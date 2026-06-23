@@ -4,19 +4,28 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"io"
 	"maps"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/net/http2"
+	"golang.org/x/net/http2/h2c"
+	"google.golang.org/grpc"
 )
 
 func TestTunnelClient_HandleRequest(t *testing.T) {
@@ -664,4 +673,1246 @@ func (f *failingHeartbeatConn) IsClosed() bool {
 
 func (f *failingHeartbeatConn) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
 	return nil, errors.New("not implemented")
+}
+
+type stallingTunnelService struct {
+	tunnelpb.UnimplementedTunnelServiceServer
+	connectCount atomic.Int32
+}
+
+type blockingRegistrationConn struct {
+	closeCount       atomic.Int32
+	closedCh         chan struct{}
+	receiveStarted   chan struct{}
+	receiveStartOnce sync.Once
+}
+
+func newBlockingRegistrationConnInternal() *blockingRegistrationConn {
+	return &blockingRegistrationConn{
+		closedCh:       make(chan struct{}),
+		receiveStarted: make(chan struct{}),
+	}
+}
+
+func (c *blockingRegistrationConn) Send(*TunnelMessage) error { return nil }
+
+func (c *blockingRegistrationConn) Receive() (*TunnelMessage, error) {
+	c.receiveStartOnce.Do(func() {
+		close(c.receiveStarted)
+	})
+	<-c.closedCh
+	return nil, io.EOF
+}
+
+func (c *blockingRegistrationConn) IsExpectedReceiveError(error) bool { return false }
+
+func (c *blockingRegistrationConn) Close() error {
+	if c.closeCount.Add(1) == 1 {
+		close(c.closedCh)
+	}
+	return nil
+}
+
+func (c *blockingRegistrationConn) IsClosed() bool {
+	select {
+	case <-c.closedCh:
+		return true
+	default:
+		return false
+	}
+}
+
+func (c *blockingRegistrationConn) SendRequest(context.Context, *TunnelMessage, *sync.Map) (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (s *stallingTunnelService) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMessage, tunnelpb.ManagerMessage]) error {
+	s.connectCount.Add(1)
+	if _, err := stream.Recv(); err != nil {
+		return err
+	}
+
+	<-stream.Context().Done()
+	return stream.Context().Err()
+}
+
+func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	envID := "env-e2e-grpc-1"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer func() {
+		cancel()
+		tunnelServer.WaitForCleanupDone()
+	}()
+
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopManager()
+
+	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/health" {
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = w.Write([]byte("not found"))
+			return
+		}
+		w.Header().Set("Content-Type", "text/plain")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write([]byte("ok-from-agent"))
+	})
+
+	cfg := &Config{
+		EdgeTransport:         EdgeTransportGRPC,
+		ManagerApiUrl:         managerURL,
+		AgentToken:            "valid-token",
+		EdgeReconnectInterval: 1,
+		Port:                  "3552",
+	}
+
+	client := NewTunnelClient(cfg, localHandler)
+	errCh := make(chan error, 4)
+	go client.StartWithErrorChan(ctx, errCh)
+
+	var tunnel *AgentTunnel
+	require.Eventually(t, func() bool {
+		var ok bool
+		tunnel, ok = GetRegistry().Get(envID)
+		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
+	}, 5*time.Second, 20*time.Millisecond)
+
+	proxyCtx, proxyCancel := context.WithTimeout(ctx, 5*time.Second)
+	defer proxyCancel()
+
+	status, headers, body, err := ProxyRequest(proxyCtx, tunnel, http.MethodGet, "/api/health", "", map[string]string{"Accept": "text/plain"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, http.StatusOK, status)
+	assert.Equal(t, "text/plain", headers["Content-Type"])
+	assert.Equal(t, "ok-from-agent", string(body))
+
+	select {
+	case clientErr := <-errCh:
+		require.NoError(t, clientErr)
+	default:
+	}
+}
+
+func TestTunnelClient_useTLSForManagerGRPC(t *testing.T) {
+	tests := []struct {
+		name       string
+		managerURL string
+		expected   bool
+	}{
+		{name: "https manager url", managerURL: "https://manager.example.com/api", expected: true},
+		{name: "https manager url with reverse proxy path", managerURL: "https://manager.example.com/arcane/api", expected: true},
+		{name: "http manager url", managerURL: "http://manager.example.com/api", expected: false},
+		{name: "invalid manager url", managerURL: "://bad-url", expected: false},
+		{name: "empty manager url", managerURL: "", expected: false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			client := NewTunnelClient(&Config{ManagerApiUrl: tc.managerURL}, http.NotFoundHandler())
+			assert.Equal(t, tc.expected, client.useTLSForManagerGRPC())
+		})
+	}
+}
+
+func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
+	ctx := t.Context()
+
+	t.Run("edge mode required", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "edge tunnel disabled")
+	})
+
+	t.Run("manager url required for grpc transport", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			AgentToken:    "token",
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "MANAGER_API_URL")
+	})
+
+	t.Run("agent token required", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			ManagerApiUrl: "https://manager.example.com/arcane/api",
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "AGENT_TOKEN is required")
+	})
+
+	t.Run("mtls requires https manager url", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			ManagerApiUrl: "http://manager.example.com/api",
+			AgentToken:    "token",
+			EdgeMTLSMode:  EdgeMTLSModeRequired,
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "MANAGER_API_URL to use https")
+	})
+
+	t.Run("required mtls auto-enrollment failure surfaces", func(t *testing.T) {
+		_, err := StartTunnelClientWithErrors(ctx, &Config{
+			EdgeAgent:     true,
+			EdgeTransport: EdgeTransportGRPC,
+			ManagerApiUrl: "https://127.0.0.1:1/api",
+			AgentToken:    "token",
+			EdgeMTLSMode:  EdgeMTLSModeRequired,
+		}, http.NotFoundHandler())
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "edge mTLS enrollment request failed")
+	})
+}
+
+func TestTunnelClient_connectAndServeGRPC_EmptyManagerAddress(t *testing.T) {
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportGRPC,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	err := client.connectAndServeGRPC(context.Background())
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manager gRPC address is empty")
+}
+
+func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	envID := "env-e2e-grpc-reject-1"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer func() {
+		cancel()
+		tunnelServer.WaitForCleanupDone()
+	}()
+
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport:         EdgeTransportGRPC,
+		ManagerApiUrl:         managerURL,
+		AgentToken:            "invalid-token",
+		EdgeReconnectInterval: 1,
+		Port:                  "3552",
+	}, http.NotFoundHandler())
+
+	err := client.connectAndServeGRPC(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "manager rejected tunnel registration")
+	assert.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	service := &stallingTunnelService{}
+	managerURL, stopManager := startTestTunnelServiceOnAPIPathInternal(t, ctx, service)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportGRPC,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	err := client.connectAndServeGRPC(ctx)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
+	assert.EqualValues(t, 1, service.connectCount.Load())
+	assert.True(t, client.conn == nil || client.conn.IsClosed())
+}
+
+func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	conn := newBlockingRegistrationConnInternal()
+	client := &TunnelClient{
+		conn:                    conn,
+		grpcRegistrationTimeout: time.Second,
+	}
+
+	msg, err := client.awaitGRPCRegistrationInternal(ctx)
+	require.Nil(t, msg)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.True(t, conn.IsClosed())
+	assert.EqualValues(t, 1, conn.closeCount.Load())
+}
+
+func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	firstConn := newBlockingRegistrationConnInternal()
+	secondConn := newBlockingRegistrationConnInternal()
+	t.Cleanup(func() {
+		_ = firstConn.Close()
+		_ = secondConn.Close()
+	})
+
+	client := &TunnelClient{
+		conn:                    firstConn,
+		grpcRegistrationTimeout: time.Second,
+	}
+
+	type registrationResult struct {
+		msg *TunnelMessage
+		err error
+	}
+	resultCh := make(chan registrationResult, 1)
+	go func() {
+		msg, err := client.awaitGRPCRegistrationInternal(ctx)
+		resultCh <- registrationResult{msg: msg, err: err}
+	}()
+
+	select {
+	case <-firstConn.receiveStarted:
+	case <-time.After(time.Second):
+		t.Fatal("registration receive did not start")
+	}
+
+	client.conn = secondConn
+	cancel()
+
+	select {
+	case result := <-resultCh:
+		require.Nil(t, result.msg)
+		require.ErrorIs(t, result.err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("registration did not exit after cancellation")
+	}
+
+	assert.True(t, firstConn.IsClosed())
+	assert.EqualValues(t, 1, firstConn.closeCount.Load())
+	assert.False(t, secondConn.IsClosed())
+	assert.EqualValues(t, 0, secondConn.closeCount.Load())
+}
+
+func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+
+	envID := "env-e2e-grpc-ws-1"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer func() {
+		cancel()
+		tunnelServer.WaitForCleanupDone()
+	}()
+
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopManager()
+
+	headerTokenCh := make(chan string, 1)
+	queryCh := make(chan string, 1)
+	pathCh := make(chan string, 1)
+	receivedMsgCh := make(chan string, 1)
+	upgradeErrCh := make(chan string, 1)
+
+	localWSServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case pathCh <- r.URL.Path:
+		default:
+		}
+		select {
+		case headerTokenCh <- r.Header.Get(HeaderAPIKey):
+		default:
+		}
+		select {
+		case queryCh <- r.URL.RawQuery:
+		default:
+		}
+
+		upgrader := websocket.Upgrader{
+			CheckOrigin: func(*http.Request) bool { return true },
+			Error: func(_ http.ResponseWriter, _ *http.Request, status int, reason error) {
+				select {
+				case upgradeErrCh <- reason.Error():
+				default:
+				}
+			},
+		}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		for {
+			mt, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			select {
+			case receivedMsgCh <- string(data):
+			default:
+			}
+			if err := conn.WriteMessage(mt, append([]byte("local echo: "), data...)); err != nil {
+				return
+			}
+		}
+	}))
+	defer localWSServer.Close()
+
+	localHost, localPort, err := net.SplitHostPort(localWSServer.Listener.Addr().String())
+	require.NoError(t, err)
+	localHost = strings.Trim(localHost, "[]")
+
+	cfg := &Config{
+		EdgeTransport:         EdgeTransportGRPC,
+		ManagerApiUrl:         managerURL,
+		AgentToken:            "valid-token",
+		EdgeReconnectInterval: 1,
+		Listen:                localHost,
+		Port:                  localPort,
+	}
+
+	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	errCh := make(chan error, 4)
+	go client.StartWithErrorChan(ctx, errCh)
+
+	require.Eventually(t, func() bool {
+		tunnel, ok := GetRegistry().Get(envID)
+		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
+	}, 5*time.Second, 20*time.Millisecond)
+
+	router := echo.New()
+	router.GET("/proxy-ws", func(c echo.Context) error {
+		tunnel, ok := GetRegistry().Get(envID)
+		if !ok || tunnel == nil {
+			return c.NoContent(http.StatusServiceUnavailable)
+		}
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+	})
+
+	proxyServer := httptest.NewServer(router)
+	defer proxyServer.Close()
+
+	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http") + "/proxy-ws?tail=100"
+	proxyConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	require.NoError(t, err)
+	if resp != nil {
+		defer func() { _ = resp.Body.Close() }()
+	}
+	defer func() { _ = proxyConn.Close() }()
+
+	require.NoError(t, proxyConn.WriteMessage(websocket.TextMessage, []byte("hello-grpc-ws")))
+
+	msgType, payload, err := proxyConn.ReadMessage()
+	select {
+	case upgradeErr := <-upgradeErrCh:
+		t.Fatalf("local websocket upgrade failed: %s", upgradeErr)
+	default:
+	}
+	require.NoError(t, err)
+	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, "local echo: hello-grpc-ws", string(payload))
+
+	select {
+	case got := <-pathCh:
+		assert.Equal(t, "/api/environments/0/ws/system/stats", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for forwarded websocket path")
+	}
+
+	select {
+	case got := <-headerTokenCh:
+		assert.Equal(t, "valid-token", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for local websocket auth header")
+	}
+
+	select {
+	case got := <-queryCh:
+		assert.Equal(t, "tail=100", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for forwarded query")
+	}
+
+	select {
+	case got := <-receivedMsgCh:
+		assert.Equal(t, "hello-grpc-ws", got)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for forwarded websocket payload")
+	}
+
+	select {
+	case clientErr := <-errCh:
+		require.NoError(t, clientErr)
+	default:
+	}
+}
+
+func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	wsConnectedCh := make(chan struct{}, 1)
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tunnel/connect" {
+			http.NotFound(w, r)
+			return
+		}
+
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		select {
+		case wsConnectedCh <- struct{}{}:
+		default:
+		}
+
+		time.Sleep(100 * time.Millisecond)
+	}))
+	defer managerServer.Close()
+
+	cfg := &Config{
+		EdgeTransport: EdgeTransportWebSocket,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "valid-token",
+	}
+
+	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	err := client.connectAndServe(ctx)
+	require.Error(t, err)
+
+	select {
+	case <-wsConnectedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected websocket fallback connection to manager")
+	}
+}
+
+func TestTunnelClient_managedTunnelTransports_AutoEnablesGRPCAndWebSocket(t *testing.T) {
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportAuto,
+		ManagerApiUrl: "http://manager.example.com",
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	transports := client.managedTunnelTransportsInternal()
+	assert.True(t, transports.grpc)
+	assert.True(t, transports.websocket)
+}
+
+func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportAuto,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
+	defer releaseGRPCAddr()
+	client.managerGRPCAddr = grpcAddr
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	select {
+	case <-wsConnectedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected auto transport to fall back to websocket when gRPC is unavailable")
+	}
+
+	cancel()
+
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for auto fallback tunnel shutdown")
+	}
+}
+
+func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	grpcAddr, stopGRPC := startHangingTCPServerInternal(t, ctx)
+	defer stopGRPC()
+
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportAuto,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	client.managerGRPCAddr = grpcAddr
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	select {
+	case <-wsConnectedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected auto transport to fall back to websocket when gRPC setup hangs")
+	}
+
+	cancel()
+
+	select {
+	case <-errCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for auto fallback tunnel shutdown")
+	}
+}
+
+func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+
+	managerURL, wsConnectedCh, stopManager := startTestWebSocketTunnelManagerInternal(t, ctx)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportGRPC,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
+	defer releaseGRPCAddr()
+	client.managerGRPCAddr = grpcAddr
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	err := client.connectAndServe(ctx)
+	require.Error(t, err)
+
+	select {
+	case <-wsConnectedCh:
+		t.Fatal("explicit gRPC transport should not fall back to websocket")
+	default:
+	}
+}
+
+func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	envID := "env-auto-poll-grpc"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer tunnelServer.WaitForCleanupDone()
+
+	managerURL, stopManager := startTestGRPCTunnelServerOnAPIPathInternal(t, ctx, tunnelServer)
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportGRPC,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	require.Eventually(t, func() bool {
+		tunnel, ok := GetRegistry().Get(envID)
+		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+			return false
+		}
+		_, isGRPC := tunnel.Conn.(*GRPCManagerTunnelConn)
+		return isGRPC
+	}, 3*time.Second, 20*time.Millisecond)
+
+	cancel()
+
+	select {
+	case err := <-errCh:
+		assert.ErrorIs(t, err, context.Canceled)
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for gRPC tunnel shutdown")
+	}
+}
+
+func startTestWebSocketTunnelManagerInternal(t *testing.T, ctx context.Context) (string, <-chan struct{}, func()) {
+	t.Helper()
+
+	wsConnectedCh := make(chan struct{}, 1)
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/tunnel/connect" {
+			http.NotFound(w, r)
+			return
+		}
+
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
+
+		registerResp, err := json.Marshal(&TunnelMessage{
+			Type:          MessageTypeRegisterResponse,
+			Accepted:      true,
+			EnvironmentID: "env-ws-fallback",
+			SessionID:     "session-ws-fallback",
+		})
+		if err != nil {
+			return
+		}
+		if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+			return
+		}
+
+		select {
+		case wsConnectedCh <- struct{}{}:
+		default:
+		}
+
+		<-ctx.Done()
+	}))
+
+	return managerServer.URL, wsConnectedCh, managerServer.Close
+}
+
+func reserveTCPAddressInternal(t *testing.T) (string, func()) {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	return lis.Addr().String(), func() {
+		require.NoError(t, lis.Close())
+	}
+}
+
+func startHangingTCPServerInternal(t *testing.T, ctx context.Context) (string, func()) {
+	t.Helper()
+
+	lis, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for {
+			conn, err := lis.Accept()
+			if err != nil {
+				return
+			}
+			go func() {
+				defer func() { _ = conn.Close() }()
+				<-ctx.Done()
+			}()
+		}
+	}()
+
+	stop := func() {
+		_ = lis.Close()
+		select {
+		case <-done:
+		case <-time.After(2 * time.Second):
+			t.Fatal("timeout waiting for hanging TCP server shutdown")
+		}
+	}
+
+	return lis.Addr().String(), stop
+}
+
+func startTestGRPCTunnelServerOnAPIPathInternal(t *testing.T, ctx context.Context, tunnelServer *TunnelServer) (string, func()) {
+	t.Helper()
+	return startTestTunnelServiceOnAPIPathInternal(t, ctx, tunnelServer)
+}
+
+func startTestTunnelServiceOnAPIPathInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer) (string, func()) {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	tunnelpb.RegisterTunnelServiceServer(grpcServer, service)
+
+	var lc net.ListenConfig
+	lis, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	handler := h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		clone := r.Clone(r.Context())
+		cloneURL := *clone.URL
+		if r.URL.Path == "/api/tunnel/connect" {
+			cloneURL.Path = tunnelpb.TunnelService_Connect_FullMethodName
+		} else {
+			cloneURL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+		}
+		clone.URL = &cloneURL
+		clone.RequestURI = cloneURL.Path
+		grpcServer.ServeHTTP(w, clone)
+	}), &http2.Server{})
+
+	httpServer := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		_ = httpServer.Serve(lis)
+	}()
+
+	cleanup := func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+		grpcServer.Stop()
+		_ = lis.Close()
+	}
+
+	return "http://" + lis.Addr().String(), cleanup
+}
+
+func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+
+	envID := "env-poll-grpc"
+	GetRegistry().Unregister(envID)
+	defer GetRegistry().Unregister(envID)
+
+	resolver := func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return envID, nil
+	}
+
+	tunnelServer := NewTunnelServer(resolver, nil)
+	go tunnelServer.StartCleanupLoop(ctx)
+	defer tunnelServer.WaitForCleanupDone()
+
+	managerURL, stopManager := startTestPollAndGRPCManagerInternal(t, ctx, tunnelServer, TunnelPollResponse{
+		Status:              TunnelStatusRequired,
+		PollIntervalSeconds: 1,
+	})
+	defer stopManager()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportPoll,
+		ManagerApiUrl: managerURL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- client.connectAndServe(ctx)
+	}()
+
+	require.Eventually(t, func() bool {
+		tunnel, ok := GetRegistry().Get(envID)
+		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
+			return false
+		}
+		_, isGRPC := tunnel.Conn.(*GRPCManagerTunnelConn)
+		return isGRPC
+	}, 3*time.Second, 20*time.Millisecond)
+
+	err := <-errCh
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
+func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	var pollCount atomic.Int32
+	wsConnectedCh := make(chan struct{}, 1)
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tunnel/poll":
+			pollCount.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+				Status:              TunnelStatusRequired,
+				PollIntervalSeconds: 1,
+			}))
+		case "/api/tunnel/connect":
+			upgrader := websocket.Upgrader{}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer func() { _ = conn.Close() }()
+
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+			registerResp, err := json.Marshal(&TunnelMessage{
+				Type:          MessageTypeRegisterResponse,
+				Accepted:      true,
+				EnvironmentID: "env-poll-ws",
+				SessionID:     "session-poll-ws",
+			})
+			if err != nil {
+				return
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+				return
+			}
+
+			select {
+			case wsConnectedCh <- struct{}{}:
+			default:
+			}
+
+			<-ctx.Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer managerServer.Close()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportPoll,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	err := client.connectAndServe(ctx)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	select {
+	case <-wsConnectedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected poll transport to open websocket tunnel when required")
+	}
+
+	assert.GreaterOrEqual(t, pollCount.Load(), int32(1))
+}
+
+func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *testing.T) {
+	t.Parallel()
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+			Status:              TunnelStatusIdle,
+			PollIntervalSeconds: 1,
+		}))
+	}))
+	defer managerServer.Close()
+
+	baseClient := managerServer.Client()
+	rewriteTransport := roundTripperFunc(func(req *http.Request) (*http.Response, error) {
+		clone := req.Clone(req.Context())
+		clone.URL.Scheme = "http"
+		clone.URL.Host = strings.TrimPrefix(managerServer.URL, "http://")
+		return baseClient.Transport.RoundTrip(clone)
+	})
+
+	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
+	client.httpClient = &http.Client{Transport: rewriteTransport}
+
+	resp, err := client.pollTunnelControlInternal(context.Background(), "http://127.0.0.1:1/api/tunnel/poll", false)
+	require.NoError(t, err)
+	assert.Equal(t, TunnelStatusIdle, resp.Status)
+	assert.Equal(t, 1, resp.PollIntervalSeconds)
+	assert.NotNil(t, client.httpClient)
+	assert.NotSame(t, http.DefaultClient, client.httpClient)
+
+	defaultReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://127.0.0.1:1/api/tunnel/poll", nil)
+	require.NoError(t, err)
+	_, err = http.DefaultClient.Do(defaultReq)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "127.0.0.1:1")
+}
+
+func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+
+	wsConnectedCh := make(chan struct{}, 1)
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tunnel/poll":
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+				Status:              TunnelStatusIdle,
+				PollIntervalSeconds: 1,
+			}))
+		case "/api/tunnel/connect":
+			select {
+			case wsConnectedCh <- struct{}{}:
+			default:
+			}
+			http.Error(w, "unexpected websocket connect", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer managerServer.Close()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportPoll,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+
+	err := client.connectAndServe(ctx)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	select {
+	case <-wsConnectedCh:
+		t.Fatal("did not expect idle poll transport to open websocket tunnel")
+	default:
+	}
+}
+
+func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+
+	var pollCount atomic.Int32
+	wsConnectedCh := make(chan struct{}, 1)
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/api/tunnel/poll":
+			currentPoll := pollCount.Add(1)
+			if currentPoll == 1 {
+				http.Error(w, "temporary failure", http.StatusBadGateway)
+				return
+			}
+
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+				Status:              TunnelStatusRequired,
+				PollIntervalSeconds: 1,
+			}))
+		case "/api/tunnel/connect":
+			upgrader := websocket.Upgrader{}
+			conn, err := upgrader.Upgrade(w, r, nil)
+			if err != nil {
+				return
+			}
+			defer func() { _ = conn.Close() }()
+
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+			registerResp, err := json.Marshal(&TunnelMessage{
+				Type:          MessageTypeRegisterResponse,
+				Accepted:      true,
+				EnvironmentID: "env-poll-retry-ws",
+				SessionID:     "session-poll-retry-ws",
+			})
+			if err != nil {
+				return
+			}
+			if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+				return
+			}
+
+			select {
+			case wsConnectedCh <- struct{}{}:
+			default:
+			}
+
+			<-ctx.Done()
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer managerServer.Close()
+
+	client := NewTunnelClient(&Config{
+		EdgeTransport: EdgeTransportPoll,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "valid-token",
+	}, http.NotFoundHandler())
+	client.grpcRegistrationTimeout = 100 * time.Millisecond
+
+	err := client.connectAndServe(ctx)
+	require.Error(t, err)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+
+	select {
+	case <-wsConnectedCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("expected poll transport to recover after transient poll error")
+	}
+
+	assert.GreaterOrEqual(t, pollCount.Load(), int32(2))
+}
+
+func TestTunnelClient_stopPollManagedSessionInternal_DeadlineExceededReturnsTimeoutMessage(t *testing.T) {
+	t.Parallel()
+
+	session := &pollManagedTunnelSession{
+		cancel: func() {},
+		done:   make(chan error),
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+
+	err := (&TunnelClient{}).stopPollManagedSessionInternal(ctx, session)
+	require.Error(t, err)
+	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
+}
+
+func TestTunnelClient_syncPollManagedSessionInternal_IdleUsesBoundedStopTimeout(t *testing.T) {
+	previousTimeout := defaultPollManagedSessionStopTimeout
+	defaultPollManagedSessionStopTimeout = 20 * time.Millisecond
+	defer func() {
+		defaultPollManagedSessionStopTimeout = previousTimeout
+	}()
+
+	session := &pollManagedTunnelSession{
+		cancel: func() {},
+		done:   make(chan error),
+	}
+
+	nextSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), session, TunnelStatusIdle)
+	require.Nil(t, nextSession)
+	require.Error(t, err)
+	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
+}
+
+func startTestPollAndGRPCManagerInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer, pollResp TunnelPollResponse) (string, func()) {
+	t.Helper()
+
+	grpcServer := grpc.NewServer()
+	tunnelpb.RegisterTunnelServiceServer(grpcServer, service)
+
+	var lc net.ListenConfig
+	lis, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+
+	handler := h2c.NewHandler(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/tunnel/poll" {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(pollResp))
+			return
+		}
+
+		if !strings.HasPrefix(r.Header.Get("Content-Type"), "application/grpc") {
+			http.NotFound(w, r)
+			return
+		}
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			http.NotFound(w, r)
+			return
+		}
+
+		clone := r.Clone(r.Context())
+		cloneURL := *clone.URL
+		if r.URL.Path == "/api/tunnel/connect" {
+			cloneURL.Path = tunnelpb.TunnelService_Connect_FullMethodName
+		} else {
+			cloneURL.Path = strings.TrimPrefix(r.URL.Path, "/api")
+		}
+		clone.URL = &cloneURL
+		clone.RequestURI = cloneURL.Path
+		grpcServer.ServeHTTP(w, clone)
+	}), &http2.Server{})
+
+	httpServer := &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+	}
+
+	go func() {
+		_ = httpServer.Serve(lis)
+	}()
+
+	cleanup := func() {
+		shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer shutdownCancel()
+		_ = httpServer.Shutdown(shutdownCtx)
+		grpcServer.Stop()
+		_ = lis.Close()
+	}
+
+	return "http://" + lis.Addr().String(), cleanup
+}
+
+type roundTripperFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	if f == nil {
+		return nil, fmt.Errorf("round tripper is nil")
+	}
+	return f(req)
 }

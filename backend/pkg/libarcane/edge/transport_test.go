@@ -9,12 +9,14 @@ import (
 )
 
 func TestNormalizeEdgeTransport(t *testing.T) {
-	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport(""))
+	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport(""))
+	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("auto"))
+	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("AUTO"))
 	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("grpc"))
 	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("GRPC"))
 	assert.Equal(t, EdgeTransportPoll, NormalizeEdgeTransport("poll"))
 	assert.Equal(t, EdgeTransportWebSocket, NormalizeEdgeTransport("websocket"))
-	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("invalid"))
+	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("invalid"))
 }
 
 func TestNormalizeEdgeMTLSMode(t *testing.T) {
@@ -26,6 +28,7 @@ func TestNormalizeEdgeMTLSMode(t *testing.T) {
 
 func TestUseGRPCEdgeTransport(t *testing.T) {
 	assert.False(t, UseGRPCEdgeTransport(nil))
+	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: EdgeTransportAuto}))
 	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: "grpc"}))
 	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: ""}))
 	assert.False(t, UseGRPCEdgeTransport(&Config{EdgeTransport: "websocket"}))
@@ -33,7 +36,8 @@ func TestUseGRPCEdgeTransport(t *testing.T) {
 
 func TestUseWebSocketEdgeTransport(t *testing.T) {
 	assert.False(t, UseWebSocketEdgeTransport(nil))
-	assert.False(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: ""}))
+	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: EdgeTransportAuto}))
+	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: ""}))
 	assert.False(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: "grpc"}))
 	assert.False(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: "poll"}))
 	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: "websocket"}))
