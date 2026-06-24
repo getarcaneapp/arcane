@@ -41,7 +41,7 @@
 		}
 	}}
 >
-	{#each accentColors as accent}
+	{#each accentColors as accent (accent.color)}
 		{@render colorOption(accent.label, accent.color, selectedColor === accent.color)}
 	{/each}
 	{#if isCustomColor || isPreviousColorCustom}
@@ -70,7 +70,7 @@
 		>
 			<div
 				class={{
-					'relative z-10 size-8 rounded-full border-2 transition-all duration-200 ease-out group-hover/item:z-20 group-hover/item:scale-110': true,
+					'relative z-[var(--arcane-z-raised)] size-8 rounded-full border-2 transition-all duration-200 ease-out group-hover/item:z-[var(--arcane-z-sticky)] group-hover/item:scale-110': true,
 					'bg-black dark:bg-white': color === 'default'
 				}}
 				style={color !== 'default' ? `background-color: ${color}` : ''}
@@ -89,7 +89,7 @@
 				{/if}
 			</div>
 			<div
-				class="text-muted-foreground group-hover/item:text-foreground bg-background absolute top-12 left-1/2 z-20 max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border px-2 py-1 text-xs whitespace-nowrap opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:opacity-100"
+				class="text-muted-foreground group-hover/item:text-foreground bg-background absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border px-2 py-1 text-xs whitespace-nowrap opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:opacity-100"
 			>
 				{label}
 			</div>

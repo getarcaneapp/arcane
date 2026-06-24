@@ -135,8 +135,8 @@
 	// (w-0 + nowrap) column would collapse, so it gets an explicit width there instead.
 	const actionsCellClasses = $derived(
 		shouldVirtualize
-			? 'sticky right-0 z-10 w-24 bg-inherit p-0 whitespace-nowrap'
-			: 'sticky right-0 z-10 w-0 bg-inherit p-0 whitespace-nowrap'
+			? 'sticky right-0 z-[var(--arcane-z-sticky)] w-24 bg-inherit p-0 whitespace-nowrap'
+			: 'sticky right-0 z-[var(--arcane-z-sticky)] w-0 bg-inherit p-0 whitespace-nowrap'
 	);
 
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
@@ -239,7 +239,7 @@
 							colspan={header.colSpan}
 							class={cn(
 								header.column.id === 'select' && selectCellClasses,
-								header.column.id === 'actions' && cn(actionsCellClasses, 'bg-background z-30')
+								header.column.id === 'actions' && cn(actionsCellClasses, 'bg-background z-[var(--arcane-z-page-floating)]')
 							)}
 						>
 							{#if !header.isPlaceholder}

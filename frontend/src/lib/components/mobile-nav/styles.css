@@ -49,7 +49,7 @@
 	pointer-events: auto;
 	touch-action: manipulation; /* Allow taps and prevent interfering gestures */
 	position: relative;
-	z-index: 1; /* Ensure buttons are above gesture detection */
+	z-index: var(--arcane-z-raised); /* Ensure buttons are above gesture detection */
 	/* Isolate button touches from parent's touch handling */
 	isolation: isolate;
 }

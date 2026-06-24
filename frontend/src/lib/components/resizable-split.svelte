@@ -253,7 +253,10 @@
 			role="separator"
 			aria-orientation="vertical"
 			aria-label={ariaLabel ?? m.common_resize_panels()}
-			class={['group relative z-20 flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible', handleClass]}
+			class={[
+				'group relative z-[var(--arcane-z-sticky)] flex shrink-0 cursor-col-resize items-stretch justify-center overflow-visible',
+				handleClass
+			]}
 			style={`width: ${layoutHandleSize}px;`}
 			onpointerdown={startResize}
 		>
@@ -265,7 +268,7 @@
 			{/if}
 			{#if collapsedSide}
 				<button
-					class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-10 m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+					class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-[var(--arcane-z-raised)] m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"
 					onclick={(event) => {
 						event.stopPropagation();
 						restoreCollapsed();

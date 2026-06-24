@@ -152,7 +152,7 @@
 				</Card.Root>
 
 				<Card.Root class="overflow-hidden pt-0">
-					<Card.Header class="bg-muted/20 sticky top-0 z-10 border-b !py-3">
+					<Card.Header class="bg-muted/20 sticky top-0 z-[var(--arcane-z-sticky)] border-b !py-3">
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div class="flex items-center gap-3">
 								<div class="bg-primary/10 text-primary ring-primary/20 flex size-8 items-center justify-center rounded-lg ring-1">

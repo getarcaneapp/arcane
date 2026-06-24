@@ -51,6 +51,17 @@
 	--glass-base: var(--bg-surface);
 	--glass-tint: var(--primary);
 	--glass-shadow-color: oklch(0 0 0 / 0.12);
+
+	--arcane-z-content: 0;
+	--arcane-z-raised: 10;
+	--arcane-z-sticky: 20;
+	--arcane-z-page-floating: 30;
+	--arcane-z-app-chrome: 40;
+	--arcane-z-overlay: 50;
+	--arcane-z-surface: 60;
+	--arcane-z-critical-surface: 70;
+	--arcane-z-toast: 80;
+	--arcane-z-loading: 9999;
 }
 
 .dark {

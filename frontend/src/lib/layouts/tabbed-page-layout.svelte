@@ -84,7 +84,9 @@
 		</div>
 
 		{#if showFloatingHeader}
-			<div class="fixed top-4 left-1/2 z-30 -translate-x-1/2 transition-all duration-300 ease-in-out">
+			<div
+				class="fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] -translate-x-1/2 transition-all duration-300 ease-in-out"
+			>
 				<div
 					class="bg-popover/90 supports-backdrop-filter:bg-popover/80 bubble-shadow-lg border-border/50 rounded-lg border px-4 py-3 backdrop-blur-md"
 				>

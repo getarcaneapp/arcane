@@ -92,7 +92,7 @@
 
 {#if isMobile.current || isTablet.current}
 	<div
-		class="fixed right-4 z-50 flex flex-col gap-3 transition-all duration-300 ease-out sm:hidden"
+		class="fixed right-4 z-[var(--arcane-z-app-chrome)] flex flex-col gap-3 transition-all duration-300 ease-out sm:hidden"
 		style="bottom: {scrollToHideEnabled && !mobileNavVisible
 			? '1rem'
 			: 'calc(var(--mobile-' +

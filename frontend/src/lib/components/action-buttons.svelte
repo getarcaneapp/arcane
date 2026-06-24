@@ -539,7 +539,7 @@
 
 					<DropdownMenu.Content
 						align="end"
-						class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+						class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 					>
 						<DropdownMenu.Group>
 							{#if !isRunning && canStart}
@@ -693,7 +693,7 @@
 
 				<DropdownMenu.Content
 					align="end"
-					class="bg-popover/20 z-50 min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+					class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
 				>
 					<DropdownMenu.Group>
 						{#if !isRunning && canStart}

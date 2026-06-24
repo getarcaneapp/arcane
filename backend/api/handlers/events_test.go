@@ -144,7 +144,3 @@ func countPersistedEventsInternal(t *testing.T, ctx context.Context, db *databas
 	require.NoError(t, db.WithContext(ctx).Model(&models.Event{}).Count(&count).Error)
 	return count
 }
-
-func ptrStringInternal(value string) *string {
-	return &value
-}

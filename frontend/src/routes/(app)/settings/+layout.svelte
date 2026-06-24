@@ -80,7 +80,7 @@
 		{#if isSubPage}
 			<div
 				class={cn(
-					'sticky top-4 z-5 mx-4 mb-6 rounded-lg border shadow-lg transition-all duration-200 md:hidden',
+					'sticky top-4 z-[var(--arcane-z-sticky)] mx-4 mb-6 rounded-lg border shadow-lg transition-all duration-200 md:hidden',
 					'bg-background/95 backdrop-blur-md'
 				)}
 			>
