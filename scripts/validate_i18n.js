@@ -27,12 +27,6 @@ const BLACKLIST = [
 // CORE LOGIC (Exported for testing)
 // ============================================================================
 
-// Matches a text node between > and < with at least 3 characters.
-// We avoid Svelte control blocks like {#each} or {if} by ensuring the text 
-// contains alphanumeric characters and standard punctuation, without starting with # or / or {
-const textRegex = />\s*([A-Za-z0-9][A-Za-z0-9\s.,'?!-]{2,})\s*</g;
-const attrRegex = /(?:aria-label|title|placeholder)=["']([^"']{2,})["']/g;
-
 function isWhitelisted(text) {
     const lower = text.toLowerCase();
     return (
@@ -47,6 +41,12 @@ function isWhitelisted(text) {
 function analyzeLine(line, filePath, lineNumber) {
     const errors = [];
     
+    // Matches a text node between > and < with at least 3 characters.
+    // We avoid Svelte control blocks like {#each} or {if} by ensuring the text 
+    // contains alphanumeric characters and standard punctuation, without starting with # or / or {
+    const textRegex = />\s*([A-Za-z0-9][A-Za-z0-9\s.,'?!-]{2,})\s*</g;
+    const attrRegex = /(?:aria-label|title|placeholder)=["']([^"']{2,})["']/g;
+
     // Skip purely structural markup or tailwind class lines
     if (line.includes('class=') && line.includes('text-') && !line.includes('>')) return errors;
 
