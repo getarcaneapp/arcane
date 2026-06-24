@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	_ "image/jpeg"
+	_ "image/png"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -17,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
+	_ "golang.org/x/image/webp"
 )
 
 type AuthHandler struct {
