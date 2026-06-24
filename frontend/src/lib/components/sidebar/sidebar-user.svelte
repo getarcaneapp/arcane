@@ -60,7 +60,7 @@
 									{/await}
 								{/if}
 								<Avatar.Fallback
-									class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-lg border bg-linear-to-br"
+									class="bg-primary text-primary-foreground rounded-lg text-sm font-semibold"
 								>
 									{user.displayName?.charAt(0).toUpperCase()}
 								</Avatar.Fallback>
@@ -107,7 +107,7 @@
 								{/await}
 							{/if}
 							<Avatar.Fallback
-								class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-lg border bg-linear-to-br text-xs font-semibold"
+								class="bg-primary text-primary-foreground rounded-lg text-xs font-semibold"
 							>
 								{user.displayName?.charAt(0).toUpperCase()}
 							</Avatar.Fallback>

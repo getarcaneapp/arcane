@@ -313,7 +313,7 @@
 											<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
 										{/if}
 										<Avatar.Fallback
-											class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
+											class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold"
 										>
 											{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
 										</Avatar.Fallback>
