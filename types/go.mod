@@ -3,10 +3,10 @@ module github.com/getarcaneapp/arcane/types/v2
 go 1.26.4
 
 require (
-	github.com/compose-spec/compose-go/v2 v2.11.0
+	github.com/compose-spec/compose-go/v2 v2.12.1
 	github.com/docker/go-units v0.5.0
-	github.com/moby/moby/api v1.54.2
-	github.com/moby/moby/client v0.4.1
+	github.com/moby/moby/api v1.55.0
+	github.com/moby/moby/client v0.5.0
 )
 
 require (

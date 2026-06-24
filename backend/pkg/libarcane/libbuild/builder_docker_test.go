@@ -1,8 +1,10 @@
 package libbuild
 
 import (
+	"bufio"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -124,4 +126,15 @@ func TestPrepareDockerBuildContextInternal_StagesDockerfileExcludedByDockerignor
 	appContents, err := os.ReadFile(filepath.Join(buildContextDir, "app.txt"))
 	require.NoError(t, err)
 	assert.Equal(t, "hello\n", string(appContents))
+}
+
+func TestDockerfileExcludedByDockerignoreInternal_ReturnsScannerError(t *testing.T) {
+	contextDir := t.TempDir()
+	tooLongPattern := strings.Repeat("a", bufio.MaxScanTokenSize+1)
+	require.NoError(t, os.WriteFile(filepath.Join(contextDir, ".dockerignore"), []byte(tooLongPattern), 0o644))
+
+	excluded, err := dockerfileExcludedByDockerignoreInternal(contextDir, "Dockerfile")
+	require.Error(t, err)
+	assert.False(t, excluded)
+	assert.Contains(t, err.Error(), "failed to read .dockerignore")
 }

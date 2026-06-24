@@ -1,10 +1,12 @@
 package libbuild
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -98,4 +100,28 @@ func TestValidateBuildRequestInternal_RejectsDockerfileAndInlineTogether(t *test
 
 	err := validateBuildRequestInternal(req, "local")
 	require.EqualError(t, err, "dockerfile and dockerfileInline are mutually exclusive")
+}
+
+func TestValidateBuildRequestInternal_ReturnsCommonTypedErrors(t *testing.T) {
+	err := validateBuildRequestInternal(imagetypes.BuildRequest{}, "local")
+	require.Error(t, err)
+
+	var typedErr *common.BuildContextDirRequiredError
+	assert.True(t, errors.As(err, &typedErr))
+}
+
+func TestPrepareDockerBuildInputInternal_ReturnsCommonTypedErrors(t *testing.T) {
+	contextDir := createBuildContextWithDockerfileInternal(t)
+	req := imagetypes.BuildRequest{
+		ContextDir: contextDir,
+		Dockerfile: "Dockerfile",
+		Platforms:  []string{"linux/amd64", "linux/arm64"},
+	}
+
+	_, reportProgress, err := prepareDockerBuildInputInternal(req)
+	require.Error(t, err)
+	assert.True(t, reportProgress)
+
+	var typedErr *common.DockerBuildMultiPlatformUnsupportedError
+	assert.True(t, errors.As(err, &typedErr))
 }
