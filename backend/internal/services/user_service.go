@@ -449,6 +449,11 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		RoleAssignments:        []user.RoleAssignmentSummary{},
 		PermissionsByEnv:       map[string][]string{},
 	}
+	// Populate AvatarURL when the user has a custom avatar stored
+	if len(u.AvatarData) > 0 {
+		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)
+		dto.AvatarURL = &avatarURL
+	}
 	if s.roleService == nil {
 		return dto
 	}
@@ -517,4 +522,49 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 		First(&user).
 		Error
 	return &user, err
+}
+
+// UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
+func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []byte, mimeType string) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]any{
+				"avatar_data":      data,
+				"avatar_mime_type": mimeType,
+			}).Error
+		if err != nil {
+			return fmt.Errorf("failed to save avatar: %w", err)
+		}
+		return nil
+	})
+}
+
+// DeleteAvatar removes the avatar for a user.
+func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		err := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]any{
+				"avatar_data":      nil,
+				"avatar_mime_type": nil,
+			}).Error
+		if err != nil {
+			return fmt.Errorf("failed to delete avatar: %w", err)
+		}
+		return nil
+	})
+}
+
+// GetAvatar returns the raw avatar data and MIME type for a user.
+// Returns (nil, "", nil) when the user has no custom avatar.
+func (s *UserService) GetAvatar(ctx context.Context, userID string) ([]byte, string, error) {
+	u, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if len(u.AvatarData) == 0 || u.AvatarMimeType == nil {
+		return nil, "", nil
+	}
+	return u.AvatarData, *u.AvatarMimeType, nil
 }

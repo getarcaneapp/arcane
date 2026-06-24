@@ -134,6 +134,7 @@ export type User = {
 	passwordHash?: string;
 	displayName?: string;
 	email?: string;
+	avatarUrl?: string;
 	roleAssignments: RoleAssignmentSummary[];
 	permissionsByEnv: Record<string, string[]>;
 	isGlobalAdmin?: boolean;

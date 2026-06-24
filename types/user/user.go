@@ -35,6 +35,7 @@ type User struct {
 	Username               string                  `json:"username" doc:"Username of the user" example:"johndoe"`
 	DisplayName            *string                 `json:"displayName,omitempty" doc:"Display name of the user" example:"John Doe"`
 	Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
+	AvatarURL              *string                 `json:"avatarUrl,omitempty" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
 	RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" doc:"Role assignments held by the user"`
 	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" doc:"Permissions the user effectively holds, keyed by environment ID. The 'global' key holds permissions that apply across every environment (and to org-level endpoints)."`
 	IsGlobalAdmin          bool                    `json:"isGlobalAdmin" doc:"Whether the user effectively holds global administrator access"`

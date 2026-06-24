@@ -3206,5 +3206,15 @@
 	"diagnostics_profile_trace": "Trace (5s)",
 	"_comment_no_access": "=== NO ACCESS PAGE ===",
 	"no_access_page_title": "You don't have access to anything yet",
-	"no_access_page_body": "Your Arcane administrator hasn't assigned you any role permissions. Ask them to add a role to your account from Settings → Users."
+	"no_access_page_body": "Your Arcane administrator hasn't assigned you any role permissions. Ask them to add a role to your account from Settings → Users.",
+	"_comment_account": "=== ACCOUNT PAGE ===",
+	"account_avatar_size_error": "Avatar file must be 2MB or smaller",
+	"account_avatar_upload_success": "Profile picture updated",
+	"account_avatar_upload_failed": "Failed to upload profile picture",
+	"account_avatar_remove_success": "Profile picture removed",
+	"account_avatar_remove_failed": "Failed to remove profile picture",
+	"account_upload_photo": "Upload photo",
+	"account_remove_photo": "Remove",
+	"account_type_sso": "Single sign-on account",
+	"account_type_local": "Local account"
 }

@@ -49,16 +49,16 @@
 					>
 						{#if user && user.displayName}
 							<Avatar.Root class="size-8 rounded-lg">
-								{#if $settingsStore.enableGravatar}
+								{#if user?.avatarUrl}
+									<Avatar.Image src={user.avatarUrl} alt={user.displayName} />
+								{:else if $settingsStore.enableGravatar}
 									{#await getGravatarUrl(user?.email)}
-										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
+										<!-- Loading gravatar, show fallback -->
 									{:then url}
 										<Avatar.Image src={url} alt={user.displayName} />
 									{:catch}
-										<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
+										<!-- Gravatar failed, show fallback -->
 									{/await}
-								{:else}
-									<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 								{/if}
 								<Avatar.Fallback
 									class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-lg border bg-linear-to-br"
@@ -96,16 +96,16 @@
 				>
 					<div class="flex items-center gap-2.5 px-2 py-2">
 						<Avatar.Root class="size-8 shrink-0 rounded-lg">
-							{#if $settingsStore.enableGravatar}
+							{#if user?.avatarUrl}
+								<Avatar.Image src={user.avatarUrl} alt={user.displayName} />
+							{:else if $settingsStore.enableGravatar}
 								{#await getGravatarUrl(user?.email)}
-									<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
+									<!-- Loading gravatar, show fallback -->
 								{:then url}
 									<Avatar.Image src={url} alt={user.displayName} />
 								{:catch}
-									<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
+									<!-- Gravatar failed, show fallback -->
 								{/await}
-							{:else}
-								<Avatar.Image src={getDefaultProfilePicture()} alt={user.displayName} />
 							{/if}
 							<Avatar.Fallback
 								class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-lg border bg-linear-to-br text-xs font-semibold"

@@ -82,6 +82,9 @@
 	let creatingKey = $state(false);
 	let createdKey = $state<ApiKeyCreated | null>(null);
 
+	let avatarUploading = $state(false);
+	let avatarInput: HTMLInputElement;
+
 	$effect(() => {
 		if (!profileLoaded && currentUser) {
 			profileDisplayName = currentUser.displayName ?? '';
@@ -139,6 +142,43 @@
 	function resetProfile() {
 		profileDisplayName = currentUser?.displayName ?? '';
 		profileEmail = currentUser?.email ?? '';
+	}
+
+	async function handleAvatarUpload(e: Event) {
+		const target = e.target as HTMLInputElement;
+		if (!target.files || target.files.length === 0) return;
+
+		const file = target.files[0];
+		if (file.size > 2 * 1024 * 1024) {
+			toast.error(m.account_avatar_size_error());
+			return;
+		}
+
+		avatarUploading = true;
+		try {
+			const updatedUser = await userService.uploadMyAvatar(file);
+			await userStore.setUser(updatedUser);
+			toast.success(m.account_avatar_upload_success());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.account_avatar_upload_failed());
+		} finally {
+			avatarUploading = false;
+			if (avatarInput) avatarInput.value = '';
+		}
+	}
+
+	async function removeAvatar() {
+		if (!currentUser?.avatarUrl) return;
+		avatarUploading = true;
+		try {
+			const updatedUser = await userService.deleteMyAvatar();
+			await userStore.setUser(updatedUser);
+			toast.success(m.account_avatar_remove_success());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.account_avatar_remove_failed());
+		} finally {
+			avatarUploading = false;
+		}
 	}
 
 	async function changePassword() {
@@ -258,20 +298,54 @@
 						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Update your display name and email</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
-						<div class="flex items-center justify-between gap-4">
+						<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 							<div class="flex min-w-0 items-center gap-4">
 								<Avatar.Root class="size-16 rounded-xl">
-									<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+									{#if currentUser.avatarUrl}
+										<Avatar.Image src={currentUser.avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+									{:else if avatarUrl}
+										<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+									{/if}
 									<Avatar.Fallback
 										class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
 									>
 										{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
 									</Avatar.Fallback>
 								</Avatar.Root>
-								<div class="min-w-0">
+								<div class="min-w-0 flex flex-col items-start gap-1">
 									<div class="text-sm font-medium">@{currentUser.username}</div>
 									<div class="text-muted-foreground text-xs">
-										{isOidcUser ? 'Single sign-on account' : 'Local account'}
+										{isOidcUser ? m.account_type_sso() : m.account_type_local()}
+									</div>
+									<div class="flex items-center gap-2 mt-1">
+										<input
+											type="file"
+											accept="image/png, image/jpeg, image/webp"
+											class="hidden"
+											bind:this={avatarInput}
+											onchange={handleAvatarUpload}
+										/>
+										<ArcaneButton
+											action="base"
+											size="xs"
+											tone="outline"
+											customLabel={m.account_upload_photo()}
+											onclick={() => avatarInput.click()}
+											loading={avatarUploading}
+											disabled={avatarUploading}
+										/>
+										{#if currentUser.avatarUrl}
+											<ArcaneButton
+												action="remove"
+												size="xs"
+												tone="ghost"
+												customLabel={m.account_remove_photo()}
+												showLabel={true}
+												class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+												onclick={removeAvatar}
+												disabled={avatarUploading}
+											/>
+										{/if}
 									</div>
 								</div>
 							</div>

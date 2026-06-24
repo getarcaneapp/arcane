@@ -18,6 +18,10 @@ type User struct {
 	RequiresPasswordChange bool       `json:"requiresPasswordChange" gorm:"column:requires_password_change"`
 	IsServiceAccount       bool       `json:"isServiceAccount" gorm:"column:is_service_account;not null;default:false"`
 
+	// Avatar — stored as a binary blob directly in the DB
+	AvatarData     []byte  `json:"-" gorm:"column:avatar_data;type:blob"`
+	AvatarMimeType *string `json:"-" gorm:"column:avatar_mime_type"`
+
 	// OIDC provider tokens
 	OidcAccessToken          *string    `json:"-" gorm:"type:text"`
 	OidcRefreshToken         *string    `json:"-" gorm:"type:text"`
