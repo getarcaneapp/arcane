@@ -59,7 +59,7 @@
 		<div class="flex items-center gap-2">
 			<div
 				role="button"
-				aria-label="Expand user card"
+				aria-label={m.nav_expand_user_card()}
 				class={cn('text-muted-foreground/60 transition-transform duration-200', userCardExpanded && 'rotate-180 transform')}
 			>
 				<ArrowDownIcon class="size-8" />

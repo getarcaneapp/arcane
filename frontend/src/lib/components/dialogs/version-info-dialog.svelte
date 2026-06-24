@@ -92,7 +92,7 @@
 				tone="outline"
 				size="icon"
 				onclick={() => window.open('https://getarcane.app', '_blank')}
-				title="Documentation"
+				title={m.common_documentation()}
 				icon={BookOpenIcon}
 			/>
 			<ArcaneButton
@@ -100,7 +100,7 @@
 				tone="outline"
 				size="icon"
 				onclick={() => window.open('https://github.com/getarcaneapp/arcane', '_blank')}
-				title="GitHub"
+				title={m.common_github()}
 				icon={GithubIcon}
 			/>
 		</div>

@@ -2,22 +2,95 @@ const fs = require('fs');
 const path = require('path');
 
 const FRONTEND_DIR = path.join(__dirname, '../frontend/src');
-const WHITELIST_FILE = path.join(__dirname, 'i18n-whitelist.txt');
-const BLACKLIST_FILE = path.join(__dirname, 'i18n-blacklist.txt');
 
-function loadList(filePath) {
-    try {
-        return fs.readFileSync(filePath, 'utf8')
-            .split('\n')
-            .map(l => l.trim())
-            .filter(Boolean);
-    } catch (e) {
-        return [];
-    }
+// ============================================================================
+// CONFIGURATION
+// ============================================================================
+
+// Technical words or patterns that are NOT text to translate.
+const WHITELIST = [
+    'compose.yaml', '.env', '#3b82f6', '80', '8080', '1000:1000', '30', '60', 
+    '300', '600', '900', '0 */15 * * * *', '/bin/sh', '-c echo hello', '/app', 
+    '/target', 'main', 'my-service', 'KEY', 'value', 'Key', 'Value', 'key', 
+    'source', 'ghcr.io/getarcaneapp/tools:latest', 'https://github.com/user/repo.git',
+    'true', 'false', 'null', 'undefined', 'promise', 'tcp', 'udp', 'bind', 'volume',
+    'breadcrumb', 'data.projects as paginated'
+];
+
+// Very common UI words that MUST ALWAYS be translated, 
+// even if they are very short and could slip through the cracks.
+const BLACKLIST = [
+    'Close', 'Cancel', 'Save', 'More', 'Copy', 'Copied', 'Edit', 'Delete'
+];
+
+// ============================================================================
+// CORE LOGIC (Exported for testing)
+// ============================================================================
+
+// Matches a text node between > and < with at least 3 characters.
+// We avoid Svelte control blocks like {#each} or {if} by ensuring the text 
+// contains alphanumeric characters and standard punctuation, without starting with # or / or {
+const textRegex = />\s*([A-Za-z0-9][A-Za-z0-9\s.,'?!-]{2,})\s*</g;
+const attrRegex = /(?:aria-label|title|placeholder)=["']([^"']{2,})["']/g;
+
+function isWhitelisted(text) {
+    const lower = text.toLowerCase();
+    return (
+        !isNaN(text) || // Numbers are ignored
+        WHITELIST.includes(text) ||
+        WHITELIST.map(w => w.toLowerCase()).includes(lower) ||
+        text.includes('===') || 
+        text.includes('=>')
+    );
 }
 
-const whitelist = loadList(WHITELIST_FILE);
-const blacklist = loadList(BLACKLIST_FILE);
+function analyzeLine(line, filePath, lineNumber) {
+    const errors = [];
+    
+    // Skip purely structural markup or tailwind class lines
+    if (line.includes('class=') && line.includes('text-') && !line.includes('>')) return errors;
+
+    // 1. Check for text nodes
+    let result;
+    while ((result = textRegex.exec(line)) !== null) {
+        const text = result[1].trim();
+        
+        // Skip too short, numbers, or whitelisted technical terms
+        if (text.length < 3 || isWhitelisted(text)) continue;
+
+        // Skip if it contains a svelte expression { } or Paraglide m.*
+        if (text.includes('{') || text.includes('m.')) continue;
+
+        // Check if it looks like an English phrase (spaces or starts with uppercase)
+        if (text.includes(' ') || /^[A-Z]/.test(text)) {
+            errors.push(`[${filePath}:${lineNumber}] Found potential hardcoded text: "${text}"`);
+        }
+    }
+
+    // 2. Check for common attributes (aria-label, title, placeholder)
+    while ((result = attrRegex.exec(line)) !== null) {
+        const text = result[1];
+        
+        if (text.includes('{') || text.includes('m.')) continue;
+        if (isWhitelisted(text)) continue;
+
+        if (BLACKLIST.includes(text)) {
+            errors.push(`[${filePath}:${lineNumber}] Blacklisted attribute text: "${text}"`);
+            continue;
+        }
+
+        // Short tokens often structural; ignore unless uppercase start or multiple words
+        if (text.length <= 4 && !/^[A-Z]/.test(text)) continue;
+
+        errors.push(`[${filePath}:${lineNumber}] Found potential hardcoded attribute text: "${text}"`);
+    }
+
+    return errors;
+}
+
+// ============================================================================
+// CLI EXECUTION
+// ============================================================================
 
 function walkDir(dir, callback) {
     fs.readdirSync(dir).forEach(f => {
@@ -27,82 +100,35 @@ function walkDir(dir, callback) {
     });
 }
 
-const errors = [];
-
-// A heuristic regex to find plain text inside tags that isn't wrapped in {m.key()} or {}
-// Matches a text node between > and < with at least 3 characters
-const textRegex = />\s*([^<{][^<{]{2,})\s*</g;
-
-walkDir(FRONTEND_DIR, (filePath) => {
-    if (filePath.endsWith('.svelte')) {
-        const content = fs.readFileSync(filePath, 'utf8');
-        
-        let match;
-        const lines = content.split('\n');
-        
-        for (let i = 0; i < lines.length; i++) {
-            const line = lines[i];
+function run() {
+    const allErrors = [];
+    walkDir(FRONTEND_DIR, (absolutePath) => {
+        if (absolutePath.endsWith('.svelte')) {
+            const content = fs.readFileSync(absolutePath, 'utf8');
+            const lines = content.split('\n');
+            const relPath = absolutePath.replace(process.cwd(), '');
             
-            // Skip lines that look like purely structural markup or CSS class lists
-            if (line.includes('class=') && line.includes('text-') && !line.includes('>')) continue;
-            
-            // Find text nodes between HTML tags
-            let result;
-            while ((result = textRegex.exec(line)) !== null) {
-                const text = result[1].trim();
-                if (
-                    text.length < 3 || 
-                    !isNaN(text) || 
-                    ['true', 'false', 'null', 'undefined', 'promise', 'tcp', 'udp', 'bind', 'volume'].includes(text.toLowerCase()) ||
-                    text.includes('===') || 
-                    text.includes('=>')
-                ) {
-                    continue;
-                }
-
-                // Skip if the exact phrase is whitelisted
-                if (whitelist.includes(text)) continue;
-
-                // Skip if the line contains a template expression or a call to m.
-                if (text.includes('{') || text.includes('m.')) continue;
-
-                // Extra check: if it looks like an English phrase (has spaces or uppercase start)
-                if (text.includes(' ') || /^[A-Z]/.test(text)) {
-                    // Also skip very small words that are likely UI tokens (More, Next, Prev)
-                    if (text.length <= 6 && whitelist.includes(text)) continue;
-                    errors.push(`[${filePath.replace(process.cwd(), '')}:${i + 1}] Found potential hardcoded text: "${text}"`);
-                }
-            }
-
-            // Also check for aria-labels or title attributes which often have hardcoded text
-            const attrRegex = /(?:aria-label|title|placeholder)=["']([^"']{2,})["']/g;
-            while ((result = attrRegex.exec(line)) !== null) {
-                const text = result[1];
-                // If attribute value contains Svelte expression or calls to m.*, skip
-                if (text.includes('{') || text.includes('m.')) continue;
-                // Skip whitelisted attributes (common tokens)
-                if (whitelist.includes(text)) continue;
-                // If blacklisted, always report
-                if (blacklist.includes(text)) {
-                    errors.push(`[${filePath.replace(process.cwd(), '')}:${i + 1}] Blacklisted attribute text: "${text}"`);
-                    continue;
-                }
-
-                // Short tokens like 'breadcrumb' or 'More' are often structural; ignore unless uppercase start
-                if (text.length <= 4 && !/^[A-Z]/.test(text)) continue;
-
-                errors.push(`[${filePath.replace(process.cwd(), '')}:${i + 1}] Found potential hardcoded attribute text: "${text}"`);
+            for (let i = 0; i < lines.length; i++) {
+                const lineErrors = analyzeLine(lines[i], relPath, i + 1);
+                allErrors.push(...lineErrors);
             }
         }
-    }
-});
+    });
 
-if (errors.length > 0) {
-    console.log("Found potentially hardcoded text in Svelte files. Please use Paraglide i18n (m.key_name()).");
-    errors.forEach(e => console.log(e));
-    console.log(`\nTotal occurrences: ${errors.length}`);
-    process.exit(1);
+    if (allErrors.length > 0) {
+        console.log("Found potentially hardcoded text in Svelte files. Please use Paraglide i18n (m.key_name()).");
+        allErrors.forEach(e => console.log(e));
+        console.log(`\nTotal occurrences: ${allErrors.length}`);
+        process.exit(1);
+    } else {
+        console.log("No hardcoded text detected in Svelte files. Good job!");
+        process.exit(0);
+    }
+}
+
+// Export for testing, or run if main
+if (require.main === module) {
+    run();
 } else {
-    console.log("No hardcoded text detected in Svelte files. Good job!");
-    process.exit(0);
+    module.exports = { analyzeLine, isWhitelisted };
 }

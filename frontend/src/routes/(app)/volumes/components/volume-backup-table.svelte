@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
 	import type { BackupEntry } from '$lib/types/shared';
@@ -352,7 +353,7 @@
 
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
-	title="Restore files"
+	title={m.volume_restore_files()}
 	description="Select files from this backup to restore."
 	contentClass="sm:max-w-[640px]"
 >
@@ -366,7 +367,7 @@
 			</Alert.Root>
 
 			<div class="flex items-center justify-between gap-2">
-				<Input class="h-9" placeholder="Search files" bind:value={backupFilesSearch} />
+				<Input class="h-9" placeholder={m.volume_search_files()} bind:value={backupFilesSearch} />
 				<div class="flex items-center gap-2">
 					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel="Select all" />
 					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel="Clear" />
@@ -416,7 +417,7 @@
 		{#if canBackupVolume}
 			<ArcaneButton
 				action="create"
-				customLabel="Restore files"
+				customLabel={m.volume_restore_files()}
 				onclick={handleRestoreFiles}
 				loading={restoringFiles}
 				disabled={restoringFiles || selectedPaths.length === 0}

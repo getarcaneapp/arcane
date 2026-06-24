@@ -271,7 +271,7 @@
 							{m.common_tags()}
 						</span>
 						{#each repoTags as tag (tag)}
-							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title="Click to select">
+							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
 								{tag}
 							</Badge>
 						{/each}
@@ -295,7 +295,7 @@
 							</div>
 							<p
 								class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-								title="Click to select"
+								title={m.common_click_to_select()}
 							>
 								{image?.id || m.common_na()}
 							</p>
@@ -306,7 +306,7 @@
 								<VolumesIcon class="size-4 text-blue-500" />
 								{m.common_size()}
 							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{imageSize}</p>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title={m.common_click_to_select()}>{imageSize}</p>
 						</div>
 
 						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
@@ -314,7 +314,7 @@
 								<ClockIcon class="size-4 text-green-500" />
 								{m.common_created()}
 							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{createdDate}</p>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title={m.common_click_to_select()}>{createdDate}</p>
 						</div>
 
 						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
@@ -322,7 +322,7 @@
 								<CpuIcon class="size-4 text-orange-500" />
 								{m.common_architecture()}
 							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{architecture}</p>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title={m.common_click_to_select()}>{architecture}</p>
 						</div>
 
 						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
@@ -330,7 +330,7 @@
 								<LayersIcon class="size-4 text-indigo-500" />
 								{m.images_os()}
 							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{osName}</p>
+							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title={m.common_click_to_select()}>{osName}</p>
 						</div>
 
 						{#if image?.dockerVersion}
@@ -339,7 +339,7 @@
 									<InfoIcon class="size-4 text-purple-500" />
 									{m.common_docker_version()}
 								</div>
-								<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">
+								<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title={m.common_click_to_select()}>
 									{image.dockerVersion}
 								</p>
 							</div>
@@ -351,7 +351,7 @@
 									<InfoIcon class="size-4 text-pink-500" />
 									{m.common_author()}
 								</div>
-								<p class="mt-2 cursor-pointer text-sm font-semibold break-all select-all" title="Click to select">
+								<p class="mt-2 cursor-pointer text-sm font-semibold break-all select-all" title={m.common_click_to_select()}>
 									{image.author}
 								</p>
 							</div>
@@ -365,7 +365,7 @@
 								</div>
 								<p
 									class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-									title="Click to select"
+									title={m.common_click_to_select()}
 								>
 									{image.config.workingDir}
 								</p>
@@ -394,7 +394,7 @@
 											</div>
 											<div
 												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{value}
 											</div>
@@ -404,7 +404,7 @@
 											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">ENV_VAR</div>
 											<div
 												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{env}
 											</div>

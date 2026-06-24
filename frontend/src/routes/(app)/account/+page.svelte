@@ -254,8 +254,8 @@
 				<!-- Profile -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Profile</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Update your display name and email</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_desc()}</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
 						<div class="flex items-center justify-between gap-4">
@@ -328,12 +328,12 @@
 				{#if !isOidcUser}
 					<Card class="overflow-hidden">
 						<div class="border-b p-4 sm:p-6">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">Password</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Change your account password</p>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_password()}</h2>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_password_desc()}</p>
 						</div>
 						<div class="space-y-5 p-4 sm:p-6">
 							<div class="space-y-2">
-								<Label for="account-current-password">Current password</Label>
+								<Label for="account-current-password">{m.account_current_password()}</Label>
 								<Input
 									id="account-current-password"
 									type="password"
@@ -343,12 +343,12 @@
 							</div>
 							<div class="grid gap-4 sm:grid-cols-2">
 								<div class="space-y-2">
-									<Label for="account-new-password">New password</Label>
+									<Label for="account-new-password">{m.account_new_password()}</Label>
 									<Input id="account-new-password" type="password" bind:value={newPassword} autocomplete="new-password" />
 									<p class="text-muted-foreground text-xs">{m.account_password_min_length()}</p>
 								</div>
 								<div class="space-y-2">
-									<Label for="account-confirm-password">Confirm new password</Label>
+									<Label for="account-confirm-password">{m.account_confirm_password()}</Label>
 									<Input id="account-confirm-password" type="password" bind:value={confirmPassword} autocomplete="new-password" />
 									{#if confirmPassword.length > 0 && confirmPassword !== newPassword}
 										<p class="text-destructive text-xs">{m.account_passwords_dont_match()}</p>
@@ -474,21 +474,21 @@
 				<!-- Preferences -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Preferences</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal display preferences</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_preferences_desc()}</p>
 					</div>
 					<div class="divide-y p-2">
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
-								<div class="text-sm font-medium">Theme</div>
+								<div class="text-sm font-medium">{m.account_theme()}</div>
 								<div class="text-muted-foreground text-xs">{m.appearance_theme_current_user_description()}</div>
 							</div>
 							<ThemeModeSelector />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
-								<div class="text-sm font-medium">Language</div>
-								<div class="text-muted-foreground text-xs">UI language for this account</div>
+								<div class="text-sm font-medium">{m.account_language()}</div>
+								<div class="text-muted-foreground text-xs">{m.account_language_desc()}</div>
 							</div>
 							<LocalePicker inline />
 						</div>
@@ -506,7 +506,7 @@
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Roles &amp; access</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Your assigned roles</p>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_roles()}</p>
 					</div>
 					<div class="p-4 sm:p-6">
 						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
@@ -526,7 +526,7 @@
 								{/each}
 							</ul>
 						{:else}
-							<p class="text-muted-foreground text-sm">No roles assigned.</p>
+							<p class="text-muted-foreground text-sm">{m.account_no_roles()}</p>
 						{/if}
 
 						{#if currentUser.permissionsByEnv}
@@ -546,13 +546,13 @@
 						<div class="border-destructive/20 border-b p-4 sm:p-6">
 							<div class="flex items-center gap-2">
 								<ShieldAlertIcon class="text-destructive size-5" />
-								<h2 class="text-base font-semibold tracking-tight sm:text-lg">Danger zone</h2>
+								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
 							</div>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Session-level actions that affect every device</p>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_danger_zone_desc()}</p>
 						</div>
 						<div class="space-y-4 p-4 sm:p-6">
 							<div class="space-y-2">
-								<div class="text-sm font-medium">Sign out other sessions</div>
+								<div class="text-sm font-medium">{m.account_signout_other()}</div>
 								<p class="text-muted-foreground text-xs">
 									Revokes every active session except this one. Useful if you forgot to log out somewhere.
 								</p>
@@ -569,8 +569,8 @@
 							<Separator />
 
 							<div class="space-y-2">
-								<div class="text-sm font-medium">Log out</div>
-								<p class="text-muted-foreground text-xs">Sign out of this device.</p>
+								<div class="text-sm font-medium">{m.common_log_out()}</div>
+								<p class="text-muted-foreground text-xs">{m.account_signout_this()}</p>
 								<form action="/logout" method="POST">
 									<ArcaneButton
 										action="cancel"

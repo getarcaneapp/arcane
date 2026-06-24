@@ -146,7 +146,7 @@
 										<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
 										<p
 											class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
-											title="Click to select"
+											title={m.common_click_to_select()}
 										>
 											{volume.name}
 										</p>
@@ -159,7 +159,7 @@
 									</div>
 									<div class="min-w-0 flex-1">
 										<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
-										<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
+										<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
 											{volume.driver}
 										</p>
 									</div>
@@ -171,7 +171,7 @@
 									</div>
 									<div class="min-w-0 flex-1">
 										<p class="text-muted-foreground text-sm font-medium">{m.common_created()}</p>
-										<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
+										<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
 											{createdDate}
 										</p>
 									</div>
@@ -185,7 +185,7 @@
 										<p class="text-muted-foreground text-sm font-medium">{m.common_scope()}</p>
 										<p
 											class="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
-											title="Click to select"
+											title={m.common_click_to_select()}
 										>
 											{volume.scope}
 										</p>
@@ -214,7 +214,7 @@
 									</div>
 									<div class="min-w-0 flex-1">
 										<p class="text-muted-foreground text-sm font-medium">{m.common_mountpoint()}</p>
-										<div class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all" title="Click to select">
+										<div class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all" title={m.common_click_to_select()}>
 											<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
 										</div>
 									</div>
@@ -245,7 +245,7 @@
 												<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 													<code
 														class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-														title="Click to select"
+														title={m.common_click_to_select()}
 													>
 														{truncateString(c.id, 48)}
 													</code>
@@ -290,7 +290,7 @@
 												</div>
 												<div
 													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title="Click to select"
+													title={m.common_click_to_select()}
 												>
 													{value}
 												</div>
@@ -320,7 +320,7 @@
 												</div>
 												<div
 													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title="Click to select"
+													title={m.common_click_to_select()}
 												>
 													{value}
 												</div>

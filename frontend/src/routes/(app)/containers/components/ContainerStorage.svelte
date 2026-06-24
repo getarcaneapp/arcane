@@ -73,7 +73,7 @@
 											</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{mount.destination}
 											</div>
@@ -91,7 +91,7 @@
 											</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{mount.source}
 											</div>
@@ -101,7 +101,7 @@
 									{#if mount.type === 'volume' && mount.driver}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">Driver</div>
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_driver()}</div>
 												<div class="text-foreground text-sm font-medium">
 													{mount.driver}
 												</div>
@@ -112,7 +112,7 @@
 									{#if mount.propagation}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">Propagation</div>
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_propagation()}</div>
 												<div class="text-foreground text-sm font-medium">
 													{mount.propagation}
 												</div>

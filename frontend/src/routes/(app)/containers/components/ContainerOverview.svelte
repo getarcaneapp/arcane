@@ -142,7 +142,7 @@
 					<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10">
 						<VolumesIcon class="size-5 text-blue-500" />
 					</div>
-					<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all" title="Click to select">
+					<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all" title={m.common_click_to_select()}>
 						{container.image || m.common_na()}
 					</div>
 				</div>
@@ -182,7 +182,7 @@
 					<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-purple-500/10">
 						<NetworksIcon class="size-5 text-purple-500" />
 					</div>
-					<div class="text-foreground cursor-pointer font-mono text-base font-semibold select-all" title="Click to select">
+					<div class="text-foreground cursor-pointer font-mono text-base font-semibold select-all" title={m.common_click_to_select()}>
 						{primaryIpAddress}
 					</div>
 				</div>
@@ -215,7 +215,7 @@
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
 						{m.common_id()}
 					</div>
-					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title="Click to select">
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title={m.common_click_to_select()}>
 						{container.id}
 					</div>
 				</Card.Content>
@@ -334,7 +334,7 @@
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
 					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_image_id()}</div>
-					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title="Click to select">
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all" title={m.common_click_to_select()}>
 						{container.imageId}
 					</div>
 				</Card.Content>
@@ -348,7 +348,7 @@
 						</div>
 						<div
 							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title="Click to select"
+							title={m.common_click_to_select()}
 						>
 							{container.config.workingDir}
 						</div>
@@ -360,7 +360,7 @@
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
 						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_user_cap()}</div>
-						<div class="text-foreground cursor-pointer font-mono text-sm font-medium select-all" title="Click to select">
+						<div class="text-foreground cursor-pointer font-mono text-sm font-medium select-all" title={m.common_click_to_select()}>
 							{container.config.user}
 						</div>
 					</Card.Content>
@@ -373,7 +373,7 @@
 						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_entrypoint()}</div>
 						<div
 							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title="Click to select"
+							title={m.common_click_to_select()}
 						>
 							{container.config.entrypoint.join(' ')}
 						</div>
@@ -389,7 +389,7 @@
 						</div>
 						<div
 							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title="Click to select"
+							title={m.common_click_to_select()}
 						>
 							{container.config.cmd.join(' ')}
 						</div>

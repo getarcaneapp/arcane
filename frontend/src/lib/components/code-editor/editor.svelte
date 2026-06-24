@@ -845,18 +845,19 @@
 
 	<div class="editor-status">
 		<span>{diagnosticSummary.errors} errors</span>
-		<span>{diagnosticSummary.warnings} warnings</span>
-		<span>Schema: {diagnosticSummary.schemaStatus}</span>
-		<span>Ln {diagnosticSummary.cursorLine}, Col {diagnosticSummary.cursorCol}</span>
-		<span>Diagnostics: {countCurrentDiagnostics()}</span>
+		<span>{diagnosticSummary.errors} {m.editor_errors()}</span>
+		<span>{diagnosticSummary.warnings} {m.editor_warnings()}</span>
+		<span>{m.editor_schema()}: {diagnosticSummary.schemaStatus}</span>
+		<span>{m.editor_line()} {diagnosticSummary.cursorLine}, {m.editor_column()} {diagnosticSummary.cursorCol}</span>
+		<span>{m.editor_diagnostics()}: {countCurrentDiagnostics()}</span>
 		{#if !validationReady}
-			<span class="status-muted">Validating...</span>
+			<span class="status-muted">{m.editor_validating()}</span>
 		{/if}
 	</div>
 
-	<Command.Dialog bind:open={commandPaletteOpen} title="Editor Commands" description="Run editor commands">
+	<Command.Dialog bind:open={commandPaletteOpen} title={m.editor_commands()} description="Run editor commands">
 		{#snippet children()}
-			<Command.Input placeholder="Search editor commands..." />
+			<Command.Input placeholder={m.editor_search_commands()} />
 			<Command.List>
 				<Command.Empty>{m.common_no_results_found()}</Command.Empty>
 				<Command.Group>

@@ -163,7 +163,7 @@
 								<p class="text-muted-foreground text-sm font-medium">{m.common_id()}</p>
 								<p
 									class="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-									title="Click to select"
+									title={m.common_click_to_select()}
 								>
 									{network.id}
 								</p>
@@ -176,7 +176,7 @@
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base" title="Click to select">
+								<p class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base" title={m.common_click_to_select()}>
 									{network.name}
 								</p>
 							</div>
@@ -188,7 +188,7 @@
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
+								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
 									{network.driver}
 								</p>
 							</div>
@@ -200,7 +200,7 @@
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_scope()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base" title="Click to select">
+								<p class="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base" title={m.common_click_to_select()}>
 									{network.scope}
 								</p>
 							</div>
@@ -212,7 +212,7 @@
 							</div>
 							<div class="min-w-0 flex-1">
 								<p class="text-muted-foreground text-sm font-medium">{m.common_created()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title="Click to select">
+								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
 									{createdDate}
 								</p>
 							</div>
@@ -327,7 +327,7 @@
 										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{peer.Name}</div>
 										<div
 											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title="Click to select"
+											title={m.common_click_to_select()}
 										>
 											{peer.IP}
 										</div>
@@ -417,7 +417,7 @@
 													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.common_subnet()}:</span>
 													<code
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title="Click to select"
+														title={m.common_click_to_select()}
 													>
 														{config.subnet}
 													</code>
@@ -431,7 +431,7 @@
 													>
 													<code
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title="Click to select"
+														title={m.common_click_to_select()}
 													>
 														{config.gateway}
 													</code>
@@ -445,7 +445,7 @@
 													>
 													<code
 														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title="Click to select"
+														title={m.common_click_to_select()}
 													>
 														{config.ipRange}
 													</code>
@@ -461,7 +461,7 @@
 																<span class="text-muted-foreground mr-2">{name}:</span>
 																<code
 																	class="bg-muted text-muted-foreground cursor-pointer rounded px-1 py-0.5 select-all"
-																	title="Click to select">{addr}</code
+																	title={m.common_click_to_select()}>{addr}</code
 																>
 															</li>
 														{/each}
@@ -558,7 +558,7 @@
 											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 												<code
 													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-													title="Click to select"
+													title={m.common_click_to_select()}
 												>
 													{container.ipv4Address ??
 														container.IPv4Address ??
@@ -592,7 +592,7 @@
 										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
 										<div
 											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title="Click to select"
+											title={m.common_click_to_select()}
 										>
 											{value}
 										</div>
@@ -620,7 +620,7 @@
 										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
 										<div
 											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title="Click to select"
+											title={m.common_click_to_select()}
 										>
 											{value}
 										</div>
