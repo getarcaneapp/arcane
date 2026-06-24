@@ -64,7 +64,7 @@ func (h *WebSocketHandler) DiagnosticsStream(c echo.Context) error {
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	done := diagnosticsReadLoopInternal(conn)
 	write := func() bool {
@@ -98,7 +98,7 @@ func (h *WebSocketHandler) ServerLogsStream(c echo.Context) error {
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer func() { _ = conn.Close() }()
 
 	// Subscribe before replaying the backlog so no entry is missed in the gap; at
 	// worst the newest backlog entry is delivered twice, which is harmless.

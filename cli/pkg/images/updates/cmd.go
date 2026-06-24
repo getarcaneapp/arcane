@@ -15,8 +15,8 @@ import (
 
 var jsonOutput bool
 
-// UpdatesCmd is the parent command for image update operations.
-var UpdatesCmd = &cobra.Command{
+// Command is the parent command for image update operations.
+var Command = &cobra.Command{
 	Use:   "updates",
 	Short: "Check for image updates",
 }
@@ -193,10 +193,10 @@ var summaryCmd = &cobra.Command{
 }
 
 func init() {
-	UpdatesCmd.AddCommand(checkCmd)
-	UpdatesCmd.AddCommand(checkAllCmd)
-	UpdatesCmd.AddCommand(checkImageCmd)
-	UpdatesCmd.AddCommand(summaryCmd)
+	Command.AddCommand(checkCmd)
+	Command.AddCommand(checkAllCmd)
+	Command.AddCommand(checkImageCmd)
+	Command.AddCommand(summaryCmd)
 
 	checkCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	checkAllCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

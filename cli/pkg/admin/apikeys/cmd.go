@@ -64,8 +64,8 @@ func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, e
 	return out, nil
 }
 
-// ApiKeysCmd is the parent command for API key operations
-var ApiKeysCmd = &cobra.Command{
+// Command is the parent command for API key operations
+var Command = &cobra.Command{
 	Use:     "api-keys",
 	Aliases: []string{"apikey", "keys", "key"},
 	Short:   "Manage API keys",
@@ -350,11 +350,11 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	ApiKeysCmd.AddCommand(listCmd)
-	ApiKeysCmd.AddCommand(createCmd)
-	ApiKeysCmd.AddCommand(getCmd)
-	ApiKeysCmd.AddCommand(updateCmd)
-	ApiKeysCmd.AddCommand(deleteCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of API keys to show")

@@ -77,50 +77,50 @@ type TunnelRuntimeState struct {
 }
 
 const (
-	// EdgeTransportAuto prefers gRPC and falls back to WebSocket automatically.
-	EdgeTransportAuto = "auto"
-	// EdgeTransportWebSocket forces WebSocket tunnel transport.
-	EdgeTransportWebSocket = "websocket"
-	// EdgeTransportGRPC forces gRPC transport without WebSocket fallback.
-	EdgeTransportGRPC = "grpc"
-	// EdgeTransportPoll uses an HTTP polling control plane with the existing
+	// TransportAuto prefers gRPC and falls back to WebSocket automatically.
+	TransportAuto = "auto"
+	// TransportWebSocket forces WebSocket tunnel transport.
+	TransportWebSocket = "websocket"
+	// TransportGRPC forces gRPC transport without WebSocket fallback.
+	TransportGRPC = "grpc"
+	// TransportPoll uses an HTTP polling control plane with the existing
 	// websocket tunnel as an on-demand data plane.
-	EdgeTransportPoll = "poll"
+	TransportPoll = "poll"
 
-	// EdgeMTLSModeDisabled disables edge tunnel mTLS.
-	EdgeMTLSModeDisabled = "disabled"
-	// EdgeMTLSModeOptional enables edge tunnel mTLS when certificates are configured.
-	EdgeMTLSModeOptional = "optional"
-	// EdgeMTLSModeRequired requires a verified client certificate on edge tunnel endpoints
+	// MTLSModeDisabled disables edge tunnel mTLS.
+	MTLSModeDisabled = "disabled"
+	// MTLSModeOptional enables edge tunnel mTLS when certificates are configured.
+	MTLSModeOptional = "optional"
+	// MTLSModeRequired requires a verified client certificate on edge tunnel endpoints
 	// when Arcane terminates TLS; external TLS terminators must enforce mTLS before proxying.
-	EdgeMTLSModeRequired = "required"
+	MTLSModeRequired = "required"
 )
 
 // NormalizeEdgeTransport normalizes transport config and defaults to auto-negotiation.
 func NormalizeEdgeTransport(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case EdgeTransportAuto:
-		return EdgeTransportAuto
-	case EdgeTransportWebSocket:
-		return EdgeTransportWebSocket
-	case EdgeTransportGRPC:
-		return EdgeTransportGRPC
-	case EdgeTransportPoll:
-		return EdgeTransportPoll
+	case TransportAuto:
+		return TransportAuto
+	case TransportWebSocket:
+		return TransportWebSocket
+	case TransportGRPC:
+		return TransportGRPC
+	case TransportPoll:
+		return TransportPoll
 	default:
-		return EdgeTransportAuto
+		return TransportAuto
 	}
 }
 
 // NormalizeEdgeMTLSMode normalizes edge mTLS config and defaults to disabled.
 func NormalizeEdgeMTLSMode(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
-	case EdgeMTLSModeOptional:
-		return EdgeMTLSModeOptional
-	case EdgeMTLSModeRequired:
-		return EdgeMTLSModeRequired
+	case MTLSModeOptional:
+		return MTLSModeOptional
+	case MTLSModeRequired:
+		return MTLSModeRequired
 	default:
-		return EdgeMTLSModeDisabled
+		return MTLSModeDisabled
 	}
 }
 
@@ -130,7 +130,7 @@ func UseGRPCEdgeTransport(cfg *Config) bool {
 		return false
 	}
 	transport := NormalizeEdgeTransport(cfg.EdgeTransport)
-	return transport == EdgeTransportGRPC || transport == EdgeTransportAuto
+	return transport == TransportGRPC || transport == TransportAuto
 }
 
 // UseWebSocketEdgeTransport reports whether websocket managed tunnel mode is allowed.
@@ -139,7 +139,7 @@ func UseWebSocketEdgeTransport(cfg *Config) bool {
 		return false
 	}
 	transport := NormalizeEdgeTransport(cfg.EdgeTransport)
-	return transport == EdgeTransportWebSocket || transport == EdgeTransportAuto
+	return transport == TransportWebSocket || transport == TransportAuto
 }
 
 // UsePollEdgeTransport reports whether the Portainer-style polling control plane
@@ -148,7 +148,7 @@ func UsePollEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
-	return NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportPoll
+	return NormalizeEdgeTransport(cfg.EdgeTransport) == TransportPoll
 }
 
 // GetActiveTunnelTransport returns the currently active tunnel transport for an environment.
@@ -160,9 +160,9 @@ func GetActiveTunnelTransport(envID string) (string, bool) {
 
 	switch tunnel.Conn.(type) {
 	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
-		return EdgeTransportGRPC, true
+		return TransportGRPC, true
 	case *TunnelConn:
-		return EdgeTransportWebSocket, true
+		return TransportWebSocket, true
 	default:
 		return "", false
 	}
@@ -179,9 +179,9 @@ func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
 
 	switch tunnel.Conn.(type) {
 	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
-		state.Transport = EdgeTransportGRPC
+		state.Transport = TransportGRPC
 	case *TunnelConn:
-		state.Transport = EdgeTransportWebSocket
+		state.Transport = TransportWebSocket
 	}
 
 	state.ConnectedAt = new(tunnel.ConnectedAt)

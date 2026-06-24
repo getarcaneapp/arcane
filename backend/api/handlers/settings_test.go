@@ -21,7 +21,7 @@ import (
 )
 
 func TestSettingsHandler_AppendRuntimeSettings(t *testing.T) {
-	handler := &SettingsHandler{
+	handler := &settingsHandler{
 		cfg: &config.Config{
 			UIConfigurationDisabled: true,
 			BackupVolumeName:        "custom-backups",
@@ -47,9 +47,9 @@ func TestSettingsHandler_AppendRuntimeSettings(t *testing.T) {
 
 func TestSettingsHandler_AppendRuntimeSettings_DoesNotGenerateEdgeMTLSCA(t *testing.T) {
 	assetsDir := t.TempDir()
-	handler := &SettingsHandler{
+	handler := &settingsHandler{
 		cfg: &config.Config{
-			EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
+			EdgeMTLSMode:      edge.MTLSModeRequired,
 			EdgeMTLSAssetsDir: assetsDir,
 		},
 	}
@@ -85,7 +85,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 	require.NoError(t, os.Chmod(unreadable, 0))
 	t.Cleanup(func() { _ = os.Chmod(unreadable, 0o700) })
 
-	handler := &SettingsHandler{settingsService: settingsSvc, cfg: &config.Config{}}
+	handler := &settingsHandler{settingsService: settingsSvc, cfg: &config.Config{}}
 
 	_, err = handler.updateSettingsForLocalEnvironment(ctx, apitypes.Update{ProjectsDirectory: new(unreadable)})
 	require.Error(t, err)

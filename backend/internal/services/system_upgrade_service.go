@@ -18,7 +18,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	vuln "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"

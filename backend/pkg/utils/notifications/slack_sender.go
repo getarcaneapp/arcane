@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -37,7 +36,7 @@ func BuildSlackURL(config models.SlackConfig) (string, error) {
 }
 
 // SendSlack sends a message via Shoutrrr Slack using proper service configuration
-func SendSlack(ctx context.Context, config models.SlackConfig, message string) error {
+func SendSlack(config models.SlackConfig, message string) error {
 	if config.Token == "" {
 		return errors.New("slack token is empty")
 	}

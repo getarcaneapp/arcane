@@ -2,8 +2,6 @@ package cmdutil
 
 import (
 	"errors"
-	"fmt"
-	"strings"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
@@ -56,18 +54,4 @@ func AssumeYes(cmd *cobra.Command) bool {
 		return app.AssumeYes()
 	}
 	return false
-}
-
-// ResolveOutputMode validates a free-form output mode value.
-func ResolveOutputMode(mode string) (runtimectx.OutputMode, error) {
-	normalized := strings.ToLower(strings.TrimSpace(mode))
-	if normalized == "" {
-		return runtimectx.OutputModeText, nil
-	}
-	switch runtimectx.OutputMode(normalized) {
-	case runtimectx.OutputModeText, runtimectx.OutputModeJSON:
-		return runtimectx.OutputMode(normalized), nil
-	default:
-		return "", fmt.Errorf("invalid output mode %q", mode)
-	}
 }

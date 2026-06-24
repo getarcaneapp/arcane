@@ -66,7 +66,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	}
 	userID, username := normalizeEventActor(req.UserID, req.Username)
 
-	event := &models.Event{
+	eventModel := &models.Event{
 		Type:          req.Type,
 		Severity:      severity,
 		Title:         req.Title,
@@ -85,7 +85,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 	}
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Create(event).Error; err != nil {
+		if err := tx.Create(eventModel).Error; err != nil {
 			return fmt.Errorf("failed to create event: %w", err)
 		}
 		return nil
@@ -94,9 +94,9 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		return nil, err
 	}
 
-	s.forwardEventToManager(ctx, event)
+	s.forwardEventToManager(ctx, eventModel)
 
-	return event, nil
+	return eventModel, nil
 }
 
 func (s *EventService) forwardEventToManager(ctx context.Context, eventModel *models.Event) {
@@ -544,7 +544,7 @@ func cloneEventMetadataValueInternal(value any) any {
 	case models.JSON:
 		return cloneEventMetadataInternal(typed)
 	case map[string]any:
-		return cloneEventMetadataInternal(models.JSON(typed))
+		return cloneEventMetadataInternal(typed)
 	case []any:
 		out := make([]any, len(typed))
 		for i := range typed {

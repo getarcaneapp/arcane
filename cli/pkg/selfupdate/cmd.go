@@ -64,14 +64,18 @@ var Cmd = &cobra.Command{
 	Aliases:      []string{"self", "cli"},
 	Short:        "Update arcane-cli",
 	SilenceUsage: true,
-	RunE:         runCLIUpdateCommandInternal,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runCLIUpdateInternal(cmd.Context(), "")
+	},
 }
 
 var selfUpdateRunCmd = &cobra.Command{
 	Use:          "run",
 	Short:        "Update arcane-cli using the configured channel",
 	SilenceUsage: true,
-	RunE:         runCLIUpdateCommandInternal,
+	RunE: func(cmd *cobra.Command, _ []string) error {
+		return runCLIUpdateInternal(cmd.Context(), "")
+	},
 }
 
 var selfUpdateChannelCmd = &cobra.Command{
@@ -129,10 +133,6 @@ func setCLIUpdateChannelAndRunInternal(cmd *cobra.Command, channel string) error
 	}
 	output.Success("Set CLI update channel to %s", channel)
 	return runCLIUpdateInternal(cmd.Context(), channel)
-}
-
-func runCLIUpdateCommandInternal(cmd *cobra.Command, args []string) error {
-	return runCLIUpdateInternal(cmd.Context(), "")
 }
 
 func runCLIUpdateInternal(ctx context.Context, overrideChannel string) error {
@@ -641,7 +641,7 @@ func verboseCLIUpdateInternal(format string, args ...any) {
 	if !cliUpdateVerbose {
 		return
 	}
-	fmt.Fprintf(os.Stderr, "self-update: "+format+"\n", args...)
+	_, _ = fmt.Fprintf(os.Stderr, "self-update: "+format+"\n", args...)
 }
 
 func sha256FileInternal(path string) (string, error) {

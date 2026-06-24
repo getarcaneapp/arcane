@@ -60,13 +60,13 @@ func StartSpinner(label string) *Spinner {
 	program := tea.NewProgram(model)
 	done := make(chan struct{})
 
-	spinner := &Spinner{program: program, done: done}
+	spinnerUI := &Spinner{program: program, done: done}
 	go func() {
 		_, _ = program.Run()
 		close(done)
 	}()
 
-	return spinner
+	return spinnerUI
 }
 
 // Stop stops the spinner and moves to the next line.

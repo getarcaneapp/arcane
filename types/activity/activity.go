@@ -4,46 +4,9 @@ import "time"
 
 type Status string
 
-const (
-	StatusQueued    Status = "queued"
-	StatusRunning   Status = "running"
-	StatusSuccess   Status = "success"
-	StatusFailed    Status = "failed"
-	StatusCancelled Status = "cancelled"
-)
-
 type Type string
 
-const (
-	TypeImagePull         Type = "image_pull"
-	TypeImageBuild        Type = "image_build"
-	TypeImageUpdateCheck  Type = "image_update_check"
-	TypeProjectPull       Type = "project_pull"
-	TypeProjectBuild      Type = "project_build"
-	TypeProjectDeploy     Type = "project_deploy"
-	TypeProjectRedeploy   Type = "project_redeploy"
-	TypeProjectDown       Type = "project_down"
-	TypeProjectRestart    Type = "project_restart"
-	TypeProjectDestroy    Type = "project_destroy"
-	TypeContainerStart    Type = "container_start"
-	TypeContainerStop     Type = "container_stop"
-	TypeContainerRestart  Type = "container_restart"
-	TypeContainerRedeploy Type = "container_redeploy"
-	TypeContainerDelete   Type = "container_delete"
-	TypeVulnerabilityScan Type = "vulnerability_scan"
-	TypeAutoUpdate        Type = "auto_update"
-	TypeSystemPrune       Type = "system_prune"
-	TypeResourceAction    Type = "resource_action"
-)
-
 type MessageLevel string
-
-const (
-	MessageLevelInfo    MessageLevel = "info"
-	MessageLevelWarning MessageLevel = "warning"
-	MessageLevelError   MessageLevel = "error"
-	MessageLevelSuccess MessageLevel = "success"
-)
 
 type Activity struct {
 	ID                    string         `json:"id"`

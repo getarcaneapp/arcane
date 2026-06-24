@@ -324,7 +324,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 		return err
 	}
 
-	authConfig, err := s.GetAuthConfig(ctx, repository)
+	authConfig, err := s.GetAuthConfig(repository)
 	if err != nil {
 		return err
 	}
@@ -362,7 +362,7 @@ func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, br
 	return nil
 }
 
-func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *models.GitRepository) (git.AuthConfig, error) {
+func (s *GitRepositoryService) GetAuthConfig(repository *models.GitRepository) (git.AuthConfig, error) {
 	authConfig := git.AuthConfig{
 		AuthType:               repository.AuthType,
 		Username:               repository.Username,
@@ -398,7 +398,7 @@ func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]g
 		return nil, err
 	}
 
-	authConfig, err := s.GetAuthConfig(listCtx, repository)
+	authConfig, err := s.GetAuthConfig(repository)
 	if err != nil {
 		return nil, err
 	}
@@ -429,7 +429,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 		return nil, err
 	}
 
-	authConfig, err := s.GetAuthConfig(ctx, repository)
+	authConfig, err := s.GetAuthConfig(repository)
 	if err != nil {
 		return nil, err
 	}

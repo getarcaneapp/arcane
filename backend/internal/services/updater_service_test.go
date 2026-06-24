@@ -347,7 +347,7 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 	})
 
 	t.Run("delegates to configured docker service", func(t *testing.T) {
-		server := newProjectImagePullServer(t, nil)
+		server := newProjectImagePullServerWithObserverInternal(t, nil, nil)
 		wantClient := newTestDockerClient(t, server)
 		dockerSvc := &DockerClientService{client: wantClient}
 		svc := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
@@ -373,7 +373,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 
 	t.Run("delegates to Arcane image puller", func(t *testing.T) {
 		db := setupProjectTestDB(t)
-		server := newProjectImagePullServer(t, nil)
+		server := newProjectImagePullServerWithObserverInternal(t, nil, nil)
 		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
 		imageSvc := NewImageService(db, dockerSvc, nil, nil, nil, NewEventService(db, nil, nil))
 		svc := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil)
@@ -608,7 +608,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 				HasUpdate:      true,
 				UpdateType:     moduletypes.UpdateTypeTag,
 				CurrentVersion: "1.0.0",
-				LatestVersion:  ptr("1.0.1"),
+				LatestVersion:  new("1.0.1"),
 			},
 			moduletypes.ImageUpdateRecord{
 				ID:             oldImageIDUpdated,
@@ -617,7 +617,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 				HasUpdate:      true,
 				UpdateType:     moduletypes.UpdateTypeTag,
 				CurrentVersion: "2.0.0",
-				LatestVersion:  ptr("2.0.1"),
+				LatestVersion:  new("2.0.1"),
 			},
 		),
 		RunRecorder:    recorder,
@@ -732,7 +732,7 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 			HasUpdate:      true,
 			UpdateType:     moduletypes.UpdateTypeTag,
 			CurrentVersion: "1.0.0",
-			LatestVersion:  ptr("1.0.1"),
+			LatestVersion:  new("1.0.1"),
 		}),
 		Settings:       fakeSettingsProviderInternal{},
 		ProjectUpdater: projectUpdater,

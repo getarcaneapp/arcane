@@ -18,9 +18,8 @@ import (
 type AppEnvironment string
 
 const (
-	AppEnvironmentProduction  AppEnvironment = "production"
-	AppEnvironmentDevelopment AppEnvironment = "development"
-	AppEnvironmentTest        AppEnvironment = "test"
+	AppEnvironmentProduction AppEnvironment = "production"
+	AppEnvironmentTest       AppEnvironment = "test"
 )
 
 // Config holds all application configuration.

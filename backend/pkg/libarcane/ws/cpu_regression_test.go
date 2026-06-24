@@ -93,7 +93,7 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 		startStatsHubPipeline(ctx, hub)
 		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 
@@ -110,14 +110,13 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		// Read one message to exercise the pipeline
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
-
+		_ = conn.Close()
 		// Brief settle for cleanup
 		time.Sleep(50 * time.Millisecond)
 
@@ -186,7 +185,7 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 
 		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 
@@ -203,12 +202,12 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		_ = conn.Close()
 		time.Sleep(50 * time.Millisecond)
 		if (i+1)%10 == 0 || i == b.N-1 {
 			current := runtime.NumGoroutine()
@@ -242,7 +241,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				startStatsHubPipeline(ctx, hub)
 				ServeClientWithOnRemove(ctx, hub, conn, nil)
 			}))
-			defer server.Close()
+			defer func() { server.Close() }()
 
 			url := "ws" + strings.TrimPrefix(server.URL, "http")
 
@@ -262,7 +261,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 						b.Fatal(err)
 					}
 					if resp != nil {
-						resp.Body.Close()
+						_ = resp.Body.Close()
 					}
 					conns[j] = conn
 				}
@@ -274,7 +273,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 
 				// Close all
 				for _, conn := range conns {
-					conn.Close()
+					_ = conn.Close()
 				}
 
 				time.Sleep(100 * time.Millisecond)
@@ -307,7 +306,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 		startStatsHubPipeline(ctx, hub)
 		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	b.ReportAllocs()
 	b.ResetTimer()
@@ -317,7 +316,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		for range 10 {
 			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -325,7 +324,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 				break
 			}
 		}
-		conn.Close()
+		_ = conn.Close()
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -351,7 +350,7 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 		startStatsHubPipeline(ctx, hub)
 		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 
 	peakGoroutines := baseline
@@ -359,11 +358,11 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err)
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		_ = conn.Close()
 		time.Sleep(50 * time.Millisecond)
 		current := runtime.NumGoroutine()
 		if current > peakGoroutines {

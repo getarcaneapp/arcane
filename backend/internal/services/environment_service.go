@@ -601,7 +601,7 @@ func (s *EnvironmentService) applySwarmNodeAgentApiKeyInternal(
 		return "", errors.New("api key service not configured")
 	}
 
-	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID, userID)
+	apiKeyDto, err := s.apiKeyService.CreateEnvironmentApiKey(ctx, env.ID)
 	if err != nil {
 		return "", fmt.Errorf("failed to create environment API key: %w", err)
 	}
@@ -708,14 +708,14 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 }
 
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
-	var environment models.Environment
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
+	var envModel models.Environment
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&envModel).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("environment not found")
 		}
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
-	return &environment, nil
+	return &envModel, nil
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
@@ -833,7 +833,9 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 			},
 			{
 				Key: "type",
-				Fn:  environmentTypeMatchesInternal,
+				Fn: func(env environment.Environment, filterValue string) bool {
+					return environmentTypeKeyInternal(env) == strings.ToLower(strings.TrimSpace(filterValue))
+				},
 			},
 		},
 	}
@@ -842,10 +844,6 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
 
 	return result.Items, paginationResp, nil
-}
-
-func environmentTypeMatchesInternal(env environment.Environment, filterValue string) bool {
-	return environmentTypeKeyInternal(env) == strings.ToLower(strings.TrimSpace(filterValue))
 }
 
 func environmentTypeKeyInternal(env environment.Environment) string {
@@ -861,9 +859,9 @@ func environmentTypeKeyInternal(env environment.Environment) string {
 		transport = *env.LastEdgeTransport
 	}
 	switch strings.ToLower(strings.TrimSpace(transport)) {
-	case edge.EdgeTransportWebSocket:
+	case edge.TransportWebSocket:
 		return "websocket"
-	case edge.EdgeTransportGRPC:
+	case edge.TransportGRPC:
 		return "grpc"
 	default:
 		return "edge"
@@ -1023,7 +1021,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 }
 
 func (s *EnvironmentService) TestConnection(ctx context.Context, id string, customApiUrl *string) (string, error) {
-	environment, err := s.GetEnvironmentByID(ctx, id)
+	envModel, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return "error", err
 	}
@@ -1034,11 +1032,11 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	}
 
 	// For edge environments, check if there's an active tunnel and route through it
-	if environment.IsEdge && customApiUrl == nil {
+	if envModel.IsEdge && customApiUrl == nil {
 		return s.testEdgeConnection(ctx, id)
 	}
 
-	apiUrl := environment.ApiUrl
+	apiUrl := envModel.ApiUrl
 	if customApiUrl != nil && *customApiUrl != "" {
 		apiUrl = *customApiUrl
 	}
@@ -1085,7 +1083,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 // testEdgeConnection tests connection to an edge agent via its tunnel
 func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) (string, error) {
 	if !edge.HasActiveTunnel(id) {
-		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
+		if !edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()) {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 			return "offline", errors.New("edge agent is not connected")
 		}
@@ -1362,7 +1360,7 @@ const (
 )
 
 // GenerateDeploymentSnippets generates Docker deployment snippets for an environment.
-func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, envID string, envAddress string, apiKey string) (*DeploymentSnippets, error) {
+func (s *EnvironmentService) GenerateDeploymentSnippets(envAddress string, apiKey string) (*DeploymentSnippets, error) {
 	managerURL := strings.TrimRight(envAddress, "/")
 
 	dockerRun := strings.Join([]string{
@@ -1575,22 +1573,22 @@ type remoteEnvironmentTargetInternal struct {
 }
 
 func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.Context, envID string) (*remoteEnvironmentTargetInternal, error) {
-	environment, err := s.GetEnvironmentByID(ctx, envID)
+	envModel, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
 
-	return s.remoteEnvironmentTargetFromModelInternal(*environment)
+	return s.remoteEnvironmentTargetFromModelInternal(*envModel)
 }
 
-func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environment models.Environment) (*remoteEnvironmentTargetInternal, error) {
-	if environment.ID == "0" {
+func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(envModel models.Environment) (*remoteEnvironmentTargetInternal, error) {
+	if envModel.ID == "0" {
 		return nil, errors.New("cannot proxy request to local environment")
 	}
 
-	targetURL := strings.TrimRight(environment.ApiUrl, "/")
-	if !environment.IsEdge {
-		validatedTargetURL, err := normalizeEnvironmentBaseURLInternal(environment.ApiUrl)
+	targetURL := strings.TrimRight(envModel.ApiUrl, "/")
+	if !envModel.IsEdge {
+		validatedTargetURL, err := normalizeEnvironmentBaseURLInternal(envModel.ApiUrl)
 		if err != nil {
 			return nil, fmt.Errorf("invalid environment API URL: %w", err)
 		}
@@ -1598,10 +1596,10 @@ func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environmen
 	}
 
 	return &remoteEnvironmentTargetInternal{
-		ID:          environment.ID,
-		Name:        environment.Name,
-		IsEdge:      environment.IsEdge,
-		AccessToken: environment.AccessToken,
+		ID:          envModel.ID,
+		Name:        envModel.Name,
+		IsEdge:      envModel.IsEdge,
+		AccessToken: envModel.AccessToken,
 		TargetURL:   targetURL,
 	}, nil
 }
@@ -1747,7 +1745,7 @@ func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID s
 		return nil
 	}
 
-	if _, ok := edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); ok {
+	if edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()) {
 		return nil
 	}
 

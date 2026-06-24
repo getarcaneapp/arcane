@@ -131,6 +131,7 @@ func sendEmailInternal(ctx context.Context, config models.EmailConfig, subject, 
 	if err != nil {
 		return fmt.Errorf("failed to build SMTP client: %w", err)
 	}
+	defer func() { _ = client.Close() }()
 
 	msg := mail.NewMsg()
 	if err := msg.From(config.FromAddress); err != nil {

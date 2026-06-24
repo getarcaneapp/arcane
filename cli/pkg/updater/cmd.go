@@ -16,8 +16,8 @@ import (
 
 var jsonOutput bool
 
-// UpdaterCmd is the parent command for updater operations
-var UpdaterCmd = &cobra.Command{
+// Command is the parent command for updater operations
+var Command = &cobra.Command{
 	Use:     "updater",
 	Aliases: []string{"upd"},
 	Short:   "Auto-updater operations",
@@ -151,9 +151,9 @@ var historyCmd = &cobra.Command{
 }
 
 func init() {
-	UpdaterCmd.AddCommand(statusCmd)
-	UpdaterCmd.AddCommand(runCmd)
-	UpdaterCmd.AddCommand(historyCmd)
+	Command.AddCommand(statusCmd)
+	Command.AddCommand(runCmd)
+	Command.AddCommand(historyCmd)
 
 	statusCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	runCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

@@ -109,6 +109,13 @@ func TestNotificationService_ResolveNotificationTargetInternal_UsesEnvironmentRe
 	require.Equal(t, "Remote Alpha", target.EnvironmentName)
 }
 
+func TestNotificationService_SendPruneReportNotification_NilResultSkips(t *testing.T) {
+	ctx := context.Background()
+	_, _, svc := setupNotificationTestServiceInternal(t)
+
+	require.NoError(t, svc.SendPruneReportNotification(ctx, nil))
+}
+
 func TestNotificationService_ResolveNotificationTargetForAccessTokenInternal_UsesStoredEnvironmentName(t *testing.T) {
 	ctx := context.Background()
 	db, _, svc := setupNotificationTestServiceInternal(t)
@@ -162,7 +169,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	}).Error)
 
 	err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
-		Kind: notificationdto.DispatchKind("bogus_kind"),
+		Kind: "bogus_kind",
 	})
 
 	require.Error(t, err)

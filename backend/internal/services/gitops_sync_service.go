@@ -11,7 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"strings"
-	"sync"
+	stdsync "sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -55,7 +55,7 @@ type GitOpsSyncService struct {
 	// The previous single global job serialized syncs implicitly; with independent
 	// per-sync jobs (plus manual/webhook/startup triggers) a sync could otherwise
 	// run concurrently with itself and race the clone/redeploy of one project.
-	runningSyncs sync.Map
+	runningSyncs stdsync.Map
 }
 
 const defaultGitSyncTimeout = 5 * time.Minute
@@ -908,15 +908,18 @@ func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id s
 	}
 
 	source, err := s.prepareSyncSource(syncCtx, sync, result, actor)
-	if source != nil && source.repoPath != "" {
+	if err != nil {
+		return result, err
+	}
+	if source == nil {
+		return result, errors.New("sync source was not prepared")
+	}
+	if source.repoPath != "" {
 		defer func() {
 			if cleanupErr := s.repoService.gitClient.Cleanup(source.repoPath); cleanupErr != nil {
 				slog.WarnContext(syncCtx, "Failed to cleanup repository", "path", source.repoPath, "error", cleanupErr)
 			}
 		}()
-	}
-	if err != nil {
-		return result, err
 	}
 
 	if sync.TargetType == "swarm_stack" {
@@ -938,7 +941,7 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.
 		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Repository not found", "repository not found")
 	}
 
-	authConfig, err := s.repoService.GetAuthConfig(ctx, repository)
+	authConfig, err := s.repoService.GetAuthConfig(repository)
 	if err != nil {
 		return nil, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to get authentication config", err.Error())
 	}
@@ -1250,7 +1253,7 @@ func (s *GitOpsSyncService) BrowseFiles(ctx context.Context, environmentID, id s
 		return nil, errors.New("repository not found")
 	}
 
-	authConfig, err := s.repoService.GetAuthConfig(browseCtx, repository)
+	authConfig, err := s.repoService.GetAuthConfig(repository)
 	if err != nil {
 		return nil, err
 	}
@@ -1737,7 +1740,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 		if err := projects.WriteEnvFile(projectsDir, stagePath, effective); err != nil {
 			return fmt.Errorf("seed stage .env: %w", err)
 		}
-	case hasGit || hasOverride:
+	default:
 		merged, mergeErr := projects.BuildEffectiveEnvContent(gitSource, override)
 		if mergeErr != nil {
 			return fmt.Errorf("build effective env from pre-existing project: %w", mergeErr)

@@ -25,8 +25,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/project"
 )
 
-// ProjectHandler provides Huma-based project management endpoints.
-type ProjectHandler struct {
+// projectHandler provides Huma-based project management endpoints.
+type projectHandler struct {
 	projectService  *services.ProjectService
 	activityService *services.ActivityService
 	appCtx          context.Context
@@ -34,14 +34,14 @@ type ProjectHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// ProjectPaginatedResponse is the paginated response for projects.
-type ProjectPaginatedResponse struct {
+// projectPaginatedResponse is the paginated response for projects.
+type projectPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []project.Details       `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListProjectsInput struct {
+type listProjectsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
@@ -53,115 +53,111 @@ type ListProjectsInput struct {
 	Archived      string `query:"archived" doc:"Archived filter: 'true' (only archived), 'all' (include archived). Default excludes archived."`
 }
 
-type ListProjectsOutput struct {
-	Body ProjectPaginatedResponse
+type listProjectsOutput struct {
+	Body projectPaginatedResponse
 }
 
-type GetProjectStatusCountsInput struct {
+type getProjectStatusCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetProjectStatusCountsOutput struct {
+type getProjectStatusCountsOutput struct {
 	Body base.ApiResponse[project.StatusCounts]
 }
 
-type DeployProjectInput struct {
+type deployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *project.DeployOptions
 }
 
-type DeployProjectOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
-type DownProjectInput struct {
+type downProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type DownProjectOutput struct {
+type downProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type CreateProjectInput struct {
+type createProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          project.CreateProject
 }
 
-type CreateProjectOutput struct {
+type createProjectOutput struct {
 	Body base.ApiResponse[project.CreateReponse]
 }
 
-type GetProjectInput struct {
+type getProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type GetProjectOutput struct {
+type getProjectOutput struct {
 	Body base.ApiResponse[project.Details]
 }
 
-type GetProjectFileInput struct {
+type getProjectFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	RelativePath  string `query:"relativePath" doc:"Path to the file relative to the project"`
 }
 
-type GetProjectFileOutput struct {
+type getProjectFileOutput struct {
 	Body base.ApiResponse[project.IncludeFile]
 }
 
-type RedeployProjectInput struct {
+type redeployProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *project.DeployOptions
 }
 
-type RedeployProjectOutput struct {
+type redeployProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type DestroyProjectInput struct {
+type destroyProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *project.Destroy
 }
 
-type DestroyProjectOutput struct {
+type destroyProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type UpdateProjectInput struct {
+type updateProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          project.UpdateProject
 }
 
-type UpdateProjectOutput struct {
+type updateProjectOutput struct {
 	Body base.ApiResponse[project.Details]
 }
 
-type UpdateProjectIncludeInput struct {
+type updateProjectIncludeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          project.UpdateIncludeFile
 }
 
-type UpdateProjectIncludeOutput struct {
+type updateProjectIncludeOutput struct {
 	Body base.ApiResponse[project.Details]
 }
 
-type RestartProjectInput struct {
+type restartProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type RestartProjectOutput struct {
+type restartProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type UpdateProjectServicesInput struct {
+type updateProjectServicesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *struct {
@@ -169,34 +165,34 @@ type UpdateProjectServicesInput struct {
 	}
 }
 
-type UpdateProjectServicesOutput struct {
+type updateProjectServicesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type ArchiveProjectInput struct {
+type archiveProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type ArchiveProjectOutput struct {
+type archiveProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type UnarchiveProjectInput struct {
+type unarchiveProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type UnarchiveProjectOutput struct {
+type unarchiveProjectOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type PullProjectImagesInput struct {
+type pullProjectImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 }
 
-type BuildProjectInput struct {
+type buildProjectInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ProjectID     string `path:"projectId" doc:"Project ID"`
 	Body          *struct {
@@ -207,24 +203,12 @@ type BuildProjectInput struct {
 	}
 }
 
-// PullProgressEvent represents a Docker pull progress event
-type PullProgressEvent struct {
-	Status         string `json:"status,omitempty"`
-	ID             string `json:"id,omitempty"`
-	Progress       string `json:"progress,omitempty"`
-	ProgressDetail struct {
-		Current int64 `json:"current,omitempty"`
-		Total   int64 `json:"total,omitempty"`
-	} `json:"progressDetail"`
-	Error string `json:"error,omitempty"`
-}
-
 // RegisterProjects registers project management routes using Huma.
 // Note: WebSocket and streaming endpoints remain as Gin handlers.
 //
 //nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterProjects(api huma.API, projectService *services.ProjectService, activityService *services.ActivityService, appCtx ActivityAppContext) {
-	h := &ProjectHandler{
+	h := &projectHandler{
 		projectService:  projectService,
 		activityService: activityService,
 		appCtx:          appCtx.contextInternal(),
@@ -241,7 +225,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsList, h.ListProjects)
+	}, authz.PermProjectsList, h.listProjectsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-status-counts",
@@ -254,7 +238,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsList, h.GetProjectStatusCounts)
+	}, authz.PermProjectsList, h.getProjectStatusCountsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deploy-project",
@@ -267,7 +251,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDeploy, h.DeployProject)
+	}, authz.PermProjectsDeploy, h.deployProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "down-project",
@@ -280,7 +264,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDown, h.DownProject)
+	}, authz.PermProjectsDown, h.downProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-project",
@@ -293,7 +277,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsCreate, h.CreateProject)
+	}, authz.PermProjectsCreate, h.createProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",
@@ -306,7 +290,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProject)
+	}, authz.PermProjectsRead, h.getProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-compose",
@@ -319,7 +303,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProjectCompose)
+	}, authz.PermProjectsRead, h.getProjectComposeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-files",
@@ -332,7 +316,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProjectFiles)
+	}, authz.PermProjectsRead, h.getProjectFilesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-runtime",
@@ -345,7 +329,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProjectRuntime)
+	}, authz.PermProjectsRead, h.getProjectRuntimeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-updates",
@@ -358,7 +342,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProjectUpdates)
+	}, authz.PermProjectsRead, h.getProjectUpdatesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-file",
@@ -371,7 +355,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRead, h.GetProjectFile)
+	}, authz.PermProjectsRead, h.getProjectFileInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-project",
@@ -384,7 +368,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDeploy, h.RedeployProject)
+	}, authz.PermProjectsDeploy, h.redeployProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "destroy-project",
@@ -397,7 +381,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDelete, h.DestroyProject)
+	}, authz.PermProjectsDelete, h.destroyProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project",
@@ -410,7 +394,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsUpdate, h.UpdateProject)
+	}, authz.PermProjectsUpdate, h.updateProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-include",
@@ -423,7 +407,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsUpdate, h.UpdateProjectInclude)
+	}, authz.PermProjectsUpdate, h.updateProjectIncludeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restart-project",
@@ -436,7 +420,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsRestart, h.RestartProject)
+	}, authz.PermProjectsRestart, h.restartProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-services",
@@ -449,7 +433,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsUpdate, h.UpdateProjectServices)
+	}, authz.PermProjectsUpdate, h.updateProjectServicesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "archive-project",
@@ -462,7 +446,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsArchive, h.ArchiveProject)
+	}, authz.PermProjectsArchive, h.archiveProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "unarchive-project",
@@ -475,7 +459,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsArchive, h.UnarchiveProject)
+	}, authz.PermProjectsArchive, h.unarchiveProjectInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pull-project-images",
@@ -488,7 +472,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDeploy, h.PullProjectImages)
+	}, authz.PermProjectsDeploy, h.pullProjectImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-project-images",
@@ -501,11 +485,11 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermProjectsDeploy, h.BuildProjectImages)
+	}, authz.PermProjectsDeploy, h.buildProjectImagesInternal)
 }
 
 // ListProjects returns a paginated list of projects.
-func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
+func (h *projectHandler) listProjectsInternal(ctx context.Context, input *listProjectsInput) (*listProjectsOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -521,7 +505,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		params.Filters["archived"] = input.Archived
 	}
 
-	projects, paginationResp, err := h.projectService.ListProjects(ctx, params)
+	projectList, paginationResp, err := h.projectService.ListProjects(ctx, params)
 	if err != nil {
 		if errors.Is(err, context.Canceled) {
 			return nil, huma.Error500InternalServerError("Request was canceled")
@@ -529,21 +513,21 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		return nil, huma.Error500InternalServerError((&common.ProjectListError{Err: err}).Error())
 	}
 
-	if projects == nil {
-		projects = []project.Details{}
+	if projectList == nil {
+		projectList = []project.Details{}
 	}
 
-	return &ListProjectsOutput{
-		Body: ProjectPaginatedResponse{
+	return &listProjectsOutput{
+		Body: projectPaginatedResponse{
 			Success:    true,
-			Data:       projects,
+			Data:       projectList,
 			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
 }
 
 // GetProjectStatusCounts returns counts of projects by status.
-func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*GetProjectStatusCountsOutput, error) {
+func (h *projectHandler) getProjectStatusCountsInternal(ctx context.Context, _ *getProjectStatusCountsInput) (*getProjectStatusCountsOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -553,7 +537,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 		return nil, huma.Error500InternalServerError((&common.ProjectStatusCountsError{Err: err}).Error())
 	}
 
-	return &GetProjectStatusCountsOutput{
+	return &getProjectStatusCountsOutput{
 		Body: base.ApiResponse[project.StatusCounts]{
 			Success: true,
 			Data: project.StatusCounts{
@@ -567,7 +551,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 }
 
 // DeployProject deploys a Docker Compose project.
-func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
+func (h *projectHandler) deployProjectInternal(ctx context.Context, input *deployProjectInput) (*huma.StreamResponse, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -632,7 +616,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 }
 
 // DownProject brings down a Docker Compose project.
-func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*DownProjectOutput, error) {
+func (h *projectHandler) downProjectInternal(ctx context.Context, input *downProjectInput) (*downProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -657,7 +641,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
 
-	return &DownProjectOutput{
+	return &downProjectOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -697,7 +681,7 @@ func projectFileHTTPError(err error) error {
 }
 
 // CreateProject creates a new Docker Compose project.
-func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
+func (h *projectHandler) createProjectInternal(ctx context.Context, input *createProjectInput) (*createProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -747,7 +731,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.ArchivedAt = proj.ArchivedAt
 	response.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
-	return &CreateProjectOutput{
+	return &createProjectOutput{
 		Body: base.ApiResponse[project.CreateReponse]{
 			Success: true,
 			Data:    response,
@@ -756,7 +740,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 }
 
 // GetProject returns a project by ID.
-func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectInternal(ctx context.Context, input *getProjectInput) (*getProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -770,7 +754,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
 	}
 
-	return &GetProjectOutput{
+	return &getProjectOutput{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -778,7 +762,7 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 	}, nil
 }
 
-func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *getProjectInput, opts project.DetailsOptions) (*getProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -791,7 +775,7 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
 	}
 
-	return &GetProjectOutput{
+	return &getProjectOutput{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -799,7 +783,7 @@ func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Contex
 	}, nil
 }
 
-func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectComposeInternal(ctx context.Context, input *getProjectInput) (*getProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeComposeContent: true,
 		IncludeEnvState:       true,
@@ -808,27 +792,27 @@ func (h *ProjectHandler) GetProjectCompose(ctx context.Context, input *GetProjec
 	})
 }
 
-func (h *ProjectHandler) GetProjectFiles(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectFilesInternal(ctx context.Context, input *getProjectInput) (*getProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeDirectoryFiles: true,
 		IncludeProjectFiles:   true,
 	})
 }
 
-func (h *ProjectHandler) GetProjectRuntime(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectRuntimeInternal(ctx context.Context, input *getProjectInput) (*getProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeRuntimeServices: true,
 	})
 }
 
-func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
+func (h *projectHandler) getProjectUpdatesInternal(ctx context.Context, input *getProjectInput) (*getProjectOutput, error) {
 	return h.getProjectDetailsWithOptionsInternal(ctx, input, project.DetailsOptions{
 		IncludeServiceConfigs: true,
 		IncludeUpdateInfo:     true,
 	})
 }
 
-func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
+func (h *projectHandler) getProjectFileInternal(ctx context.Context, input *getProjectFileInput) (*getProjectFileOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -857,7 +841,7 @@ func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFi
 		}
 	}
 
-	return &GetProjectFileOutput{
+	return &getProjectFileOutput{
 		Body: base.ApiResponse[project.IncludeFile]{
 			Success: true,
 			Data:    file,
@@ -866,19 +850,19 @@ func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFi
 }
 
 // RedeployProject redeploys a Docker Compose project.
-func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployProjectInput) (*RedeployProjectOutput, error) {
+func (h *projectHandler) redeployProjectInternal(ctx context.Context, input *redeployProjectInput) (*redeployProjectOutput, error) {
 	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.redeployProjectActivityConfigInternal(input.Body))
 	if err != nil {
 		return nil, err
 	}
 
-	return &RedeployProjectOutput{
+	return &redeployProjectOutput{
 		Body: response,
 	}, nil
 }
 
 // DestroyProject destroys a Docker Compose project.
-func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*DestroyProjectOutput, error) {
+func (h *projectHandler) destroyProjectInternal(ctx context.Context, input *destroyProjectInput) (*destroyProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -916,7 +900,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
 
-	return &DestroyProjectOutput{
+	return &destroyProjectOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -928,7 +912,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 }
 
 // UpdateProject updates a Docker Compose project.
-func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
+func (h *projectHandler) updateProjectInternal(ctx context.Context, input *updateProjectInput) (*updateProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -971,7 +955,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	}
 	details.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
-	return &UpdateProjectOutput{
+	return &updateProjectOutput{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -980,7 +964,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 }
 
 // UpdateProjectInclude updates an include file within a project.
-func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
+func (h *projectHandler) updateProjectIncludeInternal(ctx context.Context, input *updateProjectIncludeInput) (*updateProjectIncludeOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1023,7 +1007,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 	}
 	details.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
-	return &UpdateProjectIncludeOutput{
+	return &updateProjectIncludeOutput{
 		Body: base.ApiResponse[project.Details]{
 			Success: true,
 			Data:    details,
@@ -1032,30 +1016,30 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 }
 
 // RestartProject restarts all containers in a project.
-func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
+func (h *projectHandler) restartProjectInternal(ctx context.Context, input *restartProjectInput) (*restartProjectOutput, error) {
 	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.restartProjectActivityConfigInternal())
 	if err != nil {
 		return nil, err
 	}
 
-	return &RestartProjectOutput{
+	return &restartProjectOutput{
 		Body: response,
 	}, nil
 }
 
 // UpdateProjectServices pulls the latest images for the given services and recreates them.
-func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*UpdateProjectServicesOutput, error) {
-	var services []string
+func (h *projectHandler) updateProjectServicesInternal(ctx context.Context, input *updateProjectServicesInput) (*updateProjectServicesOutput, error) {
+	var serviceNames []string
 	if input.Body != nil {
-		services = input.Body.Services
+		serviceNames = input.Body.Services
 	}
 
-	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.updateProjectServicesActivityConfigInternal(services))
+	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.updateProjectServicesActivityConfigInternal(serviceNames))
 	if err != nil {
 		return nil, err
 	}
 
-	return &UpdateProjectServicesOutput{
+	return &updateProjectServicesOutput{
 		Body: response,
 	}, nil
 }
@@ -1072,7 +1056,7 @@ type projectActivityActionConfigInternal struct {
 	Error           func(error) error
 }
 
-func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.DeployOptions) projectActivityActionConfigInternal {
+func (h *projectHandler) redeployProjectActivityConfigInternal(options *project.DeployOptions) projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
 		ActivityType:    models.ActivityTypeProjectRedeploy,
 		Step:            "Starting redeploy",
@@ -1090,7 +1074,7 @@ func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.
 	}
 }
 
-func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []string) projectActivityActionConfigInternal {
+func (h *projectHandler) updateProjectServicesActivityConfigInternal(services []string) projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
 		ActivityType:    models.ActivityTypeAutoUpdate,
 		Step:            "Updating project services",
@@ -1108,7 +1092,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 	}
 }
 
-func (h *ProjectHandler) restartProjectActivityConfigInternal() projectActivityActionConfigInternal {
+func (h *projectHandler) restartProjectActivityConfigInternal() projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
 		ActivityType:    models.ActivityTypeProjectRestart,
 		Step:            "Restarting project",
@@ -1135,7 +1119,7 @@ func projectArchivedActionErrorInternal(fallback func(error) error) func(error) 
 	}
 }
 
-func (h *ProjectHandler) runProjectActivityActionResponseInternal(
+func (h *projectHandler) runProjectActivityActionResponseInternal(
 	ctx context.Context,
 	environmentID string,
 	projectID string,
@@ -1152,7 +1136,7 @@ func (h *ProjectHandler) runProjectActivityActionResponseInternal(
 	}, nil
 }
 
-func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, environmentID, projectID string, cfg projectActivityActionConfigInternal) (base.MessageResponse, error) {
+func (h *projectHandler) runProjectActivityActionInternal(ctx context.Context, environmentID, projectID string, cfg projectActivityActionConfigInternal) (base.MessageResponse, error) {
 	if h.projectService == nil {
 		return base.MessageResponse{}, huma.Error500InternalServerError("service not available")
 	}
@@ -1184,7 +1168,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 	}, nil
 }
 
-func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
+func (h *projectHandler) archiveProjectInternal(ctx context.Context, input *archiveProjectInput) (*archiveProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1205,7 +1189,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 		return nil, huma.Error500InternalServerError((&common.ProjectArchiveError{Err: err}).Error())
 	}
 
-	return &ArchiveProjectOutput{
+	return &archiveProjectOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Project archived successfully"},
@@ -1213,7 +1197,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 	}, nil
 }
 
-func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
+func (h *projectHandler) unarchiveProjectInternal(ctx context.Context, input *unarchiveProjectInput) (*unarchiveProjectOutput, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1231,7 +1215,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 		return nil, huma.Error500InternalServerError((&common.ProjectUnarchiveError{Err: err}).Error())
 	}
 
-	return &UnarchiveProjectOutput{
+	return &unarchiveProjectOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Project unarchived successfully"},
@@ -1240,7 +1224,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 }
 
 // PullProjectImages pulls all images for a project with streaming progress.
-func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
+func (h *projectHandler) pullProjectImagesInternal(ctx context.Context, input *pullProjectImagesInput) (*huma.StreamResponse, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1301,7 +1285,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 }
 
 // BuildProjectImages builds compose services with build directives.
-func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
+func (h *projectHandler) buildProjectImagesInternal(ctx context.Context, input *buildProjectInput) (*huma.StreamResponse, error) {
 	if h.projectService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

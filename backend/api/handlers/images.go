@@ -27,8 +27,8 @@ import (
 	"gorm.io/gorm"
 )
 
-// ImageHandler provides Huma-based image management endpoints.
-type ImageHandler struct {
+// imageHandler provides Huma-based image management endpoints.
+type imageHandler struct {
 	dockerService      *services.DockerClientService
 	imageService       *services.ImageService
 	imageUpdateService *services.ImageUpdateService
@@ -40,14 +40,14 @@ type ImageHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// ImagePaginatedResponse is the paginated response for images.
-type ImagePaginatedResponse struct {
+// imagePaginatedResponse is the paginated response for images.
+type imagePaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []image.Summary         `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListImagesInput struct {
+type listImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
@@ -58,20 +58,20 @@ type ListImagesInput struct {
 	Updates       string `query:"updates" doc:"Filter by update availability (true/false)"`
 }
 
-type ListImagesOutput struct {
-	Body ImagePaginatedResponse
+type listImagesOutput struct {
+	Body imagePaginatedResponse
 }
 
-type GetImageInput struct {
+type getImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 }
 
-type GetImageOutput struct {
+type getImageOutput struct {
 	Body base.ApiResponse[image.DetailSummary]
 }
 
-type GetImageAttestationsInput struct {
+type getImageAttestationsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 	Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
@@ -79,70 +79,70 @@ type GetImageAttestationsInput struct {
 	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
 }
 
-type GetImageAttestationsOutput struct {
+type getImageAttestationsOutput struct {
 	Body base.ApiResponse[image.AttestationList]
 }
 
-type TagImageInput struct {
+type tagImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 	Body          image.TagRequest
 }
 
-type TagImageOutput struct {
+type tagImageOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type GetImageHistoryInput struct {
+type getImageHistoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 }
 
-type GetImageHistoryOutput struct {
+type getImageHistoryOutput struct {
 	Body base.ApiResponse[[]image.HistoryItem]
 }
 
-type SearchImagesInput struct {
+type searchImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Term          string `query:"term" doc:"Search term"`
 }
 
-type SearchImagesOutput struct {
+type searchImagesOutput struct {
 	Body base.ApiResponse[[]image.SearchResult]
 }
 
-type ExportImageInput struct {
+type exportImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageName     string `path:"name" doc:"Image ID or image reference"`
 }
 
-type RemoveImageInput struct {
+type removeImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 	Force         bool   `query:"force" doc:"Force removal"`
 }
 
-type RemoveImageOutput struct {
+type removeImageOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type PullImageInput struct {
+type pullImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          image.PullOptions
 }
 
-type BuildImageInput struct {
+type buildImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          buildtypes.BuildRequest
 }
 
-type ImageBuildPaginatedResponse struct {
+type imageBuildPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []image.BuildRecord     `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListImageBuildsInput struct {
+type listImageBuildsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
@@ -153,20 +153,20 @@ type ListImageBuildsInput struct {
 	Provider      string `query:"provider" doc:"Filter by provider"`
 }
 
-type ListImageBuildsOutput struct {
-	Body ImageBuildPaginatedResponse
+type listImageBuildsOutput struct {
+	Body imageBuildPaginatedResponse
 }
 
-type GetImageBuildInput struct {
+type getImageBuildInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BuildID       string `path:"buildId" doc:"Build ID"`
 }
 
-type GetImageBuildOutput struct {
+type getImageBuildOutput struct {
 	Body base.ApiResponse[image.BuildRecord]
 }
 
-type PruneImagesInput struct {
+type pruneImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Dangling      bool   `query:"dangling" doc:"Only remove dangling images"`
 	Body          *struct {
@@ -177,35 +177,35 @@ type PruneImagesInput struct {
 	}
 }
 
-type PruneImagesOutput struct {
+type pruneImagesOutput struct {
 	Body base.ApiResponse[image.PruneReport]
 }
 
-type GetImageUsageCountsInput struct {
+type getImageUsageCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type ImageUsageCountsResponse struct {
+type imageUsageCountsResponse struct {
 	Success bool              `json:"success"`
 	Data    image.UsageCounts `json:"data"`
 }
 
-type GetImageUsageCountsOutput struct {
-	Body ImageUsageCountsResponse
+type getImageUsageCountsOutput struct {
+	Body imageUsageCountsResponse
 }
 
-type UploadImageInput struct {
+type uploadImageInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
-type UploadImageOutput struct {
+type uploadImageOutput struct {
 	Body base.ApiResponse[image.LoadResult]
 }
 
 // RegisterImages registers image management routes using Huma.
 func RegisterImages(api huma.API, dockerService *services.DockerClientService, imageService *services.ImageService, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, buildService *services.BuildService, activityService *services.ActivityService, appCtx ActivityAppContext) {
-	h := &ImageHandler{
+	h := &imageHandler{
 		dockerService:      dockerService,
 		imageService:       imageService,
 		imageUpdateService: imageUpdateService,
@@ -226,7 +226,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesList, h.ListImages)
+	}, authz.PermImagesList, h.listImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-usage-counts",
@@ -239,7 +239,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesList, h.GetImageUsageCounts)
+	}, authz.PermImagesList, h.getImageUsageCountsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-attestations",
@@ -252,7 +252,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.GetImageAttestations)
+	}, authz.PermImagesRead, h.getImageAttestationsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "search-images",
@@ -265,7 +265,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.SearchImages)
+	}, authz.PermImagesRead, h.searchImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "tag-image",
@@ -278,7 +278,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesTag, h.TagImage)
+	}, authz.PermImagesTag, h.tagImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-history",
@@ -291,7 +291,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.GetImageHistory)
+	}, authz.PermImagesRead, h.getImageHistoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "export-image",
@@ -304,7 +304,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.ExportImage)
+	}, authz.PermImagesRead, h.exportImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image",
@@ -317,7 +317,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.GetImage)
+	}, authz.PermImagesRead, h.getImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-image",
@@ -330,7 +330,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesDelete, h.RemoveImage)
+	}, authz.PermImagesDelete, h.removeImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pull-image",
@@ -343,7 +343,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesPull, h.PullImage)
+	}, authz.PermImagesPull, h.pullImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-image",
@@ -356,7 +356,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesBuild, h.BuildImage)
+	}, authz.PermImagesBuild, h.buildImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-image-builds",
@@ -369,7 +369,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesList, h.ListImageBuilds)
+	}, authz.PermImagesList, h.listImageBuildsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-build",
@@ -382,7 +382,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesRead, h.GetImageBuild)
+	}, authz.PermImagesRead, h.getImageBuildInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-images",
@@ -395,7 +395,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImagesPrune, h.PruneImages)
+	}, authz.PermImagesPrune, h.pruneImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-image",
@@ -425,11 +425,11 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 				},
 			},
 		},
-	}, authz.PermImagesUpload, h.UploadImage)
+	}, authz.PermImagesUpload, h.uploadImageInternal)
 }
 
 // ListImages returns a paginated list of images.
-func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
+func (h *imageHandler) listImagesInternal(ctx context.Context, input *listImagesInput) (*listImagesOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -455,8 +455,8 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 		images = []image.Summary{}
 	}
 
-	return &ListImagesOutput{
-		Body: ImagePaginatedResponse{
+	return &listImagesOutput{
+		Body: imagePaginatedResponse{
 			Success:    true,
 			Data:       images,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -465,7 +465,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 }
 
 // GetImage returns an image by ID.
-func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*GetImageOutput, error) {
+func (h *imageHandler) getImageInternal(ctx context.Context, input *getImageInput) (*getImageOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -475,7 +475,7 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 		return nil, huma.Error404NotFound((&common.ImageNotFoundError{Err: err}).Error())
 	}
 
-	return &GetImageOutput{
+	return &getImageOutput{
 		Body: base.ApiResponse[image.DetailSummary]{
 			Success: true,
 			Data:    *out,
@@ -483,8 +483,8 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 	}, nil
 }
 
-// GetImageAttestations returns in-toto attestation statements attached to an image.
-func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
+// getImageAttestationsInternal returns in-toto attestation statements attached to an image.
+func (h *imageHandler) getImageAttestationsInternal(ctx context.Context, input *getImageAttestationsInput) (*getImageAttestationsOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -513,7 +513,7 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image attestations: %v", err))
 	}
 
-	return &GetImageAttestationsOutput{
+	return &getImageAttestationsOutput{
 		Body: base.ApiResponse[image.AttestationList]{
 			Success: true,
 			Data:    *out,
@@ -521,8 +521,8 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 	}, nil
 }
 
-// TagImage adds a repository tag to an image.
-func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*TagImageOutput, error) {
+// tagImageInternal adds a repository tag to an image.
+func (h *imageHandler) tagImageInternal(ctx context.Context, input *tagImageInput) (*tagImageOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -544,7 +544,7 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", err))
 	}
 
-	return &TagImageOutput{
+	return &tagImageOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Image tagged successfully"},
@@ -552,8 +552,8 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 	}, nil
 }
 
-// GetImageHistory returns Docker image layer history.
-func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*GetImageHistoryOutput, error) {
+// getImageHistoryInternal returns Docker image layer history.
+func (h *imageHandler) getImageHistoryInternal(ctx context.Context, input *getImageHistoryInput) (*getImageHistoryOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -571,7 +571,7 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 		history = []image.HistoryItem{}
 	}
 
-	return &GetImageHistoryOutput{
+	return &getImageHistoryOutput{
 		Body: base.ApiResponse[[]image.HistoryItem]{
 			Success: true,
 			Data:    history,
@@ -579,8 +579,8 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 	}, nil
 }
 
-// SearchImages searches Docker Hub images.
-func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*SearchImagesOutput, error) {
+// searchImagesInternal searches Docker Hub images.
+func (h *imageHandler) searchImagesInternal(ctx context.Context, input *searchImagesInput) (*searchImagesOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -596,7 +596,7 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 		results = []image.SearchResult{}
 	}
 
-	return &SearchImagesOutput{
+	return &searchImagesOutput{
 		Body: base.ApiResponse[[]image.SearchResult]{
 			Success: true,
 			Data:    results,
@@ -604,8 +604,8 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 	}, nil
 }
 
-// ExportImage streams a Docker image tar archive.
-func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput) (*huma.StreamResponse, error) {
+// exportImageInternal streams a Docker image tar archive.
+func (h *imageHandler) exportImageInternal(ctx context.Context, input *exportImageInput) (*huma.StreamResponse, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -654,7 +654,7 @@ func imageExportFileNameInternal(imageName string) string {
 }
 
 // RemoveImage removes a Docker image.
-func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*RemoveImageOutput, error) {
+func (h *imageHandler) removeImageInternal(ctx context.Context, input *removeImageInput) (*removeImageOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -668,7 +668,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 		return nil, huma.Error500InternalServerError((&common.ImageRemovalError{Err: err}).Error())
 	}
 
-	return &RemoveImageOutput{
+	return &removeImageOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -679,7 +679,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 }
 
 // PullImage pulls a Docker image with streaming progress.
-func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
+func (h *imageHandler) pullImageInternal(ctx context.Context, input *pullImageInput) (*huma.StreamResponse, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -735,7 +735,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 }
 
 // BuildImage builds a Docker image with streaming progress.
-func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
+func (h *imageHandler) buildImageInternal(ctx context.Context, input *buildImageInput) (*huma.StreamResponse, error) {
 	if h.buildService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -791,7 +791,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 }
 
 // ListImageBuilds returns a paginated list of image build history entries.
-func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*ListImageBuildsOutput, error) {
+func (h *imageHandler) listImageBuildsInternal(ctx context.Context, input *listImageBuildsInput) (*listImageBuildsOutput, error) {
 	if h.buildService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -817,8 +817,8 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 		builds = []image.BuildRecord{}
 	}
 
-	return &ListImageBuildsOutput{
-		Body: ImageBuildPaginatedResponse{
+	return &listImageBuildsOutput{
+		Body: imageBuildPaginatedResponse{
 			Success:    true,
 			Data:       builds,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -827,7 +827,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 }
 
 // GetImageBuild returns a single build history entry.
-func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*GetImageBuildOutput, error) {
+func (h *imageHandler) getImageBuildInternal(ctx context.Context, input *getImageBuildInput) (*getImageBuildOutput, error) {
 	if h.buildService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -848,7 +848,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		return nil, huma.Error500InternalServerError((&common.BuildHistoryRetrievalError{Err: err}).Error())
 	}
 
-	return &GetImageBuildOutput{
+	return &getImageBuildOutput{
 		Body: base.ApiResponse[image.BuildRecord]{
 			Success: true,
 			Data:    *buildRecord,
@@ -857,7 +857,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 }
 
 // PruneImages removes unused Docker images.
-func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneImagesOutput, error) {
+func (h *imageHandler) pruneImagesInternal(ctx context.Context, input *pruneImagesInput) (*pruneImagesOutput, error) {
 	if h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -875,7 +875,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 
 	out := image.NewPruneReport(*report)
 
-	return &PruneImagesOutput{
+	return &pruneImagesOutput{
 		Body: base.ApiResponse[image.PruneReport]{
 			Success: true,
 			Data:    out,
@@ -883,7 +883,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 	}, nil
 }
 
-func resolvePruneImageModeInternal(input *PruneImagesInput) string {
+func resolvePruneImageModeInternal(input *pruneImagesInput) string {
 	mode := resolveLegacyPruneImageModeInternal(input.Dangling)
 	if input.Body == nil {
 		return mode
@@ -911,7 +911,7 @@ func resolvePruneImageModeInternal(input *PruneImagesInput) string {
 	return mode
 }
 
-func resolvePruneImageUntilInternal(input *PruneImagesInput) string {
+func resolvePruneImageUntilInternal(input *pruneImagesInput) string {
 	if input.Body == nil {
 		return ""
 	}
@@ -936,7 +936,7 @@ func resolveLegacyPruneImageModeInternal(dangling bool) string {
 }
 
 // GetImageUsageCounts returns counts of images by usage status.
-func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*GetImageUsageCountsOutput, error) {
+func (h *imageHandler) getImageUsageCountsInternal(ctx context.Context, _ *getImageUsageCountsInput) (*getImageUsageCountsOutput, error) {
 	if h.dockerService == nil || h.imageService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -965,8 +965,8 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 		return nil, huma.Error500InternalServerError((&common.ImageUsageCountsError{Err: errors.Join(errs...)}).Error())
 	}
 
-	return &GetImageUsageCountsOutput{
-		Body: ImageUsageCountsResponse{
+	return &getImageUsageCountsOutput{
+		Body: imageUsageCountsResponse{
 			Success: true,
 			Data: image.UsageCounts{
 				Inuse:     inuse,
@@ -979,7 +979,7 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 }
 
 // UploadImage uploads a Docker image from a tar archive.
-func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*UploadImageOutput, error) {
+func (h *imageHandler) uploadImageInternal(ctx context.Context, input *uploadImageInput) (*uploadImageOutput, error) {
 	if h.imageService == nil || h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1026,7 +1026,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 		return nil, huma.Error500InternalServerError((&common.ImageLoadError{Err: err}).Error())
 	}
 
-	return &UploadImageOutput{
+	return &uploadImageOutput{
 		Body: base.ApiResponse[image.LoadResult]{
 			Success: true,
 			Data:    *result,

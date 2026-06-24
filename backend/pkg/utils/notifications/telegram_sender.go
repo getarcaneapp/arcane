@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -39,7 +38,7 @@ func BuildTelegramURL(config models.TelegramConfig) (string, error) {
 }
 
 // SendTelegram sends a message via Shoutrrr Telegram using proper service configuration
-func SendTelegram(ctx context.Context, config models.TelegramConfig, message string) error {
+func SendTelegram(config models.TelegramConfig, message string) error {
 	if config.BotToken == "" {
 		return errors.New("telegram bot token is empty")
 	}

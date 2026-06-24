@@ -486,16 +486,16 @@ func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *tes
 				dockerService: &DockerClientService{client: newTestDockerClient(t, server)},
 			}
 
-			ref, err := svc.getImageRefByIDInternal(context.Background(), imageID)
+			imageRef, err := svc.getImageRefByIDInternal(context.Background(), imageID)
 			if tt.wantErr != "" {
 				require.Error(t, err)
 				assert.ErrorContains(t, err, tt.wantErr)
-				assert.Empty(t, ref)
+				assert.Empty(t, imageRef)
 				return
 			}
 
 			require.NoError(t, err)
-			assert.Equal(t, tt.wantRef, ref)
+			assert.Equal(t, tt.wantRef, imageRef)
 		})
 	}
 }
@@ -587,7 +587,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: not found")
 			},
 		}, nil
 	}, nil)
@@ -627,7 +627,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: <html><body><h1>403 Forbidden</h1> Request forbidden by administrative rules. </body></html>")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: <html><body><h1>403 Forbidden</h1> request forbidden by administrative rules. </body></html>")
 			},
 		}, nil
 	}, nil)
@@ -846,7 +846,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
-				return client.DistributionInspectResult{}, errors.New("Error response from daemon: Not Found")
+				return client.DistributionInspectResult{}, errors.New("error response from daemon: not found")
 			},
 		}, nil
 	}, nil)
@@ -1413,12 +1413,12 @@ func TestImageUpdateService_ParseAndGroupImages_DedupesNormalizedRefs(t *testing
 	require.Len(t, regRepos["docker.io"], 2)
 
 	firstRefSet := map[string]struct{}{}
-	for _, ref := range grouped[0].refs {
-		firstRefSet[ref] = struct{}{}
+	for _, imageRef := range grouped[0].refs {
+		firstRefSet[imageRef] = struct{}{}
 	}
 	secondRefSet := map[string]struct{}{}
-	for _, ref := range grouped[1].refs {
-		secondRefSet[ref] = struct{}{}
+	for _, imageRef := range grouped[1].refs {
+		secondRefSet[imageRef] = struct{}{}
 	}
 
 	// Each normalized image should only be checked once, while retaining all aliases.
@@ -1466,8 +1466,8 @@ func newBlockedDockerAPIServerInternal(t *testing.T, pathContains string) *httpt
 }
 
 func containsAll(set map[string]struct{}, refs ...string) bool {
-	for _, ref := range refs {
-		if _, ok := set[ref]; !ok {
+	for _, imageRef := range refs {
+		if _, ok := set[imageRef]; !ok {
 			return false
 		}
 	}

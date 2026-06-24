@@ -14,19 +14,19 @@ import (
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 )
 
-type RoleHandler struct {
+type roleHandler struct {
 	roleService *services.RoleService
 }
 
 // ---------- I/O wrappers ----------
 
-type RolePaginatedResponse struct {
+type rolePaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []roletypes.Role        `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListRolesInput struct {
+type listRolesInput struct {
 	Search string `query:"search" doc:"Search by role name or description"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
@@ -34,68 +34,68 @@ type ListRolesInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
-type ListRolesOutput struct {
-	Body RolePaginatedResponse
+type listRolesOutput struct {
+	Body rolePaginatedResponse
 }
 
-type GetRoleInput struct {
+type getRoleInput struct {
 	ID string `path:"id" doc:"Role ID"`
 }
 
-type GetRoleOutput struct {
+type getRoleOutput struct {
 	Body base.ApiResponse[roletypes.Role]
 }
 
-type CreateRoleInput struct {
+type createRoleInput struct {
 	Body roletypes.CreateRole
 }
 
-type CreateRoleOutput struct {
+type createRoleOutput struct {
 	Body base.ApiResponse[roletypes.Role]
 }
 
-type UpdateRoleInput struct {
+type updateRoleInput struct {
 	ID   string `path:"id" doc:"Role ID"`
 	Body roletypes.UpdateRole
 }
 
-type UpdateRoleOutput struct {
+type updateRoleOutput struct {
 	Body base.ApiResponse[roletypes.Role]
 }
 
-type DeleteRoleInput struct {
+type deleteRoleInput struct {
 	ID string `path:"id" doc:"Role ID"`
 }
 
-type DeleteRoleOutput struct {
+type deleteRoleOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type PermissionsManifestOutput struct {
+type permissionsManifestOutput struct {
 	Body base.ApiResponse[roletypes.PermissionsManifest]
 }
 
-type ListUserRoleAssignmentsInput struct {
+type listUserRoleAssignmentsInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 }
 
-type ListUserRoleAssignmentsOutput struct {
+type listUserRoleAssignmentsOutput struct {
 	Body base.ApiResponse[[]roletypes.RoleAssignment]
 }
 
-type SetUserRoleAssignmentsInput struct {
+type setUserRoleAssignmentsInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 	Body   roletypes.SetUserAssignments
 }
 
-type SetUserRoleAssignmentsOutput struct {
+type setUserRoleAssignmentsOutput struct {
 	Body base.ApiResponse[[]roletypes.RoleAssignment]
 }
 
 // ---------- Registration ----------
 
 func RegisterRoles(api huma.API, roleService *services.RoleService) {
-	h := &RoleHandler{roleService: roleService}
+	h := &roleHandler{roleService: roleService}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-roles",
@@ -106,7 +106,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequirePermission(api, authz.PermRolesList),
-	}, h.ListRoles)
+	}, h.listRolesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-role",
@@ -116,7 +116,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequirePermission(api, authz.PermRolesRead),
-	}, h.GetRole)
+	}, h.getRoleInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "create-role",
@@ -127,7 +127,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.CreateRole)
+	}, h.createRoleInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-role",
@@ -138,7 +138,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.UpdateRole)
+	}, h.updateRoleInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-role",
@@ -149,7 +149,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.DeleteRole)
+	}, h.deleteRoleInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-permissions-manifest",
@@ -159,7 +159,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Description: "Returns every permission the server recognizes, grouped by resource. Used by permission-picking UIs.",
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, h.GetPermissionsManifest)
+	}, h.getPermissionsManifestInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "list-user-role-assignments",
@@ -170,7 +170,7 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.ListUserRoleAssignments)
+	}, h.listUserRoleAssignmentsInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "set-user-role-assignments",
@@ -181,12 +181,12 @@ func RegisterRoles(api huma.API, roleService *services.RoleService) {
 		Tags:        []string{"Roles"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.SetUserRoleAssignments)
+	}, h.setUserRoleAssignmentsInternal)
 }
 
 // ---------- Handler implementations ----------
 
-func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*ListRolesOutput, error) {
+func (h *roleHandler) listRolesInternal(ctx context.Context, input *listRolesInput) (*listRolesOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -199,8 +199,8 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 	for i := range roles {
 		dtos[i] = h.toRoleDTO(ctx, &roles[i])
 	}
-	return &ListRolesOutput{
-		Body: RolePaginatedResponse{
+	return &listRolesOutput{
+		Body: rolePaginatedResponse{
 			Success:    true,
 			Data:       dtos,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -208,7 +208,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 	}, nil
 }
 
-func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRoleOutput, error) {
+func (h *roleHandler) getRoleInternal(ctx context.Context, input *getRoleInput) (*getRoleOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -219,12 +219,12 @@ func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRol
 		}
 		return nil, huma.Error500InternalServerError("failed to get role: " + err.Error())
 	}
-	return &GetRoleOutput{
+	return &getRoleOutput{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*CreateRoleOutput, error) {
+func (h *roleHandler) createRoleInternal(ctx context.Context, input *createRoleInput) (*createRoleOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -248,12 +248,12 @@ func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to create role: " + err.Error())
 	}
-	return &CreateRoleOutput{
+	return &createRoleOutput{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*UpdateRoleOutput, error) {
+func (h *roleHandler) updateRoleInternal(ctx context.Context, input *updateRoleInput) (*updateRoleOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -281,12 +281,12 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
 	}
-	return &UpdateRoleOutput{
+	return &updateRoleOutput{
 		Body: base.ApiResponse[roletypes.Role]{Success: true, Data: h.toRoleDTO(ctx, role)},
 	}, nil
 }
 
-func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*DeleteRoleOutput, error) {
+func (h *roleHandler) deleteRoleInternal(ctx context.Context, input *deleteRoleInput) (*deleteRoleOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -301,18 +301,18 @@ func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
 	}
-	return &DeleteRoleOutput{
+	return &deleteRoleOutput{
 		Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "role deleted"}},
 	}, nil
 }
 
-func (h *RoleHandler) GetPermissionsManifest(_ context.Context, _ *struct{}) (*PermissionsManifestOutput, error) {
-	return &PermissionsManifestOutput{
+func (h *roleHandler) getPermissionsManifestInternal(_ context.Context, _ *struct{}) (*permissionsManifestOutput, error) {
+	return &permissionsManifestOutput{
 		Body: base.ApiResponse[roletypes.PermissionsManifest]{Success: true, Data: buildPermissionsManifestInternal()},
 	}, nil
 }
 
-func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUserRoleAssignmentsInput) (*ListUserRoleAssignmentsOutput, error) {
+func (h *roleHandler) listUserRoleAssignmentsInternal(ctx context.Context, input *listUserRoleAssignmentsInput) (*listUserRoleAssignmentsOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -324,12 +324,12 @@ func (h *RoleHandler) ListUserRoleAssignments(ctx context.Context, input *ListUs
 	for i := range rows {
 		dtos[i] = toAssignmentDTOInternal(&rows[i])
 	}
-	return &ListUserRoleAssignmentsOutput{
+	return &listUserRoleAssignmentsOutput{
 		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }
 
-func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUserRoleAssignmentsInput) (*SetUserRoleAssignmentsOutput, error) {
+func (h *roleHandler) setUserRoleAssignmentsInternal(ctx context.Context, input *setUserRoleAssignmentsInput) (*setUserRoleAssignmentsOutput, error) {
 	if h.roleService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -354,14 +354,14 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	for i := range rows {
 		dtos[i] = toAssignmentDTOInternal(&rows[i])
 	}
-	return &SetUserRoleAssignmentsOutput{
+	return &setUserRoleAssignmentsOutput{
 		Body: base.ApiResponse[[]roletypes.RoleAssignment]{Success: true, Data: dtos},
 	}, nil
 }
 
 // ---------- DTO mappers ----------
 
-func (h *RoleHandler) toRoleDTO(ctx context.Context, r *models.Role) roletypes.Role {
+func (h *roleHandler) toRoleDTO(ctx context.Context, r *models.Role) roletypes.Role {
 	out := roletypes.Role{
 		ID:          r.ID,
 		Name:        r.Name,

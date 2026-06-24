@@ -17,8 +17,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
-// UserHandler handles user management endpoints.
-type UserHandler struct {
+// userHandler handles user management endpoints.
+type userHandler struct {
 	userService *services.UserService
 	authService *services.AuthService
 }
@@ -27,14 +27,14 @@ type UserHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// UserPaginatedResponse is the paginated response for users.
-type UserPaginatedResponse struct {
+// userPaginatedResponse is the paginated response for users.
+type userPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []user.User             `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListUsersInput struct {
+type listUsersInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction"`
@@ -42,48 +42,48 @@ type ListUsersInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Items per page"`
 }
 
-type ListUsersOutput struct {
-	Body UserPaginatedResponse
+type listUsersOutput struct {
+	Body userPaginatedResponse
 }
 
-type CreateUserInput struct {
+type createUserInput struct {
 	Body user.CreateUser
 }
 
-type CreateUserOutput struct {
+type createUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type GetUserInput struct {
+type getUserInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 }
 
-type GetUserOutput struct {
+type getUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type UpdateUserInput struct {
+type updateUserInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 	Body   user.UpdateUser
 }
 
-type UpdateUserOutput struct {
+type updateUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type DeleteUserInput struct {
+type deleteUserInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 }
 
-type DeleteUserOutput struct {
+type deleteUserOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type GetUserAvatarInput struct {
+type getUserAvatarInput struct {
 	UserID string `path:"userId" doc:"User ID"`
 }
 
-type GetUserAvatarOutput struct {
+type getUserAvatarOutput struct {
 	ContentType         string `header:"Content-Type"`
 	CacheControl        string `header:"Cache-Control"`
 	XContentTypeOptions string `header:"X-Content-Type-Options"`
@@ -96,7 +96,7 @@ type GetUserAvatarOutput struct {
 
 // RegisterUsers registers all user management endpoints.
 func RegisterUsers(api huma.API, userService *services.UserService, authService *services.AuthService) {
-	h := &UserHandler{userService: userService, authService: authService}
+	h := &userHandler{userService: userService, authService: authService}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listUsers",
@@ -110,7 +110,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersList),
-	}, h.ListUsers)
+	}, h.listUsersInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "createUser",
@@ -124,7 +124,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersCreate),
-	}, h.CreateUser)
+	}, h.createUserInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getUser",
@@ -138,7 +138,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersRead),
-	}, h.GetUser)
+	}, h.getUserInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateUser",
@@ -152,7 +152,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersUpdate),
-	}, h.UpdateUser)
+	}, h.updateUserInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteUser",
@@ -166,7 +166,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersDelete),
-	}, h.DeleteUser)
+	}, h.deleteUserInternal)
 
 	// Unauthenticated by design: profile pictures are publicly visible
 	// so they can be displayed without requiring a session token.
@@ -178,7 +178,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 		Description: "Get the custom profile picture for a user",
 		Tags:        []string{"Users"},
 		Security:    []map[string][]string{},
-	}, h.GetUserAvatar)
+	}, h.getUserAvatarInternal)
 }
 
 // ============================================================================
@@ -186,7 +186,7 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 // ============================================================================
 
 // ListUsers returns a paginated list of users.
-func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ListUsersOutput, error) {
+func (h *userHandler) listUsersInternal(ctx context.Context, input *listUsersInput) (*listUsersOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -198,8 +198,8 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 		return nil, huma.Error500InternalServerError((&common.UserListError{Err: err}).Error())
 	}
 
-	return &ListUsersOutput{
-		Body: UserPaginatedResponse{
+	return &listUsersOutput{
+		Body: userPaginatedResponse{
 			Success:    true,
 			Data:       users,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -208,7 +208,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 }
 
 // CreateUser creates a new user.
-func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*CreateUserOutput, error) {
+func (h *userHandler) createUserInternal(ctx context.Context, input *createUserInput) (*createUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -245,7 +245,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &CreateUserOutput{
+	return &createUserOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -254,7 +254,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 }
 
 // GetUser returns a user by ID.
-func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUserOutput, error) {
+func (h *userHandler) getUserInternal(ctx context.Context, input *getUserInput) (*getUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -269,7 +269,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &GetUserOutput{
+	return &getUserOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -278,7 +278,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 }
 
 // UpdateUser updates a user.
-func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*UpdateUserOutput, error) {
+func (h *userHandler) updateUserInternal(ctx context.Context, input *updateUserInput) (*updateUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -337,7 +337,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &UpdateUserOutput{
+	return &updateUserOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -346,7 +346,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 }
 
 // DeleteUser deletes a user.
-func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*DeleteUserOutput, error) {
+func (h *userHandler) deleteUserInternal(ctx context.Context, input *deleteUserInput) (*deleteUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -365,7 +365,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 		h.authService.InvalidateUserTokenCache(input.UserID)
 	}
 
-	return &DeleteUserOutput{
+	return &deleteUserOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -375,8 +375,8 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	}, nil
 }
 
-// GetUserAvatar returns the custom profile picture for a user.
-func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInput) (*GetUserAvatarOutput, error) {
+// getUserAvatarInternal returns the custom profile picture for a user.
+func (h *userHandler) getUserAvatarInternal(ctx context.Context, input *getUserAvatarInput) (*getUserAvatarOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -393,7 +393,7 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 		return nil, huma.Error404NotFound("user has no custom avatar")
 	}
 
-	return &GetUserAvatarOutput{
+	return &getUserAvatarOutput{
 		ContentType:         mimeType,
 		CacheControl:        "public, max-age=3600, stale-while-revalidate=86400",
 		XContentTypeOptions: "nosniff",

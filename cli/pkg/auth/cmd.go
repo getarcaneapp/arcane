@@ -22,8 +22,8 @@ import (
 
 var jsonOutput bool
 
-// AuthCmd is the parent command for authentication operations
-var AuthCmd = &cobra.Command{
+// Command is the parent command for authentication operations
+var Command = &cobra.Command{
 	Use:     "auth",
 	Aliases: []string{"authentication"},
 	Short:   "Authentication operations",
@@ -161,7 +161,7 @@ var loginCmd = &cobra.Command{
 			}
 
 			output.Success("Login successful")
-			path, _ := config.ConfigPath()
+			path, _ := config.Path()
 			output.KeyValue("JWT token saved to config", path)
 			return nil
 		}
@@ -209,7 +209,7 @@ var logoutCmd = &cobra.Command{
 		}
 
 		output.Success("Logout successful")
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		output.KeyValue("JWT token cleared from config", path)
 		return nil
 	},
@@ -395,7 +395,7 @@ var refreshCmd = &cobra.Command{
 		}
 
 		output.Success("Token refreshed successfully")
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		output.KeyValue("New JWT token saved to config", path)
 		return nil
 	},
@@ -447,12 +447,12 @@ var oidcStatusCmd = &cobra.Command{
 }
 
 func init() {
-	AuthCmd.AddCommand(loginCmd)
-	AuthCmd.AddCommand(logoutCmd)
-	AuthCmd.AddCommand(meCmd)
-	AuthCmd.AddCommand(passwordCmd)
-	AuthCmd.AddCommand(refreshCmd)
-	AuthCmd.AddCommand(oidcStatusCmd)
+	Command.AddCommand(loginCmd)
+	Command.AddCommand(logoutCmd)
+	Command.AddCommand(meCmd)
+	Command.AddCommand(passwordCmd)
+	Command.AddCommand(refreshCmd)
+	Command.AddCommand(oidcStatusCmd)
 
 	// Login command flags
 	loginCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

@@ -21,7 +21,7 @@ func generatedEdgeMTLSCAPathInternal(cfg *config.Config) (string, error) {
 	if cfg == nil {
 		return "", errors.New("config not available")
 	}
-	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
+	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.MTLSModeDisabled {
 		return "", errors.New("edge mTLS is disabled")
 	}
 
@@ -51,7 +51,7 @@ func generatedEdgeMTLSClientCertPathInternal(cfg *config.Config, envID string) (
 	if cfg == nil {
 		return "", errors.New("config not available")
 	}
-	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.EdgeMTLSModeDisabled {
+	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == edge.MTLSModeDisabled {
 		return "", errors.New("edge mTLS is disabled")
 	}
 

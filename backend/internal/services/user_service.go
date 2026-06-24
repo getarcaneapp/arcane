@@ -515,13 +515,13 @@ func (s *UserService) GetUser(ctx context.Context, userID string) (*models.User,
 }
 
 func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *gorm.DB) (*models.User, error) {
-	var user models.User
+	var userModel models.User
 	err := tx.
 		WithContext(ctx).
 		Where("id = ?", userID).
-		First(&user).
+		First(&userModel).
 		Error
-	return &user, err
+	return &userModel, err
 }
 
 // UploadAvatar stores avatar bytes for a user, replacing any existing avatar.

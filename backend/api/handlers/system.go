@@ -24,8 +24,8 @@ import (
 	updatertypes "go.getarcane.app/updater/types"
 )
 
-// SystemHandler handles system management endpoints.
-type SystemHandler struct {
+// systemHandler handles system management endpoints.
+type systemHandler struct {
 	dockerService      *services.DockerClientService
 	systemService      *services.SystemService
 	upgradeService     *services.SystemUpgradeService
@@ -37,107 +37,107 @@ type SystemHandler struct {
 
 // --- Input/Output Types ---
 
-type SystemHealthInput struct {
+type systemHealthInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type SystemHealthOutput struct {
+type systemHealthOutput struct {
 	Status int `status:"200"`
 }
 
-type GetDockerInfoInput struct {
+type getDockerInfoInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetDockerInfoOutput struct {
+type getDockerInfoOutput struct {
 	Body dockerinfo.Info
 }
 
-type PruneAllInput struct {
+type pruneAllInput struct {
 	EnvironmentID string                 `path:"id" doc:"Environment ID"`
 	Body          system.PruneAllRequest `doc:"Prune options"`
 }
 
-type PruneAllOutput struct {
+type pruneAllOutput struct {
 	Body base.ApiResponse[system.PruneAllResult]
 }
 
-type StartAllContainersInput struct {
+type startAllContainersInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type StartAllContainersOutput struct {
+type startAllContainersOutput struct {
 	Body base.ApiResponse[containertypes.ActionResult]
 }
 
-type StartAllStoppedContainersInput struct {
+type startAllStoppedContainersInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type StartAllStoppedContainersOutput struct {
+type startAllStoppedContainersOutput struct {
 	Body base.ApiResponse[containertypes.ActionResult]
 }
 
-type StopAllContainersInput struct {
+type stopAllContainersInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type StopAllContainersOutput struct {
+type stopAllContainersOutput struct {
 	Body base.ApiResponse[containertypes.ActionResult]
 }
 
-type ConvertDockerRunInput struct {
+type convertDockerRunInput struct {
 	EnvironmentID string                         `path:"id" doc:"Environment ID"`
 	Body          system.ConvertDockerRunRequest `doc:"Docker run command"`
 }
 
-type ConvertDockerRunOutput struct {
+type convertDockerRunOutput struct {
 	Body system.ConvertDockerRunResponse
 }
 
-type CheckUpgradeInput struct {
+type checkUpgradeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-// UpgradeCheckResultData is the response for upgrade check.
-type UpgradeCheckResultData struct {
+// upgradeCheckResultData is the response for upgrade check.
+type upgradeCheckResultData struct {
 	CanUpgrade bool   `json:"canUpgrade"`
 	Error      bool   `json:"error"`
 	Message    string `json:"message"`
 }
 
-type CheckUpgradeOutput struct {
-	Body UpgradeCheckResultData
+type checkUpgradeOutput struct {
+	Body upgradeCheckResultData
 }
 
-type TriggerUpgradeInput struct {
+type triggerUpgradeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type TriggerUpgradeOutput struct {
+type triggerUpgradeOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type TriggerUpdateAllInput struct {
+type triggerUpdateAllInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type TriggerUpdateAllOutput struct {
+type triggerUpdateAllOutput struct {
 	Body base.ApiResponse[models.EnvironmentUpdateJob]
 }
 
-type UpdateAllStatusInput struct {
+type updateAllStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type UpdateAllStatusOutput struct {
+type updateAllStatusOutput struct {
 	Body base.ApiResponse[models.EnvironmentUpdateJob]
 }
 
 // RegisterSystem registers system management endpoints using Huma.
 // Note: WebSocket endpoints (stats) remain in the Gin handler.
 func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, environmentService *services.EnvironmentService, cfg *config.Config, activityService *services.ActivityService, appCtx ActivityAppContext) {
-	h := &SystemHandler{
+	h := &systemHandler{
 		dockerService:      dockerService,
 		systemService:      systemService,
 		upgradeService:     upgradeService,
@@ -159,7 +159,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemRead, h.Health)
+	}, authz.PermSystemRead, h.healthInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-docker-info",
@@ -172,7 +172,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemRead, h.GetDockerInfo)
+	}, authz.PermSystemRead, h.getDockerInfoInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-all",
@@ -185,7 +185,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemPrune, h.PruneAll)
+	}, authz.PermSystemPrune, h.pruneAllInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-containers",
@@ -198,7 +198,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermContainersStart, h.StartAllContainers)
+	}, authz.PermContainersStart, h.startAllContainersInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-stopped-containers",
@@ -211,7 +211,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermContainersStart, h.StartAllStoppedContainers)
+	}, authz.PermContainersStart, h.startAllStoppedContainersInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "stop-all-containers",
@@ -224,7 +224,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermContainersStop, h.StopAllContainers)
+	}, authz.PermContainersStop, h.stopAllContainersInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "convert-docker-run",
@@ -237,7 +237,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermContainersCreate, h.ConvertDockerRun)
+	}, authz.PermContainersCreate, h.convertDockerRunInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-upgrade",
@@ -250,7 +250,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemRead, h.CheckUpgradeAvailable)
+	}, authz.PermSystemRead, h.checkUpgradeAvailableInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-upgrade",
@@ -264,7 +264,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemUpgrade, h.TriggerUpgrade)
+	}, authz.PermSystemUpgrade, h.triggerUpgradeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-update-all",
@@ -278,7 +278,7 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemUpgrade, h.TriggerUpdateAll)
+	}, authz.PermSystemUpgrade, h.triggerUpdateAllInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-all-status",
@@ -291,11 +291,11 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermSystemRead, h.GetUpdateAllStatus)
+	}, authz.PermSystemRead, h.getUpdateAllStatusInternal)
 }
 
 // rejectIfAgentModeInternal blocks manager-only operations when running as an agent.
-func (h *SystemHandler) rejectIfAgentModeInternal() error {
+func (h *systemHandler) rejectIfAgentModeInternal() error {
 	if h.cfg != nil && h.cfg.AgentMode {
 		return huma.Error400BadRequest("update-all is managed on the Arcane manager")
 	}
@@ -303,7 +303,7 @@ func (h *SystemHandler) rejectIfAgentModeInternal() error {
 }
 
 // Health checks if the Docker daemon is responsive.
-func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*SystemHealthOutput, error) {
+func (h *systemHandler) healthInternal(ctx context.Context, _ *systemHealthInput) (*systemHealthOutput, error) {
 	if h.dockerService == nil {
 		return nil, huma.Error503ServiceUnavailable("docker service not available")
 	}
@@ -318,11 +318,11 @@ func (h *SystemHandler) Health(ctx context.Context, input *SystemHealthInput) (*
 		return nil, huma.Error503ServiceUnavailable((&common.DockerPingError{Err: err}).Error())
 	}
 
-	return &SystemHealthOutput{}, nil
+	return &systemHealthOutput{}, nil
 }
 
 // GetDockerInfo returns Docker daemon version and system information.
-func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoInput) (*GetDockerInfoOutput, error) {
+func (h *systemHandler) getDockerInfoInternal(ctx context.Context, _ *getDockerInfoInput) (*getDockerInfoOutput, error) {
 	if h.dockerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -372,7 +372,7 @@ func (h *SystemHandler) GetDockerInfo(ctx context.Context, input *GetDockerInfoI
 
 	gitCommit, goVersion, buildTime := extractVersionDetailsFromComponents(version.Components)
 
-	return &GetDockerInfoOutput{
+	return &getDockerInfoOutput{
 		Body: dockerinfo.Info{
 			Success:    true,
 			APIVersion: version.APIVersion,
@@ -414,7 +414,7 @@ func extractVersionDetailsFromComponents(components []dockersystem.ComponentVers
 }
 
 // PruneAll removes unused Docker resources.
-func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*PruneAllOutput, error) {
+func (h *systemHandler) pruneAllInternal(ctx context.Context, input *pruneAllInput) (*pruneAllOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -431,7 +431,7 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 
 	slog.InfoContext(runtimeCtx, "System prune background activity started", "activityId", result.ActivityID)
 
-	return &PruneAllOutput{
+	return &pruneAllOutput{
 		Body: base.ApiResponse[system.PruneAllResult]{
 			Success: true,
 			Data:    *result,
@@ -440,7 +440,7 @@ func (h *SystemHandler) PruneAll(ctx context.Context, input *PruneAllInput) (*Pr
 }
 
 // StartAllContainers starts all Docker containers.
-func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllContainersInput) (*StartAllContainersOutput, error) {
+func (h *systemHandler) startAllContainersInternal(ctx context.Context, input *startAllContainersInput) (*startAllContainersOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -451,7 +451,7 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 		return nil, huma.Error500InternalServerError((&common.ContainerStartAllError{Err: err}).Error())
 	}
 
-	return &StartAllContainersOutput{
+	return &startAllContainersOutput{
 		Body: base.ApiResponse[containertypes.ActionResult]{
 			Success: true,
 			Data:    *result,
@@ -460,7 +460,7 @@ func (h *SystemHandler) StartAllContainers(ctx context.Context, input *StartAllC
 }
 
 // StartAllStoppedContainers starts all stopped Docker containers.
-func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *StartAllStoppedContainersInput) (*StartAllStoppedContainersOutput, error) {
+func (h *systemHandler) startAllStoppedContainersInternal(ctx context.Context, input *startAllStoppedContainersInput) (*startAllStoppedContainersOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -471,7 +471,7 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 		return nil, huma.Error500InternalServerError((&common.ContainerStartStoppedError{Err: err}).Error())
 	}
 
-	return &StartAllStoppedContainersOutput{
+	return &startAllStoppedContainersOutput{
 		Body: base.ApiResponse[containertypes.ActionResult]{
 			Success: true,
 			Data:    *result,
@@ -480,7 +480,7 @@ func (h *SystemHandler) StartAllStoppedContainers(ctx context.Context, input *St
 }
 
 // StopAllContainers stops all running Docker containers.
-func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllContainersInput) (*StopAllContainersOutput, error) {
+func (h *systemHandler) stopAllContainersInternal(ctx context.Context, input *stopAllContainersInput) (*stopAllContainersOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -491,7 +491,7 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 		return nil, huma.Error500InternalServerError((&common.ContainerStopAllError{Err: err}).Error())
 	}
 
-	return &StopAllContainersOutput{
+	return &stopAllContainersOutput{
 		Body: base.ApiResponse[containertypes.ActionResult]{
 			Success: true,
 			Data:    *result,
@@ -500,7 +500,7 @@ func (h *SystemHandler) StopAllContainers(ctx context.Context, input *StopAllCon
 }
 
 // ConvertDockerRun converts a docker run command to docker-compose format.
-func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDockerRunInput) (*ConvertDockerRunOutput, error) {
+func (h *systemHandler) convertDockerRunInternal(_ context.Context, input *convertDockerRunInput) (*convertDockerRunOutput, error) {
 	if h.systemService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -515,7 +515,7 @@ func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDock
 		return nil, huma.Error500InternalServerError((&common.DockerComposeConversionError{Err: err}).Error())
 	}
 
-	return &ConvertDockerRunOutput{
+	return &convertDockerRunOutput{
 		Body: system.ConvertDockerRunResponse{
 			Success:       true,
 			DockerCompose: dockerCompose,
@@ -526,7 +526,7 @@ func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDock
 }
 
 // CheckUpgradeAvailable checks if a system upgrade is available.
-func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckUpgradeInput) (*CheckUpgradeOutput, error) {
+func (h *systemHandler) checkUpgradeAvailableInternal(ctx context.Context, _ *checkUpgradeInput) (*checkUpgradeOutput, error) {
 	if h.upgradeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -534,8 +534,8 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 	canUpgrade, err := h.upgradeService.CanUpgrade(ctx)
 	if err != nil {
 		slog.Debug("System upgrade check failed", "error", err)
-		return &CheckUpgradeOutput{
-			Body: UpgradeCheckResultData{
+		return &checkUpgradeOutput{
+			Body: upgradeCheckResultData{
 				CanUpgrade: false,
 				Error:      true,
 				Message:    (&common.UpgradeCheckError{Err: err}).Error(),
@@ -543,8 +543,8 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 		}, nil
 	}
 
-	return &CheckUpgradeOutput{
-		Body: UpgradeCheckResultData{
+	return &checkUpgradeOutput{
+		Body: upgradeCheckResultData{
 			CanUpgrade: canUpgrade,
 			Error:      false,
 			Message:    "System can be upgraded",
@@ -553,7 +553,7 @@ func (h *SystemHandler) CheckUpgradeAvailable(ctx context.Context, input *CheckU
 }
 
 // TriggerUpgrade triggers a system upgrade.
-func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgradeInput) (*TriggerUpgradeOutput, error) {
+func (h *systemHandler) triggerUpgradeInternal(ctx context.Context, _ *triggerUpgradeInput) (*triggerUpgradeOutput, error) {
 	if h.upgradeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -576,7 +576,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 		return nil, huma.Error500InternalServerError((&common.UpgradeTriggerError{Err: err}).Error())
 	}
 
-	return &TriggerUpgradeOutput{
+	return &triggerUpgradeOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -588,7 +588,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 
 // TriggerUpdateAll starts a fleet-wide update, upgrading the manager first and then
 // the remote agents (the latter resume after the manager restarts).
-func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*TriggerUpdateAllOutput, error) {
+func (h *systemHandler) triggerUpdateAllInternal(ctx context.Context, _ *triggerUpdateAllInput) (*triggerUpdateAllOutput, error) {
 	if h.upgradeService == nil || h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -615,7 +615,7 @@ func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpda
 		return nil, huma.Error500InternalServerError((&common.UpgradeTriggerError{Err: err}).Error())
 	}
 
-	return &TriggerUpdateAllOutput{
+	return &triggerUpdateAllOutput{
 		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
 			Success: true,
 			Data:    *job,
@@ -624,7 +624,7 @@ func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpda
 }
 
 // GetUpdateAllStatus returns the latest update-all job for live progress polling.
-func (h *SystemHandler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatusInput) (*UpdateAllStatusOutput, error) {
+func (h *systemHandler) getUpdateAllStatusInternal(ctx context.Context, _ *updateAllStatusInput) (*updateAllStatusOutput, error) {
 	if h.upgradeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -640,7 +640,7 @@ func (h *SystemHandler) GetUpdateAllStatus(ctx context.Context, input *UpdateAll
 		return nil, huma.Error404NotFound("no update-all job found")
 	}
 
-	return &UpdateAllStatusOutput{
+	return &updateAllStatusOutput{
 		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
 			Success: true,
 			Data:    *job,

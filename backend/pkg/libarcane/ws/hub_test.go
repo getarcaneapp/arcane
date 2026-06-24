@@ -33,14 +33,14 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	cc, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	sc := <-serverReady
 
 	return cc, sc, func() {
-		cc.Close()
-		sc.Close()
+		_ = cc.Close()
+		_ = sc.Close()
 		server.Close()
 	}
 }
@@ -337,8 +337,12 @@ func TestHub_ConcurrentOperations(t *testing.T) {
 	}, goroutines)
 	for i := range goroutines {
 		_, pairs[i].sc, pairs[i].cleanup = newTestWSPair(t)
-		defer pairs[i].cleanup()
 	}
+	t.Cleanup(func() {
+		for i := range pairs {
+			pairs[i].cleanup()
+		}
+	})
 
 	for i := range goroutines {
 		wg.Add(1)

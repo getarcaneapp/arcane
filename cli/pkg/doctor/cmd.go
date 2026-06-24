@@ -25,8 +25,8 @@ type report struct {
 
 var jsonOutput bool
 
-// DoctorCmd runs environment and connection diagnostics.
-var DoctorCmd = &cobra.Command{
+// Command runs environment and connection diagnostics.
+var Command = &cobra.Command{
 	Use:          "doctor",
 	Short:        "Run CLI diagnostics",
 	SilenceUsage: true,
@@ -46,7 +46,7 @@ var DoctorCmd = &cobra.Command{
 		}
 
 		rep := report{Healthy: true}
-		path, _ := config.ConfigPath()
+		path, _ := config.Path()
 		rep.Checks = append(rep.Checks, checkResult{
 			Name:    "config_path",
 			Status:  "ok",
@@ -131,5 +131,5 @@ var DoctorCmd = &cobra.Command{
 }
 
 func init() {
-	DoctorCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	Command.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

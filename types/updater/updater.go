@@ -1,20 +1,8 @@
 package updater
 
 const (
-	// StatusChecked indicates a resource was checked.
-	StatusChecked = "checked"
-	// StatusUpdated indicates a resource was updated.
-	StatusUpdated = "updated"
 	// StatusRestarted indicates a resource was restarted because a dependency changed.
 	StatusRestarted = "restarted"
-	// StatusSkipped indicates a resource was skipped.
-	StatusSkipped = "skipped"
-	// StatusFailed indicates a resource failed to update.
-	StatusFailed = "failed"
-	// StatusUpToDate indicates a resource is already up to date.
-	StatusUpToDate = "up_to_date"
-	// StatusUpdateAvailable indicates an update is available.
-	StatusUpdateAvailable = "update_available"
 )
 
 type Options struct {

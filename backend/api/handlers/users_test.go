@@ -27,7 +27,7 @@ func setupUserHandlerTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
-func createHandlerTestUser(t *testing.T, svc *services.UserService, id, username string, _ models.StringSlice) *models.User {
+func createHandlerTestUser(t *testing.T, svc *services.UserService, id, username string) *models.User {
 	t.Helper()
 
 	user := &models.User{
@@ -51,13 +51,13 @@ func TestDeleteUserReturnsConflictForLastAdmin(t *testing.T) {
 	roleSvc := services.NewRoleService(db)
 	require.NoError(t, roleSvc.EnsureBuiltInRoles(context.Background()))
 	userSvc := services.NewUserService(db).WithRoleService(roleSvc)
-	handler := &UserHandler{userService: userSvc}
-	admin := createHandlerTestUser(t, userSvc, "admin-1", "arcane", models.StringSlice{})
+	handler := &userHandler{userService: userSvc}
+	admin := createHandlerTestUser(t, userSvc, "admin-1", "arcane")
 	require.NoError(t, roleSvc.SetUserAssignments(context.Background(), admin.ID, []models.UserRoleAssignment{
 		{RoleID: authz.BuiltInRoleAdmin, EnvironmentID: nil},
 	}))
 
-	_, err := handler.DeleteUser(adminContext(), &DeleteUserInput{UserID: admin.ID})
+	_, err := handler.deleteUserInternal(adminContext(), &deleteUserInput{UserID: admin.ID})
 	require.Error(t, err)
 
 	var statusErr huma.StatusError

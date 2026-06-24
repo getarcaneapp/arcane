@@ -111,7 +111,7 @@ GitHub Actions example:
 			output.KeyValue("Token source", tokenSource)
 			output.KeyValue("Expires at", expiresAt.Format(time.RFC3339))
 			if persist {
-				path, _ := config.ConfigPath()
+				path, _ := config.Path()
 				output.KeyValue("JWT token saved to config", path)
 			} else {
 				output.Info("Use --export, --json, or --persist to consume the token.")
@@ -123,7 +123,7 @@ GitHub Actions example:
 }
 
 func init() {
-	AuthCmd.AddCommand(federatedCmd)
+	Command.AddCommand(federatedCmd)
 
 	federatedCmd.Flags().String("server", "", "Arcane server URL for this exchange")
 	federatedCmd.Flags().String("audience", "", "Audience to request from the external OIDC provider")

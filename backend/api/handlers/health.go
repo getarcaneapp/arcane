@@ -8,8 +8,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
 
-// HealthOutput is the response for health check
-type HealthOutput struct {
+// healthOutput is the response for health check
+type healthOutput struct {
 	Body system.HealthResponse
 }
 
@@ -23,8 +23,8 @@ func RegisterHealth(api huma.API) {
 		Description: "Check if the API is healthy",
 		Tags:        []string{"Health"},
 		Security:    []map[string][]string{},
-	}, func(ctx context.Context, input *struct{}) (*HealthOutput, error) {
-		return &HealthOutput{
+	}, func(ctx context.Context, input *struct{}) (*healthOutput, error) {
+		return &healthOutput{
 			Body: system.HealthResponse{
 				Status: "UP",
 			},

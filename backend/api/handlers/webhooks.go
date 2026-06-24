@@ -14,51 +14,51 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/webhook"
 )
 
-type WebhookHandler struct {
+type webhookHandler struct {
 	webhookService *services.WebhookService
 }
 
 // --- Input/Output types ---
 
-type ListWebhooksInput struct {
+type listWebhooksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type ListWebhooksOutput struct {
+type listWebhooksOutput struct {
 	Body base.ApiResponse[[]webhook.Summary]
 }
 
-type CreateWebhookInput struct {
+type createWebhookInput struct {
 	EnvironmentID string               `path:"id" doc:"Environment ID"`
 	Body          *webhook.CreateInput `required:"true"`
 }
 
-type CreateWebhookOutput struct {
+type createWebhookOutput struct {
 	Body base.ApiResponse[webhook.Created]
 }
 
-type DeleteWebhookInput struct {
+type deleteWebhookInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	WebhookID     string `path:"webhookId" doc:"Webhook ID"`
 }
 
-type DeleteWebhookOutput struct {
+type deleteWebhookOutput struct {
 	Body base.ApiResponse[any]
 }
 
-type UpdateWebhookInput struct {
+type updateWebhookInput struct {
 	EnvironmentID string               `path:"id" doc:"Environment ID"`
 	WebhookID     string               `path:"webhookId" doc:"Webhook ID"`
 	Body          *webhook.UpdateInput `required:"true"`
 }
 
-type UpdateWebhookOutput struct {
+type updateWebhookOutput struct {
 	Body base.ApiResponse[any]
 }
 
 // RegisterWebhooks registers the authenticated CRUD routes for webhook management.
 func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
-	h := &WebhookHandler{webhookService: webhookService}
+	h := &webhookHandler{webhookService: webhookService}
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-webhooks",
@@ -71,7 +71,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermWebhooksList, h.ListWebhooks)
+	}, authz.PermWebhooksList, h.listWebhooksInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-webhook",
@@ -84,7 +84,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermWebhooksCreate, h.CreateWebhook)
+	}, authz.PermWebhooksCreate, h.createWebhookInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-webhook",
@@ -97,7 +97,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermWebhooksUpdate, h.UpdateWebhook)
+	}, authz.PermWebhooksUpdate, h.updateWebhookInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-webhook",
@@ -110,11 +110,11 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermWebhooksDelete, h.DeleteWebhook)
+	}, authz.PermWebhooksDelete, h.deleteWebhookInternal)
 }
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
-func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksInput) (*ListWebhooksOutput, error) {
+func (h *webhookHandler) listWebhooksInternal(ctx context.Context, input *listWebhooksInput) (*listWebhooksOutput, error) {
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -124,7 +124,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 		return nil, huma.Error500InternalServerError("failed to list webhooks")
 	}
 
-	return &ListWebhooksOutput{
+	return &listWebhooksOutput{
 		Body: base.ApiResponse[[]webhook.Summary]{
 			Success: true,
 			Data:    webhooks,
@@ -133,7 +133,7 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 }
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
-func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*CreateWebhookOutput, error) {
+func (h *webhookHandler) createWebhookInternal(ctx context.Context, input *createWebhookInput) (*createWebhookOutput, error) {
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -168,7 +168,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 		return nil, huma.Error500InternalServerError("failed to create webhook")
 	}
 
-	return &CreateWebhookOutput{
+	return &createWebhookOutput{
 		Body: base.ApiResponse[webhook.Created]{
 			Success: true,
 			Data: webhook.Created{
@@ -185,7 +185,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 }
 
 // UpdateWebhook updates a webhook's enabled state.
-func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhookInput) (*UpdateWebhookOutput, error) {
+func (h *webhookHandler) updateWebhookInternal(ctx context.Context, input *updateWebhookInput) (*updateWebhookOutput, error) {
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -207,13 +207,13 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 	}
 
 	_ = wh // updated record available if needed in future
-	return &UpdateWebhookOutput{
+	return &updateWebhookOutput{
 		Body: base.ApiResponse[any]{Success: true},
 	}, nil
 }
 
 // DeleteWebhook removes a webhook.
-func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*DeleteWebhookOutput, error) {
+func (h *webhookHandler) deleteWebhookInternal(ctx context.Context, input *deleteWebhookInput) (*deleteWebhookOutput, error) {
 	if h.webhookService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -230,7 +230,7 @@ func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhook
 		return nil, huma.Error500InternalServerError("failed to delete webhook")
 	}
 
-	return &DeleteWebhookOutput{
+	return &deleteWebhookOutput{
 		Body: base.ApiResponse[any]{
 			Success: true,
 		},

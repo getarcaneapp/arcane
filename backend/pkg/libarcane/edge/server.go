@@ -339,9 +339,9 @@ func (s *TunnelServer) populateSessionMetadata(tunnel *AgentTunnel, registerMsg 
 
 	switch tunnel.Conn.(type) {
 	case *GRPCManagerTunnelConn:
-		tunnel.Transport = EdgeTransportGRPC
+		tunnel.Transport = TransportGRPC
 	default:
-		tunnel.Transport = EdgeTransportWebSocket
+		tunnel.Transport = TransportWebSocket
 	}
 }
 
@@ -680,7 +680,7 @@ func resolvedEnvironmentIDFromContextInternal(ctx context.Context) (string, bool
 }
 
 func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionState, envID string) error {
-	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
+	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == MTLSModeDisabled {
 		return nil
 	}
 	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, edgeMTLSTrustDomainInternal(s.cfg))
@@ -694,7 +694,7 @@ func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Reque
 }
 
 func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context.Context, envID string) error {
-	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
+	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == MTLSModeDisabled {
 		return nil
 	}
 	p, ok := peer.FromContext(ctx)
@@ -710,7 +710,7 @@ func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context
 
 func (s *TunnelServer) edgeMTLSModeInternal() string {
 	if s == nil || s.cfg == nil {
-		return EdgeMTLSModeDisabled
+		return MTLSModeDisabled
 	}
 	return s.cfg.EdgeMTLSMode
 }

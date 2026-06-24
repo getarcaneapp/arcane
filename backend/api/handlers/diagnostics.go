@@ -14,26 +14,26 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
 
-// DiagnosticsHandler serves the REST diagnostics endpoints. The live WebSocket
+// diagnosticsHandler serves the REST diagnostics endpoints. The live WebSocket
 // streams and pprof routes live in the api/ws package alongside the other
 // streaming endpoints; the snapshot is assembled there too (ws.BuildDiagnostics).
-type DiagnosticsHandler struct {
+type diagnosticsHandler struct {
 	diag *services.DiagnosticsService
 }
 
-type DiagnosticsInput struct{}
+type diagnosticsInput struct{}
 
-type GetDiagnosticsOutput struct {
+type getDiagnosticsOutput struct {
 	Body system.Diagnostics
 }
 
-type GetDiagnosticsLogsOutput struct {
+type getDiagnosticsLogsOutput struct {
 	Body []system.LogEntry
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
 func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
-	h := &DiagnosticsHandler{diag: diag}
+	h := &diagnosticsHandler{diag: diag}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-diagnostics",
@@ -47,7 +47,7 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
-	}, h.GetDiagnostics)
+	}, h.getDiagnosticsInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-diagnostics-logs",
@@ -61,13 +61,13 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
-	}, h.GetRecentLogs)
+	}, h.getRecentLogsInternal)
 }
 
-func (h *DiagnosticsHandler) GetDiagnostics(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsOutput, error) {
-	return &GetDiagnosticsOutput{Body: ws.BuildDiagnostics(h.diag)}, nil
+func (h *diagnosticsHandler) getDiagnosticsInternal(_ context.Context, _ *diagnosticsInput) (*getDiagnosticsOutput, error) {
+	return &getDiagnosticsOutput{Body: ws.BuildDiagnostics(h.diag)}, nil
 }
 
-func (h *DiagnosticsHandler) GetRecentLogs(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsLogsOutput, error) {
-	return &GetDiagnosticsLogsOutput{Body: logstream.Default().Recent()}, nil
+func (h *diagnosticsHandler) getRecentLogsInternal(_ context.Context, _ *diagnosticsInput) (*getDiagnosticsLogsOutput, error) {
+	return &getDiagnosticsLogsOutput{Body: logstream.Default().Recent()}, nil
 }

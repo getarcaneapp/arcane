@@ -127,4 +127,4 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 
 // Compile-time assertion that GitRepositoryService is the type the production
 // handler expects; keeps this test honest if the field is ever renamed.
-var _ = (*GitRepositoryHandler)(&GitRepositoryHandler{repoService: &services.GitRepositoryService{}})
+var _ = &gitRepositoryHandler{repoService: &services.GitRepositoryService{}}

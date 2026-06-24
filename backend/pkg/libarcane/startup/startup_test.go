@@ -17,17 +17,17 @@ type mockSettingsManager struct {
 	ensureDefaultsErr    error
 }
 
-func (m *mockSettingsManager) PersistEnvSettingsIfMissing(ctx context.Context) error {
+func (m *mockSettingsManager) PersistEnvSettingsIfMissing(_ context.Context) error {
 	m.persistCalled = true
 	return m.persistErr
 }
 
-func (m *mockSettingsManager) SetBoolSetting(ctx context.Context, key string, value bool) error {
+func (m *mockSettingsManager) SetBoolSetting(_ context.Context, _ string, _ bool) error {
 	m.setBoolCalled = true
 	return m.setBoolErr
 }
 
-func (m *mockSettingsManager) EnsureDefaultSettings(ctx context.Context) error {
+func (m *mockSettingsManager) EnsureDefaultSettings(_ context.Context) error {
 	m.ensureDefaultsCalled = true
 	return m.ensureDefaultsErr
 }
@@ -37,7 +37,7 @@ type mockSettingsPruner struct {
 	pruneErr    error
 }
 
-func (m *mockSettingsPruner) PruneUnknownSettings(ctx context.Context) error {
+func (m *mockSettingsPruner) PruneUnknownSettings(_ context.Context) error {
 	m.pruneCalled = true
 	return m.pruneErr
 }
@@ -163,12 +163,11 @@ func TestEnsureEncryptionKey(t *testing.T) {
 
 func TestInitializeDefaultSettings(t *testing.T) {
 	ctx := context.Background()
-	cfg := &RuntimeConfig{}
 
 	t.Run("calls all initialization methods", func(t *testing.T) {
 		mgr := &mockSettingsManager{}
 
-		InitializeDefaultSettings(ctx, cfg, mgr)
+		InitializeDefaultSettings(ctx, mgr)
 
 		assert.True(t, mgr.ensureDefaultsCalled)
 		assert.True(t, mgr.persistCalled)
@@ -179,7 +178,7 @@ func TestInitializeDefaultSettings(t *testing.T) {
 			ensureDefaultsErr: errors.New("defaults failed"),
 		}
 
-		InitializeDefaultSettings(ctx, cfg, mgr)
+		InitializeDefaultSettings(ctx, mgr)
 
 		assert.True(t, mgr.ensureDefaultsCalled)
 		assert.True(t, mgr.persistCalled)
@@ -190,7 +189,7 @@ func TestInitializeDefaultSettings(t *testing.T) {
 			persistErr: errors.New("persist failed"),
 		}
 
-		InitializeDefaultSettings(ctx, cfg, mgr)
+		InitializeDefaultSettings(ctx, mgr)
 
 		assert.True(t, mgr.ensureDefaultsCalled)
 		assert.True(t, mgr.persistCalled)

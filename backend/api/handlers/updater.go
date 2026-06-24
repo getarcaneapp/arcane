@@ -15,52 +15,52 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 )
 
-// UpdaterHandler provides Huma-based updater management endpoints.
-type UpdaterHandler struct {
+// updaterHandler provides Huma-based updater management endpoints.
+type updaterHandler struct {
 	updaterService *services.UpdaterService
 	appCtx         context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
 
-type RunUpdaterInput struct {
+type runUpdaterInput struct {
 	EnvironmentID string           `path:"id" doc:"Environment ID"`
 	Body          *updater.Options `doc:"Updater run options"`
 }
 
-type RunUpdaterOutput struct {
+type runUpdaterOutput struct {
 	Body base.ApiResponse[*updater.Result]
 }
 
-type UpdateContainerInput struct {
+type updateContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID to update"`
 }
 
-type UpdateContainerOutput struct {
+type updateContainerOutput struct {
 	Body base.ApiResponse[*updater.Result]
 }
 
-type GetUpdaterStatusInput struct {
+type getUpdaterStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetUpdaterStatusOutput struct {
+type getUpdaterStatusOutput struct {
 	Body base.ApiResponse[updater.Status]
 }
 
-type GetUpdaterHistoryInput struct {
+type getUpdaterHistoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Limit         int    `query:"limit" default:"50" doc:"Number of history entries to return"`
 }
 
-type GetUpdaterHistoryOutput struct {
+type getUpdaterHistoryOutput struct {
 	Body base.ApiResponse[[]models.AutoUpdateRecord]
 }
 
 // RegisterUpdater registers updater management routes using Huma.
 func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appCtx ActivityAppContext) {
-	h := &UpdaterHandler{
+	h := &updaterHandler{
 		updaterService: updaterService,
 		appCtx:         appCtx.contextInternal(),
 	}
@@ -76,7 +76,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImageUpdatesCheck, h.RunUpdater)
+	}, authz.PermImageUpdatesCheck, h.runUpdaterInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-status",
@@ -89,7 +89,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImageUpdatesRead, h.GetUpdaterStatus)
+	}, authz.PermImageUpdatesRead, h.getUpdaterStatusInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-updater-history",
@@ -102,7 +102,7 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImageUpdatesRead, h.GetUpdaterHistory)
+	}, authz.PermImageUpdatesRead, h.getUpdaterHistoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-container",
@@ -115,11 +115,11 @@ func RegisterUpdater(api huma.API, updaterService *services.UpdaterService, appC
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermImageUpdatesCheck, h.UpdateContainer)
+	}, authz.PermImageUpdatesCheck, h.updateContainerInternal)
 }
 
 // RunUpdater applies pending container updates.
-func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput) (*RunUpdaterOutput, error) {
+func (h *updaterHandler) runUpdaterInternal(ctx context.Context, input *runUpdaterInput) (*runUpdaterOutput, error) {
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -135,7 +135,7 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}
 
-	return &RunUpdaterOutput{
+	return &runUpdaterOutput{
 		Body: base.ApiResponse[*updater.Result]{
 			Success: true,
 			Data:    out,
@@ -144,14 +144,14 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 }
 
 // GetUpdaterStatus returns the current status of the updater.
-func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdaterStatusInput) (*GetUpdaterStatusOutput, error) {
+func (h *updaterHandler) getUpdaterStatusInternal(_ context.Context, _ *getUpdaterStatusInput) (*getUpdaterStatusOutput, error) {
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
 	status := h.updaterService.GetStatus()
 
-	return &GetUpdaterStatusOutput{
+	return &getUpdaterStatusOutput{
 		Body: base.ApiResponse[updater.Status]{
 			Success: true,
 			Data:    status,
@@ -160,7 +160,7 @@ func (h *UpdaterHandler) GetUpdaterStatus(ctx context.Context, input *GetUpdater
 }
 
 // GetUpdaterHistory returns the history of update operations.
-func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdaterHistoryInput) (*GetUpdaterHistoryOutput, error) {
+func (h *updaterHandler) getUpdaterHistoryInternal(ctx context.Context, input *getUpdaterHistoryInput) (*getUpdaterHistoryOutput, error) {
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -175,7 +175,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 		return nil, huma.Error500InternalServerError((&common.UpdaterHistoryError{Err: err}).Error())
 	}
 
-	return &GetUpdaterHistoryOutput{
+	return &getUpdaterHistoryOutput{
 		Body: base.ApiResponse[[]models.AutoUpdateRecord]{
 			Success: true,
 			Data:    history,
@@ -184,7 +184,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 }
 
 // UpdateContainer updates a single container by pulling the latest image and applying the appropriate update flow.
-func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateContainerInput) (*UpdateContainerOutput, error) {
+func (h *updaterHandler) updateContainerInternal(ctx context.Context, input *updateContainerInput) (*updateContainerOutput, error) {
 	if h.updaterService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -195,7 +195,7 @@ func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateConta
 		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
 	}
 
-	return &UpdateContainerOutput{
+	return &updateContainerOutput{
 		Body: base.ApiResponse[*updater.Result]{
 			Success: true,
 			Data:    out,

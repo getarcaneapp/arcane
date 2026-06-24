@@ -14,10 +14,9 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderAuthorization = "Authorization"
-	bearerScheme        = "Bearer "
+	HeaderAPIKey     = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderAgentToken = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	bearerScheme     = "Bearer "
 )
 
 // ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"

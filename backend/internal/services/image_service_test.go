@@ -203,7 +203,7 @@ func TestGetPullOptionsWithAuth_ExternalCredentialsOverrideDBRegistryInternal(t 
 
 func TestImageServicePullImageRetriesAnonymouslyAfterAuthRejectedInternal(t *testing.T) {
 	db := setupProjectTestDB(t)
-	authHeaders := []string{}
+	var authHeaders []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasSuffix(r.URL.Path, "/images/create") {
 			http.NotFound(w, r)
@@ -331,13 +331,13 @@ func TestImageServiceSearchImagesCallsDockerAPIInternal(t *testing.T) {
 }
 
 func TestShouldRetryAnonymousPullInternal_UnauthorizedWithAuth(t *testing.T) {
-	err := errors.New(`Error response from daemon: Head "registry-1.docker.io/v2/library/nginx/manifests/latest": unauthorized: incorrect username or password`)
+	err := errors.New(`error response from daemon: Head "registry-1.docker.io/v2/library/nginx/manifests/latest": unauthorized: incorrect username or password`)
 
 	assert.True(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, err))
 }
 
 func TestShouldRetryAnonymousPullInternal_SkipsRetryWithoutUnauthorizedOrAuth(t *testing.T) {
-	nonAuthErr := errors.New("Error response from daemon: i/o timeout")
+	nonAuthErr := errors.New("error response from daemon: i/o timeout")
 	unauthorizedErr := errors.New("unauthorized: authentication required")
 
 	assert.False(t, shouldRetryAnonymousPullInternal(client.ImagePullOptions{RegistryAuth: "encoded-auth"}, nonAuthErr))

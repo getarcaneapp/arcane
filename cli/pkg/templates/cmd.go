@@ -53,8 +53,8 @@ var (
 	templateRegUpdateDisabled bool
 )
 
-// TemplatesCmd is the parent command for template operations
-var TemplatesCmd = &cobra.Command{
+// Command is the parent command for template operations
+var Command = &cobra.Command{
 	Use:     "templates",
 	Aliases: []string{"template", "tpl"},
 	Short:   "Manage Docker Compose templates",
@@ -1158,21 +1158,21 @@ var fetchCmd = &cobra.Command{
 }
 
 func init() {
-	TemplatesCmd.AddCommand(listCmd)
-	TemplatesCmd.AddCommand(defaultCmd)
-	TemplatesCmd.AddCommand(contentCmd)
-	TemplatesCmd.AddCommand(registriesCmd)
-	TemplatesCmd.AddCommand(variablesCmd)
-	TemplatesCmd.AddCommand(deleteCmd)
-	TemplatesCmd.AddCommand(deleteRegistryCmd)
-	TemplatesCmd.AddCommand(getCmd)
-	TemplatesCmd.AddCommand(createCmd)
-	TemplatesCmd.AddCommand(updateCmd)
-	TemplatesCmd.AddCommand(downloadCmd)
-	TemplatesCmd.AddCommand(defaultsSaveCmd)
-	TemplatesCmd.AddCommand(variablesUpdateCmd)
-	TemplatesCmd.AddCommand(registriesUpdateCmd)
-	TemplatesCmd.AddCommand(fetchCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(defaultCmd)
+	Command.AddCommand(contentCmd)
+	Command.AddCommand(registriesCmd)
+	Command.AddCommand(variablesCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(deleteRegistryCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(downloadCmd)
+	Command.AddCommand(defaultsSaveCmd)
+	Command.AddCommand(variablesUpdateCmd)
+	Command.AddCommand(registriesUpdateCmd)
+	Command.AddCommand(fetchCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of templates to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

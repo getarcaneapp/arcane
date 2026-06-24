@@ -455,7 +455,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 	})
 }
 
-func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*dashboardtypes.DockerSnapshot, error) {
+func (s *DockerClientService) GetSnapshot(ctx context.Context) (*dashboardtypes.DockerSnapshot, error) {
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	var containers []container.Summary

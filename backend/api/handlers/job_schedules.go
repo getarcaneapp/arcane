@@ -12,42 +12,42 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 )
 
-type GetJobSchedulesInput struct {
+type getJobSchedulesInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type GetJobSchedulesOutput struct {
+type getJobSchedulesOutput struct {
 	Body jobschedule.Config
 }
 
-type UpdateJobSchedulesInput struct {
+type updateJobSchedulesInput struct {
 	ID   string             `path:"id" doc:"Environment ID"`
 	Body jobschedule.Update `doc:"Job schedule update data"`
 }
 
-type UpdateJobSchedulesOutput struct {
+type updateJobSchedulesOutput struct {
 	Body base.ApiResponse[jobschedule.Config]
 }
 
-type ListJobsInput struct {
+type listJobsInput struct {
 	ID string `path:"id" doc:"Environment ID"`
 }
 
-type GetJobsOutput struct {
+type getJobsOutput struct {
 	Body jobschedule.JobListResponse
 }
 
-type RunJobInput struct {
+type runJobInput struct {
 	ID    string `path:"id" doc:"Environment ID"`
 	JobID string `path:"jobId" minLength:"1" doc:"Job ID to run"`
 }
 
-type RunJobOutput struct {
+type runJobOutput struct {
 	Body jobschedule.JobRunResponse
 }
 
 func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *services.EnvironmentService) {
-	h := &JobSchedulesHandler{
+	h := &jobSchedulesHandler{
 		jobService:         jobSvc,
 		environmentService: envSvc,
 	}
@@ -63,7 +63,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermJobsManage, h.Get)
+	}, authz.PermJobsManage, h.getInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-job-schedules",
@@ -76,7 +76,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermJobsManage, h.Update)
+	}, authz.PermJobsManage, h.updateInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-jobs",
@@ -89,7 +89,7 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermJobsManage, h.ListJobs)
+	}, authz.PermJobsManage, h.listJobsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "run-job",
@@ -102,15 +102,15 @@ func RegisterJobSchedules(api huma.API, jobSvc *services.JobService, envSvc *ser
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermJobsManage, h.RunJob)
+	}, authz.PermJobsManage, h.runJobInternal)
 }
 
-type JobSchedulesHandler struct {
+type jobSchedulesHandler struct {
 	jobService         *services.JobService
 	environmentService *services.EnvironmentService
 }
 
-func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput) (*GetJobsOutput, error) {
+func (h *jobSchedulesHandler) listJobsInternal(ctx context.Context, input *listJobsInput) (*getJobsOutput, error) {
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -123,7 +123,7 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 		if err != nil {
 			return nil, err
 		}
-		return &GetJobsOutput{Body: *jobs}, nil
+		return &getJobsOutput{Body: *jobs}, nil
 	}
 
 	jobs, err := h.jobService.ListJobs(ctx)
@@ -131,10 +131,10 @@ func (h *JobSchedulesHandler) ListJobs(ctx context.Context, input *ListJobsInput
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &GetJobsOutput{Body: *jobs}, nil
+	return &getJobsOutput{Body: *jobs}, nil
 }
 
-func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*RunJobOutput, error) {
+func (h *jobSchedulesHandler) runJobInternal(ctx context.Context, input *runJobInput) (*runJobOutput, error) {
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -147,7 +147,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 		if err != nil {
 			return nil, err
 		}
-		return &RunJobOutput{Body: *runResp}, nil
+		return &runJobOutput{Body: *runResp}, nil
 	}
 
 	err := h.jobService.RunJobNowInline(ctx, input.JobID)
@@ -155,7 +155,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	return &RunJobOutput{
+	return &runJobOutput{
 		Body: jobschedule.JobRunResponse{
 			Success: true,
 			Message: "Job completed successfully",
@@ -163,7 +163,7 @@ func (h *JobSchedulesHandler) RunJob(ctx context.Context, input *RunJobInput) (*
 	}, nil
 }
 
-func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInput) (*GetJobSchedulesOutput, error) {
+func (h *jobSchedulesHandler) getInternal(ctx context.Context, input *getJobSchedulesInput) (*getJobSchedulesOutput, error) {
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -176,14 +176,14 @@ func (h *JobSchedulesHandler) Get(ctx context.Context, input *GetJobSchedulesInp
 		if err != nil {
 			return nil, err
 		}
-		return &GetJobSchedulesOutput{Body: *cfg}, nil
+		return &getJobSchedulesOutput{Body: *cfg}, nil
 	}
 
 	cfg := h.jobService.GetJobSchedules(ctx)
-	return &GetJobSchedulesOutput{Body: cfg}, nil
+	return &getJobSchedulesOutput{Body: cfg}, nil
 }
 
-func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedulesInput) (*UpdateJobSchedulesOutput, error) {
+func (h *jobSchedulesHandler) updateInternal(ctx context.Context, input *updateJobSchedulesInput) (*updateJobSchedulesOutput, error) {
 	if h.jobService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -198,7 +198,7 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 			return nil, err
 		}
 
-		return &UpdateJobSchedulesOutput{Body: *apiResp}, nil
+		return &updateJobSchedulesOutput{Body: *apiResp}, nil
 	}
 
 	cfg, err := h.jobService.UpdateJobSchedules(ctx, input.Body)
@@ -206,7 +206,7 @@ func (h *JobSchedulesHandler) Update(ctx context.Context, input *UpdateJobSchedu
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 
-	return &UpdateJobSchedulesOutput{
+	return &updateJobSchedulesOutput{
 		Body: base.ApiResponse[jobschedule.Config]{
 			Success: true,
 			Data:    cfg,

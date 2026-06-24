@@ -10,7 +10,6 @@ const (
 	DefaultDockerImagePull = 10 * time.Minute
 	DefaultTrivyScan       = 15 * time.Minute
 	DefaultGitOperation    = 5 * time.Minute
-	DefaultHTTPClient      = 30 * time.Second
 	DefaultRegistry        = 30 * time.Second
 	DefaultProxyRequest    = 60 * time.Second
 	DefaultBuildTimeout    = 30 * time.Minute

@@ -59,7 +59,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	inContainer := runningInContainerInternal(os.Getenv, os.Stat)
 	req, warning, err := loadRuntimeIdentityRequestInternal(cfg, inContainer)
 	if warning != "" {
-		fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
+		_, _ = fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
 	}
 	if err != nil {
 		return err
@@ -80,7 +80,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	}
 
 	if os.Geteuid() != 0 {
-		fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
+		_, _ = fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
 			os.Geteuid(), runtimeUID, runtimeGID)
 		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); err != nil {
 			return err
@@ -98,7 +98,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 			return fmt.Errorf("load mountpoints: %w", err)
 		}
 
-		if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
+		if err := prepareWritablePathsWithRootsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory); err != nil {
 			return err
 		}
 	}
@@ -277,10 +277,6 @@ func dockerSocketPathInternal(raw string) (string, bool) {
 	return filepath.Clean(socketPath), true
 }
 
-func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
-	return prepareWritablePathsWithRootsInternal(uid, gid, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory)
-}
-
 func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
 	if err := os.MkdirAll(dataDirectory, pkgutils.DirPerm); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
@@ -346,7 +342,7 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 
 	// Ensure the parent directory exists before creating the file.
 	// This covers the "already the right user" early-return path where
-	// prepareWritablePathsInternal is not called.
+	// writable path preparation is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {

@@ -9,35 +9,6 @@ import (
 // Provider is the type for notification provider identifiers.
 type Provider string
 
-const (
-	// NotificationProviderDiscord is the builtin Discord notification provider.
-	NotificationProviderDiscord Provider = "discord"
-
-	// NotificationProviderEmail is the builtin Email notification provider.
-	NotificationProviderEmail Provider = "email"
-
-	// NotificationProviderTelegram is the builtin Telegram notification provider.
-	NotificationProviderTelegram Provider = "telegram"
-
-	// NotificationProviderSignal is the builtin Signal notification provider.
-	NotificationProviderSignal Provider = "signal"
-
-	// NotificationProviderSlack is the builtin Slack notification provider.
-	NotificationProviderSlack Provider = "slack"
-
-	// NotificationProviderNtfy is the builtin Ntfy notification provider.
-	NotificationProviderNtfy Provider = "ntfy"
-
-	// NotificationProviderPushover is the builtin Pushover notification provider.
-	NotificationProviderPushover Provider = "pushover"
-
-	// NotificationProviderMatrix is the builtin Matrix webhook notification provider.
-	NotificationProviderMatrix Provider = "matrix"
-
-	// NotificationProviderGeneric is the builtin Generic webhook notification provider.
-	NotificationProviderGeneric Provider = "generic"
-)
-
 type Update struct {
 	// Provider is the notification provider type.
 	//

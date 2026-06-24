@@ -17,8 +17,8 @@ import (
 
 var jsonOutput bool
 
-// SystemCmd is the parent command for system operations
-var SystemCmd = &cobra.Command{
+// Command is the parent command for system operations
+var Command = &cobra.Command{
 	Use:     "system",
 	Aliases: []string{"sys"},
 	Short:   "System operations",
@@ -350,14 +350,14 @@ var upgradeCheckCmd = &cobra.Command{
 }
 
 func init() {
-	SystemCmd.AddCommand(pruneCmd)
-	SystemCmd.AddCommand(dockerInfoCmd)
-	SystemCmd.AddCommand(containersStartAllCmd)
-	SystemCmd.AddCommand(containersStopAllCmd)
-	SystemCmd.AddCommand(startStoppedCmd)
-	SystemCmd.AddCommand(convertCmd)
-	SystemCmd.AddCommand(upgradeCmd)
-	SystemCmd.AddCommand(upgradeCheckCmd)
+	Command.AddCommand(pruneCmd)
+	Command.AddCommand(dockerInfoCmd)
+	Command.AddCommand(containersStartAllCmd)
+	Command.AddCommand(containersStopAllCmd)
+	Command.AddCommand(startStoppedCmd)
+	Command.AddCommand(convertCmd)
+	Command.AddCommand(upgradeCmd)
+	Command.AddCommand(upgradeCheckCmd)
 
 	pruneCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	dockerInfoCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

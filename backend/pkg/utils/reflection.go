@@ -27,7 +27,7 @@ func ParseMetaTag(tag string) map[string]string {
 // ParseKeywords parses a comma-separated keywords string into a slice
 // Returns an empty slice if the input is empty or contains only whitespace
 func ParseKeywords(keywordsStr string) []string {
-	keywords := []string{}
+	var keywords []string
 	if k := strings.TrimSpace(keywordsStr); k != "" {
 		for kk := range strings.SplitSeq(k, ",") {
 			if t := strings.TrimSpace(kk); t != "" {
@@ -40,7 +40,7 @@ func ParseKeywords(keywordsStr string) []string {
 
 // ExtractCategoryMetadata extracts category metadata from struct fields with catmeta tags
 // Returns a map of category ID to category metadata in field order
-func ExtractCategoryMetadata(model any, categoryIDsInOrder []string) map[string]map[string]string {
+func ExtractCategoryMetadata(model any) map[string]map[string]string {
 	result := make(map[string]map[string]string)
 	seenCategories := make(map[string]bool)
 

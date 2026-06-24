@@ -12,7 +12,7 @@ import (
 )
 
 func TestGetPWAIconReturnsPNGFromEmbeddedBackendAssets(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
@@ -29,7 +29,7 @@ func TestGetPWAIconReturnsPNGFromEmbeddedBackendAssets(t *testing.T) {
 
 	for _, filename := range filenames {
 		t.Run(filename, func(t *testing.T) {
-			resp, err := handler.GetPWAIcon(context.Background(), &GetPWAIconInput{
+			resp, err := handler.getPWAIconInternal(context.Background(), &getPWAIconInput{
 				Filename: filename,
 			})
 			require.NoError(t, err)
@@ -41,11 +41,11 @@ func TestGetPWAIconReturnsPNGFromEmbeddedBackendAssets(t *testing.T) {
 }
 
 func TestGetLogoRejectsXSSPayloadInColorParam(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
-	resp, err := handler.GetLogo(context.Background(), &GetLogoInput{
+	resp, err := handler.getLogoInternal(context.Background(), &getLogoInput{
 		Color: "red}</style><script>alert(1)</script><style>x{",
 	})
 	require.NoError(t, err)
@@ -59,11 +59,11 @@ func TestGetLogoRejectsXSSPayloadInColorParam(t *testing.T) {
 }
 
 func TestGetLogoAcceptsValidOklchOverride(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
-	resp, err := handler.GetLogo(context.Background(), &GetLogoInput{
+	resp, err := handler.getLogoInternal(context.Background(), &getLogoInput{
 		Color: "oklch(0.65 0.2 150)",
 	})
 	require.NoError(t, err)
@@ -71,11 +71,11 @@ func TestGetLogoAcceptsValidOklchOverride(t *testing.T) {
 }
 
 func TestGetLogoAcceptsValidHexOverride(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
-	resp, err := handler.GetLogo(context.Background(), &GetLogoInput{
+	resp, err := handler.getLogoInternal(context.Background(), &getLogoInput{
 		Color: "#abcdef",
 	})
 	require.NoError(t, err)
@@ -83,22 +83,22 @@ func TestGetLogoAcceptsValidHexOverride(t *testing.T) {
 }
 
 func TestGetLogoSetsNoSniffHeader(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
-	resp, err := handler.GetLogo(context.Background(), &GetLogoInput{})
+	resp, err := handler.getLogoInternal(context.Background(), &getLogoInput{})
 	require.NoError(t, err)
 	require.Equal(t, "nosniff", resp.XContentTypeOptions)
 	require.True(t, strings.HasPrefix(resp.ContentType, "image/svg"))
 }
 
 func TestGetPWAIconRejectsNonPWAAssets(t *testing.T) {
-	handler := &AppImagesHandler{
+	handler := &appImagesHandler{
 		appImagesService: services.NewApplicationImagesService(resources.FS, nil),
 	}
 
-	resp, err := handler.GetPWAIcon(context.Background(), &GetPWAIconInput{
+	resp, err := handler.getPWAIconInternal(context.Background(), &getPWAIconInput{
 		Filename: "logo.png",
 	})
 	require.Nil(t, resp)

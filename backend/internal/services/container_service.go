@@ -1560,7 +1560,7 @@ func (e *ExecSession) Stdin() io.WriteCloser { return e.hijackedResp.Conn }
 func (e *ExecSession) Stdout() io.Reader     { return e.hijackedResp.Reader }
 
 // Close terminates the exec session and kills the process if still running.
-func (e *ExecSession) Close(ctx context.Context) error {
+func (e *ExecSession) Close() error {
 	var closeErr error
 	e.closeOnce.Do(func() {
 		slog.Debug("Closing exec session", "execID", e.execID, "containerID", e.containerID)

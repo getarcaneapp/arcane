@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -58,7 +57,7 @@ func BuildGotifyURL(config models.GotifyConfig) (string, error) {
 }
 
 // SendGotify sends a message via Shoutrrr Gotify using proper service configuration
-func SendGotify(ctx context.Context, config models.GotifyConfig, message string) error {
+func SendGotify(config models.GotifyConfig, message string) error {
 	shoutrrrURL, err := BuildGotifyURL(config)
 	if err != nil {
 		return fmt.Errorf("failed to build shoutrrr Gotify URL: %w", err)

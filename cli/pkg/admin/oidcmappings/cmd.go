@@ -31,8 +31,8 @@ var (
 	updateEnvironment string
 )
 
-// OidcMappingsCmd is the parent command for OIDC role mapping operations.
-var OidcMappingsCmd = &cobra.Command{
+// Command is the parent command for OIDC role mapping operations.
+var Command = &cobra.Command{
 	Use:     "oidc-mappings",
 	Aliases: []string{"oidc-mapping", "oidc"},
 	Short:   "Manage OIDC group → role mappings",
@@ -232,10 +232,10 @@ func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMap
 }
 
 func init() {
-	OidcMappingsCmd.AddCommand(listCmd)
-	OidcMappingsCmd.AddCommand(createCmd)
-	OidcMappingsCmd.AddCommand(updateCmd)
-	OidcMappingsCmd.AddCommand(deleteCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
 
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 

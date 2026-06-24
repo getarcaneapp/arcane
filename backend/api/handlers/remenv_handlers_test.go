@@ -37,7 +37,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 	require.NoError(t, db.AutoMigrate(&models.Environment{}))
 
 	now := time.Now()
-	env := &models.Environment{
+	remoteEnv := &models.Environment{
 		BaseModel: models.BaseModel{
 			ID:        "env-remote",
 			CreatedAt: now,
@@ -49,7 +49,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 		Enabled: true,
 		IsEdge:  false,
 	}
-	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
+	require.NoError(t, db.WithContext(context.Background()).Create(remoteEnv).Error)
 
 	return services.NewEnvironmentService(&database.DB{DB: db}, server.Client(), nil, nil, nil, nil)
 }
@@ -98,12 +98,12 @@ func TestJobSchedulesHandler_ListJobs_RemoteSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := &JobSchedulesHandler{
+	handler := &jobSchedulesHandler{
 		jobService:         &services.JobService{},
 		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
 	}
 
-	output, err := handler.ListJobs(context.Background(), &ListJobsInput{ID: "env-remote"})
+	output, err := handler.listJobsInternal(context.Background(), &listJobsInput{ID: "env-remote"})
 	require.NoError(t, err)
 	require.Len(t, output.Body.Jobs, 1)
 	require.Equal(t, "job-1", output.Body.Jobs[0].ID)
@@ -117,12 +117,12 @@ func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := &SettingsHandler{
+	handler := &settingsHandler{
 		settingsService:    &services.SettingsService{},
 		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
 	}
 
-	output, err := handler.GetPublicSettings(context.Background(), &GetPublicSettingsInput{EnvironmentID: "env-remote"})
+	output, err := handler.getPublicSettingsInternal(context.Background(), &getPublicSettingsInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, expected, output.Body)
 }
@@ -138,12 +138,12 @@ func TestTemplateHandler_GetGlobalVariables_RemoteSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := &TemplateHandler{
+	handler := &templateHandler{
 		templateService:    &services.TemplateService{},
 		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
 	}
 
-	output, err := handler.GetGlobalVariables(adminTestContextInternal(), &GetGlobalVariablesInput{EnvironmentID: "env-remote"})
+	output, err := handler.getGlobalVariablesInternal(adminTestContextInternal(), &getGlobalVariablesInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, expected, output.Body)
 }

@@ -458,10 +458,9 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 
 func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-environment")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-123", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-123")
 	require.NoError(t, err)
 	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
@@ -500,10 +499,9 @@ func TestValidateAPIKeyRejectsShortPrefixedInput(t *testing.T) {
 
 func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-expired")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-expired", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-expired")
 	require.NoError(t, err)
 
 	expiredAt := time.Now().Add(-time.Minute)
@@ -531,7 +529,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 	grantGlobalAdmin(t, roleSvc, admin.ID)
 
 	envID := "env-bootstrap-test"
-	created, err := service.CreateEnvironmentApiKey(ctx, envID, admin.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, envID)
 	require.NoError(t, err)
 
 	// Resolve the per-key permission set and confirm every permission is
@@ -580,10 +578,9 @@ func TestBackfillApiKeyPermissionsRepairsExistingBootstrapKey(t *testing.T) {
 
 func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *testing.T) {
 	ctx := context.Background()
-	service, db, userService := setupAPIKeyService(t)
-	user := createTestAPIKeyUser(t, ctx, userService, "user-environment-recent")
+	service, db, _ := setupAPIKeyService(t)
 
-	created, err := service.CreateEnvironmentApiKey(ctx, "env-456", user.ID)
+	created, err := service.CreateEnvironmentApiKey(ctx, "env-456")
 	require.NoError(t, err)
 
 	recent := time.Now().Add(-time.Minute)

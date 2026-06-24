@@ -626,15 +626,6 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-// DecodeResponse decodes an API response into the given type.
-// It reads the response body, unmarshals it as JSON, and returns the typed
-// result. If the response indicates failure (Success=false) with a 4xx/5xx
-// status code, an error is returned with the error message from the API.
-// Note: This function closes the response body.
-func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
-	return DecodeResponseStrict[T](resp)
-}
-
 // DecodeResponseStrict decodes a response envelope and enforces HTTP and API success.
 func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 	defer func() { _ = resp.Body.Close() }()
@@ -659,36 +650,6 @@ func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 			return &result, fmt.Errorf("API error: %s", result.Error)
 		}
 		return &result, errors.New("API error: request was not successful")
-	}
-
-	return &result, nil
-}
-
-// DecodePaginatedResponse decodes a paginated API response.
-// It reads the response body and unmarshals it into a PaginatedResponse
-// containing the items array and pagination metadata.
-// Note: This function closes the response body.
-func DecodePaginatedResponse[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	return DecodePaginatedResponseStrict[T](resp)
-}
-
-// DecodePaginatedResponseStrict decodes a paginated envelope and enforces HTTP and API success.
-func DecodePaginatedResponseStrict[T any](resp *http.Response) (*PaginatedResponse[T], error) {
-	defer func() { _ = resp.Body.Close() }()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrorBody))
-		return nil, fmt.Errorf("request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	var result PaginatedResponse[T]
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response: %w (body: %s)", err, string(body))
 	}
 
 	return &result, nil

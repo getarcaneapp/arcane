@@ -178,7 +178,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			Description:     normalized.Description,
 			Enabled:         normalized.Enabled,
 			IssuerURL:       normalized.IssuerURL,
-			Audiences:       models.StringSlice(normalized.Audiences),
+			Audiences:       normalized.Audiences,
 			SubjectClaim:    normalized.SubjectClaim,
 			SubjectMatch:    normalized.SubjectMatch,
 			MatchType:       normalized.MatchType,
@@ -481,7 +481,7 @@ func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Conte
 func selectMatchingCredentialInternal(credentials []models.FederatedCredential, tokenAudiences []string, claims map[string]any) *models.FederatedCredential {
 	for i := range credentials {
 		credential := &credentials[i]
-		if !audienceMatchesInternal(tokenAudiences, []string(credential.Audiences)) {
+		if !audienceMatchesInternal(tokenAudiences, credential.Audiences) {
 			continue
 		}
 		subjectClaim := strings.TrimSpace(credential.SubjectClaim)
@@ -636,7 +636,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 		if len(audiences) == 0 {
 			return existing, false, &common.FederatedCredentialInvalidError{}
 		}
-		existing.Audiences = models.StringSlice(audiences)
+		existing.Audiences = audiences
 	}
 	if req.SubjectClaim != nil {
 		subjectClaim := strings.TrimSpace(*req.SubjectClaim)
@@ -682,7 +682,7 @@ func applyFederatedRoleScopeUpdateInternal(existing *models.FederatedCredential,
 		if normalizedRoleID == "" {
 			return false, &common.FederatedCredentialInvalidError{}
 		}
-		roleChanged = roleChanged || normalizedRoleID != existing.RoleID
+		roleChanged = normalizedRoleID != existing.RoleID
 		existing.RoleID = normalizedRoleID
 	}
 	if environmentID != nil {

@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -86,7 +85,7 @@ func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 }
 
 // SendNtfy sends a message via Shoutrrr Ntfy using proper service configuration
-func SendNtfy(ctx context.Context, config models.NtfyConfig, message string) error {
+func SendNtfy(config models.NtfyConfig, message string) error {
 	if config.Topic == "" {
 		return errors.New("ntfy topic is required")
 	}

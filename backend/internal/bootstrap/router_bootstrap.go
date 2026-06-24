@@ -209,7 +209,7 @@ func setupRouter(ctx context.Context, cfg *config.Config, appServices *di.Servic
 
 	//nolint:contextcheck // Echo middleware reads context from echo.Context.Request().Context(), not a parameter.
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
-		types.LOCAL_DOCKER_ENVIRONMENT_ID,
+		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(appServices),

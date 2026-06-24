@@ -42,8 +42,8 @@ var (
 
 const maxPromptOptions = 20
 
-// ProjectsCmd is the parent command for project operations
-var ProjectsCmd = &cobra.Command{
+// Command is the parent command for project operations
+var Command = &cobra.Command{
 	Use:     "projects",
 	Aliases: []string{"project", "proj", "p"},
 	Short:   "Manage projects",
@@ -602,19 +602,19 @@ var countsCmd = &cobra.Command{
 }
 
 func init() {
-	ProjectsCmd.AddCommand(listCmd)
-	ProjectsCmd.AddCommand(updatesCmd)
-	ProjectsCmd.AddCommand(getCmd)
-	ProjectsCmd.AddCommand(upCmd)
-	ProjectsCmd.AddCommand(downCmd)
-	ProjectsCmd.AddCommand(restartCmd)
-	ProjectsCmd.AddCommand(redeployCmd)
-	ProjectsCmd.AddCommand(pullCmd)
-	ProjectsCmd.AddCommand(countsCmd)
-	ProjectsCmd.AddCommand(destroyCmd)
-	ProjectsCmd.AddCommand(createCmd)
-	ProjectsCmd.AddCommand(updateCmd)
-	ProjectsCmd.AddCommand(updateIncludesCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(updatesCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(upCmd)
+	Command.AddCommand(downCmd)
+	Command.AddCommand(restartCmd)
+	Command.AddCommand(redeployCmd)
+	Command.AddCommand(pullCmd)
+	Command.AddCommand(countsCmd)
+	Command.AddCommand(destroyCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(updateIncludesCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")

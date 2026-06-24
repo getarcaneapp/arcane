@@ -16,68 +16,68 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 )
 
-type ImageUpdateHandler struct {
+type imageUpdateHandler struct {
 	imageUpdateService *services.ImageUpdateService
 	imageService       *services.ImageService
 	appCtx             context.Context
 }
 
-type CheckImageUpdateInput struct {
+type checkImageUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageRef      string `query:"imageRef" doc:"Image reference"`
 }
 
-type CheckImageUpdateOutput struct {
+type checkImageUpdateOutput struct {
 	Body base.ApiResponse[imageupdate.Response]
 }
 
-type CheckImageUpdateByIDInput struct {
+type checkImageUpdateByIDInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 }
 
-type CheckImageUpdateByIDOutput struct {
+type checkImageUpdateByIDOutput struct {
 	Body base.ApiResponse[imageupdate.Response]
 }
 
-type CheckMultipleImagesInput struct {
+type checkMultipleImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          imageupdate.BatchImageUpdateRequest
 }
 
-type CheckMultipleImagesOutput struct {
+type checkMultipleImagesOutput struct {
 	Body base.ApiResponse[imageupdate.BatchResponse]
 }
 
-type CheckAllImagesInput struct {
+type checkAllImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          imageupdate.CheckAllImagesRequest
 }
 
-type CheckAllImagesOutput struct {
+type checkAllImagesOutput struct {
 	Body base.ApiResponse[imageupdate.BatchResponse]
 }
 
-type GetUpdateInfoByRefsInput struct {
+type getUpdateInfoByRefsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageRefs     string `query:"imageRefs" doc:"Comma-separated image references"`
 }
 
-type GetUpdateInfoByRefsOutput struct {
+type getUpdateInfoByRefsOutput struct {
 	Body base.ApiResponse[map[string]*imagetypes.UpdateInfo]
 }
 
-type GetUpdateSummaryInput struct {
+type getUpdateSummaryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetUpdateSummaryOutput struct {
+type getUpdateSummaryOutput struct {
 	Body base.ApiResponse[imageupdate.Summary]
 }
 
 // RegisterImageUpdates registers image update endpoints.
 func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateService, imageSvc *services.ImageService, appCtx ActivityAppContext) {
-	h := &ImageUpdateHandler{
+	h := &imageUpdateHandler{
 		imageUpdateService: imageUpdateSvc,
 		imageService:       imageSvc,
 		appCtx:             appCtx.contextInternal(),
@@ -90,7 +90,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesCheck, h.CheckImageUpdate)
+	}, authz.PermImageUpdatesCheck, h.checkImageUpdateInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id",
@@ -99,7 +99,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
+	}, authz.PermImageUpdatesCheck, h.checkImageUpdateByIDInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-image-update-by-id-post",
@@ -108,7 +108,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
+	}, authz.PermImageUpdatesCheck, h.checkImageUpdateByIDInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-multiple-images",
@@ -117,7 +117,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesCheck, h.CheckMultipleImages)
+	}, authz.PermImageUpdatesCheck, h.checkMultipleImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-all-images",
@@ -126,7 +126,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesCheck, h.CheckAllImages)
+	}, authz.PermImageUpdatesCheck, h.checkAllImagesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-info-by-refs",
@@ -135,7 +135,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesRead, h.GetUpdateInfoByRefs)
+	}, authz.PermImageUpdatesRead, h.getUpdateInfoByRefsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-update-summary",
@@ -144,10 +144,10 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImageUpdatesRead, h.GetUpdateSummary)
+	}, authz.PermImageUpdatesRead, h.getUpdateSummaryInternal)
 }
 
-func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckImageUpdateInput) (*CheckImageUpdateOutput, error) {
+func (h *imageUpdateHandler) checkImageUpdateInternal(ctx context.Context, input *checkImageUpdateInput) (*checkImageUpdateOutput, error) {
 	if input.ImageRef == "" {
 		return nil, huma.Error400BadRequest((&common.ImageRefRequiredError{}).Error())
 	}
@@ -158,7 +158,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
 
-	return &CheckImageUpdateOutput{
+	return &checkImageUpdateOutput{
 		Body: base.ApiResponse[imageupdate.Response]{
 			Success: true,
 			Data:    *result,
@@ -166,7 +166,7 @@ func (h *ImageUpdateHandler) CheckImageUpdate(ctx context.Context, input *CheckI
 	}, nil
 }
 
-func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *CheckImageUpdateByIDInput) (*CheckImageUpdateByIDOutput, error) {
+func (h *imageUpdateHandler) checkImageUpdateByIDInternal(ctx context.Context, input *checkImageUpdateByIDInput) (*checkImageUpdateByIDOutput, error) {
 	if input.ImageID == "" {
 		return nil, huma.Error400BadRequest((&common.ImageIDRequiredError{}).Error())
 	}
@@ -177,7 +177,7 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 		return nil, huma.Error500InternalServerError((&common.ImageUpdateCheckError{Err: err}).Error())
 	}
 
-	return &CheckImageUpdateByIDOutput{
+	return &checkImageUpdateByIDOutput{
 		Body: base.ApiResponse[imageupdate.Response]{
 			Success: true,
 			Data:    *result,
@@ -185,10 +185,10 @@ func (h *ImageUpdateHandler) CheckImageUpdateByID(ctx context.Context, input *Ch
 	}, nil
 }
 
-func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *CheckMultipleImagesInput) (*CheckMultipleImagesOutput, error) {
+func (h *imageUpdateHandler) checkMultipleImagesInternal(ctx context.Context, input *checkMultipleImagesInput) (*checkMultipleImagesOutput, error) {
 	// Empty batch is valid - return empty results
 	if len(input.Body.ImageRefs) == 0 {
-		return &CheckMultipleImagesOutput{
+		return &checkMultipleImagesOutput{
 			Body: base.ApiResponse[imageupdate.BatchResponse]{
 				Success: true,
 				Data:    imageupdate.BatchResponse{},
@@ -202,33 +202,33 @@ func (h *ImageUpdateHandler) CheckMultipleImages(ctx context.Context, input *Che
 		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
 	}
 
-	return &CheckMultipleImagesOutput{
+	return &checkMultipleImagesOutput{
 		Body: base.ApiResponse[imageupdate.BatchResponse]{
 			Success: true,
-			Data:    imageupdate.BatchResponse(results),
+			Data:    results,
 		},
 	}, nil
 }
 
-func (h *ImageUpdateHandler) CheckAllImages(ctx context.Context, input *CheckAllImagesInput) (*CheckAllImagesOutput, error) {
+func (h *imageUpdateHandler) checkAllImagesInternal(ctx context.Context, input *checkAllImagesInput) (*checkAllImagesOutput, error) {
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	results, err := h.imageUpdateService.CheckAllImages(runtimeCtx, 0, input.Body.Credentials)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AllImageUpdateCheckError{Err: err}).Error())
 	}
 
-	return &CheckAllImagesOutput{
+	return &checkAllImagesOutput{
 		Body: base.ApiResponse[imageupdate.BatchResponse]{
 			Success: true,
-			Data:    imageupdate.BatchResponse(results),
+			Data:    results,
 		},
 	}, nil
 }
 
-func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *GetUpdateInfoByRefsInput) (*GetUpdateInfoByRefsOutput, error) {
+func (h *imageUpdateHandler) getUpdateInfoByRefsInternal(ctx context.Context, input *getUpdateInfoByRefsInput) (*getUpdateInfoByRefsOutput, error) {
 	imageRefs := parseImageRefsQueryInternal(input.ImageRefs)
 	if len(imageRefs) == 0 {
-		return &GetUpdateInfoByRefsOutput{
+		return &getUpdateInfoByRefsOutput{
 			Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{
 				Success: true,
 				Data:    map[string]*imagetypes.UpdateInfo{},
@@ -241,7 +241,7 @@ func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *Get
 		return nil, huma.Error500InternalServerError((&common.BatchImageUpdateCheckError{Err: err}).Error())
 	}
 
-	return &GetUpdateInfoByRefsOutput{
+	return &getUpdateInfoByRefsOutput{
 		Body: base.ApiResponse[map[string]*imagetypes.UpdateInfo]{
 			Success: true,
 			Data:    result,
@@ -249,13 +249,13 @@ func (h *ImageUpdateHandler) GetUpdateInfoByRefs(ctx context.Context, input *Get
 	}, nil
 }
 
-func (h *ImageUpdateHandler) GetUpdateSummary(ctx context.Context, input *GetUpdateSummaryInput) (*GetUpdateSummaryOutput, error) {
+func (h *imageUpdateHandler) getUpdateSummaryInternal(ctx context.Context, _ *getUpdateSummaryInput) (*getUpdateSummaryOutput, error) {
 	summary, err := h.imageUpdateService.GetUpdateSummary(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.UpdateSummaryError{Err: err}).Error())
 	}
 
-	return &GetUpdateSummaryOutput{
+	return &getUpdateSummaryOutput{
 		Body: base.ApiResponse[imageupdate.Summary]{
 			Success: true,
 			Data:    *summary,

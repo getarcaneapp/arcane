@@ -65,7 +65,7 @@ func TestNotificationHandlerGetAllNotificationSettingsRedactsCredentialsInternal
 	})
 
 	db, svc := setupNotificationHandlerTestService(t)
-	h := &NotificationHandler{
+	h := &notificationHandler{
 		notificationService: svc,
 		config:              &config.Config{},
 	}
@@ -77,7 +77,7 @@ func TestNotificationHandlerGetAllNotificationSettingsRedactsCredentialsInternal
 	})
 	require.NoError(t, err)
 
-	output, err := h.GetAllNotificationSettings(ctx, &GetAllNotificationSettingsInput{EnvironmentID: "0"})
+	output, err := h.getAllNotificationSettingsInternal(ctx, &getAllNotificationSettingsInput{EnvironmentID: "0"})
 	require.NoError(t, err)
 	require.Len(t, output.Body, 1)
 	require.Equal(t, "123456789", output.Body[0].Config["webhookId"])
@@ -93,9 +93,9 @@ func TestNotificationHandlerGetAllNotificationSettingsRedactsCredentialsInternal
 }
 
 func TestDispatchNotification_RejectsAgentModeInternal(t *testing.T) {
-	h := &NotificationHandler{config: &config.Config{AgentMode: true}}
+	h := &notificationHandler{config: &config.Config{AgentMode: true}}
 
-	resp, err := h.DispatchNotification(context.Background(), &DispatchNotificationInput{})
+	resp, err := h.dispatchNotificationInternal(context.Background(), &dispatchNotificationInput{})
 	require.Nil(t, resp)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "notifications are managed on the Arcane manager")
@@ -104,7 +104,7 @@ func TestDispatchNotification_RejectsAgentModeInternal(t *testing.T) {
 func TestDispatchNotification_ReturnsBadRequestForUnsupportedDispatchKind(t *testing.T) {
 	ctx := context.Background()
 	db, svc := setupNotificationHandlerTestService(t)
-	h := &NotificationHandler{
+	h := &notificationHandler{
 		notificationService: svc,
 		config:              &config.Config{},
 	}
@@ -120,10 +120,10 @@ func TestDispatchNotification_ReturnsBadRequestForUnsupportedDispatchKind(t *tes
 		AccessToken: &token,
 	}).Error)
 
-	resp, err := h.DispatchNotification(ctx, &DispatchNotificationInput{
+	resp, err := h.dispatchNotificationInternal(ctx, &dispatchNotificationInput{
 		APIKey: token,
 		Body: notificationdto.DispatchRequest{
-			Kind: notificationdto.DispatchKind("bogus_kind"),
+			Kind: "bogus_kind",
 		},
 	})
 	require.Nil(t, resp)

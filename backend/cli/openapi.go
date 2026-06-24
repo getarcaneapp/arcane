@@ -35,17 +35,17 @@ var openapiCmd = &cobra.Command{
 		}
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating OpenAPI spec: %v\n", err)
+			_, _ = fmt.Fprintf(os.Stderr, "Error generating OpenAPI spec: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Write to file or stdout
 		if outputFile != "" {
 			if err := os.WriteFile(outputFile, output, 0o600); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+				_, _ = fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Fprintf(os.Stderr, "OpenAPI spec written to %s\n", outputFile)
+			_, _ = fmt.Fprintf(os.Stderr, "OpenAPI spec written to %s\n", outputFile)
 		} else {
 			fmt.Println(string(output))
 		}

@@ -12,7 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
+	stdsync "sync"
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
@@ -56,7 +56,7 @@ type ProjectService struct {
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
 
-	composeNameCacheMu  sync.RWMutex
+	composeNameCacheMu  stdsync.RWMutex
 	composeNameToProjID map[string]string
 	composeCache        *cache.KeyedCache[string, composeCacheEntry]
 }
@@ -376,8 +376,8 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 		return nil, false, nil
 	}
 
-	var project models.Project
-	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+	var projectModel models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&projectModel).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			s.invalidateCachedComposeProjectIDInternal(normalizedName)
 			return nil, false, nil
@@ -387,41 +387,41 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 		}
 		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
 	}
-	if normalizeComposeProjectName(project.Name) != normalizedName {
+	if normalizeComposeProjectName(projectModel.Name) != normalizedName {
 		s.invalidateCachedComposeProjectIDInternal(normalizedName)
 		return nil, false, nil
 	}
 
-	return &project, true, nil
+	return &projectModel, true, nil
 }
 
 func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
-	var projects []models.Project
-	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+	var projectModels []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projectModels).Error; err != nil {
 		return err
 	}
 
-	cache := make(map[string]string, len(projects))
-	for i := range projects {
-		normalizedName := normalizeComposeProjectName(projects[i].Name)
+	nameCache := make(map[string]string, len(projectModels))
+	for i := range projectModels {
+		normalizedName := normalizeComposeProjectName(projectModels[i].Name)
 		if normalizedName == "" {
 			continue
 		}
-		if _, exists := cache[normalizedName]; !exists {
-			cache[normalizedName] = projects[i].ID
+		if _, exists := nameCache[normalizedName]; !exists {
+			nameCache[normalizedName] = projectModels[i].ID
 		}
 	}
 
 	s.composeNameCacheMu.Lock()
-	s.composeNameToProjID = cache
+	s.composeNameToProjID = nameCache
 	s.composeNameCacheMu.Unlock()
 
 	return nil
 }
 
 func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
-	var project models.Project
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&project).Error; err != nil {
+	var projectModel models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&projectModel).Error; err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errors.New("request canceled or timed out")
 		}
@@ -430,7 +430,7 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		}
 		return nil, fmt.Errorf("failed to get project: %w", err)
 	}
-	return &project, nil
+	return &projectModel, nil
 }
 
 func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
@@ -1351,7 +1351,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	sem := make(chan struct{}, maxConcurrentComposeReads)
 	resultsCh := make(chan imageRefsResult, len(projectsList))
 
-	var wg sync.WaitGroup
+	var wg stdsync.WaitGroup
 	for _, proj := range projectsList {
 		if refs := parseProjectImageRefsJSONInternal(proj.ImageRefsJSON); len(refs) > 0 {
 			imageRefsByProjectID[proj.ID] = refs
@@ -2401,8 +2401,8 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 	}
 
 	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
-	for _, container := range lookupProjectContainers(proj, containersByProject) {
-		if libupdater.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
+	for _, projectContainer := range lookupProjectContainers(proj, containersByProject) {
+		if libupdater.ShouldDisableArcaneServerRedeploy(projectContainer.Labels, projectContainer.ID, currentContainerID, currentContainerErr) {
 			return true
 		}
 	}
@@ -2453,12 +2453,12 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return err
 	}
 
-	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
+	composeProject, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if derr != nil {
 		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
-	return s.buildProjectServicesInternal(ctx, projectID, project, options, progressWriter, user)
+	return s.buildProjectServicesInternal(ctx, projectID, composeProject, options, progressWriter, user)
 }
 
 // EnsureProjectImagesPresent checks all compose service images for the project and
@@ -2629,7 +2629,7 @@ func (s *ProjectService) buildServiceImageForDeploy(
 		project.Services[serviceName] = updatedSvc
 	}
 
-	if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, serviceName, user); err != nil {
+	if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentID, buildReq, progressWriter, serviceName, user); err != nil {
 		return err
 	}
 
@@ -2899,7 +2899,7 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 		}
 
 		buildCount++
-		if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, name, user); err != nil {
+		if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentID, buildReq, progressWriter, name, user); err != nil {
 			return err
 		}
 	}
@@ -4168,7 +4168,7 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 	return nil
 }
 
-func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
+func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail string) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err

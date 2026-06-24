@@ -59,7 +59,7 @@ func newTestAuthService(secret string) *AuthService {
 	}
 }
 
-func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, _ []string, email, displayName string, exp time.Time, sessionIDs ...string) string {
+func makeAccessToken(t *testing.T, secret []byte, subject string, id string, username string, email, displayName string, exp time.Time, sessionIDs ...string) string {
 	t.Helper()
 	sessionID := ""
 	if len(sessionIDs) > 0 {
@@ -156,7 +156,7 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	session, _ := createTestSession(t, db, "u123", exp)
-	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", []string{"user", "admin"}, "a@example.com", "Alice", exp, session.ID)
+	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", "a@example.com", "Alice", exp, session.ID)
 
 	verifiedUser, _, err := s.VerifyToken(context.Background(), token)
 	if err != nil {
@@ -213,7 +213,7 @@ func TestVerifyToken_Expired(t *testing.T) {
 	require.NoError(t, err)
 
 	exp := time.Now().Add(-1 * time.Minute)
-	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", "", "", exp)
 
 	_, _, err = s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrExpiredToken) {
@@ -224,7 +224,7 @@ func TestVerifyToken_Expired(t *testing.T) {
 func TestVerifyToken_InvalidSubject(t *testing.T) {
 	s := newTestAuthService("")
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeAccessToken(t, s.jwtSecret, "refresh", "u1", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, s.jwtSecret, "refresh", "u1", "bob", "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
 	require.ErrorAs(t, err, new(*common.AccessTokenSubjectError))
@@ -237,7 +237,7 @@ func TestVerifyToken_InvalidSignature(t *testing.T) {
 	if _, err := rand.Read(otherSecret); err != nil {
 		t.Fatalf("rand.Read: %v", err)
 	}
-	token := makeAccessToken(t, otherSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, otherSecret, "access", "u1", "bob", "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
 	if !errors.Is(err, ErrInvalidToken) {
@@ -248,7 +248,7 @@ func TestVerifyToken_InvalidSignature(t *testing.T) {
 func TestVerifyToken_MissingUserID(t *testing.T) {
 	s := newTestAuthService("")
 	exp := time.Now().Add(5 * time.Minute)
-	token := makeAccessToken(t, s.jwtSecret, "access", "", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", "", "bob", "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
 	require.ErrorAs(t, err, new(*common.MissingTokenUserIDError))
@@ -291,10 +291,10 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 		t.Errorf("expiresAt nil")
 	}
 	// Check approx expiry within [start+7s, start+12s] to allow CI slop
-	min := start.Add(7 * time.Second)
-	max := start.Add(12 * time.Second)
-	if user.OidcAccessTokenExpiresAt.Before(min) || user.OidcAccessTokenExpiresAt.After(max) {
-		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, min, max)
+	minExpiry := start.Add(7 * time.Second)
+	maxExpiry := start.Add(12 * time.Second)
+	if user.OidcAccessTokenExpiresAt.Before(minExpiry) || user.OidcAccessTokenExpiresAt.After(maxExpiry) {
+		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, minExpiry, maxExpiry)
 	}
 }
 
@@ -304,7 +304,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 
 	oldVersion := config.Version
 	config.Version = "1.0.0"
-	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", "", "", exp)
 	config.Version = "2.0.0"
 
 	_, _, err := s.VerifyToken(context.Background(), token)
@@ -412,7 +412,7 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	exp := time.Now().Add(5 * time.Minute)
 	session, _ := createTestSession(t, db, user.ID, exp)
 	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
-	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, "", "", exp, session.ID)
 
 	_, _, err = s.VerifyToken(context.Background(), token)
 	require.True(t, common.IsSessionRevokedError(err))
@@ -432,7 +432,7 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	_, err := userSvc.CreateUser(context.Background(), user)
 	require.NoError(t, err)
 
-	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", time.Now().Add(5*time.Minute))
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, "", "", time.Now().Add(5*time.Minute))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
 	require.ErrorAs(t, err, new(*common.MissingTokenSessionIDError))
@@ -454,7 +454,7 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 
 	exp := time.Now().Add(5 * time.Minute)
 	session, _ := createTestSession(t, db, user.ID, exp)
-	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, "", "", exp, session.ID)
 	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
 
 	_, _, err = s.VerifyToken(context.Background(), token)

@@ -97,7 +97,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		"manager_addr", c.managerGRPCAddr,
 		"environment_id", registerMsg.EnvironmentID,
 	)
-	c.markTransportConnectedInternal(EdgeTransportGRPC)
+	c.markTransportConnectedInternal(TransportGRPC)
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()

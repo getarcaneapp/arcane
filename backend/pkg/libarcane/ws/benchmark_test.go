@@ -35,7 +35,7 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 			}
 		}()
 		<-ctx.Done()
-		conn.Close()
+		_ = conn.Close()
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -63,7 +63,7 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 		conns = append(conns, conn)
 
@@ -85,7 +85,7 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 	return h, cancel, func() {
 		cancel()
 		for _, c := range conns {
-			c.Close()
+			_ = c.Close()
 		}
 		serverCleanup()
 	}
@@ -308,7 +308,7 @@ func BenchmarkHub_MemoryPerClient(b *testing.B) {
 					b.Fatal(err)
 				}
 				if resp != nil {
-					resp.Body.Close()
+					_ = resp.Body.Close()
 				}
 				c := NewClient(conn, sendBuf)
 				h.register <- c

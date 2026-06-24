@@ -92,10 +92,6 @@ func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *dat
 	return NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, config.Load()), db, projectsDir
 }
 
-func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse) *httptest.Server {
-	return newProjectImagePullServerWithObserverInternal(t, inspectByRef, nil)
-}
-
 func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	ctx := context.Background()
 	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
@@ -104,11 +100,10 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project-data.txt"), []byte("keep until destroy\n"), 0o644))
 
-	dirName := "demo-remove"
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-destroy-remove-files"},
 		Name:      "demo-remove",
-		DirName:   &dirName,
+		DirName:   new("demo-remove"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -129,11 +124,10 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	projectDataPath := filepath.Join(projectPath, "project-data.txt")
 	require.NoError(t, os.WriteFile(projectDataPath, []byte("preserve on destroy\n"), 0o644))
 
-	dirName := "demo-preserve"
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-destroy-preserve-files"},
 		Name:      "demo-preserve",
-		DirName:   &dirName,
+		DirName:   new("demo-preserve"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -643,13 +637,13 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	imageDigest := digest.FromString("team-app-digest").String()
 	buildRepository := "arcane.local/demo-builder/service"
 
-	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+	server := newProjectImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	})
+	}, nil)
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
@@ -661,11 +655,10 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	composeContent := fmt.Sprintf("services:\n  app:\n    image: %s\n  builder:\n    build: .\n", imageRef)
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), 0o644))
 
-	dirName := "compose-pull"
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-pull"},
 		Name:      "compose-pull",
-		DirName:   &dirName,
+		DirName:   new("compose-pull"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -739,13 +732,13 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	imageID := "sha256:team-api"
 	imageDigest := digest.FromString("team-api-digest").String()
 
-	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+	server := newProjectImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	})
+	}, nil)
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
@@ -791,13 +784,13 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	imageID := "sha256:team-worker"
 	imageDigest := digest.FromString("team-worker-digest").String()
 
-	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+	server := newProjectImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	})
+	}, nil)
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	eventService := NewEventService(db, nil, nil)
@@ -1035,7 +1028,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-update-pull-fail"},
 		Name:      "compose-update-pull-fail",
-		DirName:   ptr("compose-update-pull-fail"),
+		DirName:   new("compose-update-pull-fail"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusRunning,
 	}
@@ -1090,13 +1083,13 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	imageID := "sha256:project-update-force"
 	imageDigest := digest.FromString("project-update-force-digest").String()
 
-	server := newProjectImagePullServer(t, map[string]dockertypesimage.InspectResponse{
+	server := newProjectImagePullServerWithObserverInternal(t, map[string]dockertypesimage.InspectResponse{
 		imageRef: {
 			ID:          imageID,
 			RepoTags:    []string{imageRef},
 			RepoDigests: []string{repository + "@" + imageDigest},
 		},
-	})
+	}, nil)
 
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
 	imageUpdateService := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
@@ -1108,7 +1101,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-update-force"},
 		Name:      "compose-update-force",
-		DirName:   ptr("compose-update-force"),
+		DirName:   new("compose-update-force"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusRunning,
 	}
@@ -1325,7 +1318,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-preview-volume-rename"},
 		Name:      "nginx",
-		DirName:   ptr("nginx"),
+		DirName:   new("nginx"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -1606,7 +1599,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
-	updated, err := svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("web"), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -2054,7 +2047,7 @@ services:
     image: nginx:alpine
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -2118,7 +2111,7 @@ services:
     image: nginx:alpine
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -2336,9 +2329,9 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	})
 	require.NoError(t, err)
 
-	bytes, err := os.ReadFile(filepath.Join(project.Path, "archive", "renamed.yaml"))
+	fileBytes, err := os.ReadFile(filepath.Join(project.Path, "archive", "renamed.yaml"))
 	require.NoError(t, err)
-	assert.Equal(t, updated, string(bytes))
+	assert.Equal(t, updated, string(fileBytes))
 	assert.NoFileExists(t, filepath.Join(project.Path, "config", "renamed.yaml"))
 }
 
@@ -3339,7 +3332,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-update-info"},
 		Name:      "updates-demo",
-		DirName:   ptr("updates-demo"),
+		DirName:   new("updates-demo"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -3422,7 +3415,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	projectRecord := &models.Project{
 		BaseModel:    models.BaseModel{ID: "proj-runtime-refresh"},
 		Name:         "projectA",
-		DirName:      ptr("projectA"),
+		DirName:      new("projectA"),
 		Path:         projectPath,
 		Status:       models.ProjectStatusStopped,
 		ServiceCount: 2,
@@ -3474,7 +3467,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	projectRecord := &models.Project{
 		BaseModel:    models.BaseModel{ID: "proj-runtime-services"},
 		Name:         "projectA",
-		DirName:      ptr("projectA"),
+		DirName:      new("projectA"),
 		Path:         projectPath,
 		Status:       models.ProjectStatusStopped,
 		ServiceCount: 1,
@@ -3520,28 +3513,28 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-updated"},
 		Name:      "updated-demo",
-		DirName:   ptr("updated-demo"),
+		DirName:   new("updated-demo"),
 		Path:      updatedPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-current"},
 		Name:      "current-demo",
-		DirName:   ptr("current-demo"),
+		DirName:   new("current-demo"),
 		Path:      upToDatePath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-error"},
 		Name:      "error-demo",
-		DirName:   ptr("error-demo"),
+		DirName:   new("error-demo"),
 		Path:      errorPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-unknown"},
 		Name:      "unknown-demo",
-		DirName:   ptr("unknown-demo"),
+		DirName:   new("unknown-demo"),
 		Path:      unknownPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
@@ -3573,7 +3566,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 		UpdateType:     "error",
 		CurrentVersion: "latest",
 		CheckTime:      now.Add(-2 * time.Minute),
-		LastError:      ptr("registry timeout"),
+		LastError:      new("registry timeout"),
 	}).Error)
 
 	tests := []struct {
@@ -3723,14 +3716,14 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-active"},
 		Name:      "active-demo",
-		DirName:   ptr("active-demo"),
+		DirName:   new("active-demo"),
 		Path:      activePath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel:  models.BaseModel{ID: "project-archived"},
 		Name:       "archived-demo",
-		DirName:    ptr("archived-demo"),
+		DirName:    new("archived-demo"),
 		Path:       archivedPath,
 		Status:     models.ProjectStatusStopped,
 		IsArchived: true,
@@ -3783,7 +3776,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel:    models.BaseModel{ID: "project-running"},
 		Name:         "running-demo",
-		DirName:      ptr("running-demo"),
+		DirName:      new("running-demo"),
 		Path:         projectPath,
 		Status:       models.ProjectStatusRunning,
 		RunningCount: 1,
@@ -3814,7 +3807,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-stopped"},
 		Name:      "stopped-demo",
-		DirName:   ptr("stopped-demo"),
+		DirName:   new("stopped-demo"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
@@ -3954,7 +3947,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 		require.NoError(t, db.Create(&models.Project{
 			BaseModel: models.BaseModel{ID: fmt.Sprintf("project-%02d", i)},
 			Name:      fmt.Sprintf("stopped-%02d", i),
-			DirName:   ptr(fmt.Sprintf("stopped-%02d", i)),
+			DirName:   new(fmt.Sprintf("stopped-%02d", i)),
 			Path:      projectPath,
 			Status:    models.ProjectStatusStopped,
 		}).Error)
@@ -4873,7 +4866,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	project := &models.Project{
 		BaseModel:       models.BaseModel{ID: syncProjectID},
 		Name:            "Radarr",
-		DirName:         ptr("Radarr-3"),
+		DirName:         new("Radarr-3"),
 		Path:            projectDir,
 		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
@@ -4924,7 +4917,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	require.NoError(t, db.Create(&models.Project{
 		BaseModel:       models.BaseModel{ID: syncProjectID},
 		Name:            "Radarr",
-		DirName:         ptr("Radarr-3"),
+		DirName:         new("Radarr-3"),
 		Path:            projectDir,
 		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
@@ -5070,9 +5063,7 @@ func dockerHostFromProjectRuntimeServerURLInternal(t *testing.T, serverURL strin
 	return "tcp://" + parsed.Host
 }
 
-func ptr(v string) *string {
-	return new(v)
-}
+//go:fix inline
 
 func TestResolveRemoveOrphans(t *testing.T) {
 	tests := []struct {
@@ -5127,7 +5118,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
 	content := "new\n"
-	_, err = svc.UpdateProject(ctx, project.ID, ptr("bar"), nil, nil, &revision, []projecttypes.ProjectFileChange{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: projecttypes.FileOpCreateFile, RelativePath: "notes.txt", Content: &content},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},

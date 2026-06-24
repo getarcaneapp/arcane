@@ -6,6 +6,6 @@ package buildables
 var EnabledFeatures = ""
 
 // HasBuildFeature always returns false when the buildables tag is not set.
-func HasBuildFeature(feature string) bool {
+func HasBuildFeature(_ string) bool {
 	return false
 }

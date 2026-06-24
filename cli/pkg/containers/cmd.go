@@ -51,8 +51,8 @@ var (
 
 const maxPromptOptions = 20
 
-// ContainersCmd is the parent command for container operations
-var ContainersCmd = &cobra.Command{
+// Command is the parent command for container operations
+var Command = &cobra.Command{
 	Use:     "containers",
 	Aliases: []string{"container", "c"},
 	Short:   "Manage containers",
@@ -615,17 +615,17 @@ var containersCreateCmd = &cobra.Command{
 }
 
 func init() {
-	ContainersCmd.AddCommand(containersListCmd)
-	ContainersCmd.AddCommand(containersUpdatesCmd)
-	ContainersCmd.AddCommand(containersGetCmd)
-	ContainersCmd.AddCommand(containersStartCmd)
-	ContainersCmd.AddCommand(containersStopCmd)
-	ContainersCmd.AddCommand(containersRestartCmd)
-	ContainersCmd.AddCommand(containersUpdateCmd)
-	ContainersCmd.AddCommand(containersRedeployCmd)
-	ContainersCmd.AddCommand(containersDeleteCmd)
-	ContainersCmd.AddCommand(containersCountsCmd)
-	ContainersCmd.AddCommand(containersCreateCmd)
+	Command.AddCommand(containersListCmd)
+	Command.AddCommand(containersUpdatesCmd)
+	Command.AddCommand(containersGetCmd)
+	Command.AddCommand(containersStartCmd)
+	Command.AddCommand(containersStopCmd)
+	Command.AddCommand(containersRestartCmd)
+	Command.AddCommand(containersUpdateCmd)
+	Command.AddCommand(containersRedeployCmd)
+	Command.AddCommand(containersDeleteCmd)
+	Command.AddCommand(containersCountsCmd)
+	Command.AddCommand(containersCreateCmd)
 
 	// Create command flags
 	containersCreateCmd.Flags().StringVarP(&containerCreateFile, "file", "f", "", "JSON config file for container creation")

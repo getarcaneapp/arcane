@@ -46,7 +46,7 @@ type SettingsPruner interface {
 	PruneUnknownSettings(ctx context.Context) error
 }
 
-func InitializeDefaultSettings(ctx context.Context, cfg *RuntimeConfig, settingsMgr SettingsManager) {
+func InitializeDefaultSettings(ctx context.Context, settingsMgr SettingsManager) {
 	slog.InfoContext(ctx, "Ensuring default settings are initialized")
 
 	if err := settingsMgr.EnsureDefaultSettings(ctx); err != nil {

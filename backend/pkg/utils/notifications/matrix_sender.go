@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -57,7 +56,7 @@ func BuildMatrixURL(config models.MatrixConfig) (string, error) {
 }
 
 // SendMatrix sends a message via Shoutrrr Matrix using proper service configuration
-func SendMatrix(ctx context.Context, config models.MatrixConfig, message string) error {
+func SendMatrix(config models.MatrixConfig, message string) error {
 	shoutrrrURL, err := BuildMatrixURL(config)
 	if err != nil {
 		return fmt.Errorf("failed to build shoutrrr Matrix URL: %w", err)

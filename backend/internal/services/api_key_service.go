@@ -443,7 +443,7 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 	})
 }
 
-func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string, userID string) (*apikey.ApiKeyCreatedDto, error) {
+func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environmentID string) (*apikey.ApiKeyCreatedDto, error) {
 	rawKey, err := s.generateApiKey()
 	if err != nil {
 		return nil, err

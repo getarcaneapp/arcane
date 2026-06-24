@@ -14,51 +14,51 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/vulnerability"
 )
 
-// VulnerabilityHandler provides Huma-based vulnerability scanning endpoints.
-type VulnerabilityHandler struct {
+// vulnerabilityHandler provides Huma-based vulnerability scanning endpoints.
+type vulnerabilityHandler struct {
 	vulnerabilityService *services.VulnerabilityService
 	appCtx               context.Context
 }
 
 // --- Huma Input/Output Types ---
 
-type ScanImageInput struct {
+type scanImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID to scan"`
 }
 
-type ScanImageOutput struct {
+type scanImageOutput struct {
 	Body base.ApiResponse[vulnerability.ScanResult]
 }
 
-type GetScanResultInput struct {
+type getScanResultInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 }
 
-type GetScanResultOutput struct {
+type getScanResultOutput struct {
 	Body base.ApiResponse[vulnerability.ScanResult]
 }
 
-type GetScanSummaryInput struct {
+type getScanSummaryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 }
 
-type GetScanSummaryOutput struct {
+type getScanSummaryOutput struct {
 	Body base.ApiResponse[vulnerability.ScanSummary]
 }
 
-type GetScanSummariesInput struct {
+type getScanSummariesInput struct {
 	EnvironmentID string                             `path:"id" doc:"Environment ID"`
 	Body          vulnerability.ScanSummariesRequest `doc:"Batch scan summary request"`
 }
 
-type GetScanSummariesOutput struct {
+type getScanSummariesOutput struct {
 	Body base.ApiResponse[vulnerability.ScanSummariesResponse]
 }
 
-type ListImageVulnerabilitiesInput struct {
+type listImageVulnerabilitiesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -70,19 +70,19 @@ type ListImageVulnerabilitiesInput struct {
 	Severity string `query:"severity" doc:"Comma-separated severity filter"`
 }
 
-type ListImageVulnerabilitiesOutput struct {
+type listImageVulnerabilitiesOutput struct {
 	Body base.Paginated[vulnerability.Vulnerability]
 }
 
-type GetEnvironmentSummaryInput struct {
+type getEnvironmentSummaryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetEnvironmentSummaryOutput struct {
+type getEnvironmentSummaryOutput struct {
 	Body base.ApiResponse[vulnerability.EnvironmentVulnerabilitySummary]
 }
 
-type ListAllVulnerabilitiesInput struct {
+type listAllVulnerabilitiesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Sort field"`
@@ -94,24 +94,24 @@ type ListAllVulnerabilitiesInput struct {
 	ImageName string `query:"imageName" doc:"Filter by image/repo name (substring)"`
 }
 
-type ListAllVulnerabilitiesOutput struct {
+type listAllVulnerabilitiesOutput struct {
 	Body base.Paginated[vulnerability.VulnerabilityWithImage]
 }
 
-type ListAllVulnerabilityImageOptionsInput struct {
+type listAllVulnerabilityImageOptionsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Severity      string `query:"severity" doc:"Comma-separated severity filter"`
 }
 
-type ListAllVulnerabilityImageOptionsOutput struct {
+type listAllVulnerabilityImageOptionsOutput struct {
 	Body base.ApiResponse[[]string]
 }
 
-type GetScannerStatusInput struct {
+type getScannerStatusInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type ScannerStatus struct {
+type scannerStatus struct {
 	// Available indicates if the vulnerability scanner (Trivy) is available
 	Available bool `json:"available"`
 
@@ -119,13 +119,13 @@ type ScannerStatus struct {
 	Version string `json:"version,omitempty"`
 }
 
-type GetScannerStatusOutput struct {
-	Body base.ApiResponse[ScannerStatus]
+type getScannerStatusOutput struct {
+	Body base.ApiResponse[scannerStatus]
 }
 
 // RegisterVulnerability registers vulnerability scanning routes using Huma.
 func RegisterVulnerability(api huma.API, vulnerabilityService *services.VulnerabilityService, appCtx ActivityAppContext) {
-	h := &VulnerabilityHandler{
+	h := &vulnerabilityHandler{
 		vulnerabilityService: vulnerabilityService,
 		appCtx:               appCtx.contextInternal(),
 	}
@@ -141,7 +141,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsScan, h.ScanImage)
+	}, authz.PermVulnsScan, h.scanImageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerabilities",
@@ -154,7 +154,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.GetScanResult)
+	}, authz.PermVulnsRead, h.getScanResultInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerability-summary",
@@ -167,7 +167,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.GetScanSummary)
+	}, authz.PermVulnsRead, h.getScanSummaryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image-vulnerability-summaries",
@@ -180,7 +180,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.GetScanSummaries)
+	}, authz.PermVulnsRead, h.getScanSummariesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-image-vulnerabilities",
@@ -193,7 +193,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.ListImageVulnerabilities)
+	}, authz.PermVulnsRead, h.listImageVulnerabilitiesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-vulnerability-scanner-status",
@@ -206,7 +206,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.GetScannerStatus)
+	}, authz.PermVulnsRead, h.getScannerStatusInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-environment-vulnerability-summary",
@@ -219,7 +219,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.GetEnvironmentSummary)
+	}, authz.PermVulnsRead, h.getEnvironmentSummaryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-environment-vulnerabilities",
@@ -232,7 +232,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.ListAllVulnerabilities)
+	}, authz.PermVulnsRead, h.listAllVulnerabilitiesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-environment-vulnerability-image-options",
@@ -245,7 +245,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.ListAllVulnerabilityImageOptions)
+	}, authz.PermVulnsRead, h.listAllVulnerabilityImageOptionsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "ignore-vulnerability",
@@ -258,7 +258,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsManage, h.IgnoreVulnerability)
+	}, authz.PermVulnsManage, h.ignoreVulnerabilityInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "unignore-vulnerability",
@@ -271,7 +271,7 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsManage, h.UnignoreVulnerability)
+	}, authz.PermVulnsManage, h.unignoreVulnerabilityInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-ignored-vulnerabilities",
@@ -284,11 +284,11 @@ func RegisterVulnerability(api huma.API, vulnerabilityService *services.Vulnerab
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVulnsRead, h.ListIgnoredVulnerabilities)
+	}, authz.PermVulnsRead, h.listIgnoredVulnerabilitiesInternal)
 }
 
 // ScanImage initiates a vulnerability scan for an image.
-func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageInput) (*ScanImageOutput, error) {
+func (h *vulnerabilityHandler) scanImageInternal(ctx context.Context, input *scanImageInput) (*scanImageOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -304,7 +304,7 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
 	}
 
-	return &ScanImageOutput{
+	return &scanImageOutput{
 		Body: base.ApiResponse[vulnerability.ScanResult]{
 			Success: true,
 			Data:    *result,
@@ -313,14 +313,14 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 }
 
 // GetScanSummaries retrieves scan summaries for a list of image IDs.
-func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetScanSummariesInput) (*GetScanSummariesOutput, error) {
+func (h *vulnerabilityHandler) getScanSummariesInternal(ctx context.Context, input *getScanSummariesInput) (*getScanSummariesOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
 	imageIDs := input.Body.ImageIDs
 	if len(imageIDs) == 0 {
-		return &GetScanSummariesOutput{
+		return &getScanSummariesOutput{
 			Body: base.ApiResponse[vulnerability.ScanSummariesResponse]{
 				Success: true,
 				Data: vulnerability.ScanSummariesResponse{
@@ -335,7 +335,7 @@ func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetS
 		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
 	}
 
-	return &GetScanSummariesOutput{
+	return &getScanSummariesOutput{
 		Body: base.ApiResponse[vulnerability.ScanSummariesResponse]{
 			Success: true,
 			Data: vulnerability.ScanSummariesResponse{
@@ -346,7 +346,7 @@ func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetS
 }
 
 // GetScanResult retrieves the vulnerability scan result for an image.
-func (h *VulnerabilityHandler) GetScanResult(ctx context.Context, input *GetScanResultInput) (*GetScanResultOutput, error) {
+func (h *vulnerabilityHandler) getScanResultInternal(ctx context.Context, input *getScanResultInput) (*getScanResultOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -360,7 +360,7 @@ func (h *VulnerabilityHandler) GetScanResult(ctx context.Context, input *GetScan
 		return nil, huma.Error404NotFound((&common.VulnerabilityScanNotFoundError{}).Error())
 	}
 
-	return &GetScanResultOutput{
+	return &getScanResultOutput{
 		Body: base.ApiResponse[vulnerability.ScanResult]{
 			Success: true,
 			Data:    *result,
@@ -369,7 +369,7 @@ func (h *VulnerabilityHandler) GetScanResult(ctx context.Context, input *GetScan
 }
 
 // GetScanSummary retrieves just the vulnerability summary for an image.
-func (h *VulnerabilityHandler) GetScanSummary(ctx context.Context, input *GetScanSummaryInput) (*GetScanSummaryOutput, error) {
+func (h *vulnerabilityHandler) getScanSummaryInternal(ctx context.Context, input *getScanSummaryInput) (*getScanSummaryOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -383,7 +383,7 @@ func (h *VulnerabilityHandler) GetScanSummary(ctx context.Context, input *GetSca
 		return nil, huma.Error404NotFound((&common.VulnerabilityScanNotFoundError{}).Error())
 	}
 
-	return &GetScanSummaryOutput{
+	return &getScanSummaryOutput{
 		Body: base.ApiResponse[vulnerability.ScanSummary]{
 			Success: true,
 			Data:    *summary,
@@ -392,7 +392,7 @@ func (h *VulnerabilityHandler) GetScanSummary(ctx context.Context, input *GetSca
 }
 
 // ListImageVulnerabilities returns a paginated list of vulnerabilities for an image.
-func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, input *ListImageVulnerabilitiesInput) (*ListImageVulnerabilitiesOutput, error) {
+func (h *vulnerabilityHandler) listImageVulnerabilitiesInternal(ctx context.Context, input *listImageVulnerabilitiesInput) (*listImageVulnerabilitiesOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -414,7 +414,7 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 		items = []vulnerability.Vulnerability{}
 	}
 
-	return &ListImageVulnerabilitiesOutput{
+	return &listImageVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.Vulnerability]{
 			Success:    true,
 			Data:       items,
@@ -424,7 +424,7 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 }
 
 // GetEnvironmentSummary returns aggregated vulnerability info for the current environment.
-func (h *VulnerabilityHandler) GetEnvironmentSummary(ctx context.Context, input *GetEnvironmentSummaryInput) (*GetEnvironmentSummaryOutput, error) {
+func (h *vulnerabilityHandler) getEnvironmentSummaryInternal(ctx context.Context, _ *getEnvironmentSummaryInput) (*getEnvironmentSummaryOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -438,7 +438,7 @@ func (h *VulnerabilityHandler) GetEnvironmentSummary(ctx context.Context, input 
 		summary = &vulnerability.EnvironmentVulnerabilitySummary{}
 	}
 
-	return &GetEnvironmentSummaryOutput{
+	return &getEnvironmentSummaryOutput{
 		Body: base.ApiResponse[vulnerability.EnvironmentVulnerabilitySummary]{
 			Success: true,
 			Data:    *summary,
@@ -447,7 +447,7 @@ func (h *VulnerabilityHandler) GetEnvironmentSummary(ctx context.Context, input 
 }
 
 // ListAllVulnerabilities returns a paginated list of vulnerabilities across all images.
-func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input *ListAllVulnerabilitiesInput) (*ListAllVulnerabilitiesOutput, error) {
+func (h *vulnerabilityHandler) listAllVulnerabilitiesInternal(ctx context.Context, input *listAllVulnerabilitiesInput) (*listAllVulnerabilitiesOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -472,7 +472,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 		items = []vulnerability.VulnerabilityWithImage{}
 	}
 
-	return &ListAllVulnerabilitiesOutput{
+	return &listAllVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.VulnerabilityWithImage]{
 			Success:    true,
 			Data:       items,
@@ -482,7 +482,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 }
 
 // ListAllVulnerabilityImageOptions returns available image options for vulnerability filtering.
-func (h *VulnerabilityHandler) ListAllVulnerabilityImageOptions(ctx context.Context, input *ListAllVulnerabilityImageOptionsInput) (*ListAllVulnerabilityImageOptionsOutput, error) {
+func (h *vulnerabilityHandler) listAllVulnerabilityImageOptionsInternal(ctx context.Context, input *listAllVulnerabilityImageOptionsInput) (*listAllVulnerabilityImageOptionsOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -496,7 +496,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilityImageOptions(ctx context.Cont
 		items = []string{}
 	}
 
-	return &ListAllVulnerabilityImageOptionsOutput{
+	return &listAllVulnerabilityImageOptionsOutput{
 		Body: base.ApiResponse[[]string]{
 			Success: true,
 			Data:    items,
@@ -505,7 +505,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilityImageOptions(ctx context.Cont
 }
 
 // GetScannerStatus checks if the vulnerability scanner is available.
-func (h *VulnerabilityHandler) GetScannerStatus(ctx context.Context, input *GetScannerStatusInput) (*GetScannerStatusOutput, error) {
+func (h *vulnerabilityHandler) getScannerStatusInternal(ctx context.Context, _ *getScannerStatusInput) (*getScannerStatusOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -513,10 +513,10 @@ func (h *VulnerabilityHandler) GetScannerStatus(ctx context.Context, input *GetS
 	version := h.vulnerabilityService.GetTrivyVersion(ctx)
 	available := version != ""
 
-	return &GetScannerStatusOutput{
-		Body: base.ApiResponse[ScannerStatus]{
+	return &getScannerStatusOutput{
+		Body: base.ApiResponse[scannerStatus]{
 			Success: true,
-			Data: ScannerStatus{
+			Data: scannerStatus{
 				Available: available,
 				Version:   version,
 			},
@@ -524,17 +524,17 @@ func (h *VulnerabilityHandler) GetScannerStatus(ctx context.Context, input *GetS
 	}, nil
 }
 
-type IgnoreVulnerabilityInput struct {
+type ignoreVulnerabilityInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          vulnerability.IgnorePayload
 }
 
-type IgnoreVulnerabilityOutput struct {
+type ignoreVulnerabilityOutput struct {
 	Body base.ApiResponse[vulnerability.IgnoredVulnerability]
 }
 
 // IgnoreVulnerability creates an ignore record for a vulnerability.
-func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *IgnoreVulnerabilityInput) (*IgnoreVulnerabilityOutput, error) {
+func (h *vulnerabilityHandler) ignoreVulnerabilityInternal(ctx context.Context, input *ignoreVulnerabilityInput) (*ignoreVulnerabilityOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -555,7 +555,7 @@ func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *I
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &IgnoreVulnerabilityOutput{
+	return &ignoreVulnerabilityOutput{
 		Body: base.ApiResponse[vulnerability.IgnoredVulnerability]{
 			Success: true,
 			Data: vulnerability.IgnoredVulnerability{
@@ -573,17 +573,17 @@ func (h *VulnerabilityHandler) IgnoreVulnerability(ctx context.Context, input *I
 	}, nil
 }
 
-type UnignoreVulnerabilityInput struct {
+type unignoreVulnerabilityInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	IgnoreID      string `path:"ignoreId" doc:"Ignore record ID"`
 }
 
-type UnignoreVulnerabilityOutput struct {
+type unignoreVulnerabilityOutput struct {
 	Body base.ApiResponse[struct{}]
 }
 
 // UnignoreVulnerability removes an ignore record for a vulnerability.
-func (h *VulnerabilityHandler) UnignoreVulnerability(ctx context.Context, input *UnignoreVulnerabilityInput) (*UnignoreVulnerabilityOutput, error) {
+func (h *vulnerabilityHandler) unignoreVulnerabilityInternal(ctx context.Context, input *unignoreVulnerabilityInput) (*unignoreVulnerabilityOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -595,14 +595,14 @@ func (h *VulnerabilityHandler) UnignoreVulnerability(ctx context.Context, input 
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &UnignoreVulnerabilityOutput{
+	return &unignoreVulnerabilityOutput{
 		Body: base.ApiResponse[struct{}]{
 			Success: true,
 		},
 	}, nil
 }
 
-type ListIgnoredVulnerabilitiesInput struct {
+type listIgnoredVulnerabilitiesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Sort field"`
@@ -611,12 +611,12 @@ type ListIgnoredVulnerabilitiesInput struct {
 	Limit         int    `query:"limit" doc:"Limit"`
 }
 
-type ListIgnoredVulnerabilitiesOutput struct {
+type listIgnoredVulnerabilitiesOutput struct {
 	Body base.Paginated[vulnerability.IgnoredVulnerability]
 }
 
 // ListIgnoredVulnerabilities returns a list of ignored vulnerabilities.
-func (h *VulnerabilityHandler) ListIgnoredVulnerabilities(ctx context.Context, input *ListIgnoredVulnerabilitiesInput) (*ListIgnoredVulnerabilitiesOutput, error) {
+func (h *vulnerabilityHandler) listIgnoredVulnerabilitiesInternal(ctx context.Context, input *listIgnoredVulnerabilitiesInput) (*listIgnoredVulnerabilitiesOutput, error) {
 	if h.vulnerabilityService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -635,7 +635,7 @@ func (h *VulnerabilityHandler) ListIgnoredVulnerabilities(ctx context.Context, i
 		items = []vulnerability.IgnoredVulnerability{}
 	}
 
-	return &ListIgnoredVulnerabilitiesOutput{
+	return &listIgnoredVulnerabilitiesOutput{
 		Body: base.Paginated[vulnerability.IgnoredVulnerability]{
 			Success:    true,
 			Data:       items,
