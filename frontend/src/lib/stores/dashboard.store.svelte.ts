@@ -384,7 +384,9 @@ function createDashboardStore() {
 			debugAllGood = nextDebugAllGood;
 			await environmentStore.ready;
 			reconcileEnvironmentsInternal();
-			void connectStreamInternal(nextGenerationInternal());
+			const generation = nextGenerationInternal();
+			void refreshInternal();
+			void connectStreamInternal(generation);
 			unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
 				reconcileEnvironmentsInternal();
 			});

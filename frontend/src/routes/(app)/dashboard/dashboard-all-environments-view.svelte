@@ -1,3 +1,10 @@
+<script module lang="ts">
+	import type { SystemStats } from '$lib/types/shared';
+	type CachedStats = { stats: SystemStats; timestamp: number };
+	const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+	const cachedStatsByEnvironmentId: Record<string, CachedStats> = {};
+</script>
+
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -19,7 +26,6 @@
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
-	import type { SystemStats } from '$lib/types/shared';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
@@ -150,11 +156,18 @@
 		};
 	}
 
-	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
+	function createEmptyLiveStatsState(environmentId: string): EnvironmentLiveStatsState {
+		const cached = cachedStatsByEnvironmentId[environmentId];
+		const isValid = cached && Date.now() - cached.timestamp < CACHE_TTL_MS;
+		if (cached && !isValid) {
+			delete cachedStatsByEnvironmentId[environmentId];
+		}
+		const stats = isValid ? cached.stats : null;
+
 		return {
-			stats: null,
-			loading: true,
-			hasLoaded: false,
+			stats,
+			loading: !stats,
+			hasLoaded: !!stats,
 			client: null
 		};
 	}
@@ -166,7 +179,7 @@
 		}
 
 		if (!liveStatsByEnvironmentId[environment.id]) {
-			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState();
+			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState(environment.id);
 		}
 
 		const liveStatsState = liveStatsByEnvironmentId[environment.id];
@@ -190,6 +203,7 @@
 				liveStatsState.stats = stats;
 				liveStatsState.hasLoaded = true;
 				liveStatsState.loading = false;
+				cachedStatsByEnvironmentId[environment.id] = { stats, timestamp: Date.now() };
 			},
 			onError: (error) => {
 				console.error(`Stats websocket error for environment ${environment.id}:`, error);
