@@ -114,7 +114,7 @@
 			const hash = Array.from(new Uint8Array(hashBuffer))
 				.map((b) => b.toString(16).padStart(2, '0'))
 				.join('');
-			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128`;
+			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
 		} catch {
 			avatarUrl = '';
 		}
