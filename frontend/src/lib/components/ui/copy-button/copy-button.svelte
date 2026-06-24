@@ -56,23 +56,23 @@
 		}}
 	>
 		{#if clipboard.status === 'success'}
-			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-				<CheckIcon tabindex={-1} />
-				<span class="sr-only">Copied</span>
-			</div>
+				<div in:scale={{ duration: animationDuration, start: 0.85 }}>
+					<CheckIcon tabindex={-1} />
+					<span class="sr-only">{m.common_copied()}</span>
+				</div>
 		{:else if clipboard.status === 'failure'}
 			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
 				<CloseIcon tabindex={-1} />
-				<span class="sr-only">Failed to copy</span>
+				<span class="sr-only">{m.common_copy_failed()}</span>
 			</div>
 		{:else}
-			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
+				<div in:scale={{ duration: animationDuration, start: 0.85 }}>
 				{#if icon}
 					{@render icon()}
 				{:else}
 					<CopyIcon tabindex={-1} />
 				{/if}
-				<span class="sr-only">Copy</span>
+					<span class="sr-only">{m.common_copy()}</span>
 			</div>
 		{/if}
 		{@render children?.()}
@@ -91,13 +91,13 @@
 				name="copy"
 				disabled
 			>
-				<div in:scale={{ duration: animationDuration, start: 0.85 }}>
+					<div in:scale={{ duration: animationDuration, start: 0.85 }}>
 					{#if icon}
 						{@render icon()}
 					{:else}
 						<CopyIcon tabindex={-1} />
 					{/if}
-					<span class="sr-only">Copy</span>
+						<span class="sr-only">{m.common_copy()}</span>
 				</div>
 				{@render children?.()}
 			</ArcaneButton>

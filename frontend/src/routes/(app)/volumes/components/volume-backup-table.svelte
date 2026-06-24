@@ -379,7 +379,7 @@
 						<LoadingSpinnerIcon class="text-muted-foreground size-5" />
 					</div>
 				{:else if filteredBackupFiles.length === 0}
-					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">No files found in this backup.</div>
+					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">{m.volume_backup_no_files()}</div>
 				{:else}
 					<div class="divide-border/40 divide-y">
 						{#each filteredBackupFiles as filePath (filePath)}

@@ -5,6 +5,7 @@
 	import type { ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
 	import { EllipsisIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
+	import { m } from '$lib/paraglide/messages';
 	import { ArrowDownIcon } from '$lib/icons';
 	import type { ActionButton, ActionButtonMenuItem } from './types.js';
 
@@ -150,7 +151,7 @@
 						'border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md border transition-colors outline-none',
 						size === 'sm' ? 'size-8' : 'size-9'
 					)}
-					aria-label="Open menu"
+					aria-label={m.common_open_menu()}
 				>
 					<ArrowDownIcon class="size-4" />
 				</DropdownMenu.Trigger>
@@ -230,7 +231,7 @@
 								size="icon"
 								class={cn('shrink-0', size === 'sm' ? 'size-8' : 'size-9')}
 							>
-								<span class="sr-only">More actions</span>
+								<span class="sr-only">{m.common_more_actions()}</span>
 								<EllipsisIcon class="size-4" />
 							</ArcaneButton>
 						{/snippet}

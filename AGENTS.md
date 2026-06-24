@@ -148,6 +148,11 @@ All user-facing text goes in `frontend/messages/en.json`, accessed via Paraglide
 <Button>{m.common_save_changes()}</Button>
 ```
 
+**AI Agent Rule for i18n**: 
+- Never use hardcoded English strings in frontend UI components (`.svelte` files). This includes text inside HTML tags and text assigned to variables, props, or state that is rendered in the UI.
+- Always define new keys ONLY in `frontend/messages/en.json` and use `m.*()`. Do NOT edit other language files (e.g., `fr.json`, `es.json`) because translations are handled automatically by Crowdin via pull requests.
+- After modifying frontend files, run the validation script: `pnpm run validate:i18n` in the root (or `node scripts/validate_i18n.js`). Pay attention to false positives, and ensure all user-facing variables are also translated.
+
 ## RBAC Architecture
 
 Three layers — keep them separate:
