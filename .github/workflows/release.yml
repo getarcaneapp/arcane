@@ -59,7 +59,7 @@ jobs:
         run: just build single frontend
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v6.4.0
         with:
           go-version-file: backend/go.mod
           cache: true
