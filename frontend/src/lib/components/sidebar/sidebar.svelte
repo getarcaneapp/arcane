@@ -54,7 +54,7 @@
 
 	const storeUser = fromStore(userStore);
 	let showVersionDialog = $state(false);
-	const effectiveUser = $derived(user ?? storeUser.current);
+	const effectiveUser = $derived(storeUser.current ?? user);
 
 	const isCollapsed = $derived(sidebar.state === 'collapsed' && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	let envSwitcherOpen = $state(false);
