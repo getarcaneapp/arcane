@@ -1596,12 +1596,11 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
 	require.NoError(t, err)
 
-	content := "hello\n"
 	updated := "updated\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: "create_folder", RelativePath: "config"},
 		{Operation: "create_folder", RelativePath: "archive"},
-		{Operation: "create_file", RelativePath: "config/app.yaml", Content: &content},
+		{Operation: "create_file", RelativePath: "config/app.yaml", Content: new("hello\n")},
 		{Operation: "update_file", RelativePath: "config/app.yaml", Content: &updated},
 		{Operation: "rename", RelativePath: "config/app.yaml", NewName: "renamed.yaml"},
 		{Operation: "move", RelativePath: "config/renamed.yaml", NewParentPath: "archive"},
@@ -1640,9 +1639,8 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
-	content := "new\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
-		{Operation: "create_file", RelativePath: "notes.txt", Content: &content},
+		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
@@ -1683,9 +1681,8 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	require.NoError(t, os.MkdirAll(deepParent, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(deepParent, "external.txt"), []byte("external\n"), 0o644))
 
-	content := "new\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &details.FileTreeRevision, []projecttypes.ProjectFileChange{
-		{Operation: "create_file", RelativePath: "notes.txt", Content: &content},
+		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",

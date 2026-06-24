@@ -144,8 +144,7 @@ func ApplyProjectFileDrafts(projectPath string, drafts []project.ProjectFileDraf
 		if draft.IsDirectory {
 			operation = project.FileOpCreateFolder
 		} else {
-			contentValue := draft.Content
-			content = &contentValue
+			content = new(draft.Content)
 		}
 		changes = append(changes, project.ProjectFileChange{
 			Operation:    operation,

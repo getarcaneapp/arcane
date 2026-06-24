@@ -8,7 +8,7 @@ import (
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
-	composev2 "github.com/docker/compose/v5/pkg/compose"
+	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/client"
 )
@@ -29,8 +29,8 @@ func NewClient(ctx context.Context) (*Client, error) {
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
-	svc, err := composev2.NewComposeService(composeCLI,
-		composev2.WithPrompt(composev2.AlwaysOkPrompt()),
+	svc, err := compose.NewComposeService(composeCLI,
+		compose.WithPrompt(compose.AlwaysOkPrompt()),
 	)
 	if err != nil {
 		return nil, err

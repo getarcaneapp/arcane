@@ -224,8 +224,7 @@ func (w *Writer) updateLayerProgressInternal(id, status string, rawDetail any) *
 		}
 	}
 
-	progress := max(min(int((weighted/float64(len(w.layers)))*100), 100), 0)
-	return &progress
+	return new(max(min(int((weighted/float64(len(w.layers)))*100), 100), 0))
 }
 
 func (w *Writer) enqueueMessageInternal(message writerAppendMessage) {

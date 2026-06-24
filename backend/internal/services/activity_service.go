@@ -549,8 +549,7 @@ func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) 
 			status = models.ActivityStatusSuccess
 			message = "Auto-update completed — Arcane restarted with the updated image"
 		} else {
-			errText := message
-			errMessage = &errText
+			errMessage = new(message)
 		}
 		if _, err := s.CompleteActivity(ctx, stale[i].ID, status, message, errMessage); err != nil {
 			resolveErrs = append(resolveErrs, fmt.Errorf("resolve stale auto-update activity %s: %w", stale[i].ID, err))
@@ -873,8 +872,7 @@ func clampProgressPtrInternal(value *int) *int {
 	if value == nil {
 		return nil
 	}
-	clamped := min(max(*value, 0), 100)
-	return &clamped
+	return new(min(max(*value, 0), 100))
 }
 
 func cloneJSONInternal(input models.JSON) models.JSON {

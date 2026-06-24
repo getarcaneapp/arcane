@@ -529,9 +529,8 @@ func (s *SystemUpgradeService) ResumeUpdateAllOnStartup(ctx context.Context) {
 	// result and close the job — do not re-run the agents phase.
 	s.recordManagerResultInternal(job, action.managerSucceeded, info.CurrentVersion)
 
-	completedAt := time.Now()
 	job.Status = models.EnvironmentUpdateJobStatusCompleted
-	job.CompletedAt = &completedAt
+	job.CompletedAt = new(time.Now())
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "Failed to finalize resumed update-all job", "jobId", job.ID, "error", err)
 		return
@@ -625,9 +624,8 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 		return
 	}
 
-	completedAt := time.Now()
 	job.Status = models.EnvironmentUpdateJobStatusCompleted
-	job.CompletedAt = &completedAt
+	job.CompletedAt = new(time.Now())
 	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
 		slog.WarnContext(ctx, "update-all: failed to mark job completed", "jobId", job.ID, "error", err)
 	}
@@ -728,8 +726,7 @@ func updateAllAgentFailureStatusInternal(err error) models.EnvironmentUpdateResu
 		return models.EnvironmentUpdateResultStatusFailed
 	}
 	// The environment answered with a non-success status — reached, not offline.
-	var statusErr *remenv.StatusError
-	if errors.As(err, &statusErr) {
+	if _, ok := errors.AsType[*remenv.StatusError](err); ok {
 		return models.EnvironmentUpdateResultStatusFailed
 	}
 	return models.EnvironmentUpdateResultStatusSkippedOffline
@@ -817,10 +814,9 @@ func (s *SystemUpgradeService) persistUpdateAllJobInternal(ctx context.Context, 
 }
 
 func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, job *models.EnvironmentUpdateJob, reason string) {
-	completedAt := time.Now()
 	job.Status = models.EnvironmentUpdateJobStatusFailed
 	job.Error = &reason
-	job.CompletedAt = &completedAt
+	job.CompletedAt = new(time.Now())
 	for i := range job.Results {
 		if job.Results[i].Status == models.EnvironmentUpdateResultStatusUpdating {
 			job.Results[i].Status = models.EnvironmentUpdateResultStatusFailed

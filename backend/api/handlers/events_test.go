@@ -69,7 +69,7 @@ func TestAgentEventIngestionRequiresAgentTokenAndPersists(t *testing.T) {
 		Severity:      models.EventSeverityInfo,
 		Title:         "Container started: web",
 		Description:   "Container 'web' has been started",
-		EnvironmentID: ptrStringInternal("0"),
+		EnvironmentID: new("0"),
 		Metadata:      models.JSON{"source": "agent"},
 	}
 	body, err := json.Marshal(payload)

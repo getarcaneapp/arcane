@@ -546,7 +546,6 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	pinnedDigest := digest.FromString("stale-pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	repository := "ghcr.io/fosrl/newt"
-	staleError := "failed to get remote digest"
 	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             recordID,
@@ -555,7 +554,7 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 		HasUpdate:      false,
 		UpdateType:     "digest",
 		CurrentVersion: "latest",
-		LastError:      &staleError,
+		LastError:      new("failed to get remote digest"),
 		CheckTime:      time.Now().Add(-time.Hour),
 	}).Error)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, nil)

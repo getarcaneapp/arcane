@@ -9,8 +9,7 @@ func TestKeyedCacheGetSet(t *testing.T) {
 		t.Fatal("expected miss for unset key")
 	}
 
-	v := 42
-	c.Set("hit", &v)
+	c.Set("hit", new(42))
 	got, ok := c.Get("hit")
 	if !ok || got == nil || *got != 42 {
 		t.Fatalf("expected cached value 42, got %v (ok=%v)", got, ok)
