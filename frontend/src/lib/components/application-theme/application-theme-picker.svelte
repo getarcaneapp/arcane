@@ -196,13 +196,13 @@
 				{/each}
 			</Carousel.Content>
 			<div
-				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 start-0 z-10 w-10 bg-gradient-to-r to-transparent backdrop-blur-[2px] sm:w-14"
+				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 start-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-r to-transparent backdrop-blur-[2px] sm:w-14"
 			></div>
 			<div
-				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 end-0 z-10 w-10 bg-gradient-to-l to-transparent backdrop-blur-[2px] sm:w-14"
+				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 end-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-l to-transparent backdrop-blur-[2px] sm:w-14"
 			></div>
-			<Carousel.Previous class="start-3 z-20 hidden md:inline-flex" />
-			<Carousel.Next class="end-3 z-20 hidden md:inline-flex" />
+			<Carousel.Previous class="start-3 z-[var(--arcane-z-sticky)] hidden md:inline-flex" />
+			<Carousel.Next class="end-3 z-[var(--arcane-z-sticky)] hidden md:inline-flex" />
 		</Carousel.Root>
 	</div>
 </RadioGroup.Root>

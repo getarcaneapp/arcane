@@ -1045,7 +1045,7 @@
 		position: absolute;
 		top: 0.5rem;
 		right: 0.5rem;
-		z-index: 20;
+		z-index: var(--arcane-z-sticky);
 		width: 16rem;
 		max-height: calc(100% - 1rem);
 		overflow: hidden;

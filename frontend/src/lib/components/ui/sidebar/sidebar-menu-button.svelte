@@ -101,7 +101,7 @@
 				{@render Button({ props })}
 			{/snippet}
 		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content side="right" align="center" class="z-50" {...tooltipContentProps}>
+		<ArcaneTooltip.Content side="right" align="center" class="z-[var(--arcane-z-surface)]" {...tooltipContentProps}>
 			{#if typeof tooltipContent === 'string'}
 				{tooltipContent}
 			{:else if tooltipContent}

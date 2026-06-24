@@ -444,7 +444,7 @@
 							<Card.Description>{m.templates_service_definitions()}</Card.Description>
 						</div>
 					</Card.Header>
-					<Card.Content class="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
+					<Card.Content class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
 						<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-t-none rounded-b-xl">
 							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
 						</div>
@@ -516,7 +516,9 @@
 									<Card.Description>{m.templates_raw_env_config()}</Card.Description>
 								</div>
 							</Card.Header>
-							<Card.Content class="relative z-0 flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
+							<Card.Content
+								class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0"
+							>
 								<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
 									<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
 								</div>

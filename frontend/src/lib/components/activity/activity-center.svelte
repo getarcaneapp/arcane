@@ -178,7 +178,7 @@
 									disabled={activityStore.isCancelling(activity.id)}
 									title={m.activity_cancel()}
 									aria-label={m.activity_cancel()}
-									class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-ring bg-background/70 absolute top-1/2 right-11 z-10 flex size-7 -translate-y-1/2 items-center justify-center rounded-md opacity-0 backdrop-blur-sm transition focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-hidden group-hover/activity:opacity-100 disabled:pointer-events-none disabled:opacity-40"
+									class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:ring-ring bg-background/70 absolute top-1/2 right-11 z-[var(--arcane-z-raised)] flex size-7 -translate-y-1/2 items-center justify-center rounded-md opacity-0 backdrop-blur-sm transition focus-visible:opacity-100 focus-visible:ring-2 focus-visible:outline-hidden group-hover/activity:opacity-100 disabled:pointer-events-none disabled:opacity-40"
 								>
 									<CloseIcon class="size-4" aria-hidden="true" />
 								</button>

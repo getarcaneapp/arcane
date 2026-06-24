@@ -104,10 +104,10 @@
 	<div class="ambient__vignette"></div>
 </div>
 
-<div class="relative z-10 flex min-h-dvh justify-center lg:px-8">
+<div class="relative z-[var(--arcane-z-raised)] flex min-h-dvh justify-center lg:px-8">
 	<div class="grid min-h-dvh w-full max-w-screen-2xl grid-cols-1 lg:grid-cols-[1.05fr_minmax(420px,0.95fr)]">
 		<aside class="showcase relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
-			<div class="relative z-10 flex items-center gap-3">
+			<div class="relative z-[var(--arcane-z-raised)] flex items-center gap-3">
 				<div class="bg-card/40 ring-border/40 inline-flex size-10 items-center justify-center rounded-xl border ring-1">
 					<img class="h-6 w-auto" src={logoUrl} alt="" />
 				</div>
@@ -121,7 +121,7 @@
 				</div>
 			</div>
 
-			<div class="relative z-10 max-w-xl">
+			<div class="relative z-[var(--arcane-z-raised)] max-w-xl">
 				<h2 class="text-foreground text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">
 					{m.auth_tagline_line1()}
 					<span
@@ -131,7 +131,7 @@
 				</h2>
 			</div>
 
-			<div class="relative z-10 h-8"></div>
+			<div class="relative z-[var(--arcane-z-raised)] h-8"></div>
 		</aside>
 
 		<section class="form-pane relative flex min-h-dvh flex-col items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-14">
@@ -322,7 +322,7 @@
 		</section>
 	</div>
 
-	<div class="pointer-events-none absolute right-0 bottom-10 left-0 z-20 hidden justify-center lg:flex">
+	<div class="pointer-events-none absolute right-0 bottom-10 left-0 z-[var(--arcane-z-sticky)] hidden justify-center lg:flex">
 		<a
 			href="https://github.com/ofkm/arcane"
 			target="_blank"
@@ -339,7 +339,7 @@
 	.ambient {
 		position: fixed;
 		inset: 0;
-		z-index: 0;
+		z-index: var(--arcane-z-content);
 		overflow: hidden;
 		pointer-events: none;
 		background: var(--background);

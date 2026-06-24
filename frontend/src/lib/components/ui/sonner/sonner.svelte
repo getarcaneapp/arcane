@@ -7,7 +7,7 @@
 
 <Sonner
 	theme={mode.current}
-	class="toaster group"
+	class="toaster group z-[var(--arcane-z-toast)]"
 	toastOptions={{
 		classes: {
 			toast:

@@ -76,7 +76,9 @@
 </script>
 
 <div class="bg-background flex h-full min-h-0 flex-col">
-	<div class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-10 mb-2 border-b backdrop-blur">
+	<div
+		class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-[var(--arcane-z-sticky)] mb-2 border-b backdrop-blur"
+	>
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex min-w-0 items-center gap-4">
 				<ArcaneButton

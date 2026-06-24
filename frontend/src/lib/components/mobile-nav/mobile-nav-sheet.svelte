@@ -67,10 +67,13 @@
 </script>
 
 <Drawer.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)} shouldScaleBackground direction="bottom" modal={true}>
-	<Drawer.Overlay class="fixed inset-0 z-40 bg-black/40 backdrop-blur-xl" />
+	<Drawer.Overlay class="fixed inset-0 z-[var(--arcane-z-overlay)] bg-black/40 backdrop-blur-xl" />
 	<Drawer.Content
 		data-testid="mobile-nav-sheet"
-		class={cn('bg-background/95 rounded-t-3xl border border-t shadow-sm backdrop-blur-md', 'z-50 flex max-h-[85vh] flex-col')}
+		class={cn(
+			'bg-background/95 rounded-t-3xl border border-t shadow-sm backdrop-blur-md',
+			'z-[var(--arcane-z-surface)] flex max-h-[85vh] flex-col'
+		)}
 	>
 		<div class="px-6 pt-4">
 			{#if memoizedUser}

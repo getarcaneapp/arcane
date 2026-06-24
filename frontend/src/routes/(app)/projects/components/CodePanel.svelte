@@ -97,7 +97,7 @@
 {/snippet}
 
 {#if variant === 'plain'}
-	<div class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
+	<div class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col" data-open={open}>
 		{@render editorBody()}
 	</div>
 {:else}
@@ -138,7 +138,11 @@
 				/>
 			</Card.Action>
 		</Card.Header>
-		<Card.Content class="relative z-0 flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible p-0">
+		<Card.Content
+			class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight
+				? ''
+				: 'flex-1'} flex-col overflow-visible p-0"
+		>
 			{@render editorBody()}
 		</Card.Content>
 	</Card.Root>

@@ -104,7 +104,7 @@
 		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
 	{/if}
 
-	<main class={isMobile.current ? 'flex-1' : 'h-dvh flex-1'}>
+	<main class={cn('relative z-[var(--arcane-z-content)]', isMobile.current ? 'flex-1' : 'h-dvh flex-1')}>
 		<section
 			class={isMobile.current
 				? cn(
