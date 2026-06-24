@@ -386,7 +386,7 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 		if errors.Is(err, services.ErrUserNotFound) {
 			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
 		}
-		return nil, huma.Error500InternalServerError("failed to retrieve avatar: " + err.Error())
+		return nil, huma.Error500InternalServerError("failed to retrieve avatar")
 	}
 
 	if len(data) == 0 {

@@ -507,11 +507,6 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 
 	fileHeader := files[0]
 
-	const maxSizeBytes = 2 * 1024 * 1024 // 2 MB
-	if fileHeader.Size > maxSizeBytes {
-		return nil, huma.NewError(http.StatusRequestEntityTooLarge, "avatar file must be 2 MB or smaller")
-	}
-
 	f, err := fileHeader.Open()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read uploaded file: " + err.Error())
@@ -522,6 +517,11 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	buf := new(bytes.Buffer)
 	if _, err := buf.ReadFrom(f); err != nil {
 		return nil, huma.Error500InternalServerError("failed to read file data: " + err.Error())
+	}
+
+	const maxSizeBytes = 2 * 1024 * 1024 // 2 MB
+	if buf.Len() > maxSizeBytes {
+		return nil, huma.NewError(http.StatusRequestEntityTooLarge, "avatar file must be 2 MB or smaller")
 	}
 	data := buf.Bytes()
 
