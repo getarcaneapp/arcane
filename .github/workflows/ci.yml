@@ -43,7 +43,7 @@ jobs:
             cgo_enabled: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -102,7 +102,7 @@ jobs:
             args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -124,7 +124,7 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -201,7 +201,7 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -250,7 +250,7 @@ jobs:
             port: 3002
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -322,7 +322,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6.0.3
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
