@@ -286,8 +286,8 @@
 					<UserIcon class="size-4 sm:size-5" />
 				</div>
 				<div class="min-w-0">
-					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Account</h1>
-					<p class="text-muted-foreground mt-1 text-sm">Manage your profile, password, and active sessions</p>
+					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{m.account_title()}</h1>
+					<p class="text-muted-foreground mt-1 text-sm">{m.account_subtitle()}</p>
 				</div>
 			</div>
 		</div>
@@ -300,8 +300,8 @@
 				<!-- Profile -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Profile</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Update your display name and email</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_subtitle()}</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
 						<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
@@ -327,7 +327,7 @@
 										</Avatar.Root>
 									{/key}
 									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100">
-										<div class="text-white text-xs font-medium">Upload</div>
+										<div class="text-white text-xs font-medium">{m.account_upload_overlay()}</div>
 									</div>
 								</button>
 								<div class="min-w-0 flex flex-col items-start gap-1">
