@@ -302,11 +302,11 @@
 							<div class="flex min-w-0 items-center gap-4">
 								<button 
 									type="button" 
-									class="group relative size-16 cursor-pointer overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+									class="group/avatar relative size-16 cursor-pointer overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
 									onclick={() => avatarInput.click()}
 									disabled={avatarUploading}
 								>
-									<Avatar.Root class="size-16 rounded-xl transition-all group-hover:opacity-80">
+									<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
 										{#if currentUser.avatarUrl}
 											<Avatar.Image src={currentUser.avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
 										{:else if avatarUrl}
@@ -318,7 +318,7 @@
 											{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
 										</Avatar.Fallback>
 									</Avatar.Root>
-									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100">
 										<div class="text-white text-xs font-medium">Upload</div>
 									</div>
 								</button>
