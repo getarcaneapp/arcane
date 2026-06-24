@@ -240,8 +240,8 @@
 					<UserIcon class="size-4 sm:size-5" />
 				</div>
 				<div class="min-w-0">
-					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">Account</h1>
-					<p class="text-muted-foreground mt-1 text-sm">Manage your profile, password, and active sessions</p>
+					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{m.account_title()}</h1>
+					<p class="text-muted-foreground mt-1 text-sm">{m.account_subtitle()}</p>
 				</div>
 			</div>
 		</div>
@@ -271,7 +271,7 @@
 								<div class="min-w-0">
 									<div class="text-sm font-medium">@{currentUser.username}</div>
 									<div class="text-muted-foreground text-xs">
-										{isOidcUser ? 'Single sign-on account' : 'Local account'}
+										{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
 									</div>
 								</div>
 							</div>
@@ -280,23 +280,23 @@
 									<div class="text-muted-foreground text-xs">Member since {safeFormatDate(currentUser.createdAt, 'PP')}</div>
 								{/if}
 								<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
-									Last login {safeFormatRelative(currentUser.lastLogin) ?? 'Never'}
+									{m.account_last_login_prefix()} {safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
 								</div>
 							</div>
 						</div>
 
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="space-y-2">
-								<Label for="account-display-name">Display Name</Label>
-								<Input id="account-display-name" bind:value={profileDisplayName} placeholder="Your name" disabled={isOidcUser} />
+								<Label for="account-display-name">{m.account_display_name_label()}</Label>
+								<Input id="account-display-name" bind:value={profileDisplayName} placeholder={m.account_display_name_placeholder()} disabled={isOidcUser} />
 							</div>
 							<div class="space-y-2">
-								<Label for="account-email">Email</Label>
+								<Label for="account-email">{m.account_email_label()}</Label>
 								<Input
 									id="account-email"
 									type="email"
 									bind:value={profileEmail}
-									placeholder="you@example.com"
+									placeholder={m.account_email_placeholder()}
 									disabled={isOidcUser}
 								/>
 							</div>
@@ -306,20 +306,20 @@
 								<ArcaneButton
 									action="cancel"
 									tone="outline"
-									customLabel="Reset"
+									customLabel={m.common_reset()}
 									onclick={resetProfile}
 									disabled={!profileDirty || profileSaving}
 								/>
 								<ArcaneButton
 									action="save"
-									customLabel="Save profile"
+									customLabel={m.account_save_profile()}
 									onclick={saveProfile}
 									loading={profileSaving}
 									disabled={!profileDirty || profileSaving}
 								/>
 							</div>
 						{:else}
-							<p class="text-muted-foreground text-xs">Profile details are managed by your identity provider.</p>
+							<p class="text-muted-foreground text-xs">{m.account_profile_managed_by_idp()}</p>
 						{/if}
 					</div>
 				</Card>
@@ -345,20 +345,20 @@
 								<div class="space-y-2">
 									<Label for="account-new-password">New password</Label>
 									<Input id="account-new-password" type="password" bind:value={newPassword} autocomplete="new-password" />
-									<p class="text-muted-foreground text-xs">At least 8 characters</p>
+									<p class="text-muted-foreground text-xs">{m.account_password_min_length()}</p>
 								</div>
 								<div class="space-y-2">
 									<Label for="account-confirm-password">Confirm new password</Label>
 									<Input id="account-confirm-password" type="password" bind:value={confirmPassword} autocomplete="new-password" />
 									{#if confirmPassword.length > 0 && confirmPassword !== newPassword}
-										<p class="text-destructive text-xs">Passwords don't match</p>
+										<p class="text-destructive text-xs">{m.account_passwords_dont_match()}</p>
 									{/if}
 								</div>
 							</div>
 							<div class="flex justify-end">
 								<ArcaneButton
 									action="save"
-									customLabel="Update password"
+									customLabel={m.account_update_password()}
 									onclick={changePassword}
 									loading={passwordSaving}
 									disabled={!passwordValid || passwordSaving}
@@ -372,15 +372,15 @@
 				<Card class="overflow-hidden">
 					<div class="flex items-start justify-between gap-3 border-b p-4 sm:p-6">
 						<div class="min-w-0">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">API keys</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal tokens for programmatic access</p>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_api_keys_description()}</p>
 						</div>
 						{#if !showCreateKeyForm && !createdKey}
 							<ArcaneButton
 								action="create"
 								tone="outline"
 								size="sm"
-								customLabel="New key"
+								customLabel={m.account_new_key()}
 								icon={AddIcon}
 								onclick={() => (showCreateKeyForm = true)}
 							/>
