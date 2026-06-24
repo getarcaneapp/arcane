@@ -168,6 +168,8 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersDelete),
 	}, h.DeleteUser)
 
+	// Unauthenticated by design: profile pictures are publicly visible
+	// so they can be displayed without requiring a session token.
 	huma.Register(api, huma.Operation{
 		OperationID: "getUserAvatar",
 		Method:      "GET",

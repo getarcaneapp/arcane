@@ -5,7 +5,6 @@
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { User } from '$lib/types/auth';
 	import settingsStore from '$lib/stores/config-store';
-	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { goto } from '$app/navigation';
 	import { LogoutIcon, UserIcon } from '$lib/icons';
 

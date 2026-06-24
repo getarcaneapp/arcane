@@ -19,7 +19,6 @@
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
-	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '$lib/types/auth';
 	import { UserIcon, LogoutIcon, ShieldAlertIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
@@ -74,7 +73,7 @@
 	let passwordSaving = $state(false);
 
 	let revokingAll = $state(false);
-	let avatarUrl = $state<string>(getDefaultProfilePicture());
+	let avatarUrl = $state<string>('');
 
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);
@@ -105,7 +104,7 @@
 
 	async function updateAvatar(email: string | undefined, enabled: boolean) {
 		if (!enabled || !email) {
-			avatarUrl = getDefaultProfilePicture();
+			avatarUrl = '';
 			return;
 		}
 		try {
@@ -117,7 +116,7 @@
 				.join('');
 			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128`;
 		} catch {
-			avatarUrl = getDefaultProfilePicture();
+			avatarUrl = '';
 		}
 	}
 
@@ -149,6 +148,7 @@
 		if (!target.files || target.files.length === 0) return;
 
 		const file = target.files[0];
+		if (!file) return;
 		if (file.size > 2 * 1024 * 1024) {
 			toast.error(m.account_avatar_size_error());
 			return;
@@ -300,18 +300,28 @@
 					<div class="space-y-5 p-4 sm:p-6">
 						<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 							<div class="flex min-w-0 items-center gap-4">
-								<Avatar.Root class="size-16 rounded-xl">
-									{#if currentUser.avatarUrl}
-										<Avatar.Image src={currentUser.avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-									{:else if avatarUrl}
-										<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-									{/if}
-									<Avatar.Fallback
-										class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
-									>
-										{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-									</Avatar.Fallback>
-								</Avatar.Root>
+								<button 
+									type="button" 
+									class="group relative size-16 cursor-pointer overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
+									onclick={() => avatarInput.click()}
+									disabled={avatarUploading}
+								>
+									<Avatar.Root class="size-16 rounded-xl transition-all group-hover:opacity-80">
+										{#if currentUser.avatarUrl}
+											<Avatar.Image src={currentUser.avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+										{:else if avatarUrl}
+											<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+										{/if}
+										<Avatar.Fallback
+											class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
+										>
+											{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+										</Avatar.Fallback>
+									</Avatar.Root>
+									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover:opacity-100">
+										<div class="text-white text-xs font-medium">Upload</div>
+									</div>
+								</button>
 								<div class="min-w-0 flex flex-col items-start gap-1">
 									<div class="text-sm font-medium">@{currentUser.username}</div>
 									<div class="text-muted-foreground text-xs">
@@ -327,7 +337,7 @@
 										/>
 										<ArcaneButton
 											action="base"
-											size="xs"
+											size="sm"
 											tone="outline"
 											customLabel={m.account_upload_photo()}
 											onclick={() => avatarInput.click()}
@@ -337,7 +347,7 @@
 										{#if currentUser.avatarUrl}
 											<ArcaneButton
 												action="remove"
-												size="xs"
+												size="sm"
 												tone="ghost"
 												customLabel={m.account_remove_photo()}
 												showLabel={true}

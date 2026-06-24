@@ -4,8 +4,6 @@ import (
 	"bytes"
 	"context"
 	"errors"
-	_ "image/jpeg"
-	_ "image/png"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -19,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
-	_ "golang.org/x/image/webp"
 )
 
 type AuthHandler struct {
@@ -529,14 +526,14 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	data := buf.Bytes()
 
 	// Detect and validate image format
-	mimeType, err := detectAvatarMimeType(data)
+	mimeType, err := detectAvatarMimeTypeInternal(data)
 	if err != nil {
 		return nil, huma.Error400BadRequest("unsupported image format: only PNG, JPEG and WebP are accepted")
 	}
 
 	if err := h.userService.UploadAvatar(ctx, currentUser.ID, data, mimeType); err != nil {
 		slog.ErrorContext(ctx, "Failed to save avatar", "user_id", currentUser.ID, "error", err)
-		return nil, huma.Error500InternalServerError("failed to save avatar: " + err.Error())
+		return nil, huma.Error500InternalServerError("failed to save avatar")
 	}
 
 	// Reload user so the response reflects the new AvatarURL
@@ -570,7 +567,8 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 	}
 
 	if err := h.userService.DeleteAvatar(ctx, currentUser.ID); err != nil {
-		return nil, huma.Error500InternalServerError("failed to delete avatar: " + err.Error())
+		slog.ErrorContext(ctx, "Failed to delete avatar", "user_id", currentUser.ID, "error", err)
+		return nil, huma.Error500InternalServerError("failed to delete avatar")
 	}
 
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
@@ -591,9 +589,9 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 	}, nil
 }
 
-// detectAvatarMimeType validates that data is a supported image format and returns its MIME type.
+// detectAvatarMimeTypeInternal validates that data is a supported image format and returns its MIME type.
 // Supported formats: PNG, JPEG, WebP.
-func detectAvatarMimeType(data []byte) (string, error) {
+func detectAvatarMimeTypeInternal(data []byte) (string, error) {
 	mimeType := http.DetectContentType(data)
 	switch mimeType {
 	case "image/png", "image/jpeg", "image/webp":
