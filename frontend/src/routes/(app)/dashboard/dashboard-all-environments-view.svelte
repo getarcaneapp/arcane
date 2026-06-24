@@ -792,38 +792,21 @@
 
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<EnvironmentsIcon class="size-3.5" />
-						<span>{m.environments_title()}</span>
+				{#each [
+					{ icon: EnvironmentsIcon, label: m.environments_title() },
+					{ icon: ContainersIcon, label: m.containers_title() },
+					{ icon: ImagesIcon, label: m.images_title() },
+					{ icon: VolumesIcon, label: m.dashboard_all_storage_title() }
+				] as tile (tile.label)}
+					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+							<tile.icon class="size-3.5" />
+							<span>{tile.label}</span>
+						</div>
+						<Skeleton class="mt-2 h-7 w-12" />
+						<Skeleton class="mt-1.5 h-3.5 w-28" />
 					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<ContainersIcon class="size-3.5" />
-						<span>{m.containers_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<ImagesIcon class="size-3.5" />
-						<span>{m.images_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<VolumesIcon class="size-3.5" />
-						<span>{m.dashboard_all_storage_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-16" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
+				{/each}
 			</div>
 		{:else}
 			{@const summary = boardState.summary}
