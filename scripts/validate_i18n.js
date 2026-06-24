@@ -38,51 +38,93 @@ function isWhitelisted(text) {
     );
 }
 
-function analyzeLine(line, filePath, lineNumber) {
+function analyzeContent(content, filePath) {
     const errors = [];
     
-    // Matches a text node between > and < with at least 3 characters.
-    // We avoid Svelte control blocks like {#each} or {if} by ensuring the text 
-    // contains alphanumeric characters and standard punctuation, without starting with # or / or {
-    const textRegex = />\s*([A-Za-z0-9][A-Za-z0-9\s.,'?!-]{2,})\s*</g;
-    const attrRegex = /(?:aria-label|title|placeholder)=["']([^"']{2,})["']/g;
+    // Strip script, style, and comments to avoid matching JS/CSS content
+    // Replace with spaces but preserve newlines to keep line numbers accurate
+    const preserveLength = (match) => match.replace(/[^\n]/g, ' ');
+    const strippedContent = content
+        .replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, preserveLength)
+        .replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, preserveLength)
+        .replace(/<!--[\s\S]*?-->/g, preserveLength);
 
-    // Skip purely structural markup or tailwind class lines
-    if (line.includes('class=') && line.includes('text-') && !line.includes('>')) return errors;
+    // Match any attribute value: (aria-label|title|placeholder|customLabel|etc)="value"
+    // We only check common string props that might contain english text.
+    // To avoid too many false positives, we check attributes ending with Label, Title, Description, or specific ones.
+    const attrRegex = /(?:aria-label|title|placeholder|[a-zA-Z]+Label|[a-zA-Z]+Title|[a-zA-Z]+Description)=["']([^"']{2,})["']/g;
 
-    // 1. Check for text nodes
-    let result;
-    while ((result = textRegex.exec(line)) !== null) {
-        const text = result[1].trim();
-        
-        // Skip too short, numbers, or whitelisted technical terms
-        if (text.length < 3 || isWhitelisted(text)) continue;
+    // Helper to get line number (using original content for accuracy)
+    const getLineNumber = (index) => content.substring(0, index).split('\n').length;
 
-        // Skip if it contains a svelte expression { } or Paraglide m.*
-        if (text.includes('{') || text.includes('m.')) continue;
+    // 1. Check for text nodes using a simple state machine
+    // This avoids regex issues with > or < inside Svelte { } blocks
+    let inTag = false;
+    let braceDepth = 0;
+    let currentText = '';
+    let textStartIndex = -1;
 
-        // Check if it looks like an English phrase (spaces or starts with uppercase)
-        if (text.includes(' ') || /^[A-Z]/.test(text)) {
-            errors.push(`[${filePath}:${lineNumber}] Found potential hardcoded text: "${text}"`);
+    for (let i = 0; i < strippedContent.length; i++) {
+        const char = strippedContent[i];
+
+        if (char === '<' && braceDepth === 0) {
+            inTag = true;
+            if (currentText.trim().length > 0) {
+                checkTextNode(currentText, textStartIndex);
+            }
+            currentText = '';
+            textStartIndex = -1;
+        } else if (char === '>' && inTag && braceDepth === 0) {
+            inTag = false;
+        } else if (char === '{') {
+            braceDepth++;
+            if (!inTag) currentText += ' '; // replace { block } with space for text check
+        } else if (char === '}') {
+            braceDepth = Math.max(0, braceDepth - 1);
+            if (!inTag) currentText += ' ';
+        } else if (!inTag && braceDepth === 0) {
+            if (currentText.length === 0) textStartIndex = i;
+            currentText += char;
+        }
+    }
+    if (currentText.trim().length > 0) {
+        checkTextNode(currentText, textStartIndex);
+    }
+
+    function checkTextNode(textStr, index) {
+        for (let text of textStr.split('\n')) {
+            text = text.trim();
+            if (text.length < 3 || isWhitelisted(text)) continue;
+
+            if (text.includes('m.')) continue;
+            if (text.includes('class=') && text.includes('text-')) continue;
+
+            if (/[a-zA-Z]/.test(text) && (text.includes(' ') || /^[A-Z]/.test(text))) {
+                const lineNum = getLineNumber(index);
+                errors.push(`[${filePath}:${lineNum}] Found potential hardcoded text: "${text}"`);
+            }
         }
     }
 
-    // 2. Check for common attributes (aria-label, title, placeholder)
-    while ((result = attrRegex.exec(line)) !== null) {
-        const text = result[1];
+    // 2. Check for attribute text
+    for (const match of content.matchAll(attrRegex)) {
+        const text = match[1];
         
         if (text.includes('{') || text.includes('m.')) continue;
         if (isWhitelisted(text)) continue;
 
+        const lineNum = getLineNumber(match.index);
+
         if (BLACKLIST.includes(text)) {
-            errors.push(`[${filePath}:${lineNumber}] Blacklisted attribute text: "${text}"`);
+            errors.push(`[${filePath}:${lineNum}] Blacklisted attribute text: "${text}"`);
             continue;
         }
 
         // Short tokens often structural; ignore unless uppercase start or multiple words
         if (text.length <= 4 && !/^[A-Z]/.test(text)) continue;
+        if (!/[a-zA-Z]/.test(text)) continue;
 
-        errors.push(`[${filePath}:${lineNumber}] Found potential hardcoded attribute text: "${text}"`);
+        errors.push(`[${filePath}:${lineNum}] Found potential hardcoded attribute text: "${text}"`);
     }
 
     return errors;
@@ -105,13 +147,10 @@ function run() {
     walkDir(FRONTEND_DIR, (absolutePath) => {
         if (absolutePath.endsWith('.svelte')) {
             const content = fs.readFileSync(absolutePath, 'utf8');
-            const lines = content.split('\n');
             const relPath = absolutePath.replace(process.cwd(), '');
             
-            for (let i = 0; i < lines.length; i++) {
-                const lineErrors = analyzeLine(lines[i], relPath, i + 1);
-                allErrors.push(...lineErrors);
-            }
+            const fileErrors = analyzeContent(content, relPath);
+            allErrors.push(...fileErrors);
         }
     });
 
@@ -130,5 +169,5 @@ function run() {
 if (require.main === module) {
     run();
 } else {
-    module.exports = { analyzeLine, isWhitelisted };
+    module.exports = { analyzeContent, isWhitelisted };
 }

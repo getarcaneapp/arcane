@@ -277,7 +277,7 @@
 							</div>
 							<div class="hidden text-right sm:block">
 								{#if safeFormatDate(currentUser.createdAt, 'PP')}
-									<div class="text-muted-foreground text-xs">Member since {safeFormatDate(currentUser.createdAt, 'PP')}</div>
+									<div class="text-muted-foreground text-xs">{m.account_member_since()} {safeFormatDate(currentUser.createdAt, 'PP')}</div>
 								{/if}
 								<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
 									{m.account_last_login_prefix()} {safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
@@ -505,7 +505,7 @@
 				<!-- Roles & access -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Roles &amp; access</h2>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_roles_and_access()}</h2>
 						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_roles()}</p>
 					</div>
 					<div class="p-4 sm:p-6">
@@ -516,9 +516,9 @@
 										<div class="min-w-0">
 											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
 											<div class="text-muted-foreground text-xs">
-												{ra.environmentId ? `Environment: ${ra.environmentId}` : 'Global scope'}
+												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
 												{#if ra.source === 'oidc'}
-													<span class="ml-1 opacity-70">· via SSO</span>
+													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
 												{/if}
 											</div>
 										</div>
@@ -554,12 +554,12 @@
 							<div class="space-y-2">
 								<div class="text-sm font-medium">{m.account_signout_other()}</div>
 								<p class="text-muted-foreground text-xs">
-									Revokes every active session except this one. Useful if you forgot to log out somewhere.
+									{m.account_signout_other_desc()}
 								</p>
 								<ArcaneButton
 									action="restart"
 									tone="outline"
-									customLabel="Sign out other sessions"
+									customLabel={m.account_signout_other()}
 									onclick={logoutAllOther}
 									loading={revokingAll}
 									disabled={revokingAll}
@@ -575,7 +575,7 @@
 									<ArcaneButton
 										action="cancel"
 										tone="outline"
-										customLabel="Log out"
+										customLabel={m.common_log_out()}
 										icon={LogoutIcon}
 										type="submit"
 										class="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
