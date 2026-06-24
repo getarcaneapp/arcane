@@ -312,18 +312,20 @@
 									onclick={() => avatarInput.click()}
 									disabled={avatarUploading}
 								>
-									<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
-										{#if avatarSrc}
-											<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
-										{:else if avatarUrl}
-											<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-										{/if}
-										<Avatar.Fallback
-											class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold"
-										>
-											{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-										</Avatar.Fallback>
-									</Avatar.Root>
+									{#key avatarCacheBuster}
+										<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
+											{#if avatarSrc}
+												<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
+											{:else if avatarUrl}
+												<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+											{/if}
+											<Avatar.Fallback
+												class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold"
+											>
+												{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+											</Avatar.Fallback>
+										</Avatar.Root>
+									{/key}
 									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100">
 										<div class="text-white text-xs font-medium">Upload</div>
 									</div>
