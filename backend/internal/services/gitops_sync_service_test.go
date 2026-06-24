@@ -736,11 +736,22 @@ func TestValidateLifecycleConfig_RejectsOverlongScriptPath(t *testing.T) {
 
 func TestValidateLifecycleConfig_RejectsScriptWithoutRunnerImageOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", " "))
 	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
 		scriptPath: strPtr("scripts/deploy.sh"),
 	})
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "Runner image is required")
+}
+
+func TestValidateLifecycleConfig_AcceptsScriptWithDefaultRunnerImageOnCreate(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest"))
+	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		targetType:    strPtr("project"),
+		scriptPath:    strPtr("scripts/deploy.sh"),
+		syncDirectory: boolPtr(true),
+	}))
 }
 
 func TestValidateLifecycleConfig_AcceptsScriptWithExistingRunnerImageOnUpdate(t *testing.T) {
@@ -833,10 +844,41 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *te
 func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		targetType:    strPtr("project"),
 		scriptPath:    strPtr("scripts/deploy.sh"),
 		runnerImage:   strPtr("alpine:latest"),
 		syncDirectory: boolPtr(true),
 	}))
+}
+
+func TestValidateLifecycleConfig_RejectsLifecycleHookForSwarmStack(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	err := svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{
+		targetType:    strPtr("swarm_stack"),
+		scriptPath:    strPtr("scripts/deploy.sh"),
+		runnerImage:   strPtr("alpine:latest"),
+		syncDirectory: boolPtr(true),
+	})
+	require.Error(t, err)
+	validationErr, ok := errors.AsType[*models.ValidationError](err)
+	require.True(t, ok, "expected *models.ValidationError, got %T", err)
+	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.Contains(t, err.Error(), "project syncs")
+}
+
+func TestValidateLifecycleConfig_RejectsSwarmTargetChangeWithExistingLifecycleHook(t *testing.T) {
+	svc, ctx := setupLifecycleValidationService(t)
+	existing := &models.GitOpsSync{TargetType: "project", SyncDirectory: true}
+	existing.PreDeployScriptPath = strPtr("scripts/deploy.sh")
+	existing.PreDeployRunnerImage = strPtr("alpine:latest")
+	err := svc.validateLifecycleConfigInternal(ctx, existing, lifecycleConfigInputInternal{
+		targetType: strPtr("swarm_stack"),
+	})
+	require.Error(t, err)
+	validationErr, ok := errors.AsType[*models.ValidationError](err)
+	require.True(t, ok, "expected *models.ValidationError, got %T", err)
+	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.Contains(t, err.Error(), "project syncs")
 }
 
 func TestValidateLifecycleConfig_AcceptsScriptWhenExistingSyncHasSyncDirectory(t *testing.T) {

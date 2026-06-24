@@ -28,6 +28,7 @@
 	import JobsTab from './components/JobsTab.svelte';
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
 	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
+	import LifecycleSecuritySettings from '$lib/components/settings/lifecycle-security-settings.svelte';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -52,6 +53,7 @@
 	let currentEnvironment = $derived(environmentStore.selected);
 
 	let activeTab = $state('general');
+	let activeSecurityTab = $state('trivy');
 
 	let isRefreshing = $state(false);
 	let isTestingConnection = $state(false);
@@ -173,6 +175,18 @@
 	});
 
 	const tabValues = $derived(new Set(tabItems.map((tab) => tab.value)));
+	const securityTabItems = $derived.by((): TabItem[] => [
+		{
+			value: 'trivy',
+			label: m.security_trivy_tab(),
+			icon: SecurityIcon
+		},
+		{
+			value: 'lifecycle',
+			label: m.security_lifecycle_tab(),
+			icon: GitBranchIcon
+		}
+	]);
 
 	$effect(() => {
 		if (!tabValues.has(activeTab)) {
@@ -246,6 +260,9 @@
 		trivyServerUrl: settings?.trivyServerUrl || '',
 		trivyServerToken: settings?.trivyServerToken || '',
 		trivyIgnoreUnfixed: settings?.trivyIgnoreUnfixed ?? true,
+		lifecycleEnabled: settings?.lifecycleEnabled ?? false,
+		lifecycleDefaultRunnerImage: settings?.lifecycleDefaultRunnerImage || 'alpine:latest',
+		lifecycleMaxTimeoutSec: settings?.lifecycleMaxTimeoutSec ?? 300,
 		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
 		autoHealEnabled: settings?.autoHealEnabled ?? false,
 		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
@@ -304,6 +321,9 @@
 				trivyServerUrl: formData.trivyServerUrl,
 				trivyServerToken: formData.trivyServerToken,
 				trivyIgnoreUnfixed: formData.trivyIgnoreUnfixed,
+				lifecycleEnabled: formData.lifecycleEnabled,
+				lifecycleDefaultRunnerImage: formData.lifecycleDefaultRunnerImage,
+				lifecycleMaxTimeoutSec: formData.lifecycleMaxTimeoutSec,
 				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
 				autoHealEnabled: formData.autoHealEnabled,
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
@@ -652,7 +672,17 @@
 			</Tabs.Content>
 
 			<Tabs.Content value="security">
-				<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+				<Tabs.Root bind:value={activeSecurityTab} class="space-y-4">
+					<TabBar items={securityTabItems} value={activeSecurityTab} onValueChange={(value) => (activeSecurityTab = value)} />
+
+					<Tabs.Content value="trivy">
+						<TrivySecuritySettings {formInputs} environmentId={environment.id} />
+					</Tabs.Content>
+
+					<Tabs.Content value="lifecycle">
+						<LifecycleSecuritySettings {formInputs} />
+					</Tabs.Content>
+				</Tabs.Root>
 			</Tabs.Content>
 
 			<Tabs.Content value="jobs">

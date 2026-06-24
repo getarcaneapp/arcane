@@ -111,6 +111,7 @@ func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error
 // request types collapse into the same shape so a single validator handles
 // both flows.
 type lifecycleConfigInputInternal struct {
+	targetType    *string
 	scriptPath    *string
 	runnerImage   *string
 	env           *string
@@ -123,11 +124,15 @@ type lifecycleConfigInputInternal struct {
 func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal) error {
 	lifecycleFieldSet := in.scriptPath != nil || in.runnerImage != nil || in.env != nil || in.extraMounts != nil || in.timeoutSec != nil || in.networkMode != nil
 	syncDirectoryChanging := in.syncDirectory != nil
+	targetTypeChanging := in.targetType != nil && strings.TrimSpace(*in.targetType) != resolveLifecycleEffectiveTargetTypeInternal(current, nil)
 	effectiveScriptPath := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployScriptPath }), in.scriptPath)
 
 	// If nothing lifecycle-related is being touched and the resulting state
 	// has no script configured, there's nothing to validate.
-	if !lifecycleFieldSet && (!syncDirectoryChanging || effectiveScriptPath == "") {
+	if !lifecycleFieldSet && !syncDirectoryChanging && !targetTypeChanging {
+		return nil
+	}
+	if !lifecycleFieldSet && effectiveScriptPath == "" {
 		return nil
 	}
 
@@ -139,26 +144,8 @@ func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context,
 	}
 
 	if effectiveScriptPath != "" {
-		if len(effectiveScriptPath) > 256 {
-			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be 256 characters or fewer."}
-		}
-		// scriptPath is a POSIX repo path, not a host path; use path.IsAbs so the
-		// check behaves the same on Windows-based contributor machines.
-		if path.IsAbs(filepath.ToSlash(effectiveScriptPath)) {
-			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be relative to the project directory."}
-		}
-		cleaned := filepath.ToSlash(filepath.Clean(effectiveScriptPath))
-		if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must not escape the project directory."}
-		}
-
-		effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
-		if effectiveRunnerImage == "" {
-			return &models.ValidationError{Field: "preDeployRunnerImage", Message: "Runner image is required when a script path is set."}
-		}
-
-		if !resolveEffectiveSyncDirectoryInternal(current, in.syncDirectory) {
-			return &models.ValidationError{Field: "preDeployScriptPath", Message: "Pre-deploy script requires \"Sync entire directory\" so the script is included in the synced files."}
+		if err := s.validateLifecycleScriptConfigInternal(ctx, current, in, effectiveScriptPath); err != nil {
+			return err
 		}
 	}
 
@@ -177,6 +164,37 @@ func (s *GitOpsSyncService) validateLifecycleConfigInternal(ctx context.Context,
 	}
 	if _, err := parseLifecycleExtraMountsTextInternal(in.extraMounts); err != nil {
 		return &models.ValidationError{Field: "preDeployExtraMounts", Message: err.Error()}
+	}
+
+	return nil
+}
+
+func (s *GitOpsSyncService) validateLifecycleScriptConfigInternal(ctx context.Context, current *models.GitOpsSync, in lifecycleConfigInputInternal, scriptPath string) error {
+	if resolveLifecycleEffectiveTargetTypeInternal(current, in.targetType) == "swarm_stack" {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Pre-deploy lifecycle hooks are only supported for project syncs."}
+	}
+
+	if len(scriptPath) > 256 {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be 256 characters or fewer."}
+	}
+	// scriptPath is a POSIX repo path, not a host path; use path.IsAbs so the
+	// check behaves the same on Windows-based contributor machines.
+	if path.IsAbs(filepath.ToSlash(scriptPath)) {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must be relative to the project directory."}
+	}
+	cleaned := filepath.ToSlash(filepath.Clean(scriptPath))
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Script path must not escape the project directory."}
+	}
+
+	effectiveRunnerImage := resolveLifecycleEffectiveStringInternal(currentStringInternal(current, func(c *models.GitOpsSync) *string { return c.PreDeployRunnerImage }), in.runnerImage)
+	defaultRunnerImage := strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", ""))
+	if effectiveRunnerImage == "" && defaultRunnerImage == "" {
+		return &models.ValidationError{Field: "preDeployRunnerImage", Message: "Runner image is required when a script path is set."}
+	}
+
+	if !resolveEffectiveSyncDirectoryInternal(current, in.syncDirectory) {
+		return &models.ValidationError{Field: "preDeployScriptPath", Message: "Pre-deploy script requires \"Sync entire directory\" so the script is included in the synced files."}
 	}
 
 	return nil
@@ -201,6 +219,16 @@ func currentStringInternal(sync *models.GitOpsSync, accessor func(*models.GitOps
 		return *p
 	}
 	return ""
+}
+
+func resolveLifecycleEffectiveTargetTypeInternal(current *models.GitOpsSync, update *string) string {
+	if update != nil && strings.TrimSpace(*update) != "" {
+		return strings.TrimSpace(*update)
+	}
+	if current != nil && strings.TrimSpace(current.TargetType) != "" {
+		return strings.TrimSpace(current.TargetType)
+	}
+	return "project"
 }
 
 // resolveEffectiveSyncDirectoryInternal mirrors the string resolver but for
@@ -618,6 +646,7 @@ func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string
 	}
 
 	lifecycleCfg := lifecycleConfigInputInternal{
+		targetType:    &req.TargetType,
 		scriptPath:    req.PreDeployScriptPath,
 		runnerImage:   req.PreDeployRunnerImage,
 		env:           req.PreDeployEnv,
@@ -732,6 +761,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 	}
 
 	lifecycleCfg := lifecycleConfigInputInternal{
+		targetType:    req.TargetType,
 		scriptPath:    req.PreDeployScriptPath,
 		runnerImage:   req.PreDeployRunnerImage,
 		env:           req.PreDeployEnv,

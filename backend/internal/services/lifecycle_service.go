@@ -130,9 +130,9 @@ func (s *LifecycleService) RunPreDeploy(ctx context.Context, project *models.Pro
 }
 
 func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project *models.Project, sync *models.GitOpsSync, actor models.User) error {
-	runnerImage := strings.TrimSpace(utils.DerefString(sync.PreDeployRunnerImage))
+	runnerImage := s.resolveRunnerImageInternal(ctx, sync)
 	if runnerImage == "" {
-		return fmt.Errorf("pre-deploy script %q is configured but no runner image is set on the GitOps sync", *sync.PreDeployScriptPath)
+		return fmt.Errorf("pre-deploy script %q is configured but no runner image is set on the GitOps sync or lifecycleDefaultRunnerImage setting", *sync.PreDeployScriptPath)
 	}
 
 	scriptPath := strings.TrimSpace(*sync.PreDeployScriptPath)
@@ -179,7 +179,7 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 	// could land mid-UTF-8 codepoint and produce garbled output.
 	persistedOutput := combineLifecycleOutputInternal(stdoutContent, stderrContent)
 	s.persistLastRunInternal(ctx, sync.ID, status, persistedOutput, start)
-	s.emitLifecycleEventInternal(ctx, project, sync, status, exitCode, durationMs, runErr, actor)
+	s.emitLifecycleEventInternal(ctx, project, sync, runnerImage, status, exitCode, durationMs, runErr, actor)
 
 	if runErr != nil {
 		return runErr
@@ -188,6 +188,16 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 		return fmt.Errorf("pre-deploy script exited with status %d", exitCode)
 	}
 	return nil
+}
+
+func (s *LifecycleService) resolveRunnerImageInternal(ctx context.Context, sync *models.GitOpsSync) string {
+	if sync != nil {
+		runnerImage := strings.TrimSpace(utils.DerefString(sync.PreDeployRunnerImage))
+		if runnerImage != "" {
+			return runnerImage
+		}
+	}
+	return strings.TrimSpace(s.settingsService.GetStringSetting(ctx, "lifecycleDefaultRunnerImage", "alpine:latest"))
 }
 
 // runScriptInContainerInternal performs the docker run + log capture + wait.
@@ -397,6 +407,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 	ctx context.Context,
 	project *models.Project,
 	sync *models.GitOpsSync,
+	runnerImage string,
 	status string,
 	exitCode int64,
 	durationMs int64,
@@ -416,7 +427,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 
 	metadata := models.JSON{
 		"scriptPath":   utils.DerefString(sync.PreDeployScriptPath),
-		"runnerImage":  utils.DerefString(sync.PreDeployRunnerImage),
+		"runnerImage":  runnerImage,
 		"exitCode":     exitCode,
 		"durationMs":   durationMs,
 		"gitopsSyncId": sync.ID,

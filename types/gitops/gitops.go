@@ -427,14 +427,13 @@ type CreateSyncRequest struct {
 	MaxSyncBinarySize *int64 `json:"maxSyncBinarySize,omitempty"`
 
 	// PreDeployScriptPath is the optional path inside the synced repo to a
-	// script executed in a throwaway container before each deploy. When set,
-	// PreDeployRunnerImage must also be supplied.
+	// script executed in a throwaway container before each deploy.
 	//
 	// Required: false
 	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
 
 	// PreDeployRunnerImage is the image used to run the pre-deploy script.
-	// Required whenever PreDeployScriptPath is set.
+	// When omitted, the lifecycleDefaultRunnerImage setting is used.
 	//
 	// Required: false
 	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
@@ -543,7 +542,7 @@ type UpdateSyncRequest struct {
 	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
 
 	// PreDeployRunnerImage is the image used to run the pre-deploy script.
-	// Required whenever PreDeployScriptPath is non-empty.
+	// When omitted, the lifecycleDefaultRunnerImage setting is used.
 	//
 	// Required: false
 	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`

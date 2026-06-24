@@ -43,7 +43,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -59,6 +59,8 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "0 0 0 * * *", sv.Value)
 		case "trivyImage":
 			require.Equal(t, DefaultTrivyImage, sv.Value)
+		case "lifecycleDefaultRunnerImage":
+			require.Equal(t, "alpine:latest", sv.Value)
 		case "trivyNetwork":
 			require.Equal(t, "", sv.Value)
 		case "trivySecurityOpts":

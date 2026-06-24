@@ -204,6 +204,12 @@ type Update struct {
 	// Required: false
 	LifecycleEnabled *string `json:"lifecycleEnabled,omitempty"`
 
+	// LifecycleDefaultRunnerImage is the default container image used to run
+	// GitOps pre-deploy lifecycle scripts when a sync does not override it.
+	//
+	// Required: false
+	LifecycleDefaultRunnerImage *string `json:"lifecycleDefaultRunnerImage,omitempty"`
+
 	// LifecycleMaxTimeoutSec caps the per-sync pre-deploy timeout admins can
 	// configure. Zero disables the cap.
 	//

@@ -303,6 +303,7 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 	db := setupLifecycleTestDB(t)
 	svc, settings := newLifecycleTestService(t, db)
 	require.NoError(t, settings.SetStringSetting(context.Background(), "lifecycleEnabled", "true"))
+	require.NoError(t, settings.SetStringSetting(context.Background(), "lifecycleDefaultRunnerImage", " "))
 
 	syncID := "sync-1"
 	projectDir := writeLifecycleProjectDirWithScript(t, "pre-deploy.sh", "echo hi\n")
@@ -332,6 +333,19 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 	err := svc.RunPreDeploy(context.Background(), project, models.User{})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "runner image")
+}
+
+func TestResolveRunnerImage_UsesSettingDefault(t *testing.T) {
+	db := setupLifecycleTestDB(t)
+	svc, settings := newLifecycleTestService(t, db)
+	require.NoError(t, settings.SetStringSetting(context.Background(), "lifecycleDefaultRunnerImage", "alpine:latest"))
+
+	assert.Equal(t, "alpine:latest", svc.resolveRunnerImageInternal(context.Background(), &models.GitOpsSync{}))
+
+	override := "debian:stable-slim"
+	assert.Equal(t, override, svc.resolveRunnerImageInternal(context.Background(), &models.GitOpsSync{
+		PreDeployRunnerImage: &override,
+	}))
 }
 
 func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {

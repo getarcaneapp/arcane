@@ -111,11 +111,14 @@
 	}
 
 	const settingsQuery = createQuery(() => ({
-		queryKey: queryKeys.settings.global(),
-		queryFn: () => settingsService.getSettings(),
+		queryKey: queryKeys.settings.byEnvironment(environmentId),
+		queryFn: () => settingsService.getSettingsForEnvironmentMerged(environmentId),
 		enabled: open,
-		staleTime: 30_000
+		staleTime: 0,
+		refetchOnMount: 'always'
 	}));
+	const lifecycleEnabled = $derived(settingsQuery.data?.lifecycleEnabled ?? false);
+	const lifecycleDefaultRunnerImage = $derived(settingsQuery.data?.lifecycleDefaultRunnerImage?.trim() || 'alpine:latest');
 
 	let formData = $derived({
 		name: open && syncToEdit ? syncToEdit.name : '',
@@ -136,7 +139,7 @@
 		autoSync: open && syncToEdit ? (syncToEdit.autoSync ?? true) : true,
 		syncInterval: open && syncToEdit ? (syncToEdit.syncInterval ?? 5) : 5,
 		preDeployScriptPath: open && syncToEdit ? (syncToEdit.preDeployScriptPath ?? '') : '',
-		preDeployRunnerImage: open && syncToEdit ? (syncToEdit.preDeployRunnerImage ?? '') : '',
+		preDeployRunnerImage: open && syncToEdit ? (syncToEdit.preDeployRunnerImage ?? '') : lifecycleDefaultRunnerImage,
 		preDeployTimeoutSec: open && syncToEdit ? (syncToEdit.preDeployTimeoutSec ?? 60) : 60,
 		preDeployNetworkMode: open && syncToEdit ? (syncToEdit.preDeployNetworkMode ?? 'none') : 'none',
 		preDeployEnv: open && syncToEdit ? (syncToEdit.preDeployEnv ?? '') : '',
@@ -164,6 +167,46 @@
 	}));
 	const branches = $derived<BranchInfo[]>(branchesQuery.data?.branches ?? []);
 	const loadingBranches = $derived(!!selectedRepository?.value && (branchesQuery.isPending || branchesQuery.isFetching));
+
+	function normalizeLifecycleNetworkModeInternal(value: string | undefined | null): string {
+		return value?.trim() || 'none';
+	}
+
+	function existingLifecycleSnapshotInternal(sync: GitOpsSync | null) {
+		return {
+			scriptPath: sync?.preDeployScriptPath?.trim() ?? '',
+			runnerImage: sync?.preDeployRunnerImage?.trim() ?? '',
+			timeoutSec: sync?.preDeployTimeoutSec ?? 60,
+			networkMode: normalizeLifecycleNetworkModeInternal(sync?.preDeployNetworkMode),
+			env: sync?.preDeployEnv?.trim() ?? '',
+			extraMounts: sync?.preDeployExtraMounts?.trim() ?? ''
+		};
+	}
+
+	function shouldSubmitLifecycleFieldsInternal(data: z.infer<typeof formSchema>): boolean {
+		if (!lifecycleEnabled || !canManageLifecycle || selectedTargetType !== 'project') {
+			return false;
+		}
+
+		const scriptPath = data.preDeployScriptPath.trim();
+		if (!isEditMode) {
+			return scriptPath !== '';
+		}
+
+		const existing = existingLifecycleSnapshotInternal(syncToEdit);
+		if (scriptPath === '' && existing.scriptPath === '') {
+			return false;
+		}
+
+		return (
+			scriptPath !== existing.scriptPath ||
+			data.preDeployRunnerImage.trim() !== existing.runnerImage ||
+			data.preDeployTimeoutSec !== existing.timeoutSec ||
+			normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode) !== existing.networkMode ||
+			data.preDeployEnv.trim() !== existing.env ||
+			data.preDeployExtraMounts.trim() !== existing.extraMounts
+		);
+	}
 
 	$effect(() => {
 		if (open) {
@@ -212,14 +255,11 @@
 			syncInterval: data.syncInterval
 		};
 
-		// Only global admins may configure the pre-deploy lifecycle hook. Non-admins
-		// never send these fields, so an existing hook is left untouched on update
-		// and the backend's admin gate is never tripped on create.
-		if (canManageLifecycle) {
+		if (shouldSubmitLifecycleFieldsInternal(data)) {
 			payload.preDeployScriptPath = data.preDeployScriptPath.trim();
 			payload.preDeployRunnerImage = data.preDeployRunnerImage.trim();
 			payload.preDeployTimeoutSec = data.preDeployTimeoutSec;
-			payload.preDeployNetworkMode = data.preDeployNetworkMode.trim();
+			payload.preDeployNetworkMode = normalizeLifecycleNetworkModeInternal(data.preDeployNetworkMode);
 			payload.preDeployEnv = data.preDeployEnv.trim();
 			payload.preDeployExtraMounts = data.preDeployExtraMounts.trim();
 		}
@@ -444,7 +484,7 @@
 					</Collapsible.Content>
 				</Collapsible.Root>
 
-				{#if canManageLifecycle}
+				{#if lifecycleEnabled && canManageLifecycle && selectedTargetType === 'project'}
 					<Collapsible.Root class="group/collapsible">
 						<Collapsible.Trigger
 							type="button"
@@ -547,7 +587,16 @@
 							</div>
 						</Collapsible.Content>
 					</Collapsible.Root>
-				{:else}
+				{:else if lifecycleEnabled && canManageLifecycle}
+					<div
+						class="text-muted-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm"
+					>
+						<span class="min-w-0">
+							<span class="block font-medium">{m.git_sync_pre_deploy_title()}</span>
+							<span class="text-xs">{m.git_sync_pre_deploy_swarm_unsupported()}</span>
+						</span>
+					</div>
+				{:else if lifecycleEnabled}
 					<div
 						class="text-muted-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm"
 					>
