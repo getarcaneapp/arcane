@@ -792,13 +792,38 @@
 
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				{#each [1, 2, 3, 4] as tile (tile)}
-					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-						<Skeleton class="h-3 w-24" />
-						<Skeleton class="mt-2 h-7 w-16" />
-						<Skeleton class="mt-1.5 h-3.5 w-32" />
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+						<EnvironmentsIcon class="size-3.5" />
+						<span>{m.environments_title()}</span>
 					</div>
-				{/each}
+					<Skeleton class="mt-2 h-7 w-10" />
+					<Skeleton class="mt-1.5 h-3.5 w-28" />
+				</div>
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+						<ContainersIcon class="size-3.5" />
+						<span>{m.containers_title()}</span>
+					</div>
+					<Skeleton class="mt-2 h-7 w-10" />
+					<Skeleton class="mt-1.5 h-3.5 w-28" />
+				</div>
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+						<ImagesIcon class="size-3.5" />
+						<span>{m.images_title()}</span>
+					</div>
+					<Skeleton class="mt-2 h-7 w-10" />
+					<Skeleton class="mt-1.5 h-3.5 w-28" />
+				</div>
+				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+						<VolumesIcon class="size-3.5" />
+						<span>{m.dashboard_all_storage_title()}</span>
+					</div>
+					<Skeleton class="mt-2 h-7 w-16" />
+					<Skeleton class="mt-1.5 h-3.5 w-28" />
+				</div>
 			</div>
 		{:else}
 			{@const summary = boardState.summary}
