@@ -74,6 +74,10 @@
 
 	let revokingAll = $state(false);
 	let avatarUrl = $state<string>('');
+	let avatarCacheBuster = $state(Date.now());
+	const avatarSrc = $derived(
+		currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : ''
+	);
 
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);
@@ -158,6 +162,7 @@
 		try {
 			const updatedUser = await userService.uploadMyAvatar(file);
 			await userStore.setUser(updatedUser);
+			avatarCacheBuster = Date.now();
 			toast.success(m.account_avatar_upload_success());
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.account_avatar_upload_failed());
@@ -173,6 +178,7 @@
 		try {
 			const updatedUser = await userService.deleteMyAvatar();
 			await userStore.setUser(updatedUser);
+			avatarCacheBuster = Date.now();
 			toast.success(m.account_avatar_remove_success());
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : m.account_avatar_remove_failed());
@@ -307,8 +313,8 @@
 									disabled={avatarUploading}
 								>
 									<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
-										{#if currentUser.avatarUrl}
-											<Avatar.Image src={currentUser.avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+										{#if avatarSrc}
+											<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
 										{:else if avatarUrl}
 											<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
 										{/if}

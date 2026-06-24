@@ -49,7 +49,7 @@
 						{#if user && user.displayName}
 							<Avatar.Root class="size-8 rounded-lg">
 								{#if user?.avatarUrl}
-									<Avatar.Image src={user.avatarUrl} alt={user.displayName} />
+									<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={user.displayName} />
 								{:else if $settingsStore.enableGravatar}
 									{#await getGravatarUrl(user?.email)}
 										<!-- Loading gravatar, show fallback -->
@@ -96,7 +96,7 @@
 					<div class="flex items-center gap-2.5 px-2 py-2">
 						<Avatar.Root class="size-8 shrink-0 rounded-lg">
 							{#if user?.avatarUrl}
-								<Avatar.Image src={user.avatarUrl} alt={user.displayName} />
+								<Avatar.Image src={`${user.avatarUrl}?t=${user.updatedAt}`} alt={user.displayName} />
 							{:else if $settingsStore.enableGravatar}
 								{#await getGravatarUrl(user?.email)}
 									<!-- Loading gravatar, show fallback -->
