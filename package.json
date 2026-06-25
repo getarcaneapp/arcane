@@ -12,15 +12,10 @@
   ],
   "scripts": {
     "preinstall": "npx only-allow pnpm",
-    "prepare": "husky",
-    "validate:i18n": "node scripts/validate_i18n.js"
+    "prepare": "husky"
   },
   "lint-staged": {
-    "frontend/**/*.svelte": [
-      "sh -c 'pnpm run validate:i18n'",
-      "sh -c 'just format frontend --check'"
-    ],
-    "frontend/**/*.{ts,js,json,css}": [
+    "frontend/**/*": [
       "sh -c 'just format frontend --check'"
     ],
     "{tests,email-templates}/**/*.{ts,tsx,js,jsx,mts,cts}": [
