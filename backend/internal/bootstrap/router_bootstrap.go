@@ -120,8 +120,8 @@ func createAuthValidatorInternal(appServices *di.Services) middleware.AuthValida
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
-			if _, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil {
-				return authz.SudoPermissionSet(), true
+			if envID, err := appServices.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
+				return authz.EnvironmentPermissionSet(*envID), true
 			}
 			return nil, false
 		}

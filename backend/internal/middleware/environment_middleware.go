@@ -51,8 +51,8 @@ type EnvResolver func(ctx context.Context, id string) (string, *string, bool, er
 // AuthValidator validates authentication for a request and resolves the
 // caller's effective permission set. The boolean result reports whether the
 // request is authenticated; the permission set is used to authorize proxied
-// requests against the target environment. Sudo permission sets (environment
-// access tokens, internal agent proxies) bypass authorization.
+// requests against the target environment. Sudo permission sets (internal
+// agent proxies) bypass authorization.
 type AuthValidator func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
@@ -181,10 +181,9 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 // required for the (method, path) is looked up in the matcher and evaluated
 // against the caller's permission set for the target environment.
 //
-// Sudo callers (environment access tokens and internal agent proxies) bypass
-// the check. Requests whose (method, path) has no known permission mapping are
-// denied (default-deny), so a newly added proxied route cannot silently bypass
-// authorization before it is mapped.
+// Sudo callers bypass the check. Requests whose (method, path) has no known
+// permission mapping are denied (default-deny), so a newly added proxied route
+// cannot silently bypass authorization before it is mapped.
 func (m *EnvironmentMiddleware) proxyPermissionDenied(c echo.Context, ps *authz.PermissionSet, envID string) bool {
 	if m.matcher == nil {
 		return false
