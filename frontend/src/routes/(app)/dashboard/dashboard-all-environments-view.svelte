@@ -18,6 +18,7 @@
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { systemStatsCacheStore } from '$lib/stores/system-stats-cache.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import type { SystemStats } from '$lib/types/shared';
 	import type {
@@ -150,11 +151,12 @@
 		};
 	}
 
-	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
+	function createEmptyLiveStatsState(environmentId: string): EnvironmentLiveStatsState {
+		const cached = systemStatsCacheStore.get(environmentId);
 		return {
-			stats: null,
-			loading: true,
-			hasLoaded: false,
+			stats: cached,
+			loading: !cached,
+			hasLoaded: !!cached,
 			client: null
 		};
 	}
@@ -166,7 +168,7 @@
 		}
 
 		if (!liveStatsByEnvironmentId[environment.id]) {
-			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState();
+			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState(environment.id);
 		}
 
 		const liveStatsState = liveStatsByEnvironmentId[environment.id];
@@ -190,6 +192,7 @@
 				liveStatsState.stats = stats;
 				liveStatsState.hasLoaded = true;
 				liveStatsState.loading = false;
+				systemStatsCacheStore.set(environment.id, stats);
 			},
 			onError: (error) => {
 				console.error(`Stats websocket error for environment ${environment.id}:`, error);
