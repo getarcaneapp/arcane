@@ -1622,10 +1622,18 @@ type RedeployAfterSyncFailedError struct {
 }
 
 func (e *RedeployAfterSyncFailedError) Error() string {
+	if e == nil || e.Err == nil {
+		return "redeploy failed"
+	}
+
 	return "redeploy failed: " + e.Err.Error()
 }
 
 func (e *RedeployAfterSyncFailedError) Unwrap() error {
+	if e == nil {
+		return nil
+	}
+
 	return e.Err
 }
 
