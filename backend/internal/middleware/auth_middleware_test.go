@@ -122,6 +122,13 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 		require.Equal(t, "Self Target", user.Username)
 		require.Equal(t, "environment_access_token", c.Get("authMethod"))
 
+		ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
+		require.True(t, ok)
+		require.True(t, ps.Allows(authz.PermContainersStart, "env-self"))
+		require.False(t, ps.Allows(authz.PermContainersStart, "env-other"))
+		require.False(t, ps.Allows(authz.PermUsersList, ""))
+		require.False(t, ps.IsGlobalAdmin())
+
 		return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
 	})
 
