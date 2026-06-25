@@ -1,3 +1,4 @@
+import { setContext, getContext } from 'svelte';
 import type { SystemStats } from '$lib/types/shared';
 
 type CachedStats = {
@@ -6,9 +7,10 @@ type CachedStats = {
 };
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const CACHE_CONTEXT_KEY = Symbol('system-stats-cache');
 
-function createSystemStatsCacheStore() {
-	let cache: Record<string, CachedStats> = {};
+export function createSystemStatsCacheStore() {
+	let cache = $state<Record<string, CachedStats>>({});
 
 	return {
 		get(environmentId: string): SystemStats | null {
@@ -32,4 +34,14 @@ function createSystemStatsCacheStore() {
 	};
 }
 
-export const systemStatsCacheStore = createSystemStatsCacheStore();
+export type SystemStatsCacheStore = ReturnType<typeof createSystemStatsCacheStore>;
+
+export function setSystemStatsCacheContext(): SystemStatsCacheStore {
+	const store = createSystemStatsCacheStore();
+	setContext(CACHE_CONTEXT_KEY, store);
+	return store;
+}
+
+export function getSystemStatsCacheContext(): SystemStatsCacheStore {
+	return getContext<SystemStatsCacheStore>(CACHE_CONTEXT_KEY);
+}

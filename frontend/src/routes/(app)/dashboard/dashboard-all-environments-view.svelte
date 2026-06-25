@@ -18,7 +18,7 @@
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { systemStatsCacheStore } from '$lib/stores/system-stats-cache.store.svelte';
+	import { getSystemStatsCacheContext } from '$lib/stores/system-stats-cache.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import type { SystemStats } from '$lib/types/shared';
 	import type {
@@ -65,6 +65,8 @@
 		debugAllGood?: boolean;
 		debugUpgrade?: boolean;
 	} = $props();
+
+	const systemStatsCacheStore = getSystemStatsCacheContext();
 
 	const emptySnapshotSettings: DashboardSnapshot['settings'] = {};
 

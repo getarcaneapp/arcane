@@ -11,10 +11,13 @@
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '$lib/utils/navigation';
 	import { browser } from '$app/env';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { setSystemStatsCacheContext } from '$lib/stores/system-stats-cache.store.svelte';
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/navigation';
 	import { cn } from '$lib/utils';
 	let { data, children }: LayoutProps = $props();
+
+	setSystemStatsCacheContext();
 
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
