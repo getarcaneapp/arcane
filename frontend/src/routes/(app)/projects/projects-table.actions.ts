@@ -129,11 +129,6 @@ export function createProjectActions({
 					id: 'volumes',
 					label: m.confirm_remove_volumes_warning(),
 					initialState: false
-				},
-				{
-					id: 'files',
-					label: m.confirm_remove_project_files(),
-					initialState: false
 				}
 			],
 			confirm: {
@@ -141,11 +136,10 @@ export function createProjectActions({
 				destructive: true,
 				action: async (result: DestroyConfirmResult) => {
 					const removeVolumes = !!(result?.checkboxes?.volumes ?? result?.volumes);
-					const removeFiles = !!(result?.checkboxes?.files ?? result?.files);
 					actionStatus[id] = 'destroying';
 
 					await handleApiResultWithCallbacks({
-						result: await tryCatch(projectService.destroyProject(id, removeVolumes, removeFiles)),
+						result: await tryCatch(projectService.destroyProject(id, removeVolumes)),
 						message: m.compose_destroy_failed(),
 						setLoadingState: (value) => {
 							actionStatus[id] = value ? 'destroying' : '';

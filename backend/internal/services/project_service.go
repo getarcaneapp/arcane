@@ -2187,7 +2187,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	return proj, nil
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user models.User) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles bool, removeVolumes bool, user models.User) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectID", projectID,
 		"removeFiles", removeFiles,
@@ -2228,8 +2228,6 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 			return fmt.Errorf("failed to remove project files: %w", err)
 		}
 		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
-	} else {
-		slog.DebugContext(ctx, "Skipping file removal (removeFiles=false)", "path", proj.Path)
 	}
 
 	if err := s.db.WithContext(ctx).Delete(proj).Error; err != nil {

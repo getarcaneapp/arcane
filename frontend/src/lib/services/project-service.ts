@@ -257,13 +257,12 @@ class ProjectService extends BaseAPIService {
 		await this.streamProjectPull(projectId, onLine);
 	}
 
-	async destroyProject(projectName: string, removeVolumes = false, removeFiles = false): Promise<void> {
+	async destroyProject(projectName: string, removeVolumes = false): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		await this.handleResponse(
 			this.api.delete(`/environments/${envId}/projects/${projectName}/destroy`, {
 				data: {
-					removeVolumes,
-					removeFiles
+					removeVolumes
 				}
 			})
 		);
