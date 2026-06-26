@@ -1,4 +1,4 @@
-package projects
+package volumes
 
 import (
 	"bytes"
@@ -98,7 +98,7 @@ func PlanMigration(ctx context.Context, dockerClient *client.Client, composeProj
 		return nil, nil
 	}
 
-	explicitVolumeNames, err := ComposeVolumeKeysWithExplicitName(composeProject.ComposeFiles)
+	explicitVolumeNames, err := composeVolumeKeysWithExplicitNameInternal(composeProject.ComposeFiles)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse compose volume names: %w", err)
 	}
