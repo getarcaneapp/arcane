@@ -26,7 +26,7 @@
 	}}
 	title={sidebar.isTablet ? '' : 'Toggle Sidebar'}
 	class={cn(
-		'absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex',
+		'absolute inset-y-0 z-[var(--arcane-z-sticky)] hidden w-4 -translate-x-1/2 transition-all ease-linear group-data-[side=left]:-right-4 group-data-[side=right]:left-0 after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] sm:flex',
 		// Only show hover and cursor effects when not in tablet mode
 		!sidebar.isTablet && [
 			'hover:after:bg-sidebar-border',

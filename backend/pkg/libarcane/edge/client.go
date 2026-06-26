@@ -261,6 +261,11 @@ func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransports
 	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
 
 	switch transport {
+	case EdgeTransportAuto:
+		return managedTunnelTransportsInternal{
+			grpc:      managerGRPCAvailable,
+			websocket: managerWebSocketAvailable,
+		}
 	case EdgeTransportPoll:
 		return managedTunnelTransportsInternal{
 			grpc:      managerGRPCAvailable,
@@ -272,8 +277,7 @@ func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransports
 		}
 	case EdgeTransportGRPC:
 		return managedTunnelTransportsInternal{
-			grpc:      managerGRPCAvailable,
-			websocket: strings.TrimSpace(c.cfg.EdgeTransport) == "" && managerWebSocketAvailable,
+			grpc: managerGRPCAvailable,
 		}
 	default:
 		return managedTunnelTransportsInternal{}

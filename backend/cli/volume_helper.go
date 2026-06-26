@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strconv"
 	"syscall"
 
 	"github.com/spf13/cobra"
@@ -23,7 +24,7 @@ type internalVolumeHelperProbeOutput struct {
 }
 
 type internalVolumeHelperFileKey struct {
-	dev uint64
+	dev string
 	ino uint64
 }
 
@@ -153,7 +154,7 @@ func allocatedBytesForFileInternal(info os.FileInfo) (uint64, internalVolumeHelp
 		return fileSizeBytesInternal(info), internalVolumeHelperFileKey{}, false
 	}
 
-	key := internalVolumeHelperFileKey{dev: stat.Dev, ino: stat.Ino}
+	key := internalVolumeHelperFileKey{dev: strconv.FormatInt(int64(stat.Dev), 10), ino: stat.Ino}
 	linked := stat.Nlink > 1
 	if stat.Blocks > 0 {
 		return uint64(stat.Blocks) * 512, key, linked

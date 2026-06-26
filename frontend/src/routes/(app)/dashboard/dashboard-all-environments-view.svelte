@@ -13,7 +13,9 @@
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { m } from '$lib/paraglide/messages';
+	import { settingsService } from '$lib/services/settings-service';
 	import { systemService } from '$lib/services/system-service';
+	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
@@ -28,6 +30,7 @@
 	import type { Environment } from '$lib/types/environment';
 	import type { DockerInfo } from '$lib/types/docker';
 	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
+	import type { Settings } from '$lib/types/settings';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { tryCatch } from '$lib/utils/api';
@@ -74,7 +77,10 @@
 	let isRefreshing = $state(false);
 	let isPruneDialogOpen = $state(false);
 	let pruneEnvironment = $state<DashboardEnvironmentOverview | null>(null);
+	let pruneDefaults = $state<Settings | null>(null);
+	let pruneDefaultsLoadingId = $state<string | null>(null);
 	let pruningEnvironmentId = $state<string | null>(null);
+	let pendingPruneActivityId = $state<string | null>(null);
 	let reloadVersion = $state(0);
 	let liveStatsByEnvironmentId = $state<Record<string, EnvironmentLiveStatsState>>({});
 	let upgradeDialogOpenById = $state<Record<string, boolean>>({});
@@ -354,6 +360,24 @@
 		});
 	});
 
+	// A prune runs as a background activity; once the streamed activity reaches a
+	// terminal state, refresh so the dashboard reflects the post-prune resource counts.
+	// A plain (non-reactive) guard dedupes so the refresh fires once per activity
+	// without writing $state inside the effect.
+	let refreshedPruneActivityId: string | null = null;
+	$effect(() => {
+		const id = pendingPruneActivityId;
+		if (!id || id === refreshedPruneActivityId) {
+			return;
+		}
+
+		const status = activityStore.getActivity(id)?.status;
+		if (status === 'success' || status === 'failed' || status === 'cancelled') {
+			refreshedPruneActivityId = id;
+			void refreshOverview();
+		}
+	});
+
 	onMount(() => {
 		void dashboardStore.start({ debugAllGood });
 	});
@@ -587,9 +611,9 @@
 				id: `${item.environment.id}-prune`,
 				action: 'prune',
 				label: m.quick_actions_prune_system(),
-				loading: pruningEnvironmentId === item.environment.id,
-				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId,
-				onclick: () => openPruneDialog(item),
+				loading: pruningEnvironmentId === item.environment.id || pruneDefaultsLoadingId === item.environment.id,
+				disabled: !canPruneEnvironment(item) || !!pruningEnvironmentId || !!pruneDefaultsLoadingId,
+				onclick: () => void openPruneDialog(item),
 				icon: TrashIcon
 			});
 		}
@@ -643,13 +667,28 @@
 		return m.dashboard_all_images_tracked_summary({ count: summary.totalImages });
 	}
 
-	function openPruneDialog(item: DashboardEnvironmentOverview) {
-		if (!canPruneEnvironment(item)) {
+	async function openPruneDialog(item: DashboardEnvironmentOverview) {
+		if (!canPruneEnvironment(item) || pruneDefaultsLoadingId) {
 			return;
 		}
 
+		const environmentId = item.environment.id;
 		pruneEnvironment = item;
-		isPruneDialogOpen = true;
+		pruneDefaultsLoadingId = environmentId;
+		try {
+			// Pre-fill the dialog with this environment's configured prune defaults.
+			pruneDefaults = await settingsService.getSettingsForEnvironment(environmentId);
+		} catch {
+			// Fall back to the dialog's built-in defaults if settings can't be loaded.
+			pruneDefaults = null;
+		} finally {
+			pruneDefaultsLoadingId = null;
+		}
+
+		// Guard against the selection changing while the fetch was in flight.
+		if (pruneEnvironment?.environment.id === environmentId) {
+			isPruneDialogOpen = true;
+		}
 	}
 
 	function closePruneDialog() {
@@ -659,6 +698,7 @@
 
 		isPruneDialogOpen = false;
 		pruneEnvironment = null;
+		pruneDefaults = null;
 	}
 
 	async function confirmPrune(pruneRequest: SystemPruneRequest) {
@@ -690,8 +730,10 @@
 			onSuccess: async (data) => {
 				isPruneDialogOpen = false;
 				pruneEnvironment = null;
+				pruneDefaults = null;
+				const activityId = extractActivityId(data);
 				const toastOptions = {
-					...(activityToastOptions(extractActivityId(data)) ?? {}),
+					...(activityToastOptions(activityId) ?? {}),
 					description: targetEnvironment.environment.name
 				};
 				if (selectedTypes.length === 1) {
@@ -699,7 +741,14 @@
 				} else {
 					toast.success(m.dashboard_prune_success_many({ types: typesString }), toastOptions);
 				}
-				await refreshOverview();
+				// The prune runs as a background activity, so refresh once it actually
+				// completes — refreshing now would capture pre-prune state. Fall back to
+				// an immediate refresh when no activity id is returned.
+				if (activityId) {
+					pendingPruneActivityId = activityId;
+				} else {
+					await refreshOverview();
+				}
 			}
 		});
 	}
@@ -1069,6 +1118,7 @@
 <PruneConfirmationDialog
 	open={isPruneDialogOpen}
 	isPruning={!!pruningEnvironmentId}
+	defaults={pruneDefaults}
 	onConfirm={confirmPrune}
 	onCancel={closePruneDialog}
 />

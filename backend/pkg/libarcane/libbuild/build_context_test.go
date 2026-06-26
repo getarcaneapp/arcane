@@ -1,8 +1,10 @@
 package libbuild
 
 import (
+	"errors"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -58,6 +60,16 @@ func TestParseGitBuildContextSource(t *testing.T) {
 		require.Error(t, err)
 		assert.True(t, ok)
 		assert.Nil(t, source)
+	})
+
+	t.Run("invalid fragment returns common typed error", func(t *testing.T) {
+		source, ok, err := ParseGitBuildContextSource("https://github.com/getarcaneapp/arcane.git#")
+		require.Error(t, err)
+		assert.True(t, ok)
+		assert.Nil(t, source)
+
+		var typedErr *common.GitBuildContextFragmentRequiredError
+		assert.True(t, errors.As(err, &typedErr))
 	})
 }
 

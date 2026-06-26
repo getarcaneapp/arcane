@@ -122,6 +122,41 @@ func TestDefaultRepositoryArgs(t *testing.T) {
 	require.Contains(t, args, DefaultChecksBundleRepository)
 }
 
+func TestScanSourceArgs(t *testing.T) {
+	t.Run("standalone uses local db repositories", func(t *testing.T) {
+		args := ScanSourceArgs("")
+		require.Contains(t, args, "--db-repository")
+		require.NotContains(t, args, "--server")
+	})
+
+	t.Run("blank server url falls back to standalone", func(t *testing.T) {
+		args := ScanSourceArgs("   ")
+		require.Contains(t, args, "--db-repository")
+		require.NotContains(t, args, "--server")
+	})
+
+	t.Run("server url replaces local db flags", func(t *testing.T) {
+		args := ScanSourceArgs(" http://trivy.example.com:4954 ")
+		require.Equal(t, []string{"--server", "http://trivy.example.com:4954"}, args)
+		require.NotContains(t, args, "--db-repository")
+	})
+
+	t.Run("token never appears in args", func(t *testing.T) {
+		require.NotContains(t, ScanSourceArgs("http://trivy.example.com:4954"), "--token")
+	})
+}
+
+func TestServerTokenEnv(t *testing.T) {
+	require.Nil(t, ServerTokenEnv(""))
+	require.Nil(t, ServerTokenEnv("   "))
+	require.Equal(t, []string{"TRIVY_TOKEN=secret"}, ServerTokenEnv(" secret "))
+}
+
+func TestIgnoreUnfixedArgs(t *testing.T) {
+	require.Equal(t, []string{"--ignore-unfixed"}, IgnoreUnfixedArgs(true))
+	require.Nil(t, IgnoreUnfixedArgs(false))
+}
+
 func TestBuildContainerConfig_IncludesEnv(t *testing.T) {
 	config := BuildContainerConfig(
 		"ghcr.io/getarcaneapp/tools:latest",

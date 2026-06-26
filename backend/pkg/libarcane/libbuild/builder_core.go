@@ -42,11 +42,11 @@ func NewBuilder(settings buildtypes.SettingsProvider, dockerClientProvider build
 
 func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, progressWriter io.Writer, serviceName string) (*imagetypes.BuildResult, error) {
 	if b.settings == nil {
-		return nil, errors.New("settings provider not available")
+		return nil, &common.BuildSettingsProviderUnavailableError{}
 	}
 
 	if strings.TrimSpace(req.ContextDir) == "" {
-		return nil, errors.New("contextDir is required")
+		return nil, &common.BuildContextDirRequiredError{}
 	}
 
 	settings := b.settings.BuildSettings()
@@ -81,7 +81,7 @@ func (b *builder) BuildImage(ctx context.Context, req imagetypes.BuildRequest, p
 	}
 
 	if provider == nil {
-		return nil, errors.New("build provider not available")
+		return nil, &common.BuildProviderUnavailableError{}
 	}
 
 	session, err := provider.NewSession(buildCtx, req)
@@ -101,7 +101,7 @@ func (b *builder) buildWithBuildkitSessionInternal(
 	session *buildSession,
 ) (*imagetypes.BuildResult, error) {
 	if session == nil || session.Client == nil {
-		return nil, errors.New("build session not available")
+		return nil, &common.BuildSessionUnavailableError{}
 	}
 
 	var buildErr error
@@ -167,7 +167,7 @@ func (b *builder) buildWithBuildkitSessionInternal(
 
 	if providerName == "local" && req.Push {
 		if b.dockerClientProvider == nil {
-			missingClientErr := errors.New("docker service not available")
+			missingClientErr := &common.BuildDockerServiceUnavailableError{}
 			buildErr = missingClientErr
 			writeProgressEventInternal(progressWriter, imagetypes.ProgressEvent{
 				Type:    "build",

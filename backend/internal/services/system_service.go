@@ -171,7 +171,12 @@ func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.P
 			localResult := &system.PruneAllResult{}
 			if err := s.pruneBuildCacheInternal(groupCtx, *req.BuildCache, localResult); err != nil {
 				slog.WarnContext(groupCtx, "Build cache pruning encountered an error", "error", err.Error())
-				// Build cache errors are often non-critical, but we log them
+				// Surface the failure like every other prune type so a build cache that
+				// could not be reclaimed is reported instead of silently left behind.
+				mu.Lock()
+				result.Errors = append(result.Errors, fmt.Sprintf("Build cache pruning failed: %v", err))
+				result.Success = false
+				mu.Unlock()
 			} else {
 				mu.Lock()
 				result.SpaceReclaimed += localResult.SpaceReclaimed

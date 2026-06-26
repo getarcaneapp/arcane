@@ -4,7 +4,6 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -12,6 +11,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/moby/go-archive"
@@ -89,7 +89,7 @@ func parseUlimitsInternal(values map[string]string) []*dockercontainer.Ulimit {
 func prepareBuildFilesystemInputInternal(req imagetypes.BuildRequest) (buildFilesystemInput, error) {
 	contextDir := filepath.Clean(req.ContextDir)
 	if contextDir == "" {
-		return buildFilesystemInput{}, errors.New("contextDir is required")
+		return buildFilesystemInput{}, &common.BuildContextDirRequiredError{}
 	}
 
 	if strings.TrimSpace(req.DockerfileInline) != "" {
@@ -141,7 +141,7 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 	}
 
 	if len(req.Platforms) > 1 {
-		return dockerBuildInput{}, true, errors.New("docker build fallback does not support multi-platform builds")
+		return dockerBuildInput{}, true, &common.DockerBuildMultiPlatformUnsupportedError{}
 	}
 
 	platform := ""
@@ -207,7 +207,10 @@ func prepareDockerBuildInputInternal(req imagetypes.BuildRequest) (dockerBuildIn
 }
 
 func createBuildContextInternal(contextDir string) (io.ReadCloser, error) {
-	excludes := readDockerignoreInternal(contextDir)
+	excludes, err := readDockerignoreInternal(contextDir)
+	if err != nil {
+		return nil, err
+	}
 	return archive.TarWithOptions(contextDir, &archive.TarOptions{ExcludePatterns: excludes})
 }
 
@@ -454,7 +457,7 @@ func buildDockerImageOptionsInternal(
 
 func (b *builder) buildWithDockerInternal(ctx context.Context, req imagetypes.BuildRequest, progressWriter io.Writer, serviceName string) (*imagetypes.BuildResult, error) {
 	if b.dockerClientProvider == nil {
-		return nil, errors.New("docker service not available")
+		return nil, &common.BuildDockerServiceUnavailableError{}
 	}
 
 	dockerClient, err := b.dockerClientProvider.GetClient(ctx)
@@ -577,11 +580,11 @@ func streamDockerMessagesInternal(ctx context.Context, reader io.Reader, w io.Wr
 	return nil
 }
 
-func readDockerignoreInternal(contextDir string) []string {
+func readDockerignoreInternal(contextDir string) ([]string, error) {
 	ignorePath := filepath.Join(contextDir, ".dockerignore")
 	file, err := os.Open(ignorePath)
 	if err != nil {
-		return nil
+		return nil, nil
 	}
 	defer file.Close()
 
@@ -594,12 +597,18 @@ func readDockerignoreInternal(contextDir string) []string {
 		}
 		patterns = append(patterns, line)
 	}
+	if err := scanner.Err(); err != nil {
+		return nil, fmt.Errorf("failed to read .dockerignore: %w", err)
+	}
 
-	return patterns
+	return patterns, nil
 }
 
 func dockerfileExcludedByDockerignoreInternal(contextDir, dockerfilePath string) (bool, error) {
-	patterns := readDockerignoreInternal(contextDir)
+	patterns, err := readDockerignoreInternal(contextDir)
+	if err != nil {
+		return false, err
+	}
 	if len(patterns) == 0 {
 		return false, nil
 	}

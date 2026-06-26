@@ -1,0 +1,121 @@
+# Snyk (https://snyk.io) policy file, patches or ignores known vulnerabilities.
+version: v1.25.1
+# ignores vulnerabilities until expiry date; change duration by modifying expiry date
+ignore:
+  'snyk:lic:golang:github.com:hashicorp:go-version:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Docker Compose pkg/api; accepted
+          while tracking upstream removal.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T15:57:01.699Z
+  'snyk:lic:golang:github.com:hashicorp:go-multierror:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Docker Compose secret-detector
+          path; accepted while tracking upstream removal.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T15:57:02.882Z
+  'snyk:lic:golang:github.com:hashicorp:go-cleanhttp:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from BuildKit auth provider and Docker
+          Compose; accepted while tracking upstream removal.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T15:57:04.165Z
+  'snyk:lic:golang:github.com:hashicorp:errwrap:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Docker Compose secret-detector via
+          go-multierror; accepted while tracking upstream removal.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T15:57:05.545Z
+  'snyk:lic:npm:lightningcss-win32-x64-msvc:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:24.055Z
+  'snyk:lic:npm:lightningcss-win32-arm64-msvc:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:25.388Z
+  'snyk:lic:npm:lightningcss-linux-x64-musl:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:26.769Z
+  'snyk:lic:npm:lightningcss-linux-x64-gnu:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:27.984Z
+  'snyk:lic:npm:lightningcss-linux-arm64-musl:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:29.197Z
+  'snyk:lic:npm:lightningcss-linux-arm64-gnu:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:30.556Z
+  'snyk:lic:npm:lightningcss-linux-arm-gnueabihf:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:31.816Z
+  'snyk:lic:npm:lightningcss-freebsd-x64:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:34.045Z
+  'snyk:lic:npm:lightningcss-darwin-x64:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:35.458Z
+  'snyk:lic:npm:lightningcss-darwin-arm64:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:36.988Z
+  'snyk:lic:npm:lightningcss-android-arm64:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:42.034Z
+  'snyk:lic:npm:lightningcss:MPL-2.0':
+    - '*':
+        reason: >-
+          MPL-2.0 transitive dependency from Vite lightningcss toolchain;
+          accepted while using the Vite frontend stack.
+        expires: 2027-06-21T00:00:00.000Z
+        created: 2026-06-21T16:00:43.477Z
+patch: {}
+exclude:
+  code:
+    - '**/*_test.go'
+    - tests/**

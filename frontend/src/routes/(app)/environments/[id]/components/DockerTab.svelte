@@ -1,9 +1,9 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import Label from '$lib/components/ui/label/label.svelte';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { DockerBrandIcon } from '$lib/icons';
@@ -94,19 +94,15 @@
 					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
 				/>
 			</div>
-
-			<div class="space-y-4 rounded-lg border p-4">
-				<div class="flex items-center justify-between">
-					<div class="space-y-0.5">
-						<Label for="auto-inject-env" class="text-sm font-medium">{m.docker_auto_inject_env_label()}</Label>
-						<div class="text-muted-foreground text-xs">{m.docker_auto_inject_env_description()}</div>
-					</div>
-					<Switch id="auto-inject-env" bind:checked={$formInputs.autoInjectEnv.value} />
-				</div>
-			</div>
 		</div>
 
-		<div class="space-y-4 rounded-lg border p-4">
+		<div class="border-t pt-6">
+			<SettingsRow layout="inline" label={m.docker_auto_inject_env_label()} description={m.docker_auto_inject_env_description()}>
+				<Switch id="auto-inject-env" bind:checked={$formInputs.autoInjectEnv.value} />
+			</SettingsRow>
+		</div>
+
+		<div class="space-y-4 border-t pt-6">
 			<div class="space-y-0.5">
 				<h3 class="text-sm font-medium">{m.prune_options_title()}</h3>
 				<p class="text-muted-foreground text-xs">{m.prune_options_description()}</p>

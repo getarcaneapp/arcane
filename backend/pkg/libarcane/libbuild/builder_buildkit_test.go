@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	dockerclient "github.com/moby/moby/client"
+	moby "github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -34,16 +34,22 @@ func TestBuildSolveOptInternal_StagesInlineDockerfile(t *testing.T) {
 	assert.Nil(t, loadErrCh)
 	assert.Equal(t, ".arcane.inline.Dockerfile", solveOpt.FrontendAttrs["filename"])
 
-	contextPath := solveOpt.LocalDirs["context"]
-	dockerfileDir := solveOpt.LocalDirs["dockerfile"]
-	assert.NotEmpty(t, contextPath)
-	assert.Equal(t, contextPath, dockerfileDir)
+	contextMount, ok := solveOpt.LocalMounts["context"]
+	require.True(t, ok)
+	dockerfileMount, ok := solveOpt.LocalMounts["dockerfile"]
+	require.True(t, ok)
 
-	contents, err := os.ReadFile(filepath.Join(dockerfileDir, solveOpt.FrontendAttrs["filename"]))
+	dockerfile, err := dockerfileMount.Open(solveOpt.FrontendAttrs["filename"])
+	require.NoError(t, err)
+	contents, err := io.ReadAll(dockerfile)
+	require.NoError(t, dockerfile.Close())
 	require.NoError(t, err)
 	assert.Equal(t, "FROM alpine:3.20\nCOPY app.txt /app.txt\n", string(contents))
 
-	appContents, err := os.ReadFile(filepath.Join(contextPath, "app.txt"))
+	appFile, err := contextMount.Open("app.txt")
+	require.NoError(t, err)
+	appContents, err := io.ReadAll(appFile)
+	require.NoError(t, appFile.Close())
 	require.NoError(t, err)
 	assert.Equal(t, "hello\n", string(appContents))
 }
@@ -103,7 +109,7 @@ func TestBuildSolveOptInternal_NonLocalLoadKeepsDockerExporter(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client, err := dockerclient.NewClientWithOpts(dockerclient.WithHost(server.URL), dockerclient.WithVersion("1.54"))
+	client, err := moby.NewClientWithOpts(moby.WithHost(server.URL), moby.WithVersion("1.54"))
 	require.NoError(t, err)
 
 	b := &builder{dockerClientProvider: testDockerClientProvider{client: client}}
@@ -135,9 +141,9 @@ func createBuildkitTestContext(t *testing.T) string {
 }
 
 type testDockerClientProvider struct {
-	client *dockerclient.Client
+	client *moby.Client
 }
 
-func (p testDockerClientProvider) GetClient(context.Context) (*dockerclient.Client, error) {
+func (p testDockerClientProvider) GetClient(context.Context) (*moby.Client, error) {
 	return p.client, nil
 }

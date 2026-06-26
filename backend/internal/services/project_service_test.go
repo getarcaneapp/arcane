@@ -74,8 +74,70 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *database.DB, string) {
+	t.Helper()
+
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, config.Load(), nil)
+	return NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load()), db, projectsDir
+}
+
 func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse) *httptest.Server {
 	return newProjectImagePullServerWithObserverInternal(t, inspectByRef, nil)
+}
+
+func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-remove")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project-data.txt"), []byte("keep until destroy\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-destroy-remove-files"},
+		Name:      "demo-remove",
+		DirName:   ptr("demo-remove"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, true, false, models.User{}))
+
+	_, statErr := os.Stat(projectPath)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-preserve")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	projectDataPath := filepath.Join(projectPath, "project-data.txt")
+	require.NoError(t, os.WriteFile(projectDataPath, []byte("preserve on destroy\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-destroy-preserve-files"},
+		Name:      "demo-preserve",
+		DirName:   ptr("demo-preserve"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, false, false, models.User{}))
+
+	assert.DirExists(t, projectPath)
+	assert.FileExists(t, projectDataPath)
 }
 
 func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
@@ -2254,12 +2316,11 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
 	require.NoError(t, err)
 
-	content := "hello\n"
 	updated := "updated\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: "create_folder", RelativePath: "config"},
 		{Operation: "create_folder", RelativePath: "archive"},
-		{Operation: "create_file", RelativePath: "config/app.yaml", Content: &content},
+		{Operation: "create_file", RelativePath: "config/app.yaml", Content: new("hello\n")},
 		{Operation: "update_file", RelativePath: "config/app.yaml", Content: &updated},
 		{Operation: "rename", RelativePath: "config/app.yaml", NewName: "renamed.yaml"},
 		{Operation: "move", RelativePath: "config/renamed.yaml", NewParentPath: "archive"},
@@ -2298,9 +2359,8 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
-	content := "new\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
-		{Operation: "create_file", RelativePath: "notes.txt", Content: &content},
+		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
@@ -2341,9 +2401,8 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	require.NoError(t, os.MkdirAll(deepParent, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(deepParent, "external.txt"), []byte("external\n"), 0o644))
 
-	content := "new\n"
 	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &details.FileTreeRevision, []projecttypes.ProjectFileChange{
-		{Operation: "create_file", RelativePath: "notes.txt", Content: &content},
+		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
@@ -4505,6 +4564,77 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	items, err = svc.ListAllProjects(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, items)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirectoryEmptyOrUnmounted(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	// An existing-but-empty projects directory simulates a mis-mapped or unmounted
+	// projects volume: GetProjectsDirectory resolves (and MkdirAll's) it, discovery
+	// finds nothing, and every stored project path is now missing on disk.
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	// Seed a small deployment's worth of filesystem-managed projects whose
+	// directories do not exist. Each would individually be pruned as "directory no
+	// longer exists"; together they would wipe the table — exactly what the
+	// mass-wipe guard must prevent, even for deployments with only a handful of
+	// projects (the guard must not give small installs a free pass).
+	const seeded = 3
+	for i := range seeded {
+		require.NoError(t, db.WithContext(ctx).Create(&models.Project{
+			Name:   fmt.Sprintf("project-%d", i),
+			Path:   filepath.Join(projectsRoot, fmt.Sprintf("project-%d", i)),
+			Status: models.ProjectStatusStopped,
+		}).Error)
+	}
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, seeded, "an empty/mis-mapped projects directory must not wipe existing project records")
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguousCustomCompose(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsRoot, "ambiguous-project")
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+
+	// Replace the standard compose.yaml with two custom-named compose files. The
+	// directory still holds compose content, but DetectComposeFile can't pick one
+	// and returns common.AmbiguousComposeFileError. The reconcile must NOT delete the
+	// record: the project's files are intact on disk and it may be deployable.
+	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
+	composeBody := []byte("services:\n  app:\n    image: nginx:alpine\n")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "app.yaml"), composeBody, 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "extra.yaml"), composeBody, 0o644))
+
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err = svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	assert.Len(t, items, 1, "project with ambiguous compose files must not be deleted")
+	assert.Equal(t, projectPath, items[0].Path)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedScanMaxDepth(t *testing.T) {

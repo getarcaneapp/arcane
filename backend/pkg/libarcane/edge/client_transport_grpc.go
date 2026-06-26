@@ -13,6 +13,7 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/backoff"
+	"google.golang.org/grpc/connectivity"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/keepalive"
@@ -63,6 +64,10 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 	defer func() { _ = conn.Close() }()
 
+	if err := c.waitForGRPCReadyInternal(ctx, conn); err != nil {
+		return fmt.Errorf("manager gRPC endpoint is not ready: %w", err)
+	}
+
 	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
 		strings.ToLower(HeaderAgentToken), c.cfg.AgentToken,
 		strings.ToLower(HeaderAPIKey), c.cfg.AgentToken,
@@ -99,6 +104,34 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	go c.heartbeatLoop(heartbeatCtx)
 
 	return c.messageLoop(ctx)
+}
+
+func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.ClientConn) error {
+	if conn == nil {
+		return errors.New("manager gRPC connection is not initialized")
+	}
+
+	timeout := c.grpcRegistrationTimeoutInternal()
+	readyCtx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+
+	conn.Connect()
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			return nil
+		}
+		if state == connectivity.Idle {
+			conn.Connect()
+		}
+
+		if !conn.WaitForStateChange(readyCtx, state) {
+			if errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
+				return fmt.Errorf("timed out waiting for manager gRPC endpoint after %s", timeout)
+			}
+			return readyCtx.Err()
+		}
+	}
 }
 
 func (c *TunnelClient) openTunnelConnectStreamInternal(

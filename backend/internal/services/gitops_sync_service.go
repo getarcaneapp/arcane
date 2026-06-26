@@ -85,6 +85,11 @@ type stagedDirectorySync struct {
 	syncedFiles     []string
 	serviceCount    int
 	contentsChanged bool
+	// copySkipped holds project-relative paths that could not be read when the
+	// live project directory was copied into the stage (e.g. foreign-owned
+	// bind-mount data). They are absent from the stage, so promotion must
+	// preserve rather than prune them.
+	copySkipped []string
 }
 
 func validateSyncLimits(maxFiles *int, maxTotalSize, maxBinarySize *int64) error {
@@ -109,6 +114,10 @@ func normalizeSyncLimitSetting(value, defaultValue int) int {
 
 func megabytesToBytes(value int) int64 {
 	return int64(value) * 1024 * 1024
+}
+
+func hasEstablishedProjectBindingInternal(sync *models.GitOpsSync) bool {
+	return sync != nil && sync.ProjectID != nil && strings.TrimSpace(*sync.ProjectID) != ""
 }
 
 func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, projectService *ProjectService, swarmService *SwarmService, eventService *EventService, settingsService *SettingsService) *GitOpsSyncService {
@@ -161,7 +170,7 @@ func (s *GitOpsSyncService) buildSyncJobInternal(syncID, environmentID string, i
 			return schedule
 		},
 		RunFn: func(ctx context.Context) {
-			sync, err := s.GetSyncByID(ctx, environmentID, syncID)
+			sync, err := s.getSyncRecordByIDInternal(ctx, environmentID, syncID)
 			if err != nil {
 				slog.DebugContext(ctx, "gitops auto-sync skipped; sync not found", "syncId", syncID, "error", err)
 				return
@@ -347,20 +356,39 @@ func (s *GitOpsSyncService) getFilteredSyncCounts(query *gorm.DB) (gitops.SyncCo
 }
 
 func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
+	sync, err := s.getSyncByIDInternal(ctx, environmentID, id, true)
+	if err != nil {
+		var notFound *models.NotFoundError
+		if errors.As(err, &notFound) {
+			slog.WarnContext(ctx, "GitOps sync not found", "syncID", id, "environmentID", environmentID)
+			return nil, err
+		}
+		slog.ErrorContext(ctx, "Failed to get GitOps sync", "syncID", id, "environmentID", environmentID, "error", err)
+		return nil, err
+	}
+	return sync, nil
+}
+
+func (s *GitOpsSyncService) getSyncByIDInternal(ctx context.Context, environmentID, id string, preloadAssociations bool) (*models.GitOpsSync, error) {
 	var sync models.GitOpsSync
-	q := s.db.WithContext(ctx).Preload("Repository").Preload("Project").Where("id = ?", id)
+	q := s.db.WithContext(ctx).Where("id = ?", id)
+	if preloadAssociations {
+		q = q.Preload("Repository").Preload("Project")
+	}
 	if environmentID != "" {
 		q = q.Where("environment_id = ?", environmentID)
 	}
 	if err := q.First(&sync).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			slog.WarnContext(ctx, "GitOps sync not found", "syncID", id, "environmentID", environmentID)
-			return nil, errors.New("sync not found")
+			return nil, &models.NotFoundError{Message: "GitOps sync not found"}
 		}
-		slog.ErrorContext(ctx, "Failed to get GitOps sync", "syncID", id, "environmentID", environmentID, "error", err)
 		return nil, fmt.Errorf("failed to get sync: %w", err)
 	}
 	return &sync, nil
+}
+
+func (s *GitOpsSyncService) getSyncRecordByIDInternal(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
+	return s.getSyncByIDInternal(ctx, environmentID, id, false)
 }
 
 func (s *GitOpsSyncService) CreateSync(ctx context.Context, environmentID string, req gitops.CreateSyncRequest, actor models.User) (*models.GitOpsSync, error) {
@@ -556,7 +584,7 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 
 func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor models.User) error {
 	// Get sync info before deleting
-	sync, err := s.GetSyncByID(ctx, environmentID, id)
+	sync, err := s.getSyncRecordByIDInternal(ctx, environmentID, id)
 	if err != nil {
 		return err
 	}
@@ -714,6 +742,13 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 
 	project, syncedFiles, _, contentsChanged, err := s.syncProjectDirectoryInternal(ctx, sync, syncFiles, actor)
 	if err != nil {
+		var bindingErr *common.GitOpsSyncProjectBindingBrokenError
+		if errors.As(err, &bindingErr) {
+			errMsg := bindingErr.Error()
+			result.Message = "GitOps project binding broken"
+			result.Error = new(errMsg)
+			return result, bindingErr
+		}
 		return result, s.failSync(ctx, id, result, sync, actor, "Failed to sync project directory", err.Error())
 	}
 
@@ -1036,6 +1071,38 @@ func (s *GitOpsSyncService) failSync(ctx context.Context, id string, result *git
 	return fmt.Errorf("%s", errMsg)
 }
 
+func (s *GitOpsSyncService) disableAutoSyncForBrokenBindingInternal(ctx context.Context, sync *models.GitOpsSync) {
+	if sync == nil || sync.ID == "" {
+		return
+	}
+	if err := s.db.WithContext(ctx).
+		Model(&models.GitOpsSync{}).
+		Where("id = ?", sync.ID).
+		Update("auto_sync", false).Error; err != nil {
+		slog.ErrorContext(ctx, "Failed to disable GitOps auto-sync after broken project binding", "syncId", sync.ID, "error", err)
+	}
+	sync.AutoSync = false
+	s.unregisterSyncJobInternal(ctx, sync.ID)
+}
+
+func (s *GitOpsSyncService) failSyncAndDisableAutoSyncInternal(ctx context.Context, id string, result *gitops.SyncResult, sync *models.GitOpsSync, actor models.User, message string, failure error) error {
+	errMsg := failure.Error()
+	_ = s.failSync(ctx, id, result, sync, actor, message, errMsg)
+	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
+	return failure
+}
+
+func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Context, sync *models.GitOpsSync, actor models.User, err error) {
+	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
+	if !errors.As(err, &bindingErr) || sync == nil {
+		return
+	}
+	errMsg := bindingErr.Error()
+	s.updateSyncStatus(ctx, sync.ID, "failed", errMsg, "")
+	s.logSyncError(ctx, sync, actor, errMsg)
+	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
+}
+
 func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, nil, actor)
 	if err != nil {
@@ -1074,8 +1141,11 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 			return nil, s.failSync(ctx, id, result, sync, actor, "Failed to load existing project", lookupErr.Error())
 		}
 		if !found {
-			slog.WarnContext(ctx, "Existing project not found, will create new one", "projectId", *sync.ProjectID)
-			project = nil
+			err := &common.GitOpsSyncProjectBindingBrokenError{
+				Err: fmt.Errorf("sync %s references missing project %s", sync.ID, *sync.ProjectID),
+			}
+			slog.WarnContext(ctx, "Existing project not found; GitOps project binding is broken", "projectId", *sync.ProjectID, "syncId", sync.ID)
+			return nil, s.failSyncAndDisableAutoSyncInternal(ctx, id, result, sync, actor, "GitOps project binding broken", err)
 		}
 	}
 
@@ -1199,6 +1269,7 @@ func (s *GitOpsSyncService) walkAndParseSyncDirectory(ctx context.Context, sync 
 func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sync *models.GitOpsSync, syncFiles []projects.SyncFile, actor models.User) (*models.Project, []string, bool, bool, error) {
 	stage, err := s.stageDirectorySyncInternal(ctx, sync, syncFiles)
 	if err != nil {
+		s.recordBrokenProjectBindingInternal(ctx, sync, actor, err)
 		return nil, nil, false, false, err
 	}
 	defer func() {
@@ -1241,10 +1312,20 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		return nil, err
 	}
 
+	var copySkipped []string
 	if project != nil {
-		if err := projects.CopyDirectoryContents(project.Path, stagePath); err != nil {
+		// Tolerate files Arcane cannot read (e.g. foreign-owned files a container
+		// wrote into the project directory through a relative bind mount). Skipping
+		// them keeps an unrelated unreadable file from aborting the whole sync; the
+		// skipped paths are preserved (not pruned) when the staged tree is mirrored
+		// back over the live project during promotion.
+		copySkipped, err = projects.CopyDirectoryContentsTolerant(project.Path, stagePath)
+		if err != nil {
 			_ = os.RemoveAll(stagePath)
 			return nil, fmt.Errorf("failed to stage current project files: %w", err)
+		}
+		if len(copySkipped) > 0 {
+			slog.WarnContext(ctx, "skipped unreadable files while staging project sync; they will be left untouched on promotion", "projectPath", project.Path, "skipped", copySkipped)
 		}
 	} else if err := s.seedStageEnvFromCandidateDirInternal(ctx, sync, projectsDir, stagePath); err != nil {
 		_ = os.RemoveAll(stagePath)
@@ -1299,6 +1380,7 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		syncedFiles:     syncedFiles,
 		serviceCount:    serviceCount,
 		contentsChanged: contentsChanged,
+		copySkipped:     copySkipped,
 	}, nil
 }
 
@@ -1535,7 +1617,7 @@ func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx cont
 	case 1:
 		return matches[0], nil
 	default:
-		return "", fmt.Errorf("multiple project directories match sync %s; refusing automatic relink", sync.ID)
+		return "", fmt.Errorf("multiple candidate project directories match sync %s; refusing automatic relink", sync.ID)
 	}
 }
 
@@ -1607,7 +1689,8 @@ func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context,
 		return nil, nil
 	}
 
-	if sync.ProjectID != nil && *sync.ProjectID != "" {
+	establishedBinding := hasEstablishedProjectBindingInternal(sync)
+	if establishedBinding {
 		project, found, err := s.lookupProjectByIDInternal(ctx, *sync.ProjectID)
 		if err != nil {
 			return nil, err
@@ -1627,6 +1710,11 @@ func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context,
 
 	project, err := s.findRecoverableManagedProjectInternal(ctx, sync)
 	if err != nil {
+		if establishedBinding {
+			return nil, &common.GitOpsSyncProjectBindingBrokenError{
+				Err: fmt.Errorf("sync %s references missing project %s: %w", sync.ID, *sync.ProjectID, err),
+			}
+		}
 		return nil, err
 	}
 	if project != nil {
@@ -1638,10 +1726,21 @@ func (s *GitOpsSyncService) getDirectorySyncProjectInternal(ctx context.Context,
 
 	project, err = s.recoverProjectFromDirectoryCandidateInternal(ctx, sync)
 	if err != nil {
+		if establishedBinding {
+			return nil, &common.GitOpsSyncProjectBindingBrokenError{
+				Err: fmt.Errorf("sync %s references missing project %s: %w", sync.ID, *sync.ProjectID, err),
+			}
+		}
 		return nil, err
 	}
 	if project != nil {
 		return project, nil
+	}
+
+	if establishedBinding {
+		return nil, &common.GitOpsSyncProjectBindingBrokenError{
+			Err: fmt.Errorf("sync %s references missing project %s: no unique recovery candidate was found", sync.ID, *sync.ProjectID),
+		}
 	}
 
 	return nil, nil
@@ -1760,6 +1859,7 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		return nil, fmt.Errorf("failed to inspect current project directory: %w", err)
 	}
 
+	var backupSkipped []string
 	if existed {
 		projectsDir, err := s.projectService.getProjectsDirectoryInternal(ctx)
 		if err != nil {
@@ -1770,15 +1870,22 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 			return nil, fmt.Errorf("failed to create backup directory: %w", err)
 		}
 		defer func() { _ = os.RemoveAll(backupPath) }()
-		if err := projects.CopyDirectoryContents(projectPath, backupPath); err != nil {
+		// Tolerate unreadable files (e.g. foreign-owned bind-mount data) so an
+		// unrelated file can't block the backup; the skipped paths are absent from
+		// the backup and must be preserved, not pruned, when restoring.
+		backupSkipped, err = projects.CopyDirectoryContentsTolerant(projectPath, backupPath)
+		if err != nil {
 			return nil, fmt.Errorf("failed to back up current project directory: %w", err)
+		}
+		if len(backupSkipped) > 0 {
+			slog.WarnContext(ctx, "skipped unreadable files while backing up project for sync; they will be left untouched on rollback", "projectPath", projectPath, "skipped", backupSkipped)
 		}
 	}
 
 	restore := func() {
 		var restoreErr error
 		if existed {
-			restoreErr = projects.MirrorDirectoryContents(backupPath, projectPath)
+			restoreErr = projects.MirrorDirectoryContentsPreserving(backupPath, projectPath, backupSkipped)
 		} else {
 			restoreErr = os.RemoveAll(projectPath)
 		}
@@ -1787,7 +1894,9 @@ func (s *GitOpsSyncService) updateDirectorySyncProjectInternal(ctx context.Conte
 		}
 	}
 
-	if err := projects.MirrorDirectoryContents(stage.stagePath, projectPath); err != nil {
+	// Preserve files skipped while staging: they remain in the live project but are
+	// absent from the stage, so a plain mirror would prune them.
+	if err := projects.MirrorDirectoryContentsPreserving(stage.stagePath, projectPath, stage.copySkipped); err != nil {
 		restore()
 		return nil, fmt.Errorf("failed to promote staged project directory: %w", err)
 	}

@@ -2,15 +2,16 @@ package libbuild
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"path/filepath"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildkit "github.com/moby/buildkit/client"
+	"github.com/tonistiigi/fsutil"
 )
 
 func parseBuildkitCacheEntriesInternal(values []string) []buildkit.CacheOptionsEntry {
@@ -143,12 +144,23 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 		frontendAttrs["label:"+k] = val
 	}
 
+	contextMount, err := fsutil.NewFS(contextDir)
+	if err != nil {
+		cleanup()
+		return buildkit.SolveOpt{}, nil, nil, fmt.Errorf("failed to prepare build context mount: %w", err)
+	}
+	dockerfileMount, err := fsutil.NewFS(dockerfileDir)
+	if err != nil {
+		cleanup()
+		return buildkit.SolveOpt{}, nil, nil, fmt.Errorf("failed to prepare Dockerfile mount: %w", err)
+	}
+
 	solveOpt := buildkit.SolveOpt{
 		Frontend:      "dockerfile.v0",
 		FrontendAttrs: frontendAttrs,
-		LocalDirs: map[string]string{
-			"context":    contextDir,
-			"dockerfile": dockerfileDir,
+		LocalMounts: map[string]fsutil.FS{
+			"context":    contextMount,
+			"dockerfile": dockerfileMount,
 		},
 		CacheImports:        parseBuildkitCacheEntriesInternal(req.CacheFrom),
 		CacheExports:        parseBuildkitCacheEntriesInternal(req.CacheTo),
@@ -192,7 +204,7 @@ func (b *builder) buildSolveOptInternal(ctx context.Context, req imagetypes.Buil
 
 func (b *builder) buildLoadExportInternal(ctx context.Context, tags []string) (buildkit.ExportEntry, chan error, error) {
 	if b.dockerClientProvider == nil {
-		return buildkit.ExportEntry{}, nil, errors.New("docker service not available")
+		return buildkit.ExportEntry{}, nil, &common.BuildDockerServiceUnavailableError{}
 	}
 
 	dockerClient, err := b.dockerClientProvider.GetClient(ctx)

@@ -43,7 +43,7 @@ jobs:
             cgo_enabled: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -102,7 +102,7 @@ jobs:
             args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Set up Go
         uses: actions/setup-go@v6
@@ -124,7 +124,7 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Setup Go
         uses: actions/setup-go@v6
@@ -201,7 +201,7 @@ jobs:
     runs-on: depot-ubuntu-latest
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -250,7 +250,7 @@ jobs:
             port: 3002
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -273,7 +273,7 @@ jobs:
         run: depot configure-docker
 
       - name: Cache Playwright Browsers
-        uses: actions/cache@v5
+        uses: actions/cache@v5.0.5
         id: playwright-cache
         with:
           path: ~/.cache/ms-playwright
@@ -283,9 +283,9 @@ jobs:
 
       - name: Pull and save test images
         run: |
-          docker pull ghcr.io/linuxserver/nginx:latest
+          docker pull public.ecr.aws/nginx/nginx:stable-alpine
           docker pull ghcr.io/linuxserver/radarr:nightly
-          docker save ghcr.io/linuxserver/nginx:latest ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
+          docker save public.ecr.aws/nginx/nginx:stable-alpine ghcr.io/linuxserver/radarr:nightly > /tmp/test-images.tar
 
       - name: Setup and Install Playwright Dependencies
         run: just deps install tests
@@ -322,7 +322,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7.0.0
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6

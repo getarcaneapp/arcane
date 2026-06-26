@@ -1,5 +1,5 @@
 import { goto, invalidateAll } from '$app/navigation';
-import BaseAPIService from './api-service';
+import BaseAPIService, { APIError } from './api-service';
 import userStore from '$lib/stores/user-store';
 import type { User } from '$lib/types/auth';
 import type { OidcStatusInfo } from '$lib/types/settings';
@@ -111,7 +111,12 @@ class AuthService extends BaseAPIService {
 		} catch (error) {
 			const err = error instanceof Error ? error : new Error('Token refresh failed');
 			console.error('Token refresh failed:', err);
-			this.clearTokenData();
+			// Only drop the stored refresh token when the server definitively rejects it
+			// (HTTP 401). Transient failures — a network error or the backend briefly
+			// down during a self-update — must keep the token so a later retry recovers.
+			if (error instanceof APIError && error.status === 401) {
+				this.clearTokenData();
+			}
 			this.refreshSubscribers.forEach((callback) => callback(null, err));
 			this.refreshSubscribers = [];
 			this.isRefreshing = false;

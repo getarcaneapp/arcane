@@ -610,10 +610,10 @@ type Details struct {
 
 // Destroy is used to destroy a project.
 type Destroy struct {
-	// RemoveFiles indicates if project files should be removed.
+	// RemoveFiles indicates if project files should be removed. Defaults to true when omitted.
 	//
 	// Required: false
-	RemoveFiles bool `json:"removeFiles,omitempty"`
+	RemoveFiles *bool `json:"removeFiles,omitempty"`
 
 	// RemoveVolumes indicates if project volumes should be removed.
 	//

@@ -39,7 +39,7 @@
 
 {#if visible}
 	<div
-		class={`pointer-events-none fixed inset-x-0 top-0 z-[9999] ${thickness} ${className}`}
+		class={`pointer-events-none fixed inset-x-0 top-0 z-[var(--arcane-z-loading)] ${thickness} ${className}`}
 		role="progressbar"
 		aria-busy="true"
 		aria-label={m.common_loading()}

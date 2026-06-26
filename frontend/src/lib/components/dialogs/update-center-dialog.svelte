@@ -7,6 +7,7 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import { onDestroy } from 'svelte';
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
+	import BaseAPIService from '$lib/services/api-service';
 	import { cn } from '$lib/utils';
 	import { ExternalLinkIcon, SuccessIcon } from '$lib/icons';
 	import type { AppVersionInformation } from '$lib/types/settings';
@@ -321,6 +322,7 @@
 			} else {
 				upgradeStatus = 'upgrading';
 				upgrading = false;
+				BaseAPIService.setUpgradeInProgress(false);
 			}
 		}
 	}
@@ -365,6 +367,9 @@
 	async function handleConfirm() {
 		upgrading = true;
 		upgradeStatus = 'upgrading';
+		// A local upgrade restarts THIS manager; flag it so the restart's version-
+		// mismatch 401s are treated as a recoverable reconnect, not a logout.
+		if (!isRemoteEnvironment) BaseAPIService.setUpgradeInProgress(true);
 		log('confirm', {
 			isRemoteEnvironment,
 			environmentId: environmentId ?? '0',
@@ -398,6 +403,7 @@
 
 		if (triggerErrored) {
 			upgrading = false;
+			BaseAPIService.setUpgradeInProgress(false);
 			return;
 		}
 		if (!upgrading) {
@@ -430,6 +436,7 @@
 
 	function closeAfterComplete() {
 		upgrading = false;
+		BaseAPIService.setUpgradeInProgress(false);
 		open = false;
 	}
 
@@ -477,6 +484,7 @@
 		if (countdownInterval) clearInterval(countdownInterval);
 		if (fallbackTimeout) clearTimeout(fallbackTimeout);
 		if (pollAbort) pollAbort.aborted = true;
+		BaseAPIService.setUpgradeInProgress(false);
 	});
 </script>
 

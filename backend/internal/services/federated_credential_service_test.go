@@ -311,9 +311,8 @@ func TestFederatedCredentialServiceUpdateDisableRevokesIssuedSessionsInternal(t 
 	require.NoError(t, err)
 	require.NotNil(t, resp)
 
-	disabled := false
 	_, err = service.Update(ctx, "admin-user", "cred-github-actions", federatedtypes.UpdateFederatedCredential{
-		Enabled: &disabled,
+		Enabled: new(false),
 	})
 	require.NoError(t, err)
 

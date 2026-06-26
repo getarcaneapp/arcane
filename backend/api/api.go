@@ -304,7 +304,7 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 	handlers.RegisterNotifications(api, svc.Notification, cfg)
 	handlers.RegisterUpdater(api, svc.Updater, handlerAppCtx)
 	handlers.RegisterCustomize(api, svc.CustomizeSearch)
-	handlers.RegisterSystem(api, svc.Docker, svc.System, svc.SystemUpgrade, cfg, svc.Activity, handlerAppCtx)
+	handlers.RegisterSystem(api, svc.Docker, svc.System, svc.SystemUpgrade, svc.Environment, cfg, svc.Activity, handlerAppCtx)
 	handlers.RegisterDiagnostics(api, svc.Diagnostics)
 	handlers.RegisterGitRepositories(api, svc.GitRepository)
 	handlers.RegisterGitOpsSyncs(api, svc.GitOpsSync)

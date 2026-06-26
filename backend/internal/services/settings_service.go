@@ -16,7 +16,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/hashicorp/go-uuid"
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -160,6 +160,10 @@ func DefaultSettingsConfig() *models.Settings {
 		TrivyCpuLimit:                   models.SettingVariable{Value: "1"},
 		TrivyMemoryLimitMb:              models.SettingVariable{Value: "0"},
 		TrivyConcurrentScanContainers:   models.SettingVariable{Value: "1"},
+		TrivyServerEnabled:              models.SettingVariable{Value: "false"},
+		TrivyServerUrl:                  models.SettingVariable{Value: ""},
+		TrivyServerToken:                models.SettingVariable{Value: ""},
+		TrivyIgnoreUnfixed:              models.SettingVariable{Value: "true"},
 		OidcEnabled:                     models.SettingVariable{Value: "false"},
 		OidcClientId:                    models.SettingVariable{Value: ""},
 		OidcClientSecret:                models.SettingVariable{Value: ""},
@@ -780,12 +784,12 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 		return nil
 	}
 
-	createdInstanceID, err := uuid.GenerateUUID()
+	createdInstanceID, err := uuid.NewRandom()
 	if err != nil {
 		return fmt.Errorf("failed to created a new instance ID: %w", err)
 	}
 
-	err = s.UpdateSetting(ctx, "instanceId", createdInstanceID)
+	err = s.UpdateSetting(ctx, "instanceId", createdInstanceID.String())
 	if err != nil {
 		return fmt.Errorf("failed to set instance ID in database: %w", err)
 	}
@@ -896,11 +900,11 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		notFound := errors.Is(err, gorm.ErrRecordNotFound)
 
 		// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
-		u, genErr := uuid.GenerateUUID()
+		u, genErr := uuid.NewRandom()
 		if genErr != nil {
 			return fmt.Errorf("failed to generate encryption key: %w", genErr)
 		}
-		sum := sha256.Sum256([]byte(u))
+		sum := sha256.Sum256([]byte(u.String()))
 		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
 		key = generatedKey
 

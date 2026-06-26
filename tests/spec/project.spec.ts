@@ -231,7 +231,6 @@ async function destroyCurrentProjectViaUI(page: Page) {
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
-	await dialog.getByLabel(/Remove project files/i).check();
 	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
 
 	await page.waitForURL(ROUTES.page, { timeout: 10000 });
@@ -260,7 +259,6 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
-	await dialog.getByLabel(/Remove project files/i).check();
 	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
 
 	await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0, {
@@ -276,8 +274,7 @@ async function destroyProjectByIdViaAPI(page: Page, projectId: string) {
 	await page.request
 		.delete(`/api/environments/0/projects/${encodeURIComponent(projectId)}/destroy`, {
 			data: {
-				removeVolumes: false,
-				removeFiles: true
+				removeVolumes: false
 			}
 		})
 		.catch(() => undefined);
@@ -709,7 +706,11 @@ test.describe('New Compose Project Page', () => {
 
 		const deployResponse = await deployResponsePromise;
 		expect(deployResponse.ok()).toBe(true);
-		expect(await deployResponse.finished()).toBeNull();
+		// Don't await deployResponse.finished() here: for a chunked NDJSON stream
+		// consumed via fetch().body, Playwright's network-layer finished() doesn't
+		// reliably resolve even after the server closes the response and the UI
+		// updates to "running" — it hangs until the test timeout. Deploy completion
+		// is verified below via the running-status poll and the activity-success check.
 
 		const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
 		await expect

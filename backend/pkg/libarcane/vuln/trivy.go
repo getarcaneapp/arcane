@@ -148,6 +148,43 @@ func DefaultRepositoryArgs() []string {
 	}
 }
 
+// ScanSourceArgs returns the Trivy flags selecting where vulnerability data comes
+// from. In client/server mode (serverURL set) the client never opens the local
+// BoltDB, so --server replaces the cache-backend and DB-repository flags. This is
+// the supported path on 32-bit hosts (arm/v7) where the local DB cannot be
+// memory-mapped. With an empty serverURL it falls back to the standalone
+// local-database flags. The server token is passed via ServerTokenEnv rather than
+// a flag so it is not exposed in the process arguments.
+func ScanSourceArgs(serverURL string) []string {
+	serverURL = strings.TrimSpace(serverURL)
+	if serverURL == "" {
+		return append(ScanCacheBackendArgs(), DefaultRepositoryArgs()...)
+	}
+
+	return []string{"--server", serverURL}
+}
+
+// ServerTokenEnv returns the TRIVY_TOKEN environment entry for a non-empty Trivy
+// server token. Passing the token through the environment instead of a --token CLI
+// flag keeps it out of the container's process arguments (/proc/<pid>/cmdline, ps).
+func ServerTokenEnv(token string) []string {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil
+	}
+
+	return []string{"TRIVY_TOKEN=" + token}
+}
+
+// IgnoreUnfixedArgs returns --ignore-unfixed when enabled so Trivy only reports
+// vulnerabilities that have a known fix.
+func IgnoreUnfixedArgs(enabled bool) []string {
+	if enabled {
+		return []string{"--ignore-unfixed"}
+	}
+	return nil
+}
+
 // BuildDockerConfigJSON encodes registry auth configs into a docker config.json
 // payload (base64 user:password under each host). It returns (nil, nil) when there
 // are no usable credentials.

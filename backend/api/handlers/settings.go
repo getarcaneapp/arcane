@@ -131,7 +131,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 		Security:    []map[string][]string{},
 	}, h.GetPublicSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-settings",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/settings",
@@ -142,10 +142,9 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSettingsRead),
-	}, h.GetSettings)
+	}, authz.PermSettingsRead, h.GetSettings)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-settings",
 		Method:      http.MethodPut,
 		Path:        "/environments/{id}/settings",
@@ -156,8 +155,7 @@ func RegisterSettings(api huma.API, settingsService *services.SettingsService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSettingsWrite),
-	}, h.UpdateSettings)
+	}, authz.PermSettingsWrite, h.UpdateSettings)
 
 	// Top-level settings endpoints (not environment-scoped)
 	huma.Register(api, huma.Operation{

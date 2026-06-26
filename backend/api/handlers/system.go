@@ -10,6 +10,7 @@ import (
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -25,12 +26,13 @@ import (
 
 // SystemHandler handles system management endpoints.
 type SystemHandler struct {
-	dockerService   *services.DockerClientService
-	systemService   *services.SystemService
-	upgradeService  *services.SystemUpgradeService
-	activityService *services.ActivityService
-	cfg             *config.Config
-	appCtx          context.Context
+	dockerService      *services.DockerClientService
+	systemService      *services.SystemService
+	upgradeService     *services.SystemUpgradeService
+	environmentService *services.EnvironmentService
+	activityService    *services.ActivityService
+	cfg                *config.Config
+	appCtx             context.Context
 }
 
 // --- Input/Output Types ---
@@ -116,19 +118,36 @@ type TriggerUpgradeOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type TriggerUpdateAllInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type TriggerUpdateAllOutput struct {
+	Body base.ApiResponse[models.EnvironmentUpdateJob]
+}
+
+type UpdateAllStatusInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type UpdateAllStatusOutput struct {
+	Body base.ApiResponse[models.EnvironmentUpdateJob]
+}
+
 // RegisterSystem registers system management endpoints using Huma.
 // Note: WebSocket endpoints (stats) remain in the Gin handler.
-func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, cfg *config.Config, activityService *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterSystem(api huma.API, dockerService *services.DockerClientService, systemService *services.SystemService, upgradeService *services.SystemUpgradeService, environmentService *services.EnvironmentService, cfg *config.Config, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &SystemHandler{
-		dockerService:   dockerService,
-		systemService:   systemService,
-		upgradeService:  upgradeService,
-		activityService: activityService,
-		cfg:             cfg,
-		appCtx:          appCtx.contextInternal(),
+		dockerService:      dockerService,
+		systemService:      systemService,
+		upgradeService:     upgradeService,
+		environmentService: environmentService,
+		activityService:    activityService,
+		cfg:                cfg,
+		appCtx:             appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "system-health",
 		Method:        http.MethodHead,
 		Path:          "/environments/{id}/system/health",
@@ -140,9 +159,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.Health)
+	}, authz.PermSystemRead, h.Health)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-docker-info",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/system/docker/info",
@@ -153,10 +172,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
-	}, h.GetDockerInfo)
+	}, authz.PermSystemRead, h.GetDockerInfo)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-all",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/prune",
@@ -167,10 +185,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemPrune),
-	}, h.PruneAll)
+	}, authz.PermSystemPrune, h.PruneAll)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/start-all",
@@ -181,10 +198,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
-	}, h.StartAllContainers)
+	}, authz.PermContainersStart, h.StartAllContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-all-stopped-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/start-stopped",
@@ -195,10 +211,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
-	}, h.StartAllStoppedContainers)
+	}, authz.PermContainersStart, h.StartAllStoppedContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "stop-all-containers",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/containers/stop-all",
@@ -209,10 +224,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStop),
-	}, h.StopAllContainers)
+	}, authz.PermContainersStop, h.StopAllContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "convert-docker-run",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/system/convert",
@@ -223,10 +237,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersCreate),
-	}, h.ConvertDockerRun)
+	}, authz.PermContainersCreate, h.ConvertDockerRun)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "check-upgrade",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/system/upgrade/check",
@@ -237,10 +250,9 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemRead),
-	}, h.CheckUpgradeAvailable)
+	}, authz.PermSystemRead, h.CheckUpgradeAvailable)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID:   "trigger-upgrade",
 		Method:        http.MethodPost,
 		Path:          "/environments/{id}/system/upgrade",
@@ -252,8 +264,42 @@ func RegisterSystem(api huma.API, dockerService *services.DockerClientService, s
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermSystemUpgrade),
-	}, h.TriggerUpgrade)
+	}, authz.PermSystemUpgrade, h.TriggerUpgrade)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID:   "trigger-update-all",
+		Method:        http.MethodPost,
+		Path:          "/environments/{id}/system/upgrade/all",
+		Summary:       "Update all environments",
+		Description:   "Upgrade every Arcane environment, starting with the manager",
+		DefaultStatus: http.StatusAccepted,
+		Tags:          []string{"System"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermSystemUpgrade, h.TriggerUpdateAll)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-all-status",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/system/upgrade/all/status",
+		Summary:     "Get update-all status",
+		Description: "Get the status of the latest update-all-environments job",
+		Tags:        []string{"System"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermSystemRead, h.GetUpdateAllStatus)
+}
+
+// rejectIfAgentModeInternal blocks manager-only operations when running as an agent.
+func (h *SystemHandler) rejectIfAgentModeInternal() error {
+	if h.cfg != nil && h.cfg.AgentMode {
+		return huma.Error400BadRequest("update-all is managed on the Arcane manager")
+	}
+	return nil
 }
 
 // Health checks if the Docker daemon is responsive.
@@ -536,6 +582,68 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 			Data: base.MessageResponse{
 				Message: "Upgrade initiated successfully. A new container is being created and will replace this one shortly.",
 			},
+		},
+	}, nil
+}
+
+// TriggerUpdateAll starts a fleet-wide update, upgrading the manager first and then
+// the remote agents (the latter resume after the manager restarts).
+func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*TriggerUpdateAllOutput, error) {
+	if h.upgradeService == nil || h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
+
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slog.Info("Update-all environments triggered", "user", user.Username, "userId", user.ID)
+
+	// Use a runtime context so the agents phase can outlive the request when the
+	// manager is already up to date.
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+
+	job, err := h.upgradeService.StartUpdateAll(runtimeCtx, *user, h.environmentService)
+	if err != nil {
+		if common.IsUpdateAllInProgressError(err) {
+			return nil, huma.Error409Conflict(err.Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.UpgradeTriggerError{Err: err}).Error())
+	}
+
+	return &TriggerUpdateAllOutput{
+		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
+			Success: true,
+			Data:    *job,
+		},
+	}, nil
+}
+
+// GetUpdateAllStatus returns the latest update-all job for live progress polling.
+func (h *SystemHandler) GetUpdateAllStatus(ctx context.Context, input *UpdateAllStatusInput) (*UpdateAllStatusOutput, error) {
+	if h.upgradeService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := h.rejectIfAgentModeInternal(); err != nil {
+		return nil, err
+	}
+
+	job, err := h.upgradeService.GetLatestUpdateAllJob(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	if job == nil {
+		return nil, huma.Error404NotFound("no update-all job found")
+	}
+
+	return &UpdateAllStatusOutput{
+		Body: base.ApiResponse[models.EnvironmentUpdateJob]{
+			Success: true,
+			Data:    *job,
 		},
 	}, nil
 }

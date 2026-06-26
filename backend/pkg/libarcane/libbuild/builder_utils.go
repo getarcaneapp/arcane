@@ -1,13 +1,13 @@
 package libbuild
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"sort"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 )
 
@@ -24,7 +24,7 @@ func normalizeBuildRequestInternal(req imagetypes.BuildRequest, providerName str
 
 func validateBuildRequestInternal(req imagetypes.BuildRequest, providerName string) error {
 	if strings.TrimSpace(req.ContextDir) == "" {
-		return errors.New("contextDir is required")
+		return &common.BuildContextDirRequiredError{}
 	}
 
 	contextDir := filepath.Clean(req.ContextDir)
@@ -33,11 +33,11 @@ func validateBuildRequestInternal(req imagetypes.BuildRequest, providerName stri
 	}
 
 	if strings.TrimSpace(req.Dockerfile) != "" && strings.TrimSpace(req.DockerfileInline) != "" {
-		return errors.New("dockerfile and dockerfileInline are mutually exclusive")
+		return &common.DockerfileAndInlineMutuallyExclusiveError{}
 	}
 
 	if providerName == "depot" && !req.Push {
-		return errors.New("depot builds must push images to a registry")
+		return &common.DepotBuildPushRequiredError{}
 	}
 
 	if unsupported := unsupportedBuildOptionsInternal(req, providerName); len(unsupported) > 0 {
@@ -45,7 +45,7 @@ func validateBuildRequestInternal(req imagetypes.BuildRequest, providerName stri
 	}
 
 	if len(req.Tags) == 0 && (req.Push || req.Load) {
-		return errors.New("at least one tag is required when push/load is enabled")
+		return &common.BuildTagsRequiredError{}
 	}
 
 	dockerfilePath := strings.TrimSpace(req.Dockerfile)

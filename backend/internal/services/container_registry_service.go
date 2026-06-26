@@ -519,8 +519,7 @@ func ensureRateLimitUsedInternal(rateLimit *updaterregistry.RateLimitInfo) {
 	if rateLimit == nil || rateLimit.Used != nil || rateLimit.Limit == nil || rateLimit.Remaining == nil {
 		return
 	}
-	used := max(*rateLimit.Limit-*rateLimit.Remaining, 0)
-	rateLimit.Used = &used
+	rateLimit.Used = new(max(*rateLimit.Limit-*rateLimit.Remaining, 0))
 }
 
 func (s *ContainerRegistryService) getObservedPullsInternal(ctx context.Context, registryHost string) int64 {

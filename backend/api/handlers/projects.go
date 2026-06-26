@@ -229,7 +229,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		appCtx:          appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-projects",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects",
@@ -240,10 +240,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsList),
-	}, h.ListProjects)
+	}, authz.PermProjectsList, h.ListProjects)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-status-counts",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/counts",
@@ -254,10 +253,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsList),
-	}, h.GetProjectStatusCounts)
+	}, authz.PermProjectsList, h.GetProjectStatusCounts)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deploy-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/up",
@@ -268,10 +266,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDeploy),
-	}, h.DeployProject)
+	}, authz.PermProjectsDeploy, h.DeployProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "down-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/down",
@@ -282,10 +279,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDown),
-	}, h.DownProject)
+	}, authz.PermProjectsDown, h.DownProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects",
@@ -296,10 +292,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsCreate),
-	}, h.CreateProject)
+	}, authz.PermProjectsCreate, h.CreateProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}",
@@ -310,10 +305,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProject)
+	}, authz.PermProjectsRead, h.GetProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-compose",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/compose",
@@ -324,10 +318,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProjectCompose)
+	}, authz.PermProjectsRead, h.GetProjectCompose)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-files",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/files",
@@ -338,10 +331,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProjectFiles)
+	}, authz.PermProjectsRead, h.GetProjectFiles)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-runtime",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/runtime",
@@ -352,10 +344,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProjectRuntime)
+	}, authz.PermProjectsRead, h.GetProjectRuntime)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-updates",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/updates",
@@ -366,10 +357,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProjectUpdates)
+	}, authz.PermProjectsRead, h.GetProjectUpdates)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-project-file",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/projects/{projectId}/file",
@@ -380,10 +370,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRead),
-	}, h.GetProjectFile)
+	}, authz.PermProjectsRead, h.GetProjectFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/redeploy",
@@ -394,10 +383,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDeploy),
-	}, h.RedeployProject)
+	}, authz.PermProjectsDeploy, h.RedeployProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "destroy-project",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/projects/{projectId}/destroy",
@@ -408,10 +396,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDelete),
-	}, h.DestroyProject)
+	}, authz.PermProjectsDelete, h.DestroyProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project",
 		Method:      http.MethodPut,
 		Path:        "/environments/{id}/projects/{projectId}",
@@ -422,10 +409,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsUpdate),
-	}, h.UpdateProject)
+	}, authz.PermProjectsUpdate, h.UpdateProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-include",
 		Method:      http.MethodPut,
 		Path:        "/environments/{id}/projects/{projectId}/includes",
@@ -436,10 +422,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsUpdate),
-	}, h.UpdateProjectInclude)
+	}, authz.PermProjectsUpdate, h.UpdateProjectInclude)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restart-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/restart",
@@ -450,10 +435,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsRestart),
-	}, h.RestartProject)
+	}, authz.PermProjectsRestart, h.RestartProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "update-project-services",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/update-services",
@@ -464,10 +448,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsUpdate),
-	}, h.UpdateProjectServices)
+	}, authz.PermProjectsUpdate, h.UpdateProjectServices)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "archive-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/archive",
@@ -478,10 +461,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsArchive),
-	}, h.ArchiveProject)
+	}, authz.PermProjectsArchive, h.ArchiveProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "unarchive-project",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/unarchive",
@@ -492,10 +474,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsArchive),
-	}, h.UnarchiveProject)
+	}, authz.PermProjectsArchive, h.UnarchiveProject)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pull-project-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/pull",
@@ -506,10 +487,9 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDeploy),
-	}, h.PullProjectImages)
+	}, authz.PermProjectsDeploy, h.PullProjectImages)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "build-project-images",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/projects/{projectId}/build",
@@ -520,8 +500,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermProjectsDeploy),
-	}, h.BuildProjectImages)
+	}, authz.PermProjectsDeploy, h.BuildProjectImages)
 }
 
 // ListProjects returns a paginated list of projects.
@@ -908,10 +887,12 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 		return nil, err
 	}
 
-	removeFiles := false
+	removeFiles := true
 	removeVolumes := false
 	if input.Body != nil {
-		removeFiles = input.Body.RemoveFiles
+		if input.Body.RemoveFiles != nil {
+			removeFiles = *input.Body.RemoveFiles
+		}
 		removeVolumes = input.Body.RemoveVolumes
 		slog.DebugContext(ctx, "DestroyProject handler received body",
 			"removeFiles", removeFiles,

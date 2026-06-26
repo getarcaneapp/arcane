@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -47,9 +48,12 @@ var managementEndpointSet = map[string]struct{}{
 // Returns: apiURL, accessToken, enabled, error
 type EnvResolver func(ctx context.Context, id string) (string, *string, bool, error)
 
-// AuthValidator validates authentication for a request.
-// Returns true if the request is authenticated, false otherwise.
-type AuthValidator func(ctx context.Context, c echo.Context) bool
+// AuthValidator validates authentication for a request and resolves the
+// caller's effective permission set. The boolean result reports whether the
+// request is authenticated; the permission set is used to authorize proxied
+// requests against the target environment. Sudo permission sets (internal
+// agent proxies) bypass authorization.
+type AuthValidator func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool)
 
 // EnvironmentMiddleware proxies requests for remote environments to their respective agents.
 type EnvironmentMiddleware struct {
@@ -59,11 +63,12 @@ type EnvironmentMiddleware struct {
 	authValidator AuthValidator
 	httpClient    *http.Client
 	registry      *edge.TunnelRegistry
+	matcher       *authz.PermissionMatcher
 }
 
 // NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator) echo.MiddlewareFunc {
-	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, edge.GetRegistry())
+func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator, matcher *authz.PermissionMatcher) echo.MiddlewareFunc {
+	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, matcher, edge.GetRegistry())
 }
 
 // NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
@@ -72,6 +77,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 	paramName string,
 	resolver EnvResolver,
 	authValidator AuthValidator,
+	matcher *authz.PermissionMatcher,
 	registry *edge.TunnelRegistry,
 ) echo.MiddlewareFunc {
 	if registry == nil {
@@ -85,6 +91,7 @@ func NewEnvProxyMiddlewareWithParamAndRegistry(
 		authValidator: authValidator,
 		httpClient:    &http.Client{Timeout: proxyTimeout},
 		registry:      registry,
+		matcher:       matcher,
 	}
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
@@ -106,11 +113,16 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 	}
 
 	// SECURITY: Validate authentication BEFORE proxying to remote environments.
-	if m.authValidator != nil && !m.authValidator(c.Request().Context(), c) {
-		return c.JSON(http.StatusUnauthorized, map[string]any{
-			"success": false,
-			"data":    map[string]any{"error": (&common.EnvironmentUnauthorizedError{}).Error()},
-		})
+	var perms *authz.PermissionSet
+	if m.authValidator != nil {
+		ps, ok := m.authValidator(c.Request().Context(), c)
+		if !ok {
+			return c.JSON(http.StatusUnauthorized, map[string]any{
+				"success": false,
+				"data":    map[string]any{"error": (&common.EnvironmentUnauthorizedError{}).Error()},
+			})
+		}
+		perms = ps
 	}
 
 	apiURL, accessToken, enabled, err := m.resolver(c.Request().Context(), envID)
@@ -125,6 +137,18 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
 			"data":    map[string]any{"error": (&common.EnvironmentDisabledError{}).Error()},
+		})
+	}
+
+	// SECURITY: Enforce the caller's per-environment permission BEFORE proxying.
+	// Remote agents run with a sudo permission set and perform no authorization
+	// of their own, so authorization for proxied requests must happen here,
+	// mirroring the per-operation RequirePermission checks used for the local
+	// environment.
+	if m.proxyPermissionDenied(c, perms, envID) {
+		return c.JSON(http.StatusForbidden, map[string]any{
+			"success": false,
+			"data":    map[string]any{"error": (&common.EnvironmentForbiddenError{}).Error()},
 		})
 	}
 
@@ -149,6 +173,49 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 		return m.proxyWebSocket(c, target, accessToken, envID)
 	}
 	return m.proxyHTTP(c, target, accessToken)
+}
+
+// proxyPermissionDenied reports whether the caller lacks permission to perform
+// the proxied request against environment envID. It mirrors the per-operation
+// RequirePermission checks enforced for the local environment: the permission
+// required for the (method, path) is looked up in the matcher and evaluated
+// against the caller's permission set for the target environment.
+//
+// Sudo callers bypass the check. Requests whose (method, path) has no known
+// permission mapping are denied (default-deny), so a newly added proxied route
+// cannot silently bypass authorization before it is mapped.
+func (m *EnvironmentMiddleware) proxyPermissionDenied(c echo.Context, ps *authz.PermissionSet, envID string) bool {
+	if m.matcher == nil {
+		return false
+	}
+	if ps != nil && ps.Sudo {
+		return false
+	}
+
+	method := c.Request().Method
+	suffix := m.buildResourceSuffix(c.Request().URL.Path, envID)
+	perm, ok := m.matcher.Lookup(method, suffix)
+	if !ok {
+		slog.WarnContext(c.Request().Context(), "Denying proxied request with no known permission mapping",
+			"method", method, "path", suffix, "environment_id", envID)
+		return true
+	}
+	if perm == "" {
+		// Explicitly public proxied route (e.g. public settings): allowed for
+		// any authenticated caller, matching local enforcement.
+		return false
+	}
+
+	scopeEnvID := ""
+	if authz.IsEnvScoped(perm) {
+		scopeEnvID = envID
+	}
+	if !ps.Allows(perm, scopeEnvID) {
+		slog.DebugContext(c.Request().Context(), "Denying proxied request: permission denied",
+			"method", method, "path", suffix, "permission", perm, "environment_id", envID)
+		return true
+	}
+	return false
 }
 
 func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {

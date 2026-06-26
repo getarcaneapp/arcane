@@ -38,15 +38,14 @@ type ListPortsOutput struct {
 func RegisterPorts(api huma.API, portSvc *services.PortService) {
 	h := &PortHandler{portService: portSvc}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-ports",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/ports",
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
-	}, h.ListPorts)
+	}, authz.PermContainersList, h.ListPorts)
 }
 
 func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ListPortsOutput, error) {

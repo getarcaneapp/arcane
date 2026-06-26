@@ -1640,19 +1640,65 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	return nil
 }
 
+// projectCleanupDecision records a project the reconcile pass intends to delete,
+// alongside the reason logged when the deletion is carried out.
+type projectCleanupDecision struct {
+	project models.Project
+	reason  string
+}
+
 func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
 	var all []models.Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
 		return fmt.Errorf("list projects for cleanup failed: %w", err)
 	}
 
+	// Decide deletions without performing them. Collecting decisions up front lets
+	// the mass-wipe guard veto an entire suspicious pass (e.g. the projects volume
+	// is unmounted, so every path is missing at once) before any rows are removed.
+	candidates := 0
+	pendingDeletions := make([]projectCleanupDecision, 0)
 	for _, p := range all {
 		if skipProjectCleanupInternal(p, seen) {
 			continue
 		}
-		s.cleanupUnseenProjectInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth)
+		candidates++
+		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth); remove {
+			pendingDeletions = append(pendingDeletions, decision)
+		}
+	}
+
+	if s.cleanupWouldMassWipeInternal(ctx, candidates, len(pendingDeletions), projectsDir) {
+		return nil
+	}
+
+	for _, decision := range pendingDeletions {
+		s.deleteProjectDuringCleanupInternal(ctx, decision.project, decision.reason)
 	}
 	return nil
+}
+
+// cleanupWouldMassWipeInternal reports whether the pending deletions look like an
+// accidental mass wipe rather than legitimate removals. It engages when a single
+// pass would prune more than one project AND more than half of the cleanup
+// candidates — so the table cannot be near-emptied at once (e.g. when the projects
+// directory is unmounted or mis-mapped and every path goes missing), no matter how
+// few projects the deployment has. A single removal is always allowed: it is
+// indistinguishable from a legitimate "deleted my only project" and is not a mass
+// wipe. When the guard engages it logs a WARN pointing the operator at the likely
+// volume/mount misconfiguration and the caller skips every deletion in the pass.
+func (s *ProjectService) cleanupWouldMassWipeInternal(ctx context.Context, candidates, deleteCount int, projectsDir string) bool {
+	if deleteCount <= 1 || deleteCount*2 <= candidates {
+		return false
+	}
+
+	slog.WarnContext(ctx,
+		"skipping project cleanup: this reconcile would delete most projects in a single pass, which usually means the projects directory is empty, unmounted, or mis-mapped; preserving DB records — check the projects volume is mounted and mapped correctly",
+		"wouldDelete", deleteCount,
+		"cleanupCandidates", candidates,
+		"projectsDir", projectsDir,
+	)
+	return true
 }
 
 func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool {
@@ -1667,23 +1713,24 @@ func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool
 	return p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != ""
 }
 
-func (s *ProjectService) cleanupUnseenProjectInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) {
+// evaluateProjectCleanupInternal decides whether a project that was not seen in
+// the current filesystem pass should be pruned. It performs only read-only checks
+// (warning in place for the "keep" cases); the actual deletion is deferred to the
+// caller so the mass-wipe guard can veto an entire suspicious pass.
+func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) (projectCleanupDecision, bool) {
 	if s.projectExceedsScanDepthInternal(p, projectsDir, maxDepth) {
-		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete project beyond configured scan depth", "path", p.Path)
-		return
+		return projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"}, true
 	}
 
 	validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
 	if err != nil {
-		s.cleanupProjectPathErrorInternal(ctx, p, err)
-		return
+		return s.evaluateProjectPathErrorInternal(ctx, p, err)
 	}
 	if !validDir {
-		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete non-project path", "path", p.Path)
-		return
+		return projectCleanupDecision{project: p, reason: "removed project: path is no longer a valid project directory"}, true
 	}
 
-	s.cleanupProjectComposeFileInternal(ctx, p)
+	return s.evaluateProjectComposeFileInternal(ctx, p)
 }
 
 func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, projectsDir string, maxDepth int) bool {
@@ -1700,32 +1747,53 @@ func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, proje
 	return rel != "" && strings.Count(rel, "/")+1 > maxDepth
 }
 
-func (s *ProjectService) cleanupProjectPathErrorInternal(ctx context.Context, p models.Project, err error) {
+func (s *ProjectService) evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) (projectCleanupDecision, bool) {
 	if os.IsNotExist(err) {
-		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete missing-path project")
+		return projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"}, true
+	}
+
+	slog.WarnContext(ctx, "stat error during cleanup; keeping DB record", "path", p.Path, "error", err)
+	return projectCleanupDecision{}, false
+}
+
+func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) (projectCleanupDecision, bool) {
+	_, err := s.resolveProjectComposeFileInternal(ctx, &p)
+	if err == nil {
+		return projectCleanupDecision{}, false
+	}
+
+	// The project directory still exists here (it passed the directory-validity
+	// check above). Only prune the DB record when the directory genuinely has no
+	// compose file. Any other resolution failure — an ambiguous match ("multiple
+	// custom compose files"), an unreadable directory, a transient parse error —
+	// means the project still has compose content on disk and may be deployable.
+	// Deleting it would silently destroy a live project whose files are intact, so
+	// keep the record and warn instead.
+	if _, ok := errors.AsType[*common.ComposeFileNotFoundError](err); !ok {
+		slog.WarnContext(ctx, "project directory present but compose file unresolved during cleanup; keeping DB record",
+			"projectID", p.ID, "path", p.Path, "error", err)
+		return projectCleanupDecision{}, false
+	}
+
+	return projectCleanupDecision{project: p, reason: "removed orphaned project: directory present but contains no compose file"}, true
+}
+
+// deleteProjectDuringCleanupInternal removes a project record discovered to be
+// stale during the filesystem reconcile. Every removal is logged (WARN on
+// success, ERROR on failure) so this destructive operation always leaves an
+// audit trail — previously successful deletions were silent.
+func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context, p models.Project, reason string, attrs ...any) {
+	logAttrs := make([]any, 0, 6+len(attrs))
+	logAttrs = append(logAttrs, "projectID", p.ID, "name", p.Name, "path", p.Path)
+	logAttrs = append(logAttrs, attrs...)
+
+	if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+		slog.ErrorContext(ctx, "failed to delete project during filesystem cleanup",
+			append(logAttrs, "reason", reason, "error", derr)...)
 		return
 	}
 
-	slog.WarnContext(ctx, "stat error during cleanup", "path", p.Path, "error", err)
-}
-
-func (s *ProjectService) cleanupProjectComposeFileInternal(ctx context.Context, p models.Project) {
-	if _, err := s.resolveProjectComposeFileInternal(ctx, &p); err != nil {
-		if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); !ok {
-			slog.WarnContext(ctx, "failed to validate project compose file during cleanup", "projectID", p.ID, "path", p.Path, "error", err)
-			return
-		}
-		s.deleteProjectDuringCleanupInternal(ctx, p, "failed to delete project without compose")
-	}
-}
-
-func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context, p models.Project, failureMessage string, attrs ...any) {
-	if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
-		logAttrs := make([]any, 0, 4+len(attrs))
-		logAttrs = append(logAttrs, "projectID", p.ID, "error", derr)
-		logAttrs = append(logAttrs, attrs...)
-		slog.WarnContext(ctx, failureMessage, logAttrs...)
-	}
+	slog.WarnContext(ctx, reason, logAttrs...)
 }
 
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]models.Project, error) {
@@ -2128,7 +2196,7 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	return proj, nil
 }
 
-func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles, removeVolumes bool, user models.User) error {
+func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, removeFiles bool, removeVolumes bool, user models.User) error {
 	slog.DebugContext(ctx, "DestroyProject service called",
 		"projectID", projectID,
 		"removeFiles", removeFiles,
@@ -2169,8 +2237,6 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 			return fmt.Errorf("failed to remove project files: %w", err)
 		}
 		slog.InfoContext(ctx, "Project files removed successfully", "path", proj.Path)
-	} else {
-		slog.DebugContext(ctx, "Skipping file removal (removeFiles=false)", "path", proj.Path)
 	}
 
 	if err := s.db.WithContext(ctx).Delete(proj).Error; err != nil {
@@ -2842,7 +2908,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	renameJournal := s.prepareProjectRenameJournalInternal(&proj, name, projectsDirectory, volumeMigration)
 
-	backupPath, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(projectsDirectory, proj.Path, composeContent, envContent, fileChanges)
+	backupPath, backupSkipped, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, composeContent, envContent, fileChanges)
 	if err != nil {
 		return nil, err
 	}
@@ -2857,7 +2923,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err := s.withProjectRenameRollback(ctx, &proj, &projectStateCommitted, func() error {
 		return s.applyProjectUpdateWithRenameJournalInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent, fileTreeRevision, fileChanges, volumeMigration, renameJournal, &journalActive, &projectStateCommitted)
 	}); err != nil {
-		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backupPath, &journalActive, projectStateCommitted, err)
+		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backupPath, backupSkipped, &journalActive, projectStateCommitted, err)
 		return nil, err
 	}
 
@@ -2889,17 +2955,17 @@ func resolveAuthoritativeProjectNameInternal(proj *models.Project, name *string,
 	return name
 }
 
-func (s *ProjectService) prepareProjectUpdateBackupInternal(projectsDirectory, projectPath string, composeContent, envContent *string, fileChanges []project.ProjectFileChange) (string, func(), error) {
+func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context, projectsDirectory, projectPath string, composeContent, envContent *string, fileChanges []project.ProjectFileChange) (string, []string, func(), error) {
 	if composeContent == nil && envContent == nil && len(fileChanges) == 0 {
-		return "", func() {}, nil
+		return "", nil, func() {}, nil
 	}
 
-	backupPath, err := s.backupProjectDirectoryInternal(projectsDirectory, projectPath)
+	backupPath, skipped, err := s.backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath)
 	if err != nil {
-		return "", nil, err
+		return "", nil, nil, err
 	}
 
-	return backupPath, func() { _ = os.RemoveAll(backupPath) }, nil
+	return backupPath, skipped, func() { _ = os.RemoveAll(backupPath) }, nil
 }
 
 func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) (bool, error) {
@@ -3015,13 +3081,13 @@ func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx conte
 	*journalActive = false
 }
 
-func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backupPath string, journalActive *bool, projectStateCommitted bool, err error) error {
+func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backupPath string, backupSkipped []string, journalActive *bool, projectStateCommitted bool, err error) error {
 	if projectStateCommitted {
 		return err
 	}
 
 	if backupPath != "" {
-		if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath); restoreErr != nil {
+		if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath, backupSkipped); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
 		}
 	}
@@ -3292,34 +3358,41 @@ func wrapProjectFileErrorInternal(err error) error {
 	}
 }
 
-func (s *ProjectService) backupProjectDirectoryInternal(projectsDirectory, projectPath string) (string, error) {
+func (s *ProjectService) backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, projectPath string) (string, []string, error) {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve project path: %w", err)
+		return "", nil, fmt.Errorf("failed to resolve project path: %w", err)
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
 	rootAbs, err := filepath.Abs(projectsDirectory)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve projects directory: %w", err)
+		return "", nil, fmt.Errorf("failed to resolve projects directory: %w", err)
 	}
 	rootAbs = filepath.Clean(rootAbs)
 	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
-		return "", errors.New("project path is outside projects directory")
+		return "", nil, errors.New("project path is outside projects directory")
 	}
 
 	backupPath, err := os.MkdirTemp(projectsDirectory, ".project-update-backup-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create project backup directory: %w", err)
+		return "", nil, fmt.Errorf("failed to create project backup directory: %w", err)
 	}
-	if err := projects.CopyDirectoryContents(projectAbs, backupPath); err != nil {
+	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
+	// in the backup so an unrelated unreadable file can't block the whole save.
+	// The skipped paths are returned so the rollback restore can preserve them.
+	skipped, err := projects.CopyDirectoryContentsTolerant(projectAbs, backupPath)
+	if err != nil {
 		_ = os.RemoveAll(backupPath)
-		return "", fmt.Errorf("failed to backup project files: %w", err)
+		return "", nil, fmt.Errorf("failed to backup project files: %w", err)
 	}
-	return backupPath, nil
+	if len(skipped) > 0 {
+		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", skipped)
+	}
+	return backupPath, skipped, nil
 }
 
-func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string) error {
+func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string, skipped []string) error {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project path: %w", err)
@@ -3336,13 +3409,13 @@ func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Conte
 	}
 
 	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backupPath)
-	if err := os.RemoveAll(projectAbs); err != nil {
-		return fmt.Errorf("failed to remove failed project directory state: %w", err)
-	}
 	if err := os.MkdirAll(projectAbs, common.DirPerm); err != nil {
 		return fmt.Errorf("failed to recreate project directory: %w", err)
 	}
-	if err := projects.CopyDirectoryContents(backupPath, projectAbs); err != nil {
+	// Mirror the backup back over the live directory rather than wiping it: files
+	// that were skipped during backup (unreadable, e.g. foreign-owned secrets)
+	// are absent from the backup and must be preserved, not deleted.
+	if err := projects.MirrorDirectoryContentsPreserving(backupPath, projectAbs, skipped); err != nil {
 		return fmt.Errorf("failed to restore project backup: %w", err)
 	}
 	return nil

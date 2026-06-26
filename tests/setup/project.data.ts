@@ -7,7 +7,7 @@ export const TEST_COMPOSE_YAML = `configs:
 
 services:
   nginx:
-    image: ghcr.io/linuxserver/nginx:latest
+    image: public.ecr.aws/nginx/nginx:stable-alpine
     container_name: \${CONTAINER_NAME}
     configs:
       - source: some_content

@@ -151,7 +151,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		appCtx:           appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-containers",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/containers",
@@ -159,70 +159,63 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
-	}, h.ListContainers)
+	}, authz.PermContainersList, h.ListContainers)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "container-status-counts",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/containers/counts",
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersList),
-	}, h.GetContainerStatusCounts)
+	}, authz.PermContainersList, h.GetContainerStatusCounts)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers",
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersCreate),
-	}, h.CreateContainer)
+	}, authz.PermContainersCreate, h.CreateContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/containers/{containerId}",
 		Summary:     "Get container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRead),
-	}, h.GetContainer)
+	}, authz.PermContainersRead, h.GetContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/start",
 		Summary:     "Start container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStart),
-	}, h.StartContainer)
+	}, authz.PermContainersStart, h.StartContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "stop-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/stop",
 		Summary:     "Stop container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersStop),
-	}, h.StopContainer)
+	}, authz.PermContainersStop, h.StopContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restart-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/restart",
 		Summary:     "Restart container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRestart),
-	}, h.RestartContainer)
+	}, authz.PermContainersRestart, h.RestartContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-container",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/containers/{containerId}/redeploy",
@@ -230,20 +223,18 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersRedeploy),
-	}, h.RedeployContainer)
+	}, authz.PermContainersRedeploy, h.RedeployContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-container",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/containers/{containerId}",
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersDelete),
-	}, h.DeleteContainer)
+	}, authz.PermContainersDelete, h.DeleteContainer)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "set-container-auto-update",
 		Method:      http.MethodPut,
 		Path:        "/environments/{id}/containers/{containerId}/auto-update",
@@ -251,8 +242,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermContainersAutoUpdate),
-	}, h.SetAutoUpdate)
+	}, authz.PermContainersAutoUpdate, h.SetAutoUpdate)
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {

@@ -90,7 +90,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		environmentService: environmentService,
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-activities",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/activities",
@@ -101,10 +101,9 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
-	}, h.ListActivities)
+	}, authz.PermActivitiesRead, h.ListActivities)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-activity",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/activities/{activityId}",
@@ -115,8 +114,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
-	}, h.GetActivity)
+	}, authz.PermActivitiesRead, h.GetActivity)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-all-activities",
@@ -132,7 +130,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
 	}, h.StreamAllActivities)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "cancel-activity",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/activities/{activityId}/cancel",
@@ -143,10 +141,9 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesCancel),
-	}, h.CancelActivity)
+	}, authz.PermActivitiesCancel, h.CancelActivity)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "clear-activity-history",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/activities/history",
@@ -157,8 +154,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesDelete),
-	}, h.ClearHistory)
+	}, authz.PermActivitiesDelete, h.ClearHistory)
 }
 
 func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*ListActivitiesOutput, error) {

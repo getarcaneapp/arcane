@@ -398,6 +398,20 @@ fix target="all":
     @just "_fix-{{ target }}"
 
 # -----------------------------------------------------------------------------
+# Security
+# -----------------------------------------------------------------------------
+
+# Run Snyk against all projects including dev dependencies
+[group('security')]
+_snyk-scan:
+    snyk test --all-projects --dev --policy-path=.snyk
+
+# Snyk targets. Valid: "scan".
+[group('security')]
+snyk target="scan":
+    @just "_snyk-{{ target }}"
+
+# -----------------------------------------------------------------------------
 # Dependencies
 # -----------------------------------------------------------------------------
 
@@ -415,19 +429,19 @@ _deps-install-tests:
 # Install backend Go dependencies
 [group('deps')]
 _deps-install-backend:
-    cd backend && go mod download
+    cd backend && go mod download && go mod tidy && go mod verify
     go work sync
 
 # Install CLI Go dependencies
 [group('deps')]
 _deps-install-cli:
-    cd cli && go mod download
+    cd cli && go mod download && go mod tidy && go mod verify
     go work sync
 
 # Install types Go dependencies
 [group('deps')]
 _deps-install-types:
-    cd types && go mod download
+    cd types && go mod download && go mod tidy && go mod verify
     go work sync
 
 # Install all Go dependencies

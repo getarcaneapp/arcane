@@ -20,6 +20,17 @@ var (
 	forceFlag  bool
 	jsonOutput bool
 
+	registryCreateURL         string
+	registryCreateUsername    string
+	registryCreateToken       string
+	registryCreateDescription string
+	registryCreateInsecure    bool
+	registryCreateDisabled    bool
+	registryCreateType        string
+	registryCreateAWSKeyID    string
+	registryCreateAWSSecret   string
+	registryCreateAWSRegion   string
+
 	registryUpdateURL      string
 	registryUpdateUsername string
 	registryUpdatePassword string
@@ -208,6 +219,67 @@ var getCmd = &cobra.Command{
 	},
 }
 
+var createCmd = &cobra.Command{
+	Use:          "create",
+	Short:        "Create a container registry",
+	SilenceUsage: true,
+	Args:         cobra.NoArgs,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		req := map[string]any{
+			"url":                registryCreateURL,
+			"registryType":       registryCreateType,
+			"username":           registryCreateUsername,
+			"token":              registryCreateToken,
+			"insecure":           registryCreateInsecure,
+			"enabled":            !registryCreateDisabled,
+			"awsAccessKeyId":     registryCreateAWSKeyID,
+			"awsSecretAccessKey": registryCreateAWSSecret,
+			"awsRegion":          registryCreateAWSRegion,
+		}
+		if registryCreateDescription != "" {
+			req["description"] = registryCreateDescription
+		}
+
+		resp, err := c.Post(cmd.Context(), types.Endpoints.ContainerRegistries(), req)
+		if err != nil {
+			return fmt.Errorf("failed to create registry: %w", err)
+		}
+		defer func() { _ = resp.Body.Close() }()
+		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
+			return fmt.Errorf("failed to create registry: %w", err)
+		}
+
+		var result base.ApiResponse[containerregistry.ContainerRegistry]
+		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+			return fmt.Errorf("failed to parse response: %w", err)
+		}
+
+		if jsonOutput {
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
+			if err != nil {
+				return fmt.Errorf("failed to marshal JSON: %w", err)
+			}
+			fmt.Println(string(resultBytes))
+			return nil
+		}
+
+		output.Success("Registry created successfully")
+		output.Header("Registry Details")
+		output.KeyValue("ID", result.Data.ID)
+		output.KeyValue("URL", result.Data.URL)
+		output.KeyValue("Username", result.Data.Username)
+		output.KeyValue("Type", result.Data.RegistryType)
+		output.KeyValue("Enabled", result.Data.Enabled)
+		output.KeyValue("Insecure", result.Data.Insecure)
+		return nil
+	},
+}
+
 var updateCmd = &cobra.Command{
 	Use:          "update <registry-id>",
 	Short:        "Update container registry",
@@ -230,13 +302,13 @@ var updateCmd = &cobra.Command{
 			req["username"] = registryUpdateUsername
 		}
 		if cmd.Flags().Changed("password") {
-			req["password"] = registryUpdatePassword
+			req["token"] = registryUpdatePassword
 		}
 		if cmd.Flags().Changed("enabled") {
-			req["enabled"] = true
+			req["enabled"] = registryUpdateEnabled
 		}
 		if cmd.Flags().Changed("disabled") {
-			req["enabled"] = false
+			req["enabled"] = !registryUpdateDisabled
 		}
 
 		if len(req) == 0 {
@@ -307,6 +379,7 @@ var deleteCmd = &cobra.Command{
 func init() {
 	RegistriesCmd.AddCommand(listCmd)
 	RegistriesCmd.AddCommand(getCmd)
+	RegistriesCmd.AddCommand(createCmd)
 	RegistriesCmd.AddCommand(syncCmd)
 	RegistriesCmd.AddCommand(testCmd)
 	RegistriesCmd.AddCommand(updateCmd)
@@ -320,6 +393,19 @@ func init() {
 
 	syncCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	testCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+
+	createCmd.Flags().StringVar(&registryCreateURL, "url", "", "Registry URL (e.g. ghcr.io, docker.io, registry.example.com)")
+	createCmd.Flags().StringVar(&registryCreateUsername, "username", "", "Username")
+	createCmd.Flags().StringVar(&registryCreateToken, "token", "", "Access token or password")
+	createCmd.Flags().StringVar(&registryCreateDescription, "description", "", "Description")
+	createCmd.Flags().BoolVar(&registryCreateInsecure, "insecure", false, "Allow insecure (HTTP) connections")
+	createCmd.Flags().BoolVar(&registryCreateDisabled, "disabled", false, "Create registry in disabled state")
+	createCmd.Flags().StringVar(&registryCreateType, "registry-type", "generic", "Registry type: generic or ecr")
+	createCmd.Flags().StringVar(&registryCreateAWSKeyID, "aws-access-key-id", "", "AWS Access Key ID (ECR only)")
+	createCmd.Flags().StringVar(&registryCreateAWSSecret, "aws-secret-access-key", "", "AWS Secret Access Key (ECR only)")
+	createCmd.Flags().StringVar(&registryCreateAWSRegion, "aws-region", "", "AWS region (ECR only)")
+	createCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
+	_ = createCmd.MarkFlagRequired("url")
 
 	updateCmd.Flags().StringVar(&registryUpdateURL, "url", "", "Registry URL")
 	updateCmd.Flags().StringVar(&registryUpdateUsername, "username", "", "Username")

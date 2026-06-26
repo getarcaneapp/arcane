@@ -69,7 +69,7 @@ func TestAgentEventIngestionRequiresAgentTokenAndPersists(t *testing.T) {
 		Severity:      models.EventSeverityInfo,
 		Title:         "Container started: web",
 		Description:   "Container 'web' has been started",
-		EnvironmentID: ptrStringInternal("0"),
+		EnvironmentID: new("0"),
 		Metadata:      models.JSON{"source": "agent"},
 	}
 	body, err := json.Marshal(payload)
@@ -143,8 +143,4 @@ func countPersistedEventsInternal(t *testing.T, ctx context.Context, db *databas
 	var count int64
 	require.NoError(t, db.WithContext(ctx).Model(&models.Event{}).Count(&count).Error)
 	return count
-}
-
-func ptrStringInternal(value string) *string {
-	return &value
 }

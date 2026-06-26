@@ -1,6 +1,7 @@
 package middleware
 
 import (
+	"context"
 	"log/slog"
 	"net/http"
 
@@ -8,6 +9,31 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
+
+// MetaRequiredPermission is re-exported from the authz package for callers that
+// reference it via this middleware package. The authoritative definition (and
+// the matcher that consumes it) lives in authz.
+const MetaRequiredPermission = authz.MetaRequiredPermission
+
+// RegisterWithPermission registers a Huma operation that requires perm. It
+// attaches the RequirePermission middleware AND records perm in the operation
+// metadata (authz.MetaRequiredPermission) so the remote environment proxy can
+// enforce the same permission for environment-scoped operations before
+// forwarding a request to an agent.
+//
+// Use this instead of huma.Register with an inline RequirePermission middleware
+// for every operation served under /environments/{id}/..., so the required
+// permission stays the single source of truth for both local enforcement and
+// remote-proxy enforcement. It is safe to use for org-level operations too; the
+// recorded metadata is simply unused by the proxy for non-environment paths.
+func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm string, handler func(context.Context, *I) (*O, error)) {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaRequiredPermission] = perm
+	op.Middlewares = append(op.Middlewares, RequirePermission(api, perm)...)
+	huma.Register(api, op, handler)
+}
 
 // RequirePermission returns a per-operation Huma middleware that rejects
 // callers lacking `perm`. For env-scoped permissions, the env ID is extracted

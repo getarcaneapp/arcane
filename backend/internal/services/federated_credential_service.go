@@ -256,8 +256,7 @@ func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*feder
 		}
 		return nil, fmt.Errorf("failed to get federated credential: %w", err)
 	}
-	dto := toFederatedCredentialDTOInternal(&credential)
-	return &dto, nil
+	return new(toFederatedCredentialDTOInternal(&credential)), nil
 }
 
 func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID string, id string, req federatedtypes.UpdateFederatedCredential) (*federatedtypes.FederatedCredential, error) {

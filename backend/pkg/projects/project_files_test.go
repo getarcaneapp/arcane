@@ -81,9 +81,6 @@ func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
-	content := "safe\n"
-	protectedDescendantContent := "bad\n"
-	binaryContent := string([]byte{0})
 	testCases := []struct {
 		name   string
 		change project.ProjectFileChange
@@ -93,7 +90,7 @@ func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.
 			change: project.ProjectFileChange{
 				Operation:    "create_file",
 				RelativePath: "../escape.txt",
-				Content:      &content,
+				Content:      new("safe\n"),
 			},
 		},
 		{
@@ -116,7 +113,7 @@ func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.
 			change: project.ProjectFileChange{
 				Operation:    "create_file",
 				RelativePath: "compose.yaml/child.yaml",
-				Content:      &protectedDescendantContent,
+				Content:      new("bad\n"),
 			},
 		},
 		{
@@ -124,7 +121,7 @@ func TestApplyProjectFileChanges_RejectsUnsafePathsAndProtectedFiles(t *testing.
 			change: project.ProjectFileChange{
 				Operation:    "create_file",
 				RelativePath: "binary.txt",
-				Content:      &binaryContent,
+				Content:      new(string([]byte{0})),
 			},
 		},
 	}
@@ -201,9 +198,8 @@ func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("changed elsewhere\n"), 0o644))
 
-	content := "new\n"
 	err = ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
-		{Operation: "update_file", RelativePath: "notes.txt", Content: &content},
+		{Operation: "update_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, ProjectFileApplyOptions{
 		ExpectedRevision: revision,
 		ComposeFileName:  "compose.yaml",
@@ -219,11 +215,10 @@ func TestApplyProjectFileChanges_AppliesOrderedTextFileOperations(t *testing.T) 
 	projectDir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 
-	content := "hello\n"
 	updated := "updated\n"
 	err := ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
 		{Operation: "create_folder", RelativePath: "config"},
-		{Operation: "create_file", RelativePath: "config/app.yaml", Content: &content},
+		{Operation: "create_file", RelativePath: "config/app.yaml", Content: new("hello\n")},
 		{Operation: "update_file", RelativePath: "config/app.yaml", Content: &updated},
 		{Operation: "rename", RelativePath: "config/app.yaml", NewName: "renamed.yaml"},
 	}, ProjectFileApplyOptions{ComposeFileName: "compose.yaml"})

@@ -1,3 +1,60 @@
+## v2.1.0
+
+### New features
+
+* add project file tree management ([#2893](https://github.com/getarcaneapp/arcane/pull/2893) by @NeurekaSoftware)
+* upgrade all environments button ([#2941](https://github.com/getarcaneapp/arcane/pull/2941) by @kmendell)
+* add support for riscv64 ([#2949](https://github.com/getarcaneapp/arcane/pull/2949) by @kmendell)
+
+### CLI - New features
+
+* add registries create command ([#2874](https://github.com/getarcaneapp/arcane/pull/2874) by @manawenuz)
+
+### Bug fixes
+
+* fix tables rows not flex redering to use the full table width ([#2928](https://github.com/getarcaneapp/arcane/pull/2928) by @kmendell)
+* add missing healthcheck cli command ([#2929](https://github.com/getarcaneapp/arcane/pull/2929) by @kmendell)
+* allow setting the data directroy for non docker installs ([#2931](https://github.com/getarcaneapp/arcane/pull/2931) by @kmendell)
+* fix dind path mappings for projects and swarm ([#2939](https://github.com/getarcaneapp/arcane/pull/2939) by @kmendell)
+* projects disapearing after fs sync ([#2940](https://github.com/getarcaneapp/arcane/pull/2940) by @kmendell)
+* compose edits lost when view is resized ([#2946](https://github.com/getarcaneapp/arcane/pull/2946) by @kmendell)
+* activity status only showing on first browser tab ([#2951](https://github.com/getarcaneapp/arcane/pull/2951) by @kmendell)
+* properly contstrain rbac endpoints ([#2950](https://github.com/getarcaneapp/arcane/pull/2950) by @kmendell)
+* send notifications on a context detached from the completed activity ([#2980](https://github.com/getarcaneapp/arcane/pull/2980) by @kmendell)
+
+### CLI - Bug fixes
+
+* fix completion command from being duplicated([df721a1](https://github.com/getarcaneapp/arcane/commit/df721a1efab7d555ee8e64a6f750cdac0bedf69e) by @kmendell)
+
+### Dependencies
+
+* bump @codemirror/merge from 6.12.1 to 6.12.2 ([#2975](https://github.com/getarcaneapp/arcane/pull/2975) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types/v2 from 2.0.1 to 2.0.3 in /cli ([#2952](https://github.com/getarcaneapp/arcane/pull/2952) by @dependabot[bot])
+* bump github.com/aws/aws-sdk-go-v2/config from 1.32.24 to 1.32.25 in /backend ([#2963](https://github.com/getarcaneapp/arcane/pull/2963) by @dependabot[bot])
+* bump prettier from 3.8.3 to 3.8.4 ([#2971](https://github.com/getarcaneapp/arcane/pull/2971) by @dependabot[bot])
+* bump golang.org/x/net from 0.55.0 to 0.56.0 in /backend ([#2959](https://github.com/getarcaneapp/arcane/pull/2959) by @dependabot[bot])
+* bump prettier-plugin-svelte from 4.1.0 to 4.1.1 ([#2969](https://github.com/getarcaneapp/arcane/pull/2969) by @dependabot[bot])
+* bump react-email from 6.5.0 to 6.6.0 ([#2960](https://github.com/getarcaneapp/arcane/pull/2960) by @dependabot[bot])
+* bump charm.land/lipgloss/v2 from 2.0.3 to 2.0.4 in /cli ([#2954](https://github.com/getarcaneapp/arcane/pull/2954) by @dependabot[bot])
+* bump github.com/nicholas-fedor/shoutrrr from 0.16.0 to 0.16.1 in /backend ([#2965](https://github.com/getarcaneapp/arcane/pull/2965) by @dependabot[bot])
+* bump github.com/labstack/echo/v4 from 4.15.2 to 4.15.4 in /backend ([#2966](https://github.com/getarcaneapp/arcane/pull/2966) by @dependabot[bot])
+* bump @sveltejs/kit from 3.0.0-next.2 to 3.0.0-next.4 ([#2967](https://github.com/getarcaneapp/arcane/pull/2967) by @dependabot[bot])
+* bump @tanstack/virtual-core from 3.17.0 to 3.17.1 ([#2972](https://github.com/getarcaneapp/arcane/pull/2972) by @dependabot[bot])
+* bump tanstack/table to beta 12([37ac71f](https://github.com/getarcaneapp/arcane/commit/37ac71f25229754b6fffa1f52f10a1eafc3093ad) by @kmendell)
+* bump react-email from 6.6.0 to 6.6.3 ([#2983](https://github.com/getarcaneapp/arcane/pull/2983) by @dependabot[bot])
+* bump actions/checkout from 6 to 6.0.3 ([#2981](https://github.com/getarcaneapp/arcane/pull/2981) by @dependabot[bot])
+* bump pnpm to v11.8.0([fdb7ec3](https://github.com/getarcaneapp/arcane/commit/fdb7ec3f083873ba39273d3a5d950e9b0399e0ad) by @kmendell)
+
+### Other
+
+* upload apk artfacts to alpine nexus repo([c31d9b9](https://github.com/getarcaneapp/arcane/commit/c31d9b9e8ef91748003fd4dc27fa114e487f31a8) by @kmendell)
+* consolidate duplicated logic in project and notification services ([#2934](https://github.com/getarcaneapp/arcane/pull/2934) by @kmendell)
+* redesign update all environments view ([#2943](https://github.com/getarcaneapp/arcane/pull/2943) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.0.3...v2.1.0
+
 ## v2.0.3
 
 ### Bug fixes

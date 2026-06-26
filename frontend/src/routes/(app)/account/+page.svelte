@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
-	import { mode, toggleMode } from 'mode-watcher';
+	import ThemeModeSelector from '$lib/components/theme-mode/theme-mode-selector.svelte';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import HeaderCard from '$lib/components/header-card.svelte';
 	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
@@ -22,7 +22,7 @@
 	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '$lib/types/auth';
-	import { UserIcon, LogoutIcon, ShieldAlertIcon, SunIcon, MoonIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
+	import { UserIcon, LogoutIcon, ShieldAlertIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
 
 	let { data: _data }: PageProps = $props();
 
@@ -481,21 +481,9 @@
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
 								<div class="text-sm font-medium">Theme</div>
-								<div class="text-muted-foreground text-xs">Switch between light and dark mode</div>
+								<div class="text-muted-foreground text-xs">{m.appearance_theme_current_user_description()}</div>
 							</div>
-							<button
-								type="button"
-								onclick={toggleMode}
-								class="border-border hover:bg-muted/60 flex items-center gap-2 rounded-lg border px-3 py-1.5 text-sm font-medium transition-colors"
-							>
-								{#if mode.current === 'dark'}
-									<MoonIcon class="size-4" />
-									Dark
-								{:else}
-									<SunIcon class="size-4" />
-									Light
-								{/if}
-							</button>
+							<ThemeModeSelector />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">

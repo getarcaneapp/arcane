@@ -383,6 +383,12 @@ func (e *EnvironmentUnauthorizedError) Error() string {
 	return "Authentication required to access remote environments"
 }
 
+type EnvironmentForbiddenError struct{}
+
+func (e *EnvironmentForbiddenError) Error() string {
+	return "You don't have permission to perform this action on this environment"
+}
+
 type EnvironmentInvalidProxyTargetError struct {
 	Err error
 }
@@ -852,6 +858,32 @@ func (e *ProjectComposeFileNotFoundError) Error() string {
 	return fmt.Sprintf("Project compose file not found: %v", e.Err)
 }
 
+func (e *ProjectComposeFileNotFoundError) Unwrap() error {
+	return e.Err
+}
+
+// ComposeFileNotFoundError indicates a directory contains no recognizable
+// compose file at all (zero candidates).
+type ComposeFileNotFoundError struct {
+	Dir string
+}
+
+func (e *ComposeFileNotFoundError) Error() string {
+	return fmt.Sprintf("no compose file found in %q", e.Dir)
+}
+
+// AmbiguousComposeFileError indicates a directory contains multiple custom-named
+// compose candidates that cannot be disambiguated. The directory still holds
+// compose content, so callers must not treat this as "no project here" (e.g. by
+// deleting the project record).
+type AmbiguousComposeFileError struct {
+	Dir string
+}
+
+func (e *AmbiguousComposeFileError) Error() string {
+	return fmt.Sprintf("multiple custom compose files found in %q", e.Dir)
+}
+
 type ProjectDiscoveryError struct {
 	Dir string
 	Err error
@@ -1063,6 +1095,16 @@ func (e *UpgradeInProgressError) Error() string {
 
 func IsUpgradeInProgressError(err error) bool {
 	return isErrorTypeInternal[*UpgradeInProgressError](err)
+}
+
+type UpdateAllInProgressError struct{}
+
+func (e *UpdateAllInProgressError) Error() string {
+	return "an update-all job is already in progress"
+}
+
+func IsUpdateAllInProgressError(err error) bool {
+	return isErrorTypeInternal[*UpdateAllInProgressError](err)
 }
 
 type DockerSocketAccessError struct{}
@@ -1546,6 +1588,21 @@ func (e *GitOpsSyncPerformError) Error() string {
 	return "Failed to perform GitOps sync"
 }
 
+type GitOpsSyncProjectBindingBrokenError struct {
+	Err error
+}
+
+func (e *GitOpsSyncProjectBindingBrokenError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("GitOps sync project binding broken: %v", e.Err)
+	}
+	return "GitOps sync project binding broken"
+}
+
+func (e *GitOpsSyncProjectBindingBrokenError) Unwrap() error {
+	return e.Err
+}
+
 type GitOpsSyncStatusError struct {
 	Err error
 }
@@ -1741,6 +1798,96 @@ func (e *BuildKitDockerExporterError) Error() string {
 }
 
 func (e *BuildKitDockerExporterError) Unwrap() error { return e.Err }
+
+type BuildSettingsProviderUnavailableError struct{}
+
+func (e *BuildSettingsProviderUnavailableError) Error() string {
+	return "settings provider not available"
+}
+
+type BuildContextDirRequiredError struct{}
+
+func (e *BuildContextDirRequiredError) Error() string {
+	return "contextDir is required"
+}
+
+type BuildProviderUnavailableError struct{}
+
+func (e *BuildProviderUnavailableError) Error() string {
+	return "build provider not available"
+}
+
+type BuildSessionUnavailableError struct{}
+
+func (e *BuildSessionUnavailableError) Error() string {
+	return "build session not available"
+}
+
+type BuildDockerServiceUnavailableError struct{}
+
+func (e *BuildDockerServiceUnavailableError) Error() string {
+	return "docker service not available"
+}
+
+type DepotProjectCredentialsRequiredError struct{}
+
+func (e *DepotProjectCredentialsRequiredError) Error() string {
+	return "depot project ID and token are required"
+}
+
+type GitBuildContextFragmentRequiredError struct{}
+
+func (e *GitBuildContextFragmentRequiredError) Error() string {
+	return "git build context fragment cannot be empty"
+}
+
+type GitBuildContextRefRequiredError struct{}
+
+func (e *GitBuildContextRefRequiredError) Error() string {
+	return "git build context ref cannot be empty"
+}
+
+type GitBuildContextSubdirRequiredError struct{}
+
+func (e *GitBuildContextSubdirRequiredError) Error() string {
+	return "git build context subdir cannot be empty"
+}
+
+type GitBuildContextSubdirRelativeError struct{}
+
+func (e *GitBuildContextSubdirRelativeError) Error() string {
+	return "git build context subdir must be relative"
+}
+
+type GitBuildContextSubdirEscapesRepositoryError struct{}
+
+func (e *GitBuildContextSubdirEscapesRepositoryError) Error() string {
+	return "git build context subdir must stay within the repository"
+}
+
+type DockerfileAndInlineMutuallyExclusiveError struct{}
+
+func (e *DockerfileAndInlineMutuallyExclusiveError) Error() string {
+	return "dockerfile and dockerfileInline are mutually exclusive"
+}
+
+type DepotBuildPushRequiredError struct{}
+
+func (e *DepotBuildPushRequiredError) Error() string {
+	return "depot builds must push images to a registry"
+}
+
+type BuildTagsRequiredError struct{}
+
+func (e *BuildTagsRequiredError) Error() string {
+	return "at least one tag is required when push/load is enabled"
+}
+
+type DockerBuildMultiPlatformUnsupportedError struct{}
+
+func (e *DockerBuildMultiPlatformUnsupportedError) Error() string {
+	return "docker build fallback does not support multi-platform builds"
+}
 
 // ----- RBAC / role service errors -----
 

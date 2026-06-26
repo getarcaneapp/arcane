@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
@@ -19,10 +20,10 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c echo.Context) bool {
+		authValidator: func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
 			_ = ctx
 			_ = c
-			return true
+			return authz.SudoPermissionSet(), true
 		},
 		httpClient: &http.Client{Timeout: proxyTimeout},
 		registry:   edge.NewTunnelRegistry(),
@@ -226,6 +227,46 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 			assert.True(t, localHandlerHit)
 		})
 	}
+}
+
+func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *testing.T) {
+	// The local environment ("0") is served directly and is never proxied, so
+	// the proxy's per-environment authorization must not apply to it. Set up a
+	// matcher that would require containers:list and a caller with no
+	// permissions at all: if local requests were subject to proxy authz, this
+	// would be a 403. It must instead fall through to the local handler, where
+	// the operation's own RequirePermission middleware enforces access.
+	matcher := authz.NewPermissionMatcher()
+	matcher.Add(http.MethodGet, "/containers", authz.PermContainersList)
+
+	mw := &EnvironmentMiddleware{
+		localID:   "0",
+		paramName: "id",
+		matcher:   matcher,
+		authValidator: func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
+			_ = ctx
+			_ = c
+			return authz.NewPermissionSet(), true
+		},
+		httpClient: &http.Client{Timeout: proxyTimeout},
+		registry:   edge.NewTunnelRegistry(),
+	}
+
+	router := echo.New()
+	api := attachMiddleware(router, mw)
+
+	localHandlerHit := false
+	api.GET("/environments/:id/containers", func(c echo.Context) error {
+		localHandlerHit = true
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/environments/0/containers", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.True(t, localHandlerHit, "local environment request must reach the local handler, not be proxy-authorized")
 }
 
 func TestEnvironmentMiddleware_ProxyWebSocketRejectsEdgeTargetsWithoutTunnel(t *testing.T) {

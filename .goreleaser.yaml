@@ -29,14 +29,20 @@ builds:
     goarch:
       - amd64
       - arm64
-      - "386"
+      - '386'
       - arm
+      - riscv64
     goarm:
-      - "7"
+      - '7'
     goamd64:
       - v1
     go386:
       - sse2
+    goriscv64:
+      - rva20u64
+    ignore:
+      - goos: darwin
+        goarch: riscv64
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
@@ -45,7 +51,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.BuildTime={{ .Date }}
     flags:
       - -trimpath
-    mod_timestamp: "{{ .CommitTimestamp }}"
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
   - id: arcane-agent
     main: ./cmd/main.go
@@ -61,14 +67,20 @@ builds:
     goarch:
       - amd64
       - arm64
-      - "386"
+      - '386'
       - arm
+      - riscv64
     goarm:
-      - "7"
+      - '7'
     goamd64:
       - v1
     go386:
       - sse2
+    goriscv64:
+      - rva20u64
+    ignore:
+      - goos: darwin
+        goarch: riscv64
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
@@ -77,7 +89,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/backend/v2/internal/config.BuildTime={{ .Date }}
     flags:
       - -trimpath
-    mod_timestamp: "{{ .CommitTimestamp }}"
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
   - id: arcane-cli
     main: .
@@ -91,14 +103,20 @@ builds:
     goarch:
       - amd64
       - arm64
-      - "386"
+      - '386'
       - arm
+      - riscv64
     goarm:
-      - "7"
+      - '7'
     goamd64:
       - v1
     go386:
       - sse2
+    goriscv64:
+      - rva20u64
+    ignore:
+      - goos: darwin
+        goarch: riscv64
     ldflags:
       - -w -s
       - -buildid={{ .Version }}
@@ -106,7 +124,7 @@ builds:
       - -X github.com/getarcaneapp/arcane/cli/v2/internal/config.Revision={{ .ShortCommit }}
     flags:
       - -trimpath
-    mod_timestamp: "{{ .CommitTimestamp }}"
+    mod_timestamp: '{{ .CommitTimestamp }}'
 
 archives:
   - id: arcane-cli-archive
@@ -114,14 +132,14 @@ archives:
       - arcane-cli
     formats:
       - tar.gz
-    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
   - id: default
     ids:
       - arcane
       - arcane-agent
     formats:
       - binary
-    name_template: "{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}"
+    name_template: '{{ .Binary }}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}'
 
 notarize:
   macos:
@@ -129,12 +147,12 @@ notarize:
       ids:
         - arcane-cli
       sign:
-        certificate: "{{ .Env.MACOS_SIGN_P12 }}"
-        password: "{{ .Env.MACOS_SIGN_PASSWORD }}"
+        certificate: '{{ .Env.MACOS_SIGN_P12 }}'
+        password: '{{ .Env.MACOS_SIGN_PASSWORD }}'
       notarize:
-        issuer_id: "{{ .Env.MACOS_NOTARY_ISSUER_ID }}"
-        key_id: "{{ .Env.MACOS_NOTARY_KEY_ID }}"
-        key: "{{ .Env.MACOS_NOTARY_KEY }}"
+        issuer_id: '{{ .Env.MACOS_NOTARY_ISSUER_ID }}'
+        key_id: '{{ .Env.MACOS_NOTARY_KEY_ID }}'
+        key: '{{ .Env.MACOS_NOTARY_KEY }}'
         wait: true
         timeout: 20m
 
@@ -145,13 +163,13 @@ binary_signs:
       - arcane
       - arcane-agent
       - arcane-cli
-    signature: "${artifact}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}.sigstore.json"
-    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    signature: '${artifact}_{{ .Os }}_{{ .Arch }}{{ with .Arm }}v{{ . }}{{ end }}.sigstore.json'
+    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign-blob
       - --key=env://COSIGN_PRIVATE_KEY
       - --bundle=${signature}
-      - "${artifact}"
+      - '${artifact}'
       - --yes
     output: true
 
@@ -161,25 +179,25 @@ signs:
     artifacts: archive
     ids:
       - arcane-cli-archive
-    signature: "${artifact}.sigstore.json"
-    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    signature: '${artifact}.sigstore.json'
+    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign-blob
       - --key=env://COSIGN_PRIVATE_KEY
       - --bundle=${signature}
-      - "${artifact}"
+      - '${artifact}'
       - --yes
     output: true
   - id: cosign-checksums
     cmd: cosign
     artifacts: checksum
-    signature: "${artifact}.sigstore.json"
-    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    signature: '${artifact}.sigstore.json'
+    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign-blob
       - --key=env://COSIGN_PRIVATE_KEY
       - --bundle=${signature}
-      - "${artifact}"
+      - '${artifact}'
       - --yes
     output: true
 
@@ -193,18 +211,20 @@ checksum:
       name_template: arcane-cli_linux_386
     - glob: dist/arcane-cli_linux_arm_7/arcane-cli
       name_template: arcane-cli_linux_armv7
+    - glob: dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli
+      name_template: arcane-cli_linux_riscv64
     - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
       name_template: arcane-cli_darwin_amd64
     - glob: dist/arcane-cli_darwin_arm64_v8.0/arcane-cli
       name_template: arcane-cli_darwin_arm64
 
 nightly:
-  version_template: "0.0.0-next.{{ .ShortCommit }}"
+  version_template: '0.0.0-next.{{ .ShortCommit }}'
 
 nfpms:
   - id: arcane-cli
     package_name: '{{ if eq (index .Env "BUILD_NEXT") "true" }}arcane-cli-next{{ else }}arcane-cli{{ end }}'
-    file_name_template: "{{ .ConventionalFileName }}"
+    file_name_template: '{{ .ConventionalFileName }}'
     ids:
       - arcane-cli
     vendor: getarcaneapp
@@ -230,7 +250,7 @@ publishers:
   - name: nexus-debian
     if: '{{ eq .ArtifactExt ".deb" }}'
     disable: '{{ if not (and (index .Env "NEXUS_USERNAME") (index .Env "NEXUS_PASSWORD")) }}true{{ end }}'
-    dir: "{{ dir .ArtifactPath }}"
+    dir: '{{ dir .ArtifactPath }}'
     cmd: >-
       curl --fail-with-body
       -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
@@ -242,7 +262,7 @@ publishers:
   - name: nexus-yum
     if: '{{ eq .ArtifactExt ".rpm" }}'
     disable: '{{ if not (and (index .Env "NEXUS_USERNAME") (index .Env "NEXUS_PASSWORD")) }}true{{ end }}'
-    dir: "{{ dir .ArtifactPath }}"
+    dir: '{{ dir .ArtifactPath }}'
     cmd: >-
       curl --fail-with-body
       -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
@@ -252,7 +272,7 @@ publishers:
   - name: nexus-alpine
     if: '{{ eq .ArtifactExt ".apk" }}'
     disable: '{{ if not (and (index .Env "NEXUS_USERNAME") (index .Env "NEXUS_PASSWORD")) }}true{{ end }}'
-    dir: "{{ dir .ArtifactPath }}"
+    dir: '{{ dir .ArtifactPath }}'
     cmd: >-
       curl --fail-with-body
       -u "{{ .Env.NEXUS_USERNAME }}:{{ .Env.NEXUS_PASSWORD }}"
@@ -273,13 +293,13 @@ homebrew_casks:
         - zsh
         - fish
         - pwsh
-    description: "Arcane CLI - Modern Docker Management, Designed for Everyone."
-    homepage: "https://getarcane.app"
+    description: 'Arcane CLI - Modern Docker Management, Designed for Everyone.'
+    homepage: 'https://getarcane.app'
     skip_upload: '{{ if eq (index .Env "BUILD_NEXT") "true" }}true{{ end }}'
     repository:
       owner: getarcaneapp
       name: homebrew-tap
-    commit_msg_template: "chore(brew): update {{ .ProjectName }} to {{ .Tag }}"
+    commit_msg_template: 'chore(brew): update {{ .ProjectName }} to {{ .Tag }}'
 
 dockers_v2:
   - id: arcane-next
@@ -287,26 +307,27 @@ dockers_v2:
       - arcane
     dockerfile: docker/next-builds/Dockerfile-static
     images:
-      - "ghcr.io/getarcaneapp/arcane"
-      - "ghcr.io/getarcaneapp/manager"
+      - 'ghcr.io/getarcaneapp/arcane'
+      - 'ghcr.io/getarcaneapp/manager'
     tags:
-      - "next-static"
-      - "{{ .Version }}"
+      - 'next-static'
+      - '{{ .Version }}'
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
+      - linux/riscv64
     labels:
-      "org.opencontainers.image.authors": "OFKM Technologies"
-      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
-      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
-      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
-      "org.opencontainers.image.version": "{{.Version}}"
-      "org.opencontainers.image.revision": "{{.FullCommit}}"
-      "org.opencontainers.image.licenses": "BSD-3-Clause"
-      "org.opencontainers.image.title": "Arcane"
-      "org.opencontainers.image.description": "Modern Docker Management, Made for Everyone"
-      "com.getarcaneapp.arcane": "true"
+      'org.opencontainers.image.authors': 'OFKM Technologies'
+      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
+      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
+      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
+      'org.opencontainers.image.version': '{{.Version}}'
+      'org.opencontainers.image.revision': '{{.FullCommit}}'
+      'org.opencontainers.image.licenses': 'BSD-3-Clause'
+      'org.opencontainers.image.title': 'Arcane'
+      'org.opencontainers.image.description': 'Modern Docker Management, Made for Everyone'
+      'com.getarcaneapp.arcane': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -315,26 +336,27 @@ dockers_v2:
       - arcane-agent
     dockerfile: docker/next-builds/Dockerfile-agent-static
     images:
-      - "ghcr.io/getarcaneapp/arcane-headless"
-      - "ghcr.io/getarcaneapp/agent"
+      - 'ghcr.io/getarcaneapp/arcane-headless'
+      - 'ghcr.io/getarcaneapp/agent'
     tags:
-      - "next-static"
-      - "{{ .Version }}"
+      - 'next-static'
+      - '{{ .Version }}'
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm/v7
+      - linux/riscv64
     labels:
-      "org.opencontainers.image.authors": "OFKM Technologies"
-      "org.opencontainers.image.url": "https://github.com/getarcaneapp/arcane"
-      "org.opencontainers.image.documentation": "https://github.com/getarcaneapp/arcane/blob/main/README.md"
-      "org.opencontainers.image.source": "https://github.com/getarcaneapp/arcane"
-      "org.opencontainers.image.version": "{{.Version}}"
-      "org.opencontainers.image.revision": "{{.FullCommit}}"
-      "org.opencontainers.image.licenses": "BSD-3-Clause"
-      "org.opencontainers.image.title": "Arcane Agent"
-      "org.opencontainers.image.description": "Arcane Agent"
-      "com.getarcaneapp.arcane.agent": "true"
+      'org.opencontainers.image.authors': 'OFKM Technologies'
+      'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
+      'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
+      'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
+      'org.opencontainers.image.version': '{{.Version}}'
+      'org.opencontainers.image.revision': '{{.FullCommit}}'
+      'org.opencontainers.image.licenses': 'BSD-3-Clause'
+      'org.opencontainers.image.title': 'Arcane Agent'
+      'org.opencontainers.image.description': 'Arcane Agent'
+      'com.getarcaneapp.arcane.agent': 'true'
     disable: '{{ if not (index .Env "BUILD_NEXT") }}true{{ end }}'
     sbom: true
 
@@ -344,11 +366,11 @@ docker_signs:
     ids:
       - arcane-next
       - arcane-agent-next
-    stdin: "{{ .Env.COSIGN_PASSWORD }}"
+    stdin: '{{ .Env.COSIGN_PASSWORD }}'
     args:
       - sign
       - --key=env://COSIGN_PRIVATE_KEY
-      - "${artifact}@${digest}"
+      - '${artifact}@${digest}'
       - --yes
     output: true
 
@@ -376,6 +398,10 @@ blobs:
         name_template: arcane-cli_linux_armv7
       - glob: dist/arcane-cli_linux_arm_7/arcane-cli_linux_armv7.sigstore.json
         name_template: arcane-cli_linux_armv7.sigstore.json
+      - glob: dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli
+        name_template: arcane-cli_linux_riscv64
+      - glob: dist/arcane-cli_linux_riscv64_rva20u64/arcane-cli_linux_riscv64.sigstore.json
+        name_template: arcane-cli_linux_riscv64.sigstore.json
       - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli
         name_template: arcane-cli_darwin_amd64
       - glob: dist/arcane-cli_darwin_amd64_v1/arcane-cli_darwin_amd64.sigstore.json
@@ -405,6 +431,8 @@ blobs:
         name_template: arcane_linux_386.sigstore.json
       - glob: dist/arcane_linux_arm_7/arcane_linux_armv7.sigstore.json
         name_template: arcane_linux_armv7.sigstore.json
+      - glob: dist/arcane_linux_riscv64_rva20u64/arcane_linux_riscv64.sigstore.json
+        name_template: arcane_linux_riscv64.sigstore.json
       - glob: dist/arcane_darwin_amd64_v1/arcane_darwin_amd64.sigstore.json
         name_template: arcane_darwin_amd64.sigstore.json
       - glob: dist/arcane_darwin_arm64_v8.0/arcane_darwin_arm64.sigstore.json
@@ -417,6 +445,8 @@ blobs:
         name_template: arcane-agent_linux_386.sigstore.json
       - glob: dist/arcane-agent_linux_arm_7/arcane-agent_linux_armv7.sigstore.json
         name_template: arcane-agent_linux_armv7.sigstore.json
+      - glob: dist/arcane-agent_linux_riscv64_rva20u64/arcane-agent_linux_riscv64.sigstore.json
+        name_template: arcane-agent_linux_riscv64.sigstore.json
       - glob: dist/arcane-agent_darwin_amd64_v1/arcane-agent_darwin_amd64.sigstore.json
         name_template: arcane-agent_darwin_amd64.sigstore.json
       - glob: dist/arcane-agent_darwin_arm64_v8.0/arcane-agent_darwin_arm64.sigstore.json
@@ -432,11 +462,11 @@ changelog:
 announce:
   discord:
     enabled: true
-    message_template: "Arcane version {{.Tag}} has been released! Checkout the changelog at {{ .ReleaseURL }}"
-    author: "Github Actions"
+    message_template: 'Arcane version {{.Tag}} has been released! Checkout the changelog at {{ .ReleaseURL }}'
+    author: 'Github Actions'
     # Color code of the embed. You have to use decimal numeral system, not hexadecimal.
-    color: "9320959"
-    icon_url: "https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png"
+    color: '9320959'
+    icon_url: 'https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png'
 
 release:
   github:
@@ -450,7 +480,7 @@ release:
   prerelease: auto
   make_latest: true
   mode: keep-existing
-  name_template: "{{.Tag}}"
+  name_template: '{{.Tag}}'
   footer: |
     ---
 

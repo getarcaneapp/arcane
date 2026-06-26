@@ -12,7 +12,8 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { simpleRefresh } from '$lib/utils/api';
 	import { hasPermission } from '$lib/utils/auth';
-	import { DownloadIcon } from '$lib/icons';
+	import { DownloadIcon, UpdateIcon } from '$lib/icons';
+	import UpdateAllDialog from './update-all-dialog.svelte';
 
 	let { data } = $props();
 
@@ -20,6 +21,7 @@
 	let selectedIds = $state<string[]>([]);
 	let requestOptions = $state(untrack(() => data.environmentRequestOptions));
 	let showEnvironmentSheet = $state(false);
+	let showUpdateAllDialog = $state(false);
 	let isLoading = $state({ refresh: false, creating: false, deleting: false });
 
 	async function refresh() {
@@ -33,6 +35,7 @@
 
 	const canCreateEnvironment = $derived(hasPermission('environments:create'));
 	const canDeleteEnvironment = $derived(hasPermission('environments:delete'));
+	const canUpdateEnvironments = $derived(hasPermission('system:upgrade'));
 
 	async function handleBulkDelete() {
 		if (selectedIds.length === 0) return;
@@ -118,6 +121,17 @@
 					}
 				]
 			: []),
+		...(canUpdateEnvironments
+			? [
+					{
+						id: 'update-all',
+						action: 'update' as const,
+						label: m.environments_update_all_button(),
+						icon: UpdateIcon,
+						onclick: () => (showUpdateAllDialog = true)
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart' as const,
@@ -136,5 +150,6 @@
 
 	{#snippet additionalContent()}
 		<NewEnvironmentSheet bind:open={showEnvironmentSheet} {onEnvironmentCreated} />
+		<UpdateAllDialog bind:open={showUpdateAllDialog} onFinished={refresh} />
 	{/snippet}
 </ResourcePageLayout>

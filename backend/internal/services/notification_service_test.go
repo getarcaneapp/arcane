@@ -465,9 +465,7 @@ func TestNotificationCredentialInternal_ReturnsErrorForCorruptedCiphertext(t *te
 	ciphertext, err := base64.StdEncoding.DecodeString(encrypted)
 	require.NoError(t, err)
 	ciphertext[len(ciphertext)-1] ^= 0xff
-	corrupted := base64.StdEncoding.EncodeToString(ciphertext)
-
-	require.Error(t, notifications.DecryptStringCredential(&corrupted))
+	require.Error(t, notifications.DecryptStringCredential(new(base64.StdEncoding.EncodeToString(ciphertext))))
 }
 
 func TestNotificationCredentialInternal_LeavesEmptyValuesEmpty(t *testing.T) {

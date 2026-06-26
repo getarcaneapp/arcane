@@ -85,6 +85,28 @@ func TestSudoAllowsEverything(t *testing.T) {
 	}
 }
 
+func TestEnvironmentPermissionSetScopesToOwnEnvironment(t *testing.T) {
+	ps := EnvironmentPermissionSet("env-A")
+
+	if !ps.Allows(PermContainersStart, "env-A") {
+		t.Fatal("environment token should allow env-scoped permissions for its own env")
+	}
+	if ps.Allows(PermContainersStart, "env-B") {
+		t.Fatal("environment token must not allow env-scoped permissions for another env")
+	}
+	if ps.Allows(PermUsersList, "") {
+		t.Fatal("environment token must not allow org-level permissions")
+	}
+	if ps.IsGlobalAdmin() {
+		t.Fatal("environment token must not be global admin")
+	}
+
+	empty := EnvironmentPermissionSet("")
+	if empty.Allows(PermContainersStart, "env-A") {
+		t.Fatal("environment token with empty env id must deny env-scoped permissions")
+	}
+}
+
 func TestEnvIDFromPath(t *testing.T) {
 	cases := map[string]string{
 		"/environments/abc-123/containers":     "abc-123",

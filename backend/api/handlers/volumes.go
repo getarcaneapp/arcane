@@ -310,7 +310,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		appCtx:          appCtx.contextInternal(),
 	}
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-usage-counts",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/counts",
@@ -321,10 +321,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
-	}, h.GetVolumeUsageCounts)
+	}, authz.PermVolumesList, h.GetVolumeUsageCounts)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volumes",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes",
@@ -335,10 +334,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
-	}, h.ListVolumes)
+	}, authz.PermVolumesList, h.ListVolumes)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}",
@@ -349,10 +347,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesRead),
-	}, h.GetVolume)
+	}, authz.PermVolumesRead, h.GetVolume)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes",
@@ -363,10 +360,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesCreate),
-	}, h.CreateVolume)
+	}, authz.PermVolumesCreate, h.CreateVolume)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-volume",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/volumes/{volumeName}",
@@ -377,10 +373,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesDelete),
-	}, h.RemoveVolume)
+	}, authz.PermVolumesDelete, h.RemoveVolume)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-volumes",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/prune",
@@ -391,10 +386,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesPrune),
-	}, h.PruneVolumes)
+	}, authz.PermVolumesPrune, h.PruneVolumes)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-usage",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}/usage",
@@ -405,10 +399,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesRead),
-	}, h.GetVolumeUsage)
+	}, authz.PermVolumesRead, h.GetVolumeUsage)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-sizes",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/sizes",
@@ -419,12 +412,11 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesList),
-	}, h.GetVolumeSizes)
+	}, authz.PermVolumesList, h.GetVolumeSizes)
 
 	// --- Volume Browsing Endpoints ---
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "browse-volume-directory",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse",
@@ -434,10 +426,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.BrowseDirectory)
+	}, authz.PermVolumesBrowse, h.BrowseDirectory)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-file-content",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/content",
@@ -447,10 +438,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.GetFileContent)
+	}, authz.PermVolumesBrowse, h.GetFileContent)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-volume-file",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/download",
@@ -460,10 +450,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.DownloadFile)
+	}, authz.PermVolumesBrowse, h.DownloadFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-file",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/upload",
@@ -490,10 +479,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
-	}, h.UploadFile)
+	}, authz.PermVolumesUpload, h.UploadFile)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume-directory",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/mkdir",
@@ -503,10 +491,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
-	}, h.CreateDirectory)
+	}, authz.PermVolumesUpload, h.CreateDirectory)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-file",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/volumes/{volumeName}/browse",
@@ -516,12 +503,11 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesDelete),
-	}, h.DeleteFile)
+	}, authz.PermVolumesDelete, h.DeleteFile)
 
 	// --- Volume Backup Endpoints ---
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volume-backups",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups",
@@ -531,10 +517,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.ListBackups)
+	}, authz.PermVolumesBrowse, h.ListBackups)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume-backup",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups",
@@ -544,10 +529,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
-	}, h.CreateBackup)
+	}, authz.PermVolumesBackup, h.CreateBackup)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restore-volume-backup",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
@@ -557,10 +541,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
-	}, h.RestoreBackup)
+	}, authz.PermVolumesBackup, h.RestoreBackup)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restore-volume-backup-files",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
@@ -570,10 +553,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
-	}, h.RestoreBackupFiles)
+	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-backup",
 		Method:      http.MethodDelete,
 		Path:        "/environments/{id}/volumes/backups/{backupId}",
@@ -583,10 +565,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBackup),
-	}, h.DeleteBackup)
+	}, authz.PermVolumesBackup, h.DeleteBackup)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-volume-backup",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/backups/{backupId}/download",
@@ -596,10 +577,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.DownloadBackup)
+	}, authz.PermVolumesBrowse, h.DownloadBackup)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
@@ -609,10 +589,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.BackupHasPath)
+	}, authz.PermVolumesBrowse, h.BackupHasPath)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-backup-files",
 		Method:      http.MethodGet,
 		Path:        "/environments/{id}/volumes/backups/{backupId}/files",
@@ -622,10 +601,9 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesBrowse),
-	}, h.ListBackupFiles)
+	}, authz.PermVolumesBrowse, h.ListBackupFiles)
 
-	huma.Register(api, huma.Operation{
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",
 		Method:      http.MethodPost,
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
@@ -652,8 +630,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermVolumesUpload),
-	}, h.UploadAndRestore)
+	}, authz.PermVolumesUpload, h.UploadAndRestore)
 }
 
 // ListVolumes returns a paginated list of volumes.

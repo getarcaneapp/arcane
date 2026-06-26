@@ -3,9 +3,12 @@ package services
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"
@@ -15,7 +18,7 @@ import (
 
 // TestSystemUpgradeService_UpgradeFlag tests the upgrading flag behavior
 func TestSystemUpgradeService_UpgradeFlag(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Initially should be false
 	require.False(t, s.upgrading.Load())
@@ -31,7 +34,7 @@ func TestSystemUpgradeService_UpgradeFlag(t *testing.T) {
 
 // TestSystemUpgradeService_Initialization tests proper initialization
 func TestSystemUpgradeService_Initialization(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	require.NotNil(t, s)
 	require.False(t, s.upgrading.Load())
@@ -55,7 +58,7 @@ func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
 func TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Test initial state
 	require.False(t, s.upgrading.Load(), "upgrading flag should start as false")
@@ -71,7 +74,7 @@ func TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess(t *testing.T) {
 
 // TestSystemUpgradeService_CompareAndSwap tests atomic CompareAndSwap operation
 func TestSystemUpgradeService_CompareAndSwap(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Test successful CompareAndSwap from false to true
 	swapped := s.upgrading.CompareAndSwap(false, true)
@@ -92,7 +95,7 @@ func TestSystemUpgradeService_CompareAndSwap(t *testing.T) {
 // TestSystemUpgradeService_Services tests that services are stored correctly
 func TestSystemUpgradeService_Services(t *testing.T) {
 	// Create upgrade service with nil services (valid for testing initialization)
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Verify service is created and initialized properly
 	require.NotNil(t, s)
@@ -101,7 +104,7 @@ func TestSystemUpgradeService_Services(t *testing.T) {
 
 // TestSystemUpgradeService_ConcurrentUpgradeAttempts tests that concurrent upgrade attempts are prevented
 func TestSystemUpgradeService_ConcurrentUpgradeAttempts(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Simulate first upgrade starting
 	success := s.upgrading.CompareAndSwap(false, true)
@@ -132,7 +135,7 @@ func TestSystemUpgradeService_UpgradeInProgressError(t *testing.T) {
 
 // TestSystemUpgradeService_AtomicOperations tests atomic.Bool operations
 func TestSystemUpgradeService_AtomicOperations(t *testing.T) {
-	s := NewSystemUpgradeService(nil, nil, nil, nil)
+	s := NewSystemUpgradeService(nil, nil, nil, nil, nil)
 
 	// Test Load
 	require.False(t, s.upgrading.Load())
@@ -270,4 +273,31 @@ func TestResolveSystemUpgraderRuntimeOptionsInternal_UnixDockerHostResolutionErr
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "resolve unix socket source")
+}
+
+// TestUpdateAllAgentFailureStatus verifies that a reachable-but-failed agent (e.g.
+// a poll-mode environment whose tunnel round-trip timed out) is reported as a real
+// failure rather than mislabeled "offline — skipped".
+func TestUpdateAllAgentFailureStatus(t *testing.T) {
+	// Mirrors the real wrapping: executeRemoteRequest -> TransportError ->
+	// "tunnel request failed" -> context.DeadlineExceeded.
+	tunnelTimeout := fmt.Errorf("failed to send request to environment oracle-cloud: %w",
+		&remenv.TransportError{Err: fmt.Errorf("tunnel request failed: %w", context.DeadlineExceeded)})
+
+	tests := []struct {
+		name string
+		err  error
+		want models.EnvironmentUpdateResultStatus
+	}{
+		{"tunnel request timed out", tunnelTimeout, models.EnvironmentUpdateResultStatusFailed},
+		{"request canceled mid-flight", fmt.Errorf("tunnel request failed: %w", context.Canceled), models.EnvironmentUpdateResultStatusFailed},
+		{"non-success status from agent", &remenv.StatusError{StatusCode: 502}, models.EnvironmentUpdateResultStatusFailed},
+		{"agent never connected", &remenv.TransportError{Err: errors.New("edge agent is not connected")}, models.EnvironmentUpdateResultStatusSkippedOffline},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, updateAllAgentFailureStatusInternal(tt.err))
+		})
+	}
 }

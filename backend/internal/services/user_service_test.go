@@ -142,8 +142,7 @@ func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
 	u := createTestUser(t, userSvc, "user-1", "fontuser")
 	require.Nil(t, u.FontSize, "new users default to no explicit font size")
 
-	size := 16
-	u.FontSize = &size
+	u.FontSize = new(16)
 	_, err := userSvc.UpdateUser(ctx, u)
 	require.NoError(t, err)
 

@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
 
@@ -16,7 +17,7 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 	folderPath := filepath.Join(baseDir, folder)
 	composePath, err := DetectComposeFile(folderPath)
 	if err != nil {
-		if errors.Is(err, errComposeFileNotFoundInternal) {
+		if _, ok := errors.AsType[*common.ComposeFileNotFoundError](err); ok {
 			return "", nil, "", false, nil
 		}
 		return "", nil, "", false, fmt.Errorf("detect compose file: %w", err)

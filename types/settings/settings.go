@@ -307,6 +307,27 @@ type Update struct {
 	// Required: false
 	TrivyConcurrentScanContainers *string `json:"trivyConcurrentScanContainers,omitempty"`
 
+	// TrivyServerEnabled enables Trivy client/server mode, scanning against a remote
+	// Trivy server instead of opening a local vulnerability database.
+	//
+	// Required: false
+	TrivyServerEnabled *string `json:"trivyServerEnabled,omitempty"`
+
+	// TrivyServerUrl is the URL of the remote Trivy server used in client/server mode.
+	//
+	// Required: false
+	TrivyServerUrl *string `json:"trivyServerUrl,omitempty"`
+
+	// TrivyServerToken is the optional authentication token sent to the remote Trivy server.
+	//
+	// Required: false
+	TrivyServerToken *string `json:"trivyServerToken,omitempty"`
+
+	// TrivyIgnoreUnfixed restricts scan results to vulnerabilities that have a known fix.
+	//
+	// Required: false
+	TrivyIgnoreUnfixed *string `json:"trivyIgnoreUnfixed,omitempty"`
+
 	// OidcClientId is the OIDC client identifier.
 	//
 	// Required: false

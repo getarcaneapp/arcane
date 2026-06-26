@@ -77,6 +77,8 @@ type TunnelRuntimeState struct {
 }
 
 const (
+	// EdgeTransportAuto prefers gRPC and falls back to WebSocket automatically.
+	EdgeTransportAuto = "auto"
 	// EdgeTransportWebSocket forces WebSocket tunnel transport.
 	EdgeTransportWebSocket = "websocket"
 	// EdgeTransportGRPC forces gRPC transport without WebSocket fallback.
@@ -94,9 +96,11 @@ const (
 	EdgeMTLSModeRequired = "required"
 )
 
-// NormalizeEdgeTransport normalizes transport config and defaults to gRPC.
+// NormalizeEdgeTransport normalizes transport config and defaults to auto-negotiation.
 func NormalizeEdgeTransport(value string) string {
 	switch strings.ToLower(strings.TrimSpace(value)) {
+	case EdgeTransportAuto:
+		return EdgeTransportAuto
 	case EdgeTransportWebSocket:
 		return EdgeTransportWebSocket
 	case EdgeTransportGRPC:
@@ -104,7 +108,7 @@ func NormalizeEdgeTransport(value string) string {
 	case EdgeTransportPoll:
 		return EdgeTransportPoll
 	default:
-		return EdgeTransportGRPC
+		return EdgeTransportAuto
 	}
 }
 
@@ -125,7 +129,8 @@ func UseGRPCEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
-	return NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportGRPC
+	transport := NormalizeEdgeTransport(cfg.EdgeTransport)
+	return transport == EdgeTransportGRPC || transport == EdgeTransportAuto
 }
 
 // UseWebSocketEdgeTransport reports whether websocket managed tunnel mode is allowed.
@@ -133,7 +138,8 @@ func UseWebSocketEdgeTransport(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
-	return NormalizeEdgeTransport(cfg.EdgeTransport) == EdgeTransportWebSocket
+	transport := NormalizeEdgeTransport(cfg.EdgeTransport)
+	return transport == EdgeTransportWebSocket || transport == EdgeTransportAuto
 }
 
 // UsePollEdgeTransport reports whether the Portainer-style polling control plane

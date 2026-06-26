@@ -161,6 +161,10 @@ function getRequestPath(url: string, baseURL: string): string {
 }
 
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
+// Set true while a manager self-update / fleet "Update All" is running. During that
+// window the backend briefly restarts and returns version-mismatch 401s; we must not
+// bounce the user to /login — the session is recoverable once the backend is back.
+let upgradeInProgressInternal = false;
 const skipAuthPathsInternal = [
 	'/auth/login',
 	'/auth/logout',
@@ -193,30 +197,34 @@ export async function handleUnauthorizedResponseInternal(
 		return 'none';
 	}
 
-	const isVersionMismatch = serverMsg?.toLowerCase().includes('application has been updated');
+	const isVersionMismatch = serverMsg?.toLowerCase().includes('application has been updated') ?? false;
 	const isAuthApi = skipAuthPathsInternal.some((path) => requestPath.startsWith(path));
 	const pathname = window.location.pathname || '/';
 	const isOnAuthPage = isAuthPagePathInternal(pathname);
 
-	if (!isAuthApi && !isOnAuthPage && tokenRefreshHandler) {
+	if (isAuthApi || isOnAuthPage) {
+		return 'none';
+	}
+
+	// During a server self-update the backend briefly returns version-mismatch 401s
+	// (and is momentarily unreachable mid-restart). The session is recoverable — the
+	// refresh path rotates the token across the version change — so never bounce to
+	// /login for these: refresh and retry when possible, otherwise let the caller
+	// (e.g. the update poller) keep retrying until the backend is back.
+	const recoverable = isVersionMismatch || upgradeInProgressInternal;
+
+	if (tokenRefreshHandler) {
 		try {
 			await tokenRefreshHandler();
 			return 'retry';
 		} catch {
-			if (isVersionMismatch) {
-				toast.info('Application has been updated. Please log in again.');
+			if (recoverable) {
+				return 'none';
 			}
 			const redirectTo = encodeURIComponent(pathname);
 			window.location.replace(`/login?redirect=${redirectTo}`);
 			return 'redirect';
 		}
-	}
-
-	if (!isAuthApi && !isOnAuthPage && isVersionMismatch) {
-		toast.info('Application has been updated. Please log in again.');
-		const redirectTo = encodeURIComponent(pathname);
-		window.location.replace(`/login?redirect=${redirectTo}`);
-		return 'redirect';
 	}
 
 	return 'none';
@@ -390,6 +398,12 @@ abstract class BaseAPIService {
 
 	static setTokenRefreshHandler(handler: () => Promise<string | null>) {
 		tokenRefreshHandler = handler;
+	}
+
+	// Toggled by the update flows (Update All / local update center) so an in-progress
+	// self-update restart is treated as a recoverable reconnect, not a logout.
+	static setUpgradeInProgress(value: boolean) {
+		upgradeInProgressInternal = value;
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {

@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { cn } from '$lib/utils';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { mode, toggleMode } from 'mode-watcher';
+	import ThemeModeSelector from '$lib/components/theme-mode/theme-mode-selector.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { User } from '$lib/types/auth';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
@@ -10,16 +10,7 @@
 	import userStore from '$lib/stores/user-store';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import {
-		ArrowDownIcon,
-		MoonIcon,
-		SunIcon,
-		LogoutIcon,
-		EnvironmentsIcon,
-		RemoteEnvironmentIcon,
-		LanguageIcon,
-		ArrowRightIcon
-	} from '$lib/icons';
+	import { ArrowDownIcon, LogoutIcon, EnvironmentsIcon, RemoteEnvironmentIcon, LanguageIcon, ArrowRightIcon } from '$lib/icons';
 
 	type Props = {
 		user: User;
@@ -36,8 +27,6 @@
 
 	let userCardExpanded = $state(false);
 	let envDialogOpen = $state(false);
-
-	const isDarkMode = $derived(mode.current === 'dark');
 
 	const effectiveUser = $derived(user);
 
@@ -145,23 +134,12 @@
 				</div>
 
 				<div class="bg-background/50 border-border/20 rounded-2xl border p-4">
-					<button class="flex h-full w-full items-center gap-3 text-left" onclick={toggleMode}>
-						<div class="bg-primary/10 text-primary flex aspect-square size-8 items-center justify-center rounded-lg">
-							{#if isDarkMode}
-								<SunIcon class="size-4" />
-							{:else}
-								<MoonIcon class="size-4" />
-							{/if}
+					<div class="flex h-full flex-col justify-center gap-2">
+						<div class="text-muted-foreground/70 text-xs font-medium tracking-widest uppercase">
+							{m.common_toggle_theme()}
 						</div>
-						<div class="flex min-w-0 flex-1 flex-col justify-center">
-							<div class="text-muted-foreground/70 mb-1 text-xs font-medium tracking-widest uppercase">
-								{m.common_toggle_theme()}
-							</div>
-							<div class="text-foreground text-sm font-medium">
-								{isDarkMode ? m.sidebar_dark_mode() : m.sidebar_light_mode()}
-							</div>
-						</div>
-					</button>
+						<ThemeModeSelector class="grid w-full grid-cols-3" />
+					</div>
 				</div>
 			</div>
 		</div>
