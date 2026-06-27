@@ -1,10 +1,8 @@
 package volumes
 
 import (
-	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -13,37 +11,11 @@ import (
 	"sync/atomic"
 	"syscall"
 	"testing"
-	"time"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/stretchr/testify/require"
 )
-
-func TestProjectVolumeCopyRequiredBytesInternal_AddsMargin(t *testing.T) {
-	require.EqualValues(t, projectVolumeCopyMinMarginBytesInternal, projectVolumeCopyRequiredBytesInternal(0))
-	require.EqualValues(t, 1024+projectVolumeCopyMinMarginBytesInternal, projectVolumeCopyRequiredBytesInternal(1024))
-
-	largeSource := uint64(10 * projectVolumeCopyMinMarginBytesInternal)
-	require.Equal(t, largeSource+(largeSource/10), projectVolumeCopyRequiredBytesInternal(largeSource))
-	require.Equal(t, ^uint64(0), projectVolumeCopyRequiredBytesInternal(^uint64(0)))
-}
-
-func TestEnsureProjectVolumeCopyCapacityInternal_ReturnsInsufficientSpace(t *testing.T) {
-	err := ensureProjectVolumeCopyCapacityInternal(
-		projectVolumeCopyProbeInternal{AllocatedBytes: 1024},
-		projectVolumeCopyProbeInternal{AvailableBytes: 1024},
-		"nginx_data",
-		"web_data",
-	)
-
-	var spaceErr *ProjectVolumeRenameInsufficientSpaceError
-	require.ErrorAs(t, err, &spaceErr)
-	require.Equal(t, "nginx_data", spaceErr.SourceVolume)
-	require.Equal(t, "web_data", spaceErr.TargetVolume)
-	require.Contains(t, spaceErr.Detail, "source=1024B")
-	require.Contains(t, spaceErr.Detail, "available=1024B")
-}
 
 func TestIsProjectVolumeCopyNoSpaceErrorInternal(t *testing.T) {
 	require.True(t, isProjectVolumeCopyNoSpaceErrorInternal(syscall.ENOSPC))
@@ -138,144 +110,6 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesArcaneAgentLabel(t *testing.T) 
 
 	require.NoError(t, err)
 	require.Equal(t, "arcane-agent:local", copyRuntime.Image)
-	require.Equal(t, []string{"./arcane-agent"}, copyRuntime.Command)
-	require.Equal(t, "arcane-agent-label", copyRuntime.Source)
-}
-
-func TestProjectVolumeCopyHolderContainerInternal_RemovesHelperWhenContextIsCanceled(t *testing.T) {
-	started := make(chan struct{})
-	deleted := make(chan struct{})
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/create"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
-				"Id":       "helper-container",
-				"Warnings": []string{},
-			}))
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
-			w.WriteHeader(http.StatusNoContent)
-			close(started)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
-			<-r.Context().Done()
-		case r.Method == http.MethodDelete && strings.Contains(r.URL.Path, "/containers/helper-container"):
-			w.WriteHeader(http.StatusNoContent)
-			close(deleted)
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	go func() {
-		<-started
-		time.Sleep(10 * time.Millisecond)
-		cancel()
-	}()
-
-	dockerClient := newTestDockerClient(t, server)
-	func() {
-		containerID, cleanup, err := createProjectVolumeCopyHolderContainerInternal(
-			ctx,
-			dockerClient,
-			projectVolumeCopyRuntimeInternal{Image: "arcane:local", Command: []string{"./arcane"}},
-			"nginx_data",
-			true,
-		)
-		require.NoError(t, err)
-		defer cleanup()
-
-		_, err = startProjectVolumeHelperContainerInternal(ctx, dockerClient, containerID)
-		require.ErrorIs(t, err, context.Canceled)
-	}()
-
-	select {
-	case <-deleted:
-	case <-time.After(2 * time.Second):
-		t.Fatal("expected helper container to be removed after context cancellation")
-	}
-}
-
-func TestStartProjectVolumeHelperContainerInternal_ReturnsWaitError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("wait interrupted"))
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	_, err := startProjectVolumeHelperContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
-
-	require.Error(t, err)
-	require.ErrorContains(t, err, "wait interrupted")
-}
-
-func TestProbeProjectVolumeCopyContainerInternal_IgnoresStderrOnSuccess(t *testing.T) {
-	expected := projectVolumeCopyProbeInternal{
-		Path:           projectVolumeCopyMountPathInternal,
-		AllocatedBytes: 1024,
-		AvailableBytes: 1024 * 1024,
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 0}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-container/logs"):
-			writeProjectVolumeCopyProbeLogInternal(t, w, expected, "startup log")
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	got, err := probeProjectVolumeCopyContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
-
-	require.NoError(t, err)
-	require.Equal(t, expected, got)
-}
-
-func TestStartProjectVolumeHelperContainerInternal_ReturnsCombinedOutputOnFailure(t *testing.T) {
-	probe := projectVolumeCopyProbeInternal{
-		Path:           projectVolumeCopyMountPathInternal,
-		AllocatedBytes: 1024,
-		AvailableBytes: 1024 * 1024,
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/start"):
-			w.WriteHeader(http.StatusNoContent)
-		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/containers/helper-container/wait"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"StatusCode": 1}))
-		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/helper-container/logs"):
-			writeProjectVolumeCopyProbeLogInternal(t, w, probe, "startup failure")
-		default:
-			http.NotFound(w, r)
-		}
-	}))
-	t.Cleanup(server.Close)
-
-	output, err := startProjectVolumeHelperContainerInternal(context.Background(), newTestDockerClient(t, server), "helper-container")
-
-	require.Error(t, err)
-	require.Contains(t, output, "startup failure")
-	require.Contains(t, output, `"path":"/volume"`)
-	require.ErrorContains(t, err, "startup failure")
-	require.ErrorContains(t, err, `"path":"/volume"`)
 }
 
 func TestDockerProjectVolumeRenameMigrationInternal_RollbackPreservesTargetWhenSourceMissing(t *testing.T) {
@@ -655,34 +489,6 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 	require.Equal(t, "web_cache", missingTarget.TargetVolume)
 	require.False(t, firstSourceRemoved.Load(), "no source volume should be removed until every target is verified")
 	require.False(t, secondSourceRemoved.Load())
-}
-
-func writeProjectVolumeCopyProbeLogInternal(t *testing.T, w http.ResponseWriter, probe projectVolumeCopyProbeInternal, stderr ...string) {
-	t.Helper()
-
-	payload, err := json.Marshal(probe)
-	require.NoError(t, err)
-
-	var stream bytes.Buffer
-	for _, message := range stderr {
-		writeProjectVolumeCopyLogFrameInternal(t, &stream, 2, []byte(message+"\n"))
-	}
-	writeProjectVolumeCopyLogFrameInternal(t, &stream, 1, append(payload, '\n'))
-
-	_, err = w.Write(stream.Bytes())
-	require.NoError(t, err)
-}
-
-func writeProjectVolumeCopyLogFrameInternal(t *testing.T, stream *bytes.Buffer, streamID byte, payload []byte) {
-	t.Helper()
-
-	header := make([]byte, 8)
-	header[0] = streamID
-	binary.BigEndian.PutUint32(header[4:], uint32(len(payload)))
-	_, err := stream.Write(header)
-	require.NoError(t, err)
-	_, err = stream.Write(payload)
-	require.NoError(t, err)
 }
 
 func setProjectVolumeCopyArchiveStatHeaderInternal(t *testing.T, w http.ResponseWriter) {

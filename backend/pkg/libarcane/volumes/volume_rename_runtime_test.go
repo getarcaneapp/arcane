@@ -8,32 +8,16 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/moby/moby/api/types/container"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/stretchr/testify/require"
 )
 
-func TestGetProjectVolumeCopyRuntimeInternal_UsesEntrypointBeforeCmd(t *testing.T) {
+func TestGetProjectVolumeCopyRuntimeInternal_UsesToolsImageWhenAvailable(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
-		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
-				{
-					ID:    "arcane-container",
-					Image: "arcane:local",
-					State: container.StateRunning,
-				},
-			}))
-		case strings.Contains(r.URL.Path, "/containers/arcane-container/") && strings.HasSuffix(r.URL.Path, "/json"):
-			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
-				ID: "arcane-container",
-				Config: &container.Config{
-					Image:      "arcane:local",
-					Entrypoint: []string{"./arcane"},
-					Cmd:        []string{"server"},
-				},
-			}))
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -43,12 +27,10 @@ func TestGetProjectVolumeCopyRuntimeInternal_UsesEntrypointBeforeCmd(t *testing.
 	copyRuntime, err := getProjectVolumeCopyRuntimeInternal(context.Background(), newTestDockerClient(t, server))
 
 	require.NoError(t, err)
-	require.Equal(t, "arcane:local", copyRuntime.Image)
-	require.Equal(t, []string{"./arcane"}, copyRuntime.Command)
-	require.Equal(t, "arcane-label", copyRuntime.Source)
+	require.Equal(t, volumehelper.DefaultToolsImage, copyRuntime.Image)
 }
 
-func TestCreateProjectVolumeCopyHolderContainerInternal_OverridesEntrypointWithHelperArgs(t *testing.T) {
+func TestCreateProjectVolumeCopyHolderContainerInternal_UsesPassiveHolderCommand(t *testing.T) {
 	var createBody map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -70,13 +52,13 @@ func TestCreateProjectVolumeCopyHolderContainerInternal_OverridesEntrypointWithH
 	_, cleanup, err := createProjectVolumeCopyHolderContainerInternal(
 		context.Background(),
 		newTestDockerClient(t, server),
-		projectVolumeCopyRuntimeInternal{Image: "arcane:local", Command: []string{"./arcane"}},
+		projectVolumeCopyRuntimeInternal{Image: "arcane:local"},
 		"nginx_data",
 		true,
 	)
 	require.NoError(t, err)
 	defer cleanup()
 
-	require.Equal(t, []any{"./arcane"}, createBody["Entrypoint"])
-	require.Equal(t, []any{"internal-volume-helper", "probe", "--path", projectVolumeCopyMountPathInternal}, createBody["Cmd"])
+	require.Empty(t, createBody["Entrypoint"])
+	require.Equal(t, []any{"sleep", "infinity"}, createBody["Cmd"])
 }

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -45,19 +46,6 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 			},
 			want: false,
 		},
-		{
-			name: "internal volume probe helper is not legacy helper",
-			summary: container.Summary{
-				Labels: map[string]string{
-					libarcane.InternalResourceLabel: "true",
-				},
-				Command: "./arcane internal-volume-helper probe --path /volume",
-				Mounts: []container.MountPoint{
-					{Destination: "/volume"},
-				},
-			},
-			want: false,
-		},
 	}
 
 	for _, tt := range tests {
@@ -67,18 +55,54 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 	}
 }
 
-func TestIsVolumeHelperContainerInternal_MatchesInternalVolumeProbe(t *testing.T) {
-	summary := container.Summary{
-		Labels: map[string]string{
-			libarcane.InternalResourceLabel: "true",
+func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary container.Summary
+		want    bool
+	}{
+		{
+			name: "new helper label matches",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+					volumehelper.ContainerLabel:     "true",
+				},
+			},
+			want: true,
 		},
-		Command: "./arcane internal-volume-helper probe --path /volume",
-		Mounts: []container.MountPoint{
-			{Destination: "/volume"},
+		{
+			name: "generic internal volume mount does not match",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
+				Mounts: []container.MountPoint{
+					{Destination: "/volume"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "legacy helper still matches",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
+				Command: "sleep infinity",
+				Mounts: []container.MountPoint{
+					{Destination: "/volume"},
+				},
+			},
+			want: true,
 		},
 	}
 
-	require.True(t, isVolumeHelperContainerInternal(summary))
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isVolumeHelperContainerInternal(tt.summary))
+		})
+	}
 }
 
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {

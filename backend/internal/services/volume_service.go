@@ -697,18 +697,7 @@ func isVolumeHelperContainerInternal(c container.Summary) bool {
 		return false
 	}
 
-	command := strings.ToLower(c.Command)
-	if !strings.Contains(command, "internal-volume-helper") {
-		return false
-	}
-
-	for _, m := range c.Mounts {
-		if m.Destination == "/volume" {
-			return true
-		}
-	}
-
-	return false
+	return strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true")
 }
 
 func (c *cleanupReadCloser) Close() error {

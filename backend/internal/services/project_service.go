@@ -1560,14 +1560,19 @@ func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
 		return &common.ProjectDiscoveryError{Dir: projectsDir, Err: discoveryErr}
 	}
 
+	renameSyncState := s.activeProjectRenameSyncStateInternal(ctx)
 	seen := map[string]struct{}{}
 	for _, discoveredProject := range discoveredProjects {
+		if renameSyncState.skipDiscoveredPathInternal(discoveredProject.Path) {
+			continue
+		}
 		if uerr := s.upsertProjectForDir(ctx, discoveredProject.DirName, discoveredProject.Path); uerr != nil {
 			slog.WarnContext(ctx, "failed to sync project from folder", "dir", discoveredProject.Path, "error", uerr)
 			continue
 		}
 		seen[discoveredProject.Path] = struct{}{}
 	}
+	renameSyncState.markProtectedPathsSeenInternal(seen)
 
 	if cerr := s.cleanupDBProjectsInternal(ctx, seen, followProjectSymlinks, projectsDir, s.config.ProjectScanMaxDepth); cerr != nil {
 		slog.WarnContext(ctx, "error during DB cleanup of projects", "error", cerr)
@@ -1649,6 +1654,57 @@ type projectCleanupDecision struct {
 	reason  string
 }
 
+type activeProjectRenameSyncStateInternal struct {
+	skipDiscoveredPaths map[string]struct{}
+	protectSeenPaths    map[string]struct{}
+}
+
+func (s *ProjectService) activeProjectRenameSyncStateInternal(ctx context.Context) activeProjectRenameSyncStateInternal {
+	state := activeProjectRenameSyncStateInternal{
+		skipDiscoveredPaths: make(map[string]struct{}),
+		protectSeenPaths:    make(map[string]struct{}),
+	}
+	if s == nil || s.kvService == nil {
+		return state
+	}
+
+	entries, err := s.kvService.ListByPrefix(ctx, projectRenameJournalKeyPrefixInternal)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list project rename journals during filesystem sync", "error", err)
+		return state
+	}
+
+	for _, entry := range entries {
+		var journal projectRenameJournalInternal
+		if err := json.Unmarshal([]byte(entry.Value), &journal); err != nil {
+			slog.WarnContext(ctx, "failed to decode project rename journal during filesystem sync", "key", entry.Key, "error", err)
+			continue
+		}
+		if !projectRenameJournalFilesystemSyncPendingInternal(journal.Phase) {
+			continue
+		}
+		if oldPath := strings.TrimSpace(journal.OldPath); oldPath != "" {
+			state.protectSeenPaths[filepath.Clean(oldPath)] = struct{}{}
+		}
+		if newPath := strings.TrimSpace(journal.NewPath); newPath != "" {
+			state.skipDiscoveredPaths[filepath.Clean(newPath)] = struct{}{}
+		}
+	}
+
+	return state
+}
+
+func (s activeProjectRenameSyncStateInternal) skipDiscoveredPathInternal(path string) bool {
+	_, ok := s.skipDiscoveredPaths[filepath.Clean(path)]
+	return ok
+}
+
+func (s activeProjectRenameSyncStateInternal) markProtectedPathsSeenInternal(seen map[string]struct{}) {
+	for path := range s.protectSeenPaths {
+		seen[path] = struct{}{}
+	}
+}
+
 func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
 	var all []models.Project
 	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
@@ -1660,14 +1716,23 @@ func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map
 	// is unmounted, so every path is missing at once) before any rows are removed.
 	candidates := 0
 	pendingDeletions := make([]projectCleanupDecision, 0)
+	tempDeletions := make([]projectCleanupDecision, 0)
 	for _, p := range all {
 		if skipProjectCleanupInternal(p, seen) {
+			continue
+		}
+		if isProjectUpdateTempProjectInternal(p) {
+			tempDeletions = append(tempDeletions, projectCleanupDecision{project: p, reason: "removed internal project update temp record"})
 			continue
 		}
 		candidates++
 		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth); remove {
 			pendingDeletions = append(pendingDeletions, decision)
 		}
+	}
+
+	for _, decision := range tempDeletions {
+		s.deleteProjectDuringCleanupInternal(ctx, decision.project, decision.reason)
 	}
 
 	if s.cleanupWouldMassWipeInternal(ctx, candidates, len(pendingDeletions), projectsDir) {
@@ -1713,6 +1778,18 @@ func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool
 	// files may not exist on disk yet (e.g. during a sync or after an SSH/clone
 	// failure) and should never be deleted here.
 	return p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != ""
+}
+
+func isProjectUpdateTempProjectInternal(p models.Project) bool {
+	if isProjectUpdateTempNameInternal(p.Name) || isProjectUpdateTempNameInternal(filepath.Base(p.Path)) {
+		return true
+	}
+	return p.DirName != nil && isProjectUpdateTempNameInternal(*p.DirName)
+}
+
+func isProjectUpdateTempNameInternal(name string) bool {
+	name = strings.TrimSpace(name)
+	return strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-")
 }
 
 // evaluateProjectCleanupInternal decides whether a project that was not seen in
@@ -5054,6 +5131,16 @@ func projectRenameJournalTargetsCopiedInternal(phase string) bool {
 		projectRenameJournalPhaseOldVolumesRemovedInternal,
 		projectRenameJournalPhaseProjectStateCommittedInternal,
 		projectRenameJournalPhaseSourceCleanupPendingInternal:
+		return true
+	default:
+		return false
+	}
+}
+
+func projectRenameJournalFilesystemSyncPendingInternal(phase string) bool {
+	switch phase {
+	case projectRenameJournalPhaseStartedInternal,
+		projectRenameJournalPhaseTargetsCopiedInternal:
 		return true
 	default:
 		return false
