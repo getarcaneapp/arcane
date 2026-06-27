@@ -24,7 +24,6 @@
 	import CreateFolderDialog from './CreateFolderDialog.svelte';
 	import FileUploadDialog from './FileUploadDialog.svelte';
 	import FilePreview from './FilePreview.svelte';
-	import * as m from '$lib/paraglide/messages.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
 	import * as Select from '$lib/components/ui/select';

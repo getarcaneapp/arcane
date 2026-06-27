@@ -19,7 +19,6 @@
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
-	import * as m from '$lib/paraglide/messages.js';
 	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
