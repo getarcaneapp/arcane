@@ -22,7 +22,10 @@ import {
 	OpenIdIcon,
 	RedeployIcon,
 	CodeIcon,
-	HammerIcon
+	HammerIcon,
+	PauseIcon,
+	PlayIcon,
+	ZapIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -54,6 +57,10 @@ export const arcaneButtonVariants = tv({
 			'outline-info':
 				'bg-sky-500/5 text-foreground! border-sky-500/20 hover:bg-sky-500/10 hover:border-sky-500/40 ' +
 				'dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-warning':
+				'bg-amber-500/5 text-foreground! border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40 ' +
+				'dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 dark:hover:bg-amber-500/20 ' +
 				'shadow-sm hover:shadow-md',
 			'outline-build':
 				'bg-violet-500/5 text-foreground! border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 ' +
@@ -135,6 +142,24 @@ export const actionConfigs = {
 		IconComponent: StopIcon,
 		tone: 'outline-info',
 		loadingLabel: m.common_action_stopping()
+	},
+	pause: {
+		defaultLabel: m.common_pause(),
+		IconComponent: PauseIcon,
+		tone: 'outline-warning',
+		loadingLabel: m.common_processing()
+	},
+	unpause: {
+		defaultLabel: m.common_unpause(),
+		IconComponent: PlayIcon,
+		tone: 'outline-success',
+		loadingLabel: m.common_processing()
+	},
+	kill: {
+		defaultLabel: m.common_kill(),
+		IconComponent: ZapIcon,
+		tone: 'outline-destructive',
+		loadingLabel: m.common_action_killing()
 	},
 	remove: {
 		defaultLabel: m.common_remove(),

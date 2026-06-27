@@ -22,6 +22,9 @@ export { default as UsersIcon } from 'virtual:icons/material-symbols/person-text
 export { default as NotificationsIcon } from 'virtual:icons/ic/round-notifications-active';
 export { default as InfoIcon } from 'virtual:icons/pepicons-pop/info-circle';
 export { default as CpuIcon } from 'virtual:icons/solar/cpu-outline';
+export { default as PauseIcon } from 'virtual:icons/lucide/pause';
+export { default as PlayIcon } from 'virtual:icons/lucide/play';
+export { default as ZapIcon } from 'virtual:icons/lucide/zap';
 export { default as MemoryStickIcon } from 'virtual:icons/fluent/memory-16-regular';
 export { default as ArrowDownIcon } from 'virtual:icons/ic/baseline-keyboard-arrow-down';
 export { default as ArrowUpIcon } from 'virtual:icons/ic/baseline-keyboard-arrow-up';

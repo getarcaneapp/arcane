@@ -54,12 +54,12 @@ class ContainerService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getContainer(containerId: string): Promise<any> {
+	async getContainer(containerId: string): Promise<ContainerDetailsDto> {
 		const envId = await this.resolveEnvironmentId();
 		return this.getContainerForEnvironment(envId, containerId);
 	}
 
-	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<any> {
+	async getContainerForEnvironment(environmentId: string, containerId: string): Promise<ContainerDetailsDto> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/containers/${containerId}`));
 	}
 
@@ -81,6 +81,23 @@ class ContainerService extends BaseAPIService {
 	async restartContainer(containerId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/restart`));
+	}
+
+	async killContainer(containerId: string, signal?: string): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		const params: Record<string, string> = {};
+		if (signal) params['signal'] = signal;
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/kill`, undefined, { params }));
+	}
+
+	async pauseContainer(containerId: string): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/pause`));
+	}
+
+	async unpauseContainer(containerId: string): Promise<any> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/unpause`));
 	}
 
 	async deleteContainer(containerId: string, opts?: { force?: boolean; volumes?: boolean }): Promise<any> {

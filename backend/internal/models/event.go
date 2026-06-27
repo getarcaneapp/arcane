@@ -19,6 +19,9 @@ const (
 	EventTypeContainerScan    EventType = "container.scan"
 	EventTypeContainerUpdate  EventType = "container.update"
 	EventTypeContainerDeploy  EventType = "container.deploy"
+	EventTypeContainerKill    EventType = "container.kill"
+	EventTypeContainerPause   EventType = "container.pause"
+	EventTypeContainerUnpause EventType = "container.unpause"
 	EventTypeContainerError   EventType = "container.error"
 
 	EventTypeImagePull              EventType = "image.pull"

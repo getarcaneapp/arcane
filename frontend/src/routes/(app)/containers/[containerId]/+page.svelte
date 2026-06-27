@@ -44,6 +44,10 @@
 	import { projectService } from '$lib/services/project-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
+	import { runContainerLifecycleAction } from '$lib/utils/container-actions';
+	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
@@ -140,6 +144,33 @@
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
+	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
+	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
+	const containerStatus = $derived(container?.state?.status ?? '');
+	const isContainerRunning = $derived(containerStatus === 'running' || !!container?.state?.running);
+	const isContainerPaused = $derived(containerStatus === 'paused');
+
+	let killDialogOpen = $state(false);
+
+	async function handlePauseContainer() {
+		if (!container) return;
+		await runContainerLifecycleAction({
+			action: 'pause',
+			containerId: container.id,
+			setStatus: () => {},
+			onRefresh: () => invalidateAll()
+		});
+	}
+
+	async function handleUnpauseContainer() {
+		if (!container) return;
+		await runContainerLifecycleAction({
+			action: 'unpause',
+			containerId: container.id,
+			setStatus: () => {},
+			onRefresh: () => invalidateAll()
+		});
+	}
 	const showStats = $derived(!!container?.state?.running);
 	const showShell = $derived(!!container?.state?.running && canExecShell);
 	const hasHealthcheck = $derived(
@@ -289,14 +320,47 @@
 		{/snippet}
 
 		{#snippet headerActions()}
-			<ActionButtons
-				id={container.id}
-				name={containerDisplayName}
-				type="container"
-				itemState={container.state?.running ? 'running' : 'stopped'}
-				desktopVariant="adaptive"
-				disableRedeploy={!!container.redeployDisabled}
-			/>
+			<div class="container-detail-actions">
+				<ActionButtons
+					id={container.id}
+					name={containerDisplayName}
+					type="container"
+					itemState={container.state?.running ? 'running' : 'stopped'}
+					desktopVariant="adaptive"
+					disableRedeploy={!!container.redeployDisabled}
+				>
+					{#snippet beforeRemoveActions(size, showLabel)}
+						{#if canPauseContainer && isContainerPaused}
+							<ArcaneButton action="unpause" {size} {showLabel} onclick={handleUnpauseContainer} />
+						{:else if canPauseContainer && isContainerRunning}
+							<ArcaneButton action="pause" {size} {showLabel} onclick={handlePauseContainer} />
+						{/if}
+						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
+							<ArcaneButton action="kill" {size} {showLabel} onclick={() => (killDialogOpen = true)} />
+						{/if}
+					{/snippet}
+
+					{#snippet beforeRemoveMenuItems()}
+						{#if canPauseContainer && isContainerPaused}
+							<DropdownMenu.Item onclick={handleUnpauseContainer}>
+								<PlayIcon class="size-4" />
+								{m.common_unpause()}
+							</DropdownMenu.Item>
+						{:else if canPauseContainer && isContainerRunning}
+							<DropdownMenu.Item onclick={handlePauseContainer}>
+								<PauseIcon class="size-4" />
+								{m.common_pause()}
+							</DropdownMenu.Item>
+						{/if}
+						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
+							<DropdownMenu.Item onclick={() => (killDialogOpen = true)}>
+								<ZapIcon class="size-4" />
+								{m.common_kill()}
+							</DropdownMenu.Item>
+						{/if}
+					{/snippet}
+				</ActionButtons>
+			</div>
 		{/snippet}
 
 		{#snippet tabContent(activeTab)}
@@ -395,6 +459,15 @@
 			</Tabs.Content>
 		{/snippet}
 	</TabbedPageLayout>
+
+	{#if killDialogOpen && canKillContainer && (isContainerRunning || isContainerPaused)}
+		<KillContainerDialog
+			containerId={container.id}
+			containerName={containerDisplayName}
+			onClose={() => (killDialogOpen = false)}
+			onComplete={() => invalidateAll()}
+		/>
+	{/if}
 {:else}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
@@ -417,3 +490,14 @@
 		</div>
 	</div>
 {/if}
+
+<style>
+	.container-detail-actions {
+		display: flex;
+		flex: 1 1 auto;
+		min-width: 0;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.5rem;
+	}
+</style>

@@ -5,8 +5,8 @@ import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 import { toast } from 'svelte-sonner';
 
-type ContainerLifecycleAction = 'start' | 'stop' | 'restart';
-type ContainerLifecycleStatus = 'starting' | 'stopping' | 'restarting' | '';
+type ContainerLifecycleAction = 'start' | 'stop' | 'restart' | 'pause' | 'unpause';
+type ContainerLifecycleStatus = 'starting' | 'stopping' | 'restarting' | 'pausing' | 'unpausing' | '';
 type ContainerRemoveStatus = 'removing' | '';
 
 type ContainerLifecycleActionConfig = {
@@ -34,6 +34,18 @@ const containerLifecycleActionConfigs: Record<ContainerLifecycleAction, Containe
 		run: (id) => containerService.restartContainer(id),
 		success: () => m.containers_restart_success(),
 		failure: () => m.containers_restart_failed()
+	},
+	pause: {
+		status: 'pausing',
+		run: (id) => containerService.pauseContainer(id),
+		success: () => m.containers_pause_success(),
+		failure: () => m.containers_pause_failed()
+	},
+	unpause: {
+		status: 'unpausing',
+		run: (id) => containerService.unpauseContainer(id),
+		success: () => m.containers_unpause_success(),
+		failure: () => m.containers_unpause_failed()
 	}
 };
 
