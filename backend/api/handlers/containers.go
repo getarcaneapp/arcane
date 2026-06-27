@@ -142,6 +142,13 @@ type SetAutoUpdateOutput struct {
 	Body ContainerActionResponse
 }
 
+// KillContainerInput carries the optional signal for a container kill.
+type KillContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Signal        string `query:"signal" doc:"Signal to send (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
+}
+
 func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
@@ -214,6 +221,34 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, authz.PermContainersRestart, h.RestartContainer)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "kill-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/kill",
+		Summary:     "Kill container",
+		Description: "Send a signal to the container's main process (default SIGKILL)",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, authz.PermContainersKill, h.KillContainer)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "pause-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/pause",
+		Summary:     "Pause container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, authz.PermContainersPause, h.PauseContainer)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "unpause-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/unpause",
+		Summary:     "Unpause container",
+		Tags:        []string{"Containers"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, authz.PermContainersPause, h.UnpauseContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-container",
@@ -628,6 +663,55 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 		},
 		Error: func(err error) error {
 			return huma.Error500InternalServerError((&common.ContainerRestartError{Err: err}).Error())
+		},
+	})
+}
+
+func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContainerInput) (*ContainerActionOutput, error) {
+	signal := strings.TrimSpace(input.Signal)
+	return h.runContainerActionInternal(ctx, &ContainerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerKill,
+		Step:            "Killing container",
+		StartMessage:    "Container kill requested",
+		CompleteMessage: "Container killed",
+		SuccessMessage:  "Container killed successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.KillContainer(runtimeCtx, containerID, signal, user)
+		},
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerKillError{Err: err}).Error())
+		},
+	})
+}
+
+func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerPause,
+		Step:            "Pausing container",
+		StartMessage:    "Container pause requested",
+		CompleteMessage: "Container paused",
+		SuccessMessage:  "Container paused successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.PauseContainer(runtimeCtx, containerID, user)
+		},
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerPauseError{Err: err}).Error())
+		},
+	})
+}
+
+func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
+		ActivityType:    models.ActivityTypeContainerUnpause,
+		Step:            "Unpausing container",
+		StartMessage:    "Container unpause requested",
+		CompleteMessage: "Container unpaused",
+		SuccessMessage:  "Container unpaused successfully",
+		Action: func(runtimeCtx context.Context, containerID string, user models.User) error {
+			return h.containerService.UnpauseContainer(runtimeCtx, containerID, user)
+		},
+		Error: func(err error) error {
+			return huma.Error500InternalServerError((&common.ContainerUnpauseError{Err: err}).Error())
 		},
 	})
 }

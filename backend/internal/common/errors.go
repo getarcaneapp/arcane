@@ -241,6 +241,30 @@ func (e *ContainerRestartError) Error() string {
 	return fmt.Sprintf("Failed to restart container: %v", e.Err)
 }
 
+type ContainerKillError struct {
+	Err error
+}
+
+func (e *ContainerKillError) Error() string {
+	return fmt.Sprintf("Failed to kill container: %v", e.Err)
+}
+
+type ContainerPauseError struct {
+	Err error
+}
+
+func (e *ContainerPauseError) Error() string {
+	return fmt.Sprintf("Failed to pause container: %v", e.Err)
+}
+
+type ContainerUnpauseError struct {
+	Err error
+}
+
+func (e *ContainerUnpauseError) Error() string {
+	return fmt.Sprintf("Failed to unpause container: %v", e.Err)
+}
+
 type ContainerRedeployError struct {
 	Err error
 }

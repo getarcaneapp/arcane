@@ -53,8 +53,12 @@
 		ProjectsIcon,
 		InspectIcon,
 		UpdateIcon,
-		RedeployIcon
+		RedeployIcon,
+		PauseIcon,
+		PlayIcon,
+		ZapIcon
 	} from '$lib/icons';
+	import KillContainerDialog from './components/kill-container-dialog.svelte';
 
 	type FieldVisibility = Record<string, boolean>;
 
@@ -180,6 +184,16 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
+	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
+	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
+
+	// The dialog is mounted only while a row is targeted, so it gets fresh state on
+	// every open; clearing the target unmounts it.
+	let killTarget = $state<ContainerSummaryDto | null>(null);
+
+	function openKillDialog(container: ContainerSummaryDto) {
+		killTarget = container;
+	}
 
 	onMount(() => {
 		collapsedGroupsState = new PersistedState<Record<string, boolean>>('container-groups-collapsed', {});
@@ -631,7 +645,21 @@
 						{/if}
 					</DropdownMenu.Item>
 				{/if}
-				{#if item.state !== 'running'}
+				{#if item.state === 'paused'}
+					{#if canPauseContainers}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('unpause', item.id)}
+							disabled={status === 'unpausing' || isAnyLoading}
+						>
+							{#if status === 'unpausing'}
+								<Spinner class="size-4" />
+							{:else}
+								<PlayIcon class="size-4" />
+							{/if}
+							{m.common_unpause()}
+						</DropdownMenu.Item>
+					{/if}
+				{:else if item.state !== 'running'}
 					<DropdownMenu.Item
 						onclick={() => performContainerAction('start', item.id)}
 						disabled={status === 'starting' || isAnyLoading}
@@ -666,6 +694,27 @@
 							<RefreshIcon class="size-4" />
 						{/if}
 						{m.common_restart()}
+					</DropdownMenu.Item>
+
+					{#if canPauseContainers}
+						<DropdownMenu.Item
+							onclick={() => performContainerAction('pause', item.id)}
+							disabled={status === 'pausing' || isAnyLoading}
+						>
+							{#if status === 'pausing'}
+								<Spinner class="size-4" />
+							{:else}
+								<PauseIcon class="size-4" />
+							{/if}
+							{m.common_pause()}
+						</DropdownMenu.Item>
+					{/if}
+				{/if}
+
+				{#if (item.state === 'running' || item.state === 'paused') && canKillContainers}
+					<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
+						<ZapIcon class="size-4" />
+						{m.common_kill()}
 					</DropdownMenu.Item>
 				{/if}
 
@@ -743,3 +792,14 @@
 		{m.containers_hide_unexposed_ports()}
 	</DropdownMenu.CheckboxItem>
 {/snippet}
+
+{#if killTarget}
+	<KillContainerDialog
+		containerId={killTarget.id}
+		containerName={getContainerDisplayName(killTarget)}
+		onClose={() => (killTarget = null)}
+		onComplete={async () => {
+			await refreshContainers(requestOptions);
+		}}
+	/>
+{/if}

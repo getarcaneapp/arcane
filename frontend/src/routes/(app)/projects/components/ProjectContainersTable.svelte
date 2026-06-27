@@ -58,7 +58,7 @@
 	);
 
 	// Track action status per container ID
-	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'removing' | '';
+	type ActionStatus = 'starting' | 'stopping' | 'restarting' | 'pausing' | 'unpausing' | 'removing' | '';
 	let actionStatus = $state<Record<string, ActionStatus>>({});
 
 	let isBulkLoading = $state({

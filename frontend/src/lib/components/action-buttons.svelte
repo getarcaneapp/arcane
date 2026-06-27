@@ -1,11 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
+	import type { Snippet } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton, type ArcaneButtonSize } from '$lib/components/arcane-button/index.js';
 	import DeploySplitButton from '$lib/components/deploy-split-button/deploy-split-button.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import { m } from '$lib/paraglide/messages';
@@ -49,7 +50,9 @@
 		refreshLoading = $bindable(false),
 		hasBuildDirective = false,
 		disableRedeploy = false,
-		onRefresh
+		onRefresh,
+		beforeRemoveActions,
+		beforeRemoveMenuItems
 	}: {
 		id: string;
 		name?: string;
@@ -67,6 +70,8 @@
 		hasBuildDirective?: boolean;
 		disableRedeploy?: boolean;
 		onRefresh?: () => void | Promise<void>;
+		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
+		beforeRemoveMenuItems?: Snippet<[boolean]>;
 	} = $props();
 
 	let isLoading = $state<LoadingStates>({
@@ -110,6 +115,9 @@
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
 	});
+	const isLifecycleActionPending = $derived(
+		!!(uiLoading.start || uiLoading.stop || uiLoading.restart || uiLoading.redeploy || uiLoading.remove)
+	);
 
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
@@ -471,6 +479,7 @@
 
 				{#if type === 'container'}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
+					{@render beforeRemoveActions?.(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly, isLifecycleActionPending)}
 					{#if canRemove}
 						<ArcaneButton
 							action="remove"
@@ -585,6 +594,7 @@
 
 							{#if type === 'container'}
 								{@render RedeployMenuItem()}
+								{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
 								{#if canRemove}
 									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 										{m.common_remove()}
@@ -651,6 +661,7 @@
 
 			{#if type === 'container'}
 				{@render RedeployActionButton()}
+				{@render beforeRemoveActions?.('default', true, isLifecycleActionPending)}
 				{#if canRemove}
 					<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
 				{/if}
@@ -739,6 +750,7 @@
 
 						{#if type === 'container'}
 							{@render RedeployMenuItem()}
+							{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
 							{#if canRemove}
 								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 									{m.common_remove()}

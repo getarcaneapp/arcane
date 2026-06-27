@@ -105,6 +105,8 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"stop", PermContainersStop, "Stop", ""},
 		{"restart", PermContainersRestart, "Restart", ""},
 		{"redeploy", PermContainersRedeploy, "Redeploy", ""},
+		{"kill", PermContainersKill, "Kill (send signal)", ""},
+		{"pause", PermContainersPause, "Pause / unpause", ""},
 		{"delete", PermContainersDelete, "Delete", ""},
 		{"exec", PermContainersExec, "Exec / terminal", ""},
 		{"autoupdate", PermContainersAutoUpdate, "Auto-update", ""},
