@@ -151,11 +151,11 @@
 
 	const removeMutation = createMutation(() => ({
 		mutationKey: ['action', 'remove', type, id],
-		mutationFn: ({ removeFiles, removeVolumes }: { removeFiles: boolean; removeVolumes: boolean }) =>
+		mutationFn: ({ removeVolumes }: { removeVolumes: boolean }) =>
 			tryCatch(
 				type === 'container'
 					? containerService.deleteContainer(id, { volumes: removeVolumes })
-					: projectService.destroyProject(id, removeVolumes, removeFiles)
+					: projectService.destroyProject(id, removeVolumes)
 			),
 		onMutate: () => setLoading('remove', true),
 		onSettled: () => setLoading('remove', false)
@@ -245,10 +245,9 @@
 					label: type === 'project' ? m.compose_destroy() : m.common_remove(),
 					destructive: true,
 					action: async (checkboxStates) => {
-						const removeFiles = checkboxStates['removeFiles'] === true;
 						const removeVolumes = checkboxStates['removeVolumes'] === true;
 
-						const result = await removeMutation.mutateAsync({ removeFiles, removeVolumes });
+						const result = await removeMutation.mutateAsync({ removeVolumes });
 						handleApiResultWithCallbacks({
 							result,
 							message: m.common_action_failed_with_type({
@@ -263,7 +262,6 @@
 					}
 				},
 				checkboxes: [
-					{ id: 'removeFiles', label: m.confirm_remove_project_files(), initialState: false },
 					{
 						id: 'removeVolumes',
 						label: m.confirm_remove_volumes_warning(),

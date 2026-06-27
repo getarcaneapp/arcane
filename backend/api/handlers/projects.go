@@ -874,10 +874,12 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 		return nil, err
 	}
 
-	removeFiles := false
+	removeFiles := true
 	removeVolumes := false
 	if input.Body != nil {
-		removeFiles = input.Body.RemoveFiles
+		if input.Body.RemoveFiles != nil {
+			removeFiles = *input.Body.RemoveFiles
+		}
 		removeVolumes = input.Body.RemoveVolumes
 		slog.DebugContext(ctx, "DestroyProject handler received body",
 			"removeFiles", removeFiles,

@@ -1588,6 +1588,21 @@ func (e *GitOpsSyncPerformError) Error() string {
 	return "Failed to perform GitOps sync"
 }
 
+type GitOpsSyncProjectBindingBrokenError struct {
+	Err error
+}
+
+func (e *GitOpsSyncProjectBindingBrokenError) Error() string {
+	if e.Err != nil {
+		return fmt.Sprintf("GitOps sync project binding broken: %v", e.Err)
+	}
+	return "GitOps sync project binding broken"
+}
+
+func (e *GitOpsSyncProjectBindingBrokenError) Unwrap() error {
+	return e.Err
+}
+
 type GitOpsSyncStatusError struct {
 	Err error
 }

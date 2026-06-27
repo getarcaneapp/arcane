@@ -7,8 +7,7 @@ import "strings"
 //
 // Global permissions apply to every environment and to org-level endpoints.
 // PerEnv permissions apply only when the caller is acting on that specific
-// environment. Sudo bypasses all checks (used for the agent token and the
-// per-environment access token paths).
+// environment. Sudo bypasses all checks (used for the agent token path).
 type PermissionSet struct {
 	Global map[string]struct{}
 	PerEnv map[string]map[string]struct{}
@@ -67,10 +66,25 @@ func (ps *PermissionSet) IsGlobalAdmin() bool {
 }
 
 // SudoPermissionSet returns a PermissionSet that allows every action. Used for
-// the agent token and environment access token paths, which bypass per-user
-// permission resolution entirely.
+// the agent token path, which bypasses per-user permission resolution entirely.
 func SudoPermissionSet() *PermissionSet {
 	return &PermissionSet{Sudo: true}
+}
+
+// EnvironmentPermissionSet returns the effective permission set for a
+// per-environment access token. It grants every environment-scoped permission
+// only for envID and no global or sudo permissions.
+func EnvironmentPermissionSet(envID string) *PermissionSet {
+	ps := NewPermissionSet()
+	if envID == "" {
+		return ps
+	}
+	for _, p := range AllPermissions() {
+		if IsEnvScoped(p) {
+			ps.AddEnv(envID, p)
+		}
+	}
+	return ps
 }
 
 // NewPermissionSet builds an empty PermissionSet ready for population.

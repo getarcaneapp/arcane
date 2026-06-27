@@ -1,3 +1,5 @@
+
+
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -19,7 +21,6 @@
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
-	import type { SystemStats } from '$lib/types/shared';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
@@ -778,11 +779,19 @@
 
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				{#each [1, 2, 3, 4] as tile (tile)}
+				{#each [
+					{ icon: EnvironmentsIcon, label: m.environments_title() },
+					{ icon: ContainersIcon, label: m.containers_title() },
+					{ icon: ImagesIcon, label: m.images_title() },
+					{ icon: VolumesIcon, label: m.dashboard_all_storage_title() }
+				] as tile (tile.label)}
 					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-						<Skeleton class="h-3 w-24" />
-						<Skeleton class="mt-2 h-7 w-16" />
-						<Skeleton class="mt-1.5 h-3.5 w-32" />
+						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+							<tile.icon class="size-3.5" />
+							<span>{tile.label}</span>
+						</div>
+						<Skeleton class="mt-2 h-7 w-12" />
+						<Skeleton class="mt-1.5 h-3.5 w-28" />
 					</div>
 				{/each}
 			</div>

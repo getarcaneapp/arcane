@@ -74,8 +74,70 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *database.DB, string) {
+	t.Helper()
+
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsDir := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, config.Load(), nil)
+	return NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load()), db, projectsDir
+}
+
 func newProjectImagePullServer(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse) *httptest.Server {
 	return newProjectImagePullServerWithObserverInternal(t, inspectByRef, nil)
+}
+
+func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-remove")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project-data.txt"), []byte("keep until destroy\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-destroy-remove-files"},
+		Name:      "demo-remove",
+		DirName:   ptr("demo-remove"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, true, false, models.User{}))
+
+	_, statErr := os.Stat(projectPath)
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupProjectDestroyTestServiceInternal(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-preserve")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	projectDataPath := filepath.Join(projectPath, "project-data.txt")
+	require.NoError(t, os.WriteFile(projectDataPath, []byte("preserve on destroy\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-destroy-preserve-files"},
+		Name:      "demo-preserve",
+		DirName:   ptr("demo-preserve"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, svc.DestroyProject(ctx, project.ID, false, false, models.User{}))
+
+	assert.DirExists(t, projectPath)
+	assert.FileExists(t, projectDataPath)
 }
 
 func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {
