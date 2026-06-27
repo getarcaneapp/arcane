@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	composeapi "github.com/docker/compose/v5/pkg/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
@@ -32,6 +34,7 @@ import (
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
+	"github.com/moby/moby/api/types/volume"
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1134,7 +1137,100 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	assert.True(t, forceRecreate, "service updates must force recreate after pulling the updated image")
 }
 
-func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
+type fakeProjectVolumeRenameMigrationInternal struct {
+	applyCalled    bool
+	commitCalled   bool
+	rollbackCalled bool
+	applyErr       error
+	commitErr      error
+	rollbackErr    error
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Apply(context.Context) error {
+	m.applyCalled = true
+	return m.applyErr
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Rollback(context.Context) error {
+	m.rollbackCalled = true
+	return m.rollbackErr
+}
+
+func (m *fakeProjectVolumeRenameMigrationInternal) Commit(context.Context) error {
+	m.commitCalled = true
+	return m.commitErr
+}
+
+func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/_ping"):
+			_, _ = io.WriteString(w, "OK")
+		case strings.HasSuffix(r.URL.Path, "/version"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				"ApiVersion":    "1.41",
+				"MinAPIVersion": "1.24",
+				"Version":       "24.0.0",
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/bar_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"Name": "bar_data",
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(dockerServer.Close)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, dockerServer.URL))
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	svc := NewProjectService(db, settingsService, eventService, nil, dockerService, nil, config.Load())
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+	require.NoError(t, os.WriteFile(filepath.Join(originalPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-conflict"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "target volume already exists")
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+}
+
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrationWhenNameChanges(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
@@ -1147,9 +1243,397 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
 
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-success"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	require.NoError(t, err)
+
+	assert.True(t, migration.applyCalled)
+	assert.True(t, migration.commitCalled)
+	assert.False(t, migration.rollbackCalled)
+	assert.True(t, projectStateCommitted)
+	assert.Equal(t, "bar", projectForUpdate.Name)
+	assert.DirExists(t, filepath.Join(projectsDir, "bar"))
+	assert.NoDirExists(t, originalPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "bar", fromDB.Name)
+	assert.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
+}
+
+func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesComposePreview(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	dockerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+				"Name":   "nginx_data",
+				"Driver": "local",
+				"Labels": map[string]string{
+					composeapi.ProjectLabel: "nginx",
+					composeapi.VolumeLabel:  "data",
+				},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(dockerServer.Close)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	svc := NewProjectService(db, settingsService, nil, nil, dockerService, nil, config.Load())
+
+	projectPath := filepath.Join(projectsDir, "nginx")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	oldCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(oldCompose), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-preview-volume-rename"},
+		Name:      "nginx",
+		DirName:   ptr("nginx"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+
+	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: fixed-data\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+
+		require.NoError(t, err)
+		require.Nil(t, migration)
+		bytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+		require.NoError(t, readErr)
+		require.Equal(t, oldCompose, string(bytes))
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+
+	t.Run("plans unchanged auto-managed volume from pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, migration)
+		journalSource, ok := migration.(volumes.JournalSource)
+		require.True(t, ok)
+		volumes := journalSource.JournalVolumes()
+		require.Len(t, volumes, 1)
+		require.Equal(t, "data", volumes[0].Key)
+		require.Equal(t, "nginx_data", volumes[0].OldName)
+		require.Equal(t, "web_data", volumes[0].NewName)
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+
+	t.Run("plans auto-managed volume when pending compose name renames project", func(t *testing.T) {
+		newCompose := "name: web\nservices:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, migration)
+		journalSource, ok := migration.(volumes.JournalSource)
+		require.True(t, ok)
+		volumes := journalSource.JournalVolumes()
+		require.Len(t, volumes, 1)
+		require.Equal(t, "data", volumes[0].Key)
+		require.Equal(t, "nginx_data", volumes[0].OldName)
+		require.Equal(t, "web_data", volumes[0].NewName)
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+
+	t.Run("plans interpolated explicit name from pending compose", func(t *testing.T) {
+		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: ${DATA_VOLUME:-nginx_data}\n"
+
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+
+		require.NoError(t, err)
+		require.NotNil(t, migration)
+		journalSource, ok := migration.(volumes.JournalSource)
+		require.True(t, ok)
+		volumes := journalSource.JournalVolumes()
+		require.Len(t, volumes, 1)
+		require.Equal(t, "data", volumes[0].Key)
+		require.Equal(t, "nginx_data", volumes[0].OldName)
+		require.Equal(t, "web_data", volumes[0].NewName)
+		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
+	})
+}
+
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigrationWhenProjectSaveFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_project_save_failure", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
+			tx.AddError(errors.New("forced project save failure"))
+		}
+	}))
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-save-fail"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "forced project save failure")
+	assert.True(t, migration.applyCalled)
+	assert.False(t, migration.commitCalled)
+	assert.True(t, migration.rollbackCalled)
+	assert.False(t, projectStateCommitted)
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+}
+
+func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRenameWhenSourceCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{
+		commitErr: errors.New("source cleanup failed"),
+	}
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-volume-cleanup-fail"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	projectForUpdate := *project
+	journalActive := false
+	projectStateCommitted := false
+	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	})
+	require.NoError(t, err)
+	require.True(t, migration.applyCalled)
+	require.True(t, migration.commitCalled)
+	require.False(t, migration.rollbackCalled)
+	require.True(t, projectStateCommitted)
+	require.NoDirExists(t, originalPath)
+	require.DirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "bar", fromDB.Name)
+	require.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
+}
+
+func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDockerUnavailable(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load()).WithKVService(kvService)
+
+	oldDir := "nginx"
+	projectPath := createComposeProjectDir(t, projectsDir, oldDir)
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-non-rename-recovery-docker-unavailable"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    projectPath,
+		NewPath:    filepath.Join(projectsDir, "web"),
+		OldDirName: &oldDir,
+		NewDirName: "web",
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	envContent := "FOO=bar\n"
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &envContent, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "nginx", updated.Name)
+
+	envBytes, err := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, err)
+	require.Equal(t, envContent, string(envBytes))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnavailable(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load()).WithKVService(kvService)
+
+	oldDir := "nginx"
+	projectPath := createComposeProjectDir(t, projectsDir, oldDir)
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-recovery-docker-unavailable"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    projectPath,
+		NewPath:    filepath.Join(projectsDir, "web"),
+		OldDirName: &oldDir,
+		NewDirName: "web",
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	updated, err := svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.Equal(t, "web", updated.Name)
+	require.NoDirExists(t, projectPath)
+	require.DirExists(t, filepath.Join(projectsDir, "web"))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-1"},
@@ -1194,10 +1678,10 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 
 	eventService := NewEventService(db, nil, nil)
 	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
 
 	originalDirName := "Foo"
-	originalPath := filepath.Join(projectsDir, originalDirName)
-	require.NoError(t, os.MkdirAll(originalPath, 0o755))
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
 
 	targetPath := filepath.Join(projectsDir, "bar")
 	require.NoError(t, os.MkdirAll(targetPath, 0o755))
@@ -1269,6 +1753,183 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
 	assert.Equal(t, "Foo", *fromDB.DirName)
+}
+
+func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunning(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, []container.Summary{
+		{
+			ID:     "app-container",
+			Names:  []string{"/foo-app-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "foo",
+				composeapi.ServiceLabel:    "app",
+				composeapi.ConfigHashLabel: "app-hash",
+				composeapi.WorkingDirLabel: filepath.Join(projectsDir, "Foo"),
+			},
+		},
+	})
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-stale-stopped-running-rename"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
+}
+
+func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVolumeMigration(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	server := newProjectRuntimeDockerServerInternal(t, nil)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+	statusReason := "stale runtime status"
+
+	project := &models.Project{
+		BaseModel:    models.BaseModel{ID: "proj-unknown-stopped-rename"},
+		Name:         "Foo",
+		DirName:      &originalDirName,
+		Path:         originalPath,
+		Status:       models.ProjectStatusUnknown,
+		StatusReason: &statusReason,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	expectedPath := filepath.Join(projectsDir, "bar")
+	assert.Equal(t, "bar", updated.Name)
+	assert.Equal(t, expectedPath, updated.Path)
+	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
+	assert.Nil(t, updated.StatusReason)
+	assert.Equal(t, 1, updated.ServiceCount)
+	assert.Equal(t, 0, updated.RunningCount)
+	assert.NoDirExists(t, originalPath)
+	assert.DirExists(t, expectedPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "bar", fromDB.Name)
+	assert.Equal(t, expectedPath, fromDB.Path)
+	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
+	assert.Nil(t, fromDB.StatusReason)
+	assert.Equal(t, 1, fromDB.ServiceCount)
+	assert.Equal(t, 0, fromDB.RunningCount)
+}
+
+func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+
+	server := newProjectRuntimeDockerServerInternal(t, []container.Summary{
+		{
+			ID:     "app-container",
+			Names:  []string{"/foo-app-1"},
+			Image:  "nginx:alpine",
+			State:  container.StateRunning,
+			Status: "Up 30 seconds",
+			Labels: map[string]string{
+				composeapi.ProjectLabel:    "foo",
+				composeapi.ServiceLabel:    "app",
+				composeapi.ConfigHashLabel: "app-hash",
+				composeapi.WorkingDirLabel: "/host/path/projects/Foo",
+			},
+		},
+	})
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+	statusReason := "stale runtime status"
+
+	project := &models.Project{
+		BaseModel:    models.BaseModel{ID: "proj-unknown-running-rename"},
+		Name:         "Foo",
+		DirName:      &originalDirName,
+		Path:         originalPath,
+		Status:       models.ProjectStatusUnknown,
+		StatusReason: &statusReason,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
+	assert.DirExists(t, originalPath)
+	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	assert.Equal(t, "Foo", fromDB.Name)
+	assert.Equal(t, originalPath, fromDB.Path)
+	assert.Equal(t, models.ProjectStatusUnknown, fromDB.Status)
+	require.NotNil(t, fromDB.StatusReason)
+	assert.Equal(t, statusReason, *fromDB.StatusReason)
 }
 
 func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t *testing.T) {
@@ -4341,6 +5002,21 @@ func createComposeProjectDir(t *testing.T, root, name string) string {
 	return projectPath
 }
 
+func configureProjectRuntimeDockerInternal(t *testing.T, containers []container.Summary) {
+	t.Helper()
+
+	server := newProjectRuntimeDockerServerInternal(t, containers)
+	t.Setenv("DOCKER_HOST", dockerHostFromProjectRuntimeServerURLInternal(t, server.URL))
+}
+
+func projectUpdatePreviewDirsInternal(t *testing.T, projectsDir string) []string {
+	t.Helper()
+
+	matches, err := filepath.Glob(filepath.Join(projectsDir, ".project-update-preview-*"))
+	require.NoError(t, err)
+	return matches
+}
+
 func newProjectRuntimeDockerServerInternal(t *testing.T, containers []container.Summary) *httptest.Server {
 	t.Helper()
 
@@ -4416,4 +5092,1771 @@ func TestResolveRemoveOrphans(t *testing.T) {
 			require.Equal(t, tt.want, resolveRemoveOrphansInternal(tt.gitOpsManaged, tt.options))
 		})
 	}
+}
+
+func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
+
+	originalDirName := "Foo"
+	originalPath := createComposeProjectDir(t, projectsDir, originalDirName)
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-stale-file-revision"},
+		Name:      "Foo",
+		DirName:   &originalDirName,
+		Path:      originalPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
+
+	content := "new\n"
+	_, err = svc.UpdateProject(ctx, project.ID, ptr("bar"), nil, nil, &revision, []projecttypes.ProjectFileChange{
+		{Operation: projecttypes.FileOpCreateFile, RelativePath: "notes.txt", Content: &content},
+	}, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+
+	require.Error(t, err)
+	var conflictErr *common.ProjectFileConflictError
+	require.ErrorAs(t, err, &conflictErr)
+	require.DirExists(t, originalPath)
+	require.NoDirExists(t, filepath.Join(projectsDir, "bar"))
+	require.FileExists(t, filepath.Join(originalPath, "external.txt"))
+	require.NoFileExists(t, filepath.Join(originalPath, "notes.txt"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "Foo", fromDB.Name)
+	require.Equal(t, originalPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirectoryRename(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-recovery"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRollback(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(oldPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-started-volume-recovery"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseStartedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPathsExist(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(oldPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-both-paths"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseStartedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+
+	conflictPaths, err := filepath.Glob(filepath.Join(projectsDir, ".web.rename-conflict-*"))
+	require.NoError(t, err)
+	require.Len(t, conflictPaths, 1)
+	require.FileExists(t, filepath.Join(conflictPaths[0], "compose.yaml"))
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+
+	newName := "web"
+	require.NoError(t, svc.applyProjectRenameIfNeeded(&fromDB, &newName, projectsDir))
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+	require.DirExists(t, newPath)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoryPathsMissing(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-paths"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseStartedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.NoDirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJournalWhenPathExists(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-preserved-target"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	var targetRemoved bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, &DockerClientService{client: newTestDockerClient(t, server)}, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, targetRemoved, "preserved target volume should remain for manual inspection")
+	require.DirExists(t, oldPath)
+}
+
+func TestProjectRenameJournalTargetsCopiedInternal(t *testing.T) {
+	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseStartedInternal))
+	require.False(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateRolledBackInternal))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseSourceCleanupPendingInternal))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseTargetsCopiedInternal))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseOldVolumesRemovedInternal))
+	require.True(t, projectRenameJournalTargetsCopiedInternal(projectRenameJournalPhaseProjectStateCommittedInternal))
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-committed"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.DirExists(t, newPath)
+}
+
+func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourceCleanup(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	oldDir := "nginx"
+	newDir := "web"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-old-volumes-removed"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      filepath.Join(t.TempDir(), newDir),
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := &projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    filepath.Join(t.TempDir(), oldDir),
+		NewPath:    project.Path,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+	}
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{}
+	journalActive := true
+	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
+	require.True(t, migration.commitCalled)
+	require.False(t, journalActive)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	oldDir := "nginx"
+	newDir := "web"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-cleanup-failure"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      filepath.Join(t.TempDir(), newDir),
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := &projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    filepath.Join(t.TempDir(), oldDir),
+		NewPath:    project.Path,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+	}
+	require.NoError(t, svc.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseTargetsCopiedInternal))
+
+	migration := &fakeProjectVolumeRenameMigrationInternal{
+		commitErr: volumes.NewSourceCleanupError("nginx_data", errors.New("source cleanup failed")),
+	}
+	journalActive := true
+	svc.finalizeProjectRenameAfterCommitInternal(ctx, project.ID, migration, journal, &journalActive)
+	require.True(t, migration.commitCalled)
+	require.True(t, journalActive)
+
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRollbackFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			if targetRemoved.Load() {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, "missing-parent", oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-directory-rollback-fails"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "rollback project directory rename")
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+	require.True(t, targetRemoved.Load(), "target volume rollback should still run after directory rollback fails")
+	require.FileExists(t, filepath.Join(newPath, "compose.yaml"), "failed directory rollback leaves the target path for retry")
+	require.NoDirExists(t, oldPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+
+	require.NoError(t, os.MkdirAll(filepath.Dir(oldPath), 0o755))
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err = kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJournalWithoutHelperImage(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var imageInspectCalled atomic.Bool
+	var oldVolumeRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			oldVolumeRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/images/"):
+			imageInspectCalled.Store(true)
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-committed-with-volumes"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.True(t, oldVolumeRemoved.Load(), "expected committed recovery to remove source volume")
+	require.False(t, imageInspectCalled.Load(), "completion recovery should not inspect or pull the copy helper image")
+}
+
+func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWhenTargetMissingAndSourceExists(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var oldVolumeRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			oldVolumeRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-target-preserve-source"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseOldVolumesRemovedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+	require.False(t, oldVolumeRemoved.Load(), "source volume is the only remaining copy and must not be deleted")
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.DirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestoreWhenVolumeRollbackFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoveAttempts atomic.Int32
+	var targetExists atomic.Bool
+	var allowTargetRemove atomic.Bool
+	targetExists.Store(true)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			if !targetExists.Load() {
+				http.NotFound(w, r)
+				return
+			}
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			targetRemoveAttempts.Add(1)
+			if allowTargetRemove.Load() {
+				targetExists.Store(false)
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+			http.Error(w, "volume busy", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-rollback-volume-fail"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+			{
+				Key:     "cache",
+				OldName: "nginx_cache",
+				NewName: "web_cache",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "remove rollback target volume web_cache")
+
+	require.Positive(t, targetRemoveAttempts.Load())
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok, "project-state journal should clear after database rollback succeeds")
+	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok, "target cleanup should keep retry state when removal fails")
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+
+	allowTargetRemove.Store(true)
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, targetExists.Load())
+}
+
+func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDockerUnavailable(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-rollback-cleanup-docker-unavailable"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	cleanup := projectRenameRollbackCleanupInternal{
+		ProjectID: project.ID,
+		OldName:   "nginx",
+		OldPath:   oldPath,
+		NewName:   "web",
+		NewPath:   filepath.Join(projectsDir, "web"),
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(cleanup)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameRollbackCleanupKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "docker service unavailable")
+
+	_, ok, err := kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenSourceAndTargetMissing(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-both-volumes"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.DirExists(t, newPath)
+	require.NoDirExists(t, oldPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCleansRemainingSourcesWhenSomeVolumesExternallyRemoved(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var cacheSourceRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			cacheSourceRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-mixed-missing-volumes"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+			{
+				Key:     "cache",
+				OldName: "nginx_cache",
+				NewName: "web_cache",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.True(t, cacheSourceRemoved.Load(), "source volume should still be cleaned up when the target exists")
+	require.DirExists(t, newPath)
+	require.NoDirExists(t, oldPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWhenCommittedCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var sourceRemoveAttempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			sourceRemoveAttempts.Add(1)
+			http.Error(w, "volume busy", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-source-cleanup-fail"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseProjectStateCommittedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	var cleanupErr *volumes.SourceCleanupError
+	require.ErrorAs(t, err, &cleanupErr)
+	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
+	require.Positive(t, sourceRemoveAttempts.Load())
+
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+	require.DirExists(t, newPath)
+	require.NoDirExists(t, oldPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJournalAfterCleanup(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var sourceRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			sourceRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-source-cleanup-pending-clear"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.True(t, sourceRemoved.Load())
+	require.DirExists(t, newPath)
+	require.NoDirExists(t, oldPath)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendingWhenTargetMissing(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var dataSourceRemoved atomic.Bool
+	var dataTargetRemoved atomic.Bool
+	var cacheTargetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			dataSourceRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			dataTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
+			cacheTargetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-source-cleanup-target-missing"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+			{
+				Key:     "cache",
+				OldName: "nginx_cache",
+				NewName: "web_cache",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	_, ok, err = kvService.Get(ctx, projectRenameRollbackCleanupKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, dataSourceRemoved.Load(), "source volume is the remaining data copy and must not be removed")
+	require.False(t, dataTargetRemoved.Load(), "missing target should not be removed")
+	require.True(t, cacheTargetRemoved.Load(), "safe target volume should still be cleaned during rollback")
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+	require.NotNil(t, fromDB.DirName)
+	require.Equal(t, oldDir, *fromDB.DirName)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJournalWhenCleanupFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var sourceRemoveAttempts atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			sourceRemoveAttempts.Add(1)
+			http.Error(w, "volume busy", http.StatusInternalServerError)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-source-cleanup-pending-fail"},
+		Name:      "web",
+		DirName:   &newDir,
+		Path:      newPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseSourceCleanupPendingInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.Error(t, err)
+	var cleanupErr *volumes.SourceCleanupError
+	require.ErrorAs(t, err, &cleanupErr)
+	require.Equal(t, "nginx_data", cleanupErr.SourceVolume)
+	require.Positive(t, sourceRemoveAttempts.Load())
+
+	raw, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.True(t, ok)
+
+	var updatedJournal projectRenameJournalInternal
+	require.NoError(t, json.Unmarshal([]byte(raw), &updatedJournal))
+	require.Equal(t, projectRenameJournalPhaseSourceCleanupPendingInternal, updatedJournal.Phase)
+	require.DirExists(t, newPath)
+	require.NoDirExists(t, oldPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "web", fromDB.Name)
+	require.Equal(t, newPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDirectoriesAreMissing(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-directories"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	svc := NewProjectService(db, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseStartedInternal,
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	require.NoDirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhenTargetPreserved(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-missing-path-preserved-target"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok)
+	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.NoDirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSourceInspectFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.Error(w, "temporary docker error", http.StatusInternalServerError)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-source-inspect-preserve"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok, "inspect uncertainty should not permanently block future renames")
+	require.False(t, targetRemoved.Load(), "target volume must not be deleted when source inspection is uncertain")
+	require.DirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTargetInspectFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			http.Error(w, "temporary docker error", http.StatusInternalServerError)
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(oldPath, 0o755))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-target-inspect-preserve"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	require.NoError(t, svc.RecoverProjectRenameJournals(ctx))
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok, "inspect uncertainty should not permanently block future renames")
+	require.False(t, targetRemoved.Load(), "target volume must not be deleted when target inspection is uncertain")
+	require.DirExists(t, oldPath)
+	require.NoDirExists(t, newPath)
+
+	var fromDB models.Project
+	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.Equal(t, "nginx", fromDB.Name)
+	require.Equal(t, oldPath, fromDB.Path)
+}
+
+func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPreservedAndDirectoryRolledBack(t *testing.T) {
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
+	ctx := context.Background()
+
+	var targetRemoved atomic.Bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
+			http.NotFound(w, r)
+		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
+			targetRemoved.Store(true)
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	projectsDir := t.TempDir()
+	oldDir := "nginx"
+	newDir := "web"
+	oldPath := filepath.Join(projectsDir, oldDir)
+	newPath := filepath.Join(projectsDir, newDir)
+	require.NoError(t, os.MkdirAll(newPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(newPath, "compose.yaml"), []byte("services: {}\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-rename-preserved-target-retry"},
+		Name:      "nginx",
+		DirName:   &oldDir,
+		Path:      oldPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	kvService := NewKVService(db)
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewProjectService(db, nil, nil, nil, dockerService, nil, config.Load()).WithKVService(kvService)
+	journal := projectRenameJournalInternal{
+		ProjectID:  project.ID,
+		OldName:    "nginx",
+		NewName:    "web",
+		OldPath:    oldPath,
+		NewPath:    newPath,
+		OldDirName: &oldDir,
+		NewDirName: newDir,
+		Phase:      projectRenameJournalPhaseTargetsCopiedInternal,
+		Volumes: []volumes.JournalVolume{
+			{
+				Key:     "data",
+				OldName: "nginx_data",
+				NewName: "web_data",
+			},
+		},
+	}
+	payload, err := json.Marshal(journal)
+	require.NoError(t, err)
+	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
+
+	err = svc.RecoverProjectRenameJournals(ctx)
+	require.NoError(t, err)
+
+	_, ok, err := kvService.Get(ctx, projectRenameJournalKeyInternal(project.ID))
+	require.NoError(t, err)
+	require.False(t, ok, "preserved target data should not leave the project permanently blocked")
+	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
+	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
+	require.NoDirExists(t, newPath)
 }

@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -65,6 +67,18 @@ type GetImageInput struct {
 
 type GetImageOutput struct {
 	Body base.ApiResponse[image.DetailSummary]
+}
+
+type GetImageAttestationsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageName     string `path:"name" doc:"Image ID or image reference"`
+	Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
+	PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
+	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
+}
+
+type GetImageAttestationsOutput struct {
+	Body base.ApiResponse[image.AttestationList]
 }
 
 type RemoveImageInput struct {
@@ -191,6 +205,19 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"ApiKeyAuth": {}},
 		},
 	}, authz.PermImagesList, h.GetImageUsageCounts)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-image-attestations",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{name}/attestations",
+		Summary:     "Get image attestations",
+		Description: "Get in-toto attestation statements attached to a Docker image",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesRead, h.GetImageAttestations)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image",
@@ -363,6 +390,44 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 
 	return &GetImageOutput{
 		Body: base.ApiResponse[image.DetailSummary]{
+			Success: true,
+			Data:    *out,
+		},
+	}, nil
+}
+
+// GetImageAttestations returns in-toto attestation statements attached to an image.
+func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageName, err := url.PathUnescape(input.ImageName)
+	if err != nil {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", input.ImageName))
+	}
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return nil, huma.Error400BadRequest("image name is required")
+	}
+
+	if input.Platform != "" {
+		if _, err := platforms.Parse(input.Platform); err != nil {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("invalid platform %q", input.Platform))
+		}
+	}
+
+	out, err := h.imageService.GetImageAttestations(ctx, imageName, services.ImageAttestationQuery{
+		Platform:         strings.TrimSpace(input.Platform),
+		PredicateType:    strings.TrimSpace(input.PredicateType),
+		IncludeStatement: input.WithStatement,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image attestations: %v", err))
+	}
+
+	return &GetImageAttestationsOutput{
+		Body: base.ApiResponse[image.AttestationList]{
 			Success: true,
 			Data:    *out,
 		},

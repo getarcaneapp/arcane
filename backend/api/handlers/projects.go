@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -667,6 +668,19 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	}, nil
 }
 
+func projectUpdateHTTPErrorInternal(err error) error {
+	if conflictErr, ok := errors.AsType[*volumes.ProjectVolumeRenameConflictError](err); ok {
+		return huma.Error409Conflict(conflictErr.Error())
+	}
+	if inUseErr, ok := errors.AsType[*volumes.ProjectVolumeRenameInUseError](err); ok {
+		return huma.Error409Conflict(inUseErr.Error())
+	}
+	if spaceErr, ok := errors.AsType[*volumes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
+	}
+	return projectFileHTTPError(err)
+}
+
 // projectFileHTTPError maps project file management errors to HTTP errors.
 // It returns nil when err is not a project file error.
 func projectFileHTTPError(err error) error {
@@ -945,7 +959,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return updateErr
 	})
 	if err != nil {
-		if httpErr := projectFileHTTPError(err); httpErr != nil {
+		if httpErr := projectUpdateHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
