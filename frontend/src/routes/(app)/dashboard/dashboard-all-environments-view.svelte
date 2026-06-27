@@ -26,7 +26,8 @@
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		DashboardOverviewSummary,
-		DashboardSnapshot
+		DashboardSnapshot,
+		SystemStats
 	} from '$lib/types/shared';
 	import type { Environment } from '$lib/types/environment';
 	import type { DockerInfo } from '$lib/types/docker';
