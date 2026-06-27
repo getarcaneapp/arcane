@@ -2293,7 +2293,7 @@ func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMap
 	// directory maps to its own host path instead of a single sources-root prefix.
 	if s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			if mounts, merr := dockerutil.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
+			if mounts, merr := appfs.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
 				pm := appfs.NewPathMapperFromMounts(mounts)
 				if !pm.IsNonMatchingMount() {
 					return nil
