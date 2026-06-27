@@ -141,7 +141,7 @@
 	);
 	const showNetworkTab = $derived(hasNetworks || hasPorts);
 	const hasMounts = $derived(!!(container?.mounts && container.mounts.length > 0));
-	const currentEnvId = $derived(environmentStore.selected?.id);
+	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canViewLogs = $derived(hasPermission('containers:logs', currentEnvId));
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
@@ -151,23 +151,29 @@
 	const isContainerPaused = $derived(containerStatus === 'paused');
 
 	let killDialogOpen = $state(false);
+	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
+	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
 
 	async function handlePauseContainer() {
-		if (!container) return;
+		if (!container || isLifecycleActionPending) return;
 		await runContainerLifecycleAction({
 			action: 'pause',
 			containerId: container.id,
-			setStatus: () => {},
+			setStatus: (status) => {
+				lifecycleStatus = status === 'pausing' ? status : '';
+			},
 			onRefresh: () => invalidateAll()
 		});
 	}
 
 	async function handleUnpauseContainer() {
-		if (!container) return;
+		if (!container || isLifecycleActionPending) return;
 		await runContainerLifecycleAction({
 			action: 'unpause',
 			containerId: container.id,
-			setStatus: () => {},
+			setStatus: (status) => {
+				lifecycleStatus = status === 'unpausing' ? status : '';
+			},
 			onRefresh: () => invalidateAll()
 		});
 	}
@@ -329,31 +335,60 @@
 					desktopVariant="adaptive"
 					disableRedeploy={!!container.redeployDisabled}
 				>
-					{#snippet beforeRemoveActions(size, showLabel)}
+					{#snippet beforeRemoveActions(size, showLabel, actionButtonsLifecyclePending)}
 						{#if canPauseContainer && isContainerPaused}
-							<ArcaneButton action="unpause" {size} {showLabel} onclick={handleUnpauseContainer} />
+							<ArcaneButton
+								action="unpause"
+								{size}
+								{showLabel}
+								loading={lifecycleStatus === 'unpausing'}
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={handleUnpauseContainer}
+							/>
 						{:else if canPauseContainer && isContainerRunning}
-							<ArcaneButton action="pause" {size} {showLabel} onclick={handlePauseContainer} />
+							<ArcaneButton
+								action="pause"
+								{size}
+								{showLabel}
+								loading={lifecycleStatus === 'pausing'}
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={handlePauseContainer}
+							/>
 						{/if}
 						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-							<ArcaneButton action="kill" {size} {showLabel} onclick={() => (killDialogOpen = true)} />
+							<ArcaneButton
+								action="kill"
+								{size}
+								{showLabel}
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={() => (killDialogOpen = true)}
+							/>
 						{/if}
 					{/snippet}
 
-					{#snippet beforeRemoveMenuItems()}
+					{#snippet beforeRemoveMenuItems(actionButtonsLifecyclePending)}
 						{#if canPauseContainer && isContainerPaused}
-							<DropdownMenu.Item onclick={handleUnpauseContainer}>
+							<DropdownMenu.Item
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={handleUnpauseContainer}
+							>
 								<PlayIcon class="size-4" />
 								{m.common_unpause()}
 							</DropdownMenu.Item>
 						{:else if canPauseContainer && isContainerRunning}
-							<DropdownMenu.Item onclick={handlePauseContainer}>
+							<DropdownMenu.Item
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={handlePauseContainer}
+							>
 								<PauseIcon class="size-4" />
 								{m.common_pause()}
 							</DropdownMenu.Item>
 						{/if}
 						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
-							<DropdownMenu.Item onclick={() => (killDialogOpen = true)}>
+							<DropdownMenu.Item
+								disabled={isLifecycleActionPending || actionButtonsLifecyclePending}
+								onclick={() => (killDialogOpen = true)}
+							>
 								<ZapIcon class="size-4" />
 								{m.common_kill()}
 							</DropdownMenu.Item>

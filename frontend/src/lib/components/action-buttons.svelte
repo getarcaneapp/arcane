@@ -70,8 +70,8 @@
 		hasBuildDirective?: boolean;
 		disableRedeploy?: boolean;
 		onRefresh?: () => void | Promise<void>;
-		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean]>;
-		beforeRemoveMenuItems?: Snippet;
+		beforeRemoveActions?: Snippet<[ArcaneButtonSize, boolean, boolean]>;
+		beforeRemoveMenuItems?: Snippet<[boolean]>;
 	} = $props();
 
 	let isLoading = $state<LoadingStates>({
@@ -115,6 +115,9 @@
 		validating: !!(isLoading.validating || loading?.validating),
 		refresh: !!(isLoading.refresh || loading?.refresh || refreshLoading)
 	});
+	const isLifecycleActionPending = $derived(
+		!!(uiLoading.start || uiLoading.stop || uiLoading.restart || uiLoading.redeploy || uiLoading.remove)
+	);
 
 	const startMutation = createMutation(() => ({
 		mutationKey: ['action', 'start', type, id],
@@ -476,7 +479,7 @@
 
 				{#if type === 'container'}
 					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-					{@render beforeRemoveActions?.(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
+					{@render beforeRemoveActions?.(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly, isLifecycleActionPending)}
 					{#if canRemove}
 						<ArcaneButton
 							action="remove"
@@ -591,7 +594,7 @@
 
 							{#if type === 'container'}
 								{@render RedeployMenuItem()}
-								{@render beforeRemoveMenuItems?.()}
+								{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
 								{#if canRemove}
 									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 										{m.common_remove()}
@@ -658,7 +661,7 @@
 
 			{#if type === 'container'}
 				{@render RedeployActionButton()}
-				{@render beforeRemoveActions?.('default', true)}
+				{@render beforeRemoveActions?.('default', true, isLifecycleActionPending)}
 				{#if canRemove}
 					<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
 				{/if}
@@ -747,7 +750,7 @@
 
 						{#if type === 'container'}
 							{@render RedeployMenuItem()}
-							{@render beforeRemoveMenuItems?.()}
+							{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
 							{#if canRemove}
 								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
 									{m.common_remove()}
