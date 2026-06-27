@@ -368,8 +368,8 @@
 			<div class="flex items-center justify-between gap-2">
 				<Input class="h-9" placeholder={m.volume_search_files()} bind:value={backupFilesSearch} />
 				<div class="flex items-center gap-2">
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel="Select all" />
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel="Clear" />
+					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel={m.common_select_all()} />
+					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel={m.common_clear()} />
 				</div>
 			</div>
 

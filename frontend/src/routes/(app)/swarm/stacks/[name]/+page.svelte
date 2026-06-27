@@ -233,7 +233,7 @@
 			{#if !hasLiveStack && canViewSource}
 				<Card.Root variant="subtle">
 					<Card.Content class="p-4 text-sm">
-						This stack is not currently deployed, but Arcane still found its saved source files.
+						{m.swarm_stacks_not_deployed_files_found()}
 					</Card.Content>
 				</Card.Root>
 			{/if}

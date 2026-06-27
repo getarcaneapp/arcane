@@ -3301,5 +3301,8 @@
 	"account_role_environment": "Environment: {env}",
 	"account_global_scope": "Global scope",
 	"account_via_sso": "· via SSO",
-	"account_signout_other_desc": "Revokes every active session except this one. Useful if you forgot to log out somewhere."
+	"account_signout_other_desc": "Revokes every active session except this one. Useful if you forgot to log out somewhere.",
+	"common_select_all": "Select all",
+	"common_clear": "Clear",
+	"swarm_stacks_not_deployed_files_found": "This stack is not currently deployed, but Arcane still found its saved source files."
 }
