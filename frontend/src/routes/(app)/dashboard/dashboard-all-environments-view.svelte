@@ -1,10 +1,3 @@
-<script module lang="ts">
-	import type { SystemStats } from '$lib/types/shared';
-	type CachedStats = { stats: SystemStats; timestamp: number };
-	const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-	const cachedStatsByEnvironmentId: Record<string, CachedStats> = {};
-</script>
-
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -26,6 +19,7 @@
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
+	import type { SystemStats } from '$lib/types/shared';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
@@ -156,18 +150,11 @@
 		};
 	}
 
-	function createEmptyLiveStatsState(environmentId: string): EnvironmentLiveStatsState {
-		const cached = cachedStatsByEnvironmentId[environmentId];
-		const isValid = cached && Date.now() - cached.timestamp < CACHE_TTL_MS;
-		if (cached && !isValid) {
-			delete cachedStatsByEnvironmentId[environmentId];
-		}
-		const stats = isValid ? cached.stats : null;
-
+	function createEmptyLiveStatsState(): EnvironmentLiveStatsState {
 		return {
-			stats,
-			loading: !stats,
-			hasLoaded: !!stats,
+			stats: null,
+			loading: true,
+			hasLoaded: false,
 			client: null
 		};
 	}
@@ -179,7 +166,7 @@
 		}
 
 		if (!liveStatsByEnvironmentId[environment.id]) {
-			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState(environment.id);
+			liveStatsByEnvironmentId[environment.id] = createEmptyLiveStatsState();
 		}
 
 		const liveStatsState = liveStatsByEnvironmentId[environment.id];
@@ -203,7 +190,6 @@
 				liveStatsState.stats = stats;
 				liveStatsState.hasLoaded = true;
 				liveStatsState.loading = false;
-				cachedStatsByEnvironmentId[environment.id] = { stats, timestamp: Date.now() };
 			},
 			onError: (error) => {
 				console.error(`Stats websocket error for environment ${environment.id}:`, error);
@@ -792,38 +778,13 @@
 
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<EnvironmentsIcon class="size-3.5" />
-						<span>{m.environments_title()}</span>
+				{#each [1, 2, 3, 4] as tile (tile)}
+					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+						<Skeleton class="h-3 w-24" />
+						<Skeleton class="mt-2 h-7 w-16" />
+						<Skeleton class="mt-1.5 h-3.5 w-32" />
 					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<ContainersIcon class="size-3.5" />
-						<span>{m.containers_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<ImagesIcon class="size-3.5" />
-						<span>{m.images_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-10" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<VolumesIcon class="size-3.5" />
-						<span>{m.dashboard_all_storage_title()}</span>
-					</div>
-					<Skeleton class="mt-2 h-7 w-16" />
-					<Skeleton class="mt-1.5 h-3.5 w-28" />
-				</div>
+				{/each}
 			</div>
 		{:else}
 			{@const summary = boardState.summary}

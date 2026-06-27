@@ -195,9 +195,9 @@ function createDashboardStore() {
 		}
 	}
 
-	async function refreshInternal(generation = streamGeneration) {
+	async function refreshInternal() {
 		reconcileEnvironmentsInternal();
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId, generation)));
+		await Promise.all(Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId)));
 	}
 
 	async function connectStreamInternal(generation: number) {
@@ -384,9 +384,7 @@ function createDashboardStore() {
 			debugAllGood = nextDebugAllGood;
 			await environmentStore.ready;
 			reconcileEnvironmentsInternal();
-			const generation = nextGenerationInternal();
-			void refreshInternal(generation);
-			void connectStreamInternal(generation);
+			void connectStreamInternal(nextGenerationInternal());
 			unsubscribeEnvironment = environmentStore.subscribeSelected(() => {
 				reconcileEnvironmentsInternal();
 			});
