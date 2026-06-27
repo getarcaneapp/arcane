@@ -1,6 +1,13 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { ImageSummaryDto, ImageUsageCounts, ImageUpdateInfoDto, ImageBuildRecord } from '$lib/types/docker';
+import type {
+	ImageSummaryDto,
+	ImageUsageCounts,
+	ImageUpdateInfoDto,
+	ImageBuildRecord,
+	ImageAttestationListDto,
+	ImageAttestationRequestOptions
+} from '$lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/automation';
 import type { PruneImagesOptions } from '$lib/types/automation';
@@ -42,6 +49,23 @@ class ImageService extends BaseAPIService {
 
 	async getImageForEnvironment(environmentId: string, imageId: string): Promise<any> {
 		return this.handleResponse(this.api.get(`/environments/${environmentId}/images/${imageId}`));
+	}
+
+	async getImageAttestationsForEnvironment(
+		environmentId: string,
+		imageId: string,
+		options?: ImageAttestationRequestOptions
+	): Promise<ImageAttestationListDto> {
+		const params: Record<string, string> = {};
+		if (options?.platform) params['platform'] = options.platform;
+		if (options?.predicateType) params['predicateType'] = options.predicateType;
+		if (options?.statement) params['statement'] = 'true';
+
+		return this.handleResponse(
+			this.api.get(`/environments/${environmentId}/images/${imageId}/attestations`, {
+				params
+			})
+		);
 	}
 
 	async pullImage(imageName: string, tag: string = 'latest', auth?: any): Promise<any> {

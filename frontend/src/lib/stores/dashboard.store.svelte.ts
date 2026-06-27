@@ -197,7 +197,9 @@ function createDashboardStore() {
 
 	async function refreshInternal(generation = streamGeneration) {
 		reconcileEnvironmentsInternal();
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId, generation)));
+		await Promise.all(
+			Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId, generation))
+		);
 	}
 
 	async function connectStreamInternal(generation: number) {

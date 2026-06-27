@@ -415,6 +415,36 @@ export interface ImageDetailSummaryDto {
 	};
 }
 
+export interface ImageAttestationSubjectDto {
+	name: string;
+	digest: Record<string, string>;
+}
+
+export interface ImageAttestationDto {
+	digest: string;
+	mediaType: string;
+	artifactType?: string;
+	predicateType: string;
+	statementType?: string;
+	subject: ImageAttestationSubjectDto[];
+	platform?: string;
+	size: number;
+	statement?: unknown;
+}
+
+export interface ImageAttestationListDto {
+	imageRef: string;
+	subjectDigest: string;
+	platform?: string;
+	attestations: ImageAttestationDto[];
+}
+
+export interface ImageAttestationRequestOptions {
+	platform?: string;
+	predicateType?: string;
+	statement?: boolean;
+}
+
 export type ImageUpdateData = ImageUpdateInfoDto;
 
 export type ImageBuildStatus = 'running' | 'success' | 'failed';

@@ -1,6 +1,7 @@
 package image
 
 import (
+	"encoding/json"
 	"math"
 	"strings"
 	"time"
@@ -159,6 +160,30 @@ type Summary struct {
 	//
 	// Required: false
 	VulnerabilityScan *vulnerability.ScanSummary `json:"vulnerabilityScan,omitempty"`
+}
+
+type AttestationList struct {
+	ImageRef      string        `json:"imageRef"`
+	SubjectDigest string        `json:"subjectDigest"`
+	Platform      string        `json:"platform,omitempty"`
+	Attestations  []Attestation `json:"attestations"`
+}
+
+type Attestation struct {
+	Digest        string               `json:"digest"`
+	MediaType     string               `json:"mediaType"`
+	ArtifactType  string               `json:"artifactType,omitempty"`
+	PredicateType string               `json:"predicateType"`
+	StatementType string               `json:"statementType,omitempty"`
+	Subject       []AttestationSubject `json:"subject"`
+	Platform      string               `json:"platform,omitempty"`
+	Size          int64                `json:"size"`
+	Statement     json.RawMessage      `json:"statement,omitempty"`
+}
+
+type AttestationSubject struct {
+	Name   string            `json:"name"`
+	Digest map[string]string `json:"digest"`
 }
 
 type PruneReport struct {
@@ -553,7 +578,6 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 			}
 		}
 		out.Config.WorkingDir = src.Config.WorkingDir
-		//nolint:staticcheck // SA1019: deprecated field intentionally copied for Docker Windows image compatibility
 		out.Config.ArgsEscaped = src.Config.ArgsEscaped
 	}
 

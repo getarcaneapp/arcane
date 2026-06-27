@@ -1,5 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
+	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { format } from 'date-fns';
@@ -20,15 +21,19 @@
 		isVulnerabilityScanInProgress
 	} from '$lib/utils/docker';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
+	import ImageAttestationsPanel from './image-attestations-panel.svelte';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import type { VulnerabilityScanResult } from '$lib/types/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { toastVulnerabilityScanStatus } from '$lib/utils/vulnerability';
-	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, CpuIcon, InfoIcon, SettingsIcon, HashIcon } from '$lib/icons';
+	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ShieldCheckIcon } from '$lib/icons';
+	import { cn } from '$lib/utils';
 
 	let { data } = $props();
 	let { image } = $derived(data);
+
+	let securityTab = $state('attestations');
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
@@ -254,170 +259,96 @@
 	});
 </script>
 
-<ResourceDetailLayout
-	backUrl="/images"
-	backLabel={m.images_title()}
-	title={image?.repoTags?.[0] || shortId}
-	subtitle={shortId}
-	{actions}
->
+<ResourceDetailLayout backUrl="/images" backLabel={m.images_title()} title={image?.repoTags?.[0] || shortId} {actions}>
 	{#if image}
 		<div class="space-y-6">
+			{#snippet tile(label: string, value: string, opts?: { mono?: boolean; class?: string })}
+				<Card.Root variant="subtle" class={opts?.class}>
+					<Card.Content class="flex flex-col gap-1 p-4">
+						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
+						<div class={cn('text-foreground text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
+							{value}
+						</div>
+					</Card.Content>
+				</Card.Root>
+			{/snippet}
+
+			<div class="bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3">
+				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+					<VolumesIcon class="size-4 shrink-0" />
+					<span>{imageSize}</span>
+				</div>
+				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+					<ClockIcon class="size-4 shrink-0" />
+					<span>{createdDate}</span>
+				</div>
+				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+					<CpuIcon class="size-4 shrink-0" />
+					<span>{architecture} · {osName}</span>
+				</div>
+			</div>
+
 			{#if hasTags}
-				<div class="border-border/60 bg-muted/30 rounded-xl border px-4 py-3">
-					<div class="flex flex-wrap items-center gap-2">
-						<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
-							<TagIcon class="size-4" />
-							{m.common_tags()}
-						</span>
-						{#each repoTags as tag (tag)}
-							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title="Click to select">
-								{tag}
-							</Badge>
+				<div class="flex flex-wrap items-center gap-2">
+					<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+						<TagIcon class="size-4" />
+						{m.common_tags()}
+					</span>
+					{#each repoTags as tag (tag)}
+						<Badge variant="secondary" class="cursor-pointer text-xs select-all" title="Click to select">
+							{tag}
+						</Badge>
+					{/each}
+				</div>
+			{/if}
+
+			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+				{@render tile(m.common_id(), image?.id || m.common_na(), { mono: true, class: 'sm:col-span-2 lg:col-span-3' })}
+				{#if image?.dockerVersion}
+					{@render tile(m.common_docker_version(), image.dockerVersion)}
+				{/if}
+				{#if image?.author}
+					{@render tile(m.common_author(), image.author)}
+				{/if}
+				{#if image.config?.workingDir}
+					{@render tile(m.common_working_dir(), image.config.workingDir, { mono: true })}
+				{/if}
+			</div>
+
+			{#if hasEnv}
+				<div class="space-y-4 border-t pt-6">
+					<h3 class="text-sm font-medium">{m.common_environment_variables()}</h3>
+					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+						{#each envVars as env (env)}
+							{#if env.includes('=')}
+								{@const [key, ...valueParts] = env.split('=')}
+								{@render tile(key ?? '', valueParts.join('='), { mono: true })}
+							{:else}
+								{@render tile('ENV_VAR', env, { mono: true })}
+							{/if}
 						{/each}
 					</div>
 				</div>
 			{/if}
 
-			<Card.Root>
-				<Card.Header icon={InfoIcon}>
-					<div class="flex flex-col space-y-1.5">
-						<Card.Title>{m.common_details_title({ resource: m.resource_image_cap() })}</Card.Title>
-						<Card.Description>{m.common_details_description({ resource: m.resource_image() })}</Card.Description>
-					</div>
-				</Card.Header>
-				<Card.Content class="p-5">
-					<div class="grid gap-3 sm:grid-cols-2">
-						<div class="border-border/60 bg-muted/30 rounded-2xl border p-4 sm:col-span-2">
-							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
-								<HashIcon class="text-muted-foreground size-4" />
-								{m.common_id()}
-							</div>
-							<p
-								class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-								title="Click to select"
-							>
-								{image?.id || m.common_na()}
-							</p>
-						</div>
-
-						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-								<VolumesIcon class="size-4 text-blue-500" />
-								{m.common_size()}
-							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{imageSize}</p>
-						</div>
-
-						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-								<ClockIcon class="size-4 text-green-500" />
-								{m.common_created()}
-							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{createdDate}</p>
-						</div>
-
-						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-								<CpuIcon class="size-4 text-orange-500" />
-								{m.common_architecture()}
-							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{architecture}</p>
-						</div>
-
-						<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-							<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-								<LayersIcon class="size-4 text-indigo-500" />
-								{m.images_os()}
-							</div>
-							<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">{osName}</p>
-						</div>
-
-						{#if image?.dockerVersion}
-							<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-									<InfoIcon class="size-4 text-purple-500" />
-									{m.common_docker_version()}
-								</div>
-								<p class="mt-2 cursor-pointer text-sm font-semibold select-all" title="Click to select">
-									{image.dockerVersion}
-								</p>
-							</div>
-						{/if}
-
-						{#if image?.author}
-							<div class="border-border/60 bg-muted/30 rounded-xl border p-3">
-								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-									<InfoIcon class="size-4 text-pink-500" />
-									{m.common_author()}
-								</div>
-								<p class="mt-2 cursor-pointer text-sm font-semibold break-all select-all" title="Click to select">
-									{image.author}
-								</p>
-							</div>
-						{/if}
-
-						{#if image.config?.workingDir}
-							<div class="border-border/60 bg-muted/30 rounded-xl border p-3 sm:col-span-2">
-								<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold">
-									<InfoIcon class="size-4 text-amber-500" />
-									{m.common_working_dir()}
-								</div>
-								<p
-									class="mt-2 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-									title="Click to select"
-								>
-									{image.config.workingDir}
-								</p>
-							</div>
-						{/if}
-					</div>
-
-					{#if hasEnv}
-						<div class="border-border/60 bg-muted/30 mt-4 rounded-2xl border p-4">
-							<div class="flex flex-wrap items-start justify-between gap-3">
-								<div>
-									<div class="text-muted-foreground flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
-										<SettingsIcon class="size-4" />
-										{m.common_environment_variables()}
-									</div>
-								</div>
-							</div>
-							<div class="mt-4 grid grid-cols-1 gap-2 sm:grid-cols-2">
-								{#each envVars as env (env)}
-									{#if env.includes('=')}
-										{@const [key, ...valueParts] = env.split('=')}
-										{@const value = valueParts.join('=')}
-										<div class="border-border/50 bg-muted/20 rounded-lg border px-3 py-2">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-all uppercase">
-												{key}
-											</div>
-											<div
-												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
-												title="Click to select"
-											>
-												{value}
-											</div>
-										</div>
-									{:else}
-										<div class="border-border/50 bg-muted/20 rounded-lg border px-3 py-2">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">ENV_VAR</div>
-											<div
-												class="text-foreground mt-1 cursor-pointer font-mono text-xs font-medium break-all select-all"
-												title="Click to select"
-											>
-												{env}
-											</div>
-										</div>
-									{/if}
-								{/each}
-							</div>
-						</div>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
+			<div class="space-y-4 border-t pt-6">
+				<h3 class="flex items-center gap-2 text-sm font-medium">
+					<ShieldCheckIcon class="size-4" />
+					{m.security_title()}
+				</h3>
+				<Tabs.Root bind:value={securityTab} class="space-y-4">
+					<Tabs.List>
+						<Tabs.Trigger value="attestations">{m.images_attestations_title()}</Tabs.Trigger>
+						<Tabs.Trigger value="vulnerabilities">{m.vuln_title()}</Tabs.Trigger>
+					</Tabs.List>
+					<Tabs.Content value="attestations">
+						<ImageAttestationsPanel {image} />
+					</Tabs.Content>
+					<Tabs.Content value="vulnerabilities">
+						<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
+					</Tabs.Content>
+				</Tabs.Root>
+			</div>
 		</div>
 	{:else}
 		<div class="py-12 text-center">

@@ -1,5 +1,3 @@
-
-
 <script lang="ts">
 	import { goto, invalidateAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
@@ -26,7 +24,8 @@
 		DashboardEnvironmentCardState,
 		DashboardEnvironmentOverview,
 		DashboardOverviewSummary,
-		DashboardSnapshot
+		DashboardSnapshot,
+		SystemStats
 	} from '$lib/types/shared';
 	import type { Environment } from '$lib/types/environment';
 	import type { DockerInfo } from '$lib/types/docker';
@@ -779,12 +778,7 @@
 
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				{#each [
-					{ icon: EnvironmentsIcon, label: m.environments_title() },
-					{ icon: ContainersIcon, label: m.containers_title() },
-					{ icon: ImagesIcon, label: m.images_title() },
-					{ icon: VolumesIcon, label: m.dashboard_all_storage_title() }
-				] as tile (tile.label)}
+				{#each [{ icon: EnvironmentsIcon, label: m.environments_title() }, { icon: ContainersIcon, label: m.containers_title() }, { icon: ImagesIcon, label: m.images_title() }, { icon: VolumesIcon, label: m.dashboard_all_storage_title() }] as tile (tile.label)}
 					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
 						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 							<tile.icon class="size-3.5" />
