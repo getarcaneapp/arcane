@@ -247,7 +247,7 @@ func TestActivityServicePruneHistoryByAgeAndCountInternal(t *testing.T) {
 		"updated_at": oldTime,
 	}).Error)
 
-	for i := 0; i < 3; i++ {
+	for i := range 3 {
 		item, startErr := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "remote-1", Type: models.ActivityTypeResourceAction})
 		require.NoError(t, startErr)
 		_, completeErr := service.CompleteActivity(ctx, item.ID, models.ActivityStatusSuccess, "done", nil)

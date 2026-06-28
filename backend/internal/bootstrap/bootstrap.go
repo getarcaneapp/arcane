@@ -14,8 +14,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/joho/godotenv"
 	"github.com/moby/moby/client"
+	"github.com/subosito/gotenv"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
@@ -32,7 +32,9 @@ import (
 )
 
 func Bootstrap(ctx context.Context) error {
-	_ = godotenv.Load()
+	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("load .env: %w", err)
+	}
 	cfg := config.Load()
 	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
 		PUID:              cfg.PUID,

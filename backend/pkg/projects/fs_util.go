@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 func ResolveConfiguredContainerDirectory(configuredPath, defaultPath string) string {

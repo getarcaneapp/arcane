@@ -3949,7 +3949,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	projectsRoot := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
-	for i := 0; i < 25; i++ {
+	for i := range 25 {
 		projectPath := createComposeProjectDir(t, projectsRoot, fmt.Sprintf("stopped-%02d", i))
 		require.NoError(t, db.Create(&models.Project{
 			BaseModel: models.BaseModel{ID: fmt.Sprintf("project-%02d", i)},

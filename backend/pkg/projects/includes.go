@@ -8,7 +8,7 @@ import (
 	"strings"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // expandEnvVarsInternal expands ${VAR} and $VAR references in a string using the provided env map.

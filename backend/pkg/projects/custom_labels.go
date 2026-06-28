@@ -13,7 +13,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 const (

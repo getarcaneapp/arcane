@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	composetemplate "github.com/compose-spec/compose-go/v2/template"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 func composeVolumeKeysWithExplicitNameInternal(composeFiles []string) (map[string]struct{}, error) {

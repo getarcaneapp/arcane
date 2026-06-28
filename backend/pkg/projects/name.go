@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/compose-spec/compose-go/v2/loader"
-	"github.com/goccy/go-yaml"
+	"go.yaml.in/yaml/v4"
 )
 
 // ComposeContentProjectName returns the normalized top-level `name:` from

@@ -463,17 +463,17 @@ func TestSQLiteMigrations_DownUpRoundTrip(t *testing.T) {
 // '-- +goose Down' marker (the Up section) and the text after it (the Down section).
 func gooseUpDownSectionsInternal(content string) (up, down string) {
 	const downMarker = "-- +goose Down"
-	idx := strings.Index(content, downMarker)
-	if idx < 0 {
+	before, after, ok := strings.Cut(content, downMarker)
+	if !ok {
 		return content, ""
 	}
-	return content[:idx], content[idx+len(downMarker):]
+	return before, after
 }
 
 // sectionHasSQLInternal reports whether a migration section contains at least one
 // non-comment, non-blank line (i.e. an actual statement rather than only comments).
 func sectionHasSQLInternal(section string) bool {
-	for _, line := range strings.Split(section, "\n") {
+	for line := range strings.SplitSeq(section, "\n") {
 		trimmed := strings.TrimSpace(line)
 		if trimmed == "" || strings.HasPrefix(trimmed, "--") {
 			continue

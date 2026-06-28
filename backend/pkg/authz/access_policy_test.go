@@ -179,8 +179,8 @@ func frontendRoutePathInternal(routesRoot, url string) string {
 			parts[i] = "[" + strings.Trim(part, "{}") + "]"
 			continue
 		}
-		if strings.HasPrefix(part, ":") {
-			parts[i] = "[" + strings.TrimPrefix(part, ":") + "]"
+		if after, ok := strings.CutPrefix(part, ":"); ok {
+			parts[i] = "[" + after + "]"
 		}
 	}
 	return filepath.Join(append([]string{routesRoot}, parts...)...)
