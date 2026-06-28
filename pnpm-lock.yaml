@@ -141,8 +141,8 @@ importers:
         specifier: ^6.0.0
         version: 6.0.0
       '@xyflow/svelte':
-        specifier: ^1.6.0
-        version: 1.6.0(svelte@5.56.4)
+        specifier: ^1.6.1
+        version: 1.6.1(svelte@5.56.4)
       ajv:
         specifier: '>=8.18.0'
         version: 8.20.0
@@ -1209,8 +1209,8 @@ packages:
     cpu: [x64]
     os: [win32]
 
-  '@svelte-put/shortcut@4.1.0':
-    resolution: {integrity: sha512-wImNEIkbxAIWFqlfuhcbC+jRPDeRa/uJGIXHMEVVD+jqL9xCwWNnkGQJ6Qb2XVszuRLHlb8SGZDL3Io/h3vs8w==}
+  '@svelte-put/shortcut@4.2.0':
+    resolution: {integrity: sha512-hqNLo4yEc++SLgAkZUvuwMxIAsii9qjQtTuzfcYVf3xRxa+0HFcfaWFK7LdU3l+15s9SYVNbPB0qQj9CHFqSuw==}
     peerDependencies:
       svelte: ^5.1.0
 
@@ -1642,13 +1642,13 @@ packages:
   '@xterm/xterm@6.0.0':
     resolution: {integrity: sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==}
 
-  '@xyflow/svelte@1.6.0':
-    resolution: {integrity: sha512-msCT95OqTThh7gWhdFJ03Qzhc0Q8QYfA8K03M4I+KTtHdvatoTuRo9ofkFHJDbMfS243y+fOs5TCvU9T1kEUUA==}
+  '@xyflow/svelte@1.6.1':
+    resolution: {integrity: sha512-o84RpjWMAs5tXjYPj6PUjMccBgeF4TFA8DllBqMSbnhJD3ZxLhttp4NmdHZAIM1T5bK5NAzCat+M37uT/9+rTw==}
     peerDependencies:
       svelte: ^5.25.0
 
-  '@xyflow/system@0.0.77':
-    resolution: {integrity: sha512-qCDCMCQAAgUu8yHnhloHG9F5mwPX5E+Wl8McpYIOPSSXfzFJJoZcwOcsDiAjitVKIg2de1WmJbCHfpcvxprsgg==}
+  '@xyflow/system@0.0.78':
+    resolution: {integrity: sha512-lY0z2qP33fUhTva9Vaxrk0lqZta2pkbxB1trHAx1omnJqRtPvDlAQYV2r5fhS6AdpkulYmbNW0svy+A4/t4B/g==}
 
   accepts@1.3.8:
     resolution: {integrity: sha512-PYAthTa2m2VKxuvSD3DPC/Gy+U+sOA1LAuT8mkmRuvw+NACSaeXEQ+NHcVF7rONl6qcaxV3Uuemwawk+7+SJLw==}
@@ -3808,7 +3808,7 @@ snapshots:
   '@svelte-check-rs/win32-x64@0.10.1':
     optional: true
 
-  '@svelte-put/shortcut@4.1.0(svelte@5.56.4)':
+  '@svelte-put/shortcut@4.2.0(svelte@5.56.4)':
     dependencies:
       svelte: 5.56.4
 
@@ -4143,13 +4143,13 @@ snapshots:
 
   '@xterm/xterm@6.0.0': {}
 
-  '@xyflow/svelte@1.6.0(svelte@5.56.4)':
+  '@xyflow/svelte@1.6.1(svelte@5.56.4)':
     dependencies:
-      '@svelte-put/shortcut': 4.1.0(svelte@5.56.4)
-      '@xyflow/system': 0.0.77
+      '@svelte-put/shortcut': 4.2.0(svelte@5.56.4)
+      '@xyflow/system': 0.0.78
       svelte: 5.56.4
 
-  '@xyflow/system@0.0.77':
+  '@xyflow/system@0.0.78':
     dependencies:
       '@types/d3-drag': 3.0.7
       '@types/d3-interpolate': 3.0.4
