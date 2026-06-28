@@ -46,7 +46,7 @@
     "prettier": "^3.8.4",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.0",
-    "svelte": "^5.56.3",
+    "svelte": "^5.56.4",
     "svelte-codemirror-editor": "^2.1.0",
     "svelte-easy-crop": "^5.0.1",
     "yaml": "^2.9.0"
