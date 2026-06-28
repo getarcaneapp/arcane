@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import * as Avatar from '$lib/components/ui/avatar/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
@@ -60,9 +61,7 @@
 											<!-- Gravatar failed, show fallback -->
 										{/await}
 									{/if}
-									<Avatar.Fallback
-										class="bg-primary text-primary-foreground rounded-lg text-sm font-semibold"
-									>
+									<Avatar.Fallback class="bg-primary text-primary-foreground rounded-lg text-sm font-semibold">
 										{user.displayName?.charAt(0).toUpperCase()}
 									</Avatar.Fallback>
 								</Avatar.Root>
@@ -109,9 +108,7 @@
 										<!-- Gravatar failed, show fallback -->
 									{/await}
 								{/if}
-								<Avatar.Fallback
-									class="bg-primary text-primary-foreground rounded-lg text-xs font-semibold"
-								>
+								<Avatar.Fallback class="bg-primary text-primary-foreground rounded-lg text-xs font-semibold">
 									{user.displayName?.charAt(0).toUpperCase()}
 								</Avatar.Fallback>
 							</Avatar.Root>
@@ -133,7 +130,7 @@
 						}}
 					>
 						<UserIcon class="text-muted-foreground size-4 shrink-0" />
-						<span>Account</span>
+						<span>{m.common_account()}</span>
 					</button>
 
 					{#if !autoLoginEnabled}
@@ -143,7 +140,7 @@
 								class="hover:bg-destructive/10 text-destructive flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors"
 							>
 								<LogoutIcon class="size-4 shrink-0" />
-								<span>Log out</span>
+								<span>{m.common_log_out()}</span>
 							</button>
 						</form>
 					{/if}

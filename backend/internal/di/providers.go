@@ -114,8 +114,9 @@ func provideContainerRegistryServiceInternal(db *database.DB, docker *services.D
 	}, kv)
 }
 
-func provideProjectServiceInternal(db *database.DB, settings *services.SettingsService, event *services.EventService, image *services.ImageService, docker *services.DockerClientService, build *services.BuildService, environment *services.EnvironmentService, cfg *config.Config) *services.ProjectService {
+func provideProjectServiceInternal(db *database.DB, settings *services.SettingsService, event *services.EventService, image *services.ImageService, docker *services.DockerClientService, build *services.BuildService, kv *services.KVService, environment *services.EnvironmentService, cfg *config.Config) *services.ProjectService {
 	return services.NewProjectService(db, settings, event, image, docker, build, cfg).
+		WithKVService(kv).
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }
 

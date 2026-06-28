@@ -9,7 +9,7 @@
 	bind:ref
 	data-slot="dialog-overlay"
 	class={cn(
-		'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[var(--arcane-z-overlay)] bg-white/10 backdrop-blur-md dark:bg-black/60',
+		'data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fill-mode-forwards data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 fixed inset-0 z-[var(--arcane-z-overlay)] bg-white/10 backdrop-blur-md dark:bg-black/60',
 		className
 	)}
 	{...restProps}

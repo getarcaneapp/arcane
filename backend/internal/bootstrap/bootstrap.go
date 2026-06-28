@@ -161,6 +161,9 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
 	if appServices.Project != nil {
+		if err := appServices.Project.RecoverProjectRenameJournals(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
+		}
 		go appServices.Project.BackfillProjectImageRefs(appCtx)
 	}
 

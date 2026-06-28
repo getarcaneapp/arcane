@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -104,7 +105,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.Equal(t, updated.EnvContent, source.EnvContent)
 
 	// Test with additional files
-	updated, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
 		Files: []swarmtypes.SyncFile{
 			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},
@@ -252,6 +253,61 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 			require.Equal(t, []string{"updated"}, resp.Warnings)
 			require.Equal(t, 1, updateCalls)
 			tt.assertMode(t, updatedSpec.Mode)
+		})
+	}
+}
+
+// TestSwarmService_BuildNodeAgentStatusInternal covers the state classification.
+// The regression case is a poll-mode agent: its persisted env.Status never leaves
+// "pending" (HandlePoll only updates the in-memory poll registry), so a fresh
+// lastPollAt must still resolve to "connected" rather than "pending".
+func TestSwarmService_BuildNodeAgentStatusInternal(t *testing.T) {
+	const nodeID = "node-abc"
+	now := time.Now()
+	svc := &SwarmService{}
+
+	tests := []struct {
+		name    string
+		env     *models.Environment
+		runtime swarmNodeAgentRuntime
+		want    swarmtypes.NodeAgentState
+	}{
+		{
+			name:    "poll-mode check-in reports connected despite stale pending status",
+			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			runtime: swarmNodeAgentRuntime{lastPollAt: &now},
+			want:    swarmtypes.NodeAgentStateConnected,
+		},
+		{
+			name:    "no runtime activity and never paired stays pending",
+			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			runtime: swarmNodeAgentRuntime{},
+			want:    swarmtypes.NodeAgentStatePending,
+		},
+		{
+			name:    "tunnel with mismatched identity reports mismatched",
+			env:     &models.Environment{Status: string(models.EnvironmentStatusOnline)},
+			runtime: swarmNodeAgentRuntime{connected: true, identity: &SwarmNodeIdentity{SwarmNodeID: "other-node", SwarmActive: true}},
+			want:    swarmtypes.NodeAgentStateMismatched,
+		},
+		{
+			name:    "tunnel connected without identity probe reports connected",
+			env:     &models.Environment{Status: string(models.EnvironmentStatusPending)},
+			runtime: swarmNodeAgentRuntime{connected: true},
+			want:    swarmtypes.NodeAgentStateConnected,
+		},
+		{
+			name:    "previously seen agent with no activity reports offline",
+			env:     &models.Environment{Status: string(models.EnvironmentStatusOnline), LastSeen: &now},
+			runtime: swarmNodeAgentRuntime{},
+			want:    swarmtypes.NodeAgentStateOffline,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := svc.buildNodeAgentStatusInternal(nodeID, tt.env, tt.runtime)
+			require.Equal(t, tt.want, got.State)
 		})
 	}
 }

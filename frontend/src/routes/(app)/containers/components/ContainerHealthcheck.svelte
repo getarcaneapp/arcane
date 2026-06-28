@@ -214,7 +214,7 @@
 						{:else}
 							<pre
 								class="text-foreground cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap select-all dark:bg-white/5"
-								title="Click to select">{testCommand.text}</pre>
+								title={m.common_click_to_select()}>{testCommand.text}</pre>
 						{/if}
 					</Card.Content>
 				</Card.Root>

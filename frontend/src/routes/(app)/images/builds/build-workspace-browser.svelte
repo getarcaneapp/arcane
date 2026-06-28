@@ -304,9 +304,9 @@
 				</div>
 			{:else}
 				<div class="space-y-2">
-					<Label>File contents</Label>
+					<Label>{m.build_file_contents()}</Label>
 					<Textarea rows={18} bind:value={editorContent} class="font-mono text-xs" />
-					<p class="text-muted-foreground text-xs">Saving will overwrite the file contents.</p>
+					<p class="text-muted-foreground text-xs">{m.build_saving_overwrite()}</p>
 				</div>
 			{/if}
 		</div>

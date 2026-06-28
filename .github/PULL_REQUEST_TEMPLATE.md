@@ -1,6 +1,7 @@
 ## Checklist
 
 - [ ] This PR is **not** opened from my fork’s `main` branch
+- [ ] All new user-facing strings are translated via Paraglide (`m.*()`)
 
 ## What This PR Implements
 

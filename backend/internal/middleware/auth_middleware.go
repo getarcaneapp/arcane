@@ -180,7 +180,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 	req := c.Request()
 	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken); ok {
-			environmentSudoInternal(c, env)
+			environmentScopedInternal(c, env)
 			return next(c)
 		}
 	}
@@ -273,7 +273,7 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c echo.Context, n
 		}
 	}
 	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
-		environmentSudoInternal(c, env)
+		environmentScopedInternal(c, env)
 		return next(c)
 	}
 	return c.JSON(http.StatusUnauthorized, models.APIError{
@@ -341,14 +341,14 @@ func agentSudoInternal(c echo.Context) {
 	c.Set(echoCtxKeyAuthMethod, "agent_token")
 }
 
-func environmentSudoInternal(c echo.Context, env *models.Environment) {
+func environmentScopedInternal(c echo.Context, env *models.Environment) {
 	envUser := &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
 	}
 	c.Set(echoCtxKeyUserID, envUser.ID)
 	c.Set(echoCtxKeyCurrentUser, envUser)
-	c.Set(echoCtxKeyUserPermissions, authz.SudoPermissionSet())
+	c.Set(echoCtxKeyUserPermissions, authz.EnvironmentPermissionSet(env.ID))
 	c.Set(echoCtxKeyAuthMethod, "environment_access_token")
 }
 

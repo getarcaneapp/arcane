@@ -15,6 +15,7 @@
 </script>
 
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import FileList from './FileList.svelte';
 	import FileBreadcrumb from './FileBreadcrumb.svelte';
@@ -23,7 +24,6 @@
 	import CreateFolderDialog from './CreateFolderDialog.svelte';
 	import FileUploadDialog from './FileUploadDialog.svelte';
 	import FilePreview from './FilePreview.svelte';
-	import * as m from '$lib/paraglide/messages.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
 	import * as Select from '$lib/components/ui/select';
@@ -252,7 +252,7 @@
 <ResponsiveDialog
 	open={showRestoreFile}
 	onOpenChange={(nextOpen) => (showRestoreFile = nextOpen)}
-	title="Restore file from backup"
+	title={m.file_browser_restore()}
 	description="Select a backup to restore the chosen file."
 	contentClass="sm:max-w-[520px]"
 >
@@ -277,10 +277,10 @@
 					Loading backups...
 				</div>
 			{:else if backups.length === 0}
-				<div class="text-muted-foreground text-sm">No backups available.</div>
+				<div class="text-muted-foreground text-sm">{m.file_browser_no_backups()}</div>
 			{:else}
 				<div class="space-y-2">
-					<Label for="restore-backup-select">Backup</Label>
+					<Label for="restore-backup-select">{m.file_browser_backup()}</Label>
 					<div class="w-full overflow-hidden">
 						<Select.Root
 							type="single"
@@ -309,7 +309,7 @@
 							Checking backup contents...
 						</div>
 					{:else if backupHasFile === false}
-						<div class="text-destructive text-xs">This backup does not contain the selected file.</div>
+						<div class="text-destructive text-xs">{m.file_browser_backup_missing_file()}</div>
 					{/if}
 				{/if}
 			{/if}

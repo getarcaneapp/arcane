@@ -4,10 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"strings"
 
+	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -20,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 )
 
@@ -67,6 +71,51 @@ type GetImageOutput struct {
 	Body base.ApiResponse[image.DetailSummary]
 }
 
+type GetImageAttestationsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageName     string `path:"name" doc:"Image ID or image reference"`
+	Platform      string `query:"platform" doc:"OCI platform selector, for example linux/amd64"`
+	PredicateType string `query:"predicateType" doc:"Exact in-toto predicate type URI to include"`
+	WithStatement bool   `query:"statement" default:"false" doc:"Include verbatim statement JSON bodies"`
+}
+
+type GetImageAttestationsOutput struct {
+	Body base.ApiResponse[image.AttestationList]
+}
+
+type TagImageInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageName     string `path:"name" doc:"Image ID or image reference"`
+	Body          image.TagRequest
+}
+
+type TagImageOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type GetImageHistoryInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageName     string `path:"name" doc:"Image ID or image reference"`
+}
+
+type GetImageHistoryOutput struct {
+	Body base.ApiResponse[[]image.HistoryItem]
+}
+
+type SearchImagesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Term          string `query:"term" doc:"Search term"`
+}
+
+type SearchImagesOutput struct {
+	Body base.ApiResponse[[]image.SearchResult]
+}
+
+type ExportImageInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ImageName     string `path:"name" doc:"Image ID or image reference"`
+}
+
 type RemoveImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ImageID       string `path:"imageId" doc:"Image ID"`
@@ -84,7 +133,7 @@ type PullImageInput struct {
 
 type BuildImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          image.BuildRequest
+	Body          buildtypes.BuildRequest
 }
 
 type ImageBuildPaginatedResponse struct {
@@ -191,6 +240,71 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 			{"ApiKeyAuth": {}},
 		},
 	}, authz.PermImagesList, h.GetImageUsageCounts)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-image-attestations",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{name}/attestations",
+		Summary:     "Get image attestations",
+		Description: "Get in-toto attestation statements attached to a Docker image",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesRead, h.GetImageAttestations)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "search-images",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/search",
+		Summary:     "Search images",
+		Description: "Search Docker Hub images",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesRead, h.SearchImages)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "tag-image",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/images/{name}/tag",
+		Summary:     "Tag image",
+		Description: "Add a repository tag to an image",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesTag, h.TagImage)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-image-history",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{name}/history",
+		Summary:     "Get image history",
+		Description: "Get Docker image layer history",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesRead, h.GetImageHistory)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "export-image",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/images/{name}/export",
+		Summary:     "Export image",
+		Description: "Download a Docker image as a tar archive",
+		Tags:        []string{"Images"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, authz.PermImagesRead, h.ExportImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-image",
@@ -367,6 +481,176 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 			Data:    *out,
 		},
 	}, nil
+}
+
+// GetImageAttestations returns in-toto attestation statements attached to an image.
+func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageName, err := url.PathUnescape(input.ImageName)
+	if err != nil {
+		return nil, huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", input.ImageName))
+	}
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return nil, huma.Error400BadRequest("image name is required")
+	}
+
+	if input.Platform != "" {
+		if _, err := platforms.Parse(input.Platform); err != nil {
+			return nil, huma.Error400BadRequest(fmt.Sprintf("invalid platform %q", input.Platform))
+		}
+	}
+
+	out, err := h.imageService.GetImageAttestations(ctx, imageName, services.ImageAttestationQuery{
+		Platform:         strings.TrimSpace(input.Platform),
+		PredicateType:    strings.TrimSpace(input.PredicateType),
+		IncludeStatement: input.WithStatement,
+	})
+	if err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image attestations: %v", err))
+	}
+
+	return &GetImageAttestationsOutput{
+		Body: base.ApiResponse[image.AttestationList]{
+			Success: true,
+			Data:    *out,
+		},
+	}, nil
+}
+
+// TagImage adds a repository tag to an image.
+func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*TagImageOutput, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageName, err := decodeImageNameInternal(input.ImageName)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Body.Repository) == "" {
+		return nil, huma.Error400BadRequest("repository is required")
+	}
+
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.imageService.TagImage(ctx, imageName, input.Body, *user); err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to tag image: %v", err))
+	}
+
+	return &TagImageOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Image tagged successfully"},
+		},
+	}, nil
+}
+
+// GetImageHistory returns Docker image layer history.
+func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*GetImageHistoryOutput, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageName, err := decodeImageNameInternal(input.ImageName)
+	if err != nil {
+		return nil, err
+	}
+
+	history, err := h.imageService.GetImageHistory(ctx, imageName)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to get image history: %v", err))
+	}
+	if history == nil {
+		history = []image.HistoryItem{}
+	}
+
+	return &GetImageHistoryOutput{
+		Body: base.ApiResponse[[]image.HistoryItem]{
+			Success: true,
+			Data:    history,
+		},
+	}, nil
+}
+
+// SearchImages searches Docker Hub images.
+func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*SearchImagesOutput, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	results, err := h.imageService.SearchImages(ctx, input.Term)
+	if err != nil {
+		if strings.Contains(err.Error(), "term is required") {
+			return nil, huma.Error400BadRequest(err.Error())
+		}
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to search images: %v", err))
+	}
+	if results == nil {
+		results = []image.SearchResult{}
+	}
+
+	return &SearchImagesOutput{
+		Body: base.ApiResponse[[]image.SearchResult]{
+			Success: true,
+			Data:    results,
+		},
+	}, nil
+}
+
+// ExportImage streams a Docker image tar archive.
+func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput) (*huma.StreamResponse, error) {
+	if h.imageService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	imageName, err := decodeImageNameInternal(input.ImageName)
+	if err != nil {
+		return nil, err
+	}
+
+	reader, err := h.imageService.ExportImage(ctx, imageName)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to export image: %v", err))
+	}
+
+	return &huma.StreamResponse{
+		Body: func(humaCtx huma.Context) {
+			defer func() { _ = reader.Close() }()
+
+			humaCtx.SetHeader("Content-Type", "application/x-tar")
+			humaCtx.SetHeader("Content-Disposition", fmt.Sprintf("attachment; filename=%q", imageExportFileNameInternal(imageName)))
+
+			_, _ = io.Copy(humaCtx.BodyWriter(), reader)
+		},
+	}, nil
+}
+
+func decodeImageNameInternal(raw string) (string, error) {
+	imageName, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", raw))
+	}
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return "", huma.Error400BadRequest("image name is required")
+	}
+	return imageName, nil
+}
+
+func imageExportFileNameInternal(imageName string) string {
+	name := strings.NewReplacer("/", "_", ":", "_", "@", "_").Replace(imageName)
+	name = strings.Trim(name, "._-")
+	if name == "" {
+		name = "image"
+	}
+	return name + ".tar"
 }
 
 // RemoveImage removes a Docker image.

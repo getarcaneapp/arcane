@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { cn } from '$lib/utils.js';
 	import { ArrowLeftIcon } from '$lib/icons';
@@ -40,5 +41,5 @@
 	{...restProps}
 >
 	<ArrowLeftIcon />
-	<span class="sr-only">Toggle Sidebar</span>
+	<span class="sr-only">{m.sidebar_toggle()}</span>
 </ArcaneButton>

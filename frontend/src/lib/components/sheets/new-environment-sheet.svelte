@@ -227,7 +227,7 @@
 					{#if createdEnvironment.isEdge}
 						<div class="bg-primary/10 text-primary flex items-center gap-2 rounded-lg p-3 text-sm">
 							<EdgeConnectionIcon class="size-5" />
-							<span>Edge agent - connects outbound to manager</span>
+							<span>{m.env_edge_agent_desc()}</span>
 						</div>
 					{/if}
 
@@ -355,7 +355,7 @@
 							Agent connects outbound to the manager. No exposed ports required - ideal for firewalled environments.
 						</p>
 						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
-							<FormInput label={m.common_name()} placeholder="Remote Docker Host" bind:input={$edgeInputs.name} />
+							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={$edgeInputs.name} />
 
 							<LabeledSwitch
 								id="new-edge-agent-mtls"

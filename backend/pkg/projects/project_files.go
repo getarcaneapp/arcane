@@ -42,7 +42,7 @@ type ProjectFileApplyOptions struct {
 
 func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, composeFileName string) ([]project.ProjectFile, string, error) {
 	if maxDepth == ProjectFileTreeUseScanDepth {
-		maxDepth = config.Load().ProjectFileTreeMaxDepth
+		maxDepth = config.LoadProjectFilesConfig().ProjectFileTreeMaxDepth
 	}
 
 	projectAbs, err := filepath.Abs(projectPath)

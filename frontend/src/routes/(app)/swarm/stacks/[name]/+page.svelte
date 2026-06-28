@@ -81,7 +81,9 @@
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
 	const stackSubtitle = $derived(
-		hasLiveStack ? m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName }) : `Saved source for ${stackName}`
+		hasLiveStack
+			? m.swarm_stack_namespace({ namespace: stack?.namespace ?? stackName })
+			: m.swarm_stack_saved_source({ stackName })
 	);
 
 	async function fetchStackServices(options: typeof servicesRequestOptions) {
@@ -233,7 +235,7 @@
 			{#if !hasLiveStack && canViewSource}
 				<Card.Root variant="subtle">
 					<Card.Content class="p-4 text-sm">
-						This stack is not currently deployed, but Arcane still found its saved source files.
+						{m.swarm_stacks_not_deployed_files_found()}
 					</Card.Content>
 				</Card.Root>
 			{/if}
@@ -329,7 +331,7 @@
 						</div>
 					{:else if sourceState === 'loading'}
 						<Card.Root variant="subtle">
-							<Card.Content class="text-muted-foreground p-6 text-center text-sm">Loading saved source...</Card.Content>
+							<Card.Content class="text-muted-foreground p-6 text-center text-sm">{m.swarm_stack_source_loading()}</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'missing'}
 						<Card.Root variant="subtle">
@@ -347,7 +349,7 @@
 							<Card.Content class="p-6 text-sm">
 								<div class="space-y-2">
 									<p class="font-medium">{m.common_action_failed()}</p>
-									<p class="text-muted-foreground">Arcane couldn’t load the saved source files for this stack.</p>
+									<p class="text-muted-foreground">{m.swarm_stack_source_load_error()}</p>
 								</div>
 							</Card.Content>
 						</Card.Root>

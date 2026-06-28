@@ -78,7 +78,7 @@
 						onRefresh={handleRefresh}
 					/>
 				</div>
-				<Card.Description>Real-time project logs</Card.Description>
+				<Card.Description>{m.project_logs_realtime_desc()}</Card.Description>
 			</div>
 			<LogControls
 				bind:autoScroll

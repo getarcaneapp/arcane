@@ -111,7 +111,7 @@
 		tone="ghost"
 		onclick={onReconnect}
 		class="size-8"
-		title="Reconnect shell"
+		title={m.terminal_reconnect()}
 		showLabel={false}
 	/>
 </div>

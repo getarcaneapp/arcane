@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
@@ -48,7 +49,7 @@
 		</Sidebar.MenuButton>
 		<Collapsible.Trigger>
 			{#snippet child({ props })}
-				<Sidebar.MenuAction {...props} aria-label="Toggle submenu" class="data-[state=open]:bg-sidebar-accent">
+				<Sidebar.MenuAction {...props} aria-label={m.sidebar_toggle_submenu()} class="data-[state=open]:bg-sidebar-accent">
 					<ArrowRightIcon class="transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
 				</Sidebar.MenuAction>
 			{/snippet}

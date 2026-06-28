@@ -227,7 +227,7 @@
 	<div class="rounded-lg border">
 		<div class="flex items-center justify-between border-b px-3 py-2">
 			<h3 class="text-sm font-medium">{m.events_metadata_title()}</h3>
-			<CopyButton text={metadataJson} variant="outline" size="sm" title="Copy metadata JSON">
+			<CopyButton text={metadataJson} variant="outline" size="sm" title={m.event_copy_metadata()}>
 				{m.common_copy_json()}
 			</CopyButton>
 		</div>

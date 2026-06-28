@@ -19,6 +19,7 @@
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
+	import { getDefaultProfilePicture } from '$lib/utils/docker';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '$lib/types/auth';
 	import { UserIcon, LogoutIcon, ShieldAlertIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
@@ -73,11 +74,9 @@
 	let passwordSaving = $state(false);
 
 	let revokingAll = $state(false);
-	let avatarUrl = $state<string>('');
+	let avatarUrl = $state<string>(getDefaultProfilePicture());
 	let avatarCacheBuster = $state(Date.now());
-	const avatarSrc = $derived(
-		currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : ''
-	);
+	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
 
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);
@@ -86,7 +85,7 @@
 	let createdKey = $state<ApiKeyCreated | null>(null);
 
 	let avatarUploading = $state(false);
-	let avatarInput: HTMLInputElement;
+	let avatarInput = $state<HTMLInputElement | null>(null);
 
 	$effect(() => {
 		if (!profileLoaded && currentUser) {
@@ -108,7 +107,7 @@
 
 	async function updateAvatar(email: string | undefined, enabled: boolean) {
 		if (!enabled || !email) {
-			avatarUrl = '';
+			avatarUrl = getDefaultProfilePicture();
 			return;
 		}
 		try {
@@ -120,7 +119,7 @@
 				.join('');
 			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
 		} catch {
-			avatarUrl = '';
+			avatarUrl = getDefaultProfilePicture();
 		}
 	}
 
@@ -301,15 +300,15 @@
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_subtitle()}</p>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_description()}</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
 						<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
 							<div class="flex min-w-0 items-center gap-4">
-								<button 
-									type="button" 
+								<button
+									type="button"
 									class="group/avatar relative size-16 cursor-pointer overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-									onclick={() => avatarInput.click()}
+									onclick={() => avatarInput?.click()}
 									disabled={avatarUploading}
 								>
 									{#key avatarCacheBuster}
@@ -319,21 +318,21 @@
 											{:else if avatarUrl}
 												<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
 											{/if}
-											<Avatar.Fallback
-												class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold"
-											>
+											<Avatar.Fallback class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold">
 												{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
 											</Avatar.Fallback>
 										</Avatar.Root>
 									{/key}
-									<div class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100">
+									<div
+										class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
+									>
 										<div class="text-white text-xs font-medium">{m.account_upload_overlay()}</div>
 									</div>
 								</button>
 								<div class="min-w-0 flex flex-col items-start gap-1">
 									<div class="text-sm font-medium">@{currentUser.username}</div>
 									<div class="text-muted-foreground text-xs">
-										{isOidcUser ? m.account_type_sso() : m.account_type_local()}
+										{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
 									</div>
 									<div class="flex items-center gap-2 mt-1">
 										<input
@@ -348,7 +347,7 @@
 											size="sm"
 											tone="outline"
 											customLabel={m.account_upload_photo()}
-											onclick={() => avatarInput.click()}
+											onclick={() => avatarInput?.click()}
 											loading={avatarUploading}
 											disabled={avatarUploading}
 										/>
@@ -369,26 +368,35 @@
 							</div>
 							<div class="hidden text-right sm:block">
 								{#if safeFormatDate(currentUser.createdAt, 'PP')}
-									<div class="text-muted-foreground text-xs">Member since {safeFormatDate(currentUser.createdAt, 'PP')}</div>
+									<div class="text-muted-foreground text-xs">
+										{m.account_member_since()}
+										{safeFormatDate(currentUser.createdAt, 'PP')}
+									</div>
 								{/if}
 								<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
-									Last login {safeFormatRelative(currentUser.lastLogin) ?? 'Never'}
+									{m.account_last_login_prefix()}
+									{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
 								</div>
 							</div>
 						</div>
 
 						<div class="grid gap-4 sm:grid-cols-2">
 							<div class="space-y-2">
-								<Label for="account-display-name">Display Name</Label>
-								<Input id="account-display-name" bind:value={profileDisplayName} placeholder="Your name" disabled={isOidcUser} />
+								<Label for="account-display-name">{m.account_display_name_label()}</Label>
+								<Input
+									id="account-display-name"
+									bind:value={profileDisplayName}
+									placeholder={m.account_display_name_placeholder()}
+									disabled={isOidcUser}
+								/>
 							</div>
 							<div class="space-y-2">
-								<Label for="account-email">Email</Label>
+								<Label for="account-email">{m.account_email_label()}</Label>
 								<Input
 									id="account-email"
 									type="email"
 									bind:value={profileEmail}
-									placeholder="you@example.com"
+									placeholder={m.account_email_placeholder()}
 									disabled={isOidcUser}
 								/>
 							</div>
@@ -398,20 +406,20 @@
 								<ArcaneButton
 									action="cancel"
 									tone="outline"
-									customLabel="Reset"
+									customLabel={m.common_reset()}
 									onclick={resetProfile}
 									disabled={!profileDirty || profileSaving}
 								/>
 								<ArcaneButton
 									action="save"
-									customLabel="Save profile"
+									customLabel={m.account_save_profile()}
 									onclick={saveProfile}
 									loading={profileSaving}
 									disabled={!profileDirty || profileSaving}
 								/>
 							</div>
 						{:else}
-							<p class="text-muted-foreground text-xs">Profile details are managed by your identity provider.</p>
+							<p class="text-muted-foreground text-xs">{m.account_profile_managed_by_idp()}</p>
 						{/if}
 					</div>
 				</Card>
@@ -420,12 +428,12 @@
 				{#if !isOidcUser}
 					<Card class="overflow-hidden">
 						<div class="border-b p-4 sm:p-6">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">Password</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Change your account password</p>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_password()}</h2>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_password_desc()}</p>
 						</div>
 						<div class="space-y-5 p-4 sm:p-6">
 							<div class="space-y-2">
-								<Label for="account-current-password">Current password</Label>
+								<Label for="account-current-password">{m.account_current_password()}</Label>
 								<Input
 									id="account-current-password"
 									type="password"
@@ -435,22 +443,22 @@
 							</div>
 							<div class="grid gap-4 sm:grid-cols-2">
 								<div class="space-y-2">
-									<Label for="account-new-password">New password</Label>
+									<Label for="account-new-password">{m.account_new_password()}</Label>
 									<Input id="account-new-password" type="password" bind:value={newPassword} autocomplete="new-password" />
-									<p class="text-muted-foreground text-xs">At least 8 characters</p>
+									<p class="text-muted-foreground text-xs">{m.account_password_min_length()}</p>
 								</div>
 								<div class="space-y-2">
-									<Label for="account-confirm-password">Confirm new password</Label>
+									<Label for="account-confirm-password">{m.account_confirm_password()}</Label>
 									<Input id="account-confirm-password" type="password" bind:value={confirmPassword} autocomplete="new-password" />
 									{#if confirmPassword.length > 0 && confirmPassword !== newPassword}
-										<p class="text-destructive text-xs">Passwords don't match</p>
+										<p class="text-destructive text-xs">{m.account_passwords_dont_match()}</p>
 									{/if}
 								</div>
 							</div>
 							<div class="flex justify-end">
 								<ArcaneButton
 									action="save"
-									customLabel="Update password"
+									customLabel={m.account_update_password()}
 									onclick={changePassword}
 									loading={passwordSaving}
 									disabled={!passwordValid || passwordSaving}
@@ -464,15 +472,15 @@
 				<Card class="overflow-hidden">
 					<div class="flex items-start justify-between gap-3 border-b p-4 sm:p-6">
 						<div class="min-w-0">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">API keys</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal tokens for programmatic access</p>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_api_keys_description()}</p>
 						</div>
 						{#if !showCreateKeyForm && !createdKey}
 							<ArcaneButton
 								action="create"
 								tone="outline"
 								size="sm"
-								customLabel="New key"
+								customLabel={m.account_new_key()}
 								icon={AddIcon}
 								onclick={() => (showCreateKeyForm = true)}
 							/>
@@ -566,21 +574,21 @@
 				<!-- Preferences -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Preferences</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Personal display preferences</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_preferences_desc()}</p>
 					</div>
 					<div class="divide-y p-2">
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
-								<div class="text-sm font-medium">Theme</div>
+								<div class="text-sm font-medium">{m.account_theme()}</div>
 								<div class="text-muted-foreground text-xs">{m.appearance_theme_current_user_description()}</div>
 							</div>
 							<ThemeModeSelector />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
-								<div class="text-sm font-medium">Language</div>
-								<div class="text-muted-foreground text-xs">UI language for this account</div>
+								<div class="text-sm font-medium">{m.account_language()}</div>
+								<div class="text-muted-foreground text-xs">{m.account_language_desc()}</div>
 							</div>
 							<LocalePicker inline />
 						</div>
@@ -597,8 +605,8 @@
 				<!-- Roles & access -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">Roles &amp; access</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Your assigned roles</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_roles_and_access()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_roles()}</p>
 					</div>
 					<div class="p-4 sm:p-6">
 						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
@@ -608,9 +616,9 @@
 										<div class="min-w-0">
 											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
 											<div class="text-muted-foreground text-xs">
-												{ra.environmentId ? `Environment: ${ra.environmentId}` : 'Global scope'}
+												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
 												{#if ra.source === 'oidc'}
-													<span class="ml-1 opacity-70">· via SSO</span>
+													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
 												{/if}
 											</div>
 										</div>
@@ -618,7 +626,7 @@
 								{/each}
 							</ul>
 						{:else}
-							<p class="text-muted-foreground text-sm">No roles assigned.</p>
+							<p class="text-muted-foreground text-sm">{m.account_no_roles()}</p>
 						{/if}
 
 						{#if currentUser.permissionsByEnv}
@@ -638,20 +646,20 @@
 						<div class="border-destructive/20 border-b p-4 sm:p-6">
 							<div class="flex items-center gap-2">
 								<ShieldAlertIcon class="text-destructive size-5" />
-								<h2 class="text-base font-semibold tracking-tight sm:text-lg">Danger zone</h2>
+								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
 							</div>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">Session-level actions that affect every device</p>
+							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_danger_zone_desc()}</p>
 						</div>
 						<div class="space-y-4 p-4 sm:p-6">
 							<div class="space-y-2">
-								<div class="text-sm font-medium">Sign out other sessions</div>
+								<div class="text-sm font-medium">{m.account_signout_other()}</div>
 								<p class="text-muted-foreground text-xs">
-									Revokes every active session except this one. Useful if you forgot to log out somewhere.
+									{m.account_signout_other_desc()}
 								</p>
 								<ArcaneButton
 									action="restart"
 									tone="outline"
-									customLabel="Sign out other sessions"
+									customLabel={m.account_signout_other()}
 									onclick={logoutAllOther}
 									loading={revokingAll}
 									disabled={revokingAll}
@@ -661,13 +669,13 @@
 							<Separator />
 
 							<div class="space-y-2">
-								<div class="text-sm font-medium">Log out</div>
-								<p class="text-muted-foreground text-xs">Sign out of this device.</p>
+								<div class="text-sm font-medium">{m.common_log_out()}</div>
+								<p class="text-muted-foreground text-xs">{m.account_signout_this()}</p>
 								<form action="/logout" method="POST">
 									<ArcaneButton
 										action="cancel"
 										tone="outline"
-										customLabel="Log out"
+										customLabel={m.common_log_out()}
 										icon={LogoutIcon}
 										type="submit"
 										class="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"

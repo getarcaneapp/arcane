@@ -202,6 +202,19 @@ export interface ContainerDetailsDto {
 	redeployDisabled?: boolean;
 }
 
+export interface ContainerCommitRequest {
+	repository?: string;
+	tag?: string;
+	comment?: string;
+	author?: string;
+	changes?: string[];
+	noPause?: boolean;
+}
+
+export interface ContainerCommitResult {
+	id: string;
+}
+
 // --- Container stats ---
 
 export interface BlkioStatEntry {
@@ -413,6 +426,58 @@ export interface ImageDetailSummaryDto {
 		digest: string;
 		size: number;
 	};
+}
+
+export interface ImageTagRequest {
+	repository: string;
+	tag?: string;
+}
+
+export interface ImageHistoryItemDto {
+	id: string;
+	created: number;
+	createdBy: string;
+	tags: string[];
+	size: number;
+	comment: string;
+}
+
+export interface ImageSearchResultDto {
+	name: string;
+	description: string;
+	starCount: number;
+	official: boolean;
+	automated: boolean;
+}
+
+export interface ImageAttestationSubjectDto {
+	name: string;
+	digest: Record<string, string>;
+}
+
+export interface ImageAttestationDto {
+	digest: string;
+	mediaType: string;
+	artifactType?: string;
+	predicateType: string;
+	statementType?: string;
+	subject: ImageAttestationSubjectDto[];
+	platform?: string;
+	size: number;
+	statement?: unknown;
+}
+
+export interface ImageAttestationListDto {
+	imageRef: string;
+	subjectDigest: string;
+	platform?: string;
+	attestations: ImageAttestationDto[];
+}
+
+export interface ImageAttestationRequestOptions {
+	platform?: string;
+	predicateType?: string;
+	statement?: boolean;
 }
 
 export type ImageUpdateData = ImageUpdateInfoDto;

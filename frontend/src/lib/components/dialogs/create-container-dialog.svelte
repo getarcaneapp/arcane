@@ -568,7 +568,7 @@
 												<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 													<Input
 														type="text"
-														placeholder="Source path or volume name"
+														placeholder={m.container_source_path_or_volume()}
 														bind:value={mount.source}
 														disabled={isLoading}
 														class="flex-1"
@@ -576,7 +576,7 @@
 													<span class="text-muted-foreground hidden sm:inline">:</span>
 													<Input
 														type="text"
-														placeholder="Container path"
+														placeholder={m.container_path()}
 														bind:value={mount.destination}
 														disabled={isLoading}
 														class="flex-1"
@@ -686,7 +686,7 @@
 											label={m.restart_policy_label()}
 											description={m.restart_policy_description()}
 											options={restartPolicies}
-											placeholder="Select restart policy"
+											placeholder={m.container_select_restart_policy()}
 										/>
 
 										{#if $inputs.restartPolicy.value === 'on-failure'}

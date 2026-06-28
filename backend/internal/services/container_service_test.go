@@ -1,9 +1,14 @@
 package services
 
 import (
+	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
 	"net/netip"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
@@ -206,6 +211,97 @@ func TestCompareContainerPortsForSortDesc_KeepsContainersWithoutPortsLast(t *tes
 	require.Equal(t, -1, compareContainerPortsForSortDescInternal(withPublished, withPrivateOnly))
 	require.Equal(t, -1, compareContainerPortsForSortDescInternal(withPrivateOnly, withoutPorts))
 	require.Equal(t, 1, compareContainerPortsForSortDescInternal(withoutPorts, withPublished))
+}
+
+func TestContainerServiceCommitContainerCallsDockerAPIInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || dockerTestPathInternal(r.URL.Path) != "/commit" {
+			http.NotFound(w, r)
+			return
+		}
+		gotRequest = map[string]any{
+			"container": r.URL.Query().Get("container"),
+			"repo":      r.URL.Query().Get("repo"),
+			"tag":       r.URL.Query().Get("tag"),
+			"comment":   r.URL.Query().Get("comment"),
+			"author":    r.URL.Query().Get("author"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+	}))
+	t.Cleanup(server.Close)
+
+	svc := NewContainerService(
+		context.Background(),
+		db,
+		NewEventService(db, nil, nil),
+		&DockerClientService{client: newTestDockerClient(t, server)},
+		nil,
+		nil,
+		nil,
+	)
+
+	out, err := svc.CommitContainer(context.Background(), "container-1", containertypes.CommitRequest{
+		Repository: "registry.example.com/team/app",
+		Tag:        "snapshot",
+		Comment:    "manual snapshot",
+		Author:     "arcane",
+	}, systemUser)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Equal(t, "sha256:new-image", out.ID)
+	require.Equal(t, map[string]any{
+		"container": "container-1",
+		"repo":      "registry.example.com/team/app",
+		"tag":       "snapshot",
+		"comment":   "manual snapshot",
+		"author":    "arcane",
+	}, gotRequest)
+
+	var event models.Event
+	require.NoError(t, db.WithContext(context.Background()).Where("type = ?", models.EventTypeImageCommit).First(&event).Error)
+	require.Equal(t, "container-1", *event.ResourceID)
+}
+
+func TestContainerServiceCommitContainerOmitsReferenceWhenRepositoryEmptyInternal(t *testing.T) {
+	db := setupProjectTestDB(t)
+	var gotRequest map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost || dockerTestPathInternal(r.URL.Path) != "/commit" {
+			http.NotFound(w, r)
+			return
+		}
+		gotRequest = map[string]any{
+			"container": r.URL.Query().Get("container"),
+			"repo":      r.URL.Query().Get("repo"),
+			"tag":       r.URL.Query().Get("tag"),
+		}
+		_ = json.NewEncoder(w).Encode(map[string]string{"ID": "sha256:new-image"})
+	}))
+	t.Cleanup(server.Close)
+
+	svc := NewContainerService(
+		context.Background(),
+		db,
+		NewEventService(db, nil, nil),
+		&DockerClientService{client: newTestDockerClient(t, server)},
+		nil,
+		nil,
+		nil,
+	)
+
+	out, err := svc.CommitContainer(context.Background(), "container-1", containertypes.CommitRequest{
+		Tag: "latest",
+	}, systemUser)
+	require.NoError(t, err)
+	require.NotNil(t, out)
+	require.Equal(t, "sha256:new-image", out.ID)
+	require.Equal(t, map[string]any{
+		"container": "container-1",
+		"repo":      "",
+		"tag":       "",
+	}, gotRequest)
 }
 
 func newGroupedContainerSummary(name string, project string) containertypes.Summary {
