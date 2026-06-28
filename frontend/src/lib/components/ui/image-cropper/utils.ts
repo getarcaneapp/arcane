@@ -57,13 +57,17 @@ export const getCroppedImg = async (imageSrc: string, pixelCrop: CropArea, rotat
 	);
 
 	return new Promise((resolve, reject) => {
-		canvas.toBlob((file) => {
-			if (!file) {
-				reject(new Error('failed to crop image'));
-				return;
-			}
+		canvas.toBlob(
+			(file) => {
+				if (!file) {
+					reject(new Error('failed to crop image'));
+					return;
+				}
 
-			resolve(URL.createObjectURL(file));
-		});
+				resolve(URL.createObjectURL(file));
+			},
+			'image/jpeg',
+			0.92
+		);
 	});
 };
