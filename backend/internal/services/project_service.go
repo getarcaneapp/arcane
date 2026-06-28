@@ -24,7 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -39,6 +38,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
+	buildtypes "go.getarcane.app/builds/types"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 	"gorm.io/gorm"
 )
@@ -2716,7 +2717,7 @@ func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConf
 	contextDir := strings.TrimSpace(svc.Build.Context)
 	if contextDir == "" {
 		contextDir = workingDir
-	} else if _, isGitContext, err := libbuild.ParseGitBuildContextSource(contextDir); err != nil {
+	} else if _, isGitContext, err := contextsource.ParseGitBuildContextSource(contextDir); err != nil {
 		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
 	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
@@ -2762,16 +2763,16 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	serviceName string,
 	svc composetypes.ServiceConfig,
 	options ProjectBuildOptions,
-) (imagetypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
+) (buildtypes.BuildRequest, composetypes.ServiceConfig, bool, error) {
 	_ = ctx
 	imageName, updatedSvc, updated := ensureServiceImage(projectID, project.Name, serviceName, svc)
 	effectiveProvider := s.resolveEffectiveBuildProvider(options.Provider)
 
 	if updated && effectiveProvider == "depot" {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when using depot build provider", serviceName)
 	}
 	if updated && options.Push != nil && *options.Push {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s must define an image when push is enabled", serviceName)
 	}
 
 	// The build context (and any absolute Dockerfile path) is read locally by
@@ -2784,12 +2785,12 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	// For that reason the build context dir is deliberately left untranslated.
 	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, err
+		return buildtypes.BuildRequest{}, updatedSvc, updated, err
 	}
 
 	dockerfileInline := updatedSvc.Build.DockerfileInline
 	if strings.TrimSpace(updatedSvc.Build.Dockerfile) != "" && strings.TrimSpace(dockerfileInline) != "" {
-		return imagetypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
+		return buildtypes.BuildRequest{}, updatedSvc, updated, fmt.Errorf("service %s cannot define both dockerfile and dockerfile_inline", serviceName)
 	}
 
 	dockerfilePath := ""
@@ -2797,7 +2798,7 @@ func (s *ProjectService) prepareServiceBuildRequest(
 		dockerfilePath = resolveDockerfilePathInternal(updatedSvc)
 	}
 
-	buildReq := imagetypes.BuildRequest{
+	buildReq := buildtypes.BuildRequest{
 		ContextDir:       contextDir,
 		Dockerfile:       dockerfilePath,
 		DockerfileInline: dockerfileInline,

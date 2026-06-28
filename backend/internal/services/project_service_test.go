@@ -27,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
-	buildtypes "github.com/getarcaneapp/arcane/types/v2/builds"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
@@ -38,6 +37,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	buildtypes "go.getarcane.app/builds/types"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 	"gorm.io/gorm"
 
@@ -60,11 +60,11 @@ type testBuildBuilder struct {
 	err error
 }
 
-func (b testBuildBuilder) BuildImage(_ context.Context, _ imagetypes.BuildRequest, _ io.Writer, _ string) (*imagetypes.BuildResult, error) {
+func (b testBuildBuilder) BuildImage(_ context.Context, _ buildtypes.BuildRequest, _ io.Writer, _ string) (*buildtypes.BuildResult, error) {
 	if b.err != nil {
 		return nil, b.err
 	}
-	return &imagetypes.BuildResult{Provider: "local"}, nil
+	return &buildtypes.BuildResult{Provider: "local"}, nil
 }
 
 var _ buildtypes.Builder = testBuildBuilder{}

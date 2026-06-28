@@ -23,6 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 )
 
@@ -132,7 +133,7 @@ type PullImageInput struct {
 
 type BuildImageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          image.BuildRequest
+	Body          buildtypes.BuildRequest
 }
 
 type ImageBuildPaginatedResponse struct {

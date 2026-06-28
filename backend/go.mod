@@ -19,13 +19,12 @@ require (
 	github.com/containerd/platforms v1.0.0-rc.4
 	github.com/coreos/go-oidc/v3 v3.19.0
 	github.com/danielgtaylor/huma/v2 v2.38.0
-	github.com/depot/depot-go v0.5.2
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.1+incompatible
 	github.com/docker/compose/v5 v5.2.0
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
-	github.com/getarcaneapp/arcane/cli/v2 v2.0.1
+	github.com/getarcaneapp/arcane/cli/v2 v2.1.0
 	github.com/getarcaneapp/arcane/types/v2 v2.1.0
 	github.com/glebarez/sqlite v1.11.0
 	github.com/go-git/go-git/v5 v5.19.1
@@ -41,11 +40,9 @@ require (
 	github.com/klauspost/compress v1.18.6
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/lmittmann/tint v1.1.3
-	github.com/moby/buildkit v0.31.0
-	github.com/moby/go-archive v0.2.0
+	github.com/moby/buildkit v0.31.1
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
-	github.com/moby/patternmatcher v0.6.1
 	github.com/nicholas-fedor/shoutrrr v0.16.1
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
@@ -56,8 +53,8 @@ require (
 	github.com/shirou/gopsutil/v4 v4.26.5
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
-	github.com/tonistiigi/fsutil v0.0.0-20260609174605-b61e79c0c046
 	github.com/wneessen/go-mail v0.7.3
+	go.getarcane.app/builds v0.1.0
 	go.getarcane.app/updater v0.4.0
 	golang.org/x/crypto v0.53.0
 	golang.org/x/mod v0.37.0
@@ -106,6 +103,7 @@ require (
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
+	github.com/depot/depot-go v0.5.2 // indirect
 	github.com/docker/buildx v0.35.0 // indirect
 	github.com/docker/docker v28.5.2+incompatible // indirect
 	github.com/docker/docker-credential-helpers v0.9.8 // indirect
@@ -158,7 +156,9 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
+	github.com/moby/go-archive v0.2.0 // indirect
 	github.com/moby/locker v1.0.1 // indirect
+	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
 	github.com/moby/sys/capability v0.4.0 // indirect
 	github.com/moby/sys/sequential v0.7.0 // indirect
@@ -192,6 +192,7 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323 // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20260609174605-b61e79c0c046 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect

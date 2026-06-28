@@ -7,17 +7,17 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
-	"github.com/getarcaneapp/arcane/types/v2/image"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	buildtypes "go.getarcane.app/builds/types"
 	"gorm.io/gorm"
 )
 
@@ -30,7 +30,7 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 		},
 	}
 
-	req := image.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: contextDir,
 		Dockerfile: "Dockerfile",
 	}
@@ -40,6 +40,18 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 	require.NotNil(t, cleanup)
 	assert.Equal(t, req, resolvedReq)
 	require.NoError(t, cleanup())
+}
+
+func TestNewBuildService_NilRegistryServiceKeepsNilBuildRegistryProvider(t *testing.T) {
+	svc := NewBuildService(nil, nil, nil, nil, nil, nil)
+	require.NotNil(t, svc.builder)
+
+	builderValue := reflect.ValueOf(svc.builder)
+	require.Equal(t, reflect.Pointer, builderValue.Kind())
+
+	registryProvider := builderValue.Elem().FieldByName("registryAuthProvider")
+	require.True(t, registryProvider.IsValid())
+	require.True(t, registryProvider.IsNil())
 }
 
 func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
@@ -65,7 +77,7 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 		},
 	}
 
-	req := image.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
 		Dockerfile: "Dockerfile",
 	}
@@ -103,7 +115,7 @@ func TestBuildService_ResolveBuildRequest_ProbesAndClonesRemoteGitContextWithout
 
 	resolvedReq, cleanup, err := svc.resolveBuildRequestInternal(
 		context.Background(),
-		image.BuildRequest{ContextDir: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app"},
+		buildtypes.BuildRequest{ContextDir: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app"},
 		nil,
 		"",
 	)
@@ -119,7 +131,7 @@ func TestBuildService_ResolveBuildRequest_RequiresGitRepositoryServiceForRemoteC
 
 	_, cleanup, err := svc.resolveBuildRequestInternal(
 		context.Background(),
-		image.BuildRequest{ContextDir: "https://github.com/getarcaneapp/arcane.git#main"},
+		buildtypes.BuildRequest{ContextDir: "https://github.com/getarcaneapp/arcane.git#main"},
 		nil,
 		"",
 	)
@@ -143,7 +155,7 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 
 	_, cleanup, err := svc.resolveBuildRequestInternal(
 		context.Background(),
-		image.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
+		buildtypes.BuildRequest{ContextDir: "https://example.com/archive.tar.gz"},
 		nil,
 		"",
 	)
@@ -199,7 +211,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 
 		_, cleanup, err := svc.resolveBuildRequestInternal(
 			context.Background(),
-			image.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build#main"},
+			buildtypes.BuildRequest{ContextDir: "https://github.com/getarcaneapp/private-build#main"},
 			nil,
 			"",
 		)
@@ -225,7 +237,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 
 		_, cleanup, err := svc.resolveBuildRequestInternal(
 			context.Background(),
-			image.BuildRequest{ContextDir: "git@github.com:getarcaneapp/private-ssh.git#main"},
+			buildtypes.BuildRequest{ContextDir: "git@github.com:getarcaneapp/private-ssh.git#main"},
 			nil,
 			"",
 		)
@@ -241,11 +253,11 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 	repoPath := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(repoPath, "Dockerfile"), []byte("FROM alpine:3.20\n"), 0o644))
 
-	captured := image.BuildRequest{}
+	captured := buildtypes.BuildRequest{}
 	svc := &BuildService{
 		db: db,
 		builder: testBuildRecorder{
-			onBuild: func(req image.BuildRequest) {
+			onBuild: func(req buildtypes.BuildRequest) {
 				captured = req
 			},
 		},
@@ -255,7 +267,7 @@ func TestBuildService_BuildImage_PreservesRemoteSourceInHistory(t *testing.T) {
 		gitCleanupFn: func(string) error { return nil },
 	}
 
-	req := image.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "https://github.com/getarcaneapp/arcane.git#main",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"ghcr.io/getarcaneapp/arcane:test"},
@@ -288,7 +300,7 @@ func TestBuildService_BuildImage_FailureRecordsHistoryAndEvent(t *testing.T) {
 		Username:  "tester",
 	}
 
-	req := image.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "/builds/demo",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"arcane.local/demo:test"},
@@ -322,7 +334,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 	db, err := setupBuildHistoryTestDB()
 	require.NoError(t, err)
 
-	buildErr := &common.BuildKitImageExporterError{
+	buildErr := &buildtypes.BuildKitImageExporterError{
 		ProviderName: "depot",
 		Err:          errors.New(`failed to solve: failed to solve: exporter "image" could not be found`),
 	}
@@ -333,7 +345,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 		eventService: NewEventService(db, nil, nil),
 		builder: testBuildRecorder{
 			err: buildErr,
-			onProgress: func(_ image.BuildRequest, w io.Writer) {
+			onProgress: func(_ buildtypes.BuildRequest, w io.Writer) {
 				_, _ = w.Write([]byte(buildErr.Error()))
 			},
 		},
@@ -344,7 +356,7 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 		Username:  "registry-test",
 	}
 
-	req := image.BuildRequest{
+	req := buildtypes.BuildRequest{
 		ContextDir: "/builds/demo",
 		Dockerfile: "Dockerfile",
 		Tags:       []string{"ghcr.io/getarcaneapp/arcane:test"},
@@ -393,12 +405,12 @@ func TestSanitizeBuildContextForEventInternal_RedactsURLCredentials(t *testing.T
 }
 
 type testBuildRecorder struct {
-	onBuild    func(image.BuildRequest)
-	onProgress func(image.BuildRequest, io.Writer)
+	onBuild    func(buildtypes.BuildRequest)
+	onProgress func(buildtypes.BuildRequest, io.Writer)
 	err        error
 }
 
-func (b testBuildRecorder) BuildImage(_ context.Context, req image.BuildRequest, writer io.Writer, _ string) (*image.BuildResult, error) {
+func (b testBuildRecorder) BuildImage(_ context.Context, req buildtypes.BuildRequest, writer io.Writer, _ string) (*buildtypes.BuildResult, error) {
 	if b.onBuild != nil {
 		b.onBuild(req)
 	}
@@ -408,7 +420,7 @@ func (b testBuildRecorder) BuildImage(_ context.Context, req image.BuildRequest,
 		}
 		return nil, b.err
 	}
-	return &image.BuildResult{Provider: "local"}, nil
+	return &buildtypes.BuildResult{Provider: "local"}, nil
 }
 
 func setupBuildHistoryTestDB() (*database.DB, error) {
