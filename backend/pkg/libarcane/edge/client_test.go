@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net"
 	"net/http"
@@ -21,6 +22,7 @@ import (
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	slogecho "github.com/samber/slog-echo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -187,6 +189,123 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 }
 
+// TestTunnelClient_WebSocket_ReconnectClosesStreams verifies that a reconnect
+// reclaims the goroutines, local sockets, and activeStreams entries opened on
+// the previous connection instead of leaking them. Run under -race it also
+// exercises concurrent c.conn access across the reassignment on reconnect.
+func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
+	// Local WS echo server the agent proxies to.
+	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		for {
+			mt, data, err := conn.ReadMessage()
+			if err != nil {
+				return
+			}
+			_ = conn.WriteMessage(mt, append([]byte("local echo: "), data...))
+		}
+	}))
+	defer localServer.Close()
+	localPort := strings.Split(localServer.Listener.Addr().String(), ":")[1]
+
+	var connCount atomic.Int32
+	firstStreamLive := make(chan struct{})
+	closeFirstConn := make(chan struct{})
+	stopManager := make(chan struct{})
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		// Every connection registers first.
+		if _, _, err := conn.ReadMessage(); err != nil {
+			return
+		}
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-1",
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+
+		if connCount.Add(1) > 1 {
+			// Post-reconnect connection: stay up so the agent stops reconnecting
+			// and the test can assert a stable, empty stream set.
+			<-stopManager
+			return
+		}
+
+		// First connection: open a stream and prove it is live by round-tripping
+		// data through the local echo server, then force a disconnect.
+		startMsg, _ := json.Marshal(&TunnelMessage{ID: "ws-1", Type: MessageTypeWebSocketStart, Path: "/"})
+		_ = conn.WriteMessage(websocket.TextMessage, startMsg)
+		dataMsg, _ := json.Marshal(&TunnelMessage{
+			ID:            "ws-1",
+			Type:          MessageTypeWebSocketData,
+			Body:          []byte("hello"),
+			WSMessageType: websocket.TextMessage,
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, dataMsg)
+
+		_, respData, err := conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		var resp TunnelMessage
+		_ = json.Unmarshal(respData, &resp)
+		assert.Equal(t, MessageTypeWebSocketData, resp.Type)
+		assert.Equal(t, "local echo: hello", string(resp.Body))
+
+		close(firstStreamLive)
+		<-closeFirstConn // returning closes the conn, forcing the agent to reconnect
+	}))
+	defer managerServer.Close()
+
+	cfg := &Config{
+		EdgeTransport: EdgeTransportWebSocket,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "test-token",
+		Port:          localPort,
+	}
+	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
+	client.reconnectInterval = 50 * time.Millisecond
+
+	countStreams := func() int {
+		n := 0
+		client.activeStreams.Range(func(_, _ any) bool { n++; return true })
+		return n
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	defer close(stopManager)
+	go client.StartWithErrorChan(ctx, nil)
+
+	// The stream is registered while the first connection is live.
+	select {
+	case <-firstStreamLive:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for the first stream to come up")
+	}
+	assert.Equal(t, 1, countStreams(), "expected one active stream during the first connection")
+
+	// Force the disconnect; the reconnect must reclaim the stream.
+	close(closeFirstConn)
+	require.Eventually(t, func() bool {
+		return connCount.Load() >= 2 && countStreams() == 0
+	}, 5*time.Second, 20*time.Millisecond, "stream leaked across reconnect")
+}
+
 func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	// Setup Mock Manager
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -279,17 +398,18 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 	}
 	defer func() { _ = conn.Close() }()
 
-	client.conn = NewTunnelConn(conn)
+	tunnelConn := NewTunnelConn(conn)
+	client.setConn(tunnelConn)
 
 	// Test sendWebSocketData
-	err = client.sendWebSocketData("stream-1", websocket.TextMessage, []byte("data"))
+	err = client.sendWebSocketData(tunnelConn, "stream-1", websocket.TextMessage, []byte("data"))
 	require.NoError(t, err)
 
 	// Test sendWebSocketClose
-	client.sendWebSocketClose("stream-1")
+	client.sendWebSocketClose(tunnelConn, "stream-1")
 
 	// Test sendErrorResponse
-	client.sendErrorResponse("req-1", 500, "error")
+	client.sendErrorResponse(tunnelConn, "req-1", 500, "error")
 }
 
 func TestTunnelClient_BuildLocalWebSocketURL(t *testing.T) {
@@ -527,18 +647,15 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 
 func TestTunnelClient_IsGRPCConnectionInternal(t *testing.T) {
 	t.Run("nil connection", func(t *testing.T) {
-		client := &TunnelClient{}
-		assert.False(t, client.isGRPCConnectionInternal())
+		assert.False(t, isGRPCConnection(nil))
 	})
 
 	t.Run("grpc connection", func(t *testing.T) {
-		client := &TunnelClient{conn: NewGRPCAgentTunnelConn(nil)}
-		assert.True(t, client.isGRPCConnectionInternal())
+		assert.True(t, isGRPCConnection(NewGRPCAgentTunnelConn(nil)))
 	})
 
 	t.Run("non-grpc connection", func(t *testing.T) {
-		client := &TunnelClient{conn: &fakeTunnelConnForTransportCheck{}}
-		assert.False(t, client.isGRPCConnectionInternal())
+		assert.False(t, isGRPCConnection(&fakeTunnelConnForTransportCheck{}))
 	})
 }
 
@@ -554,9 +671,9 @@ func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingR
 		EdgeTransport: EdgeTransportGRPC,
 	}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.conn = conn
+	client.setConn(conn)
 
-	client.handleRequest(context.Background(), &TunnelMessage{
+	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-fallback-1",
 		Type:   MessageTypeRequest,
 		Method: http.MethodGet,
@@ -572,9 +689,9 @@ func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingR
 func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) {
 	conn := &failingHeartbeatConn{}
 	client := &TunnelClient{
-		conn:              conn,
 		heartbeatInterval: 5 * time.Millisecond,
 	}
+	client.setConn(conn)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -949,7 +1066,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
 	assert.EqualValues(t, 1, service.connectCount.Load())
-	assert.True(t, client.conn == nil || client.conn.IsClosed())
+	assert.True(t, client.getConn() == nil || client.getConn().IsClosed())
 }
 
 func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
@@ -958,9 +1075,9 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *t
 
 	conn := newBlockingRegistrationConnInternal()
 	client := &TunnelClient{
-		conn:                    conn,
 		grpcRegistrationTimeout: time.Second,
 	}
+	client.setConn(conn)
 
 	msg, err := client.awaitGRPCRegistrationInternal(ctx)
 	require.Nil(t, msg)
@@ -981,9 +1098,9 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 	})
 
 	client := &TunnelClient{
-		conn:                    firstConn,
 		grpcRegistrationTimeout: time.Second,
 	}
+	client.setConn(firstConn)
 
 	type registrationResult struct {
 		msg *TunnelMessage
@@ -1001,7 +1118,7 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 		t.Fatal("registration receive did not start")
 	}
 
-	client.conn = secondConn
+	client.setConn(secondConn)
 	cancel()
 
 	select {
@@ -1915,4 +2032,171 @@ func (f roundTripperFunc) RoundTrip(req *http.Request) (*http.Response, error) {
 		return nil, fmt.Errorf("round tripper is nil")
 	}
 	return f(req)
+}
+
+func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
+	tests := []struct {
+		name string
+		run  func(t *testing.T, client *TunnelClient)
+	}{
+		{
+			name: "legacy response",
+			run: func(t *testing.T, client *TunnelClient) {
+				conn := &capturingTunnelConnForHandleRequest{}
+				client.setConn(conn)
+
+				client.handleRequest(context.Background(), conn, &TunnelMessage{
+					ID:     "req-legacy",
+					Type:   MessageTypeRequest,
+					Method: http.MethodGet,
+					Path:   "/local/api",
+				})
+
+				require.Len(t, conn.sent, 1)
+				assert.Equal(t, MessageTypeResponse, conn.sent[0].Type)
+				assert.Equal(t, http.StatusOK, conn.sent[0].Status)
+				assert.Equal(t, "local response", string(conn.sent[0].Body))
+			},
+		},
+		{
+			name: "streaming response",
+			run: func(t *testing.T, client *TunnelClient) {
+				conn := &fakeTunnelConn{}
+				client.setConn(conn)
+
+				client.handleRequestStreaming(context.Background(), conn, &TunnelMessage{
+					ID:     "req-stream",
+					Type:   MessageTypeRequest,
+					Method: http.MethodGet,
+					Path:   "/local/api",
+				})
+
+				require.Len(t, conn.msgs, 3)
+				assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
+				assert.Equal(t, http.StatusOK, conn.msgs[0].Status)
+				assert.Equal(t, MessageTypeStreamData, conn.msgs[1].Type)
+				assert.Equal(t, "local response", string(conn.msgs[1].Body))
+				assert.Equal(t, MessageTypeStreamEnd, conn.msgs[2].Type)
+			},
+		},
+	}
+
+	for _, testCase := range tests {
+		t.Run(testCase.name, func(t *testing.T) {
+			var sawInternalTunnelRequest bool
+			loggerMiddleware := slogecho.New(slog.Default())
+
+			router := echo.New()
+			router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
+				return func(c echo.Context) error {
+					if IsInternalTunnelRequest(c.Request().Context()) {
+						sawInternalTunnelRequest = true
+						return next(c)
+					}
+					return loggerMiddleware(next)(c)
+				}
+			})
+			router.GET("/local/api", func(c echo.Context) error {
+				return c.String(http.StatusOK, "local response")
+			})
+
+			client := NewTunnelClient(&Config{}, router)
+			testCase.run(t, client)
+
+			assert.True(t, sawInternalTunnelRequest)
+		})
+	}
+}
+
+type fakeTunnelConn struct {
+	mu      sync.Mutex
+	msgs    []*TunnelMessage
+	closed  bool
+	sendErr error
+}
+
+func (f *fakeTunnelConn) Send(msg *TunnelMessage) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.sendErr != nil {
+		return f.sendErr
+	}
+	copyMsg := *msg
+	if msg.Headers != nil {
+		copyMsg.Headers = cloneHeaderMap(msg.Headers)
+	}
+	if msg.Body != nil {
+		copyMsg.Body = append([]byte(nil), msg.Body...)
+	}
+	f.msgs = append(f.msgs, &copyMsg)
+	return nil
+}
+
+func (f *fakeTunnelConn) Receive() (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func (f *fakeTunnelConn) IsExpectedReceiveError(error) bool {
+	return false
+}
+
+func (f *fakeTunnelConn) Close() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.closed = true
+	return nil
+}
+
+func (f *fakeTunnelConn) IsClosed() bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.closed
+}
+
+func (f *fakeTunnelConn) SendRequest(_ context.Context, _ *TunnelMessage, _ *sync.Map) (*TunnelMessage, error) {
+	return nil, errors.New("not implemented")
+}
+
+func TestStreamingResponseRecorder_Sequence(t *testing.T) {
+	conn := &fakeTunnelConn{}
+	r := newStreamingResponseRecorder("req-1", conn)
+
+	r.Header().Set("Content-Type", "text/plain")
+
+	n, err := r.Write([]byte("hello"))
+	require.NoError(t, err)
+	assert.Equal(t, 5, n)
+
+	n, err = r.Write([]byte(" world"))
+	require.NoError(t, err)
+	assert.Equal(t, 6, n)
+
+	require.NoError(t, r.Close())
+
+	require.Len(t, conn.msgs, 4)
+	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
+	assert.Equal(t, "req-1", conn.msgs[0].ID)
+	assert.Equal(t, "text/plain", conn.msgs[0].Headers["Content-Type"])
+	assert.Equal(t, "1", conn.msgs[0].Headers["X-Arcane-Tunnel-Stream"])
+
+	assert.Equal(t, MessageTypeStreamData, conn.msgs[1].Type)
+	assert.Equal(t, "hello", string(conn.msgs[1].Body))
+
+	assert.Equal(t, MessageTypeStreamData, conn.msgs[2].Type)
+	assert.Equal(t, " world", string(conn.msgs[2].Body))
+
+	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[3].Type)
+}
+
+func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
+	conn := &fakeTunnelConn{}
+	r := newStreamingResponseRecorder("req-2", conn)
+
+	r.WriteHeader(http.StatusCreated)
+	require.NoError(t, r.Close())
+
+	require.Len(t, conn.msgs, 2)
+	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
+	assert.Equal(t, http.StatusCreated, conn.msgs[0].Status)
+	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[1].Type)
 }

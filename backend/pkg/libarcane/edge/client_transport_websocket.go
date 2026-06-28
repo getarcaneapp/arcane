@@ -50,10 +50,11 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	}
 	defer func() { _ = conn.Close() }()
 
-	c.conn = NewTunnelConn(conn)
-	setActiveAgentTunnelConn(c.conn)
-	defer clearActiveAgentTunnelConn(c.conn)
-	if err := c.conn.Send(c.registerMessageInternal()); err != nil {
+	tunnelConn := NewTunnelConn(conn)
+	c.setConn(tunnelConn)
+	setActiveAgentTunnelConn(tunnelConn)
+	defer clearActiveAgentTunnelConn(tunnelConn)
+	if err := tunnelConn.Send(c.registerMessageInternal()); err != nil {
 		return fmt.Errorf("failed to send websocket register message: %w", err)
 	}
 	registerMsg, err := c.awaitRegistrationInternal(ctx)
@@ -67,9 +68,9 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	)
 	c.markTransportConnectedInternal(EdgeTransportWebSocket)
 
-	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
-	defer heartbeatCancel()
-	go c.heartbeatLoop(heartbeatCtx)
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+	go c.heartbeatLoop(connCtx)
 
-	return c.messageLoop(ctx)
+	return c.messageLoop(connCtx)
 }

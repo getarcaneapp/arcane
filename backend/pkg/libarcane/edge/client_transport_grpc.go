@@ -81,10 +81,11 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 		return fmt.Errorf("failed to open tunnel stream: %w", err)
 	}
 
-	c.conn = NewGRPCAgentTunnelConn(stream, streamCancel)
-	setActiveAgentTunnelConn(c.conn)
-	defer clearActiveAgentTunnelConn(c.conn)
-	if err := c.conn.Send(c.registerMessageInternal()); err != nil {
+	tunnelConn := NewGRPCAgentTunnelConn(stream, streamCancel)
+	c.setConn(tunnelConn)
+	setActiveAgentTunnelConn(tunnelConn)
+	defer clearActiveAgentTunnelConn(tunnelConn)
+	if err := tunnelConn.Send(c.registerMessageInternal()); err != nil {
 		return fmt.Errorf("failed to send register message: %w", err)
 	}
 
@@ -99,11 +100,11 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	)
 	c.markTransportConnectedInternal(EdgeTransportGRPC)
 
-	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
-	defer heartbeatCancel()
-	go c.heartbeatLoop(heartbeatCtx)
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+	go c.heartbeatLoop(connCtx)
 
-	return c.messageLoop(ctx)
+	return c.messageLoop(connCtx)
 }
 
 func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.ClientConn) error {
