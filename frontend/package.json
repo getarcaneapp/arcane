@@ -66,7 +66,7 @@
     "clsx": "^2.1.1",
     "fallow": "^2.102.0",
     "formsnap": "^2.0.1",
-    "isomorphic-dompurify": "^3.17.0",
+    "isomorphic-dompurify": "^3.18.0",
     "mode-watcher": "^1.1.0",
     "paneforge": "^1.0.2",
     "runed": "^0.37.1",
