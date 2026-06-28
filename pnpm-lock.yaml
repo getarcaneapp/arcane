@@ -120,8 +120,8 @@ importers:
         specifier: ^3.0.0-next.4
         version: 3.0.0-next.4(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(@typescript/typescript6@6.0.1)(svelte@5.56.4)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       '@tanstack/svelte-query':
-        specifier: ^6.1.34
-        version: 6.1.34(svelte@5.56.4)
+        specifier: ^6.1.35
+        version: 6.1.35(svelte@5.56.4)
       '@tanstack/svelte-table':
         specifier: ^9.0.0-beta.17
         version: 9.0.0-beta.17(svelte@5.56.4)
@@ -206,7 +206,7 @@ importers:
         version: 4.3.1(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0))
       '@tanstack/svelte-query-devtools':
         specifier: ^6.1.34
-        version: 6.1.34(@tanstack/svelte-query@6.1.34(svelte@5.56.4))(svelte@5.56.4)
+        version: 6.1.34(@tanstack/svelte-query@6.1.35(svelte@5.56.4))(svelte@5.56.4)
       '@types/node':
         specifier: ^26.0.1
         version: 26.0.1
@@ -1347,8 +1347,8 @@ packages:
     peerDependencies:
       vite: ^5.2.0 || ^6 || ^7 || ^8
 
-  '@tanstack/query-core@5.101.0':
-    resolution: {integrity: sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow==}
+  '@tanstack/query-core@5.101.1':
+    resolution: {integrity: sha512-Y6Y92dkXtNqx67m2pMSxUsA3zOCwv862JexZRP8/EPwvKXMPu9m8rv43spiXWzOUIggQ3SQApttALStzhA8B4g==}
 
   '@tanstack/query-devtools@5.101.0':
     resolution: {integrity: sha512-MVqw17k08RQtGGLEL654+dX/btbX9p/8WjkznO//zusLTMaObxi3Q+MoFwGVkC9K3tqjn8qrrNhJevXx4fJTeQ==}
@@ -1362,8 +1362,8 @@ packages:
       '@tanstack/svelte-query': ^6.1.34
       svelte: ^5.25.0
 
-  '@tanstack/svelte-query@6.1.34':
-    resolution: {integrity: sha512-b/j6OXHd285NLPTH31SqJ8+XfHKoDPV8+ZGxXjg4pSAWW2aVo/f5gbu5m32QjfdTSumib3+d1dJBv5Yupv7HKw==}
+  '@tanstack/svelte-query@6.1.35':
+    resolution: {integrity: sha512-aMJMdAGFeM5vBuLbrQrQcsmZmqHwNOcfXPVlSyvVl18jc5TvT3oh1+zJJJqE+ZA8KV9M4pq5wCLJNkQjUHbh9Q==}
     peerDependencies:
       svelte: ^5.25.0
 
@@ -3926,22 +3926,22 @@ snapshots:
       tailwindcss: 4.3.1
       vite: 8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)
 
-  '@tanstack/query-core@5.101.0': {}
+  '@tanstack/query-core@5.101.1': {}
 
   '@tanstack/query-devtools@5.101.0': {}
 
   '@tanstack/store@0.11.0': {}
 
-  '@tanstack/svelte-query-devtools@6.1.34(@tanstack/svelte-query@6.1.34(svelte@5.56.4))(svelte@5.56.4)':
+  '@tanstack/svelte-query-devtools@6.1.34(@tanstack/svelte-query@6.1.35(svelte@5.56.4))(svelte@5.56.4)':
     dependencies:
       '@tanstack/query-devtools': 5.101.0
-      '@tanstack/svelte-query': 6.1.34(svelte@5.56.4)
+      '@tanstack/svelte-query': 6.1.35(svelte@5.56.4)
       esm-env: 1.2.2
       svelte: 5.56.4
 
-  '@tanstack/svelte-query@6.1.34(svelte@5.56.4)':
+  '@tanstack/svelte-query@6.1.35(svelte@5.56.4)':
     dependencies:
-      '@tanstack/query-core': 5.101.0
+      '@tanstack/query-core': 5.101.1
       svelte: 5.56.4
 
   '@tanstack/svelte-store@0.12.0(svelte@5.56.4)':
