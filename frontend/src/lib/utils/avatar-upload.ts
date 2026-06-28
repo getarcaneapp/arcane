@@ -15,7 +15,7 @@ export async function prepareAvatarUploadFile(
 	maxSizeBytes: number,
 	getFileFromUrl: (url: string, fileName: string) => Promise<File>
 ): Promise<AvatarUploadFileResult> {
-	const file = await getFileFromUrl(url, 'avatar.png');
+	const file = await getFileFromUrl(url, 'avatar');
 
 	if (file.size > maxSizeBytes) {
 		return { ok: false, reason: 'too_large' };

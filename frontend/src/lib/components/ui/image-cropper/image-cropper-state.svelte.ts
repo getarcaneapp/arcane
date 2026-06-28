@@ -11,6 +11,7 @@ export type ImageCropperRootProps = WritableBoxedValues<{
 	ReadableBoxedValues<{
 		id: string;
 		onCropped: (url: string) => void;
+		onError: (error: Error) => void;
 		onUnsupportedFile: (file: File) => void;
 	}>;
 
@@ -47,9 +48,13 @@ class ImageCropperRootState {
 	async onCrop() {
 		if (!this.pixelCrop || !this.tempUrl) return;
 
-		this.opts.src.current = await getCroppedImg(this.tempUrl, this.pixelCrop);
-		this.open = false;
-		this.opts.onCropped.current(this.opts.src.current);
+		try {
+			this.opts.src.current = await getCroppedImg(this.tempUrl, this.pixelCrop);
+			this.open = false;
+			this.opts.onCropped.current(this.opts.src.current);
+		} catch (error) {
+			this.opts.onError.current(error instanceof Error ? error : new Error('failed to crop image'));
+		}
 	}
 
 	get src() {

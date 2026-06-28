@@ -444,6 +444,7 @@
 	"account_avatar_unsupported_file": "Use a PNG, JPEG, or WebP image.",
 	"account_avatar_crop_title": "Crop profile picture",
 	"account_avatar_crop_description": "Choose the part of the image to use for your profile picture.",
+	"account_avatar_crop_failed": "Failed to crop profile picture",
 	"account_crop_photo": "Crop photo",
 	"account_upload_photo": "Upload photo",
 	"account_remove_photo": "Remove",

@@ -9,6 +9,7 @@
 		id = useId(),
 		src = $bindable(''),
 		onCropped = () => {},
+		onError = () => {},
 		onUnsupportedFile = () => {},
 		children,
 		...rest
@@ -21,6 +22,7 @@
 			(value) => (src = value)
 		),
 		onCropped: box.with(() => onCropped),
+		onError: box.with(() => onError),
 		onUnsupportedFile: box.with(() => onUnsupportedFile)
 	});
 

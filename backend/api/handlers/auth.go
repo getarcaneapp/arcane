@@ -5,6 +5,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	stdimage "image"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -516,15 +520,17 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}
 	defer func() { _ = f.Close() }()
 
-	// Read the raw bytes
+	maxSizeMb := h.avatarMaxUploadSizeMbInternal(ctx)
+	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
+
+	// Read one byte past the configured ceiling so oversized files are rejected
+	// without buffering the full multipart payload.
 	buf := new(bytes.Buffer)
-	if _, err := buf.ReadFrom(f); err != nil {
+	if _, err := buf.ReadFrom(io.LimitReader(f, maxSizeBytes+1)); err != nil {
 		return nil, huma.Error500InternalServerError("failed to read file data: " + err.Error())
 	}
 
-	maxSizeMb := h.avatarMaxUploadSizeMbInternal(ctx)
-	maxSizeBytes := maxSizeMb * 1024 * 1024
-	if buf.Len() > maxSizeBytes {
+	if int64(buf.Len()) > maxSizeBytes {
 		return nil, huma.NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("avatar file must be %d MB or smaller", maxSizeMb))
 	}
 	data := buf.Bytes()
@@ -534,6 +540,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	if err != nil {
 		return nil, huma.Error400BadRequest("unsupported image format: only PNG, JPEG and WebP are accepted")
 	}
+	data, mimeType = normalizeAvatarImageInternal(data, mimeType)
 
 	if err := h.userService.UploadAvatar(ctx, currentUser.ID, data, mimeType); err != nil {
 		slog.ErrorContext(ctx, "Failed to save avatar", "user_id", currentUser.ID, "error", err)
@@ -615,4 +622,47 @@ func detectAvatarMimeTypeInternal(data []byte) (string, error) {
 	default:
 		return "", errors.New("unsupported image format: only PNG, JPEG and WebP are accepted")
 	}
+}
+
+func normalizeAvatarImageInternal(data []byte, mimeType string) ([]byte, string) {
+	const maxAvatarNormalizePixels = 16 * 1024 * 1024
+	if mimeType != "image/png" {
+		return data, mimeType
+	}
+
+	config, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return data, mimeType
+	}
+	if config.Width > maxAvatarNormalizePixels/config.Height {
+		return data, mimeType
+	}
+
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil || imageHasTransparencyInternal(img) {
+		return data, mimeType
+	}
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: 92}); err != nil {
+		return data, mimeType
+	}
+	if out.Len() == 0 || out.Len() >= len(data) {
+		return data, mimeType
+	}
+
+	return out.Bytes(), "image/jpeg"
+}
+
+func imageHasTransparencyInternal(img stdimage.Image) bool {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, alpha := img.At(x, y).RGBA()
+			if alpha != 0xffff {
+				return true
+			}
+		}
+	}
+	return false
 }

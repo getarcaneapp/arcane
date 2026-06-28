@@ -178,6 +178,10 @@
 		toast.error(m.account_avatar_unsupported_file());
 	}
 
+	function handleAvatarCropError() {
+		toast.error(m.account_avatar_crop_failed());
+	}
+
 	async function removeAvatar() {
 		if (!currentUser?.avatarUrl) return;
 		avatarUploading = true;
@@ -315,6 +319,7 @@
 							bind:src={cropperAvatarSrc}
 							accept="image/png, image/jpeg, image/webp"
 							onCropped={handleCroppedAvatar}
+							onError={handleAvatarCropError}
 							onUnsupportedFile={handleUnsupportedAvatarFile}
 						>
 							<ImageCropper.Dialog>

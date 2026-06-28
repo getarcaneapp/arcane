@@ -7,6 +7,7 @@ export type ImageCropperRootPropsWithoutHTML = WithChildren<{
 	id?: string;
 	src?: string;
 	onCropped?: (url: string) => void;
+	onError?: (error: Error) => void;
 	onUnsupportedFile?: (file: File) => void;
 }>;
 
