@@ -64,6 +64,23 @@ func writeFileInternal(t *testing.T, rootDir, relativePath string, content []byt
 	require.NoError(t, os.WriteFile(targetPath, content, 0o644))
 }
 
+func TestApplyLifecycleFieldsToSyncInternal_DefaultsPreDeployTimeout(t *testing.T) {
+	var sync models.GitOpsSync
+
+	applyLifecycleFieldsToSyncInternal(&sync, lifecycleConfigInputInternal{})
+
+	require.Equal(t, lifecycleDefaultTimeoutSec, sync.PreDeployTimeoutSec)
+}
+
+func TestApplyLifecycleFieldsToSyncInternal_UsesExplicitPreDeployTimeout(t *testing.T) {
+	timeoutSec := 90
+	var sync models.GitOpsSync
+
+	applyLifecycleFieldsToSyncInternal(&sync, lifecycleConfigInputInternal{timeoutSec: &timeoutSec})
+
+	require.Equal(t, timeoutSec, sync.PreDeployTimeoutSec)
+}
+
 func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 	ctx := context.Background()
 	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)

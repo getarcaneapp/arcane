@@ -256,6 +256,8 @@ func applyLifecycleFieldsToSyncInternal(sync *models.GitOpsSync, in lifecycleCon
 	sync.PreDeployExtraMounts = nullableTrimmedStringInternal(in.extraMounts)
 	if in.timeoutSec != nil {
 		sync.PreDeployTimeoutSec = *in.timeoutSec
+	} else {
+		sync.PreDeployTimeoutSec = lifecycleDefaultTimeoutSec
 	}
 	if mode := normalizeLifecycleNetworkModeInternal(in.networkMode); mode != "" {
 		sync.PreDeployNetworkMode = mode
