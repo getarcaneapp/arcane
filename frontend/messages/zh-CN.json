@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "将项目目录内的符号链接子目录视为 Docker Compose 项目。",
 	"general_base_url_label": "基础服务器URL",
 	"general_base_url_help": "您的Docker host的基本URL。用于打开容器的链接",
-	"general_user_avatars_heading": "用户头像",
-	"general_user_avatars_description": "控制个人资料图像的 Gravatar 使用情况。",
 	"general_enable_gravatar_label": "启用 Gravatar 头像",
 	"general_settings_saved": "已成功更新设置",
 	"_comment_settings_security": "=== 设置 - 安全===",

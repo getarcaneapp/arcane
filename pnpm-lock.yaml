@@ -176,6 +176,9 @@ importers:
       svelte-codemirror-editor:
         specifier: ^2.1.0
         version: 2.1.0(codemirror@6.0.2)(svelte@5.56.3)
+      svelte-easy-crop:
+        specifier: ^5.0.1
+        version: 5.0.1(svelte@5.56.3)
       yaml:
         specifier: ^2.9.0
         version: 2.9.0
@@ -2702,6 +2705,11 @@ packages:
       codemirror: ^6.0.0
       svelte: ^5.0.0
 
+  svelte-easy-crop@5.0.1:
+    resolution: {integrity: sha512-Dq2rgmPsSEo+K8k49TFGXZAJwJa537AR6hW1RqKEdYj7QKlc4Ya7l4VlSYWlOV8/uAiQ10VyGRdSVAUcZiMwjg==}
+    peerDependencies:
+      svelte: ^5.0.0
+
   svelte-sonner@1.1.1:
     resolution: {integrity: sha512-5cd3p7wa4cq0NsqslMwdlPb7x1JglEZ/GKrLePWNr5bCxR1nagAVrY01FRFrXfUGs41miLt3C327+8XJo5BzZw==}
     peerDependencies:
@@ -5213,6 +5221,10 @@ snapshots:
     dependencies:
       '@codemirror/search': 6.7.0
       codemirror: 6.0.2
+      svelte: 5.56.3
+
+  svelte-easy-crop@5.0.1(svelte@5.56.3):
+    dependencies:
       svelte: 5.56.3
 
   svelte-sonner@1.1.1(svelte@5.56.3):

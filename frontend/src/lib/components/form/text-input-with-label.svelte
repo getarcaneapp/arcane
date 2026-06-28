@@ -47,7 +47,7 @@
 	}
 </script>
 
-<div class="space-y-2">
+<div class="space-y-2.5">
 	<div>
 		<Label for={id} class="text-sm font-medium">
 			{label}{#if required}<span class="text-destructive ml-0.5">*</span>{/if}

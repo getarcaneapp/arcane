@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "프로젝트 디렉토리 내에서 심볼릭 링크(Symlink)된 하위 디렉토리도 Docker Compose 프로젝트로 처리합니다.",
 	"general_base_url_label": "기본 서버 URL",
 	"general_base_url_help": "Docker 호스트의 기본 URL입니다. 서비스 링크에서 컨테이너를 열 때 사용됩니다.",
-	"general_user_avatars_heading": "사용자 아바타",
-	"general_user_avatars_description": "프로필 이미지에 Gravatar를 사용할지 설정합니다.",
 	"general_enable_gravatar_label": "Gravatar 활성화",
 	"general_settings_saved": "설정이 성공적으로 업데이트되었습니다.",
 	"_comment_settings_security": "=== 설정 - 보안 ===",

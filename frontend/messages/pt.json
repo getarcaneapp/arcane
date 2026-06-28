@@ -807,8 +807,6 @@
 	"general_base_url_placeholder": "localhost",
 	"general_base_url_help": "The Base URL for your docker host. Used when opening containers from the service links",
 	"general_base_url_required": "Base server URL is required",
-	"general_user_avatars_heading": "User Avatars",
-	"general_user_avatars_description": "Control Gravatar usage for profile images.",
 	"general_enable_gravatar_label": "Enable Gravatar",
 	"general_enable_gravatar_description": "Whether to use Gravatar-based avatars for user accounts",
 	"general_settings_saved": "Settings Updated Successfully",

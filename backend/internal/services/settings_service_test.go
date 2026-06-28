@@ -128,6 +128,27 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
 }
 
+func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	current, err := svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "2", current.AvatarMaxUploadSizeMb.Value)
+
+	updatedValue := "8"
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		AvatarMaxUploadSizeMb: &updatedValue,
+	})
+	require.NoError(t, err)
+
+	current, err = svc.GetSettings(ctx)
+	require.NoError(t, err)
+	require.Equal(t, "8", current.AvatarMaxUploadSizeMb.Value)
+}
+
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)

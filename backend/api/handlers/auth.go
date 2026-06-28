@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
 	"mime/multipart"
 	"net/http"
@@ -20,9 +21,10 @@ import (
 )
 
 type AuthHandler struct {
-	userService *services.UserService
-	authService *services.AuthService
-	oidcService *services.OidcService
+	userService     *services.UserService
+	authService     *services.AuthService
+	oidcService     *services.OidcService
+	settingsService *services.SettingsService
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -95,11 +97,12 @@ type DeleteMyAvatarOutput struct {
 }
 
 // RegisterAuth registers authentication routes using Huma.
-func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService) {
+func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService, settingsService *services.SettingsService) {
 	h := &AuthHandler{
-		userService: userService,
-		authService: authService,
-		oidcService: oidcService,
+		userService:     userService,
+		authService:     authService,
+		oidcService:     oidcService,
+		settingsService: settingsService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -189,7 +192,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Method:      http.MethodPost,
 		Path:        "/auth/me/avatar",
 		Summary:     "Upload own avatar",
-		Description: "Upload a custom profile picture (PNG, JPEG or WebP, max 2 MB). Replaces any existing avatar.",
+		Description: "Upload a custom profile picture (PNG, JPEG or WebP). Replaces any existing avatar.",
 		Tags:        []string{"Auth"},
 		Security: []map[string][]string{
 			{"BearerAuth": {}},
@@ -488,7 +491,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 }
 
 // UploadMyAvatar lets the current user upload a custom profile picture.
-// Accepts PNG, JPEG, or WebP images up to 2 MB.
+// Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
 func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
@@ -519,9 +522,10 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		return nil, huma.Error500InternalServerError("failed to read file data: " + err.Error())
 	}
 
-	const maxSizeBytes = 2 * 1024 * 1024 // 2 MB
+	maxSizeMb := h.avatarMaxUploadSizeMbInternal(ctx)
+	maxSizeBytes := maxSizeMb * 1024 * 1024
 	if buf.Len() > maxSizeBytes {
-		return nil, huma.NewError(http.StatusRequestEntityTooLarge, "avatar file must be 2 MB or smaller")
+		return nil, huma.NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("avatar file must be %d MB or smaller", maxSizeMb))
 	}
 	data := buf.Bytes()
 
@@ -553,6 +557,18 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 			Data:    out,
 		},
 	}, nil
+}
+
+func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
+	const defaultAvatarMaxUploadSizeMb = 2
+	if h.settingsService == nil {
+		return defaultAvatarMaxUploadSizeMb
+	}
+	maxSizeMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
+	if maxSizeMb <= 0 {
+		return defaultAvatarMaxUploadSizeMb
+	}
+	return maxSizeMb
 }
 
 // DeleteMyAvatar removes the current user's custom profile picture.

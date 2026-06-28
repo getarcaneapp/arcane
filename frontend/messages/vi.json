@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Xử lý các thư mục con được liên kết tượng trưng bên trong thư mục projects như các dự án Docker Compose.",
 	"general_base_url_label": "Base Server URL",
 	"general_base_url_help": "URL cơ sở cho Docker host của bạn. Được dùng khi mở Container từ các liên kết dịch vụ",
-	"general_user_avatars_heading": "Ảnh đại diện người dùng",
-	"general_user_avatars_description": "Kiểm soát việc sử dụng Gravatar cho ảnh hồ sơ.",
 	"general_enable_gravatar_label": "Bật Gravatar",
 	"general_settings_saved": "Cập nhật cài đặt thành công",
 	"_comment_settings_security": "=== SETTINGS - SECURITY ===",

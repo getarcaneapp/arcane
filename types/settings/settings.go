@@ -207,6 +207,11 @@ type Update struct {
 	// Required: false
 	EnableGravatar *string `json:"enableGravatar,omitempty"`
 
+	// AvatarMaxUploadSizeMb is the maximum size in megabytes for profile picture uploads.
+	//
+	// Required: false
+	AvatarMaxUploadSizeMb *string `json:"avatarMaxUploadSizeMb,omitempty"`
+
 	// DefaultShell is the default shell used for container execution.
 	//
 	// Required: false

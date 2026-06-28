@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Behandel symlinked kind directories binnen de projecten directory als Docker Compose projecten.",
 	"general_base_url_label": "Basisserver URL",
 	"general_base_url_help": "De basis-URL voor uw docker host. Wordt gebruikt bij het openen van containers vanuit de service links",
-	"general_user_avatars_heading": "Gebruiker Avatars",
-	"general_user_avatars_description": "Bedien Gravatar gebruik voor profielafbeeldingen.",
 	"general_enable_gravatar_label": "Gravatar inschakelen",
 	"general_settings_saved": "Instellingen bijgewerkt",
 	"_comment_settings_security": "=== INSTELLINGEN - BEVEILIGING ===",

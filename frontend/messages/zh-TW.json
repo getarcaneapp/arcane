@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "將專案目錄內的子目錄符號連結視為 Docker Compose 專案。",
 	"general_base_url_label": "基底伺服器網址",
 	"general_base_url_help": "Docker 主機的基底路徑，用於從服務連結開啟容器時",
-	"general_user_avatars_heading": "使用者頭像",
-	"general_user_avatars_description": "控制使用者頭像是否使用 Gravatar。",
 	"general_enable_gravatar_label": "啟用 Gravatar 頭像",
 	"general_settings_saved": "設定更新成功",
 	"_comment_settings_security": "=== SETTINGS - SECURITY ===",

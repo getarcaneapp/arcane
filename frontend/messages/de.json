@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Behandelt symlinked Unterverzeichnisse innerhalb des projects Verzeichnisses als Docker Compose Projekte.",
 	"general_base_url_label": "Basis-Server-URL",
 	"general_base_url_help": "Die Basis-URL für deinen Docker-Host. Wird verwendet, wenn Container über Service-Links geöffnet werden.",
-	"general_user_avatars_heading": "Benutzer-Avatare",
-	"general_user_avatars_description": "Gravatar-Nutzung für Profilbilder steuern.",
 	"general_enable_gravatar_label": "Gravatar aktivieren",
 	"general_settings_saved": "Einstellungen erfolgreich aktualisiert",
 	"_comment_settings_security": "=== EINSTELLUNGEN - SICHERHEIT ===",

@@ -279,6 +279,7 @@ var expectedSettingOverrideKeys = []string{
 	"autoUpdate",
 	"autoUpdateExcludedContainers",
 	"autoUpdateInterval",
+	"avatarMaxUploadSizeMb",
 	"baseServerUrl",
 	"buildProvider",
 	"buildTimeout",
