@@ -38,11 +38,11 @@ func (s *SettingsSearchService) GetSettingsCategories() []category.Category {
 
 func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 	// Extract category metadata from struct tags (catmeta)
-	catMetaMap := utils.ExtractCategoryMetadata(models.Settings{}, nil)
+	catMetaMap := utils.ExtractCategoryMetadata(models.Settings{})
 
 	// map category id -> list of settings
 	categories := map[string][]meta.Metadata{}
-	categoryOrder := []string{} // Track order from first appearance in struct
+	var categoryOrder []string // Track order from first appearance in struct
 
 	rt := reflect.TypeFor[models.Settings]()
 	for field := range rt.Fields() {
@@ -94,7 +94,7 @@ func (s *SettingsSearchService) buildCategoriesFromModel() []category.Category {
 	}
 
 	// Build final category list in struct order
-	results := []category.Category{}
+	var results []category.Category
 	for _, catID := range categoryOrder {
 		catMeta := catMetaMap[catID]
 		if catMeta == nil {

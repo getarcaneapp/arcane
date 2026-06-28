@@ -138,7 +138,7 @@ func (h *WebSocketHandler) streamProjectLogsInternal(ctx context.Context, projec
 	if h.projectLogStreamer != nil {
 		return h.projectLogStreamer(ctx, projectID, logsChan, follow, tail, since, timestamps)
 	}
-	return h.projectService.StreamProjectLogs(ctx, projectID, logsChan, follow, tail, since, timestamps)
+	return h.projectService.StreamProjectLogs(ctx, projectID, logsChan, follow, tail)
 }
 
 func (h *WebSocketHandler) streamContainerLogsInternal(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error {
@@ -903,10 +903,7 @@ func (h *WebSocketHandler) writeExecErrorInternal(conn *websocket.Conn, err erro
 func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
 	return func() {
 		slog.Debug("Cleaning up exec session", "execID", execID, "containerID", containerID, "contextErr", ctx.Err())
-		// Cleanup must proceed even if parent ctx is canceled.
-		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 5*time.Second)
-		defer cleanupCancel()
-		if err := execSession.Close(cleanupCtx); err != nil { //nolint:contextcheck
+		if err := execSession.Close(); err != nil {
 			slog.Warn("Failed to clean up exec session", "execID", execID, "error", err)
 		}
 	}
@@ -1114,7 +1111,7 @@ func (h *WebSocketHandler) collectSystemStats(ctx context.Context) systemtypes.S
 	cpuCount := h.getCPUCount()
 	memUsed, memTotal := h.getMemoryInfo()
 	cpuCount, memUsed, memTotal = h.applyCgroupLimits(cpuCount, memUsed, memTotal)
-	diskUsed, diskTotal := h.getDiskInfo(ctx)
+	diskUsed, diskTotal := h.getDiskInfo()
 	hostname := h.getHostname()
 	gpuStats, gpuCount := h.getGPUInfo(ctx)
 
@@ -1205,8 +1202,8 @@ func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uin
 }
 
 // getDiskInfo returns disk usage and total.
-func (h *WebSocketHandler) getDiskInfo(ctx context.Context) (uint64, uint64) {
-	diskUsagePath := h.getDiskUsagePath(ctx)
+func (h *WebSocketHandler) getDiskInfo() (uint64, uint64) {
+	diskUsagePath := h.getDiskUsagePath()
 	diskInfo, err := disk.Usage(diskUsagePath)
 	if err != nil || diskInfo == nil || diskInfo.Total == 0 {
 		if diskUsagePath != "/" {
@@ -1403,7 +1400,7 @@ func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, canc
 	}
 }
 
-func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
+func (h *WebSocketHandler) getDiskUsagePath() string {
 	h.diskUsagePathCache.RLock()
 	if h.diskUsagePathCache.value != "" && time.Since(h.diskUsagePathCache.timestamp) < 5*time.Minute {
 		path := h.diskUsagePathCache.value
@@ -1417,7 +1414,7 @@ func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
 
 	// Try to get Docker root from system service
 	if h.systemService != nil {
-		path = h.systemService.GetDiskUsagePath(ctx)
+		path = h.systemService.GetDiskUsagePath()
 	}
 
 	h.diskUsagePathCache.Lock()

@@ -22,21 +22,21 @@ import (
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 )
 
-type DashboardHandler struct {
+type dashboardHandler struct {
 	dashboardService   *services.DashboardService
 	environmentService *services.EnvironmentService
 }
 
-type GetDashboardInput struct {
+type getDashboardInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	DebugAllGood  bool   `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
 }
 
-type GetDashboardOutput struct {
+type getDashboardOutput struct {
 	Body base.ApiResponse[dashboardtypes.Snapshot]
 }
 
-type StreamAllDashboardsInput struct {
+type streamAllDashboardsInput struct {
 	DebugAllGood bool `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
 }
 
@@ -50,7 +50,7 @@ const (
 )
 
 func RegisterDashboard(api huma.API, dashboardService *services.DashboardService, environmentService *services.EnvironmentService) {
-	h := &DashboardHandler{
+	h := &dashboardHandler{
 		dashboardService:   dashboardService,
 		environmentService: environmentService,
 	}
@@ -66,7 +66,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermDashboardRead, h.GetDashboard)
+	}, authz.PermDashboardRead, h.getDashboardInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "stream-all-dashboards",
@@ -80,10 +80,10 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermDashboardRead),
-	}, h.StreamAllDashboards)
+	}, h.streamAllDashboardsHandlerInternal)
 }
 
-func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
+func (h *dashboardHandler) getDashboardInternal(ctx context.Context, input *getDashboardInput) (*getDashboardOutput, error) {
 	if h.dashboardService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -102,7 +102,7 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 		return nil, huma.Error500InternalServerError("dashboard snapshot not available")
 	}
 
-	return &GetDashboardOutput{
+	return &getDashboardOutput{
 		Body: base.ApiResponse[dashboardtypes.Snapshot]{
 			Success: true,
 			Data:    *snapshot,
@@ -110,7 +110,7 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 	}, nil
 }
 
-func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *StreamAllDashboardsInput) (*huma.StreamResponse, error) {
+func (h *dashboardHandler) streamAllDashboardsHandlerInternal(_ context.Context, input *streamAllDashboardsInput) (*huma.StreamResponse, error) {
 	if h.dashboardService == nil || h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -135,7 +135,7 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // streamAllDashboardsInternal multiplexes dashboard snapshots for the local
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
-func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, debugAllGood bool, encoder *json.Encoder, flush func()) {
+func (h *dashboardHandler) streamAllDashboardsInternal(ctx context.Context, debugAllGood bool, encoder *json.Encoder, flush func()) {
 	aggstream.Run(ctx, encoder, flush, dashboardStreamEventBuffer, dashboardStreamHeartbeatInterval,
 		func() dashboardtypes.StreamEvent {
 			return dashboardtypes.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
@@ -162,7 +162,7 @@ func trimDashboardStreamSnapshotInternal(snapshot *dashboardtypes.Snapshot) *das
 	return snapshot
 }
 
-func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.Context, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
+func (h *dashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.Context, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	lastError := ""
 
 	poll := func() {
@@ -216,14 +216,14 @@ func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.C
 // runRemoteDashboardStreamPollersInternal keeps one poller goroutine per
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
-func (h *DashboardHandler) runRemoteDashboardStreamPollersInternal(ctx context.Context, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
+func (h *dashboardHandler) runRemoteDashboardStreamPollersInternal(ctx context.Context, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	aggstream.ReconcileEnvironmentPollers(ctx, h.environmentService, dashboardStreamEnvReconcileInterval, "dashboard stream",
 		func(pollCtx context.Context, environmentID string) {
 			h.runRemoteDashboardStreamPollerInternal(pollCtx, environmentID, debugAllGood, events)
 		})
 }
 
-func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environmentID string, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
+func (h *dashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environmentID string, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	// Tell the client this environment is covered before the first poll
 	// completes so it can hold skeletons instead of assuming no data exists.
 	if !aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
@@ -294,7 +294,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 // endpoint directly through the environment service so the raw remenv error
 // survives for classification (proxyRemoteJSONInternal would translate it
 // into a huma error first).
-func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Context, environmentID string, debugAllGood bool) (*dashboardtypes.Snapshot, error) {
+func (h *dashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Context, environmentID string, debugAllGood bool) (*dashboardtypes.Snapshot, error) {
 	path := "/api/environments/0/dashboard"
 	if debugAllGood {
 		path += "?debugAllGood=true"
@@ -315,7 +315,7 @@ func (h *DashboardHandler) fetchRemoteDashboardSnapshotInternal(ctx context.Cont
 // agents have exposed for far longer than the aggregate dashboard endpoint.
 // Each piece is fetched independently so a partially compatible agent still
 // yields partial data; only when every piece fails is an error returned.
-func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Context, environmentID string) (*dashboardtypes.Snapshot, error) {
+func (h *dashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Context, environmentID string) (*dashboardtypes.Snapshot, error) {
 	snapshot := &dashboardtypes.Snapshot{
 		ActionItems: dashboardtypes.ActionItems{Items: []dashboardtypes.ActionItem{}},
 	}

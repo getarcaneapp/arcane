@@ -71,17 +71,17 @@ func BuildImageUpdateNotificationMessage(format MessageFormat, environmentName, 
 	}
 
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🔔 Container Image Update Notification"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), updateStatus)
+	_, _ = fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🔔 Container Image Update Notification"))
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), updateStatus)
 	if updateInfo != nil {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Update Type"), updateInfo.UpdateType)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Update Type"), updateInfo.UpdateType)
 		if updateInfo.CurrentDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Digest"), formatNotificationCodeInternal(format, updateInfo.CurrentDigest))
+			_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Digest"), formatNotificationCodeInternal(format, updateInfo.CurrentDigest))
 		}
 		if updateInfo.LatestDigest != "" {
-			fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Latest Digest"), formatNotificationCodeInternal(format, updateInfo.LatestDigest))
+			_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Latest Digest"), formatNotificationCodeInternal(format, updateInfo.LatestDigest))
 		}
 	}
 
@@ -95,17 +95,17 @@ func BuildContainerUpdateNotificationMessage(format MessageFormat, environmentNa
 	}
 
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "✅ Container Successfully Updated"))
-	fmt.Fprintf(&message, "Your container has been updated with the latest image version.\n\n")
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), status)
+	_, _ = fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "✅ Container Successfully Updated"))
+	_, _ = fmt.Fprintf(&message, "Your container has been updated with the latest image version.\n\n")
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Image"), imageRef)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Status"), status)
 	if oldDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Previous Version"), formatNotificationCodeInternal(format, oldDigest))
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Previous Version"), formatNotificationCodeInternal(format, oldDigest))
 	}
 	if newDigest != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Version"), formatNotificationCodeInternal(format, newDigest))
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Current Version"), formatNotificationCodeInternal(format, newDigest))
 	}
 
 	return message.String()
@@ -125,32 +125,32 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 	sort.Strings(imageRefs)
 
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitleInternal(format, title), description)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s\n\n%s\n", formatNotificationTitleInternal(format, title), description)
+	_, _ = fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
 
 	for _, imageRef := range imageRefs {
 		update := updates[imageRef]
 		switch format {
 		case MessageFormatPlain:
-			fmt.Fprintf(&message, "%s\n", imageRef)
-			fmt.Fprintf(&message, "• Type: %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• Current: %s\n", update.CurrentDigest)
-			fmt.Fprintf(&message, "• Latest: %s\n\n", update.LatestDigest)
+			_, _ = fmt.Fprintf(&message, "%s\n", imageRef)
+			_, _ = fmt.Fprintf(&message, "• Type: %s\n", update.UpdateType)
+			_, _ = fmt.Fprintf(&message, "• Current: %s\n", update.CurrentDigest)
+			_, _ = fmt.Fprintf(&message, "• Latest: %s\n\n", update.LatestDigest)
 		case MessageFormatMarkdown:
-			fmt.Fprintf(&message, "**%s**\n", imageRef)
-			fmt.Fprintf(&message, "• **Type:** %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• **Latest:** %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			_, _ = fmt.Fprintf(&message, "**%s**\n", imageRef)
+			_, _ = fmt.Fprintf(&message, "• **Type:** %s\n", update.UpdateType)
+			_, _ = fmt.Fprintf(&message, "• **Current:** %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
+			_, _ = fmt.Fprintf(&message, "• **Latest:** %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
 		case MessageFormatSlack:
-			fmt.Fprintf(&message, "*%s*\n", imageRef)
-			fmt.Fprintf(&message, "• *Type:* %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• *Latest:* %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			_, _ = fmt.Fprintf(&message, "*%s*\n", imageRef)
+			_, _ = fmt.Fprintf(&message, "• *Type:* %s\n", update.UpdateType)
+			_, _ = fmt.Fprintf(&message, "• *Current:* %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
+			_, _ = fmt.Fprintf(&message, "• *Latest:* %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
 		case MessageFormatHTML:
-			fmt.Fprintf(&message, "<b>%s</b>\n", imageRef)
-			fmt.Fprintf(&message, "• <b>Type:</b> %s\n", update.UpdateType)
-			fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
-			fmt.Fprintf(&message, "• <b>Latest:</b> %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
+			_, _ = fmt.Fprintf(&message, "<b>%s</b>\n", imageRef)
+			_, _ = fmt.Fprintf(&message, "• <b>Type:</b> %s\n", update.UpdateType)
+			_, _ = fmt.Fprintf(&message, "• <b>Current:</b> %s\n", formatNotificationCodeInternal(format, update.CurrentDigest))
+			_, _ = fmt.Fprintf(&message, "• <b>Latest:</b> %s\n\n", formatNotificationCodeInternal(format, update.LatestDigest))
 		}
 	}
 
@@ -159,23 +159,23 @@ func BuildBatchImageUpdateNotificationMessage(format MessageFormat, environmentN
 
 func BuildVulnerabilitySummaryNotificationMessage(format MessageFormat, environmentName, summaryLabel, overview, fixableCount, severityBreakdown, sampleCVEs string) string {
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "📊 Daily Vulnerability Summary"))
+	_, _ = fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "📊 Daily Vulnerability Summary"))
 
 	if strings.TrimSpace(summaryLabel) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Summary"), summaryLabel)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Summary"), summaryLabel)
 	}
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
 	if strings.TrimSpace(overview) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Overview"), overview)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Overview"), overview)
 	}
 	if strings.TrimSpace(fixableCount) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Fixable Vulnerabilities"), fixableCount)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Fixable Vulnerabilities"), fixableCount)
 	}
 	if strings.TrimSpace(severityBreakdown) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Severity Breakdown"), severityBreakdown)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Severity Breakdown"), severityBreakdown)
 	}
 	if strings.TrimSpace(sampleCVEs) != "" {
-		fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Sample CVEs"), sampleCVEs)
+		_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Sample CVEs"), sampleCVEs)
 	}
 
 	return message.String()
@@ -183,23 +183,23 @@ func BuildVulnerabilitySummaryNotificationMessage(format MessageFormat, environm
 
 func BuildPruneReportNotificationMessage(format MessageFormat, environmentName string, result *system.PruneAllResult) string {
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🧹 System Prune Report"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Total Space Reclaimed"), FormatBytes(result.SpaceReclaimed))
-	fmt.Fprintf(&message, "%s\n", formatNotificationLabelInternal(format, "Breakdown"))
-	fmt.Fprintf(&message, "- Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
-	fmt.Fprintf(&message, "- Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
-	fmt.Fprintf(&message, "- Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
-	fmt.Fprintf(&message, "- Build Cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
+	_, _ = fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "🧹 System Prune Report"))
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n\n", formatNotificationLabelInternal(format, "Total Space Reclaimed"), FormatBytes(result.SpaceReclaimed))
+	_, _ = fmt.Fprintf(&message, "%s\n", formatNotificationLabelInternal(format, "Breakdown"))
+	_, _ = fmt.Fprintf(&message, "- Containers: %s\n", FormatBytes(result.ContainerSpaceReclaimed))
+	_, _ = fmt.Fprintf(&message, "- Images: %s\n", FormatBytes(result.ImageSpaceReclaimed))
+	_, _ = fmt.Fprintf(&message, "- Volumes: %s\n", FormatBytes(result.VolumeSpaceReclaimed))
+	_, _ = fmt.Fprintf(&message, "- Build Cache: %s\n", FormatBytes(result.BuildCacheSpaceReclaimed))
 	return message.String()
 }
 
 func BuildAutoHealNotificationMessage(format MessageFormat, environmentName, containerName string) string {
 	var message strings.Builder
-	fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "Auto Heal"))
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
-	fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
-	fmt.Fprintf(&message, "%s Automatically restarted because it was unhealthy.\n", formatNotificationLabelInternal(format, "Status"))
+	_, _ = fmt.Fprintf(&message, "%s\n\n", formatNotificationTitleInternal(format, "Auto Heal"))
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Environment"), environmentName)
+	_, _ = fmt.Fprintf(&message, "%s %s\n", formatNotificationLabelInternal(format, "Container"), containerName)
+	_, _ = fmt.Fprintf(&message, "%s Automatically restarted because it was unhealthy.\n", formatNotificationLabelInternal(format, "Status"))
 	return message.String()
 }
 

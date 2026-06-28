@@ -100,10 +100,10 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	}
 
 	volResult, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
-	vol := volResult.Volume
 	if err != nil {
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
+	vol := volResult.Volume
 
 	if usageVolumes, duErr := docker.GetVolumeUsageData(ctx, dockerClient); duErr == nil {
 		for _, uv := range usageVolumes {
@@ -689,17 +689,6 @@ func isLegacyVolumeHelperContainerInternal(c container.Summary) bool {
 	return false
 }
 
-func isVolumeHelperContainerInternal(c container.Summary) bool {
-	if isLegacyVolumeHelperContainerInternal(c) {
-		return true
-	}
-	if !libarcane.IsInternalContainer(c.Labels) {
-		return false
-	}
-
-	return strings.EqualFold(c.Labels[volumehelper.ContainerLabel], "true")
-}
-
 func (c *cleanupReadCloser) Close() error {
 	err := c.Closer.Close()
 	c.cleanup()
@@ -926,7 +915,7 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 
 	removedCount := 0
 	for _, c := range containers.Items {
-		if !isVolumeHelperContainerInternal(c) {
+		if !isLegacyVolumeHelperContainerInternal(c) {
 			continue
 		}
 
@@ -1103,6 +1092,12 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
+	twClosed := false
+	defer func() {
+		if !twClosed {
+			_ = tw.Close()
+		}
+	}()
 
 	contentBytes, err := io.ReadAll(content)
 	if err != nil {
@@ -1118,12 +1113,12 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		return err
 	}
 	if _, err := tw.Write(contentBytes); err != nil {
-		_ = tw.Close()
 		return err
 	}
 	if err := tw.Close(); err != nil {
 		return err
 	}
+	twClosed = true
 
 	targetDir := path.Join("/volume", sanitizedPath)
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{

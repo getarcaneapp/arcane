@@ -31,8 +31,8 @@ var (
 
 const maxPromptOptions = 20
 
-// NetworksCmd is the parent command for network operations
-var NetworksCmd = &cobra.Command{
+// Command is the parent command for network operations
+var Command = &cobra.Command{
 	Use:     "networks",
 	Aliases: []string{"network", "net", "n"},
 	Short:   "Manage networks",
@@ -308,11 +308,11 @@ var pruneCmd = &cobra.Command{
 }
 
 func init() {
-	NetworksCmd.AddCommand(listCmd)
-	NetworksCmd.AddCommand(getCmd)
-	NetworksCmd.AddCommand(deleteCmd)
-	NetworksCmd.AddCommand(countsCmd)
-	NetworksCmd.AddCommand(pruneCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(countsCmd)
+	Command.AddCommand(pruneCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")

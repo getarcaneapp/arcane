@@ -1,9 +1,6 @@
 package cmdutil
 
 import (
-	"strconv"
-	"strings"
-
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -23,8 +20,14 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 	}
 
 	resource = clitypes.NormalizePaginatedResource(resource)
-	if app, ok := runtimectx.From(cmd.Context()); ok {
-		if cfg := app.Config(); cfg != nil {
+	if cmd != nil {
+		if app, ok := runtimectx.From(cmd.Context()); ok {
+			if cfg := app.Config(); cfg != nil {
+				if v := cfg.LimitFor(resource); v > 0 {
+					return v
+				}
+			}
+		} else if cfg, err := config.Load(); err == nil && cfg != nil {
 			if v := cfg.LimitFor(resource); v > 0 {
 				return v
 			}
@@ -42,21 +45,4 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 		return flagValue
 	}
 	return 0
-}
-
-// ParseResourceLimit parses a "resource=limit" pair.
-func ParseResourceLimit(pair string) (resource string, limit int, ok bool) {
-	left, right, found := strings.Cut(pair, "=")
-	if !found {
-		return "", 0, false
-	}
-	resource = clitypes.NormalizePaginatedResource(left)
-	if resource == "" {
-		return "", 0, false
-	}
-	parsed, err := strconv.Atoi(strings.TrimSpace(right))
-	if err != nil {
-		return "", 0, false
-	}
-	return resource, parsed, true
 }

@@ -17,62 +17,62 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/notification"
 )
 
-type NotificationHandler struct {
+type notificationHandler struct {
 	notificationService *services.NotificationService
 	config              *config.Config
 }
 
-type GetAllNotificationSettingsInput struct {
+type getAllNotificationSettingsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetAllNotificationSettingsOutput struct {
+type getAllNotificationSettingsOutput struct {
 	Body []notification.Response
 }
 
-type GetNotificationSettingsInput struct {
+type getNotificationSettingsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Provider      string `path:"provider" doc:"Provider"`
 }
 
-type GetNotificationSettingsOutput struct {
+type getNotificationSettingsOutput struct {
 	Body notification.Response
 }
 
-type CreateOrUpdateNotificationSettingsInput struct {
+type createOrUpdateNotificationSettingsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          notification.Update
 }
 
-type CreateOrUpdateNotificationSettingsOutput struct {
+type createOrUpdateNotificationSettingsOutput struct {
 	Body notification.Response
 }
 
-type DeleteNotificationSettingsInput struct {
+type deleteNotificationSettingsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Provider      string `path:"provider" doc:"Provider"`
 }
 
-type DeleteNotificationSettingsOutput struct {
+type deleteNotificationSettingsOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type TestNotificationInput struct {
+type testNotificationInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Provider      string `path:"provider" doc:"Provider"`
 	Type          string `query:"type" default:"simple"`
 }
 
-type TestNotificationOutput struct {
+type testNotificationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type DispatchNotificationInput struct {
+type dispatchNotificationInput struct {
 	APIKey string `header:"X-API-Key" doc:"Remote environment access token"`
 	Body   notification.DispatchRequest
 }
 
-type DispatchNotificationOutput struct {
+type dispatchNotificationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -100,7 +100,7 @@ func isSupportedNotificationTestType(testType string) bool {
 
 // RegisterNotifications registers notification endpoints.
 func RegisterNotifications(api huma.API, notificationSvc *services.NotificationService, cfg *config.Config) {
-	h := &NotificationHandler{
+	h := &notificationHandler{
 		notificationService: notificationSvc,
 		config:              cfg,
 	}
@@ -112,7 +112,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermNotificationsManage, h.GetAllNotificationSettings)
+	}, authz.PermNotificationsManage, h.getAllNotificationSettingsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-notification-settings",
@@ -121,7 +121,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermNotificationsManage, h.GetNotificationSettings)
+	}, authz.PermNotificationsManage, h.getNotificationSettingsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-or-update-notification-settings",
@@ -130,7 +130,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermNotificationsManage, h.CreateOrUpdateNotificationSettings)
+	}, authz.PermNotificationsManage, h.createOrUpdateNotificationSettingsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-notification-settings",
@@ -139,7 +139,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
+	}, authz.PermNotificationsManage, h.deleteNotificationSettingsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "test-notification",
@@ -148,7 +148,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermNotificationsManage, h.TestNotification)
+	}, authz.PermNotificationsManage, h.testNotificationInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "dispatch-notification",
@@ -158,17 +158,17 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
-	}, h.DispatchNotification)
+	}, h.dispatchNotificationInternal)
 }
 
-func (h *NotificationHandler) rejectIfAgentModeInternal() error {
+func (h *notificationHandler) rejectIfAgentModeInternal() error {
 	if h.config != nil && h.config.AgentMode {
 		return huma.Error400BadRequest("notifications are managed on the Arcane manager")
 	}
 	return nil
 }
 
-func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, input *GetAllNotificationSettingsInput) (*GetAllNotificationSettingsOutput, error) {
+func (h *notificationHandler) getAllNotificationSettingsInternal(ctx context.Context, _ *getAllNotificationSettingsInput) (*getAllNotificationSettingsOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -187,10 +187,10 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 		}
 	}
 
-	return &GetAllNotificationSettingsOutput{Body: responses}, nil
+	return &getAllNotificationSettingsOutput{Body: responses}, nil
 }
 
-func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input *GetNotificationSettingsInput) (*GetNotificationSettingsOutput, error) {
+func (h *notificationHandler) getNotificationSettingsInternal(ctx context.Context, input *getNotificationSettingsInput) (*getNotificationSettingsOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -208,10 +208,10 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 		Config:   base.JsonObject(services.RedactNotificationConfigCredentials(settings.Provider, settings.Config)),
 	}
 
-	return &GetNotificationSettingsOutput{Body: response}, nil
+	return &getNotificationSettingsOutput{Body: response}, nil
 }
 
-func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Context, input *CreateOrUpdateNotificationSettingsInput) (*CreateOrUpdateNotificationSettingsOutput, error) {
+func (h *notificationHandler) createOrUpdateNotificationSettingsInternal(ctx context.Context, input *createOrUpdateNotificationSettingsInput) (*createOrUpdateNotificationSettingsOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -237,10 +237,10 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		Config:   base.JsonObject(services.RedactNotificationConfigCredentials(settings.Provider, settings.Config)),
 	}
 
-	return &CreateOrUpdateNotificationSettingsOutput{Body: response}, nil
+	return &createOrUpdateNotificationSettingsOutput{Body: response}, nil
 }
 
-func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, input *DeleteNotificationSettingsInput) (*DeleteNotificationSettingsOutput, error) {
+func (h *notificationHandler) deleteNotificationSettingsInternal(ctx context.Context, input *deleteNotificationSettingsInput) (*deleteNotificationSettingsOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -250,7 +250,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 		return nil, huma.Error500InternalServerError((&common.NotificationSettingsDeletionError{Err: err}).Error())
 	}
 
-	return &DeleteNotificationSettingsOutput{
+	return &deleteNotificationSettingsOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Settings deleted successfully"},
@@ -258,7 +258,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	}, nil
 }
 
-func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestNotificationInput) (*TestNotificationOutput, error) {
+func (h *notificationHandler) testNotificationInternal(ctx context.Context, input *testNotificationInput) (*testNotificationOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -272,7 +272,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
 	}
 
-	return &TestNotificationOutput{
+	return &testNotificationOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Test notification sent successfully"},
@@ -280,7 +280,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 	}, nil
 }
 
-func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *DispatchNotificationInput) (*DispatchNotificationOutput, error) {
+func (h *notificationHandler) dispatchNotificationInternal(ctx context.Context, input *dispatchNotificationInput) (*dispatchNotificationOutput, error) {
 	if err := h.rejectIfAgentModeInternal(); err != nil {
 		return nil, err
 	}
@@ -297,7 +297,7 @@ func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *D
 		return nil, huma.Error500InternalServerError("dispatch failed")
 	}
 
-	return &DispatchNotificationOutput{
+	return &dispatchNotificationOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Notification dispatched successfully"},

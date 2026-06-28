@@ -523,7 +523,7 @@ func TestWrapDockerAPIClientForInspectCompatibility_ContainerCreateLegacyNetwork
 			Image: "nginx:alpine",
 		},
 		HostConfig: &containertypes.HostConfig{
-			NetworkMode: containertypes.NetworkMode("synobridge"),
+			NetworkMode: "synobridge",
 		},
 		NetworkingConfig: &networktypes.NetworkingConfig{
 			EndpointsConfig: map[string]*networktypes.EndpointSettings{

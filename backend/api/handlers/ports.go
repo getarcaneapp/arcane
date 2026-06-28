@@ -12,17 +12,17 @@ import (
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
 )
 
-type PortHandler struct {
+type portHandler struct {
 	portService *services.PortService
 }
 
-type PortPaginatedResponse struct {
+type portPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []porttypes.PortMapping `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListPortsInput struct {
+type listPortsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
@@ -31,12 +31,12 @@ type ListPortsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListPortsOutput struct {
-	Body PortPaginatedResponse
+type listPortsOutput struct {
+	Body portPaginatedResponse
 }
 
 func RegisterPorts(api huma.API, portSvc *services.PortService) {
-	h := &PortHandler{portService: portSvc}
+	h := &portHandler{portService: portSvc}
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-ports",
@@ -45,10 +45,10 @@ func RegisterPorts(api huma.API, portSvc *services.PortService) {
 		Summary:     "List port mappings",
 		Tags:        []string{"Ports"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersList, h.ListPorts)
+	}, authz.PermContainersList, h.listPortsInternal)
 }
 
-func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*ListPortsOutput, error) {
+func (h *portHandler) listPortsInternal(ctx context.Context, input *listPortsInput) (*listPortsOutput, error) {
 	if h.portService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -60,8 +60,8 @@ func (h *PortHandler) ListPorts(ctx context.Context, input *ListPortsInput) (*Li
 		return nil, huma.Error500InternalServerError("failed to list ports")
 	}
 
-	return &ListPortsOutput{
-		Body: PortPaginatedResponse{
+	return &listPortsOutput{
+		Body: portPaginatedResponse{
 			Success:    true,
 			Data:       items,
 			Pagination: toPaginationResponseInternal(paginationResp),

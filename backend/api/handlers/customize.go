@@ -14,30 +14,30 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/search"
 )
 
-// CustomizeHandler handles customization search endpoints.
-type CustomizeHandler struct {
+// customizeHandler handles customization search endpoints.
+type customizeHandler struct {
 	customizeSearchService *services.CustomizeSearchService
 }
 
 // --- Input/Output Types ---
 
-type SearchCustomizeInput struct {
+type searchCustomizeInput struct {
 	Body search.Request
 }
 
-type SearchCustomizeOutput struct {
+type searchCustomizeOutput struct {
 	Body search.Response
 }
 
-type GetCustomizeCategoriesInput struct{}
+type getCustomizeCategoriesInput struct{}
 
-type GetCustomizeCategoriesOutput struct {
+type getCustomizeCategoriesOutput struct {
 	Body []category.Category
 }
 
 // RegisterCustomize registers customization endpoints using Huma.
 func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeSearchService) {
-	h := &CustomizeHandler{
+	h := &customizeHandler{
 		customizeSearchService: customizeSearchService,
 	}
 
@@ -52,7 +52,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.Search)
+	}, h.searchInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-customize-categories",
@@ -65,7 +65,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.GetCategories)
+	}, h.getCategoriesInternal)
 }
 
 func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []category.Category) []category.Category {
@@ -82,7 +82,7 @@ func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []cat
 }
 
 // Search searches customization options by query.
-func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInput) (*SearchCustomizeOutput, error) {
+func (h *customizeHandler) searchInternal(ctx context.Context, input *searchCustomizeInput) (*searchCustomizeOutput, error) {
 	if h.customizeSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -96,13 +96,13 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 	results.Results = filterCustomizeCategoriesInternal(ps, results.Results)
 	results.Count = len(results.Results)
 
-	return &SearchCustomizeOutput{
+	return &searchCustomizeOutput{
 		Body: results,
 	}, nil
 }
 
 // GetCategories returns all available customization categories.
-func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomizeCategoriesInput) (*GetCustomizeCategoriesOutput, error) {
+func (h *customizeHandler) getCategoriesInternal(ctx context.Context, _ *getCustomizeCategoriesInput) (*getCustomizeCategoriesOutput, error) {
 	if h.customizeSearchService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -110,7 +110,7 @@ func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomiz
 	ps, _ := humamw.PermissionsFromContext(ctx)
 	categories := filterCustomizeCategoriesInternal(ps, h.customizeSearchService.GetCustomizeCategories())
 
-	return &GetCustomizeCategoriesOutput{
+	return &getCustomizeCategoriesOutput{
 		Body: categories,
 	}, nil
 }

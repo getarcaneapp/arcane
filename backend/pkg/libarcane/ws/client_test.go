@@ -41,15 +41,15 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 		close(serverReady)
 		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	<-serverReady
 
@@ -81,13 +81,13 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 		}
 		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
 
 	require.Eventually(t, func() bool {
@@ -95,8 +95,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// Close the client connection
-	clientConn.Close()
-
+	_ = clientConn.Close()
 	// The hub should eventually remove the client
 	require.Eventually(t, func() bool {
 		return h.ClientCount() == 0
@@ -118,15 +117,15 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 		}
 		ServeClientWithOnRemove(clientCtx, h, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	require.Eventually(t, func() bool {
 		return h.ClientCount() == 1
@@ -217,15 +216,15 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 		close(serverReady)
 		ServeClientWithOnRemove(ctx, h, conn, nil)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	<-serverReady
 

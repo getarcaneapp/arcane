@@ -9,26 +9,26 @@ import (
 )
 
 func TestNormalizeEdgeTransport(t *testing.T) {
-	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport(""))
-	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("auto"))
-	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("AUTO"))
-	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("grpc"))
-	assert.Equal(t, EdgeTransportGRPC, NormalizeEdgeTransport("GRPC"))
-	assert.Equal(t, EdgeTransportPoll, NormalizeEdgeTransport("poll"))
-	assert.Equal(t, EdgeTransportWebSocket, NormalizeEdgeTransport("websocket"))
-	assert.Equal(t, EdgeTransportAuto, NormalizeEdgeTransport("invalid"))
+	assert.Equal(t, TransportAuto, NormalizeEdgeTransport(""))
+	assert.Equal(t, TransportAuto, NormalizeEdgeTransport("auto"))
+	assert.Equal(t, TransportAuto, NormalizeEdgeTransport("AUTO"))
+	assert.Equal(t, TransportGRPC, NormalizeEdgeTransport("grpc"))
+	assert.Equal(t, TransportGRPC, NormalizeEdgeTransport("GRPC"))
+	assert.Equal(t, TransportPoll, NormalizeEdgeTransport("poll"))
+	assert.Equal(t, TransportWebSocket, NormalizeEdgeTransport("websocket"))
+	assert.Equal(t, TransportAuto, NormalizeEdgeTransport("invalid"))
 }
 
 func TestNormalizeEdgeMTLSMode(t *testing.T) {
-	assert.Equal(t, EdgeMTLSModeDisabled, NormalizeEdgeMTLSMode(""))
-	assert.Equal(t, EdgeMTLSModeOptional, NormalizeEdgeMTLSMode("optional"))
-	assert.Equal(t, EdgeMTLSModeRequired, NormalizeEdgeMTLSMode("REQUIRED"))
-	assert.Equal(t, EdgeMTLSModeDisabled, NormalizeEdgeMTLSMode("invalid"))
+	assert.Equal(t, MTLSModeDisabled, NormalizeEdgeMTLSMode(""))
+	assert.Equal(t, MTLSModeOptional, NormalizeEdgeMTLSMode("optional"))
+	assert.Equal(t, MTLSModeRequired, NormalizeEdgeMTLSMode("REQUIRED"))
+	assert.Equal(t, MTLSModeDisabled, NormalizeEdgeMTLSMode("invalid"))
 }
 
 func TestUseGRPCEdgeTransport(t *testing.T) {
 	assert.False(t, UseGRPCEdgeTransport(nil))
-	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: EdgeTransportAuto}))
+	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: TransportAuto}))
 	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: "grpc"}))
 	assert.True(t, UseGRPCEdgeTransport(&Config{EdgeTransport: ""}))
 	assert.False(t, UseGRPCEdgeTransport(&Config{EdgeTransport: "websocket"}))
@@ -36,7 +36,7 @@ func TestUseGRPCEdgeTransport(t *testing.T) {
 
 func TestUseWebSocketEdgeTransport(t *testing.T) {
 	assert.False(t, UseWebSocketEdgeTransport(nil))
-	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: EdgeTransportAuto}))
+	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: TransportAuto}))
 	assert.True(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: ""}))
 	assert.False(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: "grpc"}))
 	assert.False(t, UseWebSocketEdgeTransport(&Config{EdgeTransport: "poll"}))
@@ -68,7 +68,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 
 		transport, ok := GetActiveTunnelTransport(envID)
 		assert.True(t, ok)
-		assert.Equal(t, EdgeTransportGRPC, transport)
+		assert.Equal(t, TransportGRPC, transport)
 	})
 
 	t.Run("detects websocket tunnel", func(t *testing.T) {
@@ -84,7 +84,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 
 		transport, ok := GetActiveTunnelTransport(envID)
 		assert.True(t, ok)
-		assert.Equal(t, EdgeTransportWebSocket, transport)
+		assert.Equal(t, TransportWebSocket, transport)
 	})
 
 	t.Run("returns false for closed tunnel", func(t *testing.T) {
@@ -137,7 +137,7 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 		state, ok := GetTunnelRuntimeState(envID)
 		assert.True(t, ok)
 		if assert.NotNil(t, state) {
-			assert.Equal(t, EdgeTransportGRPC, state.Transport)
+			assert.Equal(t, TransportGRPC, state.Transport)
 			assert.NotNil(t, state.ConnectedAt)
 			assert.NotNil(t, state.LastHeartbeat)
 			assert.Equal(t, "session-1", state.SessionID)
@@ -164,7 +164,7 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 
 type unknownTunnelConn struct{}
 
-func (u *unknownTunnelConn) Send(msg *TunnelMessage) error { return nil }
+func (u *unknownTunnelConn) Send(_ *TunnelMessage) error { return nil }
 
 func (u *unknownTunnelConn) Receive() (*TunnelMessage, error) { return nil, nil }
 
@@ -174,6 +174,6 @@ func (u *unknownTunnelConn) Close() error { return nil }
 
 func (u *unknownTunnelConn) IsClosed() bool { return false }
 
-func (u *unknownTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+func (u *unknownTunnelConn) SendRequest(_ context.Context, _ *TunnelMessage, _ *sync.Map) (*TunnelMessage, error) {
 	return nil, nil
 }

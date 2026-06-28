@@ -39,7 +39,7 @@ func (f *fakeEventTunnelConn) Close() error { f.closed = true; return nil }
 
 func (f *fakeEventTunnelConn) IsClosed() bool { return f.closed }
 
-func (f *fakeEventTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+func (f *fakeEventTunnelConn) SendRequest(_ context.Context, _ *TunnelMessage, _ *sync.Map) (*TunnelMessage, error) {
 	return nil, errors.New("not implemented")
 }
 

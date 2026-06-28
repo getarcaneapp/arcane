@@ -15,9 +15,9 @@ import (
 )
 
 func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
-	h := &VolumeHandler{volumeService: &services.VolumeService{}}
+	h := &volumeHandler{volumeService: &services.VolumeService{}}
 
-	_, err := h.UploadFile(adminTestContextInternal(), &UploadFileInput{
+	_, err := h.uploadFileInternal(adminTestContextInternal(), &uploadFileInput{
 		EnvironmentID: "0",
 		VolumeName:    "vol-1",
 		Path:          "/",
@@ -32,11 +32,11 @@ func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 }
 
 func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
-	h := &VolumeHandler{volumeService: &services.VolumeService{}}
+	h := &volumeHandler{volumeService: &services.VolumeService{}}
 
 	ctx := context.WithValue(adminTestContextInternal(), humamw.ContextKeyCurrentUser, &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
 
-	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
+	_, err := h.uploadAndRestoreInternal(ctx, &uploadAndRestoreInput{
 		EnvironmentID: "0",
 		VolumeName:    "vol-1",
 		RawBody:       multipart.Form{},

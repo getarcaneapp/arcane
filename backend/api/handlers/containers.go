@@ -25,7 +25,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 )
 
-type ContainerHandler struct {
+type containerHandler struct {
 	containerService *services.ContainerService
 	dockerService    *services.DockerClientService
 	settingsService  *services.SettingsService
@@ -33,8 +33,8 @@ type ContainerHandler struct {
 	appCtx           context.Context
 }
 
-// ContainerPaginatedResponse is the paginated list response for containers.
-type ContainerPaginatedResponse struct {
+// containerPaginatedResponse is the paginated list response for containers.
+type containerPaginatedResponse struct {
 	Success    bool                          `json:"success"`
 	Data       []containertypes.Summary      `json:"data"`
 	Groups     []containertypes.SummaryGroup `json:"groups,omitempty"`
@@ -42,7 +42,7 @@ type ContainerPaginatedResponse struct {
 	Pagination base.PaginationResponse       `json:"pagination"`
 }
 
-type ListContainersInput struct {
+type listContainersInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	Search          string `query:"search" doc:"Search query"`
 	Sort            string `query:"sort" doc:"Column to sort by"`
@@ -55,83 +55,83 @@ type ListContainersInput struct {
 	Standalone      string `query:"standalone" doc:"Filter standalone containers only (true/false)"`
 }
 
-type ListContainersOutput struct {
-	Body ContainerPaginatedResponse
+type listContainersOutput struct {
+	Body containerPaginatedResponse
 }
 
-type GetContainerStatusCountsInput struct {
+type getContainerStatusCountsInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 }
 
-// ContainerStatusCountsResponse is a dedicated response type to avoid schema name collision
-type ContainerStatusCountsResponse struct {
+// containerStatusCountsResponse is a dedicated response type to avoid schema name collision
+type containerStatusCountsResponse struct {
 	Success bool                        `json:"success"`
 	Data    containertypes.StatusCounts `json:"data"`
 }
 
-type GetContainerStatusCountsOutput struct {
-	Body ContainerStatusCountsResponse
+type getContainerStatusCountsOutput struct {
+	Body containerStatusCountsResponse
 }
 
-type CreateContainerInput struct {
+type createContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          containertypes.Create
 }
 
-// ContainerCreatedResponse is a dedicated response type
-type ContainerCreatedResponse struct {
+// containerCreatedResponse is a dedicated response type
+type containerCreatedResponse struct {
 	Success bool                   `json:"success"`
 	Data    containertypes.Created `json:"data"`
 }
 
-type CreateContainerOutput struct {
-	Body ContainerCreatedResponse
+type createContainerOutput struct {
+	Body containerCreatedResponse
 }
 
-type GetContainerInput struct {
+type getContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
-// ContainerDetailsResponse is a dedicated response type
-type ContainerDetailsResponse struct {
+// containerDetailsResponse is a dedicated response type
+type containerDetailsResponse struct {
 	Success bool                   `json:"success"`
 	Data    containertypes.Details `json:"data"`
 }
 
-type GetContainerOutput struct {
-	Body ContainerDetailsResponse
+type getContainerOutput struct {
+	Body containerDetailsResponse
 }
 
-type ContainerActionInput struct {
+type containerActionInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
-// ContainerActionResponse is a dedicated response type
-type ContainerActionResponse struct {
+// containerActionResponse is a dedicated response type
+type containerActionResponse struct {
 	Success bool                 `json:"success"`
 	Data    base.MessageResponse `json:"data"`
 }
 
-type ContainerActionOutput struct {
-	Body ContainerActionResponse
+type containerActionOutput struct {
+	Body containerActionResponse
 }
 
-type DeleteContainerInput struct {
+type deleteContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 	Force         bool   `query:"force" default:"false" doc:"Force delete running container"`
 	RemoveVolumes bool   `query:"volumes" default:"false" doc:"Remove associated volumes"`
 }
 
-type DeleteContainerOutput struct {
-	Body ContainerActionResponse
+type deleteContainerOutput struct {
+	Body containerActionResponse
 }
 
-// SetAutoUpdateInput is the request input for toggling container auto-update.
-type SetAutoUpdateInput struct {
+// setAutoUpdateInput is the request input for toggling container auto-update.
+type setAutoUpdateInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 	Body          struct {
@@ -139,29 +139,29 @@ type SetAutoUpdateInput struct {
 	}
 }
 
-type SetAutoUpdateOutput struct {
-	Body ContainerActionResponse
+type setAutoUpdateOutput struct {
+	Body containerActionResponse
 }
 
-// KillContainerInput carries the optional signal for a container kill.
-type KillContainerInput struct {
+// killContainerInput carries the optional signal for a container kill.
+type killContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 	Signal        string `query:"signal" doc:"Signal to send (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
 }
 
-type CommitContainerInput struct {
+type commitContainerInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 	Body          containertypes.CommitRequest
 }
 
-type CommitContainerOutput struct {
+type commitContainerOutput struct {
 	Body base.ApiResponse[containertypes.CommitResult]
 }
 
 func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
-	h := &ContainerHandler{
+	h := &containerHandler{
 		containerService: containerSvc,
 		dockerService:    dockerSvc,
 		settingsService:  settingsSvc,
@@ -177,7 +177,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersList, h.ListContainers)
+	}, authz.PermContainersList, h.listContainersInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "container-status-counts",
@@ -186,7 +186,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersList, h.GetContainerStatusCounts)
+	}, authz.PermContainersList, h.getContainerStatusCountsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-container",
@@ -195,7 +195,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersCreate, h.CreateContainer)
+	}, authz.PermContainersCreate, h.createContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-container",
@@ -204,7 +204,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Get container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersRead, h.GetContainer)
+	}, authz.PermContainersRead, h.getContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "start-container",
@@ -213,7 +213,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Start container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersStart, h.StartContainer)
+	}, authz.PermContainersStart, h.startContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "stop-container",
@@ -222,7 +222,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Stop container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersStop, h.StopContainer)
+	}, authz.PermContainersStop, h.stopContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restart-container",
@@ -231,7 +231,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Restart container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersRestart, h.RestartContainer)
+	}, authz.PermContainersRestart, h.restartContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "kill-container",
@@ -241,7 +241,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Send a signal to the container's main process (default SIGKILL)",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersKill, h.KillContainer)
+	}, authz.PermContainersKill, h.killContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "pause-container",
@@ -250,7 +250,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Pause container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersPause, h.PauseContainer)
+	}, authz.PermContainersPause, h.pauseContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "unpause-container",
@@ -259,7 +259,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Unpause container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersPause, h.UnpauseContainer)
+	}, authz.PermContainersPause, h.unpauseContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "commit-container",
@@ -269,7 +269,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Create an image from a container",
 		Tags:        []string{"Containers", "Images"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermImagesCommit, h.CommitContainer)
+	}, authz.PermImagesCommit, h.commitContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-container",
@@ -279,7 +279,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersRedeploy, h.RedeployContainer)
+	}, authz.PermContainersRedeploy, h.redeployContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-container",
@@ -288,7 +288,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersDelete, h.DeleteContainer)
+	}, authz.PermContainersDelete, h.deleteContainerInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "set-container-auto-update",
@@ -298,10 +298,10 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermContainersAutoUpdate, h.SetAutoUpdate)
+	}, authz.PermContainersAutoUpdate, h.setAutoUpdateInternal)
 }
 
-func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
+func (h *containerHandler) listContainersInternal(ctx context.Context, input *listContainersInput) (*listContainersOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -319,8 +319,8 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 		return nil, huma.Error500InternalServerError((&common.ContainerListError{Err: err}).Error())
 	}
 
-	return &ListContainersOutput{
-		Body: ContainerPaginatedResponse{
+	return &listContainersOutput{
+		Body: containerPaginatedResponse{
 			Success:    true,
 			Data:       result.Items,
 			Groups:     result.Groups,
@@ -330,7 +330,7 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*GetContainerStatusCountsOutput, error) {
+func (h *containerHandler) getContainerStatusCountsInternal(ctx context.Context, input *getContainerStatusCountsInput) (*getContainerStatusCountsOutput, error) {
 	if h.dockerService == nil {
 		return nil, huma.Error500InternalServerError("docker service not available")
 	}
@@ -361,8 +361,8 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	}
 	total := len(containers)
 
-	return &GetContainerStatusCountsOutput{
-		Body: ContainerStatusCountsResponse{
+	return &getContainerStatusCountsOutput{
+		Body: containerStatusCountsResponse{
 			Success: true,
 			Data: containertypes.StatusCounts{
 				RunningContainers: running,
@@ -574,7 +574,7 @@ func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig
 	return nil
 }
 
-func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
+func (h *containerHandler) createContainerInternal(ctx context.Context, input *createContainerInput) (*createContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -614,15 +614,15 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 		Created: containerJSON.Created,
 	}
 
-	return &CreateContainerOutput{
-		Body: ContainerCreatedResponse{
+	return &createContainerOutput{
+		Body: containerCreatedResponse{
 			Success: true,
 			Data:    out,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*GetContainerOutput, error) {
+func (h *containerHandler) getContainerInternal(ctx context.Context, input *getContainerInput) (*getContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -632,15 +632,15 @@ func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainer
 		return nil, huma.Error404NotFound((&common.ContainerRetrievalError{Err: err}).Error())
 	}
 
-	return &GetContainerOutput{
-		Body: ContainerDetailsResponse{
+	return &getContainerOutput{
+		Body: containerDetailsResponse{
 			Success: true,
 			Data:    details,
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) startContainerInternal(ctx context.Context, input *containerActionInput) (*containerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerStart,
 		Step:            "Starting container",
@@ -656,7 +656,7 @@ func (h *ContainerHandler) StartContainer(ctx context.Context, input *ContainerA
 	})
 }
 
-func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) stopContainerInternal(ctx context.Context, input *containerActionInput) (*containerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerStop,
 		Step:            "Stopping container",
@@ -672,7 +672,7 @@ func (h *ContainerHandler) StopContainer(ctx context.Context, input *ContainerAc
 	})
 }
 
-func (h *ContainerHandler) RestartContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) restartContainerInternal(ctx context.Context, input *containerActionInput) (*containerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerRestart,
 		Step:            "Restarting container",
@@ -688,9 +688,9 @@ func (h *ContainerHandler) RestartContainer(ctx context.Context, input *Containe
 	})
 }
 
-func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContainerInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) killContainerInternal(ctx context.Context, input *killContainerInput) (*containerActionOutput, error) {
 	signal := strings.TrimSpace(input.Signal)
-	return h.runContainerActionInternal(ctx, &ContainerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfigInternal{
+	return h.runContainerActionInternal(ctx, &containerActionInput{EnvironmentID: input.EnvironmentID, ContainerID: input.ContainerID}, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerKill,
 		Step:            "Killing container",
 		StartMessage:    "Container kill requested",
@@ -705,7 +705,7 @@ func (h *ContainerHandler) KillContainer(ctx context.Context, input *KillContain
 	})
 }
 
-func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) pauseContainerInternal(ctx context.Context, input *containerActionInput) (*containerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerPause,
 		Step:            "Pausing container",
@@ -721,7 +721,7 @@ func (h *ContainerHandler) PauseContainer(ctx context.Context, input *ContainerA
 	})
 }
 
-func (h *ContainerHandler) UnpauseContainer(ctx context.Context, input *ContainerActionInput) (*ContainerActionOutput, error) {
+func (h *containerHandler) unpauseContainerInternal(ctx context.Context, input *containerActionInput) (*containerActionOutput, error) {
 	return h.runContainerActionInternal(ctx, input, containerActionConfigInternal{
 		ActivityType:    models.ActivityTypeContainerUnpause,
 		Step:            "Unpausing container",
@@ -747,7 +747,7 @@ type containerActionConfigInternal struct {
 	Error           func(error) error
 }
 
-func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input *ContainerActionInput, cfg containerActionConfigInternal) (*ContainerActionOutput, error) {
+func (h *containerHandler) runContainerActionInternal(ctx context.Context, input *containerActionInput, cfg containerActionConfigInternal) (*containerActionOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -765,15 +765,15 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
-	return &ContainerActionOutput{
-		Body: ContainerActionResponse{
+	return &containerActionOutput{
+		Body: containerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*CommitContainerOutput, error) {
+func (h *containerHandler) commitContainerInternal(ctx context.Context, input *commitContainerInput) (*commitContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -792,7 +792,7 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to commit container: %v", err))
 	}
 
-	return &CommitContainerOutput{
+	return &commitContainerOutput{
 		Body: base.ApiResponse[containertypes.CommitResult]{
 			Success: true,
 			Data:    *out,
@@ -800,7 +800,7 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 	}, nil
 }
 
-func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
+func (h *containerHandler) redeployContainerInternal(ctx context.Context, input *containerActionInput) (*getContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -828,8 +828,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	if inspectErr == nil {
 		details.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
-		return &GetContainerOutput{
-			Body: ContainerDetailsResponse{
+		return &getContainerOutput{
+			Body: containerDetailsResponse{
 				Success: true,
 				Data:    details,
 			},
@@ -838,8 +838,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 
 	// Container was redeployed successfully, but we couldn't fetch full details.
 	// Return minimal response with just the ID so frontend can still navigate.
-	return &GetContainerOutput{
-		Body: ContainerDetailsResponse{
+	return &getContainerOutput{
+		Body: containerDetailsResponse{
 			Success: true,
 			Data: containertypes.Details{
 				ID:         newContainerID,
@@ -849,7 +849,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}, nil
 }
 
-func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*DeleteContainerOutput, error) {
+func (h *containerHandler) deleteContainerInternal(ctx context.Context, input *deleteContainerInput) (*deleteContainerOutput, error) {
 	if h.containerService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -867,15 +867,15 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	}
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 
-	return &DeleteContainerOutput{
-		Body: ContainerActionResponse{
+	return &deleteContainerOutput{
+		Body: containerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
 	}, nil
 }
 
-func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
+func (h *containerHandler) setAutoUpdateInternal(ctx context.Context, input *setAutoUpdateInput) (*setAutoUpdateOutput, error) {
 	if h.settingsService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -896,8 +896,8 @@ func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpda
 		msg = "Auto-update disabled"
 	}
 
-	return &SetAutoUpdateOutput{
-		Body: ContainerActionResponse{
+	return &setAutoUpdateOutput{
+		Body: containerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: msg},
 		},

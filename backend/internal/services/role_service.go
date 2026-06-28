@@ -247,7 +247,7 @@ func (s *RoleService) backfillPermsForKeyInternal(ctx context.Context, tx *gorm.
 		}
 		return nil, fmt.Errorf("failed to load api key owner: %w", err)
 	}
-	ps, err := s.resolveUserPermissionsInternal(ctx, tx, owner.ID)
+	ps, err := s.resolveUserPermissionsInternal(tx, owner.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -356,7 +356,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		}
 		existing.Name = name
 		existing.Description = description
-		existing.Permissions = models.StringSlice(permissions)
+		existing.Permissions = permissions
 		if err := tx.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update role: %w", err)
 		}
@@ -625,7 +625,7 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, user *models.User)
 	if ps, ok := s.userCache.Get(user.ID); ok {
 		return ps, nil
 	}
-	ps, err := s.resolveUserPermissionsInternal(ctx, s.db.WithContext(ctx), user.ID)
+	ps, err := s.resolveUserPermissionsInternal(s.db.WithContext(ctx), user.ID)
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +633,7 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, user *models.User)
 	return ps, nil
 }
 
-func (s *RoleService) resolveUserPermissionsInternal(_ context.Context, tx *gorm.DB, userID string) (*authz.PermissionSet, error) {
+func (s *RoleService) resolveUserPermissionsInternal(tx *gorm.DB, userID string) (*authz.PermissionSet, error) {
 	// Scan into raw string for the permissions JSON column to avoid GORM's
 	// schema-introspection on anonymous local structs (which can't see the
 	// type tags needed to wire models.StringSlice's Scanner).

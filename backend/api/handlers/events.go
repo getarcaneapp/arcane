@@ -19,8 +19,8 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// EventHandler handles event management endpoints.
-type EventHandler struct {
+// eventHandler handles event management endpoints.
+type eventHandler struct {
 	eventService *services.EventService
 }
 
@@ -28,14 +28,14 @@ type EventHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// EventPaginatedResponse is the paginated response for events.
-type EventPaginatedResponse struct {
+// eventPaginatedResponse is the paginated response for events.
+type eventPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []event.Event           `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListEventsInput struct {
+type listEventsInput struct {
 	Search   string `query:"search" doc:"Search query"`
 	Sort     string `query:"sort" doc:"Column to sort by"`
 	Order    string `query:"order" default:"asc" doc:"Sort direction"`
@@ -45,11 +45,11 @@ type ListEventsInput struct {
 	Type     string `query:"type" doc:"Filter by event type"`
 }
 
-type ListEventsOutput struct {
-	Body EventPaginatedResponse
+type listEventsOutput struct {
+	Body eventPaginatedResponse
 }
 
-type GetEventsByEnvironmentInput struct {
+type getEventsByEnvironmentInput struct {
 	EnvironmentID string `path:"environmentId" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
 	Sort          string `query:"sort" doc:"Column to sort by"`
@@ -60,15 +60,15 @@ type GetEventsByEnvironmentInput struct {
 	Type          string `query:"type" doc:"Filter by event type"`
 }
 
-type GetEventsByEnvironmentOutput struct {
-	Body EventPaginatedResponse
+type getEventsByEnvironmentOutput struct {
+	Body eventPaginatedResponse
 }
 
-type DeleteEventInput struct {
+type deleteEventInput struct {
 	EventID string `path:"eventId" doc:"Event ID"`
 }
 
-type DeleteEventOutput struct {
+type deleteEventOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -140,7 +140,7 @@ func validAgentEventIngestionTokenInternal(r *http.Request, cfg *config.Config) 
 
 // RegisterEvents registers all event management endpoints.
 func RegisterEvents(api huma.API, eventService *services.EventService) {
-	h := &EventHandler{
+	h := &eventHandler{
 		eventService: eventService,
 	}
 
@@ -156,7 +156,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
-	}, h.ListEvents)
+	}, h.listEventsInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteEvent",
@@ -170,7 +170,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsDelete),
-	}, h.DeleteEvent)
+	}, h.deleteEventInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getEventsByEnvironment",
@@ -184,7 +184,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
-	}, h.GetEventsByEnvironment)
+	}, h.getEventsByEnvironmentInternal)
 }
 
 // ============================================================================
@@ -192,7 +192,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 // ============================================================================
 
 // ListEvents returns a paginated list of events.
-func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*ListEventsOutput, error) {
+func (h *eventHandler) listEventsInternal(ctx context.Context, input *listEventsInput) (*listEventsOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -211,8 +211,8 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 		return nil, huma.Error500InternalServerError((&common.EventListError{Err: err}).Error())
 	}
 
-	return &ListEventsOutput{
-		Body: EventPaginatedResponse{
+	return &listEventsOutput{
+		Body: eventPaginatedResponse{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -221,7 +221,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 }
 
 // GetEventsByEnvironment returns events for a specific environment.
-func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
+func (h *eventHandler) getEventsByEnvironmentInternal(ctx context.Context, input *getEventsByEnvironmentInput) (*getEventsByEnvironmentOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -244,8 +244,8 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 		return nil, huma.Error500InternalServerError((&common.EventListError{Err: err}).Error())
 	}
 
-	return &GetEventsByEnvironmentOutput{
-		Body: EventPaginatedResponse{
+	return &getEventsByEnvironmentOutput{
+		Body: eventPaginatedResponse{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -254,7 +254,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 }
 
 // DeleteEvent deletes an event.
-func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
+func (h *eventHandler) deleteEventInternal(ctx context.Context, input *deleteEventInput) (*deleteEventOutput, error) {
 	if h.eventService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -267,7 +267,7 @@ func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput)
 		return nil, huma.Error500InternalServerError((&common.EventDeletionError{Err: err}).Error())
 	}
 
-	return &DeleteEventOutput{
+	return &deleteEventOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

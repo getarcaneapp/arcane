@@ -353,7 +353,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 			networkName = key
 		}
 
-		if bool(cfg.External) {
+		if cfg.External {
 			result[key] = networkName
 			continue
 		}
@@ -596,7 +596,7 @@ func resolveResourceName(stackName, key, resourceName string, external composego
 	if name == "" {
 		name = key
 	}
-	if bool(external) {
+	if external {
 		return name
 	}
 	return stackScopedName(stackName, name)
@@ -657,7 +657,7 @@ func buildServiceSpec(
 	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
 		spec.TaskTemplate.ContainerSpec.DNSConfig = &swarm.DNSConfig{
 			Nameservers: parseIPList(service.DNS),
-			Search:      []string(service.DNSSearch),
+			Search:      service.DNSSearch,
 			Options:     service.DNSOpts,
 		}
 	}
@@ -1164,7 +1164,7 @@ func toStringSlice(command composegotypes.ShellCommand) []string {
 	if len(command) == 0 {
 		return nil
 	}
-	return []string(command)
+	return command
 }
 
 func convertDurationPtr(duration *composegotypes.Duration) *time.Duration {

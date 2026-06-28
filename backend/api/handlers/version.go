@@ -9,8 +9,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/version"
 )
 
-// VersionHandler handles version information endpoints.
-type VersionHandler struct {
+// versionHandler handles version information endpoints.
+type versionHandler struct {
 	versionService *services.VersionService
 }
 
@@ -18,17 +18,17 @@ type VersionHandler struct {
 // Input/Output Types
 // ============================================================================
 
-type GetVersionInput struct {
+type getVersionInput struct {
 	Current string `query:"current" doc:"Current version to compare against"`
 }
 
-type GetVersionOutput struct {
+type getVersionOutput struct {
 	Body version.Check
 }
 
-type GetAppVersionInput struct{}
+type getAppVersionInput struct{}
 
-type GetAppVersionOutput struct {
+type getAppVersionOutput struct {
 	Body version.Info
 }
 
@@ -38,7 +38,7 @@ type GetAppVersionOutput struct {
 
 // RegisterVersion registers version endpoints.
 func RegisterVersion(api huma.API, versionService *services.VersionService) {
-	h := &VersionHandler{versionService: versionService}
+	h := &versionHandler{versionService: versionService}
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getVersion",
@@ -48,7 +48,7 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 		Description: "Get application version information and check for updates",
 		Tags:        []string{"Version"},
 		Security:    []map[string][]string{},
-	}, h.GetVersion)
+	}, h.getVersionInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getAppVersion",
@@ -58,7 +58,7 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 		Description: "Get the current application version",
 		Tags:        []string{"Version"},
 		Security:    []map[string][]string{},
-	}, h.GetAppVersion)
+	}, h.getAppVersionInternal)
 }
 
 // ============================================================================
@@ -66,7 +66,7 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 // ============================================================================
 
 // GetVersion returns version information with optional update check.
-func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput) (*GetVersionOutput, error) {
+func (h *versionHandler) getVersionInternal(ctx context.Context, input *getVersionInput) (*getVersionOutput, error) {
 	if h.versionService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -74,20 +74,20 @@ func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput)
 	current := strings.TrimSpace(input.Current)
 	check, _ := h.versionService.GetVersionInformation(ctx, current)
 
-	return &GetVersionOutput{
+	return &getVersionOutput{
 		Body: *check,
 	}, nil
 }
 
 // GetAppVersion returns the current application version.
-func (h *VersionHandler) GetAppVersion(ctx context.Context, _ *GetAppVersionInput) (*GetAppVersionOutput, error) {
+func (h *versionHandler) getAppVersionInternal(ctx context.Context, _ *getAppVersionInput) (*getAppVersionOutput, error) {
 	if h.versionService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
 	info := h.versionService.GetAppVersionInfo(ctx)
 
-	return &GetAppVersionOutput{
+	return &getAppVersionOutput{
 		Body: *info,
 	}, nil
 }

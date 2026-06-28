@@ -197,8 +197,8 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 }
 
 // createAgentSudoUserInternal creates a sudo user for agent authentication.
-// The PermissionSet attached to the context (via setUserInContextWithSudoInternal)
-// bypasses every check; the user's Roles field is intentionally empty.
+// The PermissionSet attached to the request context bypasses every check; the
+// user's Roles field is intentionally empty.
 func createAgentSudoUserInternal() *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
@@ -270,7 +270,7 @@ func tryAgentAuthCtxInternal(ctx huma.Context, cfg *config.Config) (huma.Context
 	if !ok {
 		return ctx, false
 	}
-	return huma.WithContext(ctx, setUserInContextWithSudoInternal(ctx.Context(), user)), true
+	return huma.WithContext(ctx, setUserInContextInternal(ctx.Context(), user, authz.SudoPermissionSet())), true
 }
 
 // opportunisticBearerAuthInternal populates the user/session context if a valid
@@ -419,11 +419,4 @@ func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.
 	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
 	ctx = context.WithValue(ctx, ContextKeyUserPermissions, ps)
 	return ctx
-}
-
-// setUserInContextWithSudoInternal attaches a sudo PermissionSet (bypasses
-// every check) plus the user. Used by the agent token path, which is
-// infrastructure-level and not per-user.
-func setUserInContextWithSudoInternal(ctx context.Context, user *models.User) context.Context {
-	return setUserInContextInternal(ctx, user, authz.SudoPermissionSet())
 }

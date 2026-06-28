@@ -39,7 +39,7 @@ func (j *PruningVolumeHelperJob) Name() string {
 
 // Schedule runs the pruning job every 5 minutes. This is intentionally not
 // configurable; the idle timeout (read in Run) is the user-facing knob.
-func (j *PruningVolumeHelperJob) Schedule(ctx context.Context) string {
+func (j *PruningVolumeHelperJob) Schedule(_ context.Context) string {
 	return volumeHelperPruningSchedule
 }
 
@@ -70,7 +70,7 @@ func (j *PruningVolumeHelperJob) Run(ctx context.Context) {
 	}
 }
 
-func (j *PruningVolumeHelperJob) Reschedule(ctx context.Context) error {
+func (j *PruningVolumeHelperJob) Reschedule(_ context.Context) error {
 	// Fixed schedule; the idle-timeout setting only affects Run behavior.
 	return nil
 }

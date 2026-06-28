@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -28,7 +27,7 @@ func BuildSignalURL(config models.SignalConfig) (string, error) {
 }
 
 // SendSignal sends a message via Shoutrrr Signal using proper service configuration
-func SendSignal(ctx context.Context, config models.SignalConfig, message string) error {
+func SendSignal(config models.SignalConfig, message string) error {
 	if config.Host == "" {
 		return errors.New("signal host is empty")
 	}

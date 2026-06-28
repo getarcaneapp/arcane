@@ -249,9 +249,9 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 		hasActiveTunnel = true
 		switch tunnel.Conn.(type) {
 		case *GRPCManagerTunnelConn:
-			activeTransport = EdgeTransportGRPC
+			activeTransport = TransportGRPC
 		case *TunnelConn:
-			activeTransport = EdgeTransportWebSocket
+			activeTransport = TransportWebSocket
 		}
 	}
 

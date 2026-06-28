@@ -24,7 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
-type AuthHandler struct {
+type authHandler struct {
 	userService     *services.UserService
 	authService     *services.AuthService
 	oidcService     *services.OidcService
@@ -34,44 +34,44 @@ type AuthHandler struct {
 // --- Huma Input/Output Wrappers ---
 // These wrap the types from the types package for Huma's input/output handling.
 
-type LoginInput struct {
+type loginInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      auth.Login
 }
 
-type LoginOutput struct {
+type loginOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Session cookie"`
 	Body      base.ApiResponse[auth.LoginResponse]
 }
 
-type LogoutOutput struct {
+type logoutOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Cleared session cookie"`
 	Body      base.ApiResponse[base.MessageResponse]
 }
 
-type RefreshTokenInput struct {
+type refreshTokenInput struct {
 	UserAgent string `header:"User-Agent"`
 	Body      auth.Refresh
 }
 
-type RefreshTokenOutput struct {
+type refreshTokenOutput struct {
 	SetCookie []string `header:"Set-Cookie" doc:"Updated session cookie"`
 	Body      base.ApiResponse[auth.TokenRefreshResponse]
 }
 
-type ChangePasswordInput struct {
+type changePasswordInput struct {
 	Body auth.PasswordChange
 }
 
-type ChangePasswordOutput struct {
+type changePasswordOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type LogoutAllOtherSessionsOutput struct {
+type logoutAllOtherSessionsOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type UpdateMyProfileInput struct {
+type updateMyProfileInput struct {
 	Body struct {
 		DisplayName *string `json:"displayName,omitempty"`
 		Email       *string `json:"email,omitempty"`
@@ -80,29 +80,29 @@ type UpdateMyProfileInput struct {
 	}
 }
 
-type UpdateMyProfileOutput struct {
+type updateMyProfileOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type GetCurrentUserOutput struct {
+type getCurrentUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type UploadMyAvatarInput struct {
+type uploadMyAvatarInput struct {
 	RawBody multipart.Form `contentType:"multipart/form-data"`
 }
 
-type UploadMyAvatarOutput struct {
+type uploadMyAvatarOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
-type DeleteMyAvatarOutput struct {
+type deleteMyAvatarOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
 // RegisterAuth registers authentication routes using Huma.
 func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService, settingsService *services.SettingsService) {
-	h := &AuthHandler{
+	h := &authHandler{
 		userService:     userService,
 		authService:     authService,
 		oidcService:     oidcService,
@@ -117,7 +117,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Description: "Authenticate a user with username and password",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{},
-	}, h.Login)
+	}, h.loginInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "logout",
@@ -127,7 +127,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Description: "Clear authentication session",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{},
-	}, h.Logout)
+	}, h.logoutInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-current-user",
@@ -140,7 +140,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.GetCurrentUser)
+	}, h.getCurrentUserInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "refresh-token",
@@ -150,7 +150,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Description: "Obtain a new access token using a refresh token",
 		Tags:        []string{"Auth"},
 		Security:    []map[string][]string{},
-	}, h.RefreshToken)
+	}, h.refreshTokenInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "change-password",
@@ -163,7 +163,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.ChangePassword)
+	}, h.changePasswordInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "logout-all-other-sessions",
@@ -176,7 +176,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.LogoutAllOtherSessions)
+	}, h.logoutAllOtherSessionsInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-my-profile",
@@ -189,7 +189,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.UpdateMyProfile)
+	}, h.updateMyProfileInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "upload-my-avatar",
@@ -215,7 +215,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 				},
 			},
 		},
-	}, h.UploadMyAvatar)
+	}, h.uploadMyAvatarInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-my-avatar",
@@ -228,11 +228,11 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, h.DeleteMyAvatar)
+	}, h.deleteMyAvatarInternal)
 }
 
 // Login authenticates a user and returns tokens.
-func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
+func (h *authHandler) loginInternal(ctx context.Context, input *loginInput) (*loginOutput, error) {
 	if h.authService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -265,7 +265,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
 
-	return &LoginOutput{
+	return &loginOutput{
 		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
 		Body: base.ApiResponse[auth.LoginResponse]{
 			Success: true,
@@ -280,7 +280,7 @@ func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutpu
 }
 
 // Logout clears the authentication session.
-func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutput, error) {
+func (h *authHandler) logoutInternal(ctx context.Context, _ *struct{}) (*logoutOutput, error) {
 	if h.authService != nil {
 		if sessionID, exists := humamw.GetCurrentSessionIDFromContext(ctx); exists {
 			if err := h.authService.RevokeSession(ctx, sessionID); err != nil {
@@ -292,7 +292,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 		}
 	}
 
-	return &LogoutOutput{
+	return &logoutOutput{
 		SetCookie: cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx)),
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
@@ -306,7 +306,7 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 // GetCurrentUser returns the currently authenticated user's information.
 // Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
-func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
+func (h *authHandler) getCurrentUserInternal(ctx context.Context, _ *struct{}) (*getCurrentUserOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -326,7 +326,7 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &GetCurrentUserOutput{
+	return &getCurrentUserOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -335,7 +335,7 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 }
 
 // RefreshToken obtains a new access token using a refresh token.
-func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
+func (h *authHandler) refreshTokenInternal(ctx context.Context, input *refreshTokenInput) (*refreshTokenOutput, error) {
 	if h.authService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -353,7 +353,7 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 	maxAge += 60
 
-	return &RefreshTokenOutput{
+	return &refreshTokenOutput{
 		SetCookie: []string{cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromContext(ctx))},
 		Body: base.ApiResponse[auth.TokenRefreshResponse]{
 			Success: true,
@@ -374,7 +374,7 @@ func sessionMetaFromContextInternal(ctx context.Context, userAgent string) auth.
 }
 
 // ChangePassword changes the current user's password.
-func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*ChangePasswordOutput, error) {
+func (h *authHandler) changePasswordInternal(ctx context.Context, input *changePasswordInput) (*changePasswordOutput, error) {
 	if h.authService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -399,7 +399,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 		}
 	}
 
-	return &ChangePasswordOutput{
+	return &changePasswordOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -411,7 +411,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 
 // LogoutAllOtherSessions revokes every active session for the current user
 // except the session making this request.
-func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*LogoutAllOtherSessionsOutput, error) {
+func (h *authHandler) logoutAllOtherSessionsInternal(ctx context.Context, _ *struct{}) (*logoutAllOtherSessionsOutput, error) {
 	if h.authService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -426,7 +426,7 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 		return nil, huma.Error500InternalServerError("failed to revoke sessions: " + err.Error())
 	}
 
-	return &LogoutAllOtherSessionsOutput{
+	return &logoutAllOtherSessionsOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -438,7 +438,7 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
-func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
+func (h *authHandler) updateMyProfileInternal(ctx context.Context, input *updateMyProfileInput) (*updateMyProfileOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -486,7 +486,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &UpdateMyProfileOutput{
+	return &updateMyProfileOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -494,9 +494,9 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	}, nil
 }
 
-// UploadMyAvatar lets the current user upload a custom profile picture.
+// uploadMyAvatarInternal lets the current user upload a custom profile picture.
 // Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
-func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
+func (h *authHandler) uploadMyAvatarInternal(ctx context.Context, input *uploadMyAvatarInput) (*uploadMyAvatarOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -558,7 +558,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &UploadMyAvatarOutput{
+	return &uploadMyAvatarOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,
@@ -566,7 +566,7 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	}, nil
 }
 
-func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
+func (h *authHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 	const defaultAvatarMaxUploadSizeMb = 2
 	if h.settingsService == nil {
 		return defaultAvatarMaxUploadSizeMb
@@ -578,8 +578,8 @@ func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 	return maxSizeMb
 }
 
-// DeleteMyAvatar removes the current user's custom profile picture.
-func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*DeleteMyAvatarOutput, error) {
+// deleteMyAvatarInternal removes the current user's custom profile picture.
+func (h *authHandler) deleteMyAvatarInternal(ctx context.Context, input *struct{}) (*deleteMyAvatarOutput, error) {
 	if h.userService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -604,7 +604,7 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
 	}
 
-	return &DeleteMyAvatarOutput{
+	return &deleteMyAvatarOutput{
 		Body: base.ApiResponse[user.User]{
 			Success: true,
 			Data:    out,

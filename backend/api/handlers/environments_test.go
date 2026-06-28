@@ -81,7 +81,7 @@ func TestEnvironmentMTLSAssetFileModeInternal(t *testing.T) {
 
 func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 	t.Run("leaves non-edge environments unchanged", func(t *testing.T) {
-		handler := &EnvironmentHandler{}
+		handler := &environmentHandler{}
 		env := envtypes.Environment{
 			ID:     "0",
 			Status: string(models.EnvironmentStatusOnline),
@@ -102,7 +102,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 	})
 
 	t.Run("marks stale edge status offline when no live tunnel exists", func(t *testing.T) {
-		handler := &EnvironmentHandler{}
+		handler := &environmentHandler{}
 		envID := "env-edge-offline"
 		edge.GetRegistry().Unregister(envID)
 		t.Cleanup(func() { edge.GetRegistry().Unregister(envID) })
@@ -129,7 +129,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 	})
 
 	t.Run("preserves pending edge environments until they connect", func(t *testing.T) {
-		handler := &EnvironmentHandler{}
+		handler := &environmentHandler{}
 		envID := "env-edge-pending"
 		edge.GetRegistry().Unregister(envID)
 		t.Cleanup(func() { edge.GetRegistry().Unregister(envID) })
@@ -156,7 +156,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 	})
 
 	t.Run("reports live tunnel status as online", func(t *testing.T) {
-		handler := &EnvironmentHandler{}
+		handler := &environmentHandler{}
 		envID := "env-edge-live"
 		edge.GetRegistry().Unregister(envID)
 		t.Cleanup(func() { edge.GetRegistry().Unregister(envID) })
@@ -178,7 +178,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 
 		assert.Equal(t, string(models.EnvironmentStatusOnline), env.Status)
 		if assert.NotNil(t, env.EdgeTransport) {
-			assert.Equal(t, edge.EdgeTransportGRPC, *env.EdgeTransport)
+			assert.Equal(t, edge.TransportGRPC, *env.EdgeTransport)
 		}
 		if assert.NotNil(t, env.EdgeSecurityMode) {
 			assert.Equal(t, "mtls", *env.EdgeSecurityMode)
@@ -198,7 +198,7 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 	})
 
 	t.Run("marks recently polled edge environments standby without a live tunnel", func(t *testing.T) {
-		handler := &EnvironmentHandler{}
+		handler := &environmentHandler{}
 		envID := "env-edge-polled"
 		edge.GetRegistry().Unregister(envID)
 		t.Cleanup(func() { edge.GetRegistry().Unregister(envID) })

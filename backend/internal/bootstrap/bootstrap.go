@@ -96,15 +96,20 @@ func Bootstrap(ctx context.Context) error {
 	initializeStartupState(appCtx, cfg, appServices, dockerClientService, httpClient)
 
 	cronLocation := cfg.GetLocation()
-	scheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
-	appServices.JobSchedule.SetScheduler(appCtx, scheduler)
-	registerJobs(appCtx, scheduler, appServices, cfg)
+	jobScheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
+	appServices.JobSchedule.SetScheduler(appCtx, jobScheduler)
+	registerJobs(appCtx, jobScheduler, appServices, cfg)
 
 	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
+	defer func() {
+		if err := router.Close(); err != nil {
+			slog.WarnContext(appCtx, "failed to close router", "error", err)
+		}
+	}()
 
 	startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
 
-	err = runServicesInternal(appCtx, cfg, router, tunnelServer, scheduler)
+	err = runServicesInternal(appCtx, cfg, router, tunnelServer, jobScheduler)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -144,7 +149,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		Environment:   string(cfg.Environment),
 		AgentMode:     cfg.AgentMode,
 	})
-	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
+	startup.InitializeDefaultSettings(appCtx, appServices.Settings)
 	if appServices.GitOpsSync != nil {
 		if err := appServices.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
@@ -359,10 +364,10 @@ func runServicesInternal(appCtx context.Context, cfg *config.Config, router http
 	Run(ctx context.Context) error
 }) error {
 	for _, s := range schedulers {
-		scheduler := s
+		runnableScheduler := s
 		go func() {
 			slog.InfoContext(appCtx, "Starting scheduler")
-			if err := scheduler.Run(appCtx); err != nil {
+			if err := runnableScheduler.Run(appCtx); err != nil {
 				if !errors.Is(err, context.Canceled) {
 					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
 				}
@@ -465,7 +470,7 @@ func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, st
 		return false, "", "", nil, err
 	}
 
-	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.EdgeMTLSModeDisabled {
+	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.MTLSModeDisabled {
 		if err := edge.ValidateManagerMTLSConfig(edgeCfg); err != nil {
 			return false, "", "", nil, err
 		}

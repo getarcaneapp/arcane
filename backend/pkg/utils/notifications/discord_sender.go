@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
@@ -24,7 +23,7 @@ func BuildDiscordURL(config models.DiscordConfig) (string, error) {
 }
 
 // SendDiscord sends a message via Shoutrrr Discord using proper service configuration
-func SendDiscord(ctx context.Context, config models.DiscordConfig, message string) error {
+func SendDiscord(config models.DiscordConfig, message string) error {
 	if config.WebhookID == "" {
 		return errors.New("discord webhook ID is empty")
 	}

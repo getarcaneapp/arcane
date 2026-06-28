@@ -22,7 +22,6 @@ import (
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
 const dashboardSnapshotPreloadLimit = 50
-const localEnvironmentID = "0"
 
 type DashboardService struct {
 	db                   *database.DB
@@ -69,7 +68,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		return nil, errors.New("docker service not available")
 	}
 
-	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx, localEnvironmentID)
+	dockerSnapshot, err := s.dockerService.GetSnapshot(ctx)
 	if err != nil {
 		return nil, err
 	}

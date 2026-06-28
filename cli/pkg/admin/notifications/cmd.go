@@ -19,8 +19,8 @@ var (
 	notifForceFlag bool
 )
 
-// NotificationsCmd is the parent command for notification operations
-var NotificationsCmd = &cobra.Command{
+// Command is the parent command for notification operations
+var Command = &cobra.Command{
 	Use:     "notifications",
 	Aliases: []string{"notif", "notify"},
 	Short:   "Manage notifications",
@@ -149,8 +149,8 @@ var testProviderCmd = &cobra.Command{
 }
 
 func init() {
-	NotificationsCmd.AddCommand(settingsCmd)
-	NotificationsCmd.AddCommand(testProviderCmd)
+	Command.AddCommand(settingsCmd)
+	Command.AddCommand(testProviderCmd)
 
 	settingsCmd.AddCommand(settingsGetCmd)
 	settingsCmd.AddCommand(settingsDeleteCmd)

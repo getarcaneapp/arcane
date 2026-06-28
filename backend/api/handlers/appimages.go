@@ -11,23 +11,23 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 )
 
-// AppImagesHandler provides Huma-based application image endpoints.
-type AppImagesHandler struct {
+// appImagesHandler provides Huma-based application image endpoints.
+type appImagesHandler struct {
 	appImagesService *services.ApplicationImagesService
 }
 
 // --- Huma Input/Output Wrappers ---
 
-type GetLogoInput struct {
+type getLogoInput struct {
 	Full  bool   `query:"full" default:"false" doc:"Return full logo instead of icon"`
 	Color string `query:"color" doc:"Optional accent color override for preview (e.g., 'oklch(0.65 0.2 150)')"`
 }
 
-type GetPWAIconInput struct {
+type getPWAIconInput struct {
 	Filename string `path:"filename" example:"icon-192x192.png" doc:"PWA icon filename"`
 }
 
-type GetAppImageOutput struct {
+type getAppImageOutput struct {
 	ContentType         string `header:"Content-Type"`
 	CacheControl        string `header:"Cache-Control"`
 	XContentTypeOptions string `header:"X-Content-Type-Options"`
@@ -47,7 +47,7 @@ var allowedPWAIconFilenames = map[string]struct{}{
 
 // RegisterAppImages registers application image routes using Huma.
 func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImagesService) {
-	h := &AppImagesHandler{
+	h := &appImagesHandler{
 		appImagesService: appImagesService,
 	}
 
@@ -59,7 +59,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Description: "Get the application logo image",
 		Tags:        []string{"Application Images"},
 		Security:    []map[string][]string{},
-	}, h.GetLogo)
+	}, h.getLogoInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-logo-email",
@@ -69,7 +69,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Description: "Get the application logo image in PNG format for emails",
 		Tags:        []string{"Application Images"},
 		Security:    []map[string][]string{},
-	}, h.GetLogoEmail)
+	}, h.getLogoEmailInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-favicon",
@@ -79,7 +79,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Description: "Get the application favicon image",
 		Tags:        []string{"Application Images"},
 		Security:    []map[string][]string{},
-	}, h.GetFavicon)
+	}, h.getFaviconInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-default-profile",
@@ -89,7 +89,7 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Description: "Get the default user profile image",
 		Tags:        []string{"Application Images"},
 		Security:    []map[string][]string{},
-	}, h.GetDefaultProfile)
+	}, h.getDefaultProfileInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-pwa-icon",
@@ -99,11 +99,11 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 		Description: "Get a Progressive Web App icon image",
 		Tags:        []string{"Application Images"},
 		Security:    []map[string][]string{},
-	}, h.GetPWAIcon)
+	}, h.getPWAIconInternal)
 }
 
 // GetLogo returns the application logo image.
-func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getLogoInternal(_ context.Context, input *getLogoInput) (*getAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -117,7 +117,7 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 }
 
 // GetLogoEmail returns the application logo image for emails (PNG).
-func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getLogoEmailInternal(_ context.Context, _ *struct{}) (*getAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -126,7 +126,7 @@ func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*
 }
 
 // GetFavicon returns the application favicon image.
-func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getFaviconInternal(_ context.Context, _ *struct{}) (*getAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -135,7 +135,7 @@ func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*Ge
 }
 
 // GetDefaultProfile returns the default user profile image.
-func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getDefaultProfileInternal(_ context.Context, _ *struct{}) (*getAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -144,7 +144,7 @@ func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{
 }
 
 // GetPWAIcon returns a PWA icon image.
-func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getPWAIconInternal(_ context.Context, input *getPWAIconInput) (*getAppImageOutput, error) {
 	if h.appImagesService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -152,11 +152,11 @@ func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInpu
 	return h.getImageByFilenameInternal(input.Filename)
 }
 
-func (h *AppImagesHandler) getImage(name string) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getImage(name string) (*getAppImageOutput, error) {
 	return h.getImageWithColor(name, "")
 }
 
-func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getImageByFilenameInternal(filename string) (*getAppImageOutput, error) {
 	if _, ok := allowedPWAIconFilenames[filename]; !ok {
 		return nil, huma.Error400BadRequest("invalid PWA icon filename")
 	}
@@ -165,7 +165,7 @@ func (h *AppImagesHandler) getImageByFilenameInternal(filename string) (*GetAppI
 	return h.getImage(name)
 }
 
-func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) (*GetAppImageOutput, error) {
+func (h *appImagesHandler) getImageWithColor(name string, colorOverride string) (*getAppImageOutput, error) {
 	imageData, mimeType, err := h.appImagesService.GetImageWithColor(name, colorOverride)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ImageRetrievalError{Err: err}).Error())
@@ -178,7 +178,7 @@ func (h *AppImagesHandler) getImageWithColor(name string, colorOverride string) 
 		cacheControl = "no-cache, no-store, must-revalidate"
 	}
 
-	return &GetAppImageOutput{
+	return &getAppImageOutput{
 		ContentType:         mimeType,
 		CacheControl:        cacheControl,
 		XContentTypeOptions: "nosniff",

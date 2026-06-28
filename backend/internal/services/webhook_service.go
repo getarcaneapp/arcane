@@ -63,7 +63,7 @@ func NewWebhookService(db *database.DB, containerService *ContainerService, upda
 // isRemoteWebhookEnvironmentInternal reports whether environmentID refers to a
 // remote environment (anything but the local Docker environment).
 func isRemoteWebhookEnvironmentInternal(environmentID string) bool {
-	return environmentID != "" && environmentID != types.LOCAL_DOCKER_ENVIRONMENT_ID
+	return environmentID != "" && environmentID != types.LocalDockerEnvironmentID
 }
 
 // generateWebhookTokenInternal creates a new random webhook token and returns the raw token
@@ -148,7 +148,7 @@ func resolveWebhookActionTypeInternal(targetType, actionType string) (string, er
 		if normalizedActionType == models.WebhookActionTypeRun {
 			return normalizedActionType, nil
 		}
-	case models.WebhookTargetTypeGitOps:
+	default:
 		if normalizedActionType == models.WebhookActionTypeSync {
 			return normalizedActionType, nil
 		}
@@ -484,7 +484,7 @@ func (s *WebhookService) executeWebhookActionInternal(ctx context.Context, wh *m
 // environment ID, matching the environment proxy's path-rewriting convention.
 // wantResult reports whether the response carries an updater.Result payload.
 func remoteWebhookRequestInternal(wh *models.Webhook, actionType string) (method, path string, wantResult bool, err error) {
-	apiPrefix := "/api/environments/" + types.LOCAL_DOCKER_ENVIRONMENT_ID
+	apiPrefix := "/api/environments/" + types.LocalDockerEnvironmentID
 
 	switch wh.TargetType {
 	case models.WebhookTargetTypeContainer:

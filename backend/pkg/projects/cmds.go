@@ -58,7 +58,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 	restartCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(restartCtx)
+	c, err := NewClient()
 	if err != nil {
 		return err
 	}
@@ -77,7 +77,7 @@ func ComposeStop(ctx context.Context, proj *types.Project, services []string) er
 	stopCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(stopCtx)
+	c, err := NewClient()
 	if err != nil {
 		return err
 	}
@@ -95,7 +95,7 @@ func ComposeUp(ctx context.Context, proj *types.Project, services []string, remo
 	composeCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(composeCtx)
+	c, err := NewClient()
 	if err != nil {
 		return err
 	}
@@ -294,7 +294,7 @@ func pollContainerStatus(ctx context.Context, svc api.Compose, projectName strin
 }
 
 func ComposePs(ctx context.Context, proj *types.Project, services []string, all bool) ([]api.ContainerSummary, error) {
-	c, err := NewClient(ctx)
+	c, err := NewClient()
 	if err != nil {
 		return nil, err
 	}
@@ -307,7 +307,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 	downCtx, cancel := detachFromHTTPContextInternal(ctx)
 	defer cancel()
 
-	c, err := NewClient(downCtx)
+	c, err := NewClient()
 	if err != nil {
 		return err
 	}
@@ -320,7 +320,7 @@ func ComposeDown(ctx context.Context, proj *types.Project, removeVolumes bool) e
 }
 
 func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow bool, tail string) error {
-	c, err := NewClient(ctx)
+	c, err := NewClient()
 	if err != nil {
 		return err
 	}
@@ -330,7 +330,7 @@ func ComposeLogs(ctx context.Context, projectName string, out io.Writer, follow 
 }
 
 func ListGlobalComposeContainers(ctx context.Context) ([]container.Summary, error) {
-	c, err := NewClient(ctx)
+	c, err := NewClient()
 	if err != nil {
 		return nil, err
 	}

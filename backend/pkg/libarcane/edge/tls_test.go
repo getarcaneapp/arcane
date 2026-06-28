@@ -48,7 +48,7 @@ func initEdgeTestCrypto(t *testing.T) {
 
 func TestPrepareManagerMTLSAssetsWithContext(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 		AppURL:            "https://manager.example.com",
 	}
@@ -60,7 +60,7 @@ func TestPrepareManagerMTLSAssetsWithContext(t *testing.T) {
 
 func TestGenerateManagerClientMTLSAssetsWithContext(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 		AppURL:            "https://manager.example.com",
 	}
@@ -102,7 +102,7 @@ func TestGenerateManagerClientMTLSAssetsWithContext(t *testing.T) {
 
 func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 		AppURL:            "https://manager.example.com",
 	}
@@ -143,7 +143,7 @@ func TestEnsureAgentMTLSAssets_RejectsPlainHTTPEnrollment(t *testing.T) {
 	cfg := &Config{
 		ManagerApiUrl:     "http://manager.example.com/api",
 		AgentToken:        "valid-token",
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
 
@@ -168,7 +168,7 @@ func TestEnsureAgentMTLSAssets_LimitsEnrollmentErrorBody(t *testing.T) {
 	cfg := &Config{
 		ManagerApiUrl:     server.URL + "/api",
 		AgentToken:        "valid-token",
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSCAFile:    caPath,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
@@ -184,7 +184,7 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 	caPath := filepath.Join(assetsDir, generatedMTLSCACertFileName)
 
 	generated, err := GenerateManagerClientMTLSAssetsWithContext(context.Background(), &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 		AppURL:            "https://manager.example.com",
 	}, "env-existing", "Existing")
@@ -201,7 +201,7 @@ func TestEnsureAgentMTLSAssets_UsesDownloadedCAPathWhenPresent(t *testing.T) {
 
 	cfg := &Config{
 		ManagerApiUrl:     "https://manager.example.com/api",
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: assetsDir,
 	}
 
@@ -239,7 +239,7 @@ func TestBuildManagerClientTLSConfigInternal_OptionalIgnoresBrokenClientCertific
 
 	tlsConfig, err := buildManagerClientTLSConfigInternal(&Config{
 		ManagerApiUrl:    "https://manager.example.com",
-		EdgeMTLSMode:     EdgeMTLSModeOptional,
+		EdgeMTLSMode:     MTLSModeOptional,
 		EdgeMTLSCertFile: certPath,
 		EdgeMTLSKeyFile:  keyPath,
 	})
@@ -272,7 +272,7 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 	}
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 		AppURL:       "https://manager.example.com",
 	})
 
@@ -282,7 +282,7 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 
 func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing.T) {
 	require.NoError(t, ValidateManagerMTLSConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 	}))
 
 	assetsDir := t.TempDir()
@@ -290,7 +290,7 @@ func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing
 	require.NoError(t, err)
 
 	err = ValidateManagerMTLSConfig(&Config{
-		EdgeMTLSMode:   EdgeMTLSModeRequired,
+		EdgeMTLSMode:   MTLSModeRequired,
 		EdgeMTLSCAFile: caPath,
 	})
 	require.NoError(t, err)
@@ -299,7 +299,7 @@ func TestValidateManagerMTLSConfig_DoesNotRequireArcaneTLSTermination(t *testing
 func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T) {
 	t.Run("missing file", func(t *testing.T) {
 		err := ValidateManagerMTLSConfig(&Config{
-			EdgeMTLSMode:   EdgeMTLSModeRequired,
+			EdgeMTLSMode:   MTLSModeRequired,
 			EdgeMTLSCAFile: filepath.Join(t.TempDir(), "missing-ca.crt"),
 		})
 		require.Error(t, err)
@@ -311,7 +311,7 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 		require.NoError(t, os.WriteFile(caPath, []byte("not a pem"), 0o600))
 
 		err := ValidateManagerMTLSConfig(&Config{
-			EdgeMTLSMode:   EdgeMTLSModeRequired,
+			EdgeMTLSMode:   MTLSModeRequired,
 			EdgeMTLSCAFile: caPath,
 		})
 		require.Error(t, err)
@@ -322,7 +322,7 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 		AppURL:       "https://manager.example.com",
 	})
 
@@ -333,7 +333,7 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 		AppURL:       "https://manager.example.com",
 	})
 
@@ -376,7 +376,7 @@ func TestTunnelServerRequiredMTLS_IgnoresProxyVerificationHeaders(t *testing.T) 
 
 func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
-	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
+	server.SetConfig(&Config{EdgeMTLSMode: MTLSModeRequired})
 
 	t.Run("missing peer", func(t *testing.T) {
 		require.NoError(t, server.requireCertificateIdentityFromContextInternal(context.Background(), "env-a"))
@@ -396,7 +396,7 @@ func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *te
 			VerifiedChains:   [][]*x509.Certificate{{cert}},
 		}}})
 		server.SetConfig(&Config{
-			EdgeMTLSMode: EdgeMTLSModeRequired,
+			EdgeMTLSMode: MTLSModeRequired,
 			AppURL:       "https://manager.example.com",
 		})
 		require.NoError(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-a"))
@@ -407,7 +407,7 @@ func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *te
 func TestAgentMTLSAssetsNeedEnrollmentInternal_RenewsExpiredCertificate(t *testing.T) {
 	assetsDir := t.TempDir()
 	assets, err := GenerateManagerClientMTLSAssetsWithContext(context.Background(), &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 		AppURL:            "https://manager.example.com",
 	}, "env-renew", "Renew")
@@ -571,7 +571,7 @@ func TestBuildGeneratedClientSANsInternal(t *testing.T) {
 
 func TestShouldAutoGenerateManagerCAInternal(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
 
@@ -583,7 +583,7 @@ func TestShouldAutoGenerateManagerCAInternal(t *testing.T) {
 
 func TestShouldAutoEnrollAgentMTLSInternal(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 	}
 
 	require.True(t, shouldAutoEnrollAgentMTLSInternal(cfg))

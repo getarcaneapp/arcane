@@ -36,8 +36,8 @@ var (
 	userUpdateEmail       string
 )
 
-// UsersCmd is the parent command for user operations
-var UsersCmd = &cobra.Command{
+// Command is the parent command for user operations
+var Command = &cobra.Command{
 	Use:     "users",
 	Aliases: []string{"user", "usr"},
 	Short:   "Manage users",
@@ -58,7 +58,7 @@ func summarizeRoleAssignments(assignments []user.RoleAssignmentSummary) string {
 		hasGlobal bool
 	}
 	buckets := map[string]*bucket{}
-	order := []string{}
+	var order []string
 	for _, a := range assignments {
 		b, ok := buckets[a.RoleID]
 		if !ok {
@@ -358,11 +358,11 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	UsersCmd.AddCommand(listCmd)
-	UsersCmd.AddCommand(createCmd)
-	UsersCmd.AddCommand(getCmd)
-	UsersCmd.AddCommand(updateCmd)
-	UsersCmd.AddCommand(deleteCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of users to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

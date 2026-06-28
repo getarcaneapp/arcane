@@ -231,9 +231,8 @@ func normalizeContainerInspectRawJSONInternal(raw []byte) ([]byte, bool, error) 
 
 	changed := false
 
-	networkSettings, ok := asMapInternal(payload["NetworkSettings"])
-	if ok {
-		changed = normalizeAddressStringFieldInternal(networkSettings, "Gateway") || changed
+	if networkSettings, ok := asMapInternal(payload["NetworkSettings"]); ok {
+		changed = normalizeAddressStringFieldInternal(networkSettings, "Gateway")
 		changed = normalizeAddressStringFieldInternal(networkSettings, "IPv6Gateway") || changed
 		changed = normalizeAddressWithPrefixFieldInternal(networkSettings, "IPAddress", "IPPrefixLen") || changed
 		changed = normalizeAddressWithPrefixFieldInternal(networkSettings, "GlobalIPv6Address", "GlobalIPv6PrefixLen") || changed

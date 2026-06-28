@@ -94,8 +94,6 @@ func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T) {
 	ctx := context.Background()
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
-	missingProjectID := "missing-project"
-
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-delete-stale-project"},
 		Name:          "demo-sync",
@@ -103,7 +101,7 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/demo/docker-compose.yaml",
 		ProjectName:   "demo-project",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncInterval:  60,
 	}
 	require.NoError(t, db.Create(sync).Error)
@@ -363,11 +361,10 @@ func TestGitOpsSyncService_DirectorySync_OverwritesExistingDirectoryAtFilePath(t
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "letsencrypt"), 0o755))
 	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "logs"), 0o755))
 
-	dirName := "traefik-project"
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "proj-directory-docker-dir-conflict"},
 		Name:      "traefik-project",
-		DirName:   &dirName,
+		DirName:   new("traefik-project"),
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -444,11 +441,11 @@ func TestGitOpsSyncService_CreateDirectorySyncProjectInternal_RollsBackProjectOn
 	callbackName := "test:fail_project_gitops_update"
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register(callbackName, func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Table == "projects" {
-			_ = tx.AddError(errors.New("forced project update failure"))
+			require.Error(t, tx.AddError(errors.New("forced project update failure")))
 		}
 	}))
 	defer func() {
-		_ = db.Callback().Update().Remove(callbackName)
+		require.NoError(t, db.Callback().Update().Remove(callbackName))
 	}()
 
 	project, err := svc.createDirectorySyncProjectInternal(ctx, sync, stage, models.User{})
@@ -497,7 +494,6 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-directory-relink"},
 		Name:          "radarr-sync",
@@ -505,16 +501,15 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RelinksManagedProject
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/media/radarr.yaml",
 		ProjectName:   "Radarr",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncDirectory: true,
 	}
 	require.NoError(t, db.Create(sync).Error)
 
-	dirName := "Radarr-3"
 	project := &models.Project{
 		BaseModel:       models.BaseModel{ID: "proj-directory-relink"},
 		Name:            "Radarr",
-		DirName:         &dirName,
+		DirName:         new("Radarr-3"),
 		Path:            projectPath,
 		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &sync.ID,
@@ -540,7 +535,6 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirecto
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-directory-disk-recovery"},
 		Name:          "radarr-sync",
@@ -548,7 +542,7 @@ func TestGitOpsSyncService_GetDirectorySyncProjectInternal_RecoversUniqueDirecto
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/media/radarr.yaml",
 		ProjectName:   "Radarr",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncDirectory: true,
 	}
 	require.NoError(t, db.Create(sync).Error)
@@ -581,7 +575,6 @@ func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguou
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
 	}
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-directory-ambiguous"},
 		Name:          "radarr-sync",
@@ -589,7 +582,7 @@ func TestGitOpsSyncService_ReconcileDirectorySyncProjectsOnStartup_SkipsAmbiguou
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/media/radarr.yaml",
 		ProjectName:   "Radarr",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncDirectory: true,
 	}
 	require.NoError(t, db.Create(sync).Error)
@@ -612,7 +605,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 	testScheduler := &gitOpsSyncTestSchedulerInternal{}
 	svc.SetScheduler(ctx, testScheduler)
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-directory-missing-bound-project"},
 		Name:          "demo-sync",
@@ -620,7 +612,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/demo/docker-compose.yaml",
 		ProjectName:   "demo-project",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncDirectory: true,
 		AutoSync:      true,
 	}
@@ -674,7 +666,6 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 		require.NoError(t, os.WriteFile(filepath.Join(projectPath, "radarr.yaml"), []byte("services:\n  app:\n    image: lscr.io/linuxserver/radarr:latest\n"), 0o644))
 	}
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-directory-ambiguous-bound-project"},
 		Name:          "radarr-sync",
@@ -682,7 +673,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/media/radarr.yaml",
 		ProjectName:   "Radarr",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		SyncDirectory: true,
 		AutoSync:      true,
 	}
@@ -724,7 +715,6 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	testScheduler := &gitOpsSyncTestSchedulerInternal{}
 	svc.SetScheduler(ctx, testScheduler)
 
-	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-file-missing-bound-project"},
 		Name:          "demo-sync",
@@ -732,7 +722,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 		RepositoryID:  "repo-1",
 		ComposePath:   "apps/demo/docker-compose.yaml",
 		ProjectName:   "demo-project",
-		ProjectID:     &missingProjectID,
+		ProjectID:     new("missing-project"),
 		AutoSync:      true,
 	}
 	require.NoError(t, db.Create(sync).Error)

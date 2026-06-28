@@ -176,7 +176,7 @@ func TestTunnelServer_HandleConnect_AcceptsTokenAfterProxyTerminatedMTLS(t *test
 		return "", errors.New("invalid token")
 	}, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 		AppURL:       "https://manager.example.com",
 	})
 
@@ -349,7 +349,7 @@ func TestTunnelServer_HandleMTLSEnroll(t *testing.T) {
 		return "Lab Server", nil
 	})
 	server.SetConfig(&Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	})
 
@@ -389,7 +389,7 @@ func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testi
 		return "env-repeat", nil
 	}, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	})
 
@@ -419,7 +419,7 @@ func TestTunnelServer_HandleMTLSEnroll_ServesCachedAssetsDuringCooldown(t *testi
 
 func TestTunnelServer_HandleMTLSEnroll_AllowsRepeatAfterCooldownAndMarksReenrollment(t *testing.T) {
 	cfg := &Config{
-		EdgeMTLSMode:      EdgeMTLSModeRequired,
+		EdgeMTLSMode:      MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
 	server := NewTunnelServer(func(ctx context.Context, token string) (string, error) {
@@ -592,7 +592,7 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 
 type fakeServerTunnelConn struct{}
 
-func (f *fakeServerTunnelConn) Send(msg *TunnelMessage) error { return nil }
+func (f *fakeServerTunnelConn) Send(_ *TunnelMessage) error { return nil }
 
 func (f *fakeServerTunnelConn) Receive() (*TunnelMessage, error) { return nil, io.EOF }
 
@@ -602,7 +602,7 @@ func (f *fakeServerTunnelConn) Close() error { return nil }
 
 func (f *fakeServerTunnelConn) IsClosed() bool { return false }
 
-func (f *fakeServerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+func (f *fakeServerTunnelConn) SendRequest(_ context.Context, _ *TunnelMessage, _ *sync.Map) (*TunnelMessage, error) {
 	return nil, errors.New("not implemented")
 }
 
@@ -631,7 +631,7 @@ func (f *registerResponseOrderConn) Close() error { return nil }
 
 func (f *registerResponseOrderConn) IsClosed() bool { return false }
 
-func (f *registerResponseOrderConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
+func (f *registerResponseOrderConn) SendRequest(_ context.Context, _ *TunnelMessage, _ *sync.Map) (*TunnelMessage, error) {
 	return nil, errors.New("not implemented")
 }
 

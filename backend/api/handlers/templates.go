@@ -18,8 +18,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/template"
 )
 
-// TemplateHandler handles template management endpoints.
-type TemplateHandler struct {
+// templateHandler handles template management endpoints.
+type templateHandler struct {
 	templateService    *services.TemplateService
 	environmentService *services.EnvironmentService
 }
@@ -28,14 +28,14 @@ type TemplateHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// TemplatePaginatedResponse is the paginated response for templates.
-type TemplatePaginatedResponse struct {
+// templatePaginatedResponse is the paginated response for templates.
+type templatePaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []template.Template     `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListTemplatesInput struct {
+type listTemplatesInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction"`
@@ -44,132 +44,132 @@ type ListTemplatesInput struct {
 	Type   string `query:"type" doc:"Filter by template type (comma-separated: false,true)"`
 }
 
-type ListTemplatesOutput struct {
-	Body TemplatePaginatedResponse
+type listTemplatesOutput struct {
+	Body templatePaginatedResponse
 }
 
-type GetAllTemplatesInput struct{}
+type getAllTemplatesInput struct{}
 
-type GetAllTemplatesOutput struct {
+type getAllTemplatesOutput struct {
 	Body base.ApiResponse[[]template.Template]
 }
 
-type GetTemplateInput struct {
+type getTemplateInput struct {
 	ID string `path:"id" doc:"Template ID"`
 }
 
-type GetTemplateOutput struct {
+type getTemplateOutput struct {
 	Body base.ApiResponse[template.Template]
 }
 
-type GetTemplateContentInput struct {
+type getTemplateContentInput struct {
 	ID string `path:"id" doc:"Template ID"`
 }
 
-type GetTemplateContentOutput struct {
+type getTemplateContentOutput struct {
 	Body base.ApiResponse[template.TemplateContent]
 }
 
-type CreateTemplateInput struct {
+type createTemplateInput struct {
 	Body template.CreateRequest
 }
 
-type CreateTemplateOutput struct {
+type createTemplateOutput struct {
 	Body base.ApiResponse[template.Template]
 }
 
-type UpdateTemplateInput struct {
+type updateTemplateInput struct {
 	ID   string `path:"id" doc:"Template ID"`
 	Body template.UpdateRequest
 }
 
-type UpdateTemplateOutput struct {
+type updateTemplateOutput struct {
 	Body base.ApiResponse[template.Template]
 }
 
-type DeleteTemplateInput struct {
+type deleteTemplateInput struct {
 	ID string `path:"id" doc:"Template ID"`
 }
 
-type DeleteTemplateOutput struct {
+type deleteTemplateOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type DownloadTemplateInput struct {
+type downloadTemplateInput struct {
 	ID string `path:"id" doc:"Template ID"`
 }
 
-type DownloadTemplateOutput struct {
+type downloadTemplateOutput struct {
 	Body base.ApiResponse[template.Template]
 }
 
-type GetDefaultTemplatesInput struct{}
+type getDefaultTemplatesInput struct{}
 
-type GetDefaultTemplatesOutput struct {
+type getDefaultTemplatesOutput struct {
 	Body base.ApiResponse[template.DefaultTemplatesResponse]
 }
 
-type SaveDefaultTemplatesInput struct {
+type saveDefaultTemplatesInput struct {
 	Body template.SaveDefaultTemplatesRequest
 }
 
-type SaveDefaultTemplatesOutput struct {
+type saveDefaultTemplatesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type GetTemplateRegistriesInput struct{}
+type getTemplateRegistriesInput struct{}
 
-type GetTemplateRegistriesOutput struct {
+type getTemplateRegistriesOutput struct {
 	Body base.ApiResponse[[]template.TemplateRegistry]
 }
 
-type CreateTemplateRegistryInput struct {
+type createTemplateRegistryInput struct {
 	Body template.CreateRegistryRequest
 }
 
-type CreateTemplateRegistryOutput struct {
+type createTemplateRegistryOutput struct {
 	Body base.ApiResponse[template.TemplateRegistry]
 }
 
-type UpdateTemplateRegistryInput struct {
+type updateTemplateRegistryInput struct {
 	ID   string `path:"id" doc:"Registry ID"`
 	Body template.UpdateRegistryRequest
 }
 
-type UpdateTemplateRegistryOutput struct {
+type updateTemplateRegistryOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type DeleteTemplateRegistryInput struct {
+type deleteTemplateRegistryInput struct {
 	ID string `path:"id" doc:"Registry ID"`
 }
 
-type DeleteTemplateRegistryOutput struct {
+type deleteTemplateRegistryOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type FetchTemplateRegistryInput struct {
+type fetchTemplateRegistryInput struct {
 	URL string `query:"url" required:"true" doc:"Registry URL"`
 }
 
-type FetchTemplateRegistryOutput struct {
+type fetchTemplateRegistryOutput struct {
 	Body base.ApiResponse[template.RemoteRegistry]
 }
 
-type GetGlobalVariablesInput struct {
+type getGlobalVariablesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type GetGlobalVariablesOutput struct {
+type getGlobalVariablesOutput struct {
 	Body base.ApiResponse[[]env.Variable]
 }
 
-type UpdateGlobalVariablesInput struct {
+type updateGlobalVariablesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          env.Summary
 }
 
-type UpdateGlobalVariablesOutput struct {
+type updateGlobalVariablesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -179,7 +179,7 @@ type UpdateGlobalVariablesOutput struct {
 
 // RegisterTemplates registers all template management endpoints.
 func RegisterTemplates(api huma.API, templateService *services.TemplateService, environmentService *services.EnvironmentService) {
-	h := &TemplateHandler{templateService: templateService, environmentService: environmentService}
+	h := &templateHandler{templateService: templateService, environmentService: environmentService}
 
 	// Template registry endpoint.
 	huma.Register(api, huma.Operation{
@@ -194,7 +194,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.FetchRegistry)
+	}, h.fetchRegistryInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "listTemplatesPaginated",
@@ -204,7 +204,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Description: "Get a paginated list of compose templates",
 		Tags:        []string{"Templates"},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
-	}, h.ListTemplates)
+	}, h.listTemplatesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getAllTemplates",
@@ -214,7 +214,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Description: "Get all compose templates without pagination",
 		Tags:        []string{"Templates"},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
-	}, h.GetAllTemplates)
+	}, h.getAllTemplatesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getTemplate",
@@ -224,7 +224,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Description: "Get a compose template by ID",
 		Tags:        []string{"Templates"},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetTemplate)
+	}, h.getTemplateInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getTemplateContent",
@@ -234,7 +234,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		Description: "Get the compose content for a template with parsed data",
 		Tags:        []string{"Templates"},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetTemplateContent)
+	}, h.getTemplateContentInternal)
 
 	// Protected endpoints
 	huma.Register(api, huma.Operation{
@@ -249,7 +249,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
-	}, h.CreateTemplate)
+	}, h.createTemplateInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateTemplate",
@@ -263,7 +263,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.UpdateTemplate)
+	}, h.updateTemplateInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteTemplate",
@@ -277,7 +277,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
-	}, h.DeleteTemplate)
+	}, h.deleteTemplateInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "downloadTemplate",
@@ -291,7 +291,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.DownloadTemplate)
+	}, h.downloadTemplateInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getDefaultTemplates",
@@ -305,7 +305,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesRead),
-	}, h.GetDefaultTemplates)
+	}, h.getDefaultTemplatesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "saveDefaultTemplates",
@@ -319,7 +319,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.SaveDefaultTemplates)
+	}, h.saveDefaultTemplatesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "getTemplateRegistries",
@@ -333,7 +333,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesList),
-	}, h.GetRegistries)
+	}, h.getRegistriesInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "createTemplateRegistry",
@@ -347,7 +347,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesCreate),
-	}, h.CreateRegistry)
+	}, h.createRegistryInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "updateTemplateRegistry",
@@ -361,7 +361,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesUpdate),
-	}, h.UpdateRegistry)
+	}, h.updateRegistryInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteTemplateRegistry",
@@ -375,7 +375,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
-	}, h.DeleteRegistry)
+	}, h.deleteRegistryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getGlobalVariables",
@@ -388,7 +388,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermTemplatesRead, h.GetGlobalVariables)
+	}, authz.PermTemplatesRead, h.getGlobalVariablesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateGlobalVariables",
@@ -401,7 +401,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermTemplatesUpdate, h.UpdateGlobalVariables)
+	}, authz.PermTemplatesUpdate, h.updateGlobalVariablesInternal)
 }
 
 // ============================================================================
@@ -409,7 +409,7 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 // ============================================================================
 
 // ListTemplates returns a paginated list of templates.
-func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplatesInput) (*ListTemplatesOutput, error) {
+func (h *templateHandler) listTemplatesInternal(ctx context.Context, input *listTemplatesInput) (*listTemplatesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -427,8 +427,8 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 		return nil, huma.Error500InternalServerError((&common.TemplateListError{Err: err}).Error())
 	}
 
-	return &ListTemplatesOutput{
-		Body: TemplatePaginatedResponse{
+	return &listTemplatesOutput{
+		Body: templatePaginatedResponse{
 			Success:    true,
 			Data:       templates,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -437,7 +437,7 @@ func (h *TemplateHandler) ListTemplates(ctx context.Context, input *ListTemplate
 }
 
 // GetAllTemplates returns all templates without pagination.
-func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplatesInput) (*GetAllTemplatesOutput, error) {
+func (h *templateHandler) getAllTemplatesInternal(ctx context.Context, _ *getAllTemplatesInput) (*getAllTemplatesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -452,7 +452,7 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
-	return &GetAllTemplatesOutput{
+	return &getAllTemplatesOutput{
 		Body: base.ApiResponse[[]template.Template]{
 			Success: true,
 			Data:    out,
@@ -461,7 +461,7 @@ func (h *TemplateHandler) GetAllTemplates(ctx context.Context, _ *GetAllTemplate
 }
 
 // GetTemplate returns a template by ID.
-func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInput) (*GetTemplateOutput, error) {
+func (h *templateHandler) getTemplateInternal(ctx context.Context, input *getTemplateInput) (*getTemplateOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -491,7 +491,7 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
-	return &GetTemplateOutput{
+	return &getTemplateOutput{
 		Body: base.ApiResponse[template.Template]{
 			Success: true,
 			Data:    out,
@@ -500,7 +500,7 @@ func (h *TemplateHandler) GetTemplate(ctx context.Context, input *GetTemplateInp
 }
 
 // GetTemplateContent returns template content with parsed data.
-func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemplateContentInput) (*GetTemplateContentOutput, error) {
+func (h *templateHandler) getTemplateContentInternal(ctx context.Context, input *getTemplateContentInput) (*getTemplateContentOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -522,7 +522,7 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 		return nil, huma.Error500InternalServerError((&common.TemplateContentError{Err: err}).Error())
 	}
 
-	return &GetTemplateContentOutput{
+	return &getTemplateContentOutput{
 		Body: base.ApiResponse[template.TemplateContent]{
 			Success: true,
 			Data:    *contentData,
@@ -531,7 +531,7 @@ func (h *TemplateHandler) GetTemplateContent(ctx context.Context, input *GetTemp
 }
 
 // CreateTemplate creates a new template.
-func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTemplateInput) (*CreateTemplateOutput, error) {
+func (h *templateHandler) createTemplateInternal(ctx context.Context, input *createTemplateInput) (*createTemplateOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -556,7 +556,7 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
-	return &CreateTemplateOutput{
+	return &createTemplateOutput{
 		Body: base.ApiResponse[template.Template]{
 			Success: true,
 			Data:    out,
@@ -565,7 +565,7 @@ func (h *TemplateHandler) CreateTemplate(ctx context.Context, input *CreateTempl
 }
 
 // UpdateTemplate updates a template.
-func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTemplateInput) (*UpdateTemplateOutput, error) {
+func (h *templateHandler) updateTemplateInternal(ctx context.Context, input *updateTemplateInput) (*updateTemplateOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -607,7 +607,7 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
-	return &UpdateTemplateOutput{
+	return &updateTemplateOutput{
 		Body: base.ApiResponse[template.Template]{
 			Success: true,
 			Data:    out,
@@ -616,7 +616,7 @@ func (h *TemplateHandler) UpdateTemplate(ctx context.Context, input *UpdateTempl
 }
 
 // DeleteTemplate deletes a template.
-func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTemplateInput) (*DeleteTemplateOutput, error) {
+func (h *templateHandler) deleteTemplateInternal(ctx context.Context, input *deleteTemplateInput) (*deleteTemplateOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -637,7 +637,7 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 		return nil, huma.Error500InternalServerError((&common.TemplateDeletionError{Err: err}).Error())
 	}
 
-	return &DeleteTemplateOutput{
+	return &deleteTemplateOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -648,7 +648,7 @@ func (h *TemplateHandler) DeleteTemplate(ctx context.Context, input *DeleteTempl
 }
 
 // DownloadTemplate downloads a remote template to local storage.
-func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadTemplateInput) (*DownloadTemplateOutput, error) {
+func (h *templateHandler) downloadTemplateInternal(ctx context.Context, input *downloadTemplateInput) (*downloadTemplateOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -683,7 +683,7 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 		return nil, huma.Error500InternalServerError((&common.TemplateMappingError{Err: mapErr}).Error())
 	}
 
-	return &DownloadTemplateOutput{
+	return &downloadTemplateOutput{
 		Body: base.ApiResponse[template.Template]{
 			Success: true,
 			Data:    out,
@@ -692,7 +692,7 @@ func (h *TemplateHandler) DownloadTemplate(ctx context.Context, input *DownloadT
 }
 
 // GetDefaultTemplates returns the default compose and env templates.
-func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefaultTemplatesInput) (*GetDefaultTemplatesOutput, error) {
+func (h *templateHandler) getDefaultTemplatesInternal(_ context.Context, _ *getDefaultTemplatesInput) (*getDefaultTemplatesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -702,7 +702,7 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 	swarmStackEnvTemplate := h.templateService.GetSwarmStackEnvTemplate()
 	envTemplate := h.templateService.GetEnvTemplate()
 
-	return &GetDefaultTemplatesOutput{
+	return &getDefaultTemplatesOutput{
 		Body: base.ApiResponse[template.DefaultTemplatesResponse]{
 			Success: true,
 			Data: template.DefaultTemplatesResponse{
@@ -716,7 +716,7 @@ func (h *TemplateHandler) GetDefaultTemplates(ctx context.Context, _ *GetDefault
 }
 
 // SaveDefaultTemplates saves the default compose and env templates.
-func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveDefaultTemplatesInput) (*SaveDefaultTemplatesOutput, error) {
+func (h *templateHandler) saveDefaultTemplatesInternal(_ context.Context, input *saveDefaultTemplatesInput) (*saveDefaultTemplatesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -729,7 +729,7 @@ func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveD
 		return nil, huma.Error500InternalServerError((&common.DefaultTemplateSaveError{Err: err}).Error())
 	}
 
-	return &SaveDefaultTemplatesOutput{
+	return &saveDefaultTemplatesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -740,7 +740,7 @@ func (h *TemplateHandler) SaveDefaultTemplates(ctx context.Context, input *SaveD
 }
 
 // GetRegistries returns all template registries.
-func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegistriesInput) (*GetTemplateRegistriesOutput, error) {
+func (h *templateHandler) getRegistriesInternal(ctx context.Context, _ *getTemplateRegistriesInput) (*getTemplateRegistriesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -765,7 +765,7 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 		}
 	}
 
-	return &GetTemplateRegistriesOutput{
+	return &getTemplateRegistriesOutput{
 		Body: base.ApiResponse[[]template.TemplateRegistry]{
 			Success: true,
 			Data:    out,
@@ -774,7 +774,7 @@ func (h *TemplateHandler) GetRegistries(ctx context.Context, _ *GetTemplateRegis
 }
 
 // CreateRegistry creates a new template registry.
-func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTemplateRegistryInput) (*CreateTemplateRegistryOutput, error) {
+func (h *templateHandler) createRegistryInternal(ctx context.Context, input *createTemplateRegistryInput) (*createTemplateRegistryOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -794,7 +794,7 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 		return nil, huma.Error500InternalServerError((&common.RegistryMappingError{Err: mapErr}).Error())
 	}
 
-	return &CreateTemplateRegistryOutput{
+	return &createTemplateRegistryOutput{
 		Body: base.ApiResponse[template.TemplateRegistry]{
 			Success: true,
 			Data:    out,
@@ -803,7 +803,7 @@ func (h *TemplateHandler) CreateRegistry(ctx context.Context, input *CreateTempl
 }
 
 // UpdateRegistry updates a template registry.
-func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTemplateRegistryInput) (*UpdateTemplateRegistryOutput, error) {
+func (h *templateHandler) updateRegistryInternal(ctx context.Context, input *updateTemplateRegistryInput) (*updateTemplateRegistryOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -825,7 +825,7 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 		return nil, huma.Error500InternalServerError((&common.RegistryUpdateError{Err: err}).Error())
 	}
 
-	return &UpdateTemplateRegistryOutput{
+	return &updateTemplateRegistryOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -836,7 +836,7 @@ func (h *TemplateHandler) UpdateRegistry(ctx context.Context, input *UpdateTempl
 }
 
 // DeleteRegistry deletes a template registry.
-func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTemplateRegistryInput) (*DeleteTemplateRegistryOutput, error) {
+func (h *templateHandler) deleteRegistryInternal(ctx context.Context, input *deleteTemplateRegistryInput) (*deleteTemplateRegistryOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -852,7 +852,7 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 		return nil, huma.Error500InternalServerError((&common.RegistryDeletionError{Err: err}).Error())
 	}
 
-	return &DeleteTemplateRegistryOutput{
+	return &deleteTemplateRegistryOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -863,7 +863,7 @@ func (h *TemplateHandler) DeleteRegistry(ctx context.Context, input *DeleteTempl
 }
 
 // FetchRegistry fetches templates from a remote registry URL.
-func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplateRegistryInput) (*FetchTemplateRegistryOutput, error) {
+func (h *templateHandler) fetchRegistryInternal(ctx context.Context, input *fetchTemplateRegistryInput) (*fetchTemplateRegistryOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -882,7 +882,7 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 		return nil, huma.Error502BadGateway((&common.InvalidJSONResponseError{Err: err}).Error())
 	}
 
-	return &FetchTemplateRegistryOutput{
+	return &fetchTemplateRegistryOutput{
 		Body: base.ApiResponse[template.RemoteRegistry]{
 			Success: true,
 			Data:    registry,
@@ -891,7 +891,7 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 }
 
 // GetGlobalVariables returns global template variables.
-func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
+func (h *templateHandler) getGlobalVariablesInternal(ctx context.Context, input *getGlobalVariablesInput) (*getGlobalVariablesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -905,7 +905,7 @@ func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlob
 		return nil, huma.Error500InternalServerError((&common.GlobalVariablesRetrievalError{Err: err}).Error())
 	}
 
-	return &GetGlobalVariablesOutput{
+	return &getGlobalVariablesOutput{
 		Body: base.ApiResponse[[]env.Variable]{
 			Success: true,
 			Data:    vars,
@@ -913,7 +913,7 @@ func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlob
 	}, nil
 }
 
-func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
+func (h *templateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *getGlobalVariablesInput) (*getGlobalVariablesOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("environment service not available")
 	}
@@ -923,11 +923,11 @@ func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx con
 		return nil, err
 	}
 
-	return &GetGlobalVariablesOutput{Body: *response}, nil
+	return &getGlobalVariablesOutput{Body: *response}, nil
 }
 
 // UpdateGlobalVariables updates global template variables.
-func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
+func (h *templateHandler) updateGlobalVariablesInternal(ctx context.Context, input *updateGlobalVariablesInput) (*updateGlobalVariablesOutput, error) {
 	if h.templateService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -943,7 +943,7 @@ func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *Upda
 		return nil, huma.Error500InternalServerError((&common.GlobalVariablesUpdateError{Err: err}).Error())
 	}
 
-	return &UpdateGlobalVariablesOutput{
+	return &updateGlobalVariablesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -953,7 +953,7 @@ func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *Upda
 	}, nil
 }
 
-func (h *TemplateHandler) updateGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
+func (h *templateHandler) updateGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *updateGlobalVariablesInput) (*updateGlobalVariablesOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("environment service not available")
 	}
@@ -963,5 +963,5 @@ func (h *TemplateHandler) updateGlobalVariablesForRemoteEnvironmentInternal(ctx 
 		return nil, err
 	}
 
-	return &UpdateGlobalVariablesOutput{Body: *response}, nil
+	return &updateGlobalVariablesOutput{Body: *response}, nil
 }

@@ -20,8 +20,8 @@ var (
 	jsonOutput bool
 )
 
-// EventsCmd is the parent command for event operations
-var EventsCmd = &cobra.Command{
+// Command is the parent command for event operations
+var Command = &cobra.Command{
 	Use:     "events",
 	Aliases: []string{"event", "evt"},
 	Short:   "Manage events",
@@ -190,9 +190,9 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	EventsCmd.AddCommand(listCmd)
-	EventsCmd.AddCommand(listEnvCmd)
-	EventsCmd.AddCommand(deleteCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(listEnvCmd)
+	Command.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of events to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

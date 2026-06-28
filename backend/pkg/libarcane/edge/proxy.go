@@ -317,9 +317,10 @@ func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duratio
 
 // RequestTunnelAndWait marks an edge environment as needed and waits for the
 // agent to establish a live tunnel.
-func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) (*AgentTunnel, bool) {
+func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) bool {
 	TouchTunnelDemand(envID, demandTTL)
-	return WaitForActiveTunnel(ctx, envID, timeout)
+	_, ok := WaitForActiveTunnel(ctx, envID, timeout)
+	return ok
 }
 
 // DoRequest performs an HTTP request through an edge tunnel.

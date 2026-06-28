@@ -16,8 +16,8 @@ import (
 
 var jsonOutput bool
 
-// JobsCmd is the parent command for job schedule operations.
-var JobsCmd = &cobra.Command{
+// Command is the parent command for job schedule operations.
+var Command = &cobra.Command{
 	Use:     "jobs",
 	Aliases: []string{"job"},
 	Short:   "Manage background jobs",
@@ -124,8 +124,8 @@ var updateCmd = &cobra.Command{
 }
 
 func init() {
-	JobsCmd.AddCommand(getCmd)
-	JobsCmd.AddCommand(updateCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(updateCmd)
 
 	getCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")

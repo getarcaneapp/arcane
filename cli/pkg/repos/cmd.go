@@ -31,8 +31,8 @@ var (
 
 const maxPromptOptions = 20
 
-// ReposCmd is the parent command for git repository operations.
-var ReposCmd = &cobra.Command{
+// Command is the parent command for git repository operations.
+var Command = &cobra.Command{
 	Use:     "repos",
 	Aliases: []string{"repo", "git-repositories", "git-repos"},
 	Short:   "Manage git repositories",
@@ -646,15 +646,15 @@ func resolveGitRepository(ctx context.Context, c *client.Client, identifier stri
 }
 
 func init() {
-	ReposCmd.AddCommand(listCmd)
-	ReposCmd.AddCommand(createCmd)
-	ReposCmd.AddCommand(getCmd)
-	ReposCmd.AddCommand(updateCmd)
-	ReposCmd.AddCommand(deleteCmd)
-	ReposCmd.AddCommand(testCmd)
-	ReposCmd.AddCommand(branchesCmd)
-	ReposCmd.AddCommand(filesCmd)
-	ReposCmd.AddCommand(syncCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(testCmd)
+	Command.AddCommand(branchesCmd)
+	Command.AddCommand(filesCmd)
+	Command.AddCommand(syncCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of repositories to show")

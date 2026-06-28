@@ -14,9 +14,9 @@ import (
 	"github.com/labstack/echo/v4"
 )
 
-// FederatedCredentialHandler provides Huma-based federated credential
+// federatedCredentialHandler provides Huma-based federated credential
 // management endpoints.
-type FederatedCredentialHandler struct {
+type federatedCredentialHandler struct {
 	federatedCredentialService *services.FederatedCredentialService
 }
 
@@ -25,7 +25,7 @@ type federatedTokenExchangeError struct {
 	ErrorDescription string `json:"error_description,omitempty"` //nolint:tagliatelle // RFC 6749 wire shape is snake_case.
 }
 
-type ListFederatedCredentialsInput struct {
+type listFederatedCredentialsInput struct {
 	Search string `query:"search" doc:"Search query for filtering by name, issuer, or subject"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
 	Order  string `query:"order" default:"asc" doc:"Sort direction (asc or desc)"`
@@ -33,40 +33,40 @@ type ListFederatedCredentialsInput struct {
 	Limit  int    `query:"limit" default:"20" doc:"Number of items per page"`
 }
 
-type ListFederatedCredentialsOutput struct {
+type listFederatedCredentialsOutput struct {
 	Body base.Paginated[federatedtypes.FederatedCredential]
 }
 
-type CreateFederatedCredentialInput struct {
+type createFederatedCredentialInput struct {
 	Body federatedtypes.CreateFederatedCredential
 }
 
-type CreateFederatedCredentialOutput struct {
+type createFederatedCredentialOutput struct {
 	Body base.ApiResponse[federatedtypes.FederatedCredential]
 }
 
-type GetFederatedCredentialInput struct {
+type getFederatedCredentialInput struct {
 	ID string `path:"id" doc:"Federated credential ID"`
 }
 
-type GetFederatedCredentialOutput struct {
+type getFederatedCredentialOutput struct {
 	Body base.ApiResponse[federatedtypes.FederatedCredential]
 }
 
-type UpdateFederatedCredentialInput struct {
+type updateFederatedCredentialInput struct {
 	ID   string `path:"id" doc:"Federated credential ID"`
 	Body federatedtypes.UpdateFederatedCredential
 }
 
-type UpdateFederatedCredentialOutput struct {
+type updateFederatedCredentialOutput struct {
 	Body base.ApiResponse[federatedtypes.FederatedCredential]
 }
 
-type DeleteFederatedCredentialInput struct {
+type deleteFederatedCredentialInput struct {
 	ID string `path:"id" doc:"Federated credential ID"`
 }
 
-type DeleteFederatedCredentialOutput struct {
+type deleteFederatedCredentialOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -106,7 +106,7 @@ func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *s
 
 // RegisterFederatedCredentials registers federated credential management routes.
 func RegisterFederatedCredentials(api huma.API, federatedCredentialService *services.FederatedCredentialService) {
-	h := &FederatedCredentialHandler{
+	h := &federatedCredentialHandler{
 		federatedCredentialService: federatedCredentialService,
 	}
 
@@ -122,7 +122,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermFederatedList),
-	}, h.ListFederatedCredentials)
+	}, h.listFederatedCredentialsInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "create-federated-credential",
@@ -136,7 +136,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.CreateFederatedCredential)
+	}, h.createFederatedCredentialInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "get-federated-credential",
@@ -150,7 +150,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermFederatedRead),
-	}, h.GetFederatedCredential)
+	}, h.getFederatedCredentialInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "update-federated-credential",
@@ -164,7 +164,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.UpdateFederatedCredential)
+	}, h.updateFederatedCredentialInternal)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "delete-federated-credential",
@@ -178,10 +178,10 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 			{"ApiKeyAuth": {}},
 		},
 		Middlewares: humamw.RequireGlobalAdmin(api),
-	}, h.DeleteFederatedCredential)
+	}, h.deleteFederatedCredentialInternal)
 }
 
-func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Context, input *ListFederatedCredentialsInput) (*ListFederatedCredentialsOutput, error) {
+func (h *federatedCredentialHandler) listFederatedCredentialsInternal(ctx context.Context, input *listFederatedCredentialsInput) (*listFederatedCredentialsOutput, error) {
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -191,7 +191,7 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 		return nil, huma.Error500InternalServerError("failed to list federated credentials")
 	}
 
-	return &ListFederatedCredentialsOutput{
+	return &listFederatedCredentialsOutput{
 		Body: base.Paginated[federatedtypes.FederatedCredential]{
 			Success:    true,
 			Data:       credentials,
@@ -200,7 +200,7 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*CreateFederatedCredentialOutput, error) {
+func (h *federatedCredentialHandler) createFederatedCredentialInternal(ctx context.Context, input *createFederatedCredentialInput) (*createFederatedCredentialOutput, error) {
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -214,7 +214,7 @@ func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Conte
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}
 
-	return &CreateFederatedCredentialOutput{
+	return &createFederatedCredentialOutput{
 		Body: base.ApiResponse[federatedtypes.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
@@ -222,7 +222,7 @@ func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Conte
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context, input *GetFederatedCredentialInput) (*GetFederatedCredentialOutput, error) {
+func (h *federatedCredentialHandler) getFederatedCredentialInternal(ctx context.Context, input *getFederatedCredentialInput) (*getFederatedCredentialOutput, error) {
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -231,7 +231,7 @@ func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context,
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}
 
-	return &GetFederatedCredentialOutput{
+	return &getFederatedCredentialOutput{
 		Body: base.ApiResponse[federatedtypes.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
@@ -239,7 +239,7 @@ func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context,
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*UpdateFederatedCredentialOutput, error) {
+func (h *federatedCredentialHandler) updateFederatedCredentialInternal(ctx context.Context, input *updateFederatedCredentialInput) (*updateFederatedCredentialOutput, error) {
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -253,7 +253,7 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}
 
-	return &UpdateFederatedCredentialOutput{
+	return &updateFederatedCredentialOutput{
 		Body: base.ApiResponse[federatedtypes.FederatedCredential]{
 			Success: true,
 			Data:    *credential,
@@ -261,7 +261,7 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 	}, nil
 }
 
-func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Context, input *DeleteFederatedCredentialInput) (*DeleteFederatedCredentialOutput, error) {
+func (h *federatedCredentialHandler) deleteFederatedCredentialInternal(ctx context.Context, input *deleteFederatedCredentialInput) (*deleteFederatedCredentialOutput, error) {
 	if h.federatedCredentialService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -269,7 +269,7 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}
 
-	return &DeleteFederatedCredentialOutput{
+	return &deleteFederatedCredentialOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{

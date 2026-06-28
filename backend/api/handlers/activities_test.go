@@ -39,7 +39,7 @@ func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *te
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
 	activityService := services.NewActivityService(db)
-	handler := &ActivityHandler{activityService: activityService}
+	handler := &activityHandler{activityService: activityService}
 
 	completed, err := activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
 	require.NoError(t, err)
@@ -53,7 +53,7 @@ func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *te
 	_, err = activityService.CompleteActivity(ctx, remoteCompleted.ID, models.ActivityStatusSuccess, "done", nil)
 	require.NoError(t, err)
 
-	out, err := handler.ClearHistory(ctx, &ClearActivityHistoryInput{EnvironmentID: "0"})
+	out, err := handler.clearHistoryInternal(ctx, &clearActivityHistoryInput{EnvironmentID: "0"})
 	require.NoError(t, err)
 	require.EqualValues(t, 1, out.Body.Data.Deleted)
 
@@ -78,7 +78,7 @@ func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"deleted":7}}`))
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 
 	now := time.Now()
 	require.NoError(t, db.Create(&models.Environment{
@@ -94,11 +94,11 @@ func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.
 		AccessToken: &token,
 	}).Error)
 
-	handler := &ActivityHandler{
+	handler := &activityHandler{
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
-	out, err := handler.ClearHistory(ctx, &ClearActivityHistoryInput{EnvironmentID: "remote-1"})
+	out, err := handler.clearHistoryInternal(ctx, &clearActivityHistoryInput{EnvironmentID: "remote-1"})
 	require.NoError(t, err)
 	require.EqualValues(t, 7, out.Body.Data.Deleted)
 }
@@ -133,7 +133,7 @@ func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, ap
 // runStreamAllInternal drives streamAllActivitiesInternal through a pipe and
 // returns each decoded event to onEvent until it reports done or the stream
 // ends; remaining output is drained so a blocked encoder can always finish.
-func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, onEvent func(activity.StreamEvent) bool) {
+func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *activityHandler, onEvent func(activity.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -182,10 +182,10 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &ActivityHandler{
+	handler := &activityHandler{
 		activityService:    activityService,
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
@@ -236,7 +236,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &ActivityHandler{
+	handler := &activityHandler{
 		activityService:    activityService,
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
@@ -286,10 +286,10 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
-	defer server.Close()
+	defer func() { server.Close() }()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &ActivityHandler{
+	handler := &activityHandler{
 		activityService:    activityService,
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}

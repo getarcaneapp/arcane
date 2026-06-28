@@ -44,8 +44,8 @@ var (
 	assignRoles []string
 )
 
-// RolesCmd is the parent command for role operations.
-var RolesCmd = &cobra.Command{
+// Command is the parent command for role operations.
+var Command = &cobra.Command{
 	Use:     "roles",
 	Aliases: []string{"role"},
 	Short:   "Manage roles and per-user role assignments",
@@ -443,14 +443,14 @@ func fetchRoleInternal(cmd *cobra.Command, id string) (*roletypes.Role, error) {
 }
 
 func init() {
-	RolesCmd.AddCommand(listCmd)
-	RolesCmd.AddCommand(getCmd)
-	RolesCmd.AddCommand(createCmd)
-	RolesCmd.AddCommand(updateCmd)
-	RolesCmd.AddCommand(deleteCmd)
-	RolesCmd.AddCommand(permissionsCmd)
-	RolesCmd.AddCommand(assignmentsCmd)
-	RolesCmd.AddCommand(assignCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(permissionsCmd)
+	Command.AddCommand(assignmentsCmd)
+	Command.AddCommand(assignCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of roles to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

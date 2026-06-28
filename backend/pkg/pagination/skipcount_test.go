@@ -1,6 +1,7 @@
 package pagination
 
 import (
+	"fmt"
 	"testing"
 
 	glsqlite "github.com/glebarez/sqlite"
@@ -20,7 +21,7 @@ func newSkipCountTestDB(t *testing.T) *gorm.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&widget{}))
 	for i := range 5 {
-		require.NoError(t, db.Create(&widget{ID: string(rune('a' + i)), Name: string(rune('A' + i))}).Error)
+		require.NoError(t, db.Create(&widget{ID: fmt.Sprintf("%c", 'a'+i), Name: fmt.Sprintf("%c", 'A'+i)}).Error)
 	}
 	return db
 }
@@ -31,7 +32,7 @@ func TestPaginateAndSortDB_SkipCountReturnsUnknownTotals(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: 2, SkipCount: true},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -47,7 +48,7 @@ func TestPaginateAndSortDB_DefaultStillCounts(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: 2},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 2)
@@ -61,7 +62,7 @@ func TestPaginateAndSortDB_SkipCountShowAll(t *testing.T) {
 	var got []widget
 	resp, err := PaginateAndSortDB(QueryParams{
 		Params:     Params{Start: 0, Limit: -1, SkipCount: true},
-		SortParams: SortParams{Sort: "Name", Order: SortOrder("asc")},
+		SortParams: SortParams{Sort: "Name", Order: "asc"},
 	}, db.Model(&widget{}), &got)
 	require.NoError(t, err)
 	require.Len(t, got, 5)

@@ -38,7 +38,7 @@ var (
 	registryUpdateDisabled bool
 )
 
-var RegistriesCmd = &cobra.Command{
+var Command = &cobra.Command{
 	Use:     "registries",
 	Aliases: []string{"registry", "reg"},
 	Short:   "Manage container registries",
@@ -377,13 +377,13 @@ var deleteCmd = &cobra.Command{
 }
 
 func init() {
-	RegistriesCmd.AddCommand(listCmd)
-	RegistriesCmd.AddCommand(getCmd)
-	RegistriesCmd.AddCommand(createCmd)
-	RegistriesCmd.AddCommand(syncCmd)
-	RegistriesCmd.AddCommand(testCmd)
-	RegistriesCmd.AddCommand(updateCmd)
-	RegistriesCmd.AddCommand(deleteCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(syncCmd)
+	Command.AddCommand(testCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of registries to show")
 	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")

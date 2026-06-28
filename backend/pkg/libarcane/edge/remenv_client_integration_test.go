@@ -24,7 +24,7 @@ func newTestRemenvClientInternal(timeout time.Duration) *remenv.Client {
 				return nil
 			}
 
-			if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()); ok {
+			if RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()) {
 				return nil
 			}
 

@@ -78,7 +78,7 @@ type enrollMTLSResponse struct {
 // BuildManagerServerTLSConfig returns the manager TLS configuration needed to
 // support optional edge mTLS on the shared Arcane listener.
 func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
-	if cfg == nil || NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeDisabled {
+	if cfg == nil || NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == MTLSModeDisabled {
 		return nil, nil
 	}
 
@@ -314,7 +314,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 	}
 
 	if err := enrollAgentMTLSAssetsInternal(ctx, cfg, assetsDir, certPath, keyPath); err != nil {
-		if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeRequired {
+		if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != MTLSModeRequired {
 			slog.WarnContext(ctx, "Edge mTLS enrollment failed; proceeding without client certificate", "error", err)
 			return nil
 		}
@@ -418,7 +418,7 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 		needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 		if needsEnrollment {
 			err := fmt.Errorf("edge mTLS client certificate is unusable: %s", reason)
-			if mode == EdgeMTLSModeOptional {
+			if mode == MTLSModeOptional {
 				slog.Warn("Ignoring unusable optional edge mTLS client certificate; falling back to token auth", "cert_path", certPath, "error", err.Error())
 				return tlsConfig, nil
 			}
@@ -426,7 +426,7 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 		}
 		cert, err := tls.LoadX509KeyPair(certPath, keyPath)
 		if err != nil {
-			if mode == EdgeMTLSModeOptional {
+			if mode == MTLSModeOptional {
 				slog.Warn("Failed to load optional edge mTLS client certificate; falling back to token auth", "cert_path", certPath, "error", err.Error())
 				return tlsConfig, nil
 			}
@@ -446,7 +446,7 @@ func ValidateAgentMTLSConfig(cfg *Config) error {
 	}
 
 	mode := NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode)
-	if mode == EdgeMTLSModeDisabled {
+	if mode == MTLSModeDisabled {
 		return nil
 	}
 
@@ -466,7 +466,7 @@ func ValidateManagerMTLSConfig(cfg *Config) error {
 	}
 
 	mode := NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode)
-	if mode == EdgeMTLSModeDisabled {
+	if mode == MTLSModeDisabled {
 		return nil
 	}
 
@@ -544,7 +544,7 @@ func shouldAutoGenerateManagerCAInternal(cfg *Config) bool {
 		return false
 	}
 
-	return NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeDisabled &&
+	return NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != MTLSModeDisabled &&
 		strings.TrimSpace(cfg.EdgeMTLSCAFile) == ""
 }
 
@@ -552,7 +552,7 @@ func shouldUseGeneratedManagerCAInternal(cfg *Config) bool {
 	if cfg == nil {
 		return false
 	}
-	if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == EdgeMTLSModeDisabled {
+	if NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) == MTLSModeDisabled {
 		return false
 	}
 	configuredCA := strings.TrimSpace(cfg.EdgeMTLSCAFile)
@@ -572,7 +572,7 @@ func shouldAutoEnrollAgentMTLSInternal(cfg *Config) bool {
 		return false
 	}
 
-	return NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != EdgeMTLSModeDisabled &&
+	return NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != MTLSModeDisabled &&
 		!hasClientCertificateInternal(cfg)
 }
 

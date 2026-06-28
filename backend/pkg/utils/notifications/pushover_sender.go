@@ -1,7 +1,6 @@
 package notifications
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"net/url"
@@ -57,7 +56,7 @@ func BuildPushoverURL(config models.PushoverConfig) (string, error) {
 }
 
 // SendPushover sends a message via Shoutrrr Pushover using proper service configuration.
-func SendPushover(ctx context.Context, config models.PushoverConfig, message string) error {
+func SendPushover(config models.PushoverConfig, message string) error {
 	if strings.TrimSpace(config.Token) == "" {
 		return errors.New("pushover token is empty")
 	}

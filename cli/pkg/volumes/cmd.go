@@ -38,8 +38,8 @@ var (
 
 const maxPromptOptions = 20
 
-// VolumesCmd is the parent command for volume operations
-var VolumesCmd = &cobra.Command{
+// Command is the parent command for volume operations
+var Command = &cobra.Command{
 	Use:     "volumes",
 	Aliases: []string{"volume", "vol", "v"},
 	Short:   "Manage volumes",
@@ -426,14 +426,14 @@ var createCmd = &cobra.Command{
 }
 
 func init() {
-	VolumesCmd.AddCommand(listCmd)
-	VolumesCmd.AddCommand(getCmd)
-	VolumesCmd.AddCommand(deleteCmd)
-	VolumesCmd.AddCommand(countsCmd)
-	VolumesCmd.AddCommand(pruneCmd)
-	VolumesCmd.AddCommand(sizesCmd)
-	VolumesCmd.AddCommand(usageCmd)
-	VolumesCmd.AddCommand(createCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(countsCmd)
+	Command.AddCommand(pruneCmd)
+	Command.AddCommand(sizesCmd)
+	Command.AddCommand(usageCmd)
+	Command.AddCommand(createCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of volumes to show")

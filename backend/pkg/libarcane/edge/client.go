@@ -20,8 +20,6 @@ import (
 const (
 	// DefaultHeartbeatInterval is how often the client sends heartbeats
 	DefaultHeartbeatInterval = 30 * time.Second
-	// DefaultWriteTimeout is the timeout for write operations
-	DefaultWriteTimeout = 10 * time.Second
 	// DefaultRequestTimeout is the timeout for executing local requests
 	DefaultRequestTimeout = 5 * time.Minute
 	// DefaultGRPCRegistrationTimeout bounds how long the agent waits for the
@@ -158,15 +156,15 @@ func StartupLogAttrs(cfg *Config) []any {
 
 	controlPlane := "managed"
 	if UsePollEdgeTransport(cfg) {
-		controlPlane = EdgeTransportPoll
+		controlPlane = TransportPoll
 	}
 
 	managedSessionTransports := make([]string, 0, 2)
 	if UseGRPCEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerGRPCAddr()) != "") {
-		managedSessionTransports = append(managedSessionTransports, EdgeTransportGRPC)
+		managedSessionTransports = append(managedSessionTransports, TransportGRPC)
 	}
 	if UseWebSocketEdgeTransport(cfg) || (UsePollEdgeTransport(cfg) && strings.TrimSpace(cfg.GetManagerBaseURL()) != "") {
-		managedSessionTransports = append(managedSessionTransports, EdgeTransportWebSocket)
+		managedSessionTransports = append(managedSessionTransports, TransportWebSocket)
 	}
 
 	attrs := []any{
@@ -261,21 +259,21 @@ func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransports
 	transport := NormalizeEdgeTransport(c.cfg.EdgeTransport)
 
 	switch transport {
-	case EdgeTransportAuto:
+	case TransportAuto:
 		return managedTunnelTransportsInternal{
 			grpc:      managerGRPCAvailable,
 			websocket: managerWebSocketAvailable,
 		}
-	case EdgeTransportPoll:
+	case TransportPoll:
 		return managedTunnelTransportsInternal{
 			grpc:      managerGRPCAvailable,
 			websocket: managerWebSocketAvailable,
 		}
-	case EdgeTransportWebSocket:
+	case TransportWebSocket:
 		return managedTunnelTransportsInternal{
 			websocket: managerWebSocketAvailable,
 		}
-	case EdgeTransportGRPC:
+	case TransportGRPC:
 		return managedTunnelTransportsInternal{
 			grpc: managerGRPCAvailable,
 		}
@@ -339,9 +337,9 @@ func (c *TunnelClient) markTransportConnectedInternal(transport string) {
 	defer c.transportPreferenceMu.Unlock()
 
 	switch transport {
-	case EdgeTransportGRPC:
+	case TransportGRPC:
 		c.preferWebSocketUntil = time.Time{}
-	case EdgeTransportWebSocket:
+	case TransportWebSocket:
 		if c.shouldAttemptGRPCTunnelInternal() && c.shouldAttemptWebSocketTunnelInternal() {
 			c.preferWebSocketUntil = time.Now().Add(c.websocketPreferenceTTLInternal())
 		}

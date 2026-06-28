@@ -1754,9 +1754,13 @@ func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCr
 	return s.GetConfig(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateConfig(ctx context.Context, configID string, req swarmtypes.ConfigUpdateRequest) error {
-	_ = configID
-	_ = req
+func (s *SwarmService) UpdateConfig(ctx context.Context, configID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(configID) == "" {
+		return errors.New("config id is required")
+	}
 	return &common.SwarmConfigImmutableError{}
 }
 
@@ -1840,9 +1844,13 @@ func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCr
 	return s.GetSecret(ctx, createResult.ID)
 }
 
-func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string, req swarmtypes.SecretUpdateRequest) error {
-	_ = secretID
-	_ = req
+func (s *SwarmService) UpdateSecret(ctx context.Context, secretID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if strings.TrimSpace(secretID) == "" {
+		return errors.New("secret id is required")
+	}
 	return &common.SwarmSecretImmutableError{}
 }
 
@@ -2184,7 +2192,7 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
 		if err := os.Remove(environmentDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-			if errno, ok := errors.AsType[syscall.Errno](err); ok && (errno == syscall.ENOTEMPTY || errno == syscall.EACCES) {
+			if errors.Is(err, syscall.ENOTEMPTY) || errors.Is(err, syscall.EACCES) {
 				slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
 				return nil
 			}

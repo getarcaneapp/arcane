@@ -4,7 +4,6 @@ import "time"
 
 const (
 	UserSessionSourceLocal     = "local"
-	UserSessionSourceOidc      = "oidc"
 	UserSessionSourceFederated = "federated"
 )
 

@@ -70,8 +70,8 @@ var (
 
 const maxPromptOptions = 20
 
-// ImagesCmd is the parent command for image operations
-var ImagesCmd = &cobra.Command{
+// Command is the parent command for image operations
+var Command = &cobra.Command{
 	Use:     "images",
 	Aliases: []string{"image", "i"},
 	Short:   "Manage images",
@@ -705,7 +705,7 @@ var imagesUploadCmd = &cobra.Command{
 }
 
 func init() {
-	ImagesCmd.AddCommand(imagesListCmd)
+	Command.AddCommand(imagesListCmd)
 	imagesListCmd.Flags().IntVarP(&imagesLimit, "limit", "n", 0, "Number of images to show (server default 20)")
 	imagesListCmd.Flags().IntVar(&imagesStart, "start", 0, "Offset for pagination")
 	imagesListCmd.Flags().StringVar(&imagesSort, "sort", "", "Field to sort by")
@@ -714,20 +714,20 @@ func init() {
 	imagesListCmd.Flags().BoolVar(&imagesInUseOnly, "inuse", false, "Only show images currently in use")
 	imagesListCmd.Flags().BoolVar(&imagesUnusedOnly, "unused", false, "Only show images not in use")
 
-	ImagesCmd.AddCommand(imagesGetCmd)
+	Command.AddCommand(imagesGetCmd)
 
-	ImagesCmd.AddCommand(imagesRemoveCmd)
+	Command.AddCommand(imagesRemoveCmd)
 	imagesRemoveCmd.Flags().BoolVarP(&removeForce, "force", "f", false, "Force removal of image")
 
-	ImagesCmd.AddCommand(imagesPullCmd)
+	Command.AddCommand(imagesPullCmd)
 
-	ImagesCmd.AddCommand(imagesPruneCmd)
+	Command.AddCommand(imagesPruneCmd)
 	imagesPruneCmd.Flags().BoolVar(&pruneDangling, "dangling", false, "Only remove dangling images")
 
-	ImagesCmd.AddCommand(imagesCountsCmd)
-	ImagesCmd.AddCommand(updates.UpdatesCmd)
+	Command.AddCommand(imagesCountsCmd)
+	Command.AddCommand(updates.Command)
 
-	ImagesCmd.AddCommand(imagesUploadCmd)
+	Command.AddCommand(imagesUploadCmd)
 }
 
 func resolveImageID(ctx context.Context, c *client.Client, identifier string, allowPrompt bool) (string, error) {

@@ -15,14 +15,14 @@ import (
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 )
 
-// BuildWorkspaceHandler provides file browsing endpoints for manual build workspaces.
-type BuildWorkspaceHandler struct {
+// buildWorkspaceHandler provides file browsing endpoints for manual build workspaces.
+type buildWorkspaceHandler struct {
 	service *services.BuildWorkspaceService
 }
 
 // RegisterBuildWorkspaces registers build workspace file browser routes.
 func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorkspaceService) {
-	h := &BuildWorkspaceHandler{service: workspaceService}
+	h := &buildWorkspaceHandler{service: workspaceService}
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse",
@@ -32,7 +32,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "List files and directories under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermBuildWorkspacesManage, h.BrowseDirectory)
+	}, authz.PermBuildWorkspacesManage, h.browseDirectoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-content",
@@ -42,7 +42,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Read file content under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermBuildWorkspacesManage, h.GetFileContent)
+	}, authz.PermBuildWorkspacesManage, h.getFileContentInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-download",
@@ -52,7 +52,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Download a file from the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermBuildWorkspacesManage, h.DownloadFile)
+	}, authz.PermBuildWorkspacesManage, h.downloadFileInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-upload",
@@ -79,7 +79,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 				},
 			},
 		},
-	}, authz.PermBuildWorkspacesManage, h.UploadFile)
+	}, authz.PermBuildWorkspacesManage, h.uploadFileInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-mkdir",
@@ -89,7 +89,7 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Create a directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermBuildWorkspacesManage, h.CreateDirectory)
+	}, authz.PermBuildWorkspacesManage, h.createDirectoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "builds-browse-delete",
@@ -99,62 +99,62 @@ func RegisterBuildWorkspaces(api huma.API, workspaceService *services.BuildWorks
 		Description: "Delete a file or directory under the builds workspace root",
 		Tags:        []string{"Builds"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
-	}, authz.PermBuildWorkspacesManage, h.DeleteFile)
+	}, authz.PermBuildWorkspacesManage, h.deleteFileInternal)
 }
 
-type BrowseBuildsInput struct {
+type browseBuildsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
 }
 
-type BrowseBuildsOutput struct {
+type browseBuildsOutput struct {
 	Body base.ApiResponse[[]volumetypes.FileEntry]
 }
 
-type GetBuildFileContentInput struct {
+type getBuildFileContentInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" doc:"File path"`
 	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
 }
 
-type BuildFileContentResponse struct {
+type buildFileContentResponse struct {
 	Content  []byte `json:"content"`
 	MimeType string `json:"mimeType"`
 }
 
-type GetBuildFileContentOutput struct {
-	Body base.ApiResponse[BuildFileContentResponse]
+type getBuildFileContentOutput struct {
+	Body base.ApiResponse[buildFileContentResponse]
 }
 
-type DownloadBuildFileInput struct {
+type downloadBuildFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" doc:"File path"`
 }
 
-type DownloadBuildFileOutput struct {
+type downloadBuildFileOutput struct {
 	ContentType        string `header:"Content-Type"`
 	ContentDisposition string `header:"Content-Disposition"`
 	ContentLength      int64  `header:"Content-Length"`
 	Body               io.ReadCloser
 }
 
-type UploadBuildFileInput struct {
+type uploadBuildFileInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	Path          string         `query:"path" default:"/" doc:"Destination path"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
-type CreateBuildDirectoryInput struct {
+type createBuildDirectoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" doc:"Directory path to create"`
 }
 
-type DeleteBuildFileInput struct {
+type deleteBuildFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
-func (h *BuildWorkspaceHandler) BrowseDirectory(ctx context.Context, input *BrowseBuildsInput) (*BrowseBuildsOutput, error) {
+func (h *buildWorkspaceHandler) browseDirectoryInternal(ctx context.Context, input *browseBuildsInput) (*browseBuildsOutput, error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -162,10 +162,10 @@ func (h *BuildWorkspaceHandler) BrowseDirectory(ctx context.Context, input *Brow
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &BrowseBuildsOutput{Body: base.ApiResponse[[]volumetypes.FileEntry]{Success: true, Data: entries}}, nil
+	return &browseBuildsOutput{Body: base.ApiResponse[[]volumetypes.FileEntry]{Success: true, Data: entries}}, nil
 }
 
-func (h *BuildWorkspaceHandler) GetFileContent(ctx context.Context, input *GetBuildFileContentInput) (*GetBuildFileContentOutput, error) {
+func (h *buildWorkspaceHandler) getFileContentInternal(ctx context.Context, input *getBuildFileContentInput) (*getBuildFileContentOutput, error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -173,13 +173,13 @@ func (h *BuildWorkspaceHandler) GetFileContent(ctx context.Context, input *GetBu
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &GetBuildFileContentOutput{Body: base.ApiResponse[BuildFileContentResponse]{
+	return &getBuildFileContentOutput{Body: base.ApiResponse[buildFileContentResponse]{
 		Success: true,
-		Data:    BuildFileContentResponse{Content: content, MimeType: mimeType},
+		Data:    buildFileContentResponse{Content: content, MimeType: mimeType},
 	}}, nil
 }
 
-func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *DownloadBuildFileInput) (*DownloadBuildFileOutput, error) {
+func (h *buildWorkspaceHandler) downloadFileInternal(ctx context.Context, input *downloadBuildFileInput) (*downloadBuildFileOutput, error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -187,7 +187,7 @@ func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *Downloa
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DownloadBuildFileOutput{
+	return &downloadBuildFileOutput{
 		ContentType:        "application/octet-stream",
 		ContentDisposition: "attachment; filename=" + path.Base(input.Path),
 		ContentLength:      size,
@@ -195,7 +195,7 @@ func (h *BuildWorkspaceHandler) DownloadFile(ctx context.Context, input *Downloa
 	}, nil
 }
 
-func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *buildWorkspaceHandler) uploadFileInternal(ctx context.Context, input *uploadBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -221,7 +221,7 @@ func (h *BuildWorkspaceHandler) UploadFile(ctx context.Context, input *UploadBui
 	}, nil
 }
 
-func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *CreateBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *buildWorkspaceHandler) createDirectoryInternal(ctx context.Context, input *createBuildDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -234,7 +234,7 @@ func (h *BuildWorkspaceHandler) CreateDirectory(ctx context.Context, input *Crea
 	}, nil
 }
 
-func (h *BuildWorkspaceHandler) DeleteFile(ctx context.Context, input *DeleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *buildWorkspaceHandler) deleteFileInternal(ctx context.Context, input *deleteBuildFileInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.service == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}

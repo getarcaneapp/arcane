@@ -15,8 +15,8 @@ import (
 
 var jsonOutput bool
 
-// SettingsCmd is the parent command for settings operations
-var SettingsCmd = &cobra.Command{
+// Command is the parent command for settings operations
+var Command = &cobra.Command{
 	Use:     "settings",
 	Aliases: []string{"setting"},
 	Short:   "Manage settings",
@@ -139,9 +139,9 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 }
 
 func init() {
-	SettingsCmd.AddCommand(listCmd)
-	SettingsCmd.AddCommand(updateCmd)
-	SettingsCmd.AddCommand(publicCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(publicCmd)
 
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 

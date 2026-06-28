@@ -59,7 +59,7 @@ func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, comp
 
 	protected := ProtectedProjectFilePaths(composeFileName)
 	skipDirs := projectScanSkipDirectorySetInternal(skipDirectories)
-	files := []project.ProjectFile{}
+	var files []project.ProjectFile
 	revisionHash := sha256.New()
 
 	err = fs.WalkDir(root.FS(), ".", func(rel string, entry fs.DirEntry, walkErr error) error {

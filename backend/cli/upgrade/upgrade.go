@@ -25,9 +25,9 @@ var (
 	autoDetect    bool
 )
 
-// UpgradeCmd recreates a running Arcane container with a newer image while
+// Command recreates a running Arcane container with a newer image while
 // preserving its configuration.
-var UpgradeCmd = &cobra.Command{
+var Command = &cobra.Command{
 	Use:   "upgrade",
 	Short: "Upgrade an Arcane container to the latest version",
 	Long: `Upgrade an Arcane container by pulling the latest image and recreating the container.
@@ -46,12 +46,12 @@ This command should be run from outside the container (e.g., from the host or an
 }
 
 func init() {
-	UpgradeCmd.Flags().StringVarP(&containerName, "container", "c", "", "Name of the container to upgrade")
-	UpgradeCmd.Flags().StringVarP(&targetImage, "image", "i", "", "Target image to upgrade to (defaults to current tag)")
-	UpgradeCmd.Flags().BoolVarP(&autoDetect, "auto", "a", false, "Auto-detect Arcane container")
+	Command.Flags().StringVarP(&containerName, "container", "c", "", "Name of the container to upgrade")
+	Command.Flags().StringVarP(&targetImage, "image", "i", "", "Target image to upgrade to (defaults to current tag)")
+	Command.Flags().BoolVarP(&autoDetect, "auto", "a", false, "Auto-detect Arcane container")
 }
 
-func runUpgrade(cmd *cobra.Command, args []string) error {
+func runUpgrade(_ *cobra.Command, _ []string) error {
 	// Use background context instead of command context to ignore signals
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
@@ -87,11 +87,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
 		inspectResult, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
-		targetContainer = inspectResult.Container
 		err = inspectErr
 		if err != nil {
 			return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
 		}
+		targetContainer = inspectResult.Container
 	}
 
 	// Determine image to pull

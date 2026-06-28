@@ -324,7 +324,7 @@ func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL s
 		return buildgit.AuthConfig{}, false, nil
 	}
 
-	authConfig, err := s.gitRepository.GetAuthConfig(ctx, repository)
+	authConfig, err := s.gitRepository.GetAuthConfig(repository)
 	if err != nil {
 		return buildgit.AuthConfig{}, true, fmt.Errorf("failed to load git repository credentials: %w", err)
 	}
@@ -541,21 +541,21 @@ func buildToRecord(build models.ImageBuild, includeOutput bool) imagetypes.Build
 		ContextDir:      build.ContextDir,
 		Dockerfile:      build.Dockerfile,
 		Target:          build.Target,
-		Tags:            []string(build.Tags),
-		Platforms:       []string(build.Platforms),
+		Tags:            build.Tags,
+		Platforms:       build.Platforms,
 		BuildArgs:       buildArgs,
 		Labels:          labels,
-		CacheFrom:       []string(build.CacheFrom),
-		CacheTo:         []string(build.CacheTo),
+		CacheFrom:       build.CacheFrom,
+		CacheTo:         build.CacheTo,
 		NoCache:         build.NoCache,
 		Pull:            build.Pull,
 		Network:         build.BuildNetwork,
 		Isolation:       build.Isolation,
 		ShmSize:         build.ShmSize,
 		Ulimits:         ulimits,
-		Entitlements:    []string(build.Entitlements),
+		Entitlements:    build.Entitlements,
 		Privileged:      build.Privileged,
-		ExtraHosts:      []string(build.ExtraHosts),
+		ExtraHosts:      build.ExtraHosts,
 		Push:            build.Push,
 		Load:            build.Load,
 		Digest:          build.Digest,

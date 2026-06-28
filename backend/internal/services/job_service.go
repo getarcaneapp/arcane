@@ -225,13 +225,13 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 	allMetadata := meta.GetAllJobMetadata()
 	jobs := make([]jobschedule.JobStatus, 0, len(allMetadata))
 
-	for _, meta := range allMetadata {
-		schedule := s.getJobScheduleInternal(ctx, meta)
+	for _, metadata := range allMetadata {
+		schedule := s.getJobScheduleInternal(ctx, metadata)
 		nextRun := s.calculateNextRunInternal(schedule)
-		enabled := s.isJobEnabledInternal(ctx, meta)
-		prerequisites := s.evaluatePrerequisitesInternal(ctx, meta)
+		enabled := s.isJobEnabledInternal(ctx, metadata)
+		prerequisites := s.evaluatePrerequisitesInternal(ctx, metadata)
 
-		jobStatus := meta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
+		jobStatus := metadata.ToJobStatus(schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
 	}
 
@@ -271,16 +271,16 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 		return nil, errors.New("job service or scheduler not initialized")
 	}
 
-	meta, ok := meta.GetJobMetadata(jobID)
+	metadata, ok := meta.GetJobMetadata(jobID)
 	if !ok {
 		return nil, fmt.Errorf("unknown job: %s", jobID)
 	}
 
-	if !meta.CanRunManually {
+	if !metadata.CanRunManually {
 		return nil, fmt.Errorf("job %s cannot be run manually", jobID)
 	}
 
-	if s.cfg != nil && s.cfg.AgentMode && meta.ManagerOnly {
+	if s.cfg != nil && s.cfg.AgentMode && metadata.ManagerOnly {
 		return nil, fmt.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
 	}
 

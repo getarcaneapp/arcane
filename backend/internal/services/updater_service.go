@@ -530,7 +530,7 @@ func (s *UpdaterService) RecordEvent(ctx context.Context, event moduletypes.Even
 			s.deps.SystemUser.ID,
 			s.deps.SystemUser.Username,
 			"0",
-			models.JSON(event.Metadata),
+			event.Metadata,
 		)
 	}
 

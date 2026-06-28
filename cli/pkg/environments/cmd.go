@@ -41,8 +41,8 @@ var (
 	enabledStyle       = lipgloss.NewStyle().Foreground(lipgloss.Color("#6d28d9"))
 )
 
-// EnvironmentsCmd is the parent command for environment operations
-var EnvironmentsCmd = &cobra.Command{
+// Command is the parent command for environment operations
+var Command = &cobra.Command{
 	Use:     "environments",
 	Aliases: []string{"environment", "env", "e"},
 	Short:   "Manage environments",
@@ -477,13 +477,13 @@ func buildEnvironmentPayloadInternal(env environment.Environment) map[string]any
 }
 
 func init() {
-	EnvironmentsCmd.AddCommand(listCmd)
-	EnvironmentsCmd.AddCommand(getCmd)
-	EnvironmentsCmd.AddCommand(testCmd)
-	EnvironmentsCmd.AddCommand(deleteCmd)
-	EnvironmentsCmd.AddCommand(switchCmd)
-	EnvironmentsCmd.AddCommand(updateCmd)
-	EnvironmentsCmd.AddCommand(versionCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(testCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(switchCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(versionCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of environments to show")

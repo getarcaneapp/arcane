@@ -7,11 +7,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/getarcaneapp/arcane/backend/v2/cli/generate"
 	"github.com/getarcaneapp/arcane/backend/v2/cli/upgrade"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/bootstrap"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/signals"
+	"github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 )
 
 var rootCmd = &cobra.Command{
@@ -38,8 +38,8 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.AddCommand(upgrade.UpgradeCmd)
-	rootCmd.AddCommand(generate.GenerateCmd)
+	rootCmd.AddCommand(upgrade.Command)
+	rootCmd.AddCommand(generate.Command)
 }
 
 func getVersion() string {

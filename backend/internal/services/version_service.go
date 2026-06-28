@@ -111,7 +111,10 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 
 func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 	rel, err := s.getLatestReleaseInternal(ctx)
-	return rel.TagName, err
+	if err != nil {
+		return "", err
+	}
+	return rel.TagName, nil
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
@@ -200,25 +203,25 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
 func (s *VersionService) isSemverVersion() bool {
-	version := strings.TrimSpace(s.version)
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
+	normalizedVersion := strings.TrimSpace(s.version)
+	if !strings.HasPrefix(normalizedVersion, "v") {
+		normalizedVersion = "v" + normalizedVersion
 	}
-	return semver.IsValid(version)
+	return semver.IsValid(normalizedVersion)
 }
 
 // getDisplayVersion formats the version for display purposes
 // If version contains "next", it returns "next-<short revision>"
 // Otherwise returns the version as-is
 func (s *VersionService) getDisplayVersion() string {
-	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
-	if strings.Contains(strings.ToLower(version), "next") && s.revision != "" && s.revision != "unknown" {
+	displayVersion := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
+	if strings.Contains(strings.ToLower(displayVersion), "next") && s.revision != "" && s.revision != "unknown" {
 		return "next-" + config.ShortRevision()
 	}
 	if s.isSemverVersion() {
-		return "v" + version
+		return "v" + displayVersion
 	}
-	return version
+	return displayVersion
 }
 
 // GetAppVersionInfo returns application version information including display version

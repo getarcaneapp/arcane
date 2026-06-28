@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"context"
 	"io"
 	"strings"
 
@@ -18,7 +17,7 @@ type Client struct {
 	dockerCli command.Cli
 }
 
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient() (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -72,10 +71,10 @@ func (c *Client) Close() error {
 
 type writerConsumer struct{ out io.Writer }
 
-func (w writerConsumer) Register(container string)    {}
-func (w writerConsumer) Start(container string)       {}
-func (w writerConsumer) Stop(container string)        {}
-func (w writerConsumer) Status(container, msg string) {}
+func (w writerConsumer) Register(_ string)  {}
+func (w writerConsumer) Start(_ string)     {}
+func (w writerConsumer) Stop(_ string)      {}
+func (w writerConsumer) Status(_, _ string) {}
 func (w writerConsumer) Log(container, msg string) {
 	w.write(container, msg)
 }

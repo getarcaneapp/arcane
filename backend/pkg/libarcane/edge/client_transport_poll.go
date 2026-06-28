@@ -162,7 +162,7 @@ func waitForNextPollCycleInternal(ctx context.Context, session *pollManagedTunne
 
 func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL string, connected bool) (*TunnelPollResponse, error) {
 	pollReq := TunnelPollRequest{
-		Transport: EdgeTransportPoll,
+		Transport: TransportPoll,
 		Connected: connected,
 	}
 

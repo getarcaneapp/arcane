@@ -265,7 +265,7 @@ func TestContainerCreateWithCompatibilityForAPIVersion(t *testing.T) {
 		_, err := ContainerCreateWithCompatibilityForAPIVersion(t.Context(), fakeClient, client.ContainerCreateOptions{
 			Config: &container.Config{Image: "nginx:latest"},
 			HostConfig: &container.HostConfig{
-				NetworkMode: container.NetworkMode("anet"),
+				NetworkMode: "anet",
 			},
 			NetworkingConfig: &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{
@@ -300,7 +300,7 @@ func TestContainerCreateWithCompatibilityForAPIVersion(t *testing.T) {
 
 		_, err := ContainerCreateWithCompatibilityForAPIVersion(t.Context(), fakeClient, client.ContainerCreateOptions{
 			HostConfig: &container.HostConfig{
-				NetworkMode: container.NetworkMode("anet"),
+				NetworkMode: "anet",
 			},
 			NetworkingConfig: &network.NetworkingConfig{
 				EndpointsConfig: map[string]*network.EndpointSettings{

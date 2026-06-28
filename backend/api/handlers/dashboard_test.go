@@ -113,11 +113,11 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 	}).Error)
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
-	handler := &DashboardHandler{
+	handler := &dashboardHandler{
 		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil),
 	}
 
-	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
+	output, err := handler.getDashboardInternal(context.Background(), &getDashboardInput{EnvironmentID: "0"})
 	require.NoError(t, err)
 	require.NotNil(t, output)
 	require.True(t, output.Body.Success)
@@ -138,7 +138,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 // runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
 // pipe and returns each decoded event to onEvent until it reports done or the
 // stream ends; remaining output is drained so a blocked encoder can finish.
-func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, onEvent func(dashboardtypes.StreamEvent) bool) {
+func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *dashboardHandler, onEvent func(dashboardtypes.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -193,7 +193,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &DashboardHandler{
+	handler := &dashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
@@ -242,7 +242,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &DashboardHandler{
+	handler := &dashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
@@ -284,7 +284,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
 
-	handler := &DashboardHandler{
+	handler := &dashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}

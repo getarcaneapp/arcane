@@ -10,12 +10,12 @@ var (
 	SvelteKitVersion = "unknown"
 )
 
+const shortRevisionLength = 8
+
 // ShortRevision returns the first 8 characters of the revision hash
 func ShortRevision() string {
-	if len(Revision) > 8 {
-		return Revision[:8]
-	}
-	return Revision
+	revision := Revision
+	return revision[:min(len(revision), shortRevisionLength)]
 }
 
 // GoVersion returns the Go runtime version

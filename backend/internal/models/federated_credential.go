@@ -2,10 +2,7 @@ package models
 
 import "time"
 
-const (
-	FederatedCredentialMatchExact = "exact"
-	FederatedCredentialMatchGlob  = "glob"
-)
+const FederatedCredentialMatchExact = "exact"
 
 type FederatedCredential struct {
 	BaseModel

@@ -23,7 +23,7 @@ func TestMain(m *testing.M) {
 
 func TestGeneratedEdgeMTLSCAPath(t *testing.T) {
 	t.Run("returns error when edge mTLS is disabled", func(t *testing.T) {
-		cfg := &config.Config{EdgeMTLSMode: edge.EdgeMTLSModeDisabled}
+		cfg := &config.Config{EdgeMTLSMode: edge.MTLSModeDisabled}
 
 		_, err := generatedEdgeMTLSCAPathInternal(cfg)
 
@@ -35,7 +35,7 @@ func TestGeneratedEdgeMTLSCAPath(t *testing.T) {
 		require.NoError(t, os.WriteFile(caPath, []byte("pem"), 0o644))
 
 		cfg := &config.Config{
-			EdgeMTLSMode:   edge.EdgeMTLSModeRequired,
+			EdgeMTLSMode:   edge.MTLSModeRequired,
 			EdgeMTLSCAFile: caPath,
 		}
 
@@ -47,7 +47,7 @@ func TestGeneratedEdgeMTLSCAPath(t *testing.T) {
 
 	t.Run("returns generated CA path when Arcane manages the CA", func(t *testing.T) {
 		cfg := &config.Config{
-			EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
+			EdgeMTLSMode:      edge.MTLSModeRequired,
 			EdgeMTLSAssetsDir: t.TempDir(),
 		}
 		require.NoError(t, edge.PrepareManagerMTLSAssetsWithContext(context.Background(), &edge.Config{
@@ -68,7 +68,7 @@ func TestGeneratedEdgeMTLSCAPath(t *testing.T) {
 
 	t.Run("does not generate missing Arcane-managed CA", func(t *testing.T) {
 		cfg := &config.Config{
-			EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
+			EdgeMTLSMode:      edge.MTLSModeRequired,
 			EdgeMTLSAssetsDir: t.TempDir(),
 		}
 
@@ -82,7 +82,7 @@ func TestGeneratedEdgeMTLSCAPath(t *testing.T) {
 
 func TestReadGeneratedEdgeMTLSCertificateInfo(t *testing.T) {
 	cfg := &config.Config{
-		EdgeMTLSMode:      edge.EdgeMTLSModeRequired,
+		EdgeMTLSMode:      edge.MTLSModeRequired,
 		EdgeMTLSAssetsDir: t.TempDir(),
 	}
 

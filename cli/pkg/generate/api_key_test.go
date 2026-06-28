@@ -8,7 +8,7 @@ import (
 )
 
 func TestAPIKeyDefaultOutput(t *testing.T) {
-	cmd := gen.GenerateCmd
+	cmd := gen.Command
 	cmd.SetArgs([]string{"api-key"})
 
 	out, err := captureOutput(func() error {

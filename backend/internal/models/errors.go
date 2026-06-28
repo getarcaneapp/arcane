@@ -8,7 +8,6 @@ import (
 type APIErrorCode string
 
 const (
-	APIErrorCodeBadRequest          APIErrorCode = "BAD_REQUEST"
 	APIErrorCodeUnauthorized        APIErrorCode = "UNAUTHORIZED"
 	APIErrorCodeForbidden           APIErrorCode = "FORBIDDEN"
 	APIErrorCodeNotFound            APIErrorCode = "NOT_FOUND"
@@ -16,7 +15,6 @@ const (
 	APIErrorCodeInternalServerError APIErrorCode = "INTERNAL_SERVER_ERROR"
 	APIErrorCodeDockerAPIError      APIErrorCode = "DOCKER_API_ERROR"
 	APIErrorCodeValidationError     APIErrorCode = "VALIDATION_ERROR"
-	APIErrorCodeTimeout             APIErrorCode = "TIMEOUT"
 )
 
 type APIErrorResponse struct {

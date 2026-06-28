@@ -1122,7 +1122,7 @@ func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]env.Variabl
 	}
 	defer func() { _ = file.Close() }()
 
-	vars := []env.Variable{}
+	var vars []env.Variable
 	scanner := bufio.NewScanner(file)
 	lineNum := 0
 

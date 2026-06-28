@@ -6,16 +6,6 @@ import (
 
 type AutoUpdateStatus string
 
-const (
-	AutoUpdateStatusPending   AutoUpdateStatus = "pending"
-	AutoUpdateStatusChecking  AutoUpdateStatus = "checking"
-	AutoUpdateStatusUpdating  AutoUpdateStatus = "updating"
-	AutoUpdateStatusCompleted AutoUpdateStatus = "completed"
-	AutoUpdateStatusFailed    AutoUpdateStatus = "failed"
-	AutoUpdateStatusSkipped   AutoUpdateStatus = "skipped"
-	AutoUpdateStatusRestarted AutoUpdateStatus = "restarted"
-)
-
 type AutoUpdateRecord struct {
 	BaseModel
 

@@ -68,14 +68,14 @@ func NewOidcService(authService *AuthService, settingsService *SettingsService, 
 }
 
 func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*models.OidcConfig, error) {
-	config, err := s.authService.GetOidcConfig(ctx)
+	oidcConfig, err := s.authService.GetOidcConfig(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get OIDC config: %w", err)
 	}
-	if config.IssuerURL == "" {
+	if oidcConfig.IssuerURL == "" {
 		return nil, errors.New("issuer URL must be configured")
 	}
-	return config, nil
+	return oidcConfig, nil
 }
 
 func (s *OidcService) getHttpClientInternal(skipTlsVerify bool) *http.Client {
@@ -214,18 +214,18 @@ func (s *OidcService) ValidateMobileRedirectURI(ctx context.Context, uri string)
 }
 
 func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, origin string, mobileRedirectURI string) (string, string, error) {
-	config, err := s.getEffectiveConfigInternal(ctx)
+	oidcConfig, err := s.getEffectiveConfigInternal(ctx)
 	if err != nil {
 		slog.Error("GenerateAuthURL: failed to get OIDC config", "error", err)
 		return "", "", err
 	}
 
 	var provider *oidc.Provider
-	if !s.hasManualEndpointsInternal(config) {
+	if !s.hasManualEndpointsInternal(oidcConfig) {
 		var err error
-		provider, err = s.getOrDiscoverProviderInternal(ctx, config)
+		provider, err = s.getOrDiscoverProviderInternal(ctx, oidcConfig)
 		if err != nil {
-			slog.Error("GenerateAuthURL: provider discovery failed", "issuer", config.IssuerURL, "error", err)
+			slog.Error("GenerateAuthURL: provider discovery failed", "issuer", oidcConfig.IssuerURL, "error", err)
 			return "", "", fmt.Errorf("failed to discover provider: %w", err)
 		}
 	}
@@ -234,7 +234,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 	nonce := utils.GenerateRandomString(32)
 	codeVerifier := utils.GenerateRandomString(128)
 
-	oauth2Config, err := s.getOauth2ConfigInternal(config, provider, origin, mobileRedirectURI)
+	oauth2Config, err := s.getOauth2ConfigInternal(oidcConfig, provider, origin, mobileRedirectURI)
 	if err != nil {
 		slog.Error("GenerateAuthURL: invalid OIDC endpoints", "error", err)
 		return "", "", err
@@ -260,7 +260,7 @@ func (s *OidcService) GenerateAuthURL(ctx context.Context, redirectTo string, or
 	}
 	encodedState := base64.URLEncoding.EncodeToString(stateJSON)
 
-	slog.Debug("GenerateAuthURL: generated authorization URL", "issuer", config.IssuerURL, "scopes", oauth2Config.Scopes)
+	slog.Debug("GenerateAuthURL: generated authorization URL", "issuer", oidcConfig.IssuerURL, "scopes", oauth2Config.Scopes)
 	return authURL, encodedState, nil
 }
 

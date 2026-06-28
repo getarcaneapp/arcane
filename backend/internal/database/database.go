@@ -16,7 +16,7 @@ import (
 	"time"
 
 	glsqlite "github.com/glebarez/sqlite"
-	goose "github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -50,6 +50,14 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to database: %w", err)
 	}
+	initialized := false
+	defer func() {
+		if !initialized {
+			if closeErr := db.Close(); closeErr != nil {
+				slog.WarnContext(ctx, "failed to close database after initialization error", "error", closeErr)
+			}
+		}
+	}()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -87,6 +95,7 @@ func Initialize(ctx context.Context, databaseURL string, options MigrationOption
 	sqlDB.SetConnMaxLifetime(5 * time.Minute)
 	sqlDB.SetConnMaxIdleTime(3 * time.Minute)
 
+	initialized = true
 	return db, nil
 }
 

@@ -22,8 +22,8 @@ import (
 	"github.com/moby/moby/client"
 )
 
-// VolumeHandler provides Huma-based volume management endpoints.
-type VolumeHandler struct {
+// volumeHandler provides Huma-based volume management endpoints.
+type volumeHandler struct {
 	volumeService   *services.VolumeService
 	dockerService   *services.DockerClientService
 	activityService *services.ActivityService
@@ -32,23 +32,23 @@ type VolumeHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// VolumeUsageCountsData represents the counts of volumes by usage status.
+// volumeUsageCountsData represents the counts of volumes by usage status.
 // This is a local type to avoid schema naming conflicts with image.UsageCounts.
-type VolumeUsageCountsData struct {
+type volumeUsageCountsData struct {
 	Inuse  int `json:"inuse"`
 	Unused int `json:"unused"`
 	Total  int `json:"total"`
 }
 
-// VolumePaginatedResponse is the paginated response for volumes.
-type VolumePaginatedResponse struct {
+// volumePaginatedResponse is the paginated response for volumes.
+type volumePaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []volumetypes.Volume    `json:"data"`
-	Counts     VolumeUsageCountsData   `json:"counts"`
+	Counts     volumeUsageCountsData   `json:"counts"`
 	Pagination base.PaginationResponse `json:"pagination"`
 }
 
-type ListVolumesInput struct {
+type listVolumesInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	Search          string `query:"search" doc:"Search query"`
 	Sort            string `query:"sort" doc:"Column to sort by"`
@@ -59,147 +59,147 @@ type ListVolumesInput struct {
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 }
 
-type ListVolumesOutput struct {
-	Body VolumePaginatedResponse
+type listVolumesOutput struct {
+	Body volumePaginatedResponse
 }
 
-type GetVolumeInput struct {
+type getVolumeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-type GetVolumeOutput struct {
+type getVolumeOutput struct {
 	Body base.ApiResponse[*volumetypes.Volume]
 }
 
-type CreateVolumeInput struct {
+type createVolumeInput struct {
 	EnvironmentID string             `path:"id" doc:"Environment ID"`
 	Body          volumetypes.Create `doc:"Volume creation data"`
 }
 
-type CreateVolumeOutput struct {
+type createVolumeOutput struct {
 	Body base.ApiResponse[*volumetypes.Volume]
 }
 
-type RemoveVolumeInput struct {
+type removeVolumeInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Force         bool   `query:"force" doc:"Force removal"`
 }
 
-type RemoveVolumeOutput struct {
+type removeVolumeOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type PruneVolumesInput struct {
+type pruneVolumesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-// VolumePruneReportData represents the result of a volume prune operation.
+// volumePruneReportData represents the result of a volume prune operation.
 // This is a local type to avoid schema naming conflicts with image.PruneReport.
-type VolumePruneReportData struct {
+type volumePruneReportData struct {
 	VolumesDeleted []string `json:"volumesDeleted,omitempty"`
 	SpaceReclaimed uint64   `json:"spaceReclaimed"`
 	ActivityID     *string  `json:"activityId,omitempty"`
 }
 
-type PruneVolumesOutput struct {
-	Body base.ApiResponse[VolumePruneReportData]
+type pruneVolumesOutput struct {
+	Body base.ApiResponse[volumePruneReportData]
 }
 
-type GetVolumeUsageInput struct {
+type getVolumeUsageInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-// VolumeUsageResponse represents volume usage information.
-type VolumeUsageResponse struct {
+// volumeUsageResponse represents volume usage information.
+type volumeUsageResponse struct {
 	InUse      bool     `json:"inUse"`
 	Containers []string `json:"containers"`
 }
 
-type GetVolumeUsageOutput struct {
-	Body base.ApiResponse[VolumeUsageResponse]
+type getVolumeUsageOutput struct {
+	Body base.ApiResponse[volumeUsageResponse]
 }
 
-type GetVolumeUsageCountsInput struct {
+type getVolumeUsageCountsInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal volumes"`
 }
 
-type GetVolumeUsageCountsOutput struct {
-	Body base.ApiResponse[VolumeUsageCountsData]
+type getVolumeUsageCountsOutput struct {
+	Body base.ApiResponse[volumeUsageCountsData]
 }
 
-type GetVolumeSizesInput struct {
+type getVolumeSizesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-// VolumeSizeInfo represents size information for a single volume.
-type VolumeSizeInfo struct {
+// volumeSizeInfo represents size information for a single volume.
+type volumeSizeInfo struct {
 	Name     string `json:"name"`
 	Size     int64  `json:"size"`
 	RefCount int64  `json:"refCount"`
 }
 
-type GetVolumeSizesOutput struct {
-	Body base.ApiResponse[[]VolumeSizeInfo]
+type getVolumeSizesOutput struct {
+	Body base.ApiResponse[[]volumeSizeInfo]
 }
 
 // --- Volume Browser & Backup ---
 
-type BrowseDirectoryInput struct {
+type browseDirectoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" default:"/" doc:"Directory path to browse"`
 }
 
-type BrowseDirectoryOutput struct {
+type browseDirectoryOutput struct {
 	Body base.ApiResponse[[]volumetypes.FileEntry]
 }
 
-type GetFileContentInput struct {
+type getFileContentInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" doc:"File path"`
 	MaxBytes      int64  `query:"maxBytes" default:"1048576" doc:"Maximum bytes to read (default 1MB)"`
 }
 
-type FileContentResponse struct {
+type fileContentResponse struct {
 	Content  []byte `json:"content"`
 	MimeType string `json:"mimeType"`
 }
 
-type GetFileContentOutput struct {
-	Body base.ApiResponse[FileContentResponse]
+type getFileContentOutput struct {
+	Body base.ApiResponse[fileContentResponse]
 }
 
-type DownloadFileInput struct {
+type downloadFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" doc:"File path"`
 }
 
-type UploadFileInput struct {
+type uploadFileInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	VolumeName    string         `path:"volumeName" doc:"Volume name"`
 	Path          string         `query:"path" default:"/" doc:"Destination path"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
-type CreateDirectoryInput struct {
+type createDirectoryInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" doc:"Directory path to create"`
 }
 
-type DeleteFileInput struct {
+type deleteFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" doc:"File or directory path to delete"`
 }
 
-type ListBackupsInput struct {
+type listBackupsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Search        string `query:"search" doc:"Search query"`
@@ -209,37 +209,37 @@ type ListBackupsInput struct {
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 }
 
-type VolumeBackupPaginatedResponse struct {
+type volumeBackupPaginatedResponse struct {
 	Success    bool                    `json:"success"`
 	Data       []models.VolumeBackup   `json:"data"`
 	Pagination base.PaginationResponse `json:"pagination"`
 	Warnings   []string                `json:"warnings,omitempty"`
 }
 
-type ListBackupsOutput struct {
-	Body VolumeBackupPaginatedResponse
+type listBackupsOutput struct {
+	Body volumeBackupPaginatedResponse
 }
 
-type CreateBackupInput struct {
+type createBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 }
 
-type CreateBackupOutput struct {
+type createBackupOutput struct {
 	Body base.ApiResponse[*models.VolumeBackup]
 }
 
-type RestoreBackupInput struct {
+type restoreBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
-type RestoreBackupOutput struct {
+type restoreBackupOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type RestoreBackupFilesInput struct {
+type restoreBackupFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
@@ -248,54 +248,54 @@ type RestoreBackupFilesInput struct {
 	}
 }
 
-type RestoreBackupFilesOutput struct {
+type restoreBackupFilesOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type BackupHasPathInput struct {
+type backupHasPathInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 	Path          string `query:"path" doc:"Path to check"`
 }
 
-type BackupHasPathResponse struct {
+type backupHasPathResponse struct {
 	Exists bool `json:"exists"`
 }
 
-type BackupHasPathOutput struct {
-	Body base.ApiResponse[BackupHasPathResponse]
+type backupHasPathOutput struct {
+	Body base.ApiResponse[backupHasPathResponse]
 }
 
-type ListBackupFilesInput struct {
+type listBackupFilesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
-type ListBackupFilesOutput struct {
+type listBackupFilesOutput struct {
 	Body base.ApiResponse[[]string]
 }
 
-type DeleteBackupInput struct {
+type deleteBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
-type DeleteBackupOutput struct {
+type deleteBackupOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-type DownloadBackupInput struct {
+type downloadBackupInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	BackupID      string `path:"backupId" doc:"Backup ID"`
 }
 
-type UploadAndRestoreInput struct {
+type uploadAndRestoreInput struct {
 	EnvironmentID string         `path:"id" doc:"Environment ID"`
 	VolumeName    string         `path:"volumeName" doc:"Volume name"`
 	RawBody       multipart.Form `contentType:"multipart/form-data"`
 }
 
-type UploadAndRestoreOutput struct {
+type uploadAndRestoreOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
@@ -303,7 +303,7 @@ type UploadAndRestoreOutput struct {
 //
 //nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
-	h := &VolumeHandler{
+	h := &volumeHandler{
 		volumeService:   volumeService,
 		dockerService:   dockerService,
 		activityService: activityService,
@@ -321,7 +321,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesList, h.GetVolumeUsageCounts)
+	}, authz.PermVolumesList, h.getVolumeUsageCountsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-volumes",
@@ -334,7 +334,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesList, h.ListVolumes)
+	}, authz.PermVolumesList, h.listVolumesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume",
@@ -347,7 +347,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesRead, h.GetVolume)
+	}, authz.PermVolumesRead, h.getVolumeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume",
@@ -360,7 +360,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesCreate, h.CreateVolume)
+	}, authz.PermVolumesCreate, h.createVolumeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "remove-volume",
@@ -373,7 +373,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesDelete, h.RemoveVolume)
+	}, authz.PermVolumesDelete, h.removeVolumeInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "prune-volumes",
@@ -386,7 +386,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesPrune, h.PruneVolumes)
+	}, authz.PermVolumesPrune, h.pruneVolumesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-usage",
@@ -399,7 +399,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesRead, h.GetVolumeUsage)
+	}, authz.PermVolumesRead, h.getVolumeUsageInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-sizes",
@@ -412,7 +412,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesList, h.GetVolumeSizes)
+	}, authz.PermVolumesList, h.getVolumeSizesInternal)
 
 	// --- Volume Browsing Endpoints ---
 
@@ -426,7 +426,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.BrowseDirectory)
+	}, authz.PermVolumesBrowse, h.browseDirectoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-volume-file-content",
@@ -438,7 +438,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.GetFileContent)
+	}, authz.PermVolumesBrowse, h.getFileContentInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-volume-file",
@@ -450,7 +450,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.DownloadFile)
+	}, authz.PermVolumesBrowse, h.downloadFileInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-file",
@@ -479,7 +479,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-	}, authz.PermVolumesUpload, h.UploadFile)
+	}, authz.PermVolumesUpload, h.uploadFileInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume-directory",
@@ -491,7 +491,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesUpload, h.CreateDirectory)
+	}, authz.PermVolumesUpload, h.createDirectoryInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-file",
@@ -503,7 +503,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesDelete, h.DeleteFile)
+	}, authz.PermVolumesDelete, h.deleteFileInternal)
 
 	// --- Volume Backup Endpoints ---
 
@@ -517,7 +517,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.ListBackups)
+	}, authz.PermVolumesBrowse, h.listBackupsInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "create-volume-backup",
@@ -529,7 +529,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBackup, h.CreateBackup)
+	}, authz.PermVolumesBackup, h.createBackupInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restore-volume-backup",
@@ -541,7 +541,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBackup, h.RestoreBackup)
+	}, authz.PermVolumesBackup, h.restoreBackupInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "restore-volume-backup-files",
@@ -553,7 +553,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
+	}, authz.PermVolumesBackup, h.restoreBackupFilesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-volume-backup",
@@ -565,7 +565,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBackup, h.DeleteBackup)
+	}, authz.PermVolumesBackup, h.deleteBackupInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "download-volume-backup",
@@ -577,7 +577,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.DownloadBackup)
+	}, authz.PermVolumesBrowse, h.downloadBackupInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "backup-has-path",
@@ -589,7 +589,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.BackupHasPath)
+	}, authz.PermVolumesBrowse, h.backupHasPathInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-backup-files",
@@ -601,7 +601,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-	}, authz.PermVolumesBrowse, h.ListBackupFiles)
+	}, authz.PermVolumesBrowse, h.listBackupFilesInternal)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "upload-volume-backup",
@@ -630,11 +630,11 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 				},
 			},
 		},
-	}, authz.PermVolumesUpload, h.UploadAndRestore)
+	}, authz.PermVolumesUpload, h.uploadAndRestoreInternal)
 }
 
 // ListVolumes returns a paginated list of volumes.
-func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput) (*ListVolumesOutput, error) {
+func (h *volumeHandler) listVolumesInternal(ctx context.Context, input *listVolumesInput) (*listVolumesOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -657,11 +657,11 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 		volumes = []volumetypes.Volume{}
 	}
 
-	return &ListVolumesOutput{
-		Body: VolumePaginatedResponse{
+	return &listVolumesOutput{
+		Body: volumePaginatedResponse{
 			Success: true,
 			Data:    volumes,
-			Counts: VolumeUsageCountsData{
+			Counts: volumeUsageCountsData{
 				Inuse:  counts.Inuse,
 				Unused: counts.Unused,
 				Total:  counts.Total,
@@ -672,7 +672,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 }
 
 // GetVolume returns a volume by name.
-func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*GetVolumeOutput, error) {
+func (h *volumeHandler) getVolumeInternal(ctx context.Context, input *getVolumeInput) (*getVolumeOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -682,7 +682,7 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 		return nil, huma.Error404NotFound((&common.VolumeNotFoundError{Err: err}).Error())
 	}
 
-	return &GetVolumeOutput{
+	return &getVolumeOutput{
 		Body: base.ApiResponse[*volumetypes.Volume]{
 			Success: true,
 			Data:    vol,
@@ -691,7 +691,7 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 }
 
 // CreateVolume creates a new Docker volume.
-func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
+func (h *volumeHandler) createVolumeInternal(ctx context.Context, input *createVolumeInput) (*createVolumeOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -734,7 +734,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	}
 	response.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
-	return &CreateVolumeOutput{
+	return &createVolumeOutput{
 		Body: base.ApiResponse[*volumetypes.Volume]{
 			Success: true,
 			Data:    response,
@@ -743,7 +743,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 }
 
 // RemoveVolume removes a Docker volume.
-func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
+func (h *volumeHandler) removeVolumeInternal(ctx context.Context, input *removeVolumeInput) (*removeVolumeOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -775,7 +775,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 		return nil, huma.Error500InternalServerError((&common.VolumeDeletionError{Err: err}).Error())
 	}
 
-	return &RemoveVolumeOutput{
+	return &removeVolumeOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data: base.MessageResponse{
@@ -787,7 +787,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 }
 
 // PruneVolumes removes all unused Docker volumes.
-func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
+func (h *volumeHandler) pruneVolumesInternal(ctx context.Context, input *pruneVolumesInput) (*pruneVolumesOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -811,10 +811,10 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 		return nil, huma.Error500InternalServerError((&common.VolumePruneError{Err: err}).Error())
 	}
 
-	return &PruneVolumesOutput{
-		Body: base.ApiResponse[VolumePruneReportData]{
+	return &pruneVolumesOutput{
+		Body: base.ApiResponse[volumePruneReportData]{
 			Success: true,
-			Data: VolumePruneReportData{
+			Data: volumePruneReportData{
 				VolumesDeleted: report.VolumesDeleted,
 				SpaceReclaimed: report.SpaceReclaimed,
 				ActivityID:     utils.StringPtrFromTrimmed(activityID),
@@ -824,7 +824,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 }
 
 // GetVolumeUsage returns containers using a specific volume.
-func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*GetVolumeUsageOutput, error) {
+func (h *volumeHandler) getVolumeUsageInternal(ctx context.Context, input *getVolumeUsageInput) (*getVolumeUsageOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -834,10 +834,10 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 		return nil, huma.Error500InternalServerError((&common.VolumeUsageError{Err: err}).Error())
 	}
 
-	return &GetVolumeUsageOutput{
-		Body: base.ApiResponse[VolumeUsageResponse]{
+	return &getVolumeUsageOutput{
+		Body: base.ApiResponse[volumeUsageResponse]{
 			Success: true,
-			Data: VolumeUsageResponse{
+			Data: volumeUsageResponse{
 				InUse:      inUse,
 				Containers: containers,
 			},
@@ -846,7 +846,7 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 }
 
 // GetVolumeUsageCounts returns counts of volumes by usage status.
-func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*GetVolumeUsageCountsOutput, error) {
+func (h *volumeHandler) getVolumeUsageCountsInternal(ctx context.Context, input *getVolumeUsageCountsInput) (*getVolumeUsageCountsOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -856,10 +856,10 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 		return nil, huma.Error500InternalServerError((&common.VolumeCountsError{Err: err}).Error())
 	}
 
-	return &GetVolumeUsageCountsOutput{
-		Body: base.ApiResponse[VolumeUsageCountsData]{
+	return &getVolumeUsageCountsOutput{
+		Body: base.ApiResponse[volumeUsageCountsData]{
 			Success: true,
-			Data: VolumeUsageCountsData{
+			Data: volumeUsageCountsData{
 				Inuse:  counts.Inuse,
 				Unused: counts.Unused,
 				Total:  counts.Total,
@@ -870,7 +870,7 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 
 // GetVolumeSizes returns disk usage sizes for all volumes.
 // This is a slow operation as it requires calculating disk usage.
-func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*GetVolumeSizesOutput, error) {
+func (h *volumeHandler) getVolumeSizesInternal(ctx context.Context, _ *getVolumeSizesInput) (*getVolumeSizesOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -880,17 +880,17 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	result := make([]VolumeSizeInfo, 0, len(sizes))
+	result := make([]volumeSizeInfo, 0, len(sizes))
 	for name, info := range sizes {
-		result = append(result, VolumeSizeInfo{
+		result = append(result, volumeSizeInfo{
 			Name:     name,
 			Size:     info.Size,
 			RefCount: info.RefCount,
 		})
 	}
 
-	return &GetVolumeSizesOutput{
-		Body: base.ApiResponse[[]VolumeSizeInfo]{
+	return &getVolumeSizesOutput{
+		Body: base.ApiResponse[[]volumeSizeInfo]{
 			Success: true,
 			Data:    result,
 		},
@@ -899,7 +899,7 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 
 // --- Volume Browser Handler Methods ---
 
-func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirectoryInput) (*BrowseDirectoryOutput, error) {
+func (h *volumeHandler) browseDirectoryInternal(ctx context.Context, input *browseDirectoryInput) (*browseDirectoryOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -907,7 +907,7 @@ func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirect
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &BrowseDirectoryOutput{
+	return &browseDirectoryOutput{
 		Body: base.ApiResponse[[]volumetypes.FileEntry]{
 			Success: true,
 			Data:    entries,
@@ -915,7 +915,7 @@ func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirect
 	}, nil
 }
 
-func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileContentInput) (*GetFileContentOutput, error) {
+func (h *volumeHandler) getFileContentInternal(ctx context.Context, input *getFileContentInput) (*getFileContentOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -923,10 +923,10 @@ func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileConten
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &GetFileContentOutput{
-		Body: base.ApiResponse[FileContentResponse]{
+	return &getFileContentOutput{
+		Body: base.ApiResponse[fileContentResponse]{
 			Success: true,
-			Data: FileContentResponse{
+			Data: fileContentResponse{
 				Content:  content,
 				MimeType: mimeType,
 			},
@@ -934,7 +934,7 @@ func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileConten
 	}, nil
 }
 
-func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*huma.StreamResponse, error) {
+func (h *volumeHandler) downloadFileInternal(ctx context.Context, input *downloadFileInput) (*huma.StreamResponse, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -957,7 +957,7 @@ func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInp
 	}, nil
 }
 
-func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *volumeHandler) uploadFileInternal(ctx context.Context, input *uploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1002,7 +1002,7 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	}, nil
 }
 
-func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *volumeHandler) createDirectoryInternal(ctx context.Context, input *createDirectoryInput) (*base.ApiResponse[base.MessageResponse], error) {
 	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
 		Step:           "Creating directory",
 		Message:        "Creating directory in volume",
@@ -1014,7 +1014,7 @@ func (h *VolumeHandler) CreateDirectory(ctx context.Context, input *CreateDirect
 	})
 }
 
-func (h *VolumeHandler) DeleteFile(ctx context.Context, input *DeleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *volumeHandler) deleteFileInternal(ctx context.Context, input *deleteFileInput) (*base.ApiResponse[base.MessageResponse], error) {
 	return h.runVolumePathActivityInternal(ctx, input.EnvironmentID, input.VolumeName, input.Path, volumePathActivityConfigInternal{
 		Step:           "Deleting file",
 		Message:        "Deleting file or directory from volume",
@@ -1034,7 +1034,7 @@ type volumePathActivityConfigInternal struct {
 	Action         func(context.Context, string, string, *models.User) error
 }
 
-func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
+func (h *volumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1068,7 +1068,7 @@ func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, envir
 
 // --- Volume Backup Handler Methods ---
 
-func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
+func (h *volumeHandler) listBackupsInternal(ctx context.Context, input *listBackupsInput) (*listBackupsOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1098,8 +1098,8 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 
 	warning := h.volumeService.BackupMountWarning(ctx)
 
-	return &ListBackupsOutput{
-		Body: VolumeBackupPaginatedResponse{
+	return &listBackupsOutput{
+		Body: volumeBackupPaginatedResponse{
 			Success:    true,
 			Data:       backups,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -1113,7 +1113,7 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 	}, nil
 }
 
-func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
+func (h *volumeHandler) createBackupInternal(ctx context.Context, input *createBackupInput) (*createBackupOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1144,7 +1144,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 	backup.ActivityID = utils.StringPtrFromTrimmed(activityID)
-	return &CreateBackupOutput{
+	return &createBackupOutput{
 		Body: base.ApiResponse[*models.VolumeBackup]{
 			Success: true,
 			Data:    backup,
@@ -1152,7 +1152,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	}, nil
 }
 
-func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
+func (h *volumeHandler) restoreBackupInternal(ctx context.Context, input *restoreBackupInput) (*restoreBackupOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1182,7 +1182,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &RestoreBackupOutput{
+	return &restoreBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
@@ -1190,7 +1190,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	}, nil
 }
 
-func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
+func (h *volumeHandler) restoreBackupFilesInternal(ctx context.Context, input *restoreBackupFilesInput) (*restoreBackupFilesOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1227,7 +1227,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &RestoreBackupFilesOutput{
+	return &restoreBackupFilesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
@@ -1235,7 +1235,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 	}, nil
 }
 
-func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*BackupHasPathOutput, error) {
+func (h *volumeHandler) backupHasPathInternal(ctx context.Context, input *backupHasPathInput) (*backupHasPathOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1249,15 +1249,15 @@ func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathI
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &BackupHasPathOutput{
-		Body: base.ApiResponse[BackupHasPathResponse]{
+	return &backupHasPathOutput{
+		Body: base.ApiResponse[backupHasPathResponse]{
 			Success: true,
-			Data:    BackupHasPathResponse{Exists: exists},
+			Data:    backupHasPathResponse{Exists: exists},
 		},
 	}, nil
 }
 
-func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*ListBackupFilesOutput, error) {
+func (h *volumeHandler) listBackupFilesInternal(ctx context.Context, input *listBackupFilesInput) (*listBackupFilesOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1267,7 +1267,7 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	return &ListBackupFilesOutput{
+	return &listBackupFilesOutput{
 		Body: base.ApiResponse[[]string]{
 			Success: true,
 			Data:    files,
@@ -1275,7 +1275,7 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 	}, nil
 }
 
-func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
+func (h *volumeHandler) deleteBackupInternal(ctx context.Context, input *deleteBackupInput) (*deleteBackupOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1301,7 +1301,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &DeleteBackupOutput{
+	return &deleteBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
@@ -1309,7 +1309,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 	}, nil
 }
 
-func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
+func (h *volumeHandler) downloadBackupInternal(ctx context.Context, input *downloadBackupInput) (*huma.StreamResponse, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1333,7 +1333,7 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 	}, nil
 }
 
-func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
+func (h *volumeHandler) uploadAndRestoreInternal(ctx context.Context, input *uploadAndRestoreInput) (*uploadAndRestoreOutput, error) {
 	if h.volumeService == nil {
 		return nil, huma.Error500InternalServerError("service not available")
 	}
@@ -1375,7 +1375,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	return &UploadAndRestoreOutput{
+	return &uploadAndRestoreOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},

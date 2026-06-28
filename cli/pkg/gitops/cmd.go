@@ -39,8 +39,8 @@ var (
 
 const maxPromptOptions = 20
 
-// GitopsCmd is the parent command for gitops sync operations
-var GitopsCmd = &cobra.Command{
+// Command is the parent command for gitops sync operations
+var Command = &cobra.Command{
 	Use:     "gitops",
 	Aliases: []string{"gitops-syncs", "gs"},
 	Short:   "Manage GitOps syncs",
@@ -548,15 +548,15 @@ var importCmd = &cobra.Command{
 }
 
 func init() {
-	GitopsCmd.AddCommand(listCmd)
-	GitopsCmd.AddCommand(createCmd)
-	GitopsCmd.AddCommand(getCmd)
-	GitopsCmd.AddCommand(updateCmd)
-	GitopsCmd.AddCommand(deleteCmd)
-	GitopsCmd.AddCommand(statusCmd)
-	GitopsCmd.AddCommand(syncCmd)
-	GitopsCmd.AddCommand(filesCmd)
-	GitopsCmd.AddCommand(importCmd)
+	Command.AddCommand(listCmd)
+	Command.AddCommand(createCmd)
+	Command.AddCommand(getCmd)
+	Command.AddCommand(updateCmd)
+	Command.AddCommand(deleteCmd)
+	Command.AddCommand(statusCmd)
+	Command.AddCommand(syncCmd)
+	Command.AddCommand(filesCmd)
+	Command.AddCommand(importCmd)
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of syncs to show")

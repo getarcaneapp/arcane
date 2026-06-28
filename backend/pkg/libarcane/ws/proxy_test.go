@@ -20,7 +20,7 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			mt, msg, err := conn.ReadMessage()
@@ -33,7 +33,7 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 			}
 		}
 	}))
-	defer remoteServer.Close()
+	defer func() { remoteServer.Close() }()
 
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
@@ -41,16 +41,16 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = ProxyHTTP(w, r, remoteWS, nil)
 	}))
-	defer proxyServer.Close()
+	defer func() { proxyServer.Close() }()
 
 	// 3. Connect a client to the proxy
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// 4. Send messages and verify they get proxied and echoed
 	testMessages := []string{"hello", "world", "test123"}
@@ -76,9 +76,9 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 		// Close immediately
 		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
-		conn.Close()
+		_ = conn.Close()
 	}))
-	defer remoteServer.Close()
+	defer func() { remoteServer.Close() }()
 
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
@@ -86,15 +86,15 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyDone <- ProxyHTTP(w, r, remoteWS, nil)
 	}))
-	defer proxyServer.Close()
+	defer func() { proxyServer.Close() }()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	// The proxy should complete (not hang)
 	select {
@@ -110,15 +110,15 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		proxyDone <- ProxyHTTP(w, r, "ws://127.0.0.1:1", nil)
 	}))
-	defer proxyServer.Close()
+	defer func() { proxyServer.Close() }()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	select {
 	case err := <-proxyDone:
@@ -136,7 +136,7 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() { _ = conn.Close() }()
 
 		for {
 			mt, msg, err := conn.ReadMessage()
@@ -148,22 +148,22 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 			}
 		}
 	}))
-	defer remoteServer.Close()
+	defer func() { remoteServer.Close() }()
 
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = ProxyHTTP(w, r, remoteWS, nil)
 	}))
-	defer proxyServer.Close()
+	defer func() { proxyServer.Close() }()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	binaryData := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD}
 	err = clientConn.WriteMessage(websocket.BinaryMessage, binaryData)
@@ -185,9 +185,9 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 		if err != nil {
 			return
 		}
-		conn.Close()
+		_ = conn.Close()
 	}))
-	defer remoteServer.Close()
+	defer func() { remoteServer.Close() }()
 
 	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
 
@@ -199,15 +199,15 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_ = ProxyHTTP(w, r, remoteWS, customHeaders)
 	}))
-	defer proxyServer.Close()
+	defer func() { proxyServer.Close() }()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		_ = resp.Body.Close()
 	}
-	defer clientConn.Close()
+	defer func() { _ = clientConn.Close() }()
 
 	select {
 	case receivedHeaders := <-headersCh:

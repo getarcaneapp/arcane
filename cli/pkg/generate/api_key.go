@@ -23,7 +23,7 @@ var apiKeyCmd = &cobra.Command{
 }
 
 func init() {
-	GenerateCmd.AddCommand(apiKeyCmd)
+	Command.AddCommand(apiKeyCmd)
 }
 
 func GenerateAPIKey() (string, error) {

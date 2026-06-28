@@ -95,7 +95,7 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
 		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
 		Filters:    map[string]string{},
 	})
 	require.NoError(t, err)
@@ -126,7 +126,7 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
 		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
 		Filters:    map[string]string{},
 	})
 	require.NoError(t, err)

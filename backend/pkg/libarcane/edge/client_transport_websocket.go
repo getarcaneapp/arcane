@@ -65,7 +65,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 		"environment_id", registerMsg.EnvironmentID,
 		"session_id", registerMsg.SessionID,
 	)
-	c.markTransportConnectedInternal(EdgeTransportWebSocket)
+	c.markTransportConnectedInternal(TransportWebSocket)
 
 	heartbeatCtx, heartbeatCancel := context.WithCancel(ctx)
 	defer heartbeatCancel()

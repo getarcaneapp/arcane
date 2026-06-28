@@ -14,10 +14,6 @@ const (
 	HeaderAuthorization = "Authorization"
 	HeaderCookie        = "Cookie"
 	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderUpgrade       = "Upgrade"
-	HeaderConnection    = "Connection"
-
-	ConnectionUpgradeToken = "upgrade"
 )
 
 func CopyRequestHeaders(from http.Header, to http.Header, skip map[string]struct{}) {

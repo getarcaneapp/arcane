@@ -70,7 +70,7 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 	assert.Equal(t, TunnelStatusActive, resp.Status)
 	assert.Equal(t, int(DefaultTunnelPollInterval/time.Second), resp.PollIntervalSeconds)
 	assert.True(t, resp.Connected)
-	assert.Equal(t, EdgeTransportGRPC, resp.ActiveTransport)
+	assert.Equal(t, TransportGRPC, resp.ActiveTransport)
 }
 
 // TestTunnelServer_HandlePoll_AcceptsTokenFromAllSupportedHeaders pins that
@@ -180,7 +180,7 @@ func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing
 		return "env-proxy-mtls", nil
 	}, nil)
 	server.SetConfig(&Config{
-		EdgeMTLSMode: EdgeMTLSModeRequired,
+		EdgeMTLSMode: MTLSModeRequired,
 		AppURL:       "https://manager.example.com",
 	})
 

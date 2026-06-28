@@ -170,7 +170,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 			return nil, fmt.Errorf("failed to create known_hosts file: %w", err)
 		}
 		if err := file.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close known_hosts file %s: %v\n", knownHostsPath, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to close known_hosts file %s: %v\n", knownHostsPath, err)
 		}
 	}
 
@@ -199,7 +199,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 		if err := addHostKey(knownHostsPath, hostname, key); err != nil {
 			// Log the error but don't fail - still allow the connection
 			// The host key just won't be remembered for next time
-			fmt.Fprintf(os.Stderr, "Warning: failed to save host key for %s: %v\n", hostname, err)
+			_, _ = fmt.Fprintf(os.Stderr, "Warning: failed to save host key for %s: %v\n", hostname, err)
 		}
 
 		return nil
@@ -243,7 +243,10 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	if err := fileLock.Lock(); err != nil {
 		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", err)
 	}
-	defer fileLock.Unlock() //nolint:errcheck
+	defer func() {
+		_ = fileLock.Unlock()
+		_ = fileLock.Close()
+	}()
 
 	// Append to the file
 	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)

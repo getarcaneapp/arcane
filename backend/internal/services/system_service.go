@@ -306,8 +306,8 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 	// Limit concurrency to avoid overwhelming Docker daemon
 	g.SetLimit(5)
 
-	for _, container := range containers {
-		c := container // capture loop var
+	for _, containerInfo := range containers {
+		c := containerInfo // capture loop var
 		if !shouldProcess(c) {
 			continue
 		}
@@ -744,7 +744,7 @@ func (s *SystemService) ConvertToDockerCompose(parsed *system.DockerRunCommand) 
 	return string(yamlData), envVars, serviceName, nil
 }
 
-func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {
+func (s *SystemService) GetDiskUsagePath() string {
 	cfg := s.settingsService.GetSettingsConfig()
 	if cfg == nil {
 		return "/"
