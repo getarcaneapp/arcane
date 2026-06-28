@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { cn, type WithElementRef } from '$lib/utils.js';
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { useSidebar } from './context.svelte.js';
@@ -17,7 +18,7 @@
 	bind:this={ref}
 	data-sidebar="rail"
 	data-slot="sidebar-rail"
-	aria-label="Toggle Sidebar"
+	aria-label={m.sidebar_toggle()}
 	tabindex={sidebar.isTablet ? -1 : -1}
 	onclick={() => {
 		if (!sidebar.isTablet) {

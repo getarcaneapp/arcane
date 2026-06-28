@@ -60,10 +60,6 @@ func createGitRepositoryServiceTestRepoInternal(t *testing.T, svc *GitRepository
 	return repo
 }
 
-func gitRepositoryStringPtrInternal(value string) *string {
-	return &value
-}
-
 func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWouldBeReused(t *testing.T) {
 	svc, _ := setupGitRepositoryServiceTestInternal(t)
 	repo := createGitRepositoryServiceTestRepoInternal(t, svc, models.CreateGitRepositoryRequest{

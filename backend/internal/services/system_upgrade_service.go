@@ -19,6 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	vuln "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	containertypes "github.com/moby/moby/api/types/container"
@@ -193,7 +194,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		s.dockerService.DockerHost(),
 		&currentContainer,
 		func(ctx context.Context, containerPath string) (string, error) {
-			return dockerutils.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
+			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
 		func() bool {
 			_, err := dockerutils.GetCurrentContainerID()

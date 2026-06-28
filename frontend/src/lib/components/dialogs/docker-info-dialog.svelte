@@ -195,7 +195,7 @@
 				<div class="flex items-center justify-end gap-2">
 					<code class="bg-muted rounded px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
 					{#if info.gitCommit}
-						<CopyButton text={info.gitCommit} size="icon" class="size-6" title="Copy full commit hash" />
+						<CopyButton text={info.gitCommit} size="icon" class="size-6" title={m.docker_copy_commit_hash()} />
 					{/if}
 				</div>
 			</div>

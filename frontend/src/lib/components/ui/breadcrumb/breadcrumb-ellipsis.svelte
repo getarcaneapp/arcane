@@ -3,6 +3,7 @@
 	import type { HTMLAttributes } from 'svelte/elements';
 	import { cn } from '$lib/utils.js';
 	import { EllipsisIcon } from '$lib/icons';
+	import { m } from '$lib/paraglide/messages';
 
 	let {
 		ref = $bindable(null),
@@ -19,5 +20,5 @@
 	{...restProps}
 >
 	<EllipsisIcon class="size-4" />
-	<span class="sr-only">More</span>
+	<span class="sr-only">{m.common_more()}</span>
 </span>

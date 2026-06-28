@@ -3,6 +3,7 @@
 	import { cn } from '$lib/utils.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { PinOnIcon, PinOffIcon } from '$lib/icons';
+	import { m } from '$lib/paraglide/messages';
 
 	let {
 		ref = $bindable(null),
@@ -28,7 +29,7 @@
 	class={cn('text-muted-foreground hover:text-foreground size-7', className)}
 	type="button"
 	disabled={sidebar.isTablet}
-	title={isPinned ? 'Unpin sidebar' : 'Pin sidebar'}
+	title={isPinned ? m.common_unpin_sidebar() : m.common_pin_sidebar()}
 	onclick={(e) => {
 		e.preventDefault();
 		e.stopPropagation();
@@ -45,9 +46,9 @@
 >
 	{#if isPinned}
 		<PinOnIcon />
-		<span class="sr-only">Unpin sidebar</span>
+		<span class="sr-only">{m.common_unpin_sidebar()}</span>
 	{:else}
 		<PinOffIcon />
-		<span class="sr-only">Pin sidebar</span>
+		<span class="sr-only">{m.common_pin_sidebar()}</span>
 	{/if}
 </ArcaneButton>

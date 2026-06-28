@@ -86,6 +86,10 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 }
 
 func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
+	if !isRoot && isProjectUpdateTempDirInternal(filepath.Base(path)) {
+		return nil
+	}
+
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
 		return err
@@ -136,4 +140,9 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 	}
 
 	return nil
+}
+
+func isProjectUpdateTempDirInternal(name string) bool {
+	name = strings.TrimSpace(name)
+	return strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-")
 }

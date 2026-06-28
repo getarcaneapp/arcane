@@ -134,10 +134,10 @@ func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, user.ID, rawKey)
 	require.NoError(t, err)
 	require.Equal(t, rawKey, created.Key)
-	require.Equal(t, defaultAdminAPIKeyName, created.ApiKey.Name)
-	require.True(t, created.ApiKey.IsStatic)
+	require.Equal(t, defaultAdminAPIKeyName, created.Name)
+	require.True(t, created.IsStatic)
 
-	stored := fetchAPIKey(t, db, created.ApiKey.ID)
+	stored := fetchAPIKey(t, db, created.ID)
 	require.NotEqual(t, rawKey, stored.KeyHash)
 	require.Equal(t, rawKey[:len(apiKeyPrefix)+apiKeyPrefixLen], stored.KeyPrefix)
 	require.NotNil(t, stored.ManagedBy)
@@ -174,12 +174,12 @@ func TestDeleteApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapprotected1234567890")
 	require.NoError(t, err)
 
-	err = service.DeleteApiKey(ctx, created.ApiKey.ID)
+	err = service.DeleteApiKey(ctx, created.ID)
 	require.ErrorIs(t, err, ErrApiKeyProtected)
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 1)
-	require.Equal(t, created.ApiKey.ID, apiKeys[0].ID)
+	require.Equal(t, created.ID, apiKeys[0].ID)
 }
 
 func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
@@ -190,7 +190,7 @@ func TestUpdateApiKeyRejectsStaticKey(t *testing.T) {
 	created, err := service.CreateDefaultAdminAPIKey(ctx, adminUser.ID, "arc_bootstrapupdateprotected1234567890")
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ApiKey.ID, apikey.UpdateApiKey{
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
 		Name:        new("renamed"),
 		Description: new("updated description"),
 	})
@@ -219,7 +219,7 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	created, err := service.CreateApiKey(ctx, admin.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "original"})
 	require.NoError(t, err)
 
-	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ApiKey.ID, apikey.UpdateApiKey{
+	updated, err := service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
 		Name: new("renamed"),
 		Permissions: []apikey.PermissionGrant{
 			{Permission: authz.PermContainersList},
@@ -229,7 +229,7 @@ func TestUpdateApiKeyRollsBackMetadataWhenPermissionUpdateFails(t *testing.T) {
 	require.Nil(t, updated)
 	require.Error(t, err)
 
-	stored := fetchAPIKey(t, db, created.ApiKey.ID)
+	stored := fetchAPIKey(t, db, created.ID)
 	require.Equal(t, "original", stored.Name)
 }
 
@@ -254,7 +254,7 @@ func TestCreateApiKeyRejectsGrantsBeyondCallerPermissions(t *testing.T) {
 		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.NoError(t, err)
-	require.Equal(t, models.ApiKeyKindScoped, created.ApiKey.Kind)
+	require.Equal(t, models.ApiKeyKindScoped, created.Kind)
 }
 
 func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
@@ -278,7 +278,7 @@ func TestApiKeyGrantsAreCappedByOwnerRoles(t *testing.T) {
 	// Update path: a grantless key cannot gain permissions the owner lacks.
 	created, err := service.CreateApiKey(ctx, owner.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "grantless"})
 	require.NoError(t, err)
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ApiKey.ID, apikey.UpdateApiKey{
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
 		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.ErrorIs(t, err, ErrApiKeyPermissionEscalation)
@@ -305,12 +305,12 @@ func TestCreatePersonalApiKeyHasNoGrantsAndCannotGainAny(t *testing.T) {
 
 	created, err := service.CreatePersonalApiKey(ctx, user.ID, apikey.CreateUserApiKey{Name: "personal"})
 	require.NoError(t, err)
-	require.Equal(t, models.ApiKeyKindPersonal, created.ApiKey.Kind)
-	require.Empty(t, created.ApiKey.Permissions)
-	require.Equal(t, models.ApiKeyKindPersonal, fetchAPIKey(t, db, created.ApiKey.ID).Kind)
+	require.Equal(t, models.ApiKeyKindPersonal, created.Kind)
+	require.Empty(t, created.Permissions)
+	require.Equal(t, models.ApiKeyKindPersonal, fetchAPIKey(t, db, created.ID).Kind)
 
 	// Attaching grants to a personal key is rejected even for sudo callers.
-	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ApiKey.ID, apikey.UpdateApiKey{
+	_, err = service.UpdateApiKey(ctx, authz.SudoPermissionSet(), created.ID, apikey.UpdateApiKey{
 		Permissions: []apikey.PermissionGrant{{Permission: authz.PermContainersList}},
 	})
 	require.ErrorIs(t, err, ErrApiKeyPersonalNoGrants)
@@ -384,7 +384,7 @@ func TestReconcileDefaultAdminAPIKeyPreservesUserManagedKeys(t *testing.T) {
 	foundUserKey := false
 	foundManagedKey := false
 	for _, apiKey := range apiKeys {
-		if apiKey.ID == userCreated.ApiKey.ID {
+		if apiKey.ID == userCreated.ID {
 			foundUserKey = true
 			require.Nil(t, apiKey.ManagedBy)
 			require.Equal(t, "manual-key", apiKey.Name)
@@ -413,7 +413,7 @@ func TestReconcileDefaultAdminAPIKeyDeletesDuplicateManagedKeys(t *testing.T) {
 
 	apiKeys := listAPIKeysForUser(t, db, adminUser.ID)
 	require.Len(t, apiKeys, 1)
-	require.Equal(t, first.ApiKey.ID, apiKeys[0].ID)
+	require.Equal(t, first.ID, apiKeys[0].ID)
 }
 
 func TestReconcileDefaultAdminAPIKeySkipsWhenDefaultAdminMissing(t *testing.T) {
@@ -446,13 +446,13 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 
 	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "validate-key"})
 	require.NoError(t, err)
-	require.Nil(t, fetchAPIKey(t, db, created.ApiKey.ID).LastUsedAt)
+	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
 	validatedUser, err := service.ValidateApiKey(ctx, created.Key)
 	require.NoError(t, err)
 	require.Equal(t, user.ID, validatedUser.ID)
 
-	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ApiKey.ID)
+	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
 }
 
@@ -463,14 +463,14 @@ func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 
 	created, err := service.CreateEnvironmentApiKey(ctx, "env-123", user.ID)
 	require.NoError(t, err)
-	require.Nil(t, fetchAPIKey(t, db, created.ApiKey.ID).LastUsedAt)
+	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
 
 	environmentID, err := service.GetEnvironmentByApiKey(ctx, created.Key)
 	require.NoError(t, err)
 	require.NotNil(t, environmentID)
 	require.Equal(t, "env-123", *environmentID)
 
-	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ApiKey.ID)
+	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
 }
 
@@ -485,8 +485,8 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
 
-	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
-	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
+	assertAPIKeyLastUsedStable(t, db, created.ID, nil, 500*time.Millisecond)
+	apiKey := fetchAPIKey(t, db, created.ID)
 	require.Nil(t, apiKey.LastUsedAt)
 }
 
@@ -507,14 +507,14 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	require.NoError(t, err)
 
 	expiredAt := time.Now().Add(-time.Minute)
-	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ApiKey.ID).Update("expires_at", expiredAt).Error
+	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("expires_at", expiredAt).Error
 	require.NoError(t, err)
 
 	_, err = service.GetEnvironmentByApiKey(ctx, created.Key)
 	require.ErrorIs(t, err, ErrApiKeyExpired)
 
-	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, nil, 500*time.Millisecond)
-	apiKey := fetchAPIKey(t, db, created.ApiKey.ID)
+	assertAPIKeyLastUsedStable(t, db, created.ID, nil, 500*time.Millisecond)
+	apiKey := fetchAPIKey(t, db, created.ID)
 	require.Nil(t, apiKey.LastUsedAt)
 }
 
@@ -536,7 +536,7 @@ func TestCreateEnvironmentApiKeySeedsAllPermissionsScopedToEnv(t *testing.T) {
 
 	// Resolve the per-key permission set and confirm every permission is
 	// present, scoped to the bootstrap env (not global).
-	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, created.ApiKey.ID)
+	ps, err := roleSvc.ResolveApiKeyPermissions(ctx, created.ID)
 	require.NoError(t, err)
 	require.Empty(t, ps.Global, "bootstrap key permissions must land in PerEnv, not Global")
 	envPerms, ok := ps.PerEnv[envID]
@@ -587,10 +587,10 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	require.NoError(t, err)
 
 	recent := time.Now().Add(-time.Minute)
-	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ApiKey.ID).Update("last_used_at", recent).Error
+	err = db.WithContext(ctx).Model(&models.ApiKey{}).Where("id = ?", created.ID).Update("last_used_at", recent).Error
 	require.NoError(t, err)
 
-	before := fetchAPIKey(t, db, created.ApiKey.ID)
+	before := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, before.LastUsedAt)
 
 	environmentID, err := service.GetEnvironmentByApiKey(ctx, created.Key)
@@ -598,8 +598,8 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	require.NotNil(t, environmentID)
 	require.Equal(t, "env-456", *environmentID)
 
-	assertAPIKeyLastUsedStable(t, db, created.ApiKey.ID, before.LastUsedAt, 2*time.Second)
-	after := fetchAPIKey(t, db, created.ApiKey.ID)
+	assertAPIKeyLastUsedStable(t, db, created.ID, before.LastUsedAt, 2*time.Second)
+	after := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, after.LastUsedAt)
 	require.Equal(t, before.LastUsedAt.UTC().Unix(), after.LastUsedAt.UTC().Unix())
 }

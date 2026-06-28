@@ -25,10 +25,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/libbuild"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	buildapi "go.getarcane.app/builds/api"
 )
 
 // Lifecycle hook configuration limits and conventions.
@@ -311,8 +311,8 @@ func (s *LifecycleService) runScriptInContainerInternal(
 		return "", "", 0, fmt.Errorf("stream lifecycle container logs: %w", err)
 	}
 
-	stdoutBuf := libbuild.NewLogCapture(lifecycleMaxOutputBytes)
-	stderrBuf := libbuild.NewLogCapture(lifecycleMaxOutputBytes)
+	stdoutBuf := buildapi.NewLogCapture(lifecycleMaxOutputBytes)
+	stderrBuf := buildapi.NewLogCapture(lifecycleMaxOutputBytes)
 	logDone := make(chan error, 1)
 	go func() {
 		_, copyErr := stdcopy.StdCopy(stdoutBuf, stderrBuf, logs)
@@ -716,7 +716,7 @@ func drainLifecycleLogsInternal(ctx context.Context, logsCancel context.CancelFu
 	_ = logs.Close()
 }
 
-// truncatableCaptureInternal is satisfied by libbuild.LogCapture. It is
+// truncatableCaptureInternal is satisfied by the capped build log capture. It is
 // declared locally so the lifecycle service depends on the shared capped-output
 // writer's behaviour, not on build-domain types.
 type truncatableCaptureInternal interface {

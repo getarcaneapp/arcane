@@ -255,6 +255,128 @@ func (s *ImageService) ReconcilePulledImageUpdate(ctx context.Context, imageName
 	return s.imageUpdateService.MarkImageRefUpToDateAfterPull(ctx, imageName)
 }
 
+// TagImage adds a repository tag to an existing image.
+func (s *ImageService) TagImage(ctx context.Context, source string, req imagetypes.TagRequest, user models.User) error {
+	source = strings.TrimSpace(source)
+	repository := strings.TrimSpace(req.Repository)
+	tag := strings.TrimSpace(req.Tag)
+	if source == "" {
+		return errors.New("image name is required")
+	}
+	if repository == "" {
+		return errors.New("repository is required")
+	}
+
+	target := repository
+	if tag != "" {
+		target = repository + ":" + tag
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
+		return fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	_, err = dockerClient.ImageTag(ctx, client.ImageTagOptions{Source: source, Target: target})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", source, user.ID, user.Username, "0", err, models.JSON{"action": "tag", "target": target})
+		return fmt.Errorf("failed to tag image: %w", err)
+	}
+
+	metadata := models.JSON{
+		"action":     "tag",
+		"imageName":  source,
+		"repository": repository,
+		"tag":        tag,
+		"target":     target,
+	}
+	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageTag, "", source, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.Warn("could not log image tag action", "err", logErr, "image", source, "target", target)
+	}
+
+	return nil
+}
+
+// GetImageHistory returns layer history for an image.
+func (s *ImageService) GetImageHistory(ctx context.Context, imageName string) ([]imagetypes.HistoryItem, error) {
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return nil, errors.New("image name is required")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	result, err := dockerClient.ImageHistory(ctx, imageName)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get image history: %w", err)
+	}
+
+	items := make([]imagetypes.HistoryItem, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, imagetypes.HistoryItem{
+			ID:        item.ID,
+			Created:   item.Created,
+			CreatedBy: item.CreatedBy,
+			Tags:      item.Tags,
+			Size:      item.Size,
+			Comment:   item.Comment,
+		})
+	}
+	return items, nil
+}
+
+// SearchImages searches the configured Docker registry for images.
+func (s *ImageService) SearchImages(ctx context.Context, term string) ([]imagetypes.SearchResult, error) {
+	term = strings.TrimSpace(term)
+	if term == "" {
+		return nil, errors.New("search term is required")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	result, err := dockerClient.ImageSearch(ctx, term, client.ImageSearchOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to search images: %w", err)
+	}
+
+	items := make([]imagetypes.SearchResult, 0, len(result.Items))
+	for _, item := range result.Items {
+		items = append(items, imagetypes.SearchResult{
+			Name:        item.Name,
+			Description: item.Description,
+			StarCount:   item.StarCount,
+			Official:    item.IsOfficial,
+		})
+	}
+	return items, nil
+}
+
+// ExportImage returns a tar stream for one Docker image.
+func (s *ImageService) ExportImage(ctx context.Context, imageName string) (io.ReadCloser, error) {
+	imageName = strings.TrimSpace(imageName)
+	if imageName == "" {
+		return nil, errors.New("image name is required")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	reader, err := dockerClient.ImageSave(ctx, []string{imageName})
+	if err != nil {
+		return nil, fmt.Errorf("failed to export image: %w", err)
+	}
+	return reader, nil
+}
+
 func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader, fileName string, user models.User, maxSizeBytes int64) (*imagetypes.LoadResult, error) {
 	// Wrap reader with size limit enforcement
 	limitedReader := io.LimitReader(reader, maxSizeBytes+1)

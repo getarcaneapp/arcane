@@ -154,17 +154,17 @@ func tryApiKeyAuthInternal(ctx huma.Context, apiKeyService *services.ApiKeyServi
 	return user, key, true
 }
 
-func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver environmentAccessTokenResolver, token string) (*models.User, bool) {
+func tryEnvironmentAccessTokenAuthInternal(ctx huma.Context, resolver environmentAccessTokenResolver, token string) (*models.User, *models.Environment, bool) {
 	if resolver == nil || strings.TrimSpace(token) == "" {
-		return nil, false
+		return nil, nil, false
 	}
 
 	env, err := resolver.ResolveEnvironmentByAccessToken(ctx.Context(), token)
 	if err != nil || env == nil {
-		return nil, false
+		return nil, nil, false
 	}
 
-	return createEnvironmentSudoUserInternal(env), true
+	return createEnvironmentUserInternal(env), env, true
 }
 
 // tryAgentAuthInternal checks if the request is from an authenticated agent.
@@ -207,7 +207,7 @@ func createAgentSudoUserInternal() *models.User {
 	}
 }
 
-func createEnvironmentSudoUserInternal(env *models.Environment) *models.User {
+func createEnvironmentUserInternal(env *models.Environment) *models.User {
 	return &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
@@ -238,12 +238,12 @@ func NewAuthBridge(api huma.API, authService *services.AuthService, apiKeyServic
 		}
 
 		if reqs.apiKeyAuth && ctx.Header(pkgutils.HeaderApiKey) != "" {
-			handleApiKeyAuthInternal(api, ctx, apiKeyService, permResolver, envTokenResolver, next)
+			handleApiKeyAuthInternal(api, ctx, authService, apiKeyService, permResolver, envTokenResolver, reqs.bearerAuth, next)
 			return
 		}
 
-		if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
-			newCtx := setUserInContextWithSudoInternal(ctx.Context(), user)
+		if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderAgentToken)); ok {
+			newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 			next(huma.WithContext(ctx, newCtx))
 			return
 		}
@@ -289,9 +289,10 @@ func opportunisticBearerAuthInternal(ctx huma.Context, authService *services.Aut
 	return huma.WithContext(ctx, newCtx)
 }
 
-// handleApiKeyAuthInternal handles the API-key-present branch. If validation
-// fails, it writes 401 directly — Bearer is not attempted as fallback.
-func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *services.ApiKeyService, permResolver PermissionResolver, envTokenResolver environmentAccessTokenResolver, next func(huma.Context)) {
+// handleApiKeyAuthInternal handles the API-key-present branch. Invalid user
+// keys fail closed; only recognized environment tokens defer to bearer auth
+// when both credentials are present on a bearer-capable operation.
+func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, authService *services.AuthService, apiKeyService *services.ApiKeyService, permResolver PermissionResolver, envTokenResolver environmentAccessTokenResolver, allowBearerFallback bool, next func(huma.Context)) {
 	if user, key, ok := tryApiKeyAuthInternal(ctx, apiKeyService); ok {
 		// Personal keys inherit the owner's role permissions (same resolution
 		// as session auth); scoped keys are limited to their own grants.
@@ -305,8 +306,17 @@ func handleApiKeyAuthInternal(api huma.API, ctx huma.Context, apiKeyService *ser
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
-	if user, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
-		newCtx := setUserInContextWithSudoInternal(ctx.Context(), user)
+	if user, env, ok := tryEnvironmentAccessTokenAuthInternal(ctx, envTokenResolver, ctx.Header(pkgutils.HeaderApiKey)); ok {
+		if allowBearerFallback && extractBearerTokenInternal(ctx) != "" {
+			nextCtx, handled := handleBearerAuthInternal(api, ctx, authService, permResolver)
+			if handled {
+				if nextCtx != nil {
+					next(nextCtx)
+				}
+				return
+			}
+		}
+		newCtx := setUserInContextInternal(ctx.Context(), user, authz.EnvironmentPermissionSet(env.ID))
 		next(huma.WithContext(ctx, newCtx))
 		return
 	}
@@ -412,8 +422,8 @@ func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.
 }
 
 // setUserInContextWithSudoInternal attaches a sudo PermissionSet (bypasses
-// every check) plus the user. Used by the agent token and environment
-// access token paths, which are infrastructure-level and not per-user.
+// every check) plus the user. Used by the agent token path, which is
+// infrastructure-level and not per-user.
 func setUserInContextWithSudoInternal(ctx context.Context, user *models.User) context.Context {
 	return setUserInContextInternal(ctx, user, authz.SudoPermissionSet())
 }

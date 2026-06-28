@@ -271,7 +271,7 @@
 										<Input
 											id="subnet"
 											type="text"
-											placeholder="e.g., 172.20.0.0/16"
+											placeholder={m.network_example_subnet()}
 											disabled={isLoading}
 											bind:value={$inputs.subnet.value}
 											class={$inputs.subnet.error ? 'border-destructive' : ''}
@@ -287,7 +287,7 @@
 										<Input
 											id="gateway"
 											type="text"
-											placeholder="e.g., 172.20.0.1"
+											placeholder={m.network_example_gateway()}
 											disabled={isLoading}
 											bind:value={$inputs.gateway.value}
 											class={$inputs.gateway.error ? 'border-destructive' : ''}

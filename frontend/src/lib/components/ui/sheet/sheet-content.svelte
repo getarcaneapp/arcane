@@ -1,7 +1,7 @@
 <script lang="ts" module>
 	import { tv, type VariantProps } from 'tailwind-variants';
 	export const sheetVariants = tv({
-		base: 'text-foreground bg-white dark:bg-surface/10 backdrop-blur-md border border-border/70 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out fixed z-[var(--arcane-z-surface)] flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
+		base: 'text-foreground bg-white dark:bg-surface/10 backdrop-blur-md border border-border/70 shadow-lg data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fill-mode-forwards fixed z-[var(--arcane-z-surface)] flex flex-col gap-4 transition ease-in-out data-[state=closed]:duration-300 data-[state=open]:duration-500',
 		variants: {
 			side: {
 				top: 'data-[state=closed]:slide-out-to-top data-[state=open]:slide-in-from-top inset-x-0 top-0 h-auto rounded-b-2xl',
@@ -21,6 +21,7 @@
 </script>
 
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { Dialog as SheetPrimitive } from 'bits-ui';
 	import { CloseIcon } from '$lib/icons';
 	import type { Snippet } from 'svelte';
@@ -49,7 +50,7 @@
 			class="ring-offset-background focus-visible:ring-ring absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-hidden disabled:pointer-events-none"
 		>
 			<CloseIcon class="size-4" />
-			<span class="sr-only">Close</span>
+			<span class="sr-only">{m.common_close()}</span>
 		</SheetPrimitive.Close>
 	</SheetPrimitive.Content>
 </SheetPrimitive.Portal>

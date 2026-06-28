@@ -275,6 +275,44 @@ type Create struct {
 	Credentials []containerregistry.Credential `json:"credentials,omitempty"`
 }
 
+// CommitRequest is used to create an image from a container's current filesystem.
+type CommitRequest struct {
+	// Repository is the target image repository.
+	//
+	// Required: false
+	Repository string `json:"repository,omitempty" doc:"Target image repository"`
+
+	// Tag is the target image tag.
+	//
+	// Required: false
+	Tag string `json:"tag,omitempty" doc:"Target image tag"`
+
+	// Comment records why the image was committed.
+	//
+	// Required: false
+	Comment string `json:"comment,omitempty" doc:"Commit comment"`
+
+	// Author records who created the committed image.
+	//
+	// Required: false
+	Author string `json:"author,omitempty" doc:"Commit author"`
+
+	// Changes contains Dockerfile-style changes to apply during commit.
+	//
+	// Required: false
+	Changes []string `json:"changes,omitempty" doc:"Dockerfile changes to apply"`
+
+	// NoPause disables the default pause during commit.
+	//
+	// Required: false
+	NoPause bool `json:"noPause,omitempty" doc:"Do not pause the container during commit"`
+}
+
+// CommitResult identifies the image created by a container commit.
+type CommitResult struct {
+	ID string `json:"id"`
+}
+
 // StatusCounts contains counts of containers by status.
 type StatusCounts struct {
 	// RunningContainers is the number of running containers.

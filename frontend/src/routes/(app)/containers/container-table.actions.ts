@@ -26,12 +26,15 @@ type ActionDeps = {
 	isBulkLoading: BulkLoadingState;
 };
 
-type ContainerActionKind = 'start' | 'stop' | 'restart' | 'redeploy';
+type ContainerActionKind = 'start' | 'stop' | 'restart' | 'pause' | 'unpause' | 'redeploy';
 
 type ContainerActionConfig = TableActionConfig<ActionStatus>;
 type BulkActionConfig = TableBulkActionConfig<keyof BulkLoadingState>;
 
-const containerActionConfigs: Record<Exclude<ContainerActionKind, 'start' | 'stop' | 'restart'>, ContainerActionConfig> = {
+const containerActionConfigs: Record<
+	Exclude<ContainerActionKind, 'start' | 'stop' | 'restart' | 'pause' | 'unpause'>,
+	ContainerActionConfig
+> = {
 	redeploy: {
 		status: 'redeploying',
 		run: (id) => containerService.redeployContainer(id),
@@ -54,7 +57,7 @@ export function createContainerActions({
 	};
 
 	async function performContainerAction(action: ContainerActionKind, id: string) {
-		if (action === 'start' || action === 'stop' || action === 'restart') {
+		if (action === 'start' || action === 'stop' || action === 'restart' || action === 'pause' || action === 'unpause') {
 			await runContainerLifecycleAction({
 				action,
 				containerId: id,

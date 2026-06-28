@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
 	import type { BackupEntry } from '$lib/types/shared';
@@ -18,7 +19,6 @@
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
-	import * as m from '$lib/paraglide/messages.js';
 	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
@@ -352,7 +352,7 @@
 
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
-	title="Restore files"
+	title={m.volume_restore_files()}
 	description="Select files from this backup to restore."
 	contentClass="sm:max-w-[640px]"
 >
@@ -366,10 +366,10 @@
 			</Alert.Root>
 
 			<div class="flex items-center justify-between gap-2">
-				<Input class="h-9" placeholder="Search files" bind:value={backupFilesSearch} />
+				<Input class="h-9" placeholder={m.volume_search_files()} bind:value={backupFilesSearch} />
 				<div class="flex items-center gap-2">
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel="Select all" />
-					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel="Clear" />
+					<ArcaneButton action="base" tone="ghost" size="sm" onclick={selectAllVisible} customLabel={m.common_select_all()} />
+					<ArcaneButton action="base" tone="ghost" size="sm" onclick={clearSelection} customLabel={m.common_clear()} />
 				</div>
 			</div>
 
@@ -379,7 +379,7 @@
 						<LoadingSpinnerIcon class="text-muted-foreground size-5" />
 					</div>
 				{:else if filteredBackupFiles.length === 0}
-					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">No files found in this backup.</div>
+					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">{m.volume_backup_no_files()}</div>
 				{:else}
 					<div class="divide-border/40 divide-y">
 						{#each filteredBackupFiles as filePath (filePath)}
@@ -416,7 +416,7 @@
 		{#if canBackupVolume}
 			<ArcaneButton
 				action="create"
-				customLabel="Restore files"
+				customLabel={m.volume_restore_files()}
 				onclick={handleRestoreFiles}
 				loading={restoringFiles}
 				disabled={restoringFiles || selectedPaths.length === 0}

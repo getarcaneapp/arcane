@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -54,11 +55,54 @@ func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
 	}
 }
 
-func TestBuildVolumeHelperLabelsInternal(t *testing.T) {
-	labels := buildVolumeHelperLabelsInternal()
+func TestIsVolumeHelperContainerInternal_UsesExplicitHelperLabel(t *testing.T) {
+	tests := []struct {
+		name    string
+		summary container.Summary
+		want    bool
+	}{
+		{
+			name: "new helper label matches",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+					volumehelper.ContainerLabel:     "true",
+				},
+			},
+			want: true,
+		},
+		{
+			name: "generic internal volume mount does not match",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
+				Mounts: []container.MountPoint{
+					{Destination: "/volume"},
+				},
+			},
+			want: false,
+		},
+		{
+			name: "legacy helper still matches",
+			summary: container.Summary{
+				Labels: map[string]string{
+					libarcane.InternalResourceLabel: "true",
+				},
+				Command: "sleep infinity",
+				Mounts: []container.MountPoint{
+					{Destination: "/volume"},
+				},
+			},
+			want: true,
+		},
+	}
 
-	require.Equal(t, "true", labels[libarcane.InternalResourceLabel])
-	require.Len(t, labels, 1)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, isVolumeHelperContainerInternal(tt.summary))
+		})
+	}
 }
 
 func TestEnrichVolumesWithUsageDataInternal(t *testing.T) {

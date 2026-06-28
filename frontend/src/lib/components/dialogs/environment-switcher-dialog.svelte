@@ -261,7 +261,7 @@
 						type="button"
 						onclick={clearSearch}
 						class="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 transition-colors"
-						title="Clear search"
+						title={m.common_clear_search()}
 					>
 						<CloseIcon class="size-4" />
 					</button>

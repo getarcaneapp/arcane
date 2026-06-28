@@ -263,7 +263,7 @@
 														</div>
 
 														<div class="space-y-2">
-															<Input type="search" placeholder="Search containers..." class="h-8" bind:value={searchTerm} />
+															<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
 															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
 																<div class="space-y-2">
 																	{#await containersPromise}
@@ -358,7 +358,7 @@
 														<div class="space-y-2">
 															<Input
 																type="search"
-																placeholder="Search containers..."
+																placeholder={m.jobs_search_containers()}
 																class="h-8"
 																bind:value={autoHealSearchTerm}
 															/>

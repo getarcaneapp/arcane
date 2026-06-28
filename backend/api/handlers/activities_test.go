@@ -139,7 +139,7 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer pw.Close()
+		defer func() { _ = pw.Close() }()
 		handler.streamAllActivitiesInternal(ctx, 50, json.NewEncoder(pw), func() {})
 	}()
 

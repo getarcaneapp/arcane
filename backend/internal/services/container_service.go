@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"maps"
 	"slices"
 	"strings"
 	"sync"
@@ -278,76 +279,163 @@ func (s *ContainerService) restoreContainerAfterRedeployFailureInternal(ctx cont
 	}
 }
 
-func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
+type containerLifecycleActionInternal struct {
+	action             string
+	eventType          models.EventType
+	metadata           models.JSON
+	warnOnLogError     bool
+	runContainerAction func(*client.Client) error
+}
+
+func (s *ContainerService) runContainerLifecycleActionInternal(ctx context.Context, containerID string, user models.User, cfg containerLifecycleActionInternal) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": cfg.action})
 		return fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
 	metadata := models.JSON{
-		"action":      "start",
+		"action":      cfg.action,
 		"containerId": containerID,
 	}
+	maps.Copy(metadata, cfg.metadata)
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStart, containerID, "name", user.ID, user.Username, "0", metadata)
+	err = s.eventService.LogContainerEvent(ctx, cfg.eventType, containerID, "name", user.ID, user.Username, "0", metadata)
 	if err != nil {
-		slog.WarnContext(ctx, "could not log container start action", "error", err)
+		if !cfg.warnOnLogError {
+			return fmt.Errorf("failed to log action: %w", err)
+		}
+		slog.WarnContext(ctx, "could not log container action", "action", cfg.action, "error", err)
 	}
 
-	_, err = dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+	err = cfg.runContainerAction(dockerClient)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "start"})
+		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": cfg.action})
 	}
 	return err
+}
+
+func (s *ContainerService) StartContainer(ctx context.Context, containerID string, user models.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:         "start",
+		eventType:      models.EventTypeContainerStart,
+		warnOnLogError: true,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerStart(ctx, containerID, client.ContainerStartOptions{})
+			return err
+		},
+	})
 }
 
 func (s *ContainerService) StopContainer(ctx context.Context, containerID string, user models.User) error {
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
-	}
-
-	metadata := models.JSON{
-		"action":      "stop",
-		"containerId": containerID,
-	}
-
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerStop, containerID, "name", user.ID, user.Username, "0", metadata)
-	if err != nil {
-		return fmt.Errorf("failed to log action: %w", err)
-	}
-
-	_, err = dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "stop"})
-	}
-	return err
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:    "stop",
+		eventType: models.EventTypeContainerStop,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerStop(ctx, containerID, client.ContainerStopOptions{Timeout: new(30)})
+			return err
+		},
+	})
 }
 
 func (s *ContainerService) RestartContainer(ctx context.Context, containerID string, user models.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:    "restart",
+		eventType: models.EventTypeContainerRestart,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
+			return err
+		},
+	})
+}
+
+// KillContainer sends a signal to the container's main process (default SIGKILL
+// when signal is empty) without removing the container.
+func (s *ContainerService) KillContainer(ctx context.Context, containerID, signal string, user models.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:         "kill",
+		eventType:      models.EventTypeContainerKill,
+		metadata:       models.JSON{"signal": signal},
+		warnOnLogError: true,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerKill(ctx, containerID, client.ContainerKillOptions{Signal: signal})
+			return err
+		},
+	})
+}
+
+// PauseContainer suspends all processes in the container.
+func (s *ContainerService) PauseContainer(ctx context.Context, containerID string, user models.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:         "pause",
+		eventType:      models.EventTypeContainerPause,
+		warnOnLogError: true,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerPause(ctx, containerID, client.ContainerPauseOptions{})
+			return err
+		},
+	})
+}
+
+// UnpauseContainer resumes a previously paused container.
+func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID string, user models.User) error {
+	return s.runContainerLifecycleActionInternal(ctx, containerID, user, containerLifecycleActionInternal{
+		action:         "unpause",
+		eventType:      models.EventTypeContainerUnpause,
+		warnOnLogError: true,
+		runContainerAction: func(dockerClient *client.Client) error {
+			_, err := dockerClient.ContainerUnpause(ctx, containerID, client.ContainerUnpauseOptions{})
+			return err
+		},
+	})
+}
+
+// CommitContainer creates an image from a container's current filesystem.
+func (s *ContainerService) CommitContainer(ctx context.Context, containerID string, req containertypes.CommitRequest, user models.User) (*containertypes.CommitResult, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return nil, errors.New("container ID is required")
+	}
+
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "commit"})
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	repository := strings.TrimSpace(req.Repository)
+	tag := strings.TrimSpace(req.Tag)
+	reference := repository
+	if repository != "" && tag != "" {
+		reference = repository + ":" + tag
+	}
+
+	result, err := dockerClient.ContainerCommit(ctx, containerID, client.ContainerCommitOptions{
+		Reference: reference,
+		Comment:   strings.TrimSpace(req.Comment),
+		Author:    strings.TrimSpace(req.Author),
+		Changes:   req.Changes,
+		NoPause:   req.NoPause,
+	})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, reference, user.ID, user.Username, "0", err, models.JSON{"action": "commit", "reference": reference})
+		return nil, fmt.Errorf("failed to commit container: %w", err)
 	}
 
 	metadata := models.JSON{
-		"action":      "restart",
+		"action":      "commit",
 		"containerId": containerID,
+		"imageId":     result.ID,
+		"repository":  repository,
+		"tag":         tag,
+		"reference":   reference,
+		"noPause":     req.NoPause,
+	}
+	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageCommit, containerID, reference, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log container commit action", "container", containerID, "image", result.ID, "error", logErr)
 	}
 
-	err = s.eventService.LogContainerEvent(ctx, models.EventTypeContainerRestart, containerID, "name", user.ID, user.Username, "0", metadata)
-	if err != nil {
-		return fmt.Errorf("failed to log action: %w", err)
-	}
-
-	_, err = dockerClient.ContainerRestart(ctx, containerID, client.ContainerRestartOptions{})
-	if err != nil {
-		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "restart"})
-	}
-	return err
+	return &containertypes.CommitResult{ID: result.ID}, nil
 }
 
 // tryRedeployViaComposeProjectInternal attempts to redeploy a compose-managed

@@ -22,7 +22,13 @@ import {
 	OpenIdIcon,
 	RedeployIcon,
 	CodeIcon,
-	HammerIcon
+	HammerIcon,
+	PauseIcon,
+	PlayIcon,
+	ZapIcon,
+	TagIcon,
+	ScanIcon,
+	ImagesIcon
 } from '$lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -54,6 +60,22 @@ export const arcaneButtonVariants = tv({
 			'outline-info':
 				'bg-sky-500/5 text-foreground! border-sky-500/20 hover:bg-sky-500/10 hover:border-sky-500/40 ' +
 				'dark:bg-sky-500/10 dark:text-sky-400 dark:border-sky-500/30 dark:hover:bg-sky-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-warning':
+				'bg-amber-500/5 text-foreground! border-amber-500/20 hover:bg-amber-500/10 hover:border-amber-500/40 ' +
+				'dark:bg-amber-500/10 dark:text-amber-300 dark:border-amber-500/30 dark:hover:bg-amber-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-tag':
+				'bg-teal-500/5 text-foreground! border-teal-500/20 hover:bg-teal-500/10 hover:border-teal-500/40 ' +
+				'dark:bg-teal-500/10 dark:text-teal-300 dark:border-teal-500/30 dark:hover:bg-teal-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-scan':
+				'bg-indigo-500/5 text-foreground! border-indigo-500/20 hover:bg-indigo-500/10 hover:border-indigo-500/40 ' +
+				'dark:bg-indigo-500/10 dark:text-indigo-300 dark:border-indigo-500/30 dark:hover:bg-indigo-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-commit':
+				'bg-cyan-500/5 text-foreground! border-cyan-500/20 hover:bg-cyan-500/10 hover:border-cyan-500/40 ' +
+				'dark:bg-cyan-500/10 dark:text-cyan-300 dark:border-cyan-500/30 dark:hover:bg-cyan-500/20 ' +
 				'shadow-sm hover:shadow-md',
 			'outline-build':
 				'bg-violet-500/5 text-foreground! border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 ' +
@@ -136,6 +158,24 @@ export const actionConfigs = {
 		tone: 'outline-info',
 		loadingLabel: m.common_action_stopping()
 	},
+	pause: {
+		defaultLabel: m.common_pause(),
+		IconComponent: PauseIcon,
+		tone: 'outline-warning',
+		loadingLabel: m.common_processing()
+	},
+	unpause: {
+		defaultLabel: m.common_unpause(),
+		IconComponent: PlayIcon,
+		tone: 'outline-success',
+		loadingLabel: m.common_processing()
+	},
+	kill: {
+		defaultLabel: m.common_kill(),
+		IconComponent: ZapIcon,
+		tone: 'outline-destructive',
+		loadingLabel: m.common_action_killing()
+	},
 	remove: {
 		defaultLabel: m.common_remove(),
 		IconComponent: TrashIcon,
@@ -159,6 +199,24 @@ export const actionConfigs = {
 		IconComponent: DownloadIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_pulling()
+	},
+	tag: {
+		defaultLabel: m.images_tag_image(),
+		IconComponent: TagIcon,
+		tone: 'outline-tag',
+		loadingLabel: m.common_processing()
+	},
+	scan: {
+		defaultLabel: m.vuln_scan(),
+		IconComponent: ScanIcon,
+		tone: 'outline-scan',
+		loadingLabel: m.common_processing()
+	},
+	commit: {
+		defaultLabel: m.containers_commit_action(),
+		IconComponent: ImagesIcon,
+		tone: 'outline-commit',
+		loadingLabel: m.common_processing()
 	},
 	redeploy: {
 		defaultLabel: m.common_redeploy(),

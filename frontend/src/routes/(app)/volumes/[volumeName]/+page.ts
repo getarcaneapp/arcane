@@ -26,11 +26,8 @@ export const load: PageLoad = async ({ params, parent }) => {
 							queryKey: queryKeys.containers.detail(envId, id),
 							queryFn: () => containerService.getContainerForEnvironment(envId, id)
 						});
-						const idVal = (c?.id || c?.Id || id) as string;
-						const nameVal = (c?.name ||
-							c?.Name ||
-							(c?.Names && c?.Names[0]?.replace?.(/^\//, '')) ||
-							idVal?.substring(0, 12)) as string;
+						const idVal = c?.id || id;
+						const nameVal = c?.name || idVal.substring(0, 12);
 						return { id: idVal, name: nameVal };
 					} catch {
 						return { id, name: id.substring(0, 12) };

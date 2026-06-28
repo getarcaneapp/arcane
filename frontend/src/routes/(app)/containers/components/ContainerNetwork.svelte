@@ -71,7 +71,7 @@
 											</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.ipAddress || m.common_na()}
 											</div>
@@ -83,7 +83,7 @@
 											<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.common_gateway()}</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.gateway || m.common_na()}
 											</div>
@@ -97,7 +97,7 @@
 											</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.macAddress || m.common_na()}
 											</div>
@@ -109,7 +109,7 @@
 											<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.common_subnet()}</div>
 											<div
 												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-												title="Click to select"
+												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.ipPrefixLen
 													? `${rawNetworkConfig.ipAddress}/${rawNetworkConfig.ipPrefixLen}`
@@ -121,10 +121,10 @@
 									{#if rawNetworkConfig.networkId}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">Network ID</div>
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_network_id()}</div>
 												<div
 													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title="Click to select"
+													title={m.common_click_to_select()}
 												>
 													{rawNetworkConfig.networkId}
 												</div>
@@ -135,10 +135,10 @@
 									{#if rawNetworkConfig.endpointId}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">Endpoint ID</div>
+												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_endpoint_id()}</div>
 												<div
 													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title="Click to select"
+													title={m.common_click_to_select()}
 												>
 													{rawNetworkConfig.endpointId}
 												</div>
@@ -154,7 +154,7 @@
 												</div>
 												<div class="text-foreground space-y-1 text-sm font-medium">
 													{#each rawNetworkConfig.aliases as alias, index (index)}
-														<div class="cursor-pointer font-mono break-all select-all" title="Click to select">
+														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
 															{alias}
 														</div>
 													{/each}

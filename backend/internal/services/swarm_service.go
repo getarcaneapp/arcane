@@ -659,10 +659,17 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.E
 		return swarmtypes.NodeAgentStatus{State: swarmtypes.NodeAgentStateNone}
 	}
 
+	// An agent is live when it holds an open tunnel or has checked in via the poll
+	// control plane recently. lastHeartbeat/lastPollAt are only populated from the
+	// in-memory runtime registries when activity is fresh, so their presence is
+	// current evidence — unlike env.Status, which poll-mode agents never advance
+	// out of "pending" (HandlePoll updates the registry, not the persisted record).
+	live := runtime.connected || runtime.lastHeartbeat != nil || runtime.lastPollAt != nil
+
 	status := swarmtypes.NodeAgentStatus{
 		State:         swarmtypes.NodeAgentStateOffline,
 		EnvironmentID: &env.ID,
-		Connected:     &runtime.connected,
+		Connected:     &live,
 		LastHeartbeat: runtime.lastHeartbeat,
 		LastPollAt:    runtime.lastPollAt,
 	}
@@ -676,6 +683,8 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.E
 		}
 	}
 
+	// A live tunnel with a completed identity probe lets us authoritatively detect
+	// a node-ID mismatch (only tunnel mode can probe identity).
 	if runtime.connected && runtime.identity != nil {
 		if !runtime.identity.SwarmActive || strings.TrimSpace(runtime.identity.SwarmNodeID) != strings.TrimSpace(nodeID) {
 			status.State = swarmtypes.NodeAgentStateMismatched
@@ -685,7 +694,17 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.E
 		return status
 	}
 
-	if env.Status == string(models.EnvironmentStatusPending) || (env.LastSeen == nil && runtime.lastHeartbeat == nil && runtime.lastPollAt == nil) {
+	// Poll-mode agents (and tunnels without a completed probe) can't be identity-
+	// verified live, but a fresh check-in proves the agent mapped to this node is
+	// reachable. The node-to-env mapping was established by Arcane at deploy time,
+	// so report it as connected instead of masking it behind a stale env.Status.
+	if live {
+		status.State = swarmtypes.NodeAgentStateConnected
+		return status
+	}
+
+	// No live evidence: an unpaired agent stays pending; one seen before is offline.
+	if env.Status == string(models.EnvironmentStatusPending) || env.LastSeen == nil {
 		status.State = swarmtypes.NodeAgentStatePending
 		return status
 	}
@@ -2274,7 +2293,7 @@ func (s *SwarmService) getPathMapperInternal(ctx context.Context) *appfs.PathMap
 	// directory maps to its own host path instead of a single sources-root prefix.
 	if s.dockerService != nil {
 		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			if mounts, merr := dockerutil.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
+			if mounts, merr := appfs.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
 				pm := appfs.NewPathMapperFromMounts(mounts)
 				if !pm.IsNonMatchingMount() {
 					return nil
