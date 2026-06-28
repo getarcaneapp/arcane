@@ -7,11 +7,11 @@
 	import HeaderCard from '$lib/components/header-card.svelte';
 	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
 	import { Card } from '$lib/components/ui/card';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
 	import { Separator } from '$lib/components/ui/separator';
 	import * as Avatar from '$lib/components/ui/avatar';
+	import * as ImageCropper from '$lib/components/ui/image-cropper';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import FontSizePicker from '$lib/components/font-size-picker.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -20,6 +20,8 @@
 	import userStore from '$lib/stores/user-store';
 	import settingsStore from '$lib/stores/config-store';
 	import { getDefaultProfilePicture } from '$lib/utils/docker';
+	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '$lib/utils/avatar-upload';
+	import { cn } from '$lib/utils';
 	import { GLOBAL_SCOPE } from '$lib/types/auth';
 	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '$lib/types/auth';
 	import { UserIcon, LogoutIcon, ShieldAlertIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '$lib/icons';
@@ -62,6 +64,10 @@
 	const autoLogin = fromStore(settingsStore.autoLoginEnabled);
 	const autoLoginEnabled = $derived(autoLogin.current);
 	const gravatarEnabled = $derived(Boolean(settings.current?.enableGravatar));
+	const avatarMaxUploadSizeMb = $derived(
+		Number(settings.current?.avatarMaxUploadSizeMb) > 0 ? Number(settings.current?.avatarMaxUploadSizeMb) : 2
+	);
+	const avatarMaxUploadSizeBytes = $derived(avatarUploadLimitBytes(avatarMaxUploadSizeMb));
 
 	let profileDisplayName = $state('');
 	let profileEmail = $state('');
@@ -75,12 +81,17 @@
 
 	let revokingAll = $state(false);
 	let avatarUrl = $state<string>(getDefaultProfilePicture());
+	let avatarCacheBuster = $state(Date.now());
+	const avatarSrc = $derived(currentUser?.avatarUrl ? `${currentUser.avatarUrl}?t=${avatarCacheBuster}` : '');
+	let cropperAvatarSrc = $derived(avatarSrc || avatarUrl);
 
 	let apiKeys = $state<ApiKey[]>([]);
 	let apiKeysLoading = $state(false);
 	let showCreateKeyForm = $state(false);
 	let creatingKey = $state(false);
 	let createdKey = $state<ApiKeyCreated | null>(null);
+
+	let avatarUploading = $state(false);
 
 	$effect(() => {
 		if (!profileLoaded && currentUser) {
@@ -112,7 +123,7 @@
 			const hash = Array.from(new Uint8Array(hashBuffer))
 				.map((b) => b.toString(16).padStart(2, '0'))
 				.join('');
-			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128`;
+			avatarUrl = `https://www.gravatar.com/avatar/${hash}?s=128&d=404`;
 		} catch {
 			avatarUrl = getDefaultProfilePicture();
 		}
@@ -139,6 +150,51 @@
 	function resetProfile() {
 		profileDisplayName = currentUser?.displayName ?? '';
 		profileEmail = currentUser?.email ?? '';
+	}
+
+	async function handleCroppedAvatar(url: string) {
+		avatarUploading = true;
+		try {
+			const preparedFile = await prepareAvatarUploadFile(url, avatarMaxUploadSizeBytes, ImageCropper.getFileFromUrl);
+			if (!preparedFile.ok) {
+				toast.error(m.account_avatar_size_error({ maxSizeMb: avatarMaxUploadSizeMb }));
+				return;
+			}
+
+			const updatedUser = await userService.uploadMyAvatar(preparedFile.file);
+			await userStore.setUser(updatedUser);
+			avatarCacheBuster = Date.now();
+			toast.success(m.account_avatar_upload_success());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.account_avatar_upload_failed());
+		} finally {
+			avatarUploading = false;
+			URL.revokeObjectURL(url);
+			if (cropperAvatarSrc === url) cropperAvatarSrc = avatarSrc || avatarUrl;
+		}
+	}
+
+	function handleUnsupportedAvatarFile() {
+		toast.error(m.account_avatar_unsupported_file());
+	}
+
+	function handleAvatarCropError() {
+		toast.error(m.account_avatar_crop_failed());
+	}
+
+	async function removeAvatar() {
+		if (!currentUser?.avatarUrl) return;
+		avatarUploading = true;
+		try {
+			const updatedUser = await userService.deleteMyAvatar();
+			await userStore.setUser(updatedUser);
+			avatarCacheBuster = Date.now();
+			toast.success(m.account_avatar_remove_success());
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.account_avatar_remove_failed());
+		} finally {
+			avatarUploading = false;
+		}
 	}
 
 	async function changePassword() {
@@ -254,61 +310,112 @@
 				<!-- Profile -->
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile()}</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_desc()}</p>
+						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
+						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_description()}</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
-						<div class="flex items-center justify-between gap-4">
-							<div class="flex min-w-0 items-center gap-4">
-								<Avatar.Root class="size-16 rounded-xl">
-									<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
-									<Avatar.Fallback
-										class="from-primary/20 to-primary/10 text-primary border-primary/20 rounded-xl border bg-linear-to-br text-xl font-semibold"
-									>
-										{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
-									</Avatar.Fallback>
-								</Avatar.Root>
-								<div class="min-w-0">
-									<div class="text-sm font-medium">@{currentUser.username}</div>
-									<div class="text-muted-foreground text-xs">
-										{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
-									</div>
+						<ImageCropper.Root
+							id="account-avatar-cropper"
+							bind:src={cropperAvatarSrc}
+							accept="image/png, image/jpeg, image/webp"
+							onCropped={handleCroppedAvatar}
+							onError={handleAvatarCropError}
+							onUnsupportedFile={handleUnsupportedAvatarFile}
+						>
+							<ImageCropper.Dialog>
+								<div class="space-y-1">
+									<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
+									<p class="text-muted-foreground text-sm">{m.account_avatar_crop_description()}</p>
 								</div>
-							</div>
-							<div class="hidden text-right sm:block">
-								{#if safeFormatDate(currentUser.createdAt, 'PP')}
-									<div class="text-muted-foreground text-xs">
-										{m.account_member_since()}
-										{safeFormatDate(currentUser.createdAt, 'PP')}
-									</div>
-								{/if}
-								<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
-									{m.account_last_login_prefix()}
-									{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
+								<div class="bg-muted/40 h-72 overflow-hidden rounded-lg border">
+									<ImageCropper.Cropper />
 								</div>
-							</div>
-						</div>
+								<ImageCropper.Controls class="justify-end">
+									<ImageCropper.Cancel disabled={avatarUploading} />
+									<ImageCropper.Crop disabled={avatarUploading} />
+								</ImageCropper.Controls>
+							</ImageCropper.Dialog>
 
-						<div class="grid gap-4 sm:grid-cols-2">
-							<div class="space-y-2">
-								<Label for="account-display-name">{m.account_display_name_label()}</Label>
-								<Input
-									id="account-display-name"
-									bind:value={profileDisplayName}
-									placeholder={m.account_display_name_placeholder()}
-									disabled={isOidcUser}
-								/>
+							<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+								<div class="flex min-w-0 items-center gap-4">
+									<ImageCropper.UploadTrigger
+										aria-label={m.account_upload_photo()}
+										class={cn(
+											'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+											avatarUploading && 'pointer-events-none opacity-70'
+										)}
+										disabled={avatarUploading}
+									>
+										{#key avatarCacheBuster}
+											<Avatar.Root class="size-16 rounded-xl transition-all group-hover/avatar:opacity-80">
+												{#if avatarSrc}
+													<Avatar.Image src={avatarSrc} alt={currentUser.displayName ?? currentUser.username} />
+												{:else if avatarUrl}
+													<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
+												{/if}
+												<Avatar.Fallback class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold">
+													{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
+												</Avatar.Fallback>
+											</Avatar.Root>
+										{/key}
+										<div
+											class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
+										>
+											<div class="text-white text-xs font-medium">{m.account_upload_overlay()}</div>
+										</div>
+									</ImageCropper.UploadTrigger>
+									<div class="min-w-0 flex flex-col items-start gap-1">
+										<div class="text-sm font-medium">@{currentUser.username}</div>
+										<div class="text-muted-foreground text-xs">
+											{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
+										</div>
+										{#if currentUser.avatarUrl}
+											<div class="mt-1 flex items-center gap-2">
+												<ArcaneButton
+													action="remove"
+													size="sm"
+													tone="ghost"
+													customLabel={m.account_remove_photo()}
+													showLabel={true}
+													class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+													onclick={removeAvatar}
+													disabled={avatarUploading}
+												/>
+											</div>
+										{/if}
+									</div>
+								</div>
+								<div class="hidden text-right sm:block">
+									{#if safeFormatDate(currentUser.createdAt, 'PP')}
+										<div class="text-muted-foreground text-xs">
+											{m.account_member_since()}
+											{safeFormatDate(currentUser.createdAt, 'PP')}
+										</div>
+									{/if}
+									<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
+										{m.account_last_login_prefix()}
+										{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
+									</div>
+								</div>
 							</div>
-							<div class="space-y-2">
-								<Label for="account-email">{m.account_email_label()}</Label>
-								<Input
-									id="account-email"
-									type="email"
-									bind:value={profileEmail}
-									placeholder={m.account_email_placeholder()}
-									disabled={isOidcUser}
-								/>
-							</div>
+						</ImageCropper.Root>
+
+						<div class="grid gap-5 sm:grid-cols-2">
+							<TextInputWithLabel
+								id="account-display-name"
+								bind:value={profileDisplayName}
+								label={m.account_display_name_label()}
+								placeholder={m.account_display_name_placeholder()}
+								disabled={isOidcUser}
+							/>
+							<TextInputWithLabel
+								id="account-email"
+								type="email"
+								bind:value={profileEmail}
+								label={m.account_email_label()}
+								placeholder={m.account_email_placeholder()}
+								disabled={isOidcUser}
+							/>
 						</div>
 						{#if !isOidcUser}
 							<div class="flex justify-end gap-2">
@@ -341,28 +448,30 @@
 							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_password_desc()}</p>
 						</div>
 						<div class="space-y-5 p-4 sm:p-6">
-							<div class="space-y-2">
-								<Label for="account-current-password">{m.account_current_password()}</Label>
-								<Input
-									id="account-current-password"
+							<TextInputWithLabel
+								id="account-current-password"
+								type="password"
+								bind:value={currentPassword}
+								label={m.account_current_password()}
+								autocomplete="current-password"
+							/>
+							<div class="grid gap-5 sm:grid-cols-2">
+								<TextInputWithLabel
+									id="account-new-password"
 									type="password"
-									bind:value={currentPassword}
-									autocomplete="current-password"
+									bind:value={newPassword}
+									label={m.account_new_password()}
+									helpText={m.account_password_min_length()}
+									autocomplete="new-password"
 								/>
-							</div>
-							<div class="grid gap-4 sm:grid-cols-2">
-								<div class="space-y-2">
-									<Label for="account-new-password">{m.account_new_password()}</Label>
-									<Input id="account-new-password" type="password" bind:value={newPassword} autocomplete="new-password" />
-									<p class="text-muted-foreground text-xs">{m.account_password_min_length()}</p>
-								</div>
-								<div class="space-y-2">
-									<Label for="account-confirm-password">{m.account_confirm_password()}</Label>
-									<Input id="account-confirm-password" type="password" bind:value={confirmPassword} autocomplete="new-password" />
-									{#if confirmPassword.length > 0 && confirmPassword !== newPassword}
-										<p class="text-destructive text-xs">{m.account_passwords_dont_match()}</p>
-									{/if}
-								</div>
+								<TextInputWithLabel
+									id="account-confirm-password"
+									type="password"
+									bind:value={confirmPassword}
+									label={m.account_confirm_password()}
+									error={confirmPassword.length > 0 && confirmPassword !== newPassword ? m.account_passwords_dont_match() : null}
+									autocomplete="new-password"
+								/>
 							</div>
 							<div class="flex justify-end">
 								<ArcaneButton

@@ -50,6 +50,7 @@ export type Settings = {
 	gitSyncMaxBinarySizeMb: number;
 	baseServerUrl: string;
 	enableGravatar: boolean;
+	avatarMaxUploadSizeMb: number;
 	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;

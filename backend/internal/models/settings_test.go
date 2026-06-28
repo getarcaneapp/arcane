@@ -53,6 +53,7 @@ func TestSettings_ToSettingVariableSlice_Visibility(t *testing.T) {
 	require.Contains(t, nonAdminKeys, "mobileNavigationMode")
 	require.Contains(t, nonAdminKeys, "keyboardShortcutsEnabled")
 	require.Contains(t, nonAdminKeys, "enableGravatar")
+	require.Contains(t, nonAdminKeys, "avatarMaxUploadSizeMb")
 	require.NotContains(t, nonAdminKeys, "baseServerUrl")
 	require.NotContains(t, nonAdminKeys, "defaultShell")
 	require.NotContains(t, nonAdminKeys, "oidcClientSecret")

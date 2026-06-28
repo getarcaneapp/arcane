@@ -15,6 +15,7 @@ export type LocalSettings = {
 	sidebarHoverExpansion: boolean;
 	keyboardShortcutsEnabled: boolean;
 	edgeMTLSManagerCAAvailable?: boolean;
+	avatarMaxUploadSizeMb: number;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
@@ -26,6 +27,7 @@ const LOCAL_SETTING_KEYS = new Set([
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',
 	'keyboardShortcutsEnabled',
+	'avatarMaxUploadSizeMb',
 	'authLocalEnabled',
 	'authSessionTimeout',
 	'authPasswordPolicy',

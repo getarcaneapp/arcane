@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Синхронізовані дочірні каталоги всередині каталогу проектів слід розглядати як проекти Docker Compose.",
 	"general_base_url_label": "Base Server URL",
 	"general_base_url_help": "The Base URL for your docker host. Used when opening containers from the service links",
-	"general_user_avatars_heading": "User Avatars",
-	"general_user_avatars_description": "Control Gravatar usage for profile images.",
 	"general_enable_gravatar_label": "Enable Gravatar",
 	"general_settings_saved": "Settings Updated Successfully",
 	"_comment_settings_security": "=== SETTINGS - SECURITY ===",

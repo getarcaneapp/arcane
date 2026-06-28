@@ -277,7 +277,7 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 		svc = &di.Services{}
 	}
 	handlers.RegisterHealth(api)
-	handlers.RegisterAuth(api, svc.User, svc.Auth, svc.Oidc)
+	handlers.RegisterAuth(api, svc.User, svc.Auth, svc.Oidc, svc.Settings)
 	handlers.RegisterApiKeys(api, svc.ApiKey)
 	handlers.RegisterFederatedCredentials(api, svc.Federated)
 	handlers.RegisterRoles(api, svc.Role)

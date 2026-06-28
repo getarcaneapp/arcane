@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Trata os subdiretórios com links simbólicos dentro do diretório de projetos como projetos do Docker Compose.",
 	"general_base_url_label": "URL base do servidor",
 	"general_base_url_help": "A URL base para seu host docker. Usada ao acessar os containers de links de serviço.",
-	"general_user_avatars_heading": "Avatares do usuário",
-	"general_user_avatars_description": "Controle o uso do Gravatar para imagens de perfil.",
 	"general_enable_gravatar_label": "Ativar Gravatar",
 	"general_settings_saved": "Atualizações de configurações bem-sucedida",
 	"_comment_settings_security": "=== CONFIGURAÇÕES — SEGURANÇA ===",

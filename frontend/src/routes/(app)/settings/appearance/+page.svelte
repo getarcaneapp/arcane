@@ -7,6 +7,7 @@
 	import { navigationSettingsOverridesStore, resetNavigationVisibility } from '$lib/utils/navigation';
 	import { SettingsPageLayout } from '$lib/layouts';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { Input } from '$lib/components/ui/input/index.js';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { createSettingsForm } from '$lib/utils/settings-form';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
@@ -34,6 +35,7 @@
 		keyboardShortcutsEnabled: z.boolean(),
 		accentColor: z.string(),
 		enableGravatar: z.boolean(),
+		avatarMaxUploadSizeMb: z.coerce.number().int().min(1).max(50),
 		oledMode: z.boolean()
 	});
 
@@ -172,10 +174,10 @@
 						/>
 					</SettingsRow>
 
-					<!-- User Avatars -->
+					<!-- Gravatar -->
 					<SettingsRow
-						label={m.general_user_avatars_heading()}
-						description={m.general_user_avatars_description()}
+						label={m.general_enable_gravatar_label()}
+						description={m.general_enable_gravatar_description()}
 						layout="inline"
 					>
 						<Switch
@@ -186,6 +188,29 @@
 								$formInputs.enableGravatar.value = checked;
 							}}
 						/>
+					</SettingsRow>
+
+					<SettingsRow
+						label={m.general_avatar_upload_size_label()}
+						description={m.general_avatar_upload_size_description()}
+						helpText={m.general_avatar_upload_size_help()}
+						layout="inline"
+					>
+						<div class="flex w-24 flex-col gap-1">
+							<Input
+								id="avatarMaxUploadSizeMb"
+								type="number"
+								min="1"
+								max="50"
+								bind:value={$formInputs.avatarMaxUploadSizeMb.value}
+								placeholder="2"
+								disabled={isReadOnly}
+								aria-invalid={Boolean($formInputs.avatarMaxUploadSizeMb.error)}
+							/>
+							{#if $formInputs.avatarMaxUploadSizeMb.error}
+								<p class="text-destructive text-xs font-medium">{$formInputs.avatarMaxUploadSizeMb.error}</p>
+							{/if}
+						</div>
 					</SettingsRow>
 
 					<!-- Language -->

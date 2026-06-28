@@ -143,6 +143,7 @@ func DefaultSettingsConfig() *models.Settings {
 		VolumeBrowserHelperIdleTimeout:  models.SettingVariable{Value: "10"},
 		BaseServerURL:                   models.SettingVariable{Value: "http://localhost"},
 		EnableGravatar:                  models.SettingVariable{Value: "true"},
+		AvatarMaxUploadSizeMb:           models.SettingVariable{Value: "2"},
 		DefaultShell:                    models.SettingVariable{Value: "/bin/sh"},
 		DockerHost:                      models.SettingVariable{Value: "unix:///var/run/docker.sock"},
 		BuildsDirectory:                 models.SettingVariable{Value: "/builds"},

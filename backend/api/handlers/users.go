@@ -79,6 +79,17 @@ type DeleteUserOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type GetUserAvatarInput struct {
+	UserID string `path:"userId" doc:"User ID"`
+}
+
+type GetUserAvatarOutput struct {
+	ContentType         string `header:"Content-Type"`
+	CacheControl        string `header:"Cache-Control"`
+	XContentTypeOptions string `header:"X-Content-Type-Options"`
+	Body                []byte
+}
+
 // ============================================================================
 // Registration
 // ============================================================================
@@ -156,6 +167,18 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermUsersDelete),
 	}, h.DeleteUser)
+
+	// Unauthenticated by design: profile pictures are publicly visible
+	// so they can be displayed without requiring a session token.
+	huma.Register(api, huma.Operation{
+		OperationID: "getUserAvatar",
+		Method:      "GET",
+		Path:        "/users/{userId}/avatar",
+		Summary:     "Get user avatar",
+		Description: "Get the custom profile picture for a user",
+		Tags:        []string{"Users"},
+		Security:    []map[string][]string{},
+	}, h.GetUserAvatar)
 }
 
 // ============================================================================
@@ -349,6 +372,32 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 				Message: "User deleted successfully",
 			},
 		},
+	}, nil
+}
+
+// GetUserAvatar returns the custom profile picture for a user.
+func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInput) (*GetUserAvatarOutput, error) {
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	data, mimeType, err := h.userService.GetAvatar(ctx, input.UserID)
+	if err != nil {
+		if errors.Is(err, services.ErrUserNotFound) {
+			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+		}
+		return nil, huma.Error500InternalServerError("failed to retrieve avatar")
+	}
+
+	if len(data) == 0 {
+		return nil, huma.Error404NotFound("user has no custom avatar")
+	}
+
+	return &GetUserAvatarOutput{
+		ContentType:         mimeType,
+		CacheControl:        "public, max-age=3600, stale-while-revalidate=86400",
+		XContentTypeOptions: "nosniff",
+		Body:                data,
 	}, nil
 }
 

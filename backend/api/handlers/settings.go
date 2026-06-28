@@ -357,6 +357,13 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) err
 		}
 	}
 
+	if input.AvatarMaxUploadSizeMb != nil && strings.TrimSpace(*input.AvatarMaxUploadSizeMb) != "" {
+		value, err := strconv.Atoi(strings.TrimSpace(*input.AvatarMaxUploadSizeMb))
+		if err != nil || value < 1 || value > 50 {
+			return huma.Error400BadRequest("avatarMaxUploadSizeMb must be between 1 and 50")
+		}
+	}
+
 	return nil
 }
 

@@ -41,6 +41,16 @@ class UserAPIService extends BaseAPIService {
 	async updateMyProfile(data: { displayName?: string; email?: string; locale?: string; fontSize?: number }): Promise<User> {
 		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}
+
+	async uploadMyAvatar(file: File): Promise<User> {
+		const formData = new FormData();
+		formData.append('file', file);
+		return this.handleResponse(this.api.post('/auth/me/avatar', formData)) as Promise<User>;
+	}
+
+	async deleteMyAvatar(): Promise<User> {
+		return this.handleResponse(this.api.delete('/auth/me/avatar')) as Promise<User>;
+	}
 }
 
 export const userService = new UserAPIService();

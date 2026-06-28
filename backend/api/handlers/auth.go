@@ -1,9 +1,16 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"fmt"
+	stdimage "image"
+	"image/jpeg"
+	"image/png"
+	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"time"
 
@@ -18,9 +25,10 @@ import (
 )
 
 type AuthHandler struct {
-	userService *services.UserService
-	authService *services.AuthService
-	oidcService *services.OidcService
+	userService     *services.UserService
+	authService     *services.AuthService
+	oidcService     *services.OidcService
+	settingsService *services.SettingsService
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -80,12 +88,25 @@ type GetCurrentUserOutput struct {
 	Body base.ApiResponse[user.User]
 }
 
+type UploadMyAvatarInput struct {
+	RawBody multipart.Form `contentType:"multipart/form-data"`
+}
+
+type UploadMyAvatarOutput struct {
+	Body base.ApiResponse[user.User]
+}
+
+type DeleteMyAvatarOutput struct {
+	Body base.ApiResponse[user.User]
+}
+
 // RegisterAuth registers authentication routes using Huma.
-func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService) {
+func RegisterAuth(api huma.API, userService *services.UserService, authService *services.AuthService, oidcService *services.OidcService, settingsService *services.SettingsService) {
 	h := &AuthHandler{
-		userService: userService,
-		authService: authService,
-		oidcService: oidcService,
+		userService:     userService,
+		authService:     authService,
+		oidcService:     oidcService,
+		settingsService: settingsService,
 	}
 
 	huma.Register(api, huma.Operation{
@@ -169,6 +190,45 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 			{"ApiKeyAuth": {}},
 		},
 	}, h.UpdateMyProfile)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "upload-my-avatar",
+		Method:      http.MethodPost,
+		Path:        "/auth/me/avatar",
+		Summary:     "Upload own avatar",
+		Description: "Upload a custom profile picture (PNG, JPEG or WebP). Replaces any existing avatar.",
+		Tags:        []string{"Auth"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		RequestBody: &huma.RequestBody{
+			Required: true,
+			Content: map[string]*huma.MediaType{
+				"multipart/form-data": {
+					Schema: &huma.Schema{
+						Type: "object",
+						Properties: map[string]*huma.Schema{
+							"file": {Type: "string", Format: "binary"},
+						},
+					},
+				},
+			},
+		},
+	}, h.UploadMyAvatar)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "delete-my-avatar",
+		Method:      http.MethodDelete,
+		Path:        "/auth/me/avatar",
+		Summary:     "Delete own avatar",
+		Description: "Remove the current user's custom profile picture, reverting to the default avatar.",
+		Tags:        []string{"Auth"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+	}, h.DeleteMyAvatar)
 }
 
 // Login authenticates a user and returns tokens.
@@ -432,4 +492,177 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 			Data:    out,
 		},
 	}, nil
+}
+
+// UploadMyAvatar lets the current user upload a custom profile picture.
+// Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
+func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	currentUser, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Get file from multipart form
+	files := input.RawBody.File["file"]
+	if len(files) == 0 {
+		return nil, huma.Error400BadRequest("no file uploaded; include a 'file' field in the multipart form")
+	}
+
+	fileHeader := files[0]
+
+	f, err := fileHeader.Open()
+	if err != nil {
+		return nil, huma.Error500InternalServerError("failed to read uploaded file: " + err.Error())
+	}
+	defer func() { _ = f.Close() }()
+
+	maxSizeMb := h.avatarMaxUploadSizeMbInternal(ctx)
+	maxSizeBytes := int64(maxSizeMb) * 1024 * 1024
+
+	// Read one byte past the configured ceiling so oversized files are rejected
+	// without buffering the full multipart payload.
+	buf := new(bytes.Buffer)
+	if _, err := buf.ReadFrom(io.LimitReader(f, maxSizeBytes+1)); err != nil {
+		return nil, huma.Error500InternalServerError("failed to read file data: " + err.Error())
+	}
+
+	if int64(buf.Len()) > maxSizeBytes {
+		return nil, huma.NewError(http.StatusRequestEntityTooLarge, fmt.Sprintf("avatar file must be %d MB or smaller", maxSizeMb))
+	}
+	data := buf.Bytes()
+
+	// Detect and validate image format
+	mimeType, err := detectAvatarMimeTypeInternal(data)
+	if err != nil {
+		return nil, huma.Error400BadRequest("unsupported image format: only PNG, JPEG and WebP are accepted")
+	}
+	data, mimeType = normalizeAvatarImageInternal(data, mimeType)
+
+	if err := h.userService.UploadAvatar(ctx, currentUser.ID, data, mimeType); err != nil {
+		slog.ErrorContext(ctx, "Failed to save avatar", "user_id", currentUser.ID, "error", err)
+		return nil, huma.Error500InternalServerError("failed to save avatar")
+	}
+
+	// Reload user so the response reflects the new AvatarURL
+	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+	}
+
+	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+	}
+
+	return &UploadMyAvatarOutput{
+		Body: base.ApiResponse[user.User]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
+	const defaultAvatarMaxUploadSizeMb = 2
+	if h.settingsService == nil {
+		return defaultAvatarMaxUploadSizeMb
+	}
+	maxSizeMb := h.settingsService.GetIntSetting(ctx, "avatarMaxUploadSizeMb", defaultAvatarMaxUploadSizeMb)
+	if maxSizeMb <= 0 {
+		return defaultAvatarMaxUploadSizeMb
+	}
+	return maxSizeMb
+}
+
+// DeleteMyAvatar removes the current user's custom profile picture.
+func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*DeleteMyAvatarOutput, error) {
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	currentUser, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	if err := h.userService.DeleteAvatar(ctx, currentUser.ID); err != nil {
+		slog.ErrorContext(ctx, "Failed to delete avatar", "user_id", currentUser.ID, "error", err)
+		return nil, huma.Error500InternalServerError("failed to delete avatar")
+	}
+
+	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+	}
+
+	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+	}
+
+	return &DeleteMyAvatarOutput{
+		Body: base.ApiResponse[user.User]{
+			Success: true,
+			Data:    out,
+		},
+	}, nil
+}
+
+// detectAvatarMimeTypeInternal validates that data is a supported image format and returns its MIME type.
+// Supported formats: PNG, JPEG, WebP.
+func detectAvatarMimeTypeInternal(data []byte) (string, error) {
+	mimeType := http.DetectContentType(data)
+	switch mimeType {
+	case "image/png", "image/jpeg", "image/webp":
+		return mimeType, nil
+	default:
+		return "", errors.New("unsupported image format: only PNG, JPEG and WebP are accepted")
+	}
+}
+
+func normalizeAvatarImageInternal(data []byte, mimeType string) ([]byte, string) {
+	const maxAvatarNormalizePixels = 16 * 1024 * 1024
+	if mimeType != "image/png" {
+		return data, mimeType
+	}
+
+	config, err := png.DecodeConfig(bytes.NewReader(data))
+	if err != nil || config.Width <= 0 || config.Height <= 0 {
+		return data, mimeType
+	}
+	if config.Width > maxAvatarNormalizePixels/config.Height {
+		return data, mimeType
+	}
+
+	img, err := png.Decode(bytes.NewReader(data))
+	if err != nil || imageHasTransparencyInternal(img) {
+		return data, mimeType
+	}
+
+	var out bytes.Buffer
+	if err := jpeg.Encode(&out, img, &jpeg.Options{Quality: 92}); err != nil {
+		return data, mimeType
+	}
+	if out.Len() == 0 || out.Len() >= len(data) {
+		return data, mimeType
+	}
+
+	return out.Bytes(), "image/jpeg"
+}
+
+func imageHasTransparencyInternal(img stdimage.Image) bool {
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			_, _, _, alpha := img.At(x, y).RGBA()
+			if alpha != 0xffff {
+				return true
+			}
+		}
+	}
+	return false
 }

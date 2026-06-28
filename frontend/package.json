@@ -48,6 +48,7 @@
 		"prettier-plugin-tailwindcss": "^0.8.0",
 		"svelte": "^5.56.3",
 		"svelte-codemirror-editor": "^2.1.0",
+		"svelte-easy-crop": "^5.0.1",
 		"yaml": "^2.9.0"
 	},
 	"devDependencies": {

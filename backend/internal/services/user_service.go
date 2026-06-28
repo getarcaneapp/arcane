@@ -449,6 +449,11 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		RoleAssignments:        []user.RoleAssignmentSummary{},
 		PermissionsByEnv:       map[string][]string{},
 	}
+	// Populate AvatarURL when the user has a custom avatar stored
+	if u.HasAvatar {
+		avatarURL := fmt.Sprintf("/api/users/%s/avatar", u.ID)
+		dto.AvatarURL = &avatarURL
+	}
 	if s.roleService == nil {
 		return dto
 	}
@@ -517,4 +522,67 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 		First(&user).
 		Error
 	return &user, err
+}
+
+// UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
+func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []byte, mimeType string) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		avatar := models.UserAvatar{
+			UserID:   userID,
+			Data:     data,
+			MimeType: mimeType,
+		}
+		if err := tx.Save(&avatar).Error; err != nil {
+			return fmt.Errorf("failed to save avatar data: %w", err)
+		}
+
+		err := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]any{
+				"has_avatar": true,
+			}).Error
+		if err != nil {
+			return fmt.Errorf("failed to update user avatar flag: %w", err)
+		}
+		return nil
+	})
+}
+
+// DeleteAvatar removes the avatar for a user.
+func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAvatar{}).Error; err != nil {
+			return fmt.Errorf("failed to delete avatar data: %w", err)
+		}
+
+		err := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			Updates(map[string]any{
+				"has_avatar": false,
+			}).Error
+		if err != nil {
+			return fmt.Errorf("failed to update user avatar flag: %w", err)
+		}
+		return nil
+	})
+}
+
+// GetAvatar returns the raw avatar data and MIME type for a user.
+// Returns (nil, "", nil) when the user has no custom avatar.
+func (s *UserService) GetAvatar(ctx context.Context, userID string) ([]byte, string, error) {
+	u, err := s.GetUserByID(ctx, userID)
+	if err != nil {
+		return nil, "", err
+	}
+	if !u.HasAvatar {
+		return nil, "", nil
+	}
+	var avatar models.UserAvatar
+	if err := s.db.DB.WithContext(ctx).Where("user_id = ?", userID).First(&avatar).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, "", nil
+		}
+		return nil, "", err
+	}
+	return avatar.Data, avatar.MimeType, nil
 }

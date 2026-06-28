@@ -1410,8 +1410,6 @@
 	"general_follow_project_symlinks_help": "Рассматривать дочерние каталоги с символическими ссылками внутри каталога проектов как проекты Docker Compose.",
 	"general_base_url_label": "Базовый URL сервера",
 	"general_base_url_help": "Базовый URL-адрес для вашего Docker хоста. Используется при открытии контейнеров из ссылок сервиса",
-	"general_user_avatars_heading": "Аватар пользователя",
-	"general_user_avatars_description": "Используй Gravatar для изображения профиля.",
 	"general_enable_gravatar_label": "Использовать Gravatar",
 	"general_settings_saved": "Настройки Успешно Обновлены",
 	"_comment_settings_security": "=== НАСТРОЙКИ - БЕЗОПАСНОСТИ ===",
