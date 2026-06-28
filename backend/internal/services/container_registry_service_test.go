@@ -52,7 +52,7 @@ func newTestDockerClient(t *testing.T, server *httptest.Server) *client.Client {
 	httpClient := server.Client()
 	cli, err := client.New(
 		client.WithHost(server.URL),
-		client.WithVersion("1.41"),
+		client.WithAPIVersion("1.41"),
 		client.WithHTTPClient(httpClient),
 	)
 	require.NoError(t, err)

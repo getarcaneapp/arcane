@@ -105,7 +105,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.Equal(t, updated.EnvContent, source.EnvContent)
 
 	// Test with additional files
-	updated, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
 		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
 		Files: []swarmtypes.SyncFile{
 			{RelativePath: "config/nginx.conf", Content: []byte("worker_processes 1;")},

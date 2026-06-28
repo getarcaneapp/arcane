@@ -104,10 +104,11 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 	require.NoError(t, os.MkdirAll(projectPath, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project-data.txt"), []byte("keep until destroy\n"), 0o644))
 
+	dirName := "demo-remove"
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-destroy-remove-files"},
 		Name:      "demo-remove",
-		DirName:   ptr("demo-remove"),
+		DirName:   &dirName,
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -128,10 +129,11 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 	projectDataPath := filepath.Join(projectPath, "project-data.txt")
 	require.NoError(t, os.WriteFile(projectDataPath, []byte("preserve on destroy\n"), 0o644))
 
+	dirName := "demo-preserve"
 	project := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-destroy-preserve-files"},
 		Name:      "demo-preserve",
-		DirName:   ptr("demo-preserve"),
+		DirName:   &dirName,
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -659,10 +661,11 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	composeContent := fmt.Sprintf("services:\n  app:\n    image: %s\n  builder:\n    build: .\n", imageRef)
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(composeContent), 0o644))
 
+	dirName := "compose-pull"
 	projectRecord := &models.Project{
 		BaseModel: models.BaseModel{ID: "project-pull"},
 		Name:      "compose-pull",
-		DirName:   ptr("compose-pull"),
+		DirName:   &dirName,
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
@@ -1409,7 +1412,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_project_save_failure", func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
-			tx.AddError(errors.New("forced project save failure"))
+			_ = tx.AddError(errors.New("forced project save failure"))
 		}
 	}))
 
@@ -5067,7 +5070,6 @@ func dockerHostFromProjectRuntimeServerURLInternal(t *testing.T, serverURL strin
 	return "tcp://" + parsed.Host
 }
 
-//go:fix inline
 func ptr(v string) *string {
 	return new(v)
 }

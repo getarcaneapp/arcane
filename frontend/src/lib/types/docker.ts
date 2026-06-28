@@ -202,6 +202,19 @@ export interface ContainerDetailsDto {
 	redeployDisabled?: boolean;
 }
 
+export interface ContainerCommitRequest {
+	repository?: string;
+	tag?: string;
+	comment?: string;
+	author?: string;
+	changes?: string[];
+	noPause?: boolean;
+}
+
+export interface ContainerCommitResult {
+	id: string;
+}
+
 // --- Container stats ---
 
 export interface BlkioStatEntry {
@@ -413,6 +426,28 @@ export interface ImageDetailSummaryDto {
 		digest: string;
 		size: number;
 	};
+}
+
+export interface ImageTagRequest {
+	repository: string;
+	tag?: string;
+}
+
+export interface ImageHistoryItemDto {
+	id: string;
+	created: number;
+	createdBy: string;
+	tags: string[];
+	size: number;
+	comment: string;
+}
+
+export interface ImageSearchResultDto {
+	name: string;
+	description: string;
+	starCount: number;
+	official: boolean;
+	automated: boolean;
 }
 
 export interface ImageAttestationSubjectDto {

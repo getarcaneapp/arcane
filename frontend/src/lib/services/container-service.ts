@@ -5,7 +5,9 @@ import type {
 	ContainerSummaryDto,
 	ContainerSummaryGroupDto,
 	ContainerCreateRequest,
-	ContainerDetailsDto
+	ContainerDetailsDto,
+	ContainerCommitRequest,
+	ContainerCommitResult
 } from '$lib/types/docker';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
@@ -98,6 +100,11 @@ class ContainerService extends BaseAPIService {
 	async unpauseContainer(containerId: string): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/unpause`));
+	}
+
+	async commitContainer(containerId: string, request: ContainerCommitRequest): Promise<ContainerCommitResult> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/commit`, request));
 	}
 
 	async deleteContainer(containerId: string, opts?: { force?: boolean; volumes?: boolean }): Promise<any> {

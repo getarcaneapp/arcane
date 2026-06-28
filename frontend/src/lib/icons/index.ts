@@ -8,7 +8,7 @@ export { default as ProjectsIcon } from 'virtual:icons/solar/folder-with-files-b
 export { default as EnvironmentsIcon } from 'virtual:icons/solar/server-minimalistic-linear';
 export { default as CustomizeIcon } from 'virtual:icons/material-symbols/inbox-customize-outline-rounded';
 export { default as ContainersIcon } from 'virtual:icons/carbon/web-services-container';
-export { default as ImagesIcon } from 'virtual:icons/solar/gallery-linear';
+export { default as ImagesIcon } from 'virtual:icons/gravity-ui/layers-3-diagonal';
 export { default as NetworksIcon } from 'virtual:icons/fluent/virtual-network-16-filled';
 export { default as VolumesIcon } from 'virtual:icons/fluent/hard-drive-20-filled';
 export { default as EventsIcon } from 'virtual:icons/material-symbols/event-list';
@@ -38,7 +38,6 @@ export { default as EyeOnIcon } from 'virtual:icons/fluent/eye-20-filled';
 export { default as FolderXIcon } from 'virtual:icons/solar/folder-error-linear';
 export { default as ResetIcon } from 'virtual:icons/fluent/arrow-reset-32-filled';
 export { default as CheckIcon } from 'virtual:icons/material-symbols/fitbit-check-small';
-/** @lintignore Knip misses this Svelte component import. */
 export { default as FilterIcon } from 'virtual:icons/fluent/filter-32-filled';
 export { default as LoadingSpinnerIcon } from 'virtual:icons/svg-spinners/ring-resize';
 export { default as AddIcon } from 'virtual:icons/ic/outline-add-circle';
@@ -82,7 +81,7 @@ export { default as DockIcon } from 'virtual:icons/lucide/dock';
 export { default as EditIcon } from 'virtual:icons/solar/pen-linear';
 export { default as SearchIcon } from 'virtual:icons/solar/minimalistic-magnifer-linear';
 export { default as InspectIcon } from 'virtual:icons/solar/card-search-linear';
-export { default as UpdateIcon } from 'virtual:icons/solar/upload-square-linear';
+export { default as UpdateIcon } from 'virtual:icons/mage/box-3d-upload';
 export { default as RestartIcon } from 'virtual:icons/solar/restart-linear';
 export { default as FileTextIcon } from 'virtual:icons/solar/file-text-linear';
 export { default as CreateFileIcon } from 'virtual:icons/lucide/file-plus';
@@ -105,7 +104,6 @@ export { default as LocalFolderComputerIcon } from 'virtual:icons/streamline/loc
 export { default as SendEmailIcon } from 'virtual:icons/solar/plain-2-linear';
 export { default as VolumeUnusedIcon } from 'virtual:icons/clarity/hard-disk-solid-alerted';
 export { default as OpenIdIcon } from 'virtual:icons/simple-icons/openid';
-/** @lintignore Knip misses this Svelte component import. */
 export { default as LoginIcon } from 'virtual:icons/solar/login-3-linear';
 export { default as GitBranchIcon } from 'virtual:icons/tabler/git-branch';
 export { default as JobsIcon } from 'virtual:icons/solar/alarm-linear';

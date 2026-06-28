@@ -69,9 +69,9 @@ func newDashboardTestDockerService(
 	}))
 	t.Cleanup(server.Close)
 
-	dockerClient, err := client.NewClientWithOpts(
+	dockerClient, err := client.New(
 		client.WithHost(server.URL),
-		client.WithVersion("1.41"),
+		client.WithAPIVersion("1.41"),
 	)
 	require.NoError(t, err)
 	t.Cleanup(func() {
@@ -148,10 +148,11 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "projectsDirectory", projectsDir))
 	projectPath := createComposeProjectDir(t, projectsDir, "project-with-update")
 	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: repo/worker:latest\n"), 0o644))
+	dirName := "project-with-update"
 	require.NoError(t, db.WithContext(context.Background()).Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-with-update"},
 		Name:      "project-with-update",
-		DirName:   ptr("project-with-update"),
+		DirName:   &dirName,
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)

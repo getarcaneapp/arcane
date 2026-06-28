@@ -22,6 +22,7 @@
 	import ContainerInspect from '../components/ContainerInspect.svelte';
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
+	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
 	import { mode } from 'mode-watcher';
@@ -45,7 +46,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
+	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
 	import { runContainerLifecycleAction } from '$lib/utils/container-actions';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	let { data } = $props();
@@ -146,11 +147,13 @@
 	const canExecShell = $derived(hasPermission('containers:exec', currentEnvId));
 	const canPauseContainer = $derived(hasPermission('containers:pause', currentEnvId));
 	const canKillContainer = $derived(hasPermission('containers:kill', currentEnvId));
+	const canCommitImage = $derived(hasPermission('images:commit', currentEnvId));
 	const containerStatus = $derived(container?.state?.status ?? '');
 	const isContainerRunning = $derived(containerStatus === 'running' || !!container?.state?.running);
 	const isContainerPaused = $derived(containerStatus === 'paused');
 
 	let killDialogOpen = $state(false);
+	let commitDialogOpen = $state(false);
 	let lifecycleStatus = $state<'pausing' | 'unpausing' | ''>('');
 	const isLifecycleActionPending = $derived(lifecycleStatus !== '');
 
@@ -355,6 +358,15 @@
 								onclick={handlePauseContainer}
 							/>
 						{/if}
+						{#if canCommitImage}
+							<ArcaneButton
+								action="commit"
+								{size}
+								{showLabel}
+								disabled={actionButtonsLifecyclePending}
+								onclick={() => (commitDialogOpen = true)}
+							/>
+						{/if}
 						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
 							<ArcaneButton
 								action="kill"
@@ -382,6 +394,12 @@
 							>
 								<PauseIcon class="size-4" />
 								{m.common_pause()}
+							</DropdownMenu.Item>
+						{/if}
+						{#if canCommitImage}
+							<DropdownMenu.Item disabled={actionButtonsLifecyclePending} onclick={() => (commitDialogOpen = true)}>
+								<ImagesIcon class="size-4" />
+								{m.containers_commit_action()}
 							</DropdownMenu.Item>
 						{/if}
 						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
@@ -501,6 +519,14 @@
 			containerName={containerDisplayName}
 			onClose={() => (killDialogOpen = false)}
 			onComplete={() => invalidateAll()}
+		/>
+	{/if}
+	{#if commitDialogOpen && canCommitImage}
+		<ContainerCommitDialog
+			bind:open={commitDialogOpen}
+			containerId={container.id}
+			containerName={containerDisplayName}
+			onCommitted={() => invalidateAll()}
 		/>
 	{/if}
 {:else}

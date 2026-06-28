@@ -120,7 +120,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to open file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	content, err := io.ReadAll(io.LimitReader(file, maxBytes))
 	if err != nil {
@@ -195,7 +195,7 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 	if err != nil {
 		return fmt.Errorf("failed to create file: %w", err)
 	}
-	defer file.Close()
+	defer func() { _ = file.Close() }()
 
 	if _, err := io.Copy(file, content); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)

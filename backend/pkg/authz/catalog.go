@@ -129,6 +129,8 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"pull", PermImagesPull, "Pull", ""},
 		{"push", PermImagesPush, "Push", ""},
 		{"build", PermImagesBuild, "Build", ""},
+		{"tag", PermImagesTag, "Tag", ""},
+		{"commit", PermImagesCommit, "Commit container", ""},
 		{"prune", PermImagesPrune, "Prune", ""},
 		{"delete", PermImagesDelete, "Delete", ""},
 		{"upload", PermImagesUpload, "Upload", ""},

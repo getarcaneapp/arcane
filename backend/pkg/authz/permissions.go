@@ -119,6 +119,8 @@ const (
 	PermImagesPull   = "images:pull"
 	PermImagesPush   = "images:push"
 	PermImagesBuild  = "images:build"
+	PermImagesTag    = "images:tag"
+	PermImagesCommit = "images:commit"
 	PermImagesPrune  = "images:prune"
 	PermImagesDelete = "images:delete"
 	PermImagesUpload = "images:upload"
@@ -282,7 +284,7 @@ func BuiltInEditorPermissions() []string {
 		// Full env-scoped Docker management
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersCreate, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause, PermContainersDelete, PermContainersExec, PermContainersAutoUpdate,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsCreate, PermProjectsUpdate, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart, PermProjectsDelete, PermProjectsArchive,
-		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesPrune, PermImagesDelete, PermImagesUpload,
+		PermImagesList, PermImagesRead, PermImagesPull, PermImagesPush, PermImagesBuild, PermImagesTag, PermImagesCommit, PermImagesPrune, PermImagesDelete, PermImagesUpload,
 		PermVolumesList, PermVolumesRead, PermVolumesCreate, PermVolumesDelete, PermVolumesPrune, PermVolumesBrowse, PermVolumesUpload, PermVolumesBackup,
 		PermNetworksList, PermNetworksRead, PermNetworksCreate, PermNetworksDelete, PermNetworksPrune,
 		PermSwarmRead, PermSwarmSpec, PermSwarmNodes, PermSwarmServices, PermSwarmServicesLogs, PermSwarmStacks, PermSwarmConfigs, PermSwarmSecrets,
@@ -308,7 +310,7 @@ func BuiltInDeployerPermissions() []string {
 		PermEventsRead,
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
-		PermImagesList, PermImagesRead, PermImagesPull,
+		PermImagesList, PermImagesRead, PermImagesPull, PermImagesTag, PermImagesCommit,
 		PermVolumesList, PermVolumesRead, PermVolumesBrowse,
 		PermNetworksList, PermNetworksRead,
 		PermSwarmRead, PermSwarmServicesLogs,

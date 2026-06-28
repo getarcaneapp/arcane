@@ -5,9 +5,8 @@
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { toast } from 'svelte-sonner';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { readNdjsonStream } from '$lib/utils/streaming';
+	import { imageService } from '$lib/services/image-service';
 
 	type ImagePullFormProps = {
 		open: boolean;
@@ -49,60 +48,20 @@
 		}
 
 		const fullImageName = `${imageName}:${imageTag}`;
-		const envId = await environmentStore.getCurrentEnvironmentId();
-
-		try {
-			const response = await fetch(`/api/environments/${envId}/images/pull`, {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({ imageName: fullImageName })
-			});
-
-			if (!response.ok || !response.body) {
-				const errorData = await response.json().catch(() => ({
-					data: { message: m.images_pull_server_error() }
-				}));
-				const errorMessage =
-					errorData.data?.message ||
-					errorData.error ||
-					errorData.message ||
-					`${m.images_pull_server_error()}: HTTP ${response.status}`;
-				throw new Error(errorMessage);
-			}
-
-			open = false;
-			isPulling = false;
-
-			drainPullStream(response.body, fullImageName);
-		} catch (error: any) {
-			const message = error.message || m.images_pull_unexpected_error();
-			toast.error(message);
-			onPullFinished(false, fullImageName, message);
-			isPulling = false;
-		}
+		open = false;
+		isPulling = false;
+		void drainPullStream(fullImageName);
 	}
 
-	function drainPullStream(body: ReadableStream<Uint8Array>, fullImageName: string) {
-		(async () => {
-			let streamFailed = false;
-			try {
-				await readNdjsonStream(body, (parsed) => {
-					if (parsed?.error) {
-						const errMsg = typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_error();
-						streamFailed = true;
-						toast.error(errMsg);
-						onPullFinished(false, fullImageName, errMsg);
-						throw new Error(errMsg);
-					}
-				});
-				onPullFinished(true, fullImageName);
-			} catch (error: any) {
-				if (streamFailed) return;
-				const message = error.message || m.images_pull_unexpected_error();
-				toast.error(message);
-				onPullFinished(false, fullImageName, message);
-			}
-		})();
+	async function drainPullStream(fullImageName: string) {
+		const result = await imageService.pullImageStream(fullImageName);
+		if (!result.success) {
+			const message = result.error || m.images_pull_unexpected_error();
+			toast.error(message);
+			onPullFinished(false, fullImageName, message);
+			return;
+		}
+		onPullFinished(true, fullImageName);
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

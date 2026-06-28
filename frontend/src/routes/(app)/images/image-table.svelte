@@ -15,6 +15,7 @@
 	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
 	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
 	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
+	import ImageTagDialog from './components/image-tag-dialog.svelte';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/docker';
@@ -40,7 +41,8 @@
 		EllipsisIcon,
 		ScanIcon,
 		ProjectsIcon,
-		ContainersIcon
+		ContainersIcon,
+		TagIcon
 	} from '$lib/icons';
 
 	let {
@@ -68,9 +70,12 @@
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canPullImage = $derived(hasPermission('images:pull', currentEnvId));
 	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
+	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
 
 	let isPullingInline = $state<Record<string, boolean>>({});
 	let isScanningInline = $state<Record<string, boolean>>({});
+	let tagDialogImage = $state<ImageSummaryDto | null>(null);
 	let scanRequestedAtByImage = $state<Record<string, string>>({});
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	let scanPollInFlight = false;
@@ -200,6 +205,11 @@
 		});
 
 		isScanningInline[imageId] = false;
+	}
+
+	async function handleExportImage(imageId: string) {
+		const url = await imageService.getImageExportUrl(imageId);
+		window.open(url, '_blank', 'noopener,noreferrer');
 	}
 
 	async function handleUpdateInfoChanged(imageId: string, newUpdateInfo: ImageUpdateInfoDto) {
@@ -681,8 +691,22 @@
 					{m.common_inspect()}
 				</DropdownMenu.Item>
 
-				{#if canPullImage || canScanImage}
+				{#if canPullImage || canScanImage || canTagImage || canReadImage}
 					<DropdownMenu.Separator />
+				{/if}
+
+				{#if canTagImage}
+					<DropdownMenu.Item onclick={() => (tagDialogImage = item)}>
+						<TagIcon class="size-4" />
+						{m.images_tag_image()}
+					</DropdownMenu.Item>
+				{/if}
+
+				{#if canReadImage}
+					<DropdownMenu.Item onclick={() => handleExportImage(item.id)}>
+						<DownloadIcon class="size-4" />
+						{m.images_export()}
+					</DropdownMenu.Item>
 				{/if}
 
 				{#if canPullImage}
@@ -745,3 +769,15 @@
 	rowActions={RowActions}
 	mobileCard={ImageMobileCardSnippet}
 />
+
+{#if tagDialogImage}
+	<ImageTagDialog
+		open={!!tagDialogImage}
+		imageId={tagDialogImage.id}
+		defaultRepository={tagDialogImage.repo !== '<none>' ? tagDialogImage.repo : ''}
+		onOpenChange={(open) => {
+			if (!open) tagDialogImage = null;
+		}}
+		onTagged={async () => refreshImages()}
+	/>
+{/if}

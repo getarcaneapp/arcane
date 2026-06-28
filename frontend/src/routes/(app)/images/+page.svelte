@@ -3,6 +3,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { toast } from 'svelte-sonner';
 	import ImagePullSheet from '$lib/components/sheets/image-pull-sheet.svelte';
+	import ImageRegistrySearchDialog from '$lib/components/dialogs/image-registry-search-dialog.svelte';
 	import { bytes } from '$lib/utils/formatting';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import { displaySize, FileDropZone, MEGABYTE, type FileDropZoneProps } from '$lib/components/ui/file-drop-zone';
@@ -15,7 +16,7 @@
 	import type { ImageUsageCounts } from '$lib/types/docker';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon } from '$lib/icons';
+	import { CloseIcon, VolumesIcon, LocalFolderComputerIcon, SearchIcon } from '$lib/icons';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
@@ -26,6 +27,7 @@
 	let requestOptions = $state(untrack(() => data.imageRequestOptions));
 	let selectedIds = $state<string[]>([]);
 	let isPullDialogOpen = $state(false);
+	let isRegistrySearchDialogOpen = $state(false);
 	let isUploadDialogOpen = $state(false);
 	let isConfirmPruneDialogOpen = $state(false);
 	let uploadedFiles = $state<File[]>([]);
@@ -165,6 +167,13 @@
 		const buttons: ActionButton[] = [];
 		if (canPullImage) {
 			buttons.push({ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) });
+			buttons.push({
+				id: 'registry-search',
+				action: 'inspect',
+				label: m.images_search_registry(),
+				icon: SearchIcon,
+				onclick: () => (isRegistrySearchDialogOpen = true)
+			});
 		}
 		if (canUploadImage) {
 			buttons.push({
@@ -243,6 +252,13 @@
 	{#snippet additionalContent()}
 		<ImagePullSheet
 			bind:open={isPullDialogOpen}
+			onPullFinished={async () => {
+				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+			}}
+		/>
+
+		<ImageRegistrySearchDialog
+			bind:open={isRegistrySearchDialogOpen}
 			onPullFinished={async () => {
 				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 			}}

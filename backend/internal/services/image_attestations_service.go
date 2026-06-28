@@ -566,7 +566,7 @@ func decompressAttestationStatementInternal(data []byte) ([]byte, error) {
 		if err != nil {
 			return nil, err
 		}
-		defer reader.Close()
+		defer func() { _ = reader.Close() }()
 		return io.ReadAll(reader)
 	case len(data) >= 4 && data[0] == 0x28 && data[1] == 0xb5 && data[2] == 0x2f && data[3] == 0xfd:
 		reader, err := zstd.NewReader(nil)

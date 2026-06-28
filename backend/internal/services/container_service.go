@@ -390,6 +390,54 @@ func (s *ContainerService) UnpauseContainer(ctx context.Context, containerID str
 	})
 }
 
+// CommitContainer creates an image from a container's current filesystem.
+func (s *ContainerService) CommitContainer(ctx context.Context, containerID string, req containertypes.CommitRequest, user models.User) (*containertypes.CommitResult, error) {
+	containerID = strings.TrimSpace(containerID)
+	if containerID == "" {
+		return nil, errors.New("container ID is required")
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, "", user.ID, user.Username, "0", err, models.JSON{"action": "commit"})
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
+
+	repository := strings.TrimSpace(req.Repository)
+	tag := strings.TrimSpace(req.Tag)
+	reference := repository
+	if repository != "" && tag != "" {
+		reference = repository + ":" + tag
+	}
+
+	result, err := dockerClient.ContainerCommit(ctx, containerID, client.ContainerCommitOptions{
+		Reference: reference,
+		Comment:   strings.TrimSpace(req.Comment),
+		Author:    strings.TrimSpace(req.Author),
+		Changes:   req.Changes,
+		NoPause:   req.NoPause,
+	})
+	if err != nil {
+		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "container", containerID, reference, user.ID, user.Username, "0", err, models.JSON{"action": "commit", "reference": reference})
+		return nil, fmt.Errorf("failed to commit container: %w", err)
+	}
+
+	metadata := models.JSON{
+		"action":      "commit",
+		"containerId": containerID,
+		"imageId":     result.ID,
+		"repository":  repository,
+		"tag":         tag,
+		"reference":   reference,
+		"noPause":     req.NoPause,
+	}
+	if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageCommit, containerID, reference, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.WarnContext(ctx, "could not log container commit action", "container", containerID, "image", result.ID, "error", logErr)
+	}
+
+	return &containertypes.CommitResult{ID: result.ID}, nil
+}
+
 // tryRedeployViaComposeProjectInternal attempts to redeploy a compose-managed
 // container by delegating to ProjectService.UpdateProjectServices, which loads
 // the compose project with full project_directory / env-file / include context

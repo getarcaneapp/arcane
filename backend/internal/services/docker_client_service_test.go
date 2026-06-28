@@ -5,6 +5,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -198,6 +199,10 @@ func TestCountImageUsage_NoImages(t *testing.T) {
 
 func newDockerClientServiceForTestInternal(host string) *DockerClientService {
 	return NewDockerClientService(context.Background(), nil, &config.Config{DockerHost: host}, nil)
+}
+
+func dockerTestPathInternal(path string) string {
+	return regexp.MustCompile(`^/v[0-9]+\.[0-9]+`).ReplaceAllString(path, "")
 }
 
 func newDockerPingTestServerInternal(t *testing.T, apiVersion string) *httptest.Server {

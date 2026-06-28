@@ -26,6 +26,8 @@ const (
 
 	EventTypeImagePull              EventType = "image.pull"
 	EventTypeImageLoad              EventType = "image.load"
+	EventTypeImageTag               EventType = "image.tag"
+	EventTypeImageCommit            EventType = "image.commit"
 	EventTypeImageDelete            EventType = "image.delete"
 	EventTypeImageScan              EventType = "image.scan"
 	EventTypeImageError             EventType = "image.error"

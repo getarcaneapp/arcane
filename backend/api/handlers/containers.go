@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"maps"
 	"net/http"
@@ -149,6 +150,16 @@ type KillContainerInput struct {
 	Signal        string `query:"signal" doc:"Signal to send (for example SIGTERM, SIGKILL). Defaults to SIGKILL."`
 }
 
+type CommitContainerInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	ContainerID   string `path:"containerId" doc:"Container ID"`
+	Body          containertypes.CommitRequest
+}
+
+type CommitContainerOutput struct {
+	Body base.ApiResponse[containertypes.CommitResult]
+}
+
 func RegisterContainers(api huma.API, containerSvc *services.ContainerService, dockerSvc *services.DockerClientService, settingsSvc *services.SettingsService, activitySvc *services.ActivityService, appCtx ActivityAppContext) {
 	h := &ContainerHandler{
 		containerService: containerSvc,
@@ -249,6 +260,16 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Tags:        []string{"Containers"},
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, authz.PermContainersPause, h.UnpauseContainer)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "commit-container",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/containers/{containerId}/commit",
+		Summary:     "Commit container",
+		Description: "Create an image from a container",
+		Tags:        []string{"Containers", "Images"},
+		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+	}, authz.PermImagesCommit, h.CommitContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "redeploy-container",
@@ -748,6 +769,33 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 		Body: ContainerActionResponse{
 			Success: true,
 			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		},
+	}, nil
+}
+
+func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*CommitContainerOutput, error) {
+	if h.containerService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if strings.TrimSpace(input.ContainerID) == "" {
+		return nil, huma.Error400BadRequest("container ID is required")
+	}
+
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	out, err := h.containerService.CommitContainer(ctx, input.ContainerID, input.Body, *user)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(fmt.Sprintf("failed to commit container: %v", err))
+	}
+
+	return &CommitContainerOutput{
+		Body: base.ApiResponse[containertypes.CommitResult]{
+			Success: true,
+			Data:    *out,
 		},
 	}, nil
 }

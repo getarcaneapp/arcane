@@ -198,6 +198,38 @@ type PruneReport struct {
 	SpaceReclaimed int64 `json:"spaceReclaimed"`
 }
 
+// TagRequest is used to add a new repository tag to an existing image.
+type TagRequest struct {
+	// Repository is the target repository name.
+	//
+	// Required: true
+	Repository string `json:"repository" doc:"Target repository name"`
+
+	// Tag is the target tag. Docker defaults to latest when omitted.
+	//
+	// Required: false
+	Tag string `json:"tag,omitempty" doc:"Target tag"`
+}
+
+// HistoryItem describes a single image history layer entry.
+type HistoryItem struct {
+	ID        string   `json:"id"`
+	Created   int64    `json:"created"`
+	CreatedBy string   `json:"createdBy"`
+	Tags      []string `json:"tags"`
+	Size      int64    `json:"size"`
+	Comment   string   `json:"comment"`
+}
+
+// SearchResult describes an image registry search result.
+type SearchResult struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	StarCount   int    `json:"starCount"`
+	Official    bool   `json:"official"`
+	Automated   bool   `json:"automated"`
+}
+
 // NewPruneReport creates a PruneReport from a Docker image prune report.
 // It extracts deleted and untagged image IDs from the Docker API response,
 // combining both types into a single list and converting space reclaimed to int64.

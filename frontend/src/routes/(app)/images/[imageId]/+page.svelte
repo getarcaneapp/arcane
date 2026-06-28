@@ -22,6 +22,8 @@
 	} from '$lib/utils/docker';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import ImageAttestationsPanel from './image-attestations-panel.svelte';
+	import ImageHistoryPanel from './image-history-panel.svelte';
+	import ImageTagDialog from '../components/image-tag-dialog.svelte';
 	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
 	import type { VulnerabilityScanResult } from '$lib/types/environment';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -38,13 +40,16 @@
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
+	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
+	const canReadImage = $derived(hasPermission('images:read', currentEnvId));
 
 	let isLoading = $state({
 		pulling: false,
 		removing: false,
-		refreshing: false,
+		exporting: false,
 		scanning: false
 	});
+	let tagDialogOpen = $state(false);
 
 	let vulnerabilityScan = $state<VulnerabilityScanResult | null>(null);
 	let hasLoadedVulnerabilities = $state(false);
@@ -233,12 +238,40 @@
 		});
 	}
 
+	async function handleExportImage(id: string) {
+		isLoading.exporting = true;
+		try {
+			const url = await imageService.getImageExportUrl(id);
+			window.open(url, '_blank', 'noopener,noreferrer');
+		} finally {
+			isLoading.exporting = false;
+		}
+	}
+
 	const actions: DetailAction[] = $derived.by(() => {
 		const list: DetailAction[] = [];
+		if (canTagImage) {
+			list.push({
+				id: 'tag',
+				action: 'tag',
+				label: m.images_tag_image(),
+				onclick: () => (tagDialogOpen = true)
+			});
+		}
+		if (canReadImage) {
+			list.push({
+				id: 'export',
+				action: 'pull',
+				label: m.images_export(),
+				loading: isLoading.exporting,
+				disabled: isLoading.exporting,
+				onclick: () => handleExportImage(image.id)
+			});
+		}
 		if (canScanImage) {
 			list.push({
 				id: 'scan',
-				action: 'base',
+				action: 'scan',
 				label: m.vuln_scan(),
 				loading: isLoading.scanning,
 				disabled: isLoading.scanning,
@@ -334,13 +367,17 @@
 			<div class="space-y-4 border-t pt-6">
 				<h3 class="flex items-center gap-2 text-sm font-medium">
 					<ShieldCheckIcon class="size-4" />
-					{m.security_title()}
+					{m.images_details_title()}
 				</h3>
 				<Tabs.Root bind:value={securityTab} class="space-y-4">
 					<Tabs.List>
+						<Tabs.Trigger value="history">{m.images_history_title()}</Tabs.Trigger>
 						<Tabs.Trigger value="attestations">{m.images_attestations_title()}</Tabs.Trigger>
 						<Tabs.Trigger value="vulnerabilities">{m.vuln_title()}</Tabs.Trigger>
 					</Tabs.List>
+					<Tabs.Content value="history">
+						<ImageHistoryPanel imageId={image.id} />
+					</Tabs.Content>
 					<Tabs.Content value="attestations">
 						<ImageAttestationsPanel {image} />
 					</Tabs.Content>
@@ -363,3 +400,12 @@
 		</div>
 	{/if}
 </ResourceDetailLayout>
+
+{#if image && tagDialogOpen}
+	<ImageTagDialog
+		bind:open={tagDialogOpen}
+		imageId={image.id}
+		defaultRepository={image.repoTags?.[0]?.split(':')[0] ?? ''}
+		onTagged={() => goto(`/images/${image.id}`, { invalidateAll: true })}
+	/>
+{/if}
