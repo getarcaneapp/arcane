@@ -88,17 +88,48 @@ func ReconcileEnvironmentPollers(
 	streamLabel string,
 	runPoller func(ctx context.Context, environmentID string),
 ) {
-	pollers := make(map[string]context.CancelFunc)
+	ReconcilePollersByKey(ctx,
+		func(ctx context.Context) ([]string, error) {
+			return lister.ListRemoteEnvironmentIDs(ctx)
+		},
+		func(environmentID string) string {
+			return environmentID
+		},
+		nil,
+		reconcileInterval,
+		streamLabel,
+		runPoller,
+	)
+}
+
+// ReconcilePollersByKey keeps one poller goroutine per listed item, keyed by a
+// stable item ID. If the same key is later returned with a different version,
+// the old poller is replaced so callers can pass refreshed item metadata.
+func ReconcilePollersByKey[T any](
+	ctx context.Context,
+	listItems func(context.Context) ([]T, error),
+	keyFunc func(T) string,
+	versionFunc func(T) string,
+	reconcileInterval time.Duration,
+	streamLabel string,
+	runPoller func(ctx context.Context, item T),
+) {
+	type poller struct {
+		cancel  context.CancelFunc
+		version string
+	}
+
+	pollers := make(map[string]poller)
 	var wg sync.WaitGroup
 	defer wg.Wait()
 	defer func() {
-		for _, cancelPoll := range pollers {
-			cancelPoll()
+		for _, activePoller := range pollers {
+			activePoller.cancel()
 		}
 	}()
 
 	reconcile := func() {
-		environmentIDs, err := lister.ListRemoteEnvironmentIDs(ctx)
+		items, err := listItems(ctx)
 		if err != nil {
 			if ctx.Err() == nil {
 				slog.WarnContext(ctx, "failed to list environments for "+streamLabel, "error", err)
@@ -106,24 +137,39 @@ func ReconcileEnvironmentPollers(
 			return
 		}
 
-		current := make(map[string]struct{}, len(environmentIDs))
-		for _, environmentID := range environmentIDs {
-			current[environmentID] = struct{}{}
-			if _, ok := pollers[environmentID]; ok {
+		current := make(map[string]struct{}, len(items))
+		for _, item := range items {
+			key := keyFunc(item)
+			if key == "" {
 				continue
 			}
-			pollCtx, cancelPoll := context.WithCancel(ctx) //nolint:gosec // cancel is retained in pollers and invoked on env removal or via the deferred cleanup.
-			pollers[environmentID] = cancelPoll
+			version := ""
+			if versionFunc != nil {
+				version = versionFunc(item)
+			}
+			current[key] = struct{}{}
+
+			if existingPoller, ok := pollers[key]; ok && existingPoller.version == version {
+				continue
+			}
+
+			if existingPoller, ok := pollers[key]; ok {
+				existingPoller.cancel()
+				delete(pollers, key)
+			}
+
+			pollCtx, cancelPoll := context.WithCancel(ctx)
+			pollers[key] = poller{cancel: cancelPoll, version: version}
 			wg.Add(1)
-			go func(environmentID string) {
+			go func(pollCtx context.Context, item T) {
 				defer wg.Done()
-				runPoller(pollCtx, environmentID)
-			}(environmentID)
+				runPoller(pollCtx, item)
+			}(pollCtx, item)
 		}
 
-		for id, cancelPoll := range pollers {
+		for id, activePoller := range pollers {
 			if _, ok := current[id]; !ok {
-				cancelPoll()
+				activePoller.cancel()
 				delete(pollers, id)
 			}
 		}

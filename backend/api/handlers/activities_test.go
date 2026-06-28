@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -198,6 +199,8 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 		}
 		if event.Type == "snapshot" && event.EnvironmentID == "remote-1" && len(event.Activities) == 1 {
 			require.Equal(t, "remote-activity-1", event.Activities[0].ID)
+			require.Equal(t, "remote-1", event.Activities[0].SourceEnvironmentID)
+			require.Equal(t, "Remote", event.Activities[0].SourceEnvironmentName)
 			remoteSnapshot = true
 		}
 		return localSnapshot && remoteSnapshot
@@ -205,6 +208,68 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 
 	require.True(t, localSnapshot)
 	require.True(t, remoteSnapshot)
+}
+
+func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	activityService := services.NewActivityService(db)
+
+	var countEnvironmentQueries atomic.Bool
+	var environmentQueryCount atomic.Int64
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("arcane_test_count_environment_queries", func(tx *gorm.DB) {
+		if countEnvironmentQueries.Load() && activityTestQueryLoadsEnvironmentIDInternal(tx, "remote-1") {
+			environmentQueryCount.Add(1)
+		}
+	}))
+
+	token := "remote-token"
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
+	}))
+	defer server.Close()
+	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+
+	handler := &ActivityHandler{
+		activityService:    activityService,
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
+	}
+
+	remoteSnapshotCount := 0
+	runStreamAllInternal(t, ctx, cancel, handler, func(event activity.StreamEvent) bool {
+		if event.Type != "snapshot" || event.EnvironmentID != "remote-1" {
+			return false
+		}
+
+		remoteSnapshotCount++
+		if remoteSnapshotCount == 1 {
+			countEnvironmentQueries.Store(true)
+			return false
+		}
+
+		require.Zero(t, environmentQueryCount.Load(), "steady-state remote activity poll should not reload environment rows")
+		return true
+	})
+
+	require.GreaterOrEqual(t, remoteSnapshotCount, 2)
+}
+
+func activityTestQueryLoadsEnvironmentIDInternal(tx *gorm.DB, environmentID string) bool {
+	if tx.Statement == nil || tx.Statement.Table != "environments" {
+		return false
+	}
+	for _, arg := range tx.Statement.Vars {
+		if arg == environmentID {
+			return true
+		}
+	}
+	return false
 }
 
 func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInternal(t *testing.T) {

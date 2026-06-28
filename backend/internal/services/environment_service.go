@@ -41,6 +41,8 @@ type EnvironmentService struct {
 	tokenCacheMu    sync.RWMutex
 	tokenCache      map[string]edgeTokenCacheEntry
 	tokenByEnvID    map[string]string
+	remoteEnvMu     sync.RWMutex
+	remoteEnvs      map[string]models.Environment
 
 	// scheduler and lifecycleCtx are injected post-construction via SetScheduler
 	// (manager-only). Each enabled environment gets its own health-check job; this
@@ -86,6 +88,7 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 		}),
 		tokenCache:   make(map[string]edgeTokenCacheEntry),
 		tokenByEnvID: make(map[string]string),
+		remoteEnvs:   make(map[string]models.Environment),
 	}
 }
 
@@ -396,6 +399,88 @@ func (s *EnvironmentService) syncEnvironmentTokenCacheInternal(envID string, tok
 	}
 }
 
+// GetActiveRemoteEnvironmentSnapshot returns the latest in-process snapshot for
+// an enabled, visible, non-local remote environment.
+func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) (models.Environment, bool) {
+	if s == nil || environmentID == "" {
+		return models.Environment{}, false
+	}
+
+	s.remoteEnvMu.RLock()
+	environment, ok := s.remoteEnvs[environmentID]
+	s.remoteEnvMu.RUnlock()
+	if !ok || !isActiveRemoteEnvironmentInternal(environment) {
+		return models.Environment{}, false
+	}
+	return environment, true
+}
+
+func isActiveRemoteEnvironmentInternal(environment models.Environment) bool {
+	return environment.ID != "" && environment.ID != "0" && environment.Enabled && !environment.Hidden
+}
+
+func (s *EnvironmentService) syncRemoteEnvironmentSnapshotsInternal(environments []models.Environment) {
+	if s == nil {
+		return
+	}
+
+	next := make(map[string]models.Environment, len(environments))
+	for _, environment := range environments {
+		if isActiveRemoteEnvironmentInternal(environment) {
+			next[environment.ID] = environment
+		}
+	}
+
+	s.remoteEnvMu.Lock()
+	s.remoteEnvs = next
+	s.remoteEnvMu.Unlock()
+}
+
+func (s *EnvironmentService) cacheRemoteEnvironmentSnapshotInternal(environment models.Environment) {
+	if s == nil {
+		return
+	}
+
+	if !isActiveRemoteEnvironmentInternal(environment) {
+		s.removeRemoteEnvironmentSnapshotInternal(environment.ID)
+		return
+	}
+
+	s.remoteEnvMu.Lock()
+	s.remoteEnvs[environment.ID] = environment
+	s.remoteEnvMu.Unlock()
+}
+
+func (s *EnvironmentService) removeRemoteEnvironmentSnapshotInternal(environmentID string) {
+	if s == nil || environmentID == "" {
+		return
+	}
+
+	s.remoteEnvMu.Lock()
+	delete(s.remoteEnvs, environmentID)
+	s.remoteEnvMu.Unlock()
+}
+
+func (s *EnvironmentService) updateRemoteEnvironmentSnapshotInternal(environmentID string, update func(*models.Environment)) {
+	if s == nil || environmentID == "" || update == nil {
+		return
+	}
+
+	s.remoteEnvMu.Lock()
+	defer s.remoteEnvMu.Unlock()
+
+	environment, ok := s.remoteEnvs[environmentID]
+	if !ok {
+		return
+	}
+	update(&environment)
+	if isActiveRemoteEnvironmentInternal(environment) {
+		s.remoteEnvs[environmentID] = environment
+	} else {
+		delete(s.remoteEnvs, environmentID)
+	}
+}
+
 func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
 	const localEnvID = "0"
 
@@ -461,6 +546,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	if environment.Enabled {
 		s.registerHealthJobInternal(ctx, environment.ID)
 	}
+	s.cacheRemoteEnvironmentSnapshotInternal(*environment)
 
 	return environment, nil
 }
@@ -832,6 +918,7 @@ func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]mode
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote environments: %w", err)
 	}
+	s.syncRemoteEnvironmentSnapshotsInternal(envs)
 	return envs, nil
 }
 
@@ -883,6 +970,7 @@ func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, u
 	if err != nil {
 		return nil, err
 	}
+	s.cacheRemoteEnvironmentSnapshotInternal(*updated)
 
 	if rawAccessToken, ok := updates["access_token"]; ok {
 		accessToken, _ := rawAccessToken.(string)
@@ -926,6 +1014,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	}
 
 	s.invalidateEnvironmentTokenInternal(id)
+	s.removeRemoteEnvironmentSnapshotInternal(id)
 
 	// Create event in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), id, env.Name, models.EventTypeEnvironmentDelete, "Environment Deleted", fmt.Sprintf("Environment '%s' was deleted", env.Name), models.EventSeverityWarning, userID, username)
@@ -1179,6 +1268,14 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 	}
 
 	s.syncEnvironmentTokenCacheInternal(envID, encryptedKey)
+	now := time.Now()
+	s.updateRemoteEnvironmentSnapshotInternal(envID, func(environment *models.Environment) {
+		environment.ApiKeyID = &newApiKeyID
+		environment.AccessToken = &encryptedKey
+		environment.Status = string(models.EnvironmentStatusPending)
+		environment.LastSeen = nil
+		environment.UpdatedAt = &now
+	})
 
 	// Create event log in background
 	go s.createEnvironmentEvent(context.WithoutCancel(ctx), envID, envName, models.EventTypeEnvironmentApiKeyRegenerated, "API Key Regenerated", "Environment API key was regenerated and status set to pending", models.EventSeverityInfo, new(userID), new(username))
@@ -1483,7 +1580,11 @@ func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.
 		return nil, fmt.Errorf("failed to get environment: %w", err)
 	}
 
-	if envID == "0" {
+	return s.remoteEnvironmentTargetFromModelInternal(*environment)
+}
+
+func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environment models.Environment) (*remoteEnvironmentTargetInternal, error) {
+	if environment.ID == "0" {
 		return nil, errors.New("cannot proxy request to local environment")
 	}
 
@@ -1598,6 +1699,20 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string,
 	defer cancel()
 
 	target, err := s.resolveRemoteEnvironmentTargetInternal(proxyCtx, envID)
+	if err != nil {
+		return err
+	}
+
+	return s.proxyJSONRequestForTargetInternal(proxyCtx, target, method, path, body, out)
+}
+
+// ProxyJSONRequestForEnvironment sends a JSON request using an already-loaded
+// environment row, avoiding an extra environment lookup on hot stream paths.
+func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment models.Environment, method string, path string, body []byte, out any) error {
+	proxyCtx, cancel := s.getProxyRequestContextInternal(ctx)
+	defer cancel()
+
+	target, err := s.remoteEnvironmentTargetFromModelInternal(environment)
 	if err != nil {
 		return err
 	}

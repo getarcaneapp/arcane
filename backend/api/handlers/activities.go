@@ -13,6 +13,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/aggstream"
@@ -401,20 +402,44 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
 func (h *ActivityHandler) runRemoteActivityStreamPollersInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
-	aggstream.ReconcileEnvironmentPollers(ctx, h.environmentService, activityStreamEnvReconcileInterval, "activity stream",
-		func(pollCtx context.Context, environmentID string) {
-			h.runRemoteActivityStreamPollerInternal(pollCtx, environmentID, limit, events)
+	aggstream.ReconcilePollersByKey(ctx,
+		h.environmentService.ListRemoteEnvironments,
+		func(environment models.Environment) string {
+			return environment.ID
+		},
+		activityStreamEnvironmentVersionInternal,
+		activityStreamEnvReconcileInterval,
+		"activity stream",
+		func(pollCtx context.Context, environment models.Environment) {
+			h.runRemoteActivityStreamPollerInternal(pollCtx, environment, limit, events)
 		})
 }
 
-func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environmentID string, limit int, events chan<- activity.StreamEvent) {
+func activityStreamEnvironmentVersionInternal(environment models.Environment) string {
+	if environment.UpdatedAt == nil {
+		return environment.ID
+	}
+	return environment.ID + ":" + environment.UpdatedAt.UTC().Format(time.RFC3339Nano)
+}
+
+func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment models.Environment, limit int, events chan<- activity.StreamEvent) {
+	environmentID := environment.ID
 	lastError := ""
 
 	poll := func() {
 		pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
 		defer cancelPoll()
 
-		output, err := h.proxyListActivitiesInternal(pollCtx, &ListActivitiesInput{
+		currentEnvironment := environment
+		if h.environmentService != nil {
+			var ok bool
+			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID)
+			if !ok {
+				return
+			}
+		}
+
+		output, err := h.proxyListActivitiesForEnvironmentInternal(pollCtx, currentEnvironment, &ListActivitiesInput{
 			EnvironmentID: environmentID,
 			Limit:         resolveActivityStreamLimitInternal(limit),
 			Order:         "desc",
@@ -473,6 +498,19 @@ func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input
 	return &ListActivitiesOutput{Body: *out}, nil
 }
 
+func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment models.Environment, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("environment service not available")
+	}
+	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
+	var out base.Paginated[activity.Activity]
+	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {
+		return nil, translateRemoteProxyErrorInternal(err)
+	}
+	applyActivitySourceLabelsForEnvironmentInternal(environment, out.Data)
+	return &ListActivitiesOutput{Body: out}, nil
+}
+
 func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *GetActivityInput) (*GetActivityOutput, error) {
 	if h.environmentService == nil {
 		return nil, huma.Error500InternalServerError("environment service not available")
@@ -520,6 +558,29 @@ func (h *ActivityHandler) applyActivityStreamEventSourceLabelInternal(ctx contex
 	for i := range event.Activities {
 		applyActivitySourceInternal(&event.Activities[i], sourceID, sourceName)
 	}
+}
+
+func applyActivitySourceLabelsForEnvironmentInternal(environment models.Environment, activities []activity.Activity) {
+	sourceID, sourceName := activitySourceFromEnvironmentInternal(environment)
+	for i := range activities {
+		applyActivitySourceInternal(&activities[i], sourceID, sourceName)
+	}
+}
+
+func activitySourceFromEnvironmentInternal(environment models.Environment) (string, string) {
+	environmentID := environment.ID
+	if environmentID == "" {
+		environmentID = "0"
+	}
+	environmentName := environment.Name
+	if environmentName == "" {
+		if environmentID == "0" {
+			environmentName = "Local"
+		} else {
+			environmentName = environmentID
+		}
+	}
+	return environmentID, environmentName
 }
 
 func (h *ActivityHandler) resolveActivitySourceInternal(ctx context.Context, environmentID string) (string, string) {
