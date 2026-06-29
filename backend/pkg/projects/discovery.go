@@ -1,7 +1,10 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
+	"io/fs"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
@@ -125,6 +128,15 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
+		// A subdirectory we lack permission to read (e.g. a root-owned
+		// lost+found on a mounted volume) should be skipped rather than
+		// aborting discovery of sibling projects. The projects root itself
+		// is still surfaced as a hard error, since being unable to read it
+		// makes discovery impossible.
+		if !isRoot && errors.Is(err, fs.ErrPermission) {
+			slog.Debug("Skipping unreadable project subdirectory", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 
