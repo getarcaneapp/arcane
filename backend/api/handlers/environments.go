@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -220,7 +221,10 @@ func RegisterEnvironments(api huma.API, environmentService *services.Environment
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermEnvironmentsList),
+		// No global PermEnvironmentsList gate: this endpoint also backs the
+		// environment switcher, so any authenticated caller may list. The handler
+		// filters the result to the environments the caller can actually access.
+		// Management mutations (create/update/delete) remain global-gated below.
 	}, h.ListEnvironments)
 
 	huma.Register(api, huma.Operation{
@@ -419,12 +423,26 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
+	// The list endpoint backs both the environments management page and the
+	// environment switcher, so any authenticated caller may reach it. Global
+	// listers (sudo, global admins, or holders of the org-level
+	// environments:list permission) see every environment; environment-scoped
+	// callers see only the environments they hold at least one permission on.
+	ps, ok := humamw.PermissionsFromContext(ctx)
+	if !ok {
+		return nil, huma.Error403Forbidden("permission denied")
+	}
+	var accessibleEnvIDs []string // nil = no restriction
+	if !environmentListerSeesAllInternal(ps) {
+		accessibleEnvIDs = accessibleEnvironmentIDsInternal(ps)
+	}
+
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Type != "" {
 		params.Filters["type"] = input.Type
 	}
 
-	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params)
+	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params, accessibleEnvIDs)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EnvironmentListError{Err: err}).Error())
 	}
@@ -439,6 +457,30 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 			Pagination: toPaginationResponseInternal(paginationResp),
 		},
 	}, nil
+}
+
+// environmentListerSeesAllInternal reports whether the caller may list every
+// environment. True for sudo callers, global admins, and holders of the
+// org-level environments:list permission (Allows short-circuits on sudo and
+// treats global admins as holding every permission).
+func environmentListerSeesAllInternal(ps *authz.PermissionSet) bool {
+	return ps != nil && ps.Allows(authz.PermEnvironmentsList, "")
+}
+
+// accessibleEnvironmentIDsInternal returns the sorted set of environment IDs the
+// caller holds at least one environment-scoped permission on. A non-nil result
+// (possibly empty) restricts the environment list for non-global callers; an
+// empty result yields no environments.
+func accessibleEnvironmentIDsInternal(ps *authz.PermissionSet) []string {
+	if ps == nil {
+		return []string{}
+	}
+	ids := make([]string, 0, len(ps.PerEnv))
+	for envID := range ps.PerEnv {
+		ids = append(ids, envID)
+	}
+	sort.Strings(ids)
+	return ids
 }
 
 // CreateEnvironment creates a new environment.

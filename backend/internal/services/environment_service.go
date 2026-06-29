@@ -718,13 +718,23 @@ func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) 
 	return &environment, nil
 }
 
-func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
+func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
 	if strings.TrimSpace(params.Filters["type"]) != "" {
-		return s.listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx, params)
+		return s.listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx, params, accessibleEnvIDs)
 	}
 
 	var envs []models.Environment
 	q := s.db.WithContext(ctx).Model(&models.Environment{}).Where("hidden = ?", false)
+	// accessibleEnvIDs == nil means "no restriction". A non-nil slice limits the
+	// result to those environment IDs; an empty slice therefore matches nothing.
+	switch {
+	case accessibleEnvIDs == nil:
+		// no restriction
+	case len(accessibleEnvIDs) == 0:
+		q = q.Where("1 = 0")
+	default:
+		q = q.Where("id IN ?", accessibleEnvIDs)
+	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -750,7 +760,24 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	return out, paginationResp, nil
 }
 
-func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx context.Context, params pagination.QueryParams) ([]environment.Environment, pagination.Response, error) {
+// filterEnvironmentsByIDInternal returns only the environments whose ID is in
+// allowedIDs. A non-nil but empty allowedIDs yields an empty slice. Used to
+// restrict the runtime-filtered list path to a caller's accessible environments.
+func filterEnvironmentsByIDInternal(items []environment.Environment, allowedIDs []string) []environment.Environment {
+	allowed := make(map[string]struct{}, len(allowedIDs))
+	for _, id := range allowedIDs {
+		allowed[id] = struct{}{}
+	}
+	out := make([]environment.Environment, 0, len(items))
+	for _, item := range items {
+		if _, ok := allowed[item.ID]; ok {
+			out = append(out, item)
+		}
+	}
+	return out
+}
+
+func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
 	var envs []models.Environment
 	if err := s.db.WithContext(ctx).
 		Model(&models.Environment{}).
@@ -762,6 +789,11 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 	items, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
 	if mapErr != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
+	}
+
+	// nil = no restriction; non-nil restricts to the caller's accessible envs.
+	if accessibleEnvIDs != nil {
+		items = filterEnvironmentsByIDInternal(items, accessibleEnvIDs)
 	}
 
 	for i := range items {

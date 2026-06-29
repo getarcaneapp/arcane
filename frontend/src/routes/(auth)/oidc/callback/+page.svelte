@@ -10,6 +10,8 @@
 	import { settingsService } from '$lib/services/settings-service';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { authService } from '$lib/services/auth-service';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
@@ -124,7 +126,23 @@
 				console.warn('Skipping post-login settings fetch:', err);
 			}
 			toast.success('Successfully logged in!');
-			await goto(redirectTo, { replaceState: true });
+			// Navigate straight to a route the user can actually reach. Computing the
+			// reachable target here (rather than always going to /dashboard) avoids the
+			// (app) layout's auth-redirect superseding this navigation: an interrupted
+			// goto() never resolves, which would hang this callback on "Processing
+			// Login…". Environment-scoped users (no global perms) would otherwise bounce
+			// to /no-access mid-navigation. invalidateAll() above has repopulated
+			// page.data (user + permissions manifest) and the environment store.
+			const landingUser = page.data['user'] ?? user;
+			const target =
+				getAuthRedirectPath(
+					redirectTo,
+					landingUser,
+					environmentStore.selected?.id,
+					page.data['permissionsManifest'],
+					page.data['permissionsManifestLoadFailed'] ?? false
+				) ?? redirectTo;
+			await goto(target, { replaceState: true });
 		},
 		onError: (err: unknown) => {
 			console.error('OIDC callback error:', err);

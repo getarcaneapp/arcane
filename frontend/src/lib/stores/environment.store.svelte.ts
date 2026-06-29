@@ -93,6 +93,17 @@ function createEnvironmentManagementStore() {
 			return _setSelectedEnvironment(firstReachable);
 		}
 
+		// Last resort: nothing is auto-selectable (e.g. an environment-scoped user
+		// whose only environment is a currently-offline remote agent). Select the
+		// first available enabled environment so a valid environment stays in scope
+		// instead of leaving it null — which would make the app fall back to local
+		// ('0'), an environment the user may have no access to. The backend already
+		// filters the list to the caller's accessible environments.
+		const firstEnabled = available.find((env) => env.enabled);
+		if (firstEnabled) {
+			return _setSelectedEnvironment(firstEnabled);
+		}
+
 		_assignSelectedEnvironment(null);
 		return null;
 	}

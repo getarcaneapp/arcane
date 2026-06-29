@@ -434,28 +434,28 @@ func (s *RoleService) ListUserAssignments(ctx context.Context, userID string) ([
 	return out, nil
 }
 
-// SetUserAssignments replaces the user's source='manual' assignments with the
-// given desired set. Source='oidc' rows are preserved (use
-// ReplaceOidcAssignments for those). Enforces the global-admin guard.
-func (s *RoleService) SetUserAssignments(ctx context.Context, userID string, desired []models.UserRoleAssignment) error {
+// replaceUserAssignmentsForSourceInternal replaces the user's assignments for a
+// single source (manual or oidc), leaving other sources untouched. References
+// are validated inside the tx so a concurrent role/env delete yields a typed
+// error (→ 400) rather than an opaque FK violation, and the global-admin guard
+// is enforced before commit. Shared by SetUserAssignments and
+// ReplaceOidcAssignments.
+func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Context, userID, source string, desired []models.UserRoleAssignment) error {
 	for i := range desired {
 		desired[i].UserID = userID
-		desired[i].Source = models.RoleAssignmentSourceManual
+		desired[i].Source = source
 	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		// Validate inside the tx so a concurrent role/env delete can't race past
-		// this check. Yields a typed error → 400 at the handler, rather than an
-		// opaque FK violation surfacing as 500.
 		if err := validateAssignmentsExistInternal(tx, desired); err != nil {
 			return err
 		}
-		if err := tx.Where("user_id = ? AND source = ?", userID, models.RoleAssignmentSourceManual).
+		if err := tx.Where("user_id = ? AND source = ?", userID, source).
 			Delete(&models.UserRoleAssignment{}).Error; err != nil {
-			return fmt.Errorf("failed to clear manual assignments: %w", err)
+			return fmt.Errorf("failed to clear %s assignments: %w", source, err)
 		}
 		if len(desired) > 0 {
 			if err := tx.Create(&desired).Error; err != nil {
-				return fmt.Errorf("failed to insert assignments: %w", err)
+				return fmt.Errorf("failed to insert %s assignments: %w", source, err)
 			}
 		}
 		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
@@ -472,6 +472,13 @@ func (s *RoleService) SetUserAssignments(ctx context.Context, userID string, des
 	}
 	s.userCache.Delete(userID)
 	return nil
+}
+
+// SetUserAssignments replaces the user's source='manual' assignments with the
+// given desired set. Source='oidc' rows are preserved (use
+// ReplaceOidcAssignments for those). Enforces the global-admin guard.
+func (s *RoleService) SetUserAssignments(ctx context.Context, userID string, desired []models.UserRoleAssignment) error {
+	return s.replaceUserAssignmentsForSourceInternal(ctx, userID, models.RoleAssignmentSourceManual, desired)
 }
 
 // validateAssignmentsExistInternal verifies every distinct RoleID and
@@ -531,36 +538,12 @@ func validateAssignmentsExistInternal(tx *gorm.DB, desired []models.UserRoleAssi
 }
 
 // ReplaceOidcAssignments replaces the user's source='oidc' assignments. Manual
-// assignments are untouched. Enforces the global-admin guard after the swap.
+// assignments are untouched. An OIDC mapping referencing a since-deleted role or
+// environment fails with a typed error; the caller logs and continues login so
+// the user simply receives no OIDC-derived assignments. Enforces the
+// global-admin guard after the swap.
 func (s *RoleService) ReplaceOidcAssignments(ctx context.Context, userID string, desired []models.UserRoleAssignment) error {
-	for i := range desired {
-		desired[i].UserID = userID
-		desired[i].Source = models.RoleAssignmentSourceOidc
-	}
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.Where("user_id = ? AND source = ?", userID, models.RoleAssignmentSourceOidc).
-			Delete(&models.UserRoleAssignment{}).Error; err != nil {
-			return fmt.Errorf("failed to clear oidc assignments: %w", err)
-		}
-		if len(desired) > 0 {
-			if err := tx.Create(&desired).Error; err != nil {
-				return fmt.Errorf("failed to insert oidc assignments: %w", err)
-			}
-		}
-		count, err := s.countEffectiveGlobalAdminsInternal(ctx, tx, "")
-		if err != nil {
-			return err
-		}
-		if count == 0 {
-			return &common.NoGlobalAdminRemainsError{}
-		}
-		return nil
-	})
-	if err != nil {
-		return err
-	}
-	s.userCache.Delete(userID)
-	return nil
+	return s.replaceUserAssignmentsForSourceInternal(ctx, userID, models.RoleAssignmentSourceOidc, desired)
 }
 
 // CountGlobalAdminsExcludingUser returns the number of non-service users (other

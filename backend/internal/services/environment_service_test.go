@@ -738,7 +738,7 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
 		Params:  pagination.Params{Start: 0, Limit: 20},
 		Filters: map[string]string{},
-	})
+	}, nil)
 	require.NoError(t, err)
 	require.Len(t, listedEnvironments, 2)
 	for _, env := range listedEnvironments {
@@ -749,6 +749,51 @@ func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) 
 	require.NoError(t, err)
 	require.Len(t, remoteEnvironments, 1)
 	require.Equal(t, "env-visible", remoteEnvironments[0].ID)
+}
+
+func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByAccessibleEnvIDs(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	createTestEnvironment(t, db, "0", "http://localhost:3552", nil)
+	createNamedTestEnvironmentInternal(t, db, "env-a", "Env A", "http://a.example", new("token-a"))
+	createNamedTestEnvironmentInternal(t, db, "env-b", "Env B", "http://b.example", new("token-b"))
+
+	newParams := func(typeFilter string) pagination.QueryParams {
+		filters := map[string]string{}
+		if typeFilter != "" {
+			filters["type"] = typeFilter
+		}
+		return pagination.QueryParams{
+			Params:  pagination.Params{Start: 0, Limit: 20},
+			Filters: filters,
+		}
+	}
+
+	// nil = no restriction: every non-hidden environment is returned.
+	all, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), nil)
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"0", "env-a", "env-b"}, environmentIDsInternal(all))
+
+	// A non-nil allow-list restricts the result on the DB path.
+	scoped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), []string{"env-a"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"env-a"}, environmentIDsInternal(scoped))
+
+	// The runtime-filter path (type filter) honors the allow-list too.
+	scopedTyped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams("http"), []string{"env-a"})
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"env-a"}, environmentIDsInternal(scopedTyped))
+
+	// An empty (non-nil) allow-list yields no environments on either path.
+	none, _, err := svc.ListEnvironmentsPaginated(ctx, newParams(""), []string{})
+	require.NoError(t, err)
+	require.Empty(t, none)
+
+	noneTyped, _, err := svc.ListEnvironmentsPaginated(ctx, newParams("http"), []string{})
+	require.NoError(t, err)
+	require.Empty(t, noneTyped)
 }
 
 func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *testing.T) {
@@ -846,7 +891,7 @@ func TestEnvironmentService_ListEnvironmentsPaginated_FiltersByRuntimeType(t *te
 			listedEnvironments, _, err := svc.ListEnvironmentsPaginated(ctx, pagination.QueryParams{
 				Params:  pagination.Params{Start: 0, Limit: 20},
 				Filters: map[string]string{"type": tt.typeFilter},
-			})
+			}, nil)
 			require.NoError(t, err)
 			require.ElementsMatch(t, tt.wantIDs, environmentIDsInternal(listedEnvironments))
 		})

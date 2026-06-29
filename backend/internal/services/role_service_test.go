@@ -103,6 +103,33 @@ func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
 	require.True(t, common.IsInvalidRoleAssignmentError(err))
 }
 
+func TestReplaceOidcAssignmentsRejectsUnknownRole(t *testing.T) {
+	ctx := context.Background()
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	user := createTestUser(t, userSvc, "oidc-user", "oidc-user")
+
+	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []models.UserRoleAssignment{
+		{RoleID: "role_does_not_exist"},
+	})
+	require.Error(t, err)
+	require.True(t, common.IsInvalidRoleAssignmentError(err))
+}
+
+func TestReplaceOidcAssignmentsRejectsUnknownEnvironment(t *testing.T) {
+	ctx := context.Background()
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	user := createTestUser(t, userSvc, "oidc-user-env", "oidc-user-env")
+	missingEnv := "env_does_not_exist"
+
+	// A valid role scoped to a non-existent environment must fail existence
+	// validation (mirrors SetUserAssignments) rather than attempting an insert.
+	err := roleSvc.ReplaceOidcAssignments(ctx, user.ID, []models.UserRoleAssignment{
+		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &missingEnv},
+	})
+	require.Error(t, err)
+	require.True(t, common.IsInvalidRoleAssignmentError(err))
+}
+
 func TestEffectiveGlobalAdminCountIncludesCustomAllPermissionsRole(t *testing.T) {
 	ctx := context.Background()
 	userSvc, roleSvc := setupUserAndRoleServices(t)
