@@ -17,6 +17,8 @@
 
 For setup instructions, configuration details, and development guides, visit the **[official documentation site](https://getarcane.app)**.
 
+Troubleshooting nested Docker Compose discovery? See [Nested compose file discovery troubleshooting](docs/nested-compose-troubleshooting.md).
+
 ## Sponsors
 
 This project is supported by the following amazing people:
