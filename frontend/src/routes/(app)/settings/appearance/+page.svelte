@@ -274,7 +274,6 @@
 						/>
 					</SettingsRow>
 
-					<!-- Interface Animations -->
 					<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="inline">
 						<Switch
 							id="animationsEnabled"
