@@ -265,7 +265,6 @@
 						/>
 					</SettingsRow>
 
-					<!-- Glass & Blur Effects -->
 					<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="inline">
 						<Switch
 							id="glassEffectsEnabled"
