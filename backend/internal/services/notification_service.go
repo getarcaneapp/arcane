@@ -163,76 +163,85 @@ func (s *NotificationService) resolveNotificationTargetForAccessTokenInternal(ct
 	}, nil
 }
 
-func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.Context, payload notificationdto.DispatchRequest) error {
+func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.Context, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
 	if s.config == nil || strings.TrimSpace(s.config.GetManagerBaseURL()) == "" {
-		return errors.New("manager API URL is required for notification dispatch")
+		return notificationdto.DispatchResponse{}, errors.New("manager API URL is required for notification dispatch")
 	}
 	if strings.TrimSpace(s.config.AgentToken) == "" {
-		return errors.New("agent token is required for notification dispatch")
+		return notificationdto.DispatchResponse{}, errors.New("agent token is required for notification dispatch")
 	}
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
+		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to marshal notification dispatch payload: %w", err)
 	}
 
 	dispatchURL := strings.TrimRight(s.config.GetManagerBaseURL(), "/") + "/api/notifications/dispatch"
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, dispatchURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create notification dispatch request: %w", err)
+		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to create notification dispatch request: %w", err)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-Api-Key", s.config.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to dispatch notification to manager: %w", err)
+		return notificationdto.DispatchResponse{}, fmt.Errorf("failed to dispatch notification to manager: %w", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode >= http.StatusOK && resp.StatusCode < http.StatusMultipleChoices {
-		return nil
+		var apiResponse struct {
+			Data notificationdto.DispatchResponse `json:"data"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
+			return notificationdto.DispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", err)
+		}
+		return apiResponse.Data, nil
 	}
 
 	responseBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
+	return notificationdto.DispatchResponse{}, fmt.Errorf("manager notification dispatch failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(responseBody)))
 }
 
-func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload notificationdto.DispatchRequest) error {
+func (s *NotificationService) DispatchNotification(ctx context.Context, accessToken string, payload notificationdto.DispatchRequest) (notificationdto.DispatchResponse, error) {
 	if s.config != nil && s.config.AgentMode {
-		return errors.New("notification dispatch is manager-only")
+		return notificationdto.DispatchResponse{}, errors.New("notification dispatch is manager-only")
 	}
 
 	target, err := s.resolveNotificationTargetForAccessTokenInternal(ctx, accessToken)
 	if err != nil {
-		return err
+		return notificationdto.DispatchResponse{}, err
 	}
 
+	dispatchResponse := notificationdto.DispatchResponse{Message: "Notification dispatched successfully"}
 	switch payload.Kind {
 	case notificationdto.DispatchKindImageUpdate:
 		if payload.ImageUpdate == nil {
-			return errors.New("image update payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("image update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendImageUpdateNotificationForTargetInternal(ctx, target, payload.ImageUpdate.ImageRef, &payload.ImageUpdate.UpdateInfo, models.NotificationEventImageUpdate)
+		dispatchResponse.Delivered, err = s.sendImageUpdateNotificationForTargetInternal(ctx, target, payload.ImageUpdate.ImageRef, &payload.ImageUpdate.UpdateInfo, models.NotificationEventImageUpdate)
+		return dispatchResponse, err
 	case notificationdto.DispatchKindBatchImageUpdate:
 		if payload.BatchImageUpdate == nil {
-			return errors.New("batch image update payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("batch image update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, payload.BatchImageUpdate.Updates)
+		dispatchResponse.Delivered, err = s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, payload.BatchImageUpdate.Updates)
+		return dispatchResponse, err
 	case notificationdto.DispatchKindContainerUpdate:
 		if payload.ContainerUpdate == nil {
-			return errors.New("container update payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("container update payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendContainerUpdateNotificationForTargetInternal(ctx, target, payload.ContainerUpdate.ContainerName, payload.ContainerUpdate.ImageRef, payload.ContainerUpdate.OldDigest, payload.ContainerUpdate.NewDigest)
+		return dispatchResponse, s.sendContainerUpdateNotificationForTargetInternal(ctx, target, payload.ContainerUpdate.ContainerName, payload.ContainerUpdate.ImageRef, payload.ContainerUpdate.OldDigest, payload.ContainerUpdate.NewDigest)
 	case notificationdto.DispatchKindVulnerabilityFound:
 		if payload.VulnerabilityFound == nil {
-			return errors.New("vulnerability payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("vulnerability payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendVulnerabilityNotificationForTargetInternal(ctx, target, VulnerabilityNotificationPayload{
+		return dispatchResponse, s.sendVulnerabilityNotificationForTargetInternal(ctx, target, VulnerabilityNotificationPayload{
 			CVEID:            payload.VulnerabilityFound.CVEID,
 			CVELink:          payload.VulnerabilityFound.CVELink,
 			Severity:         payload.VulnerabilityFound.Severity,
@@ -243,18 +252,18 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 		})
 	case notificationdto.DispatchKindPruneReport:
 		if payload.PruneReport == nil {
-			return errors.New("prune report payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("prune report payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendPruneReportNotificationForTargetInternal(ctx, target, &payload.PruneReport.Result)
+		return dispatchResponse, s.sendPruneReportNotificationForTargetInternal(ctx, target, &payload.PruneReport.Result)
 	case notificationdto.DispatchKindAutoHeal:
 		if payload.AutoHeal == nil {
-			return errors.New("auto-heal payload is required")
+			return notificationdto.DispatchResponse{}, errors.New("auto-heal payload is required")
 		}
 		logManagerDispatchNotificationInternal(ctx, target, payload.Kind)
-		return s.sendAutoHealNotificationForTargetInternal(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
+		return dispatchResponse, s.sendAutoHealNotificationForTargetInternal(ctx, target, payload.AutoHeal.ContainerName, payload.AutoHeal.ContainerID)
 	default:
-		return fmt.Errorf("%w: %s", ErrUnsupportedDispatchKind, payload.Kind)
+		return notificationdto.DispatchResponse{}, fmt.Errorf("%w: %s", ErrUnsupportedDispatchKind, payload.Kind)
 	}
 }
 
@@ -397,35 +406,43 @@ func (s *NotificationService) DeleteSettings(ctx context.Context, provider model
 	return nil
 }
 
-func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) error {
+// SendImageUpdateNotification dispatches a single-image update notification and
+// returns the number of eligible providers it was delivered to (0 means no
+// provider has this event enabled, so callers must not mark the update notified).
+func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
 	if updateInfo == nil {
-		return errors.New("updateInfo is required")
+		return 0, errors.New("updateInfo is required")
 	}
 
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		dispatchResponse, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindImageUpdate,
 			ImageUpdate: &notificationdto.DispatchImageUpdate{
 				ImageRef:   imageRef,
 				UpdateInfo: *updateInfo,
 			},
 		})
+		if err != nil {
+			return 0, err
+		}
+		return dispatchResponse.Delivered, nil
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	return s.sendImageUpdateNotificationForTargetInternal(ctx, target, imageRef, updateInfo, eventType)
 }
 
-func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) error {
+func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
+		return 0, fmt.Errorf("failed to get notification settings: %w", err)
 	}
 
+	delivered := 0
 	var errors []string
 	for _, setting := range settings {
 		if !setting.Enabled {
@@ -471,6 +488,8 @@ func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx c
 			msg := sendErr.Error()
 			errMsg = new(msg)
 			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
+		} else {
+			delivered++
 		}
 
 		s.logNotification(ctx, setting.Provider, imageRef, status, errMsg, models.JSON{
@@ -483,10 +502,10 @@ func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx c
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
 	}
 
-	return nil
+	return delivered, nil
 }
 
 // isEventEnabled checks if a specific event type is enabled in the config
@@ -506,7 +525,7 @@ func (s *NotificationService) isEventEnabled(config models.JSON, eventType model
 
 func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindContainerUpdate,
 			ContainerUpdate: &notificationdto.DispatchContainerUpdate{
 				ContainerName: containerName,
@@ -515,6 +534,7 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 				NewDigest:     newDigest,
 			},
 		})
+		return err
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")
@@ -606,7 +626,7 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 	}
 
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindVulnerabilityFound,
 			VulnerabilityFound: &notificationdto.DispatchVulnerabilityFound{
 				CVEID:            payload.CVEID,
@@ -618,6 +638,7 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 				InstalledVersion: payload.InstalledVersion,
 			},
 		})
+		return err
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")
@@ -1360,24 +1381,31 @@ func (s *NotificationService) logNotification(ctx context.Context, provider mode
 	}
 }
 
-func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) error {
+// SendBatchImageUpdateNotification dispatches a batched image-update notification
+// and returns the number of eligible providers it was delivered to (0 means no
+// provider has this event enabled, so callers must not mark the updates notified).
+func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) (int, error) {
 	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
 	if len(updatesWithChanges) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		dispatchResponse, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindBatchImageUpdate,
 			BatchImageUpdate: &notificationdto.DispatchBatchImageUpdate{
 				Updates: updatesWithChanges,
 			},
 		})
+		if err != nil {
+			return 0, err
+		}
+		return dispatchResponse.Delivered, nil
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	return s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, updatesWithChanges)
@@ -1393,18 +1421,19 @@ func filterUpdatesWithChangesInternal(updates map[string]*imageupdate.Response) 
 	return updatesWithChanges
 }
 
-func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, updates map[string]*imageupdate.Response) error {
+func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, updates map[string]*imageupdate.Response) (int, error) {
 	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
 
 	if len(updatesWithChanges) == 0 {
-		return nil
+		return 0, nil
 	}
 
 	settings, err := s.GetAllSettings(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
+		return 0, fmt.Errorf("failed to get notification settings: %w", err)
 	}
 
+	delivered := 0
 	var errors []string
 	for _, setting := range settings {
 		if !setting.Enabled {
@@ -1419,6 +1448,10 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 		if !handled {
 			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
 			continue
+		}
+
+		if sendErr == nil {
+			delivered++
 		}
 
 		status, errMsg := collectNotificationSendResultInternal(&errors, setting.Provider, sendErr)
@@ -1436,10 +1469,10 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 	}
 
 	if len(errors) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
+		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
 	}
 
-	return nil
+	return delivered, nil
 }
 
 func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
@@ -2437,12 +2470,13 @@ func (s *NotificationService) SendPruneReportNotification(ctx context.Context, r
 	}
 
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindPruneReport,
 			PruneReport: &notificationdto.DispatchPruneReport{
 				Result: *result,
 			},
 		})
+		return err
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")
@@ -2715,13 +2749,14 @@ func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, 
 // SendAutoHealNotification sends a notification when a container is auto-healed.
 func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
 	if s.config != nil && s.config.AgentMode {
-		return s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
 			Kind: notificationdto.DispatchKindAutoHeal,
 			AutoHeal: &notificationdto.DispatchAutoHeal{
 				ContainerName: containerName,
 				ContainerID:   containerID,
 			},
 		})
+		return err
 	}
 
 	target, err := s.resolveNotificationTargetInternal(ctx, "")

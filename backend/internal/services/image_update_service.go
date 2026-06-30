@@ -251,12 +251,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 		slog.WarnContext(ctx, "Failed to save update result", "imageRef", imageRef, "error", saveErr.Error())
 	}
 
-	// Send notification if update is available
-	if digestResult.HasUpdate && s.notificationService != nil {
-		if notifErr := s.notificationService.SendImageUpdateNotification(ctx, imageRef, digestResult, models.NotificationEventImageUpdate); notifErr != nil {
-			slog.WarnContext(ctx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
-		}
-	}
+	s.notifyImageUpdateInternal(ctx, imageRef, digestResult, snapshot)
 
 	finalMessage := "Image update check completed"
 	if digestResult.HasUpdate {
@@ -264,6 +259,49 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 	s.completeImageUpdateActivityInternal(ctx, activityID, true, finalMessage)
 	return digestResult, nil
+}
+
+// notifyImageUpdateInternal sends the single-image update notification and marks the
+// record notified only when it was actually delivered to at least one provider with
+// no send errors. Mirroring the batch path, any send error leaves the record
+// unnotified so a later check retries it — a failed send must never silently poison
+// the notification_sent flag. Prefer the snapshot's image ID: it is the same key
+// saveUpdateResultWithSnapshotInternal stored the record under.
+func (s *ImageUpdateService) notifyImageUpdateInternal(ctx context.Context, imageRef string, digestResult *imageupdate.Response, snapshot *localImageSnapshot) {
+	if !digestResult.HasUpdate || s.notificationService == nil {
+		return
+	}
+
+	delivered, notifErr := s.notificationService.SendImageUpdateNotification(ctx, imageRef, digestResult, models.NotificationEventImageUpdate)
+	if notifErr != nil {
+		slog.WarnContext(ctx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
+	}
+	if notifErr != nil || delivered == 0 {
+		return
+	}
+
+	imageID := s.resolveNotifiedImageIDInternal(ctx, imageRef, snapshot)
+	if imageID == "" {
+		return
+	}
+	if markErr := s.MarkUpdatesAsNotified(ctx, []string{imageID}); markErr != nil {
+		slog.WarnContext(ctx, "Failed to mark update as notified", "imageRef", imageRef, "error", markErr.Error())
+	}
+}
+
+// resolveNotifiedImageIDInternal returns the image ID used to mark an update
+// notified, preferring the snapshot's image ID and falling back to a lookup by
+// reference.
+func (s *ImageUpdateService) resolveNotifiedImageIDInternal(ctx context.Context, imageRef string, snapshot *localImageSnapshot) string {
+	if snapshot != nil && snapshot.ImageID != "" {
+		return snapshot.ImageID
+	}
+	resolved, err := s.getImageIDByRef(ctx, imageRef)
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to resolve image ID to mark notified", "imageRef", imageRef, "error", err.Error())
+		return ""
+	}
+	return resolved
 }
 
 func digestPinnedImageUpdateResultInternal(imageRef string) (*imageupdate.Response, bool) {
@@ -1326,8 +1364,13 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 
 		slog.InfoContext(ctx, "Sending notifications for unnotified updates", "count", len(updatesToNotify))
 
-		if notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify); notifErr != nil {
+		delivered, notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify)
+		if notifErr != nil {
 			slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
+			return
+		}
+		if delivered == 0 {
+			slog.DebugContext(ctx, "No eligible notification providers for image updates; leaving records unnotified", "count", len(imageIDsToMark))
 			return
 		}
 		if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {

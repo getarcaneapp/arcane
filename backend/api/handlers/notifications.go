@@ -73,7 +73,7 @@ type DispatchNotificationInput struct {
 }
 
 type DispatchNotificationOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
+	Body base.ApiResponse[notification.DispatchResponse]
 }
 
 var supportedNotificationTestTypes = map[string]struct{}{
@@ -287,7 +287,8 @@ func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *D
 	if strings.TrimSpace(input.APIKey) == "" {
 		return nil, huma.Error401Unauthorized("missing remote environment access token")
 	}
-	if err := h.notificationService.DispatchNotification(ctx, input.APIKey, input.Body); err != nil {
+	dispatchResponse, err := h.notificationService.DispatchNotification(ctx, input.APIKey, input.Body)
+	if err != nil {
 		if errors.Is(err, services.ErrUnsupportedDispatchKind) {
 			return nil, huma.Error400BadRequest("unsupported dispatch kind")
 		}
@@ -298,9 +299,9 @@ func (h *NotificationHandler) DispatchNotification(ctx context.Context, input *D
 	}
 
 	return &DispatchNotificationOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: base.ApiResponse[notification.DispatchResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Notification dispatched successfully"},
+			Data:    dispatchResponse,
 		},
 	}, nil
 }

@@ -134,7 +134,7 @@ func TestNotificationService_DispatchNotification_InvalidAccessTokenReturnsUnaut
 	ctx := context.Background()
 	_, _, svc := setupNotificationTestServiceInternal(t)
 
-	err := svc.DispatchNotification(ctx, "missing-token", notificationdto.DispatchRequest{
+	_, err := svc.DispatchNotification(ctx, "missing-token", notificationdto.DispatchRequest{
 		Kind: notificationdto.DispatchKindImageUpdate,
 		ImageUpdate: &notificationdto.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
@@ -161,7 +161,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 		AccessToken: &token,
 	}).Error)
 
-	err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
+	_, err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
 		Kind: notificationdto.DispatchKind("bogus_kind"),
 	})
 
@@ -188,7 +188,7 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 		AccessToken: &token,
 	}).Error)
 
-	err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
+	dispatchResponse, err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
 		Kind: notificationdto.DispatchKindImageUpdate,
 		ImageUpdate: &notificationdto.DispatchImageUpdate{
 			ImageRef:   "nginx:latest",
@@ -197,6 +197,8 @@ func TestNotificationService_DispatchNotification_LogsManagerDispatchForAgent(t 
 	})
 
 	require.NoError(t, err)
+	require.Equal(t, "Notification dispatched successfully", dispatchResponse.Message)
+	require.Equal(t, 0, dispatchResponse.Delivered)
 	logs := logBuffer.String()
 	require.Contains(t, logs, "Manager dispatching notification on behalf of agent")
 	require.Contains(t, logs, "environment_id=env-remote")
@@ -217,7 +219,13 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
 		require.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched))
 		calls.Add(1)
-		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": notificationdto.DispatchResponse{
+				Message:   "Notification dispatched successfully",
+				Delivered: 2,
+			},
+		}))
 	}))
 	defer server.Close()
 
@@ -228,12 +236,51 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeDispatchesToMa
 		ManagerApiUrl: server.URL,
 	}, envSvc)
 
-	err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), models.NotificationEventImageUpdate)
+	delivered, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", newNotificationTestUpdateInfoInternal(), models.NotificationEventImageUpdate)
 	require.NoError(t, err)
+	require.EqualValues(t, 2, delivered)
 	require.EqualValues(t, 1, calls.Load())
 	require.Equal(t, notificationdto.DispatchKindImageUpdate, dispatched.Kind)
 	require.NotNil(t, dispatched.ImageUpdate)
 	require.Equal(t, "nginx:latest", dispatched.ImageUpdate.ImageRef)
+}
+
+func TestNotificationService_SendBatchImageUpdateNotification_AgentModeUsesManagerDeliveredCountInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	var dispatched notificationdto.DispatchRequest
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/notifications/dispatch", r.URL.Path)
+		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&dispatched))
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": notificationdto.DispatchResponse{
+				Message:   "Notification dispatched successfully",
+				Delivered: 0,
+			},
+		}))
+	}))
+	defer server.Close()
+
+	svc := NewNotificationService(db, &config.Config{
+		AppUrl:        "http://localhost:3552",
+		AgentMode:     true,
+		AgentToken:    "agent-token",
+		ManagerApiUrl: server.URL,
+	}, envSvc)
+
+	delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
+		"nginx:latest": newNotificationTestUpdateInfoInternal(),
+	})
+	require.NoError(t, err)
+	require.EqualValues(t, 0, delivered)
+	require.Equal(t, notificationdto.DispatchKindBatchImageUpdate, dispatched.Kind)
+	require.NotNil(t, dispatched.BatchImageUpdate)
+	require.Contains(t, dispatched.BatchImageUpdate.Updates, "nginx:latest")
 }
 
 func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdateInfo(t *testing.T) {
@@ -246,7 +293,7 @@ func TestNotificationService_SendImageUpdateNotification_AgentModeRequiresUpdate
 		AgentMode: true,
 	}, envSvc)
 
-	err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, models.NotificationEventImageUpdate)
+	_, err := svc.SendImageUpdateNotification(ctx, "nginx:latest", nil, models.NotificationEventImageUpdate)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "updateInfo is required")
 }
@@ -271,13 +318,14 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 	}, envSvc)
 
 	t.Run("empty updates", func(t *testing.T) {
-		err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{})
+		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{})
 		require.NoError(t, err)
+		require.EqualValues(t, 0, delivered)
 		require.EqualValues(t, 0, calls.Load())
 	})
 
 	t.Run("no changed updates", func(t *testing.T) {
-		err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
+		delivered, err := svc.SendBatchImageUpdateNotification(ctx, map[string]*imageupdate.Response{
 			"nginx:latest": {
 				HasUpdate:     false,
 				CurrentDigest: "sha256:current",
@@ -286,6 +334,7 @@ func TestNotificationService_SendBatchImageUpdateNotification_AgentModeSkipsNoOp
 			"redis:latest": nil,
 		})
 		require.NoError(t, err)
+		require.EqualValues(t, 0, delivered)
 		require.EqualValues(t, 0, calls.Load())
 	})
 }

@@ -132,3 +132,8 @@ type DispatchRequest struct {
 	PruneReport        *DispatchPruneReport        `json:"pruneReport,omitempty"`
 	AutoHeal           *DispatchAutoHeal           `json:"autoHeal,omitempty"`
 }
+
+type DispatchResponse struct {
+	Message   string `json:"message"`
+	Delivered int    `json:"delivered"`
+}
