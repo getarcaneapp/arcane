@@ -472,7 +472,7 @@ func NewDetailSummary(src *image.InspectResponse) DetailSummary {
 			}
 		}
 		out.Config.WorkingDir = src.Config.WorkingDir
-		out.Config.ArgsEscaped = src.Config.ArgsEscaped
+		out.Config.ArgsEscaped = src.Config.ArgsEscaped //nolint:staticcheck,nolintlint // Mirror Docker inspect data; deprecated only for new image builders.
 	}
 
 	out.Architecture = src.Architecture

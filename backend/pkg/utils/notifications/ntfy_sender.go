@@ -78,7 +78,7 @@ func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 	}
 
 	if config.DisableTLSVerification {
-		q.Set("disabletls", "yes")
+		q.Set("disabletlsverification", "yes")
 	}
 
 	u.RawQuery = q.Encode()

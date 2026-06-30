@@ -1,6 +1,7 @@
 package notifications
 
 import (
+	"net/url"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -111,7 +112,7 @@ func TestBuildNtfyURL(t *testing.T) {
 			},
 			wantErr: false,
 			check: func(url string) bool {
-				return url == "ntfy://user:pass@ntfy.example.com:8080/test?cache=no&disabletls=yes&firebase=no&icon=https%3A%2F%2Fexample.com%2Ficon.png&priority=max&tags=urgent&title=Arcane+Alert"
+				return url == "ntfy://user:pass@ntfy.example.com:8080/test?cache=no&disabletlsverification=yes&firebase=no&icon=https%3A%2F%2Fexample.com%2Ficon.png&priority=max&tags=urgent&title=Arcane+Alert"
 			},
 		},
 	}
@@ -127,4 +128,22 @@ func TestBuildNtfyURL(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestBuildNtfyURLDisableTLSVerificationUsesCertificateVerificationFlag(t *testing.T) {
+	gotURL, err := BuildNtfyURL(models.NtfyConfig{
+		Host:                   "ntfy.example.com",
+		Topic:                  "alerts",
+		Cache:                  true,
+		Firebase:               true,
+		DisableTLSVerification: true,
+	})
+	require.NoError(t, err)
+
+	parsedURL, err := url.Parse(gotURL)
+	require.NoError(t, err)
+
+	query := parsedURL.Query()
+	assert.Equal(t, "yes", query.Get("disabletlsverification"))
+	assert.Empty(t, query.Get("disabletls"))
 }
