@@ -391,18 +391,31 @@ func (s *GitOpsSyncService) buildSyncJobInternal(syncID, environmentID string, i
 			return schedule
 		},
 		RunFn: func(ctx context.Context) {
-			sync, err := s.getSyncRecordByIDInternal(ctx, environmentID, syncID)
-			if err != nil {
-				slog.DebugContext(ctx, "gitops auto-sync skipped; sync not found", "syncId", syncID, "error", err)
-				return
-			}
-			if !sync.AutoSync {
-				return
-			}
-			if _, err := s.PerformSync(ctx, environmentID, syncID, systemUser); err != nil {
-				slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", syncID, "error", err)
-			}
+			s.runScheduledSyncInternal(ctx, environmentID, syncID)
 		},
+	}
+}
+
+// runScheduledSyncInternal is the body of a scheduled sync fire. It re-reads the
+// sync each run so a row toggled to AutoSync=false self-cancels. If the row is gone
+// (e.g. deleted out-of-band via raw SQL), the job unregisters itself instead of
+// firing forever; transient load errors are skipped and retried next tick.
+func (s *GitOpsSyncService) runScheduledSyncInternal(ctx context.Context, environmentID, syncID string) {
+	sync, err := s.getSyncRecordByIDInternal(ctx, environmentID, syncID)
+	if err != nil {
+		if _, ok := errors.AsType[*models.NotFoundError](err); ok {
+			slog.InfoContext(ctx, "gitops auto-sync job unregistering; sync no longer exists", "syncId", syncID)
+			s.unregisterSyncJobInternal(ctx, syncID)
+			return
+		}
+		slog.DebugContext(ctx, "gitops auto-sync skipped; failed to load sync", "syncId", syncID, "error", err)
+		return
+	}
+	if !sync.AutoSync {
+		return
+	}
+	if _, err := s.PerformSync(ctx, environmentID, syncID, systemUser); err != nil {
+		slog.ErrorContext(ctx, "gitops auto-sync run failed", "syncId", syncID, "error", err)
 	}
 }
 
@@ -836,35 +849,44 @@ func (s *GitOpsSyncService) UpdateSync(ctx context.Context, environmentID, id st
 }
 
 func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id string, actor models.User) error {
-	// Get sync info before deleting
-	sync, err := s.getSyncRecordByIDInternal(ctx, environmentID, id)
-	if err != nil {
-		return err
-	}
-
-	// Stop the recurring job before the row goes away. Any in-flight run re-reads
-	// the sync and self-cancels once the row is gone.
+	// Stop the recurring job first, unconditionally. Even a sync whose row can no
+	// longer be loaded (corrupt or environment-mismatched) must stop firing; any
+	// in-flight run re-reads the row and self-cancels once it is gone.
 	s.unregisterSyncJobInternal(ctx, id)
 
+	// Best-effort load for the audit-event metadata. A corrupt or env-mismatched row
+	// must still be deletable, so a load failure falls through to the direct delete
+	// below instead of aborting.
+	sync, loadErr := s.getSyncRecordByIDInternal(ctx, environmentID, id)
+
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		// Clear gitops_managed_by for the associated project, if any.
-		if sync.ProjectID != nil && *sync.ProjectID != "" {
-			if err := tx.Model(&models.Project{}).
-				Where("id = ? AND gitops_managed_by = ?", *sync.ProjectID, id).
-				Update("gitops_managed_by", nil).Error; err != nil {
-				return fmt.Errorf("failed to clear gitops_managed_by: %w", err)
-			}
+		// Clear gitops_managed_by for any project still pointing at this sync, keyed
+		// on the sync id so orphaned managed flags are cleared even when the sync row
+		// (and its ProjectID) could not be loaded.
+		if err := tx.Model(&models.Project{}).
+			Where("gitops_managed_by = ?", id).
+			Update("gitops_managed_by", nil).Error; err != nil {
+			return fmt.Errorf("failed to clear gitops_managed_by: %w", err)
 		}
 
+		// Delete by id only (no environment scoping). The handler already enforced the
+		// delete permission; env scoping is precisely what made env-mismatched corrupt
+		// rows undeletable. A zero-row delete is treated as success (idempotent).
 		if err := tx.Where("id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
 			return fmt.Errorf("failed to delete sync: %w", err)
 		}
 		return nil
 	}); err != nil {
-		if sync.AutoSync {
+		// Re-register the recurring job only when we actually loaded an auto-sync row.
+		if loadErr == nil && sync.AutoSync {
 			s.registerSyncJobInternal(ctx, sync.ID, sync.EnvironmentID, sync.SyncInterval)
 		}
 		return err
+	}
+
+	if loadErr != nil {
+		slog.WarnContext(ctx, "Deleted GitOps sync whose record could not be loaded", "syncId", id, "loadError", loadErr)
+		return nil
 	}
 
 	// Log event
@@ -1205,6 +1227,45 @@ func (s *GitOpsSyncService) GetSyncStatus(ctx context.Context, environmentID, id
 	return status, nil
 }
 
+// CleanupLeakedScratchDirsOnStartup removes orphaned GitOps scratch directories
+// (.gitops-sync-stage-*, .gitops-backup-*, and the legacy "<name>.gitops-backup-<digits>"
+// form) left in the projects directory by a crash or container restart that interrupted
+// a sync mid-flight. These are Arcane-internal working dirs; left in place the filesystem
+// discovery imports them as phantom projects. It is safe to run at startup because it
+// executes before any sync job is registered, so nothing is mid-stage.
+func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Context) error {
+	projectsDir, err := s.projectService.getProjectsDirectoryInternal(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to resolve projects directory for gitops scratch cleanup: %w", err)
+	}
+
+	entries, err := os.ReadDir(projectsDir)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return nil
+		}
+		return fmt.Errorf("failed to list projects directory %s for gitops scratch cleanup: %w", projectsDir, err)
+	}
+
+	removed := 0
+	for _, entry := range entries {
+		if !entry.IsDir() || !projects.IsGitOpsScratchDirName(entry.Name()) {
+			continue
+		}
+		scratchPath := filepath.Join(projectsDir, entry.Name())
+		if rmErr := os.RemoveAll(scratchPath); rmErr != nil {
+			slog.WarnContext(ctx, "Failed to remove leaked GitOps scratch directory on startup", "path", scratchPath, "error", rmErr)
+			continue
+		}
+		removed++
+		slog.InfoContext(ctx, "Removed leaked GitOps scratch directory on startup", "path", scratchPath)
+	}
+	if removed > 0 {
+		slog.InfoContext(ctx, "Cleaned up leaked GitOps scratch directories on startup", "count", removed)
+	}
+	return nil
+}
+
 func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.Context) error {
 	var syncs []models.GitOpsSync
 	if err := s.db.WithContext(ctx).
@@ -1390,8 +1451,17 @@ func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Conte
 }
 
 func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
-	project, err := s.projectService.CreateProject(ctx, sync.ProjectName, composeContent, envContent, nil, actor)
+	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
+	// A name collision means a project directory already exists for this name, so the
+	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
+	project, err := s.projectService.createProjectInternal(ctx, sync.ProjectName, composeContent, envContent, nil, actor, false)
 	if err != nil {
+		if errors.Is(err, projects.ErrProjectDirExists) {
+			bindingErr := &common.GitOpsSyncProjectBindingBrokenError{
+				Err: fmt.Errorf("sync %s cannot create project %q: a directory with that name already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)),
+			}
+			return nil, s.failSyncAndDisableAutoSyncInternal(ctx, id, result, sync, actor, "GitOps project binding broken", bindingErr)
+		}
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to create project", err.Error())
 	}
 
@@ -1571,6 +1641,9 @@ func (s *GitOpsSyncService) syncProjectDirectoryInternal(ctx context.Context, sy
 	if stage.project == nil {
 		project, err := s.createDirectorySyncProjectInternal(ctx, sync, stage, actor)
 		if err != nil {
+			// A name-collision on create surfaces as a broken-binding error; disable
+			// auto-sync so it cannot keep retrying (no-op for other error kinds).
+			s.recordBrokenProjectBindingInternal(ctx, sync, actor, err)
 			return nil, nil, false, false, err
 		}
 		return project, stage.syncedFiles, true, true, nil
@@ -1887,6 +1960,10 @@ func (s *GitOpsSyncService) findUniqueProjectDirectoryCandidateInternal(ctx cont
 		if !projects.IsProjectDirectoryEntry(entry, candidatePath, false) {
 			continue
 		}
+		// Never adopt one of Arcane's own scratch dirs as a recovery candidate.
+		if projects.IsInternalScratchDirName(entry.Name()) {
+			continue
+		}
 		if prefix != "" && entry.Name() != prefix && !strings.HasPrefix(entry.Name(), prefix+"-") {
 			continue
 		}
@@ -2071,9 +2148,18 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
+	// Non-suffixing create: a GitOps sync must never mint a "-N" duplicate. Any
+	// adoptable existing directory was already resolved by getDirectorySyncProjectInternal,
+	// so a collision here means the name is taken by an unrelated/unrecoverable dir;
+	// treat it as a broken binding rather than creating a duplicate.
 	basePath := filepath.Join(projectsDir, projects.SanitizeProjectName(sync.ProjectName))
-	projectPath, folderName, err := projects.CreateUniqueDir(projectsDir, basePath, sync.ProjectName, 0o755)
+	projectPath, folderName, err := projects.CreateExactDir(projectsDir, basePath, sync.ProjectName, 0o755)
 	if err != nil {
+		if errors.Is(err, projects.ErrProjectDirExists) {
+			return nil, &common.GitOpsSyncProjectBindingBrokenError{
+				Err: fmt.Errorf("sync %s cannot create project %q: a directory with that name already exists; refusing to create a duplicate", sync.ID, projects.SanitizeProjectName(sync.ProjectName)),
+			}
+		}
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
 

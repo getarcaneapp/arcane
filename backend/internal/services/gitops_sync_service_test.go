@@ -115,6 +115,181 @@ func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T)
 	assert.Zero(t, count)
 }
 
+// TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched proves a
+// corrupt/env-mismatched sync is still deletable via the API: the request env ("0")
+// does not match the row's env ("5"), yet the delete must succeed and stop the job.
+func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	scheduler := &gitOpsSyncTestSchedulerInternal{}
+	svc.SetScheduler(ctx, scheduler)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-env-mismatch"},
+		Name:          "corrupt-sync",
+		EnvironmentID: "5",
+		ProjectName:   "demo-project",
+		SyncInterval:  60,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	require.NoError(t, svc.DeleteSync(ctx, "0", sync.ID, models.User{}))
+
+	var count int64
+	require.NoError(t, db.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Count(&count).Error)
+	assert.Zero(t, count)
+	assert.Contains(t, scheduler.removed, gitOpsSyncJobNameInternal(sync.ID))
+}
+
+// TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag verifies the managed
+// flag is cleared keyed on the sync id even when the sync's ProjectID is nil.
+func TestGitOpsSyncService_DeleteSync_ClearsOrphanedManagedFlag(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+
+	syncID := "sync-orphan-flag"
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		ProjectName:   "demo-project",
+		SyncInterval:  60,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	managed := &models.Project{
+		BaseModel:       models.BaseModel{ID: "proj-managed"},
+		Name:            "managed",
+		Path:            filepath.Join(t.TempDir(), "managed"),
+		GitOpsManagedBy: &syncID,
+	}
+	require.NoError(t, db.Create(managed).Error)
+
+	require.NoError(t, svc.DeleteSync(ctx, "0", syncID, models.User{}))
+
+	var got models.Project
+	require.NoError(t, db.Where("id = ?", managed.ID).First(&got).Error)
+	assert.Nil(t, got.GitOpsManagedBy)
+}
+
+// TestGitOpsSyncService_RunScheduledSync_UnregistersMissingSync verifies a scheduled
+// run whose row no longer exists (e.g. deleted out-of-band via raw SQL) unregisters
+// its own job instead of firing forever.
+func TestGitOpsSyncService_RunScheduledSync_UnregistersMissingSync(t *testing.T) {
+	ctx := context.Background()
+	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
+	scheduler := &gitOpsSyncTestSchedulerInternal{}
+	svc.SetScheduler(ctx, scheduler)
+
+	svc.runScheduledSyncInternal(ctx, "0", "ghost-sync")
+
+	assert.Contains(t, scheduler.removed, gitOpsSyncJobNameInternal("ghost-sync"))
+}
+
+// TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans verifies the
+// startup sweep removes leaked gitops scratch dirs (hidden and legacy name-embedded
+// forms) while leaving real project directories untouched.
+func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *testing.T) {
+	ctx := context.Background()
+	svc, _, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	mkdir := func(name string) string {
+		p := filepath.Join(projectsDir, name)
+		require.NoError(t, os.MkdirAll(p, 0o755))
+		return p
+	}
+	scratch := []string{
+		mkdir(".gitops-sync-stage-1219810203"),
+		mkdir(".gitops-backup-456"),
+		mkdir("Makerra.gitops-backup-1780656786384743013"),
+	}
+	realProject := mkdir("app")
+	require.NoError(t, os.WriteFile(filepath.Join(realProject, "compose.yaml"), []byte("services: {}\n"), 0o644))
+
+	require.NoError(t, svc.CleanupLeakedScratchDirsOnStartup(ctx))
+
+	for _, p := range scratch {
+		_, err := os.Stat(p)
+		assert.ErrorIs(t, err, os.ErrNotExist, "scratch dir should be removed: %s", p)
+	}
+	_, err := os.Stat(realProject)
+	assert.NoError(t, err, "real project dir must be kept")
+}
+
+// TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision verifies a
+// directory sync refuses to create a "-N" sibling when its target name is already taken
+// by a non-adoptable directory; instead it errors as a broken binding and disables auto-sync.
+func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	// Occupy the target name with a dir that is NOT an adoptable GitOps project
+	// (it has no matching compose file).
+	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectsDir, "Dozzle", "unrelated.txt"), []byte("x"), 0o644))
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-dup-refuse"},
+		Name:          "Dozzle",
+		EnvironmentID: "0",
+		ComposePath:   "Dozzle/docker-compose.yaml",
+		ProjectName:   "Dozzle",
+		SyncDirectory: true,
+		AutoSync:      true,
+		SyncInterval:  60,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	syncFiles := []projects.SyncFile{
+		{RelativePath: "docker-compose.yaml", Content: []byte("services:\n  app:\n    image: nginx:alpine\n")},
+	}
+
+	_, _, _, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
+	require.ErrorAs(t, err, &bindingErr)
+
+	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
+
+	var got models.GitOpsSync
+	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
+	assert.False(t, got.AutoSync, "auto-sync should be disabled on broken binding")
+}
+
+// TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision is the
+// single-file-sync analogue of the directory refuse: a name collision on create is a
+// broken binding, not a "-N" duplicate.
+func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+	svc.SetScheduler(ctx, &gitOpsSyncTestSchedulerInternal{})
+
+	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-single-dup"},
+		Name:          "Dozzle",
+		EnvironmentID: "0",
+		ComposePath:   "docker-compose.yaml",
+		ProjectName:   "Dozzle",
+		AutoSync:      true,
+		SyncInterval:  60,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	result := &gitops.SyncResult{}
+	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, result, models.User{})
+	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
+	require.ErrorAs(t, err, &bindingErr)
+
+	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
+
+	var got models.GitOpsSync
+	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
+	assert.False(t, got.AutoSync, "auto-sync should be disabled on broken binding")
+}
+
 func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayout(t *testing.T) {
 	ctx := context.Background()
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)

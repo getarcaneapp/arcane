@@ -146,6 +146,11 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	})
 	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
 	if appServices.GitOpsSync != nil {
+		// Sweep leaked gitops scratch dirs before the filesystem watcher can import
+		// them as phantom projects and before the directory-sync reconcile runs.
+		if err := appServices.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
+		}
 		if err := appServices.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
 		}

@@ -4572,6 +4572,40 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	assert.Empty(t, items)
 }
 
+// TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow verifies a
+// phantom project row imported from a leaked gitops scratch dir is pruned and not
+// re-imported, while a real project is kept. This closes the "deleted projects
+// resurrected on restart" loop for gitops scratch leftovers.
+func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	createComposeProjectDir(t, projectsRoot, "app")
+
+	scratchName := ".gitops-backup-9"
+	scratchPath := createComposeProjectDir(t, projectsRoot, scratchName)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "phantom-scratch"},
+		Name:      scratchName,
+		DirName:   &scratchName,
+		Path:      scratchPath,
+	}).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	items, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+	require.Len(t, items, 1)
+	assert.Equal(t, "app", items[0].Name)
+}
+
 func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirectoryEmptyOrUnmounted(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

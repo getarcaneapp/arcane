@@ -641,6 +641,57 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 	}
 }
 
+// ErrProjectDirExists is returned by CreateExactDir when the target directory
+// already exists. Callers that must not auto-rename (e.g. GitOps creates, which
+// must never mint "-N" duplicate projects on a broken binding) use this to fail
+// loudly instead of suffixing.
+var ErrProjectDirExists = errors.New("project directory already exists")
+
+// CreateExactDir creates basePath (the sanitized project directory) under
+// projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
+// when the directory already exists, leaving the caller to decide how to proceed.
+// Validation mirrors CreateUniqueDir so the created directory is always within
+// projectsRoot.
+func CreateExactDir(projectsRoot, basePath, name string, perm os.FileMode) (path, folderName string, err error) {
+	sanitized := SanitizeProjectName(name)
+	if sanitized == "" || strings.Trim(sanitized, "_") == "" {
+		return "", "", errors.New("invalid project name: results in empty directory name")
+	}
+
+	projectsRootAbs, err := filepath.Abs(projectsRoot)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve projects root directory: %w", err)
+	}
+	projectsRootAbs = filepath.Clean(projectsRootAbs)
+
+	candidateAbs, err := filepath.Abs(basePath)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve candidate path: %w", err)
+	}
+	candidateAbs = filepath.Clean(candidateAbs)
+
+	if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
+		return "", "", errors.New("project directory would be outside allowed projects root")
+	}
+
+	if mkErr := os.Mkdir(basePath, perm); mkErr != nil {
+		if os.IsExist(mkErr) {
+			return "", "", ErrProjectDirExists
+		}
+		return "", "", mkErr
+	}
+
+	// Paranoid post-create validation, matching CreateUniqueDir.
+	if !IsSafeSubdirectory(projectsRootAbs, candidateAbs) {
+		if strings.HasPrefix(candidateAbs, projectsRootAbs+string(filepath.Separator)) {
+			_ = os.Remove(candidateAbs)
+		}
+		return "", "", errors.New("created directory is outside allowed projects root")
+	}
+
+	return basePath, sanitized, nil
+}
+
 func SanitizeProjectName(name string) string {
 	name = strings.TrimSpace(name)
 	return strings.Map(func(r rune) rune {

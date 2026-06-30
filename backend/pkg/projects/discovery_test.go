@@ -149,3 +149,49 @@ func TestDiscoverProjectDirectories_UnlimitedDepthStillFindsNestedProject(t *tes
 	names := discoveredNamesInternal(discovered)
 	require.Equal(t, []string{"nested"}, names)
 }
+
+func TestIsInternalScratchDirName(t *testing.T) {
+	scratch := []string{
+		".project-update-preview-123",
+		".project-update-backup-123",
+		".gitops-sync-stage-1219810203",
+		".gitops-backup-456",
+		"Makerra.gitops-backup-1780656786384743013", // legacy name-embedded form
+	}
+	for _, name := range scratch {
+		require.True(t, IsInternalScratchDirName(name), "expected %q to be an internal scratch dir", name)
+	}
+
+	notScratch := []string{
+		"app",
+		"Dozzle",
+		"Dozzle-1",
+		"my.gitops-backup-notes", // non-numeric tail: a real user project, not scratch
+		"app.gitops-backup-2024", // short year-like tail: not a UnixNano scratch suffix
+		"gitops-backup-1",        // no leading dot before the marker
+	}
+	for _, name := range notScratch {
+		require.False(t, IsInternalScratchDirName(name), "expected %q NOT to be an internal scratch dir", name)
+	}
+
+	// IsGitOpsScratchDirName is the gitops-only subset used by the startup FS sweep.
+	require.True(t, IsGitOpsScratchDirName(".gitops-sync-stage-1"))
+	require.True(t, IsGitOpsScratchDirName("Makerra.gitops-backup-1780656786384743013"))
+	require.False(t, IsGitOpsScratchDirName(".project-update-backup-1"))
+}
+
+// TestDiscoverProjectDirectories_SkipsGitOpsScratchDirs verifies that leaked
+// gitops scratch directories (in both the hidden and legacy name-embedded forms)
+// are never discovered as projects, while a lookalike user project is kept.
+func TestDiscoverProjectDirectories_SkipsGitOpsScratchDirs(t *testing.T) {
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "app"))
+	writeComposeFileInternal(t, filepath.Join(root, ".gitops-sync-stage-1219810203"))
+	writeComposeFileInternal(t, filepath.Join(root, ".gitops-backup-456"))
+	writeComposeFileInternal(t, filepath.Join(root, "Makerra.gitops-backup-1780656786384743013"))
+	writeComposeFileInternal(t, filepath.Join(root, "notes.gitops-backup-final")) // lookalike user project
+
+	names := discoveredNamesInternal(discoverProjectDirectoriesInternal(t, root))
+	require.ElementsMatch(t, []string{"app", "notes.gitops-backup-final"}, names)
+}

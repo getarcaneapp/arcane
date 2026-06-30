@@ -1724,8 +1724,8 @@ func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map
 		if skipProjectCleanupInternal(p, seen) {
 			continue
 		}
-		if isProjectUpdateTempProjectInternal(p) {
-			tempDeletions = append(tempDeletions, projectCleanupDecision{project: p, reason: "removed internal project update temp record"})
+		if isInternalScratchProjectInternal(p) {
+			tempDeletions = append(tempDeletions, projectCleanupDecision{project: p, reason: "removed internal Arcane scratch record (project-update/gitops temp dir)"})
 			continue
 		}
 		candidates++
@@ -1783,16 +1783,16 @@ func skipProjectCleanupInternal(p models.Project, seen map[string]struct{}) bool
 	return p.GitOpsManagedBy != nil && strings.TrimSpace(*p.GitOpsManagedBy) != ""
 }
 
-func isProjectUpdateTempProjectInternal(p models.Project) bool {
-	if isProjectUpdateTempNameInternal(p.Name) || isProjectUpdateTempNameInternal(filepath.Base(p.Path)) {
+// isInternalScratchProjectInternal reports whether a project row was imported from
+// one of Arcane's own scratch directories (project-update preview/backup, or GitOps
+// sync-stage/backup). Such rows are never real user projects — a crash or restart
+// mid-operation can leak the scratch dir, which the filesystem discovery then imports.
+// They are force-removed during cleanup regardless of whether the dir still exists.
+func isInternalScratchProjectInternal(p models.Project) bool {
+	if projects.IsInternalScratchDirName(p.Name) || projects.IsInternalScratchDirName(filepath.Base(p.Path)) {
 		return true
 	}
-	return p.DirName != nil && isProjectUpdateTempNameInternal(*p.DirName)
-}
-
-func isProjectUpdateTempNameInternal(name string) bool {
-	name = strings.TrimSpace(name)
-	return strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-")
+	return p.DirName != nil && projects.IsInternalScratchDirName(*p.DirName)
 }
 
 // evaluateProjectCleanupInternal decides whether a project that was not seen in
@@ -2229,6 +2229,15 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, projectFiles []project.ProjectFileDraft, user models.User) (*models.Project, error) {
+	return s.createProjectInternal(ctx, name, composeContent, envContent, projectFiles, user, true)
+}
+
+// createProjectInternal creates a project's directory, files, and DB row. When
+// allowNameSuffix is true a directory-name collision is resolved by appending
+// "-N" (the interactive default). When false a collision returns
+// projects.ErrProjectDirExists (wrapped) so GitOps creates fail loudly instead of
+// minting runaway "-N" duplicate projects on a broken binding.
+func (s *ProjectService) createProjectInternal(ctx context.Context, name, composeContent string, envContent *string, projectFiles []project.ProjectFileDraft, user models.User, allowNameSuffix bool) (*models.Project, error) {
 	// A top-level `name:` in the compose file is authoritative over the
 	// submitted project name.
 	if yamlName := projects.ComposeContentProjectName(composeContent); yamlName != "" {
@@ -2242,7 +2251,12 @@ func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent
 	}
 
 	basePath := filepath.Join(projectsDirectory, sanitized)
-	projectPath, folderName, err := projects.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
+	var projectPath, folderName string
+	if allowNameSuffix {
+		projectPath, folderName, err = projects.CreateUniqueDir(projectsDirectory, basePath, name, common.DirPerm)
+	} else {
+		projectPath, folderName, err = projects.CreateExactDir(projectsDirectory, basePath, name, common.DirPerm)
+	}
 	if err != nil {
 		return nil, fmt.Errorf("failed to create project directory: %w", err)
 	}
