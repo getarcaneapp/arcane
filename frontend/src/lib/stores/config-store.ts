@@ -3,6 +3,8 @@ import type { Settings } from '$lib/types/settings';
 import { applyAccentColor } from '$lib/utils/theme';
 import { applyApplicationTheme } from '$lib/utils/theme';
 import { applyOledMode } from '$lib/utils/theme';
+import { applyGlassEffects } from '$lib/utils/theme';
+import { applyInterfaceAnimations } from '$lib/utils/theme';
 import { get, writable } from 'svelte/store';
 
 const settingsStore = writable<Settings>();
@@ -17,6 +19,8 @@ const set = (settings: Settings) => {
 	applyApplicationTheme(settings.applicationTheme);
 	applyAccentColor(settings.accentColor);
 	applyOledMode(settings.oledMode ?? false);
+	applyGlassEffects(settings.glassEffectsEnabled ?? true);
+	applyInterfaceAnimations(settings.animationsEnabled ?? true);
 	settingsStore.set(settings);
 };
 

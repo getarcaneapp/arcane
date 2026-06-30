@@ -587,6 +587,55 @@
 	--glass-shadow-color: oklch(0 0 0 / 0.6);
 }
 
+/*
+ * Appearance performance modes (Settings → Appearance), toggled on <html> from
+ * theme.ts. Absent by default, so existing installs keep the frosted-glass look
+ * until a user opts out.
+ *
+ * `no-blur`        strips backdrop-filter and makes glass surfaces opaque —
+ *                  backdrop-filter is the dominant GPU cost on Firefox/Zen.
+ * `reduce-effects` neutralizes decorative animations and transitions.
+ */
+html.no-blur *,
+html.no-blur *::before,
+html.no-blur *::after {
+	-webkit-backdrop-filter: none !important;
+	backdrop-filter: none !important;
+}
+
+/* Make translucent content surfaces solid so nothing shows through without blur. */
+html.no-blur :is(.bg-card\/30, .bg-card\/50, .bg-card\/60, .bg-card\/70, .bg-card\/80, .bg-card\/90) {
+	background-color: var(--card) !important;
+}
+html.no-blur :is(.bg-background\/60, .bg-background\/80, .bg-background\/95) {
+	background-color: var(--background) !important;
+}
+html.no-blur :is(.bg-popover\/20, .bg-popover\/95) {
+	background-color: var(--popover) !important;
+}
+html.no-blur .bg-input\/80 {
+	background-color: var(--input) !important;
+}
+
+/* Modal/sheet/drawer scrims relied on blur for separation — keep them dimmed
+   (not solid) so dialogs stay legible in light and dark mode. */
+html.no-blur :is(.bg-white\/10, .bg-black\/40, .bg-black\/60) {
+	background-color: color-mix(in oklab, black 55%, transparent) !important;
+}
+
+/* Neutralize every animation and transition — catches CSS keyframes as well as
+   Svelte component transitions (dialogs, sheets, tooltips, popovers, activity
+   center, profile menu). */
+html.reduce-effects *,
+html.reduce-effects *::before,
+html.reduce-effects *::after {
+	animation-duration: 0.001ms !important;
+	animation-delay: 0ms !important;
+	animation-iteration-count: 1 !important;
+	transition-duration: 0.001ms !important;
+	transition-delay: 0ms !important;
+}
+
 @theme inline {
 	--radius-sm: calc(var(--radius) * 0.6);
 	--radius-md: calc(var(--radius) * 0.8);

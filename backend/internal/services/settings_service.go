@@ -189,6 +189,8 @@ func DefaultSettingsConfig() *models.Settings {
 		IconCatalog:                     models.SettingVariable{Value: "selfhst"},
 		AccentColor:                     models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
 		OledMode:                        models.SettingVariable{Value: "false"},
+		GlassEffectsEnabled:             models.SettingVariable{Value: "true"},
+		AnimationsEnabled:               models.SettingVariable{Value: "true"},
 		MaxImageUploadSize:              models.SettingVariable{Value: "500"},
 		GitSyncMaxFiles:                 models.SettingVariable{Value: "500"},
 		GitSyncMaxTotalSizeMb:           models.SettingVariable{Value: "50"},

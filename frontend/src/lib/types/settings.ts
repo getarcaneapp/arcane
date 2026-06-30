@@ -58,6 +58,8 @@ export type Settings = {
 	iconCatalog: IconCatalog;
 	accentColor: string;
 	oledMode: boolean;
+	glassEffectsEnabled: boolean;
+	animationsEnabled: boolean;
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 	edgeMTLSManagerCAAvailable?: boolean;

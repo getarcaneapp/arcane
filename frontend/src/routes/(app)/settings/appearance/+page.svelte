@@ -19,6 +19,7 @@
 	import { applyAccentColor } from '$lib/utils/theme';
 	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/theme';
 	import { applyOledMode } from '$lib/utils/theme';
+	import { applyGlassEffects, applyInterfaceAnimations } from '$lib/utils/theme';
 	import { AppearanceIcon, MonitorSpeakerIcon, DockIcon } from '$lib/icons';
 	import { cn } from '$lib/utils';
 
@@ -36,7 +37,9 @@
 		accentColor: z.string(),
 		enableGravatar: z.boolean(),
 		avatarMaxUploadSizeMb: z.coerce.number().int().min(1).max(50),
-		oledMode: z.boolean()
+		oledMode: z.boolean(),
+		glassEffectsEnabled: z.boolean(),
+		animationsEnabled: z.boolean()
 	});
 
 	// Track local override state using the shared store
@@ -64,6 +67,8 @@
 		applyApplicationTheme(currentSettings.applicationTheme);
 		applyAccentColor(currentSettings.accentColor);
 		applyOledMode(currentSettings.oledMode ?? false);
+		applyGlassEffects(currentSettings.glassEffectsEnabled ?? true);
+		applyInterfaceAnimations(currentSettings.animationsEnabled ?? true);
 	}
 
 	onDestroy(() => {
@@ -120,6 +125,18 @@
 		$formInputs.oledMode.value = checked;
 		// Live preview: apply immediately so the user sees the effect
 		applyOledMode(checked);
+	}
+
+	function handleGlassEffectsChange(checked: boolean) {
+		$formInputs.glassEffectsEnabled.value = checked;
+		// Live preview: apply immediately so the user sees the effect
+		applyGlassEffects(checked);
+	}
+
+	function handleAnimationsChange(checked: boolean) {
+		$formInputs.animationsEnabled.value = checked;
+		// Live preview: apply immediately so the user sees the effect
+		applyInterfaceAnimations(checked);
 	}
 
 	function handleLabelsSegmentSelect(segment: 'default' | 'on' | 'off') {
@@ -245,6 +262,26 @@
 							checked={$formInputs.oledMode.value}
 							disabled={isReadOnly || !isDefaultApplicationTheme}
 							onCheckedChange={handleOledModeChange}
+						/>
+					</SettingsRow>
+
+					<!-- Glass & Blur Effects -->
+					<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="inline">
+						<Switch
+							id="glassEffectsEnabled"
+							checked={$formInputs.glassEffectsEnabled.value}
+							disabled={isReadOnly}
+							onCheckedChange={handleGlassEffectsChange}
+						/>
+					</SettingsRow>
+
+					<!-- Interface Animations -->
+					<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="inline">
+						<Switch
+							id="animationsEnabled"
+							checked={$formInputs.animationsEnabled.value}
+							disabled={isReadOnly}
+							onCheckedChange={handleAnimationsChange}
 						/>
 					</SettingsRow>
 				</div>

@@ -365,6 +365,35 @@ export function applyOledMode(enabled: boolean): void {
 	syncBrowserThemeColor();
 }
 
+const NO_BLUR_CLASS = 'no-blur';
+const REDUCE_EFFECTS_CLASS = 'reduce-effects';
+
+/**
+ * Toggle glass / backdrop-blur effects. When disabled, the `no-blur` class on
+ * <html> drives app.css to strip every backdrop-filter and make glass surfaces
+ * opaque — the main lever for cutting GPU usage on Firefox-based browsers.
+ */
+export function applyGlassEffects(enabled: boolean): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	document.documentElement.classList.toggle(NO_BLUR_CLASS, !enabled);
+}
+
+/**
+ * Toggle decorative, always-on interface animations (ambient login shimmer,
+ * loading-bar glow, pulse indicators). When disabled we add a `reduce-effects`
+ * class to <html> and app.css halts those animations.
+ */
+export function applyInterfaceAnimations(enabled: boolean): void {
+	if (typeof document === 'undefined') {
+		return;
+	}
+
+	document.documentElement.classList.toggle(REDUCE_EFFECTS_CLASS, !enabled);
+}
+
 export const FONT_SIZE_MIN = 12;
 export const FONT_SIZE_MAX = 20;
 export const FONT_SIZE_DEFAULT = 14; // matches `html { font-size: 14px }` in app.css

@@ -20,6 +20,13 @@
 	let password = $state('');
 	const queryClient = useQueryClient();
 
+	// The ambient shimmer is a ~300vmax rotating conic-gradient that pegs the GPU
+	// on Firefox-based browsers. `animationsEnabled` is a public setting, so it
+	// reaches this pre-auth page via data.settings — skip rendering the shimmer
+	// when animations are disabled. (OS reduced-motion is handled by the
+	// prefers-reduced-motion rule in the <style> below.)
+	const showAmbientMotion = $derived(data.settings?.animationsEnabled !== false);
+
 	const accentColor = $derived(data.settings?.accentColor);
 	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
 
@@ -98,7 +105,9 @@
 
 <div class="ambient" aria-hidden="true">
 	<div class="ambient__mesh"></div>
-	<div class="ambient__shimmer"></div>
+	{#if showAmbientMotion}
+		<div class="ambient__shimmer"></div>
+	{/if}
 	<div class="ambient__grid"></div>
 	<div class="ambient__noise"></div>
 	<div class="ambient__vignette"></div>

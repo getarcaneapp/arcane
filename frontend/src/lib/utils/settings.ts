@@ -10,6 +10,8 @@ export type LocalSettings = {
 	iconCatalog: IconCatalog;
 	accentColor: string;
 	oledMode: boolean;
+	glassEffectsEnabled: boolean;
+	animationsEnabled: boolean;
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
@@ -23,6 +25,8 @@ const LOCAL_SETTING_KEYS = new Set([
 	'iconCatalog',
 	'accentColor',
 	'oledMode',
+	'glassEffectsEnabled',
+	'animationsEnabled',
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',

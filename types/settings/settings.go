@@ -418,6 +418,16 @@ type Update struct {
 	// Required: false
 	KeyboardShortcutsEnabled *string `json:"keyboardShortcutsEnabled,omitempty"`
 
+	// GlassEffectsEnabled indicates if blur/glass effects are applied to UI surfaces.
+	//
+	// Required: false
+	GlassEffectsEnabled *string `json:"glassEffectsEnabled,omitempty"`
+
+	// AnimationsEnabled indicates if decorative interface animations are enabled.
+	//
+	// Required: false
+	AnimationsEnabled *string `json:"animationsEnabled,omitempty"`
+
 	// DockerApiTimeout is the timeout for Docker API operations in seconds.
 	//
 	// Required: false
