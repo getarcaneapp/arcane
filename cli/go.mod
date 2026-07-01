@@ -17,6 +17,7 @@ require (
 	github.com/spf13/pflag v1.0.10
 	github.com/spf13/viper v1.21.0
 	github.com/stretchr/testify v1.11.1
+	go.getarcane.app/sys/atomic v0.1.0
 	go.withmatt.com/size v0.0.0-20250220224316-11aee5773e67
 )
 

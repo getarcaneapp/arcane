@@ -6,6 +6,7 @@ import (
 	"errors"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
@@ -134,10 +135,9 @@ const defaultSendRequestTimeout = 5 * time.Minute
 
 // TunnelConn wraps a WebSocket connection with send/receive helpers.
 type TunnelConn struct {
-	conn     *websocket.Conn
-	mu       sync.Mutex
-	closed   bool
-	closedMu sync.RWMutex
+	conn   *websocket.Conn
+	mu     sync.Mutex
+	closed atomic.Bool
 }
 
 // NewTunnelConn creates a new WebSocket tunnel connection wrapper.
@@ -150,12 +150,9 @@ func (t *TunnelConn) Send(msg *TunnelMessage) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
-	t.closedMu.RLock()
-	if t.closed {
-		t.closedMu.RUnlock()
+	if t.closed.Load() {
 		return websocket.ErrCloseSent
 	}
-	t.closedMu.RUnlock()
 
 	data, err := json.Marshal(msg)
 	if err != nil {
@@ -197,9 +194,7 @@ func (t *TunnelConn) IsExpectedReceiveError(err error) bool {
 
 // Close closes the WebSocket tunnel connection.
 func (t *TunnelConn) Close() error {
-	t.closedMu.Lock()
-	t.closed = true
-	t.closedMu.Unlock()
+	t.closed.Store(true)
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -208,9 +203,7 @@ func (t *TunnelConn) Close() error {
 
 // IsClosed returns whether the connection is closed.
 func (t *TunnelConn) IsClosed() bool {
-	t.closedMu.RLock()
-	defer t.closedMu.RUnlock()
-	return t.closed
+	return t.closed.Load()
 }
 
 // SendRequest sends a request and waits for response.
@@ -233,11 +226,10 @@ type grpcAgentStream interface {
 
 // GRPCManagerTunnelConn wraps the manager-side gRPC tunnel stream.
 type GRPCManagerTunnelConn struct {
-	stream   grpcManagerStream
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	closed   bool
-	closedMu sync.RWMutex
+	stream grpcManagerStream
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	closed atomic.Bool
 }
 
 // NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper.
@@ -310,9 +302,7 @@ func (t *GRPCManagerTunnelConn) Close() error {
 
 // IsClosed returns whether the stream is closed.
 func (t *GRPCManagerTunnelConn) IsClosed() bool {
-	t.closedMu.RLock()
-	defer t.closedMu.RUnlock()
-	return t.closed
+	return t.closed.Load()
 }
 
 // SendRequest sends a request and waits for response.
@@ -321,18 +311,15 @@ func (t *GRPCManagerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMess
 }
 
 func (t *GRPCManagerTunnelConn) markClosed() {
-	t.closedMu.Lock()
-	t.closed = true
-	t.closedMu.Unlock()
+	t.closed.Store(true)
 }
 
 // GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.
 type GRPCAgentTunnelConn struct {
-	stream   grpcAgentStream
-	cancel   context.CancelFunc
-	mu       sync.Mutex
-	closed   bool
-	closedMu sync.RWMutex
+	stream grpcAgentStream
+	cancel context.CancelFunc
+	mu     sync.Mutex
+	closed atomic.Bool
 }
 
 // NewGRPCAgentTunnelConn creates an agent-side gRPC tunnel wrapper.
@@ -402,9 +389,7 @@ func (t *GRPCAgentTunnelConn) Close() error {
 
 // IsClosed returns whether the stream is closed.
 func (t *GRPCAgentTunnelConn) IsClosed() bool {
-	t.closedMu.RLock()
-	defer t.closedMu.RUnlock()
-	return t.closed
+	return t.closed.Load()
 }
 
 // SendRequest sends a request and waits for response.
@@ -413,9 +398,7 @@ func (t *GRPCAgentTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessag
 }
 
 func (t *GRPCAgentTunnelConn) markClosed() {
-	t.closedMu.Lock()
-	t.closed = true
-	t.closedMu.Unlock()
+	t.closed.Store(true)
 }
 
 func sendRequestWithPending(ctx context.Context, conn interface {

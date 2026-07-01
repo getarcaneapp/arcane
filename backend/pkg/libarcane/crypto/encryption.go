@@ -14,6 +14,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"go.getarcane.app/sys/atomic"
 )
 
 var encryptionKey []byte
@@ -125,35 +127,7 @@ func agentKeyDir() string {
 }
 
 func atomicWriteHexFile(path string, key []byte, mode os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, "agent_key_")
-	if err != nil {
-		return err
-	}
-	tmpPath := tmp.Name()
-	defer func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmpPath)
-	}()
-
-	if _, err := tmp.WriteString(hex.EncodeToString(key) + "\n"); err != nil {
-		return err
-	}
-	if err := tmp.Sync(); err != nil {
-		// proceed, but return error if rename fails later
-		slog.Warn("Failed to sync agent key temp file; key may not be fully persisted", "err", err)
-	}
-	if err := tmp.Close(); err != nil {
-		return err
-	}
-	if err := os.Rename(tmpPath, path); err != nil {
-		return err
-	}
-	if err := os.Chmod(path, mode); err != nil {
-		// Non-fatal; permissions might be too permissive
-		slog.Warn("Failed to set permissions on agent key file", "path", path, "err", err)
-	}
-	return nil
+	return atomic.WriteFile(path, []byte(hex.EncodeToString(key)+"\n"), mode)
 }
 
 func deriveDevKey() []byte {

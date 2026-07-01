@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
+	"go.getarcane.app/sys/atomic"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 )
@@ -237,7 +238,7 @@ func recordManagerMTLSEnrollmentInternal(cfg *Config, envID string, now time.Tim
 	if now.IsZero() {
 		now = time.Now()
 	}
-	return writeFileAtomicInternal(markerPath, []byte(now.UTC().Format(time.RFC3339Nano)+"\n"), 0o600)
+	return atomic.WriteFile(markerPath, []byte(now.UTC().Format(time.RFC3339Nano)+"\n"), 0o600)
 }
 
 func managerMTLSEnrollmentMarkerPathInternal(cfg *Config, envID string) (string, error) {
@@ -303,7 +304,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 		needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 		if !needsEnrollment {
 			if !fileExistsInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
-				if err := writeFileAtomicInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+				if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 					return fmt.Errorf("failed to write edge mTLS enrollment marker: %w", err)
 				}
 			}
@@ -374,7 +375,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 		if strings.TrimSpace(file.Permissions) == "0600" {
 			perm = 0o600
 		}
-		if err := writeFileAtomicInternal(targetPath, []byte(file.Content), perm); err != nil {
+		if err := atomic.WriteFile(targetPath, []byte(file.Content), perm); err != nil {
 			return fmt.Errorf("failed to write edge mTLS asset %s: %w", file.Name, err)
 		}
 	}
@@ -382,7 +383,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	if needsEnrollment {
 		return fmt.Errorf("edge mTLS enrollment wrote unusable assets: %s", reason)
 	}
-	if err := writeFileAtomicInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
+	if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
 		return fmt.Errorf("failed to write edge mTLS enrollment marker: %w", err)
 	}
 
@@ -1205,7 +1206,7 @@ func writePEMFileInternal(path string, blockType string, bytes []byte, perm os.F
 	if pemBytes == nil {
 		return fmt.Errorf("failed to encode PEM file %s", path)
 	}
-	return writeFileAtomicInternal(path, pemBytes, perm)
+	return atomic.WriteFile(path, pemBytes, perm)
 }
 
 // caKeyEncryptedPrefix marks files written with libcrypto envelope encryption.
@@ -1231,7 +1232,7 @@ func writeCAKeyFileInternal(path string, derBytes []byte) error {
 		return errors.New("failed to encrypt edge mTLS CA private key: encrypted payload is empty")
 	}
 
-	return writeFileAtomicInternal(path, []byte(caKeyEncryptedPrefix+ciphertext), 0o600)
+	return atomic.WriteFile(path, []byte(caKeyEncryptedPrefix+ciphertext), 0o600)
 }
 
 // readCAKeyPEMInternal returns the plain PEM bytes of the edge CA private key,
@@ -1251,36 +1252,6 @@ func readCAKeyPEMInternal(path string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to decrypt CA private key %s: %w", path, err)
 	}
 	return []byte(plaintext), nil
-}
-
-// writeFileAtomicInternal writes data to path via a temp file + rename.
-func writeFileAtomicInternal(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for %s: %w", path, err)
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("failed to write temp file %s: %w", tmpName, err)
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("failed to chmod temp file %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("failed to close temp file %s: %w", tmpName, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return fmt.Errorf("failed to rename %s to %s: %w", tmpName, path, err)
-	}
-	return nil
 }
 
 func fileExistsInternal(path string) bool {

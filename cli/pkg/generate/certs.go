@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/spf13/cobra"
+	"go.getarcane.app/sys/atomic"
 )
 
 const (
@@ -378,49 +379,5 @@ func writePEMFileInternal(path, blockType string, bytes []byte, perm os.FileMode
 	if pemBytes == nil {
 		return fmt.Errorf("failed to encode PEM file %s", path)
 	}
-	return writeFileAtomicInternal(path, pemBytes, perm)
-}
-
-func writeFileAtomicInternal(path string, data []byte, perm os.FileMode) error {
-	dir := filepath.Dir(path)
-	tmp, err := os.CreateTemp(dir, filepath.Base(path)+".tmp-*")
-	if err != nil {
-		return fmt.Errorf("failed to create temp file for %s: %w", path, err)
-	}
-	tmpName := tmp.Name()
-	cleanup := func() { _ = os.Remove(tmpName) }
-
-	if _, err := tmp.Write(data); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("failed to write temp file %s: %w", tmpName, err)
-	}
-	if err := tmp.Chmod(perm); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("failed to chmod temp file %s: %w", tmpName, err)
-	}
-	if err := tmp.Sync(); err != nil {
-		_ = tmp.Close()
-		cleanup()
-		return fmt.Errorf("failed to sync temp file %s: %w", tmpName, err)
-	}
-	if err := tmp.Close(); err != nil {
-		cleanup()
-		return fmt.Errorf("failed to close temp file %s: %w", tmpName, err)
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		cleanup()
-		return fmt.Errorf("failed to rename %s to %s: %w", tmpName, path, err)
-	}
-
-	dirFile, err := os.Open(dir)
-	if err != nil {
-		return fmt.Errorf("failed to open directory %s for sync: %w", dir, err)
-	}
-	defer func() { _ = dirFile.Close() }()
-	if err := dirFile.Sync(); err != nil {
-		return fmt.Errorf("failed to sync directory %s: %w", dir, err)
-	}
-	return nil
+	return atomic.WriteFile(path, pemBytes, perm)
 }

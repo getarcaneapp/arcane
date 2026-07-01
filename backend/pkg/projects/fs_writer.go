@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"go.getarcane.app/sys/atomic"
 )
 
 // DefaultComposeFileName is the compose filename Arcane writes when a project
@@ -73,7 +74,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 		composePath = filepath.Join(dirPath, DefaultComposeFileName)
 	}
 
-	if err := os.WriteFile(composePath, []byte(content), pkgutils.FilePerm); err != nil {
+	if err := atomic.WriteFile(composePath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write compose file: %w", err)
 	}
 
@@ -108,7 +109,7 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	}
 
 	targetPath := filepath.Join(dirPath, fileName)
-	if err := os.WriteFile(targetPath, []byte(content), pkgutils.FilePerm); err != nil {
+	if err := atomic.WriteFile(targetPath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
 
@@ -193,7 +194,7 @@ func WriteTemplateFile(filePath, content string) error {
 		return fmt.Errorf("failed to create template directory: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, []byte(content), pkgutils.FilePerm); err != nil {
+	if err := atomic.WriteFile(filePath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write template file: %w", err)
 	}
 
@@ -207,7 +208,7 @@ func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 		return fmt.Errorf("failed to create directory: %w", err)
 	}
 
-	if err := os.WriteFile(filePath, []byte(content), perm); err != nil {
+	if err := atomic.WriteFile(filePath, []byte(content), perm); err != nil {
 		return fmt.Errorf("failed to write file: %w", err)
 	}
 
@@ -281,13 +282,8 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 		if file.Executable {
 			perm = 0o755
 		}
-		if err := os.WriteFile(targetPathClean, file.Content, perm); err != nil {
+		if err := atomic.WriteFile(targetPathClean, file.Content, perm); err != nil {
 			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)
-		}
-		// os.WriteFile only honors the mode on file creation. Re-chmod so an
-		// update path also lifts/lowers the +x bit to match the repo.
-		if err := os.Chmod(targetPathClean, perm); err != nil {
-			return nil, fmt.Errorf("failed to set mode on %s: %w", file.RelativePath, err)
 		}
 
 		writtenPaths = append(writtenPaths, file.RelativePath)

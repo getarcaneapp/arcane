@@ -190,6 +190,34 @@ func TestWriteSyncedDirectory_DowngradesExecutableBit(t *testing.T) {
 	assert.Equal(t, os.FileMode(0), second.Mode().Perm()&0o111, "executable bit should clear on update when repo no longer marks +x")
 }
 
+func TestWriteSyncedDirectory_UpgradesExecutableBitOnUpdate(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("file mode bits are not represented on Windows FS")
+	}
+
+	root := t.TempDir()
+	project := filepath.Join(root, "myproject")
+
+	// First write: file committed without +x.
+	_, err := WriteSyncedDirectory(root, project, []SyncFile{
+		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\n"), Executable: false},
+	})
+	require.NoError(t, err)
+	first, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
+	require.NoError(t, err)
+	require.Equal(t, os.FileMode(0), first.Mode().Perm()&0o111)
+
+	// Second write: same file, now with +x (e.g. the repo added the bit).
+	// The write path must apply the new mode on an update, not just on create.
+	_, err = WriteSyncedDirectory(root, project, []SyncFile{
+		{RelativePath: "scripts/hook.sh", Content: []byte("#!/bin/sh\necho updated\n"), Executable: true},
+	})
+	require.NoError(t, err)
+	second, err := os.Stat(filepath.Join(project, "scripts/hook.sh"))
+	require.NoError(t, err)
+	assert.NotEqual(t, os.FileMode(0), second.Mode().Perm()&0o111, "executable bit should set on update when repo marks +x")
+}
+
 func TestWriteComposeFile_PreservesExistingCustomComposeNames(t *testing.T) {
 	t.Parallel()
 
