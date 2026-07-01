@@ -40,9 +40,11 @@ export const load: PageLoad = async ({ params, parent }) => {
 		name: project.name || '',
 		composeContent: project.composeContent || '',
 		envContent: project.envContent || '',
+		overrideContent: project.overrideContent || '',
 		originalName: project.name || '',
 		originalComposeContent: project.composeContent || '',
-		originalEnvContent: project.envContent || ''
+		originalEnvContent: project.envContent || '',
+		originalOverrideContent: project.overrideContent || ''
 	};
 
 	return {
