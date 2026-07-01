@@ -1693,6 +1693,12 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		return nil, fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
+	// The project-root env files are reserved for the three-file override
+	// merge applied below (applyGitSyncEnvToDirInternal) rather than a raw
+	// overwrite — a raw .env write would silently wipe edits made in Arcane
+	// on every sync.
+	filteredSyncFiles, gitEnvContent := partitionReservedRootEnvFilesInternal(ctx, syncFiles)
+
 	stagePath, err := os.MkdirTemp(projectsDir, ".gitops-sync-stage-*")
 	if err != nil {
 		return nil, fmt.Errorf("failed to create staging directory: %w", err)
@@ -1724,12 +1730,16 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		return nil, err
 	}
 
-	syncedFiles := make([]string, len(syncFiles))
-	for i, file := range syncFiles {
+	syncedFiles := make([]string, len(filteredSyncFiles))
+	for i, file := range filteredSyncFiles {
 		syncedFiles[i] = file.RelativePath
 	}
 
-	oldSyncedFiles := parseSyncedFiles(sync.SyncedFiles)
+	// Syncs created before this fix may still have .env recorded as a tracked
+	// file. Drop reserved root env files here too, or CleanupRemovedFiles would
+	// treat .env as removed-by-git and delete the live-copied stage .env before
+	// applyGitSyncEnvToDirInternal gets a chance to read it for the merge.
+	oldSyncedFiles := filterReservedRootEnvFilesInternal(parseSyncedFiles(sync.SyncedFiles))
 	if len(oldSyncedFiles) > 0 {
 		if err := projects.CleanupRemovedFiles(projectsDir, stagePath, oldSyncedFiles, syncedFiles); err != nil {
 			_ = os.RemoveAll(stagePath)
@@ -1745,18 +1755,31 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 
 	contentsChanged := true
 	if project != nil {
-		contentsChanged, err = projects.DirectorySyncContentsChanged(project.Path, syncFiles, oldSyncedFiles, composeFileName)
+		contentsChanged, err = projects.DirectorySyncContentsChanged(project.Path, filteredSyncFiles, oldSyncedFiles, composeFileName)
 		if err != nil {
 			_ = os.RemoveAll(stagePath)
 			return nil, fmt.Errorf("failed to compare staged directory changes: %w", err)
 		}
 	}
 
-	// Write the repo files after cleanup so validation sees the final on-disk
-	// tree exactly as it will exist in the managed project.
-	if _, err := projects.WriteSyncedDirectory(projectsDir, stagePath, syncFiles); err != nil {
+	// Write the repo files (excluding reserved root env files, handled below)
+	// after cleanup so validation sees the final on-disk tree exactly as it
+	// will exist in the managed project.
+	if _, err := projects.WriteSyncedDirectory(projectsDir, stagePath, filteredSyncFiles); err != nil {
 		_ = os.RemoveAll(stagePath)
 		return nil, fmt.Errorf("failed to write staged sync files: %w", err)
+	}
+
+	// Route the project-root .env through the same three-file override merge
+	// single-file git sync uses: git is source-of-truth, edits made in Arcane
+	// become an override that wins, and new git-introduced keys still flow in.
+	preEnvContent, postEnvContent, err := s.applyGitSyncEnvToDirInternal(stagePath, projectsDir, gitEnvContent)
+	if err != nil {
+		_ = os.RemoveAll(stagePath)
+		return nil, err
+	}
+	if project != nil && envContentChangedInternal(preEnvContent, postEnvContent) {
+		contentsChanged = true
 	}
 
 	serviceCount, err := s.validateDirectorySyncStageInternal(ctx, sync.ProjectName, stagePath, composeFileName)
@@ -1774,6 +1797,94 @@ func (s *GitOpsSyncService) stageDirectorySyncInternal(ctx context.Context, sync
 		contentsChanged: contentsChanged,
 		copySkipped:     copySkipped,
 	}, nil
+}
+
+// isReservedRootEnvFileInternal reports whether relPath is one of the
+// project-root env bookkeeping files the override-merge system owns (.env,
+// .env.git, project.env, .env.global). These are excluded from the raw
+// directory-sync write and routed through applyGitSyncEnvToDirInternal
+// instead. Exact-matching RelativePath intentionally leaves nested env files
+// (e.g. svc/.env) in the raw write set — only the project root is
+// merge-managed.
+func isReservedRootEnvFileInternal(relPath string) bool {
+	switch relPath {
+	case projects.EffectiveEnvFileName, projects.GitSourceEnvFileName, projects.OverrideEnvFileName, projects.GlobalEnvFileName:
+		return true
+	default:
+		return false
+	}
+}
+
+// filterReservedRootEnvFilesInternal drops reserved root env file paths from a
+// tracked synced-file list. Syncs created before the override-merge migration
+// may still have .env recorded from an earlier sync; leaving it in would make
+// CleanupRemovedFiles treat .env as removed-by-git and delete the live-copied
+// stage .env before applyGitSyncEnvToDirInternal can read it for the merge.
+func filterReservedRootEnvFilesInternal(paths []string) []string {
+	filtered := make([]string, 0, len(paths))
+	for _, p := range paths {
+		if !isReservedRootEnvFileInternal(p) {
+			filtered = append(filtered, p)
+		}
+	}
+	return filtered
+}
+
+// partitionReservedRootEnvFilesInternal splits syncFiles into the set safe to
+// write directly (everything except the reserved root env files) and the
+// git-sourced root .env content, if the repo has one. A committed
+// .env.git/project.env/.env.global at the project root is dropped rather than
+// raw-written: those are Arcane-owned bookkeeping files that must only ever be
+// produced by the override merge, never by an untrusted git payload.
+func partitionReservedRootEnvFilesInternal(ctx context.Context, syncFiles []projects.SyncFile) ([]projects.SyncFile, *string) {
+	filtered := make([]projects.SyncFile, 0, len(syncFiles))
+	var gitEnvContent *string
+	for _, file := range syncFiles {
+		if !isReservedRootEnvFileInternal(file.RelativePath) {
+			filtered = append(filtered, file)
+			continue
+		}
+		switch file.RelativePath {
+		case projects.EffectiveEnvFileName:
+			content := string(file.Content)
+			gitEnvContent = &content
+		case projects.GlobalEnvFileName:
+			slog.WarnContext(ctx, "dropping .env.global from git payload; project-root env files are not raw-written from git and .env.global is not project-scoped",
+				"path", file.RelativePath,
+			)
+		default:
+			slog.WarnContext(ctx, "dropping reserved Arcane env file from git payload; will be re-derived from override merge",
+				"path", file.RelativePath,
+			)
+		}
+	}
+	return filtered, gitEnvContent
+}
+
+// applyGitSyncEnvToDirInternal routes a directory sync's project-root .env
+// through the same three-file override merge single-file git sync uses
+// (ProjectService.ApplyGitSyncProjectFiles), so edits made in Arcane become an
+// override that wins over git while new git-introduced keys still flow in.
+// dirPath already contains whatever .env/.env.git/project.env were
+// copied/seeded from the live project (or a pre-existing candidate directory
+// for a new project), so the existing single-file machinery works against it
+// unchanged. Returns the effective .env content before and after the merge so
+// the caller can decide whether the change should trigger a redeploy.
+func (s *GitOpsSyncService) applyGitSyncEnvToDirInternal(dirPath, projectsDir string, gitEnvContent *string) (before, after string, err error) {
+	update, err := s.projectService.prepareGitSyncEnvUpdateInternal(dirPath, gitEnvContent)
+	if err != nil {
+		return "", "", fmt.Errorf("failed to resolve git env state: %w", err)
+	}
+	before = update.state.DirectContent
+	if update.effectiveContent != nil {
+		after = *update.effectiveContent
+	}
+
+	if err := s.projectService.persistGitSyncEnvFilesInternal(dirPath, projectsDir, update); err != nil {
+		return "", "", fmt.Errorf("failed to sync git env files: %w", err)
+	}
+
+	return before, after, nil
 }
 
 // seedStageEnvFromCandidateDirInternal copies env files from a pre-existing project
@@ -1796,12 +1907,19 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 		return nil
 	}
 
+	// A permission error (e.g. a chmod 000 or foreign-owned file) is treated
+	// like the file being absent: it's skipped rather than aborting the whole
+	// staging attempt, since seeding is a best-effort convenience.
 	readOptional := func(name string) (string, bool, error) {
 		content, readErr := os.ReadFile(filepath.Join(candidatePath, name))
 		if readErr == nil {
 			return string(content), true, nil
 		}
 		if errors.Is(readErr, os.ErrNotExist) {
+			return "", false, nil
+		}
+		if errors.Is(readErr, os.ErrPermission) {
+			slog.WarnContext(ctx, "skipping permission-locked project env file while seeding GitOps stage", "path", filepath.Join(candidatePath, name))
 			return "", false, nil
 		}
 		return "", false, fmt.Errorf("read %s from %s: %w", name, candidatePath, readErr)

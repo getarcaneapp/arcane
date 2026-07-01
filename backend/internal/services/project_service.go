@@ -2279,7 +2279,10 @@ func (s *ProjectService) createProjectInternal(ctx context.Context, name, compos
 		return nil, wrapProjectFileErrorInternal(err)
 	}
 
-	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent); err != nil {
+	// GitOps-originated creates (allowNameSuffix=false) tolerate not-yet-supplied
+	// ${VAR} references the same way single-file git sync updates do; interactive
+	// creates (allowNameSuffix=true) stay strict.
+	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, projectPath, name, composeContent, envContent, !allowNameSuffix); err != nil {
 		_ = os.RemoveAll(projectPath)
 		return nil, fmt.Errorf("invalid compose file: %w", err)
 	}
@@ -3268,7 +3271,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 		return nil, fmt.Errorf("failed to resolve git env state: %w", err)
 	}
 
-	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent); err != nil {
+	if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, composeContent, envUpdate.effectiveContent, true); err != nil {
 		return nil, fmt.Errorf("invalid compose file: %w", err)
 	}
 
@@ -3571,7 +3574,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 		if err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
-		if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent); err != nil {
+		if err := s.validateComposeContentForUpdate(ctx, projectsDirectory, proj.Path, proj.Name, *composeContent, effectiveEnvContent, false); err != nil {
 			return fmt.Errorf("invalid compose file: %w", err)
 		}
 		if err := projects.WriteComposeFile(projectsDirectory, proj.Path, *composeContent); err != nil {
@@ -3593,7 +3596,7 @@ func (s *ProjectService) persistUpdatedProjectFiles(ctx context.Context, proj *m
 	return nil
 }
 
-func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string) (err error) {
+func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, projectsDirectory, projectPath, projectName, composeContent string, effectiveEnvContent *string, lenient bool) (err error) {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("compose file contains invalid syntax: %v", recovered)
@@ -3627,6 +3630,9 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
 				opts.SetProjectName(validationProjectName, true)
+			}
+			if lenient {
+				projects.ApplyLenientLoaderOptions(ctx, opts, cfg.ConfigFiles[0].Filename)
 			}
 		})
 		return loadErr
@@ -3792,7 +3798,18 @@ func withTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 	originalContent, readErr := os.ReadFile(envPath)
 	originalExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
-		return fmt.Errorf("prepare env file for compose validation: %w", readErr)
+		if !errors.Is(readErr, os.ErrPermission) {
+			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
+		}
+		// The file exists but is permission-locked (e.g. chmod 000, foreign-owned).
+		// Its contents can't be verified or safely overwritten, so leave it
+		// untouched and validate against whatever's already on disk instead of
+		// aborting the whole update.
+		slog.Warn("skipping permission-locked .env file during compose validation; leaving it untouched", "projectPath", projectPath)
+		if run == nil {
+			return nil
+		}
+		return run()
 	}
 
 	shouldWrite := effectiveEnvContent != nil || !originalExists
@@ -3878,7 +3895,7 @@ func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, project
 				return err
 			}
 		}
-		return projects.WriteEnvFile(projectsDirectory, projectPath, envContent)
+		return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, envContent)
 	}
 
 	overrideContent, err := projects.BuildOverrideEnvContent(state.GitContent, envContent)
@@ -3891,19 +3908,11 @@ func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, project
 		return fmt.Errorf("build effective env content: %w", err)
 	}
 
-	if err := projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent); err != nil {
+	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent); err != nil {
 		return err
 	}
 
-	if strings.TrimSpace(overrideContent) == "" {
-		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-			return err
-		}
-	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, overrideContent); err != nil {
-		return err
-	}
-
-	return nil
+	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, state.OverrideUnreadable, overrideContent)
 }
 
 func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDirectory string) error {
@@ -3921,7 +3930,7 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDir
 			if err != nil {
 				return err
 			}
-			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+			return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 		}
 		return projects.EnsureEnvFile(projectsDirectory, projectPath)
 	}
@@ -3931,7 +3940,7 @@ func (s *ProjectService) ensureEffectiveEnvFileInternal(projectPath, projectsDir
 		return fmt.Errorf("build effective env content: %w", err)
 	}
 
-	return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, state.EffectiveUnreadable, effectiveContent)
 }
 
 type gitSyncEnvUpdateInternal struct {
@@ -4025,7 +4034,11 @@ func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDir
 			if update.effectiveContent != nil {
 				effectiveContent = *update.effectiveContent
 			}
-			return projects.WriteEnvFile(projectsDirectory, projectPath, effectiveContent)
+			return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, effectiveContent)
+		}
+		if update.state.EffectiveUnreadable {
+			slog.Warn("skipping permission-locked .env file; leaving it untouched", "projectPath", projectPath)
+			return nil
 		}
 		return projects.EnsureEnvFile(projectsDirectory, projectPath)
 	}
@@ -4034,21 +4047,13 @@ func (s *ProjectService) persistGitSyncEnvFilesInternal(projectPath, projectsDir
 		return errors.New("missing effective env content for git sync update")
 	}
 
-	if err := projects.WriteEnvFile(projectsDirectory, projectPath, *update.effectiveContent); err != nil {
+	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.EffectiveEnvFileName, update.state.EffectiveUnreadable, *update.effectiveContent); err != nil {
 		return err
 	}
-	if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, *update.gitEnvContent); err != nil {
+	if err := projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.GitSourceEnvFileName, update.state.GitSourceUnreadable, *update.gitEnvContent); err != nil {
 		return err
 	}
-	if strings.TrimSpace(update.overrideContent) == "" {
-		if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {
-			return err
-		}
-	} else if err := projects.WriteProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.overrideContent); err != nil {
-		return err
-	}
-
-	return nil
+	return projects.WriteManagedEnvFile(projectsDirectory, projectPath, projects.OverrideEnvFileName, update.state.OverrideUnreadable, update.overrideContent)
 }
 
 func (s *ProjectService) ensureProjectStoppedForRenameInternal(ctx context.Context, proj *models.Project, name *string) error {
