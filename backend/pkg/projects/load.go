@@ -270,6 +270,9 @@ func loadComposeProjectInternal(
 		if projectName != "" {
 			opts.SetProjectName(projectName, true)
 		}
+		// Discard env_file after folding into environment, as the compose CLI
+		// does, so config-hashes match and both tools stop recreating services.
+		loader.WithDiscardEnvFiles(opts)
 		if lenient {
 			opts.SkipValidation = true
 			opts.SkipConsistencyCheck = true
