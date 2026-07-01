@@ -49,6 +49,7 @@
 	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
 	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartContainer = $derived(hasPermission('containers:restart', currentEnvId));
+	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
 	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
 
 	// Convert RuntimeService to a format compatible with ArcaneTable
@@ -505,7 +506,7 @@
 							</DropdownMenu.Item>
 						{/if}
 
-						{#if canRestartContainer}
+						{#if canRestartProject}
 							<DropdownMenu.Item onclick={() => performServiceRestart(item)} disabled={status === 'restarting' || isAnyLoading}>
 								{#if status === 'restarting'}
 									<Spinner class="size-4" />
