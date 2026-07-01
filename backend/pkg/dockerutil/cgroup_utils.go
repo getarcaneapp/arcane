@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
@@ -99,6 +100,11 @@ func detectCgroupV2Limits(limits *CgroupLimits) (*CgroupLimits, error) {
 	}
 
 	if memUsage, err := readCgroupV2Int64("/sys/fs/cgroup/memory.current"); err == nil {
+		// memory.current includes reclaimable page cache; subtract inactive_file
+		// to match what `docker stats` reports as usage.
+		if inactiveFile, err := readMemoryStatValue("/sys/fs/cgroup/memory.stat", "inactive_file"); err == nil {
+			memUsage = max(memUsage-inactiveFile, 0)
+		}
 		limits.MemoryUsage = memUsage
 	}
 
@@ -138,6 +144,12 @@ func detectCgroupV1Limits(limits *CgroupLimits) (*CgroupLimits, error) {
 
 	memoryUsagePath := filepath.Join("/sys/fs/cgroup/memory", cgroupPath, "memory.usage_in_bytes")
 	if memUsage, err := readCgroupV1Int64(memoryUsagePath); err == nil {
+		// memory.usage_in_bytes includes reclaimable page cache; subtract
+		// total_inactive_file (from memory.stat) to match `docker stats`.
+		memoryStatPath := filepath.Join("/sys/fs/cgroup/memory", cgroupPath, "memory.stat")
+		if inactiveFile, err := readMemoryStatValue(memoryStatPath, "total_inactive_file"); err == nil {
+			memUsage = max(memUsage-inactiveFile, 0)
+		}
 		limits.MemoryUsage = memUsage
 	}
 
@@ -193,6 +205,30 @@ func readCgroupV1Int64(path string) (int64, error) {
 	}
 
 	return value, nil
+}
+
+// readMemoryStatValue reads a single "key value" line from a cgroup memory.stat
+// file and returns the value for the given key.
+func readMemoryStatValue(path, key string) (int64, error) {
+	file, err := os.Open(path)
+	if err != nil {
+		return 0, err
+	}
+	defer func() { _ = file.Close() }()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 2 || fields[0] != key {
+			continue
+		}
+		return strconv.ParseInt(fields[1], 10, 64)
+	}
+	if err := scanner.Err(); err != nil {
+		return 0, err
+	}
+
+	return 0, fmt.Errorf("key %q not found in %s", key, path)
 }
 
 func readCgroupV2Int64(path string) (int64, error) {
@@ -392,4 +428,61 @@ func getContainerIDFromHostname() (string, error) {
 	}
 
 	return "", errors.New("hostname doesn't match expected container ID length")
+}
+
+// ZFSARCReclaimable returns the number of bytes of ZFS ARC (Adaptive
+// Replacement Cache) that the kernel counts as used memory but that can be
+// reclaimed under memory pressure.
+//
+// The kernel accounts ZFS ARC as used and excludes it from /proc/meminfo's
+// MemAvailable, so gopsutil's Used (= Total - MemAvailable) counts the whole
+// ARC as used. Tools like btop/htop instead treat ARC as reclaimable cache. We
+// subtract the reclaimable portion so the dashboard does not over-report usage
+// on ZFS hosts.
+//
+// The arcstats file only exists when the ZFS kernel module is loaded, so the
+// open fails cheaply on non-ZFS systems (including macOS dev machines) and this
+// returns 0 there.
+func ZFSARCReclaimable() uint64 {
+	f, err := os.Open("/proc/spl/kstat/zfs/arcstats")
+	if err != nil {
+		return 0
+	}
+	defer func() { _ = f.Close() }()
+	return parseARCStats(f)
+}
+
+// parseARCStats parses the kstat-format arcstats content and returns the
+// reclaimable ARC size in bytes: max(size-c_min, 0). The ARC cannot shrink
+// below c_min, so only the portion above c_min is genuinely reclaimable — a
+// slightly more conservative choice than btop's full-size treatment, which is
+// the right call for a "used" metric.
+//
+// Each kstat row is "name type data"; the value is the third column.
+func parseARCStats(r io.Reader) uint64 {
+	var size, cMin uint64
+	scanner := bufio.NewScanner(r)
+	for scanner.Scan() {
+		fields := strings.Fields(scanner.Text())
+		if len(fields) < 3 {
+			continue
+		}
+		switch fields[0] {
+		case "size":
+			if v, err := strconv.ParseUint(fields[2], 10, 64); err == nil {
+				size = v
+			}
+		case "c_min":
+			if v, err := strconv.ParseUint(fields[2], 10, 64); err == nil {
+				cMin = v
+			}
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		slog.Error("failed to parse ARC stats", "error", err)
+	}
+	if size <= cMin {
+		return 0
+	}
+	return size - cMin
 }

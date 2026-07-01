@@ -1163,7 +1163,14 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 	if memInfo == nil {
 		return 0, 0
 	}
-	return memInfo.Used, memInfo.Total
+	// gopsutil counts ZFS ARC as used memory (the kernel excludes it from
+	// MemAvailable). Treat the reclaimable portion as cache, matching
+	// btop/htop, so the dashboard does not over-report usage on ZFS hosts.
+	used := memInfo.Used
+	if arc := docker.ZFSARCReclaimable(); arc > 0 {
+		used -= min(used, arc)
+	}
+	return used, memInfo.Total
 }
 
 // applyCgroupLimits applies cgroup limits when running in an LXC (or similar)
