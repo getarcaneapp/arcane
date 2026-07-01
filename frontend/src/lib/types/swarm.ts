@@ -546,6 +546,8 @@ export interface Project {
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;
 	composeFileName?: string;
+	overrideContent?: string;
+	overrideFileName?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
 	directoryFiles?: IncludeFile[];

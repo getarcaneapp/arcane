@@ -22,15 +22,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
-var ProjectFileCandidates = []string{
-	"compose.yaml",
-	"compose.yml",
-	"docker-compose.yaml",
-	"docker-compose.yml",
-	"podman-compose.yaml",
-	"podman-compose.yml",
+// ProjectFileCandidates enumerates known project files: base compose names,
+// compose override names, and .env. It is used as a membership set for
+// recognizing and skipping known files during discovery; it is NOT the
+// base-detection order (see composeFileCandidates for that).
+var ProjectFileCandidates = append(
+	append(slices.Clone(composeFileCandidates), composeOverrideFileCandidates...),
 	".env",
-}
+)
 
 // IsProjectFile reports whether filename is a known project file or a plausible
 // custom YAML filename worth watching for compose discovery.
@@ -63,11 +62,7 @@ func stripTrailingProjectCounterInternal(name string) string {
 }
 
 func DetectComposeFile(dir string) (string, error) {
-	for _, filename := range ProjectFileCandidates {
-		if filename == ".env" {
-			continue
-		}
-
+	for _, filename := range composeFileCandidates {
 		composePath := filepath.Join(dir, filename)
 		if info, err := os.Stat(composePath); err == nil && !info.IsDir() {
 			return composePath, nil
@@ -285,12 +280,26 @@ func loadComposeProjectInternal(
 	}
 
 	// Pass full environment to compose-go for interpolation, compose-go will use this for ${VAR} expansion in the compose file
+	configFiles := []composetypes.ConfigFile{
+		{Filename: composeFile},
+	}
+	// Merge a Docker Compose override file (compose.override.yaml, etc.) when
+	// present alongside the base file, as `docker compose` does. Only auto-load an
+	// override when the base was discovered by its standard filename: `docker
+	// compose` never auto-loads overrides for an explicit custom `-f` file, and
+	// our custom-YAML fallback scan (e.g. mystack.yaml) is that case. Listing the
+	// override after the base makes it take precedence.
+	if slices.Contains(composeFileCandidates, filepath.Base(composeFile)) {
+		if overrideFile := DetectComposeOverrideFile(workdir); overrideFile != "" {
+			configFiles = append(configFiles, composetypes.ConfigFile{Filename: overrideFile})
+			slog.DebugContext(ctx, "merging compose override file", "base", composeFile, "override", overrideFile)
+		}
+	}
+
 	cfg := composetypes.ConfigDetails{
-		Version:    api.ComposeVersion,
-		WorkingDir: workdir,
-		ConfigFiles: []composetypes.ConfigFile{
-			{Filename: composeFile},
-		},
+		Version:     api.ComposeVersion,
+		WorkingDir:  workdir,
+		ConfigFiles: configFiles,
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 

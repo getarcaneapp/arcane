@@ -373,7 +373,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 	require.NoError(t, db.Create(sync).Error)
 
 	result := &gitops.SyncResult{}
-	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, result, models.User{})
+	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
 	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
 	require.ErrorAs(t, err, &bindingErr)
 
@@ -1225,7 +1225,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	require.NoError(t, db.Create(sync).Error)
 
 	result := &gitops.SyncResult{}
-	project, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, result, models.User{})
+	project, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
 	require.Error(t, err)
 	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
 	require.ErrorAs(t, err, &bindingErr)

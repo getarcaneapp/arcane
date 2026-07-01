@@ -14,7 +14,13 @@ const reservedRootNames = new Set([
 	'compose.yaml',
 	'compose.yml',
 	'docker-compose.yaml',
-	'docker-compose.yml'
+	'docker-compose.yml',
+	'podman-compose.yaml',
+	'podman-compose.yml',
+	'compose.override.yaml',
+	'compose.override.yml',
+	'docker-compose.override.yaml',
+	'docker-compose.override.yml'
 ]);
 
 export function projectFileBasename(relativePath: string): string {

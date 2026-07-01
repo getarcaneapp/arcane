@@ -12,6 +12,12 @@ type StackDeployRequest struct {
 	// Required: true
 	ComposeContent string `json:"composeContent"`
 
+	// OverrideContent is the optional Docker Compose override YAML content merged
+	// on top of ComposeContent, mirroring `docker compose` override files.
+	//
+	// Required: false
+	OverrideContent string `json:"overrideContent,omitempty"`
+
 	// EnvContent is the optional environment file content.
 	//
 	// Required: false

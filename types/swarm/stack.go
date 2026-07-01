@@ -72,6 +72,12 @@ type StackRenderConfigRequest struct {
 	// Required: true
 	ComposeContent string `json:"composeContent"`
 
+	// OverrideContent is the optional Docker Compose override YAML content merged
+	// on top of ComposeContent, mirroring `docker compose` override files.
+	//
+	// Required: false
+	OverrideContent string `json:"overrideContent,omitempty"`
+
 	// EnvContent is the optional environment file content.
 	//
 	// Required: false
@@ -131,6 +137,12 @@ type StackSource struct {
 	// Required: true
 	ComposeContent string `json:"composeContent"`
 
+	// OverrideContent is the optional Docker Compose override content merged on top
+	// of ComposeContent at deploy, mirroring `docker compose` override files.
+	//
+	// Required: false
+	OverrideContent string `json:"overrideContent,omitempty"`
+
 	// EnvContent is the optional original environment file content used for deployment.
 	//
 	// Required: false
@@ -147,6 +159,12 @@ type StackSourceUpdateRequest struct {
 	//
 	// Required: true
 	ComposeContent string `json:"composeContent"`
+
+	// OverrideContent is the optional Docker Compose override content to persist
+	// for the stack, merged on top of ComposeContent at deploy.
+	//
+	// Required: false
+	OverrideContent string `json:"overrideContent,omitempty"`
 
 	// EnvContent is the optional environment file content to persist for the stack.
 	//

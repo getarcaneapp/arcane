@@ -232,6 +232,9 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 	for _, candidate := range ComposeFileCandidates() {
 		protected[candidate] = true
 	}
+	for _, candidate := range ComposeOverrideFileCandidates() {
+		protected[candidate] = true
+	}
 	if trimmed := strings.TrimSpace(composeFileName); trimmed != "" {
 		protected[path.Base(filepath.ToSlash(trimmed))] = true
 	}

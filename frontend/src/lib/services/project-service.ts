@@ -163,6 +163,7 @@ class ProjectService extends BaseAPIService {
 		name?: string,
 		composeContent?: string,
 		envContent?: string,
+		overrideContent?: string,
 		fileTreeRevision?: string,
 		fileChanges?: ProjectFileChange[]
 	): Promise<Project> {
@@ -171,6 +172,7 @@ class ProjectService extends BaseAPIService {
 			name?: string;
 			composeContent?: string;
 			envContent?: string;
+			overrideContent?: string;
 			fileTreeRevision?: string;
 			fileChanges?: ProjectFileChange[];
 		} = {};
@@ -182,6 +184,9 @@ class ProjectService extends BaseAPIService {
 		}
 		if (envContent !== undefined) {
 			payload.envContent = envContent;
+		}
+		if (overrideContent !== undefined) {
+			payload.overrideContent = overrideContent;
 		}
 		if (fileChanges && fileChanges.length > 0) {
 			payload.fileTreeRevision = fileTreeRevision;

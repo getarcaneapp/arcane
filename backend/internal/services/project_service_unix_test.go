@@ -54,7 +54,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfPermissionLockedEnv(t
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:1.27-alpine\n", new("FOO=fromgit\n"), models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:1.27-alpine\n", new("FOO=fromgit\n"), nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})

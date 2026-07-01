@@ -956,7 +956,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		SuccessMessage: "Project updated successfully",
 		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
 	}, func(runtimeCtx context.Context) error {
-		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
+		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.OverrideContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
 		return updateErr
 	})
 	if err != nil {

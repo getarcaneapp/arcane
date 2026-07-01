@@ -49,6 +49,13 @@
 
 	interface Props {
 		composeFileName: string;
+		// The override row is pinned only by the project editor. showOverride renders
+		// the existing-override row (labeled overrideFileName); onAddOverride renders
+		// an "add override" affordance for a project that has none yet. Other
+		// consumers (new project, swarm stacks) omit all three.
+		overrideFileName?: string;
+		showOverride?: boolean;
+		onAddOverride?: () => void;
 		entries: ManagedProjectFileEntry[];
 		selectedFile: string;
 		disabled?: boolean;
@@ -63,6 +70,9 @@
 
 	let {
 		composeFileName,
+		overrideFileName,
+		showOverride = false,
+		onAddOverride,
 		entries,
 		selectedFile,
 		disabled = false,
@@ -537,6 +547,38 @@
 					<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
 				</span>
 			</button>
+
+			{#if showOverride}
+				<button
+					type="button"
+					class={cn(
+						'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
+						selectedFile === 'override' && 'bg-accent'
+					)}
+					onclick={() => onSelect('override')}
+				>
+					{#if hasDirectories}
+						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+					{/if}
+					<FileTextIcon class="size-4 shrink-0 text-purple-500" />
+					<span class="min-w-0 flex-1 truncate">{overrideFileName}</span>
+					<span class="inline-flex size-6 shrink-0 items-center justify-center">
+						<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+					</span>
+				</button>
+			{:else if onAddOverride}
+				<button
+					type="button"
+					class="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]"
+					onclick={() => onAddOverride?.()}
+				>
+					{#if hasDirectories}
+						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+					{/if}
+					<CreateFileIcon class="size-4 shrink-0" />
+					<span class="min-w-0 flex-1 truncate">{m.compose_override_add()}</span>
+				</button>
+			{/if}
 
 			<button
 				type="button"

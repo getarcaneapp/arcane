@@ -6,6 +6,10 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import {
 		ArrowLeftIcon,
+		ArrowDownIcon,
+		ArrowRightIcon,
+		CreateFileIcon,
+		TrashIcon,
 		BoxIcon,
 		ProjectsIcon,
 		LayersIcon,
@@ -13,7 +17,9 @@
 		FileTextIcon,
 		AlertIcon,
 		GlobeIcon,
-		CodeIcon
+		CodeIcon,
+		ArrowsUpDownIcon,
+		SearchIcon
 	} from '$lib/icons';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
@@ -138,7 +144,8 @@
 		.object({
 			name: z.string().min(1, m.compose_project_name_required()),
 			composeContent: z.string().min(1, m.compose_compose_content_required()),
-			envContent: z.string().optional().default('')
+			envContent: z.string().optional().default(''),
+			overrideContent: z.string().optional().default('')
 		})
 		.superRefine((data, ctx) => {
 			const currentServerName = project?.name ?? '';
@@ -154,7 +161,8 @@
 	const initialFormData = untrack(() => ({
 		name: data.editorState.originalName,
 		composeContent: data.editorState.originalComposeContent,
-		envContent: data.editorState.originalEnvContent || ''
+		envContent: data.editorState.originalEnvContent || '',
+		overrideContent: data.editorState.originalOverrideContent || ''
 	}));
 
 	const { inputs, ...form } = createForm<typeof formSchema>(formSchema, initialFormData);
@@ -188,6 +196,7 @@
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
 	const serverEnvContent = $derived(project?.envContent ?? '');
+	const serverOverrideContent = $derived(project?.overrideContent ?? '');
 	const serverIncludeFiles = $derived.by(() =>
 		Object.fromEntries(
 			(project?.includeFiles ?? []).flatMap((file) =>
@@ -213,6 +222,7 @@
 	let hasChanges = $derived(
 		effectiveName !== serverName ||
 			$inputs.composeContent.value !== serverComposeContent ||
+			$inputs.overrideContent.value !== serverOverrideContent ||
 			$inputs.envContent.value !== serverEnvContent ||
 			Object.entries(includeFilesState).some(([relativePath, content]) => content !== serverIncludeFiles[relativePath]) ||
 			managedProjectFileChanges.length > 0 ||
@@ -232,9 +242,20 @@
 			project?.status !== 'partially running'
 	);
 	let canEditCompose = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
+	// Override edits are blocked for GitOps-managed projects, mirroring canEditCompose.
+	let canEditOverride = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let canEditEnv = $derived(canUpdateProject && !project?.isArchived);
 	let canEditProjectFiles = $derived(canUpdateProject && !project?.isArchived && !isGitOpsManaged);
 	let composeFileName = $derived(project?.composeFileName || 'compose.yaml');
+	// Set when the user opts to add an override to a project that has none yet.
+	let overrideEditorRequested = $state(false);
+	// The backend only sets overrideFileName when an override file exists on disk.
+	// The display name falls back to the default for the "add override" flow.
+	let overrideExists = $derived(!!project?.overrideFileName);
+	let overrideFileName = $derived(project?.overrideFileName || 'compose.override.yaml');
+	// The override editor surfaces only when an override exists or the user asked
+	// to add one this session; otherwise the UI shows an "add override" affordance.
+	let overrideActive = $derived(overrideExists || overrideEditorRequested);
 	let archiveRequiresStopped = $derived(
 		!!project &&
 			!project.isArchived &&
@@ -250,8 +271,14 @@
 	let selectedTab = $state<'services' | 'compose' | 'logs'>('compose');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
+	let overrideOpen = $state(false);
+	// Editor action toggles for the encapsulated override editor in the classic
+	// view, mirroring the buttons CodePanel's card header normally provides.
+	let overrideOutlineOpen = $state(false);
+	let overrideDiffOpen = $state(false);
+	let overrideCommandPaletteOpen = $state(false);
 	let includeFilesPanelStates = $state<Record<string, boolean>>({});
-	let selectedFilePreference = $state<'compose' | 'env' | string>('compose');
+	let selectedFilePreference = $state<'compose' | 'env' | 'override' | string>('compose');
 	let openTabsPreference = $state<string[]>(['compose']);
 	let treeOutlineOpen = $state(false);
 	let treeDiffOpen = $state(false);
@@ -264,10 +291,12 @@
 	const minEnvPaneWidth = 280;
 
 	let composeHasErrors = $state(false);
+	let overrideHasErrors = $state(false);
 	let envHasErrors = $state(false);
 	let includeFilesHasErrors = $state<Record<string, boolean>>({});
 	let managedProjectFileHasErrors = $state<Record<string, boolean>>({});
 	let composeValidationReady = $state(false);
+	let overrideValidationReady = $state(false);
 	let envValidationReady = $state(false);
 	let includeFilesValidationReady = $state<Record<string, boolean>>({});
 	let managedProjectFileValidationReady = $state<Record<string, boolean>>({});
@@ -275,6 +304,7 @@
 	const directoryFilePaths = $derived.by(() => new Set((project?.directoryFiles ?? []).map((file) => file.relativePath)));
 	const selectedFile = $derived.by(() => {
 		const current = selectedFilePreference;
+		if (current === 'override') return overrideActive ? 'override' : 'compose';
 		if (current === 'compose' || current === 'env') return current;
 		if (current.startsWith('file:')) {
 			const relativePath = current.slice(5);
@@ -294,6 +324,9 @@
 	const openTabs = $derived.by(() => {
 		const valid = openTabsPreference.filter((key) => {
 			if (key === 'compose' || key === 'env') return true;
+			// Drop a lingering override tab once the override is gone (e.g. deleted
+			// via a blank save) and no add is in progress.
+			if (key === 'override') return overrideActive;
 			if (!key.startsWith('file:')) return false;
 			// fallow-ignore-next-line code-duplication managed-file predicate; script-level, diverges per page
 			const entry = managedProjectFiles.find((file) => file.relativePath === key.slice(5));
@@ -307,7 +340,14 @@
 			key,
 			label: treeTabLabel(key),
 			title: treeTabTitle(key),
-			iconClass: key === 'compose' ? 'text-blue-500' : key === 'env' ? 'text-green-500' : 'text-muted-foreground',
+			iconClass:
+				key === 'compose'
+					? 'text-blue-500'
+					: key === 'override'
+						? 'text-purple-500'
+						: key === 'env'
+							? 'text-green-500'
+							: 'text-muted-foreground',
 			pending: treeTabPending(key)
 		}))
 	);
@@ -322,6 +362,7 @@
 		return null;
 	});
 	let composeHasChanges = $derived($inputs.composeContent.value !== serverComposeContent);
+	let overrideHasChanges = $derived($inputs.overrideContent.value !== serverOverrideContent);
 	let envHasChanges = $derived($inputs.envContent.value !== serverEnvContent);
 	let changedIncludeFilePaths = $derived.by(() =>
 		Object.keys(includeFilesState).filter((relativePath) => includeFilesState[relativePath] !== serverIncludeFiles[relativePath])
@@ -329,6 +370,7 @@
 
 	let hasAnyErrors = $derived(
 		(composeHasChanges && (!composeValidationReady || composeHasErrors)) ||
+			(overrideHasChanges && (!overrideValidationReady || overrideHasErrors)) ||
 			(envHasChanges && (!envValidationReady || envHasErrors)) ||
 			changedIncludeFilePaths.some(
 				(relativePath) => !includeFilesValidationReady[relativePath] || !!includeFilesHasErrors[relativePath]
@@ -366,10 +408,11 @@
 	type ComposeUIPrefs = {
 		tab: 'services' | 'compose' | 'logs';
 		composeOpen: boolean;
+		overrideOpen: boolean;
 		envOpen: boolean;
 		autoScroll: boolean;
 		layoutMode: 'classic' | 'tree';
-		selectedFile?: 'compose' | 'env' | string;
+		selectedFile?: 'compose' | 'env' | 'override' | string;
 		openTabs?: string[];
 	};
 
@@ -386,6 +429,7 @@
 	const defaultComposeUIPrefs: ComposeUIPrefs = {
 		tab: 'compose',
 		composeOpen: true,
+		overrideOpen: false,
 		envOpen: true,
 		autoScroll: true,
 		layoutMode: 'classic',
@@ -503,6 +547,7 @@
 
 		$inputs.name.value = normalizedProject.name || '';
 		$inputs.composeContent.value = normalizedProject.composeContent || '';
+		$inputs.overrideContent.value = normalizedProject.overrideContent || '';
 		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		managedProjectFileChanges = [];
 		managedProjectFileContents = savedManagedProjectFileContents;
@@ -602,6 +647,9 @@
 		const cur = prefs.current ?? {};
 		selectedTab = cur.tab ?? defaultComposeUIPrefs.tab;
 		composeOpen = cur.composeOpen ?? defaultComposeUIPrefs.composeOpen;
+		// Expanding the override collapses the compose editor (accordion), so the
+		// override defaults to collapsed to keep compose primary on load.
+		overrideOpen = cur.overrideOpen ?? false;
 		envOpen = cur.envOpen ?? defaultComposeUIPrefs.envOpen;
 		autoScrollStackLogs = cur.autoScroll ?? defaultComposeUIPrefs.autoScroll;
 		selectedFilePreference = cur.selectedFile ?? defaultComposeUIPrefs.selectedFile ?? 'compose';
@@ -681,9 +729,12 @@
 		const validated = isGitOpsManaged ? formValues : form.validate();
 		if (!validated) return;
 
-		const { composeContent, envContent } = validated;
+		const { composeContent, envContent, overrideContent } = validated;
 		const namePayload = isGitOpsManaged ? undefined : effectiveName;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
+		// Blank override => delete, which the backend treats as a no-op when none
+		// exists, so we can always send it (except for read-only GitOps projects).
+		const overridePayload = isGitOpsManaged ? undefined : overrideContent;
 		const fileChangesPayload = buildProjectFileSaveChanges();
 		const includeFileUpdates = buildIncludeFileSaveUpdates();
 		const fileTreeRevision = fileChangesPayload.length > 0 ? project.fileTreeRevision : undefined;
@@ -696,6 +747,7 @@
 						namePayload,
 						composePayload,
 						envContent,
+						overridePayload,
 						fileTreeRevision,
 						fileChangesPayload
 					);
@@ -782,6 +834,7 @@
 		prefs.current = {
 			tab: selectedTab,
 			composeOpen,
+			overrideOpen,
 			envOpen,
 			autoScroll: autoScrollStackLogs,
 			layoutMode,
@@ -913,6 +966,12 @@
 	}
 
 	function closeFileTab(key: string) {
+		// Closing a not-yet-saved override tab cancels the add outright — there's
+		// nothing on disk to keep, so the override reverts to the add affordance.
+		if (key === 'override' && !overrideExists) {
+			overrideEditorRequested = false;
+			$inputs.overrideContent.value = '';
+		}
 		const index = openTabs.indexOf(key);
 		const remaining = openTabs.filter((tab) => tab !== key);
 		openTabsPreference = openTabsPreference.filter((tab) => tab !== key);
@@ -924,18 +983,21 @@
 
 	function treeTabLabel(key: string): string {
 		if (key === 'compose') return composeFileName;
+		if (key === 'override') return overrideFileName;
 		if (key === 'env') return '.env';
 		return projectFileBasename(key.startsWith('file:') ? key.slice(5) : key);
 	}
 
 	function treeTabTitle(key: string): string {
 		if (key === 'compose') return composeFileName;
+		if (key === 'override') return overrideFileName;
 		if (key === 'env') return '.env';
 		return key.startsWith('file:') ? key.slice(5) : key;
 	}
 
 	function treeTabPending(key: string): boolean {
 		if (key === 'compose') return composeHasChanges;
+		if (key === 'override') return overrideHasChanges;
 		if (key === 'env') return envHasChanges;
 		if (!key.startsWith('file:')) return false;
 		const relativePath = key.slice(5);
@@ -947,6 +1009,28 @@
 
 	function selectManagedProjectFile(key: string) {
 		openFileTab(key);
+	}
+
+	// Reveal the override editor for a project that has no override yet: mark it
+	// active (so the tab/panel renders), expand it, and focus its tab.
+	function handleAddOverride() {
+		overrideEditorRequested = true;
+		overrideOpen = true;
+		openFileTab('override');
+	}
+
+	// Remove the override. A not-yet-saved "add" is discarded client-side; an
+	// existing on-disk override is deleted by persisting the now-blank content
+	// (the backend treats a blank override as a delete). Either way the editor
+	// collapses back to the "add override" affordance.
+	async function handleRemoveOverride() {
+		overrideEditorRequested = false;
+		overrideOpen = false;
+		const existed = overrideExists;
+		$inputs.overrideContent.value = '';
+		if (existed) {
+			await handleSaveChanges();
+		}
 	}
 
 	async function loadManagedProjectFileDraft(relativePath: string) {
@@ -1073,7 +1157,9 @@
 	}
 
 	const allComposeContents = $derived.by(() => {
-		return [$inputs.composeContent.value, ...Object.values(includeFilesState)].filter((value) => value.length > 0);
+		return [$inputs.composeContent.value, $inputs.overrideContent.value, ...Object.values(includeFilesState)].filter(
+			(value) => value.length > 0
+		);
 	});
 	const codeEditorContext = $derived({
 		envContent: $inputs.envContent.value,
@@ -1149,6 +1235,20 @@
 			readOnly: !canEditCompose,
 			fileId: `project:${projectId}:compose`,
 			originalValue: serverComposeContent,
+			enableDiff: true,
+			editorContext: codeEditorContext
+		} as const;
+	}
+
+	function overridePanelProps() {
+		return {
+			title: overrideFileName,
+			language: 'yaml',
+			validationMode: 'compose',
+			error: $inputs.overrideContent.error ?? undefined,
+			readOnly: !canEditOverride,
+			fileId: `project:${projectId}:override`,
+			originalValue: serverOverrideContent,
 			enableDiff: true,
 			editorContext: codeEditorContext
 		} as const;
@@ -1435,6 +1535,9 @@
 									{#snippet first()}
 										<ProjectFileTreePanel
 											{composeFileName}
+											{overrideFileName}
+											showOverride={overrideActive}
+											onAddOverride={canEditOverride ? handleAddOverride : undefined}
 											entries={managedProjectFiles}
 											{selectedFile}
 											disabled={!canEditProjectFiles}
@@ -1479,6 +1582,33 @@
 															bind:diffOpen={treeDiffOpen}
 															bind:commandPaletteOpen={treeCommandPaletteOpen}
 														/>
+													{:else if activeTreeTab === 'override'}
+														<div class="flex min-h-0 flex-1 flex-col">
+															<div class="border-border flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
+																<p class="text-muted-foreground text-xs">{m.compose_override_hint()}</p>
+																{#if canEditOverride}
+																	<button
+																		type="button"
+																		class="text-muted-foreground hover:text-destructive flex shrink-0 items-center gap-1 text-xs font-medium"
+																		onclick={handleRemoveOverride}
+																	>
+																		<TrashIcon class="size-3.5 shrink-0" />
+																		<span>{m.compose_override_remove()}</span>
+																	</button>
+																{/if}
+															</div>
+															<CodePanel
+																variant="plain"
+																open={true}
+																{...overridePanelProps()}
+																bind:value={$inputs.overrideContent.value}
+																bind:hasErrors={overrideHasErrors}
+																bind:validationReady={overrideValidationReady}
+																bind:outlineOpen={treeOutlineOpen}
+																bind:diffOpen={treeDiffOpen}
+																bind:commandPaletteOpen={treeCommandPaletteOpen}
+															/>
+														</div>
 													{:else if activeTreeTab === 'env'}
 														<CodePanel
 															variant="plain"
@@ -1614,14 +1744,139 @@
 										onResizeEnd={persistPrefs}
 									>
 										{#snippet first()}
-											<div class="flex min-h-0 flex-1 flex-col">
-												<CodePanel
-													{...composePanelProps()}
-													bind:open={composeOpen}
-													bind:value={$inputs.composeContent.value}
-													bind:hasErrors={composeHasErrors}
-													bind:validationReady={composeValidationReady}
-												/>
+											{@const overrideExpanded = overrideActive && overrideOpen}
+											<div class="flex min-h-0 flex-1 flex-col gap-2">
+												{#if overrideExpanded}
+													<button
+														type="button"
+														class="border-border bg-card hover:text-foreground flex shrink-0 items-center gap-2 rounded-lg border px-2 py-2 text-sm font-medium"
+														aria-expanded="false"
+														onclick={() => (overrideOpen = false)}
+													>
+														<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
+														<CodeIcon class="text-muted-foreground size-4 shrink-0" />
+														<span class="truncate">{composeFileName}</span>
+														{#if composeHasChanges}
+															<span
+																class="bg-primary size-1.5 shrink-0 rounded-full"
+																role="img"
+																aria-label={m.common_unsaved_changes()}
+															></span>
+														{/if}
+													</button>
+												{:else}
+													<div class="flex min-h-0 flex-1 flex-col">
+														<CodePanel
+															{...composePanelProps()}
+															bind:open={composeOpen}
+															bind:value={$inputs.composeContent.value}
+															bind:hasErrors={composeHasErrors}
+															bind:validationReady={composeValidationReady}
+														/>
+													</div>
+												{/if}
+												{#if overrideActive}
+													<div
+														class="border-border bg-card flex min-h-0 flex-col overflow-hidden rounded-lg border {overrideExpanded
+															? 'flex-1'
+															: 'shrink-0'}"
+													>
+														<div
+															class="flex shrink-0 items-center gap-1 px-2 py-1 {overrideExpanded
+																? 'border-border border-b'
+																: ''}"
+														>
+															<button
+																type="button"
+																class="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 py-1 text-sm font-medium"
+																aria-expanded={overrideOpen}
+																onclick={() => (overrideOpen = !overrideOpen)}
+															>
+																{#if overrideOpen}
+																	<ArrowDownIcon class="text-muted-foreground size-4 shrink-0" />
+																{:else}
+																	<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
+																{/if}
+																<FileTextIcon class="text-muted-foreground size-4 shrink-0" />
+																<span class="truncate">{overrideFileName}</span>
+																{#if overrideHasChanges}
+																	<span
+																		class="bg-primary size-1.5 shrink-0 rounded-full"
+																		role="img"
+																		aria-label={m.common_unsaved_changes()}
+																	></span>
+																{/if}
+																{#if !overrideOpen}
+																	<span class="text-muted-foreground hidden truncate text-xs font-normal sm:inline"
+																		>{m.compose_override_hint()}</span
+																	>
+																{/if}
+															</button>
+															{#if overrideExpanded}
+																<ArcaneButton
+																	action="base"
+																	tone={overrideOutlineOpen ? 'outline-primary' : 'ghost'}
+																	size="icon"
+																	showLabel={false}
+																	icon={FileTextIcon}
+																	customLabel={m.compose_editor_toggle_outline()}
+																	onclick={() => (overrideOutlineOpen = !overrideOutlineOpen)}
+																/>
+																<ArcaneButton
+																	action="base"
+																	tone={overrideDiffOpen ? 'outline-primary' : 'ghost'}
+																	size="icon"
+																	showLabel={false}
+																	icon={ArrowsUpDownIcon}
+																	customLabel={m.compose_editor_toggle_diff()}
+																	onclick={() => (overrideDiffOpen = !overrideDiffOpen)}
+																/>
+																<ArcaneButton
+																	action="base"
+																	tone="ghost"
+																	size="icon"
+																	showLabel={false}
+																	icon={SearchIcon}
+																	customLabel={m.compose_editor_command_palette()}
+																	onclick={() => (overrideCommandPaletteOpen = true)}
+																/>
+															{/if}
+															{#if canEditOverride}
+																<button
+																	type="button"
+																	class="text-muted-foreground hover:text-destructive flex shrink-0 items-center p-1.5"
+																	onclick={handleRemoveOverride}
+																	aria-label={m.compose_override_remove()}
+																>
+																	<TrashIcon class="size-4 shrink-0" />
+																</button>
+															{/if}
+														</div>
+														{#if overrideExpanded}
+															<div class="flex min-h-0 flex-1 flex-col">
+																<CodePanel
+																	{...overridePanelProps()}
+																	variant="plain"
+																	bind:value={$inputs.overrideContent.value}
+																	bind:hasErrors={overrideHasErrors}
+																	bind:validationReady={overrideValidationReady}
+																	bind:outlineOpen={overrideOutlineOpen}
+																	bind:diffOpen={overrideDiffOpen}
+																	bind:commandPaletteOpen={overrideCommandPaletteOpen}
+																/>
+															</div>
+														{/if}
+													</div>
+												{:else if canEditOverride}
+													<button
+														type="button"
+														class="border-border text-muted-foreground hover:text-foreground hover:bg-card flex shrink-0 items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm font-medium transition-colors"
+														onclick={handleAddOverride}
+													>
+														<CreateFileIcon class="size-4 shrink-0" />
+														<span>{m.compose_override_add()}</span>
+													</button>
+												{/if}
 											</div>
 										{/snippet}
 

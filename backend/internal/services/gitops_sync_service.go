@@ -10,6 +10,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -71,10 +72,12 @@ const (
 // preparedSyncSource captures the repository data needed by the sync execution
 // paths after the source repository has been cloned and validated.
 type preparedSyncSource struct {
-	repoPath       string
-	commitHash     string
-	composeContent string
-	envContent     *string
+	repoPath         string
+	commitHash       string
+	composeContent   string
+	envContent       *string
+	overrideContent  *string
+	overrideFileName string
 }
 
 // stagedDirectorySync holds the fully prepared directory-sync result before it
@@ -1002,6 +1005,33 @@ func (s *GitOpsSyncService) prepareSyncSource(ctx context.Context, sync *models.
 		}
 	}
 
+	// Detect a Docker Compose override file (compose.override.yaml, etc.) sitting
+	// beside the compose file in the repo, mirroring `docker compose` behavior.
+	// Only auto-load an override when the compose file was referenced by a
+	// standard filename; an explicit custom path is the `-f` case, where docker
+	// compose does not auto-load overrides.
+	if slices.Contains(projects.ComposeFileCandidates(), filepath.Base(sync.ComposePath)) {
+		composeDir := filepath.Dir(sync.ComposePath)
+		overrideName, overrideContent, overrideFound, overrideErr := projects.ResolveComposeOverride(
+			func(name string) bool {
+				return s.repoService.gitClient.FileExists(ctx, repoPath, filepath.Join(composeDir, name))
+			},
+			func(name string) (string, error) {
+				return s.repoService.gitClient.ReadFile(ctx, repoPath, filepath.Join(composeDir, name))
+			},
+		)
+		// Fail the sync on a read error instead of degrading: WriteComposeOverrideFile
+		// with nil content removes the project's existing override, so a transient
+		// read failure here would delete the override and redeploy without it.
+		if overrideErr != nil {
+			return source, s.failSync(ctx, sync.ID, result, sync, actor, "Failed to read compose override file", overrideErr.Error())
+		}
+		if overrideFound {
+			source.overrideContent = &overrideContent
+			source.overrideFileName = overrideName
+		}
+	}
+
 	return source, nil
 }
 
@@ -1047,24 +1077,36 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 	return result, nil
 }
 
+// singleFileSyncedFilesInternal builds the tracked-file list for a single-file
+// sync: the compose file's base name plus the override file name when one was
+// resolved. Shared by the compose-only and swarm-stack single-file paths so the
+// two never disagree on what a single-file sync tracked.
+func singleFileSyncedFilesInternal(sync *models.GitOpsSync, source *preparedSyncSource) []string {
+	syncedFiles := []string{filepath.Base(sync.ComposePath)}
+	if source.overrideFileName != "" {
+		syncedFiles = append(syncedFiles, source.overrideFileName)
+	}
+	return syncedFiles
+}
+
 // performSingleFileSyncInternal preserves the legacy compose-only Git sync behavior.
 func (s *GitOpsSyncService) performSingleFileSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, actor models.User, result *gitops.SyncResult, source *preparedSyncSource) (*gitops.SyncResult, error) {
 	slog.InfoContext(ctx, "Using single file sync mode", "syncId", id, "composePath", sync.ComposePath)
 
-	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, result, actor)
+	syncedFiles := singleFileSyncedFilesInternal(sync, source)
+
+	project, err := s.getOrCreateProjectInternal(ctx, sync, id, source.composeContent, source.envContent, source.overrideContent, source.overrideFileName, result, actor)
 	if err != nil {
 		// err may be a *common.RedeployAfterSyncFailedError (from updateProjectForSyncInternal)
 		// or a plain failSync error (from CreateProject / ApplyGitSyncProjectFiles).
 		// Only the typed case warrants the redeploy-failure marker; the rest just
 		// surface through the caller.
 		if redeployErr, ok := errors.AsType[*common.RedeployAfterSyncFailedError](err); ok {
-			syncedFiles := []string{filepath.Base(sync.ComposePath)}
 			s.markSyncRedeployFailedInternal(ctx, sync, id, source.commitHash, syncedFiles, redeployErr, actor, result)
 		}
 		return result, err
 	}
 
-	syncedFiles := []string{filepath.Base(sync.ComposePath)}
 	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
 	result.Success = true
 	result.Message = fmt.Sprintf("Successfully synced compose file from %s to project %s", sync.ComposePath, project.Name)
@@ -1087,6 +1129,11 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 		envContent = *source.envContent
 	}
 
+	overrideContent := ""
+	if source.overrideContent != nil {
+		overrideContent = *source.overrideContent
+	}
+
 	var syncFiles []projects.SyncFile
 	if sync.SyncDirectory {
 		files, err := s.walkAndParseSyncDirectory(ctx, sync, source.repoPath)
@@ -1107,12 +1154,13 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 	}
 
 	req := swarm.StackDeployRequest{
-		Name:           sync.ProjectName,
-		ComposeContent: source.composeContent,
-		EnvContent:     envContent,
-		Files:          swarmFiles,
-		Prune:          true,
-		WorkingDir:     filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
+		Name:            sync.ProjectName,
+		ComposeContent:  source.composeContent,
+		OverrideContent: overrideContent,
+		EnvContent:      envContent,
+		Files:           swarmFiles,
+		Prune:           true,
+		WorkingDir:      filepath.Dir(filepath.Join(source.repoPath, sync.ComposePath)),
 	}
 
 	if _, err := s.swarmService.DeployStack(ctx, sync.EnvironmentID, req); err != nil {
@@ -1120,7 +1168,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 	}
 
 	if len(syncedFiles) == 0 {
-		syncedFiles = []string{filepath.Base(sync.ComposePath)}
+		syncedFiles = singleFileSyncedFilesInternal(sync, source)
 	}
 	s.updateSyncStatusWithFiles(ctx, id, "success", "", source.commitHash, syncedFiles)
 	result.Success = true
@@ -1479,7 +1527,7 @@ func (s *GitOpsSyncService) recordBrokenProjectBindingInternal(ctx context.Conte
 	s.disableAutoSyncForBrokenBindingInternal(ctx, sync)
 }
 
-func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
+func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	// Use the non-suffixing create: a GitOps sync must never mint a "-N" duplicate.
 	// A name collision means a project directory already exists for this name, so the
 	// binding is broken — fail loudly and disable auto-sync instead of duplicating.
@@ -1506,7 +1554,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to mark project as GitOps-managed", err.Error())
 	}
 
-	if _, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, actor); err != nil {
+	if _, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor); err != nil {
 		return nil, s.failSync(ctx, id, result, sync, actor, "Failed to sync project env files", err.Error())
 	}
 
@@ -1515,7 +1563,7 @@ func (s *GitOpsSyncService) createProjectForSyncInternal(ctx context.Context, sy
 	return project, nil
 }
 
-func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
+func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync *models.GitOpsSync, id string, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) (*models.Project, error) {
 	var project *models.Project
 
 	if sync.ProjectID != nil && *sync.ProjectID != "" {
@@ -1535,28 +1583,28 @@ func (s *GitOpsSyncService) getOrCreateProjectInternal(ctx context.Context, sync
 	}
 
 	if project == nil {
-		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, result, actor)
+		return s.createProjectForSyncInternal(ctx, sync, id, composeContent, envContent, overrideContent, overrideFileName, result, actor)
 	}
 
-	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, result, actor); err != nil {
+	if err := s.updateProjectForSyncInternal(ctx, sync, id, project, composeContent, envContent, overrideContent, overrideFileName, result, actor); err != nil {
 		return nil, err
 	}
 	return project, nil
 }
 
-func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, result *gitops.SyncResult, actor models.User) error {
+func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sync *models.GitOpsSync, id string, project *models.Project, composeContent string, envContent *string, overrideContent *string, overrideFileName string, result *gitops.SyncResult, actor models.User) error {
 	// Get current content to see if it changed
-	oldCompose, oldEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
+	oldCompose, oldEnv, oldOverride, _ := s.projectService.GetProjectContent(ctx, project.ID)
 
 	// Update existing project's compose and env files
-	_, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, actor)
+	_, err := s.projectService.ApplyGitSyncProjectFiles(ctx, project.ID, composeContent, envContent, overrideContent, overrideFileName, actor)
 	if err != nil {
 		return s.failSync(ctx, id, result, sync, actor, "Failed to update project files", err.Error())
 	}
 	slog.InfoContext(ctx, "Updated project files", "projectName", project.Name, "projectId", project.ID)
 
-	newCompose, newEnv, _ := s.projectService.GetProjectContent(ctx, project.ID)
-	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv)
+	newCompose, newEnv, newOverride, _ := s.projectService.GetProjectContent(ctx, project.ID)
+	contentChanged := oldCompose != newCompose || envContentChangedInternal(oldEnv, newEnv) || oldOverride != newOverride
 
 	// If content changed and project is running, redeploy. A redeploy failure
 	// is bubbled up as a *common.RedeployAfterSyncFailedError so the parent flow
