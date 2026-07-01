@@ -4764,6 +4764,72 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	assert.Equal(t, before[0].Path, after[0].Path)
 }
 
+// TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDespiteUnreadableNestedSibling
+// covers the regression from GitHub issue #3080: a permission-denied error on a
+// non-root nested subdirectory used to abort discovery of ALL projects. Unlike
+// TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirectoryUnreadable
+// above (which makes the projects ROOT itself unreadable and expects sync to still
+// error), this test makes only a NESTED subdirectory unreadable and expects sync to
+// succeed, discover the readable sibling project, and leave alone any existing DB
+// record whose path happens to live under the now-skipped unreadable subtree.
+func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDespiteUnreadableNestedSibling(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission-denied behavior is not portable to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test requires a non-root UID to trigger permission-denied on ReadDir")
+	}
+
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	project1Path := createComposeProjectDir(t, projectsRoot, "project1")
+
+	unreadableDir := filepath.Join(projectsRoot, "adguard-cheetah", "workingdir")
+	require.NoError(t, os.MkdirAll(unreadableDir, 0o755))
+	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o700) })
+	require.NoError(t, os.Chmod(unreadableDir, 0))
+
+	// Seed a DB row (bypassing the filesystem) whose Path sits under the
+	// now-unreadable subtree, simulating a project Arcane previously knew about.
+	strandedDirName := "stranded-project"
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "stranded-under-unreadable"},
+		Name:      "stranded-project",
+		DirName:   &strandedDirName,
+		Path:      filepath.Join(unreadableDir, "stranded-project"),
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx), "sync must succeed despite the unreadable nested directory")
+
+	after, err := svc.ListAllProjects(ctx)
+	require.NoError(t, err)
+
+	var foundReadableSibling bool
+	var foundStrandedRecord bool
+	for _, p := range after {
+		if p.Path == project1Path {
+			foundReadableSibling = true
+		}
+		if p.ID == "stranded-under-unreadable" {
+			foundStrandedRecord = true
+		}
+	}
+
+	assert.True(t, foundReadableSibling, "readable sibling project must still be discovered")
+	// evaluateProjectPathErrorInternal only prunes on os.IsNotExist; a permission-denied
+	// stat falls into the "keep the record" branch, so the stranded record must survive.
+	assert.True(t, foundStrandedRecord, "DB record under the unreadable subtree must not be pruned by a permission-denied stat")
+}
+
 func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectoriesInDifferentParents(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

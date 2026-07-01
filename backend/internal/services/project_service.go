@@ -2355,7 +2355,7 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		if projectsDir, dirErr := s.getProjectsDirectoryInternal(ctx); dirErr != nil {
 			slog.WarnContext(ctx, "Failed to resolve projects directory for quarantine", "error", dirErr)
 		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
-			trashPath := filepath.Join(filepath.Dir(proj.Path), fmt.Sprintf(".arcane-trash-%s-%d", filepath.Base(proj.Path), time.Now().Unix()))
+			trashPath := filepath.Join(filepath.Dir(proj.Path), fmt.Sprintf("%s%s-%d", projects.ArcaneTrashPrefix, filepath.Base(proj.Path), time.Now().Unix()))
 			if err := os.Rename(proj.Path, trashPath); err != nil {
 				slog.WarnContext(ctx, "Failed to quarantine project files", "path", proj.Path, "trashPath", trashPath, "error", err)
 			} else {
