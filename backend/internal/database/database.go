@@ -39,6 +39,19 @@ const (
 	legacyVersionTable = "schema_migrations"
 )
 
+// Prepared-statement cache bounds. GORM's PrepareStmt cache is a global LRU keyed
+// by SQL text. When PrepareStmtMaxSize/PrepareStmtTTL are left at zero, GORM falls
+// back to math.MaxInt entries with a 24h TTL, i.e. effectively unbounded. Because
+// this codebase emits highly variable SQL (dynamic filter/sort/pagination and
+// GORM's IN (?,?,...) slice expansion, whose placeholder count changes the query
+// text), the cache — and the modernc.org/sqlite compiled statements it retains on
+// the Go heap — grows steadily under normal use. Bounding size and TTL keeps hot
+// queries prepared while evicting the long tail (evicted statements are closed).
+const (
+	preparedStmtMaxSize = 256
+	preparedStmtTTL     = 15 * time.Minute
+)
+
 var customGormLogger logger.Interface
 
 func SetGormLogger(l logger.Interface) {
@@ -122,6 +135,8 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 				return time.Now().UTC()
 			},
 			PrepareStmt:                      true,
+			PrepareStmtMaxSize:               preparedStmtMaxSize,
+			PrepareStmtTTL:                   preparedStmtTTL,
 			IgnoreRelationshipsWhenMigrating: true,
 		})
 		if err == nil {
