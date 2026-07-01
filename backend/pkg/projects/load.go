@@ -213,6 +213,34 @@ func lenientCastSizeInternal(value string) (any, error) {
 	return int(n), nil
 }
 
+// ApplyLenientLoaderOptions configures a compose loader.Options for tolerant
+// loading: structural validation and consistency checks are skipped, and
+// undefined ${VAR} references are substituted with a placeholder instead of
+// an empty string (which would otherwise produce invalid volume/bind specs
+// like ":/path"). Callers use this when a .env file may not yet exist or may
+// not define every variable the compose file references.
+func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, composeFile string) {
+	opts.SkipValidation = true
+	opts.SkipConsistencyCheck = true
+	if opts.Interpolate == nil {
+		slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "compose_file", composeFile)
+		return
+	}
+
+	realLookup := opts.Interpolate.LookupValue
+	opts.Interpolate = &interp.Options{
+		Substitute:      template.Substitute,
+		TypeCastMapping: wrapTypeCastMappingLenientInternal(opts.Interpolate.TypeCastMapping),
+		LookupValue: func(key string) (string, bool) {
+			if val, ok := realLookup(key); ok {
+				return val, true
+			}
+			slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "variable", key, "compose_file", composeFile)
+			return "/placeholder-undefined", true
+		},
+	}
+}
+
 func loadComposeProjectInternal(
 	ctx context.Context,
 	composeFile string,
@@ -274,24 +302,7 @@ func loadComposeProjectInternal(
 		// does, so config-hashes match and both tools stop recreating services.
 		loader.WithDiscardEnvFiles(opts)
 		if lenient {
-			opts.SkipValidation = true
-			opts.SkipConsistencyCheck = true
-			if opts.Interpolate == nil {
-				slog.WarnContext(ctx, "compose loader did not initialize Interpolate options; lenient variable substitution will not apply", "compose_file", composeFile)
-			} else {
-				realLookup := opts.Interpolate.LookupValue
-				opts.Interpolate = &interp.Options{
-					Substitute:      template.Substitute,
-					TypeCastMapping: wrapTypeCastMappingLenientInternal(opts.Interpolate.TypeCastMapping),
-					LookupValue: func(key string) (string, bool) {
-						if val, ok := realLookup(key); ok {
-							return val, true
-						}
-						slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "variable", key, "compose_file", composeFile)
-						return "/placeholder-undefined", true
-					},
-				}
-			}
+			ApplyLenientLoaderOptions(ctx, opts, composeFile)
 		}
 		if configureLoader != nil {
 			configureLoader(opts)

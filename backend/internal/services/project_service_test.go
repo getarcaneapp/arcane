@@ -3162,6 +3162,58 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	assert.Equal(t, compose, string(composeBytes))
 }
 
+// TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar verifies
+// a git sync updating a compose file that references an undefined ${VAR} (with no
+// .env supplying it yet) succeeds instead of failing compose validation with a
+// typed-decode error like `strconv.ParseFloat: parsing "": invalid syntax`.
+func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-undefined-var"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    deploy:
+      resources:
+        limits:
+          cpus: "${CPU}"
+`
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-undefined-var"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	composeBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, compose, string(composeBytes))
+}
+
 func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

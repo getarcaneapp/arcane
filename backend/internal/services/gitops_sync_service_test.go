@@ -430,7 +430,9 @@ services:
 	require.NotNil(t, project)
 	require.True(t, created)
 	require.True(t, changed)
-	require.ElementsMatch(t, []string{"docker-compose.yaml", "meta.yaml", ".env"}, syncedFiles)
+	// .env is a reserved root env file: it is routed through the override
+	// merge rather than tracked as a raw synced file.
+	require.ElementsMatch(t, []string{"docker-compose.yaml", "meta.yaml"}, syncedFiles)
 
 	composePath, detectErr := projects.DetectComposeFile(project.Path)
 	require.NoError(t, detectErr)
@@ -540,6 +542,221 @@ services:
 	featureBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "nested", "feature.yaml"))
 	require.NoError(t, err)
 	assert.Contains(t, string(featureBytes), "worker:")
+}
+
+// TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey
+// verifies directory sync routes the project-root .env through the same
+// three-file override merge single-file git sync uses: an edit made in Arcane
+// (recorded as project.env) survives the sync, while a new key introduced by
+// git still flows into the effective .env. This is the core regression test
+// for https://github.com/getarcaneapp/arcane/issues/2476.
+func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGitKey(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-project")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "docker-compose.yaml"), []byte(`services:
+  app:
+    image: nginx:1.26-alpine
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte("FOO=git\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("FOO=useredit\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("FOO=useredit\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-directory-env-preserve"},
+		Name:      "demo-project",
+		DirName:   new("demo-project"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	oldSyncedFilesJSON, err := json.Marshal([]string{"docker-compose.yaml"})
+	require.NoError(t, err)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-env-preserve"},
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/demo/docker-compose.yaml",
+		ProjectName:   "demo-project",
+		ProjectID:     &project.ID,
+		SyncDirectory: true,
+		SyncedFiles:   new(string(oldSyncedFilesJSON)),
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	syncFiles := []projects.SyncFile{
+		{
+			RelativePath: "docker-compose.yaml",
+			Content: []byte(`services:
+  app:
+    image: nginx:1.27-alpine
+`),
+		},
+		{
+			RelativePath: ".env",
+			Content:      []byte("FOO=gitnew\nBAR=new\n"),
+		},
+	}
+
+	updatedProject, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	require.NoError(t, err)
+	require.NotNil(t, updatedProject)
+	require.False(t, created)
+	require.True(t, changed)
+	require.ElementsMatch(t, []string{"docker-compose.yaml"}, syncedFiles)
+
+	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"FOO": "useredit", "BAR": "new"}, effectiveEnv)
+
+	gitEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env.git"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"FOO": "gitnew", "BAR": "new"}, gitEnv)
+
+	overrideEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, "project.env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"FOO": "useredit"}, overrideEnv)
+}
+
+// TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstSyncAfterUpgrade
+// verifies the first directory sync after upgrading from a pre-override-merge
+// Arcane version: sync.SyncedFiles still lists ".env" from the old raw-write
+// path, and the project has only a direct .env (no .env.git/project.env yet).
+// CleanupRemovedFiles must not delete the live-copied stage .env before the
+// merge step reads it, or a local-only key would be silently dropped instead
+// of migrated into project.env.
+func TestGitOpsSyncService_SyncProjectDirectory_MigratesLegacyTrackedEnvOnFirstSyncAfterUpgrade(t *testing.T) {
+	ctx := context.Background()
+	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
+
+	projectPath := filepath.Join(projectsDir, "demo-project")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "docker-compose.yaml"), []byte(`services:
+  app:
+    image: nginx:1.26-alpine
+`), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("LOCAL_ONLY=1\n"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-directory-legacy-env-migrate"},
+		Name:      "demo-project",
+		DirName:   new("demo-project"),
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	// A pre-fix sync recorded .env as a plain tracked file.
+	oldSyncedFilesJSON, err := json.Marshal([]string{"docker-compose.yaml", ".env"})
+	require.NoError(t, err)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-legacy-env-migrate"},
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/demo/docker-compose.yaml",
+		ProjectName:   "demo-project",
+		ProjectID:     &project.ID,
+		SyncDirectory: true,
+		SyncedFiles:   new(string(oldSyncedFilesJSON)),
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	syncFiles := []projects.SyncFile{
+		{
+			RelativePath: "docker-compose.yaml",
+			Content: []byte(`services:
+  app:
+    image: nginx:1.27-alpine
+`),
+		},
+		{
+			RelativePath: ".env",
+			Content:      []byte("BASE=git\n"),
+		},
+	}
+
+	updatedProject, _, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	require.NoError(t, err)
+	require.NotNil(t, updatedProject)
+	require.False(t, created)
+
+	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"BASE": "git", "LOCAL_ONLY": "1"}, effectiveEnv)
+
+	overrideEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, "project.env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"LOCAL_ONLY": "1"}, overrideEnv)
+}
+
+// TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles verifies
+// that a repo committing files at the reserved bookkeeping paths (.env.git,
+// project.env) cannot clobber Arcane's own override-merge bookkeeping: those paths
+// are dropped from the raw sync write, never tracked in syncedFiles, and the actual
+// .env.git/project.env on disk are still produced solely by the merge.
+func TestGitOpsSyncService_SyncProjectDirectory_IgnoresCommittedReservedEnvFiles(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+
+	sync := &models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-directory-reserved-env"},
+		Name:          "demo-sync",
+		EnvironmentID: "0",
+		RepositoryID:  "repo-1",
+		ComposePath:   "apps/demo/docker-compose.yaml",
+		ProjectName:   "demo-project-reserved",
+		SyncDirectory: true,
+	}
+	require.NoError(t, db.Create(sync).Error)
+
+	syncFiles := []projects.SyncFile{
+		{
+			RelativePath: "docker-compose.yaml",
+			Content: []byte(`services:
+  app:
+    image: nginx:alpine
+`),
+		},
+		{
+			RelativePath: ".env",
+			Content:      []byte("FOO=fromgit\n"),
+		},
+		{
+			RelativePath: ".env.git",
+			Content:      []byte("poison\n"),
+		},
+		{
+			RelativePath: "project.env",
+			Content:      []byte("poison\n"),
+		},
+	}
+
+	project, syncedFiles, created, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	require.True(t, created)
+	require.ElementsMatch(t, []string{"docker-compose.yaml"}, syncedFiles)
+
+	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"FOO": "fromgit"}, effectiveEnv)
+
+	gitBytes, err := os.ReadFile(filepath.Join(project.Path, ".env.git"))
+	require.NoError(t, err)
+	assert.NotContains(t, string(gitBytes), "poison")
+	gitEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env.git"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, projects.EnvMap{"FOO": "fromgit"}, gitEnv)
+
+	_, statErr := os.Stat(filepath.Join(project.Path, "project.env"))
+	assert.True(t, os.IsNotExist(statErr))
 }
 
 func TestGitOpsSyncService_DirectorySync_RealWalkWithNestedConfig(t *testing.T) {
