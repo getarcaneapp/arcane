@@ -1,3 +1,41 @@
+## v2.3.0
+
+### New features
+
+* add appearance toggles for blur and interface animations ([#3091](https://github.com/getarcaneapp/arcane/pull/3091) by @othyn)
+
+### Bug fixes
+
+* edge tunnel go routine leak ([#3073](https://github.com/getarcaneapp/arcane/pull/3073) by @kmendell)
+* users with env only scopes unable to access the UI ([#3081](https://github.com/getarcaneapp/arcane/pull/3081) by @kmendell)
+* use correct disabletlsverification parameter for ntfy ([#3084](https://github.com/getarcaneapp/arcane/pull/3084) by @kmendell)
+* dont create trivy cache in server/client mode ([#3087](https://github.com/getarcaneapp/arcane/pull/3087) by @kmendell)
+* stop phantom and duplicate projects from broken syncs ([#3088](https://github.com/getarcaneapp/arcane/pull/3088) by @kmendell)
+* image polling notifications context being canceled early or not registered at all ([#3089](https://github.com/getarcaneapp/arcane/pull/3089) by @kmendell)
+
+### Dependencies
+
+* bump svelte from 5.56.3 to 5.56.4 ([#3067](https://github.com/getarcaneapp/arcane/pull/3067) by @dependabot[bot])
+* align some backend dependencies to avoid tranisent imports ([#3068](https://github.com/getarcaneapp/arcane/pull/3068) by @kmendell)
+* bump github.com/google/go-containerregistry from 0.21.6 to 0.21.7 in /backend ([#3044](https://github.com/getarcaneapp/arcane/pull/3044) by @dependabot[bot])
+* bump gorm.io/gorm from 1.31.1 to 1.31.2 in /backend ([#3046](https://github.com/getarcaneapp/arcane/pull/3046) by @dependabot[bot])
+* bump prettier from 3.8.4 to 3.8.5 ([#3064](https://github.com/getarcaneapp/arcane/pull/3064) by @dependabot[bot])
+* bump @tanstack/virtual-core from 3.17.1 to 3.17.2 ([#3047](https://github.com/getarcaneapp/arcane/pull/3047) by @dependabot[bot])
+* bump @xyflow/svelte from 1.6.0 to 1.6.1 ([#3066](https://github.com/getarcaneapp/arcane/pull/3066) by @dependabot[bot])
+* bump react-email from 6.6.3 to 6.6.5 ([#3059](https://github.com/getarcaneapp/arcane/pull/3059) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.34 to 6.1.35 ([#3049](https://github.com/getarcaneapp/arcane/pull/3049) by @dependabot[bot])
+* bump actions/cache from 5.0.5 to 6.1.0 ([#3071](https://github.com/getarcaneapp/arcane/pull/3071) by @dependabot[bot])
+* bump go.yaml.in/yaml/v4 from 4.0.0-rc.4 to 4.0.0-rc.6 in /backend ([#3070](https://github.com/getarcaneapp/arcane/pull/3070) by @dependabot[bot])
+* bump @tanstack/svelte-table from 9.0.0-beta.17 to 9.0.0-beta.21 in the tanstack-svelte group across 1 directory ([#3072](https://github.com/getarcaneapp/arcane/pull/3072) by @dependabot[bot])
+
+### Other
+
+* use atomic file writes and atomic bools for tunnel connections ([#3097](https://github.com/getarcaneapp/arcane/pull/3097) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.2.0...v2.3.0
+
 ## v2.2.0
 
 ### New features
