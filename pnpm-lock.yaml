@@ -162,14 +162,14 @@ importers:
         specifier: ^18.0.5
         version: 18.0.5
       prettier:
-        specifier: ^3.8.5
-        version: 3.9.0
+        specifier: ^3.9.3
+        version: 3.9.4
       prettier-plugin-svelte:
         specifier: ^4.1.1
-        version: 4.1.1(prettier@3.9.0)(svelte@5.56.4)
+        version: 4.1.1(prettier@3.9.4)(svelte@5.56.4)
       prettier-plugin-tailwindcss:
         specifier: ^0.8.0
-        version: 0.8.0(@prettier/plugin-oxc@0.1.4)(prettier-plugin-svelte@4.1.1(prettier@3.9.0)(svelte@5.56.4))(prettier@3.9.0)
+        version: 0.8.0(@prettier/plugin-oxc@0.1.4)(prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4))(prettier@3.9.4)
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -2499,8 +2499,8 @@ packages:
       prettier-plugin-svelte:
         optional: true
 
-  prettier@3.9.0:
-    resolution: {integrity: sha512-LjIqSIC5VYLzs9WedVmJ2ljNAGnU+DteIClbahu4L/DBeWjZ6iT/k1lAYyu9JUh+1xINxWadaPw/Pl63y/agAw==}
+  prettier@3.9.4:
+    resolution: {integrity: sha512-yWG/o/4oJfo036EKAfK6ACAoDOfHeRHx4tuxkfBZiauURiaSmYwlpOr5LQqKtIkRD2z1PLteme2WoxEnj4tHTg==}
     engines: {node: '>=14'}
     hasBin: true
 
@@ -3736,7 +3736,7 @@ snapshots:
   '@react-email/render@2.0.9(react-dom@19.2.7(react@19.2.7))(react@19.2.7)':
     dependencies:
       html-to-text: 9.0.5
-      prettier: 3.9.0
+      prettier: 3.9.4
       react: 19.2.7
       react-dom: 19.2.7(react@19.2.7)
 
@@ -4966,19 +4966,19 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  prettier-plugin-svelte@4.1.1(prettier@3.9.0)(svelte@5.56.4):
+  prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4):
     dependencies:
-      prettier: 3.9.0
+      prettier: 3.9.4
       svelte: 5.56.4
 
-  prettier-plugin-tailwindcss@0.8.0(@prettier/plugin-oxc@0.1.4)(prettier-plugin-svelte@4.1.1(prettier@3.9.0)(svelte@5.56.4))(prettier@3.9.0):
+  prettier-plugin-tailwindcss@0.8.0(@prettier/plugin-oxc@0.1.4)(prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4))(prettier@3.9.4):
     dependencies:
-      prettier: 3.9.0
+      prettier: 3.9.4
     optionalDependencies:
       '@prettier/plugin-oxc': 0.1.4
-      prettier-plugin-svelte: 4.1.1(prettier@3.9.0)(svelte@5.56.4)
+      prettier-plugin-svelte: 4.1.1(prettier@3.9.4)(svelte@5.56.4)
 
-  prettier@3.9.0: {}
+  prettier@3.9.4: {}
 
   prismjs@1.30.0: {}
 
