@@ -244,6 +244,44 @@ git commit -m "refactor: simplify API response handling"
 
 ## 🐛 Troubleshooting
 
+### Development startup checklist
+
+When `./scripts/development/dev.sh start` fails or the app does not load, validate the environment in this order before changing code:
+
+1. Confirm Docker is installed and the daemon is reachable:
+
+   ```bash
+   docker info
+   docker compose version
+   ```
+
+2. Confirm the development compose file is valid from the project root:
+
+   ```bash
+   docker compose -f docker/compose.dev.yaml -p arcane-dev config
+   ```
+
+3. Start the stack and inspect container state:
+
+   ```bash
+   ./scripts/development/dev.sh start
+   ./scripts/development/dev.sh status
+   ```
+
+4. Check the expected development endpoints:
+
+   ```bash
+   curl -f http://localhost:3000
+   curl -f http://localhost:3552/api/health
+   ```
+
+5. If a service is unhealthy, read the targeted logs first:
+
+   ```bash
+   ./scripts/development/dev.sh logs frontend
+   ./scripts/development/dev.sh logs backend
+   ```
+
 ### Common Issues
 
 **Port conflicts:**
