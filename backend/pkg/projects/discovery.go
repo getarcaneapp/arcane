@@ -1,7 +1,9 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -93,6 +95,10 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
+		if !isRoot && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 	if _, seen := ancestors[identity]; seen {
@@ -126,6 +132,10 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
+		if !isRoot && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 

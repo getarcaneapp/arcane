@@ -275,6 +275,10 @@ func (fw *Watcher) addExistingDirectories(root string) error {
 func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalPath string, ancestors map[string]struct{}) error {
 	identity, err := projects.ResolveDirectoryIdentityInternal(path)
 	if err != nil {
+		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable directory for watcher", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 	if _, seen := ancestors[identity]; seen {
@@ -302,6 +306,10 @@ func (fw *Watcher) addExistingDirectoriesRecursiveInternal(path string, logicalP
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
+		if path != fw.watchedPath && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable directory for watcher", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 
