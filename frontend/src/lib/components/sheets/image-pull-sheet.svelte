@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
@@ -105,9 +105,6 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton action="cancel" tone="outline" type="button" class="flex-1" onclick={() => (open = false)} />
-			<ArcaneButton action="pull" type="submit" class="flex-1" onclick={handleSubmit} disabled={isPulling} />
-		</div>
+		<SheetFooterActions bind:open submitAction="pull" onSubmit={handleSubmit} submitDisabled={isPulling} />
 	{/snippet}
 </ResponsiveDialog.Root>

@@ -10,6 +10,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { Input } from '$lib/components/ui/input/index.js';
 	import FileBrowserDialog from '$lib/components/dialogs/file-browser-dialog.svelte';
+	import GitopsDialogFooter from '$lib/components/dialogs/gitops-dialog-footer.svelte';
 	import type {
 		FileTreeNode,
 		GitOpsSync,
@@ -268,6 +269,22 @@
 	}
 </script>
 
+{#snippet BrowseFilesButton(target: 'compose' | 'preDeployScript')}
+	<Button
+		type="button"
+		variant="outline"
+		size="icon"
+		onclick={() => {
+			fileBrowserTarget = target;
+			showFileBrowser = true;
+		}}
+		disabled={!selectedRepository?.value || !$inputs.branch.value}
+		title={m.git_sync_browse_files_title()}
+	>
+		<FolderOpenIcon class="size-4" />
+	</Button>
+{/snippet}
+
 <ResponsiveDialog
 	bind:open
 	title={isEditMode ? m.git_sync_edit_title() : m.git_sync_add_title()}
@@ -379,19 +396,7 @@
 									bind:input={$inputs.composePath}
 								/>
 							</div>
-							<Button
-								type="button"
-								variant="outline"
-								size="icon"
-								onclick={() => {
-									fileBrowserTarget = 'compose';
-									showFileBrowser = true;
-								}}
-								disabled={!selectedRepository?.value || !$inputs.branch.value}
-								title={m.git_sync_browse_files_title()}
-							>
-								<FolderOpenIcon class="size-4" />
-							</Button>
+							{@render BrowseFilesButton('compose')}
 						</div>
 					</div>
 				</div>
@@ -522,19 +527,7 @@
 												aria-invalid={$inputs.preDeployScriptPath.error ? 'true' : undefined}
 											/>
 										</div>
-										<Button
-											type="button"
-											variant="outline"
-											size="icon"
-											onclick={() => {
-												fileBrowserTarget = 'preDeployScript';
-												showFileBrowser = true;
-											}}
-											disabled={!selectedRepository?.value || !$inputs.branch.value}
-											title={m.git_sync_browse_files_title()}
-										>
-											<FolderOpenIcon class="size-4" />
-										</Button>
+										{@render BrowseFilesButton('preDeployScript')}
 									</div>
 									<p class="text-muted-foreground text-xs">{m.git_sync_pre_deploy_script_path_help()}</p>
 									{#if $inputs.preDeployScriptPath.error}
@@ -628,22 +621,16 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button
-			type="button"
-			class="arcane-button-cancel flex-1"
-			variant="outline"
-			onclick={() => (open = false)}
-			disabled={isLoading}
-		>
-			{m.common_cancel()}
-		</Button>
-
-		<Button type="submit" form="sync-form" class="arcane-button-create flex-1" disabled={isLoading}>
-			{#if isLoading}
-				<Spinner class="mr-2 size-4" />
-			{/if}
-			{isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_sync_cap() })}
-		</Button>
+		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>
+			{#snippet primary()}
+				<Button type="submit" form="sync-form" class="arcane-button-create flex-1" disabled={isLoading}>
+					{#if isLoading}
+						<Spinner class="mr-2 size-4" />
+					{/if}
+					{isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_sync_cap() })}
+				</Button>
+			{/snippet}
+		</GitopsDialogFooter>
 	{/snippet}
 </ResponsiveDialog>
 

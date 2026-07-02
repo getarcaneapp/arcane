@@ -12,7 +12,7 @@
 	import { createRefreshActionButtons } from '$lib/utils/resource-actions';
 	import type { SwarmServiceCreateSpec } from '$lib/types/swarm';
 	import SwarmServicesTable from './services-table.svelte';
-	import CreateServiceDialog from '$lib/components/dialogs/create-service-dialog.svelte';
+	import ServiceEditorDialog from '$lib/components/dialogs/service-editor-dialog.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
@@ -45,7 +45,8 @@
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canCreateService = $derived(hasPermission('swarm:services', currentEnvId));
 
-	async function handleCreateService(spec: SwarmServiceCreateSpec) {
+	async function handleCreateService(payload: { spec: Record<string, unknown>; options?: Record<string, unknown> }) {
+		const spec = payload.spec as unknown as SwarmServiceCreateSpec;
 		handleApiResultWithCallbacks({
 			result: await tryCatch(swarmService.createService({ spec })),
 			message: m.common_create_failed({ resource: `${m.swarm_service()} "${spec.Name}"` }),
@@ -79,7 +80,18 @@
 	]);
 </script>
 
-<CreateServiceDialog bind:open={showCreateDialog} onSubmit={handleCreateService} isLoading={isLoading.creating} />
+{#if showCreateDialog}
+	<ServiceEditorDialog
+		bind:open={showCreateDialog}
+		title={m.swarm_service_create_title()}
+		description={m.swarm_service_create_description()}
+		submitLabel={m.common_create()}
+		submitAction="create"
+		initialSpec=""
+		isLoading={isLoading.creating}
+		onSubmit={handleCreateService}
+	/>
+{/if}
 
 <ResourcePageLayout title={m.swarm_services_title()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}

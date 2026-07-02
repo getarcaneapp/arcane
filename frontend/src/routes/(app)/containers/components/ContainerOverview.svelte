@@ -7,6 +7,7 @@
 	import { format, formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '$lib/icons';
 	import { containerService } from '$lib/services/container-service';
+	import { KeyValueCard } from '$lib/components/resource-detail';
 	import { toast } from 'svelte-sonner';
 
 	interface Props {
@@ -216,19 +217,7 @@
 		</div>
 
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-						{m.common_id()}
-					</div>
-					<div
-						class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-						title={m.common_click_to_select()}
-					>
-						{container.id}
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<KeyValueCard label={m.common_id()} valueTitle={m.common_click_to_select()}>{container.id}</KeyValueCard>
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">

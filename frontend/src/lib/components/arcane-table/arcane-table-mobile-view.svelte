@@ -1,9 +1,8 @@
 <script lang="ts" generics="TData extends Record<string, any> & { id: string }">
 	import type { ArcaneRow, ArcaneSvelteTable } from './table-features';
-	import * as Empty from '$lib/components/ui/empty/index.js';
 	import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 	import DropdownCard from '$lib/components/dropdown-card.svelte';
-	import { FolderXIcon } from '$lib/icons';
+	import TableEmpty from './table-empty.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import type { Snippet, Component } from 'svelte';
@@ -62,6 +61,29 @@
 	{/each}
 {/snippet}
 
+{#snippet mobileRow(row: ArcaneRow<TData>)}
+	{@const rowId = row.original.id}
+	{@const isExpanded = expandedRows?.has(rowId) ?? false}
+	<!-- svelte-ignore a11y_click_events_have_key_events -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
+		{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
+	</div>
+	{#if hasExpand && isExpanded && expandedRowContent}
+		<div class="bg-muted/30 px-4 py-3" transition:slide={{ duration: 200 }}>
+			{@render expandedRowContent({ row, item: row.original })}
+		</div>
+	{/if}
+{/snippet}
+
+{#snippet emptyState()}
+	<div class="p-4">
+		<TableEmpty
+			class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
+		/>
+	</div>
+{/snippet}
+
 <div class="divide-border/30 divide-y">
 	{#if isGrouped && groupedRows}
 		<div class="space-y-4 py-2">
@@ -77,18 +99,7 @@
 				>
 					<div class="divide-border/30 divide-y">
 						{#each groupRows as row (row.id)}
-							{@const rowId = row.original.id}
-							{@const isExpanded = expandedRows?.has(rowId) ?? false}
-							<!-- svelte-ignore a11y_click_events_have_key_events -->
-							<!-- svelte-ignore a11y_no_static_element_interactions -->
-							<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
-								{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
-							</div>
-							{#if hasExpand && isExpanded && expandedRowContent}
-								<div class="bg-muted/30 px-4 py-3" transition:slide={{ duration: 200 }}>
-									{@render expandedRowContent({ row, item: row.original })}
-								</div>
-							{/if}
+							{@render mobileRow(row)}
 						{:else}
 							<div class="text-muted-foreground flex h-24 items-center justify-center text-center">
 								{m.common_no_results_found()}
@@ -100,55 +111,16 @@
 		</div>
 
 		{#if groupedRows.length === 0}
-			<div class="p-4">
-				<Empty.Root
-					class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
-					role="status"
-					aria-live="polite"
-				>
-					<Empty.Header>
-						<Empty.Media variant="icon">
-							<FolderXIcon class="text-muted-foreground/60 size-10" />
-						</Empty.Media>
-						<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
-						<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
-					</Empty.Header>
-				</Empty.Root>
-			</div>
+			{@render emptyState()}
 		{/if}
 	{:else if loading && table.getRowModel().rows.length === 0}
 		{@render mobileSkeleton()}
 	{:else}
 		<!-- Non-grouped view (original behavior) -->
 		{#each table.getRowModel().rows as row (row.id)}
-			{@const rowId = (row.original as any).id}
-			{@const isExpanded = expandedRows?.has(rowId) ?? false}
-			<!-- svelte-ignore a11y_click_events_have_key_events -->
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class={cn(hasExpand && 'cursor-pointer')} onclick={(e) => handleRowClick(e, rowId)}>
-				{@render mobileCard({ row, item: row.original, mobileFieldVisibility })}
-			</div>
-			{#if hasExpand && isExpanded && expandedRowContent}
-				<div class="bg-muted/30 px-4 py-3" transition:slide={{ duration: 200 }}>
-					{@render expandedRowContent({ row, item: row.original })}
-				</div>
-			{/if}
+			{@render mobileRow(row)}
 		{:else}
-			<div class="p-4">
-				<Empty.Root
-					class={cn('min-h-48 rounded-xl py-12', unstyled ? 'border-transparent bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
-					role="status"
-					aria-live="polite"
-				>
-					<Empty.Header>
-						<Empty.Media variant="icon">
-							<FolderXIcon class="text-muted-foreground/60 size-10" />
-						</Empty.Media>
-						<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
-						<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
-					</Empty.Header>
-				</Empty.Root>
-			</div>
+			{@render emptyState()}
 		{/each}
 	{/if}
 </div>

@@ -10,6 +10,7 @@
 	import { ArrowRightIcon, RefreshIcon, AlertIcon, VerifiedCheckIcon, ApiKeyIcon, CircleArrowUpIcon, BoxIcon } from '$lib/icons';
 	import { createQuery } from '@tanstack/svelte-query';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
+	import UpdateStatusBanner from '$lib/components/update-status-banner.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 
@@ -341,6 +342,26 @@
 	{@render recheckButton()}
 {/snippet}
 
+{#snippet updateDetails(latestLabel: string, latestBg: string, latestText: string, boxBg: string, boxText: string)}
+	<div class="bg-transparent p-4">
+		<div class="space-y-3">
+			<div class="space-y-2 text-xs">
+				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
+				{#if latestVersion}
+					{@render versionDisplay(latestLabel, latestVersion, latestBg, latestText)}
+				{/if}
+			</div>
+			{#if updatePriority}
+				<div class="rounded-lg {boxBg} p-3">
+					<div class="text-center text-xs leading-relaxed font-medium {boxText}">
+						{updatePriority.description}
+					</div>
+				</div>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 {#snippet digestUpdateState()}
 	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
 		<div class="flex items-start gap-3">
@@ -352,28 +373,13 @@
 			</div>
 		</div>
 	</div>
-	<div class="bg-transparent p-4">
-		<div class="space-y-3">
-			<div class="space-y-2 text-xs">
-				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
-				{#if latestVersion}
-					{@render versionDisplay(
-						m.image_update_latest_digest_label(),
-						latestVersion,
-						'bg-blue-100 dark:bg-blue-900/30',
-						'text-blue-800 dark:text-blue-300'
-					)}
-				{/if}
-			</div>
-			{#if updatePriority}
-				<div class="rounded-lg bg-blue-50 p-3 dark:bg-blue-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-blue-800 dark:text-blue-300">
-						{updatePriority.description}
-					</div>
-				</div>
-			{/if}
-		</div>
-	</div>
+	{@render updateDetails(
+		m.image_update_latest_digest_label(),
+		'bg-blue-100 dark:bg-blue-900/30',
+		'text-blue-800 dark:text-blue-300',
+		'bg-blue-50 dark:bg-blue-950/30',
+		'text-blue-800 dark:text-blue-300'
+	)}
 	{@render recheckButton()}
 {/snippet}
 
@@ -388,28 +394,13 @@
 			</div>
 		</div>
 	</div>
-	<div class="bg-transparent p-4">
-		<div class="space-y-3">
-			<div class="space-y-2 text-xs">
-				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
-				{#if latestVersion}
-					{@render versionDisplay(
-						m.image_update_latest_label(),
-						latestVersion,
-						'bg-amber-100 dark:bg-amber-900/30',
-						'text-amber-800 dark:text-amber-300'
-					)}
-				{/if}
-			</div>
-			{#if updatePriority}
-				<div class="rounded-lg bg-amber-50 p-3 dark:bg-amber-950/30">
-					<div class="text-center text-xs leading-relaxed font-medium text-amber-800 dark:text-amber-300">
-						{updatePriority.description}
-					</div>
-				</div>
-			{/if}
-		</div>
-	</div>
+	{@render updateDetails(
+		m.image_update_latest_label(),
+		'bg-amber-100 dark:bg-amber-900/30',
+		'text-amber-800 dark:text-amber-300',
+		'bg-amber-50 dark:bg-amber-950/30',
+		'text-amber-800 dark:text-amber-300'
+	)}
 	{@render recheckButton()}
 {/snippet}
 
@@ -426,15 +417,17 @@
 {/snippet}
 
 {#snippet loadingState()}
-	<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
-		<div class="flex items-center gap-3">
-			{@render iconCircle(Spinner, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
-			<div>
-				<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_checking_title()}</div>
-				<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
-			</div>
-		</div>
-	</div>
+	<UpdateStatusBanner
+		icon={Spinner}
+		wrapperClass="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10"
+		gradientFrom="from-blue-500"
+		gradientTo="to-cyan-500"
+		shadowColor="shadow-blue-500/25"
+		titleClass="text-blue-950 dark:text-blue-100"
+		descriptionClass="text-blue-900/80 dark:text-blue-300/80"
+		title={m.image_update_checking_title()}
+		description={m.image_update_querying_registry()}
+	/>
 {/snippet}
 
 {#snippet unknownState()}

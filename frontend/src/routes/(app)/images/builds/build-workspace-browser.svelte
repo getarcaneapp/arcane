@@ -17,7 +17,7 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { FileEntry } from '$lib/types/shared';
-	import type { FileProvider } from '$lib/components/file-browser';
+	import { sortFileEntries, type FileProvider } from '$lib/components/file-browser';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 
 	let {
@@ -46,11 +46,7 @@
 
 	const files = $derived.by<FileEntry[]>(() => {
 		const result = (filesQuery.data ?? []).slice();
-		return result.sort((a, b) => {
-			if (a.isDirectory && !b.isDirectory) return -1;
-			if (!a.isDirectory && b.isDirectory) return 1;
-			return a.name.localeCompare(b.name);
-		});
+		return sortFileEntries(result);
 	});
 
 	const loading = $derived(filesQuery.isPending);

@@ -4,6 +4,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
 	import { Textarea } from '$lib/components/ui/textarea/index.js';
+	import GitopsDialogFooter from '$lib/components/dialogs/gitops-dialog-footer.svelte';
 	import type { ImportGitOpsSyncRequest } from '$lib/types/automation';
 	import { m } from '$lib/paraglide/messages';
 
@@ -102,21 +103,15 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<Button
-			type="button"
-			class="arcane-button-cancel flex-1"
-			variant="outline"
-			onclick={() => (open = false)}
-			disabled={isLoading}
-		>
-			{m.common_cancel()}
-		</Button>
-
-		<Button onclick={handleSubmit} class="arcane-button-create flex-1" disabled={isLoading}>
-			{#if isLoading}
-				<Spinner class="mr-2 size-4" />
-			{/if}
-			{m.git_sync_import_button()}
-		</Button>
+		<GitopsDialogFooter cancelLabel={m.common_cancel()} {isLoading} onCancel={() => (open = false)}>
+			{#snippet primary()}
+				<Button onclick={handleSubmit} class="arcane-button-create flex-1" disabled={isLoading}>
+					{#if isLoading}
+						<Spinner class="mr-2 size-4" />
+					{/if}
+					{m.git_sync_import_button()}
+				</Button>
+			{/snippet}
+		</GitopsDialogFooter>
 	{/snippet}
 </ResponsiveDialog>

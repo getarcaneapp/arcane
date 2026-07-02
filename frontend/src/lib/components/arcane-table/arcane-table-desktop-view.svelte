@@ -4,8 +4,7 @@
 	import { createVirtualizer } from './virtualizer.svelte';
 	import Skeleton from '$lib/components/ui/skeleton/skeleton.svelte';
 	import * as Table from '$lib/components/ui/table/index.js';
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { FolderXIcon, ArrowRightIcon, ArrowDownIcon } from '$lib/icons';
+	import { ArrowRightIcon, ArrowDownIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
 	import {
@@ -17,6 +16,7 @@
 		type GroupSelectionState
 	} from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
+	import TableEmpty from './table-empty.svelte';
 	import type { Component, Snippet } from 'svelte';
 	import type { Attachment } from 'svelte/attachments';
 	import { slide } from 'svelte/transition';
@@ -124,9 +124,21 @@
 	// the full unpaginated set. Normal paginated pages (<= 100 rows) render plainly. Grouped and
 	// expandable layouts keep their existing, proven rendering.
 	const VIRTUALIZE_THRESHOLD = 100;
-	const ROW_ESTIMATE_PX = 52;
+	// Rows are strictly single-line (Table.Cell is `whitespace-nowrap`) so they all share one height.
+	// We virtualize with a fixed row height instead of measuring every row: dynamic per-row measurement
+	// made the "All" view flicker — with an estimate that differed from the real height, each row
+	// re-measured as it scrolled in and nudged the rows already on screen. Calibrate once from the first
+	// rendered row, after which every offset is exact and stable.
+	const ROW_ESTIMATE_PX = 44;
+	let measuredRowHeight = $state<number | null>(null);
 	const flatRows = $derived(table.getRowModel().rows);
 	const shouldVirtualize = $derived(!isGrouped && !hasExpand && !!scrollElement && flatRows.length > VIRTUALIZE_THRESHOLD);
+
+	function calibrateRowHeight(node: HTMLTableRowElement) {
+		if (measuredRowHeight !== null) return;
+		const h = node.getBoundingClientRect().height;
+		if (h > 0) measuredRowHeight = h;
+	}
 
 	// Row actions are a real pinned column: sticky to the row's right edge with its own reserved
 	// width, so the floating button never overlaps data columns and survives horizontal scroll.
@@ -141,14 +153,17 @@
 
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
 	// when we actually virtualize; disabled, it stays cheap and reports an empty window.
-	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => ({
-		count: flatRows.length,
-		getScrollElement: () => scrollElement ?? null,
-		estimateSize: () => ROW_ESTIMATE_PX,
-		overscan: 10,
-		getItemKey: (index) => flatRows[index]?.id ?? index,
-		enabled: shouldVirtualize
-	}));
+	const rowVirtualizer = createVirtualizer<HTMLElement, HTMLTableRowElement>(() => {
+		const rowSize = measuredRowHeight ?? ROW_ESTIMATE_PX;
+		return {
+			count: flatRows.length,
+			getScrollElement: () => scrollElement ?? null,
+			estimateSize: () => rowSize,
+			overscan: 10,
+			getItemKey: (index) => flatRows[index]?.id ?? index,
+			enabled: shouldVirtualize
+		};
+	});
 </script>
 
 {#snippet cellContent(cell: ArcaneCell<TData>)}
@@ -164,7 +179,7 @@
 	{/if}
 {/snippet}
 
-{#snippet flatRow(row: ArcaneRow<TData>, measureRow?: Attachment<HTMLTableRowElement>)}
+{#snippet dataRow(row: ArcaneRow<TData>, isGroupedRow: boolean, measureRow?: Attachment<HTMLTableRowElement>)}
 	{@const rowId = row.original.id}
 	{@const isExpanded = expandedRows?.has(rowId) ?? false}
 	<Table.Row
@@ -188,8 +203,9 @@
 				</button>
 			</Table.Cell>
 		{/if}
-		{#each row.getVisibleCells() as cell (cell.id)}
-			<Table.Cell class={getCellClasses(cell, false, false)}>
+		{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
+			{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
+			<Table.Cell class={getCellClasses(cell, isGroupedRow, isFirstDataCell)}>
 				{@render cellContent(cell)}
 			</Table.Cell>
 		{/each}
@@ -206,6 +222,14 @@
 			</Table.Cell>
 		</Table.Row>
 	{/if}
+{/snippet}
+
+{#snippet emptyState()}
+	<Table.Row>
+		<Table.Cell colspan={columnsCount} class="h-48">
+			<TableEmpty class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')} />
+		</Table.Cell>
+	</Table.Row>
 {/snippet}
 
 {#snippet skeletonRows()}
@@ -296,91 +320,19 @@
 					<!-- Group Items (if not collapsed) -->
 					{#if !isCollapsed}
 						{#each groupRows as row (row.id)}
-							{@const rowId = row.original.id}
-							{@const isExpanded = expandedRows?.has(rowId) ?? false}
-							<Table.Row
-								data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
-								onclick={(event) => handleRowClick(event, rowId)}
-								class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
-							>
-								{#if hasExpand}
-									<Table.Cell class="w-8 px-2" data-row-select-ignore>
-										<button
-											class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
-											class:rotate-90={isExpanded}
-											onclick={(e) => {
-												e.stopPropagation();
-												onToggleRowExpanded?.(rowId);
-											}}
-											aria-label={isExpanded ? 'Collapse row' : 'Expand row'}
-										>
-											<ArrowRightIcon class="size-4" />
-										</button>
-									</Table.Cell>
-								{/if}
-								{#each row.getVisibleCells() as cell, cellIndex (cell.id)}
-									{@const isFirstDataCell = !selectionDisabled ? cellIndex === 1 : cellIndex === 0}
-									<Table.Cell class={getCellClasses(cell, true, isFirstDataCell)}>
-										{@render cellContent(cell)}
-									</Table.Cell>
-								{/each}
-							</Table.Row>
-
-							{#if hasExpand && isExpanded && expandedRowContent}
-								<Table.Row class="bg-primary/10 hover:bg-primary/10">
-									<Table.Cell colspan={columnsCount} class="p-0">
-										<div transition:slide={{ duration: 200 }}>
-											<div class="px-6 py-4">
-												{@render expandedRowContent({ row, item: row.original })}
-											</div>
-										</div>
-									</Table.Cell>
-								</Table.Row>
-							{/if}
+							{@render dataRow(row, true)}
 						{/each}
 					{/if}
 				{/each}
 
 				{#if groupedRows.length === 0}
-					<Table.Row>
-						<Table.Cell colspan={columnsCount} class="h-48">
-							<Empty.Root
-								class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'bg-card/30 backdrop-blur-sm')}
-								role="status"
-								aria-live="polite"
-							>
-								<Empty.Header>
-									<Empty.Media variant="icon">
-										<FolderXIcon class="text-muted-foreground/60 size-10" />
-									</Empty.Media>
-									<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
-									<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
-								</Empty.Header>
-							</Empty.Root>
-						</Table.Cell>
-					</Table.Row>
+					{@render emptyState()}
 				{/if}
 			{:else}
 				{#if loading && flatRows.length === 0}
 					{@render skeletonRows()}
 				{:else if flatRows.length === 0}
-					<Table.Row>
-						<Table.Cell colspan={columnsCount} class="h-48">
-							<Empty.Root
-								class={cn('rounded-lg py-12', unstyled ? 'bg-transparent' : 'backdrop-blur-sm bg-card/30')}
-								role="status"
-								aria-live="polite"
-							>
-								<Empty.Header>
-									<Empty.Media variant="icon">
-										<FolderXIcon class="text-muted-foreground/60 size-10" />
-									</Empty.Media>
-									<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
-									<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
-								</Empty.Header>
-							</Empty.Root>
-						</Table.Cell>
-					</Table.Row>
+					{@render emptyState()}
 				{:else if shouldVirtualize}
 					{@const vItems = rowVirtualizer.virtualItems}
 					{@const first = vItems[0]}
@@ -393,7 +345,7 @@
 					{#each vItems as vItem (vItem.key)}
 						{@const row = flatRows[vItem.index]}
 						{#if row}
-							{@render flatRow(row, rowVirtualizer.measureElement)}
+							{@render dataRow(row, false, calibrateRowHeight)}
 						{/if}
 					{/each}
 					{#if padBottom > 0}
@@ -401,7 +353,7 @@
 					{/if}
 				{:else}
 					{#each flatRows as row (row.id)}
-						{@render flatRow(row)}
+						{@render dataRow(row, false)}
 					{/each}
 				{/if}
 			{/if}

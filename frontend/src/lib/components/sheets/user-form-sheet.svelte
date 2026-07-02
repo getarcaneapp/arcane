@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import RoleAssignmentsEditor from '$lib/components/forms/role-assignments-editor.svelte';
 	import type { User } from '$lib/types/auth';
@@ -196,28 +196,19 @@
 					{/if}
 				</div>
 			</IfPermitted>
+			<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-			<ArcaneButton
-				action={isEditMode ? 'save' : 'create'}
-				type="submit"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={isEditMode ? m.users_save_changes() : m.common_create_button({ resource: m.resource_user_cap() })}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitAction={isEditMode ? 'save' : 'create'}
+			submitDisabled={isLoading}
+			submitLoading={isLoading}
+			onSubmit={handleSubmit}
+			submitLabel={isEditMode ? m.users_save_changes() : m.common_create_button({ resource: m.resource_user_cap() })}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

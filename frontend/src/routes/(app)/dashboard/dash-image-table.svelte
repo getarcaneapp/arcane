@@ -1,18 +1,18 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 	import type { ImageSummaryDto } from '$lib/types/docker';
 	import { bytes } from '$lib/utils/formatting';
 	import type { ColumnSpec } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
+	import DashTableCardHeader from './dash-table-card-header.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
 	import { goto } from '$app/navigation';
 	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
-	import { ImagesIcon, ArrowRightIcon } from '$lib/icons';
+	import { ImagesIcon } from '$lib/icons';
 
 	let {
 		images = $bindable(),
@@ -60,11 +60,7 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: ImageSummaryDto })}
-	{#if item.inUse}
-		<StatusBadge text={m.common_in_use()} variant="green" />
-	{:else}
-		<StatusBadge text={m.common_unused()} variant="amber" />
-	{/if}
+	<InUseStatus inUse={item.inUse} />
 {/snippet}
 
 {#snippet TagCell({ item }: { item: ImageSummaryDto })}
@@ -109,20 +105,13 @@
 
 <div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={tableLimit.measuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
-		<Card.Header icon={ImagesIcon} class="shrink-0">
-			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2><a class="hover:underline" href="/images">{m.images_title()}</a></h2>
-					</Card.Title>
-					<Card.Description>{m.images_top_largest()}</Card.Description>
-				</div>
-				<ArcaneButton action="base" tone="ghost" size="sm" href="/images" disabled={isLoading}>
-					{m.common_view_all()}
-					<ArrowRightIcon class="size-4" />
-				</ArcaneButton>
-			</div>
-		</Card.Header>
+		<DashTableCardHeader
+			icon={ImagesIcon}
+			href="/images"
+			title={m.images_title()}
+			description={m.images_top_largest()}
+			{isLoading}
+		/>
 		<Card.Content class="px-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
 			<ArcaneTable
 				items={{ ...images, data: images.data.slice(0, tableLimit.displayLimit) }}

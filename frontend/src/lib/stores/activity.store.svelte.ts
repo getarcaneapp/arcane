@@ -1,6 +1,11 @@
-import { browser } from '$app/env';
 import { activityService } from '$lib/services/activity-service';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
+import {
+	createEnvironmentStreamStore,
+	environmentDisplayName,
+	streamErrorMessage,
+	type StreamEnvStateBase
+} from '$lib/stores/environment-stream.svelte';
 import type {
 	Activity,
 	ActivityClearHistorySummary,
@@ -15,16 +20,9 @@ import type { Environment } from '$lib/types/environment';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;
-const MAX_RECONNECT_DELAY = 15_000;
-const MAX_RECONNECT_ATTEMPTS = 20;
 
-type ActivityEnvironmentState = {
-	id: string;
-	name: string;
+type ActivityEnvironmentState = StreamEnvStateBase & {
 	activities: Activity[];
-	loading: boolean;
-	streamError: boolean;
-	errorMessage?: string;
 };
 
 function sortActivitiesInternal(items: Activity[]): Activity[] {
@@ -60,25 +58,8 @@ function sourceEnvironmentIdInternal(activity: Activity | null | undefined): str
 	return activity?.sourceEnvironmentId || activity?.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
 }
 
-function environmentNameInternal(
-	environment: Pick<Environment, 'id' | 'name'> | ActivityEnvironmentState | null | undefined
-): string {
-	if (!environment) {
-		return 'Local';
-	}
-	return environment.name || environment.id;
-}
-
-function errorMessageInternal(error: unknown): string | undefined {
-	if (error instanceof Error && error.message.trim()) {
-		return error.message;
-	}
-	return undefined;
-}
-
 function createActivityStore() {
 	let _activities = $state<Activity[]>([]);
-	let _environmentStates = $state<Record<string, ActivityEnvironmentState>>({});
 	let _environmentActivities = $state<Record<string, Activity[]>>({});
 	let _details = $state<Record<string, ActivityDetail>>({});
 	let _expandedActivityIds = $state<Record<string, boolean>>({});
@@ -89,105 +70,97 @@ function createActivityStore() {
 	let _open = $state(false);
 	let _currentEnvironmentId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 
-	let started = false;
-	let unsubscribeEnvironment: (() => void) | null = null;
-	// A single aggregated stream carries every environment's events; per-env
-	// connections would exhaust the browser's 6-per-origin HTTP/1.1 limit.
-	let streamAbortController: AbortController | null = null;
-	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	let reconnectAttempt = 0;
-	let streamGeneration = 0;
-	let _streamConnected = $state(false);
-	let _streamFailed = $state(false);
-
-	function createEnvironmentStateInternal(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
-		return {
-			id: environment.id || LOCAL_DOCKER_ENVIRONMENT_ID,
-			name: environmentNameInternal(environment),
-			activities: [],
-			loading: true,
-			streamError: false
-		};
-	}
-
-	function environmentStateInternal(environmentId: string): ActivityEnvironmentState | undefined {
-		return _environmentStates[environmentId];
-	}
-
-	function updateEnvironmentStateInternal(
-		environmentId: string,
-		updater: (state: ActivityEnvironmentState) => ActivityEnvironmentState
-	) {
-		const current =
-			_environmentStates[environmentId] ?? createEnvironmentStateInternal({ id: environmentId, name: environmentId });
-		_environmentStates = {
-			..._environmentStates,
-			[environmentId]: updater(current)
-		};
-	}
-
-	function setEnvironmentErrorInternal(environmentId: string, error: unknown) {
-		updateEnvironmentStateInternal(environmentId, (state) => ({
-			...state,
-			loading: false,
-			streamError: true,
-			errorMessage: errorMessageInternal(error)
-		}));
-	}
-
-	function clearEnvironmentErrorInternal(environmentId: string) {
-		updateEnvironmentStateInternal(environmentId, (state) => ({
-			...state,
-			streamError: false,
-			errorMessage: undefined
-		}));
-	}
-
-	// A fresh stream re-emits error events for environments that are still
-	// failing, so stale per-environment errors are cleared on every (re)connect.
-	function clearAllEnvironmentErrorsInternal() {
-		for (const environmentId of Object.keys(_environmentStates)) {
-			if (environmentStateInternal(environmentId)?.streamError) {
-				clearEnvironmentErrorInternal(environmentId);
+	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
+		label: 'Activity',
+		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
+			return {
+				id: environment.id || LOCAL_DOCKER_ENVIRONMENT_ID,
+				name: environmentDisplayName(environment),
+				activities: [],
+				loading: true,
+				streamError: false
+			};
+		},
+		openStream: (signal) => activityService.openActivityStream(signal, ACTIVITY_LIST_LIMIT),
+		// REST-fetch history on start so the panel isn't stuck loading if the
+		// stream is slow or drops before delivering its first snapshot.
+		refreshOnStart: true,
+		applyEvent(environmentId, event) {
+			switch (event.type) {
+				case 'snapshot':
+					replaceEnvironmentSnapshotInternal(environmentId, event.activities ?? []);
+					break;
+				case 'activity':
+					if (event.activity) {
+						mergeActivityInternal(normalizeActivityInternal(event.activity, environmentId));
+					}
+					break;
+				case 'message':
+					if (event.message) {
+						mergeMessageInternal(event.message);
+					}
+					break;
+				case 'error':
+					core.setEnvironmentError(environmentId, new Error(event.error || 'Activity stream error'));
+					break;
 			}
+		},
+		async fetchSnapshot(environmentId, generation) {
+			core.updateEnvironmentState(environmentId, (state) => ({
+				...state,
+				loading: true
+			}));
+			try {
+				const result = await activityService.getActivities(
+					{ pagination: { page: 1, limit: ACTIVITY_LIST_LIMIT } },
+					environmentId
+				);
+				// The environment can be removed while the fetch is in-flight; don't resurrect it.
+				if (!core.isCurrentGeneration(generation) || !core.environmentState(environmentId)) {
+					return;
+				}
+				replaceEnvironmentSnapshotInternal(environmentId, result.data ?? []);
+			} catch (error) {
+				if (core.isCurrentGeneration(generation) && core.environmentState(environmentId)) {
+					console.warn('Failed to refresh activities:', error);
+					core.setEnvironmentError(environmentId, error);
+				}
+			}
+		},
+		onEnvironmentRemoved(environmentId) {
+			const nextActivities = { ..._environmentActivities };
+			delete nextActivities[environmentId];
+			_environmentActivities = nextActivities;
+			rebuildActivitiesInternal();
+		},
+		onEnvironmentRenamed(environmentId, name) {
+			const existing = core.environmentState(environmentId);
+			const updatedActivities = (_environmentActivities[environmentId] ?? existing?.activities ?? []).map((activity) =>
+				activity.sourceEnvironmentName
+					? activity
+					: {
+							...activity,
+							sourceEnvironmentName: name
+						}
+			);
+			_environmentActivities = {
+				..._environmentActivities,
+				[environmentId]: updatedActivities
+			};
+			core.updateEnvironmentState(environmentId, (state) => ({
+				...state,
+				name,
+				activities: updatedActivities
+			}));
+			rebuildActivitiesInternal();
+		},
+		onSelectedEnvironment(environment) {
+			_currentEnvironmentId = environment?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
 		}
-	}
-
-	function nextGenerationInternal(): number {
-		streamGeneration += 1;
-		return streamGeneration;
-	}
-
-	function isCurrentGenerationInternal(generation: number): boolean {
-		return streamGeneration === generation;
-	}
-
-	function clearReconnectTimerInternal() {
-		if (reconnectTimer) {
-			clearTimeout(reconnectTimer);
-			reconnectTimer = null;
-		}
-	}
-
-	function abortStreamInternal() {
-		clearReconnectTimerInternal();
-		streamAbortController?.abort();
-		streamAbortController = null;
-		_streamConnected = false;
-	}
-
-	function removeEnvironmentInternal(environmentId: string) {
-		const nextStates = { ..._environmentStates };
-		delete nextStates[environmentId];
-		_environmentStates = nextStates;
-		const nextActivities = { ..._environmentActivities };
-		delete nextActivities[environmentId];
-		_environmentActivities = nextActivities;
-		rebuildActivitiesInternal();
-	}
+	});
 
 	function normalizeActivityInternal(activity: Activity, environmentId: string): Activity {
-		const state = environmentStateInternal(environmentId);
+		const state = core.environmentState(environmentId);
 		return {
 			...activity,
 			sourceEnvironmentId: activity.sourceEnvironmentId || environmentId,
@@ -198,7 +171,7 @@ function createActivityStore() {
 	function replaceEnvironmentSnapshotInternal(environmentId: string, activities: Activity[]) {
 		// Snapshots can still arrive (stream or in-flight REST) after the
 		// environment was removed locally; don't resurrect it.
-		if (!environmentStateInternal(environmentId)) {
+		if (!core.environmentState(environmentId)) {
 			return;
 		}
 		const normalizedActivities = sortActivitiesInternal(
@@ -208,7 +181,7 @@ function createActivityStore() {
 			..._environmentActivities,
 			[environmentId]: normalizedActivities
 		};
-		updateEnvironmentStateInternal(environmentId, (state) => ({
+		core.updateEnvironmentState(environmentId, (state) => ({
 			...state,
 			activities: normalizedActivities,
 			loading: false,
@@ -234,7 +207,7 @@ function createActivityStore() {
 	function mergeActivityInternal(activity: Activity) {
 		const environmentId = sourceEnvironmentIdInternal(activity);
 		const normalized = normalizeActivityInternal(activity, environmentId);
-		const currentActivities = _environmentActivities[environmentId] ?? environmentStateInternal(environmentId)?.activities ?? [];
+		const currentActivities = _environmentActivities[environmentId] ?? core.environmentState(environmentId)?.activities ?? [];
 		const index = currentActivities.findIndex((item) => item.id === normalized.id);
 		const activities = sortActivitiesInternal(
 			index >= 0
@@ -245,7 +218,7 @@ function createActivityStore() {
 			..._environmentActivities,
 			[environmentId]: activities
 		};
-		updateEnvironmentStateInternal(environmentId, (state) => {
+		core.updateEnvironmentState(environmentId, (state) => {
 			return {
 				...state,
 				activities,
@@ -282,224 +255,6 @@ function createActivityStore() {
 				messages
 			}
 		};
-	}
-
-	function applyStreamEventInternal(environmentId: string, event: ActivityStreamEvent) {
-		// The aggregated stream can keep delivering events for an environment
-		// for a short while after it was removed locally; don't resurrect it.
-		if (event.type !== 'heartbeat' && !environmentStateInternal(environmentId)) {
-			return;
-		}
-		switch (event.type) {
-			case 'snapshot':
-				replaceEnvironmentSnapshotInternal(environmentId, event.activities ?? []);
-				break;
-			case 'activity':
-				if (event.activity) {
-					mergeActivityInternal(normalizeActivityInternal(event.activity, environmentId));
-				}
-				break;
-			case 'message':
-				if (event.message) {
-					mergeMessageInternal(event.message);
-				}
-				break;
-			case 'heartbeat':
-				_streamConnected = true;
-				break;
-			case 'error':
-				setEnvironmentErrorInternal(environmentId, new Error(event.error || 'Activity stream error'));
-				break;
-		}
-	}
-
-	async function refreshEnvironmentInternal(environmentId: string, generation = streamGeneration) {
-		updateEnvironmentStateInternal(environmentId, (state) => ({
-			...state,
-			loading: true
-		}));
-		try {
-			const result = await activityService.getActivities({ pagination: { page: 1, limit: ACTIVITY_LIST_LIMIT } }, environmentId);
-			// The environment can be removed while the fetch is in-flight; don't resurrect it.
-			if (!isCurrentGenerationInternal(generation) || !environmentStateInternal(environmentId)) {
-				return;
-			}
-			replaceEnvironmentSnapshotInternal(environmentId, result.data ?? []);
-		} catch (error) {
-			if (isCurrentGenerationInternal(generation) && environmentStateInternal(environmentId)) {
-				console.warn('Failed to refresh activities:', error);
-				setEnvironmentErrorInternal(environmentId, error);
-			}
-		}
-	}
-
-	async function refreshInternal() {
-		reconcileEnvironmentsInternal();
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => refreshEnvironmentInternal(environmentId)));
-	}
-
-	async function connectStreamInternal(generation: number) {
-		if (!browser || !isCurrentGenerationInternal(generation)) {
-			return;
-		}
-
-		const controller = new AbortController();
-		streamAbortController = controller;
-		try {
-			const response = await activityService.openActivityStream(controller.signal, ACTIVITY_LIST_LIMIT);
-			if (!isCurrentGenerationInternal(generation) || !response.body) {
-				if (streamAbortController === controller) {
-					streamAbortController = null;
-				}
-				return;
-			}
-
-			_streamConnected = true;
-			_streamFailed = false;
-			reconnectAttempt = 0;
-			clearAllEnvironmentErrorsInternal();
-			await readJSONLinesInternal(response.body, generation);
-		} catch (error) {
-			if (!controller.signal.aborted && isCurrentGenerationInternal(generation)) {
-				console.warn('Activity stream disconnected:', error);
-			}
-		} finally {
-			if (streamAbortController === controller) {
-				streamAbortController = null;
-			}
-			if (isCurrentGenerationInternal(generation)) {
-				_streamConnected = false;
-				if (!controller.signal.aborted) {
-					scheduleReconnectInternal(generation);
-				}
-			}
-		}
-	}
-
-	async function readJSONLinesInternal(stream: ReadableStream<Uint8Array>, generation: number) {
-		const reader = stream.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		try {
-			while (isCurrentGenerationInternal(generation)) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() ?? '';
-				for (const line of lines) {
-					handleStreamLineInternal(line);
-				}
-			}
-
-			buffer += decoder.decode();
-			if (buffer.trim()) {
-				handleStreamLineInternal(buffer);
-			}
-		} finally {
-			reader.releaseLock();
-		}
-	}
-
-	function handleStreamLineInternal(line: string) {
-		const trimmed = line.trim();
-		if (!trimmed) {
-			return;
-		}
-
-		try {
-			const event = JSON.parse(trimmed) as ActivityStreamEvent;
-			applyStreamEventInternal(event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID, event);
-		} catch (error) {
-			console.warn('Failed to parse activity stream line:', error);
-		}
-	}
-
-	function scheduleReconnectInternal(generation: number) {
-		if (!browser || !started || !isCurrentGenerationInternal(generation)) {
-			return;
-		}
-
-		if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-			_streamFailed = true;
-			return;
-		}
-
-		clearReconnectTimerInternal();
-		const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
-		reconnectAttempt += 1;
-		reconnectTimer = setTimeout(() => {
-			void connectStreamInternal(generation);
-		}, delay);
-	}
-
-	function reconcileEnvironmentsInternal() {
-		if (!browser || !started) {
-			return;
-		}
-
-		// Track only enabled environments — they are the ones the aggregated
-		// stream serves; a disabled environment would never leave "loading".
-		const available = environmentStore.available.filter((environment) => environment.enabled);
-		const environments =
-			available.length > 0
-				? available
-				: [
-						{
-							id: environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID,
-							name: environmentStore.selected?.name ?? 'Local'
-						}
-					];
-		const targetIds = new Set(environments.map((environment) => environment.id || LOCAL_DOCKER_ENVIRONMENT_ID));
-
-		for (const environmentId of Object.keys(_environmentStates)) {
-			if (!targetIds.has(environmentId)) {
-				removeEnvironmentInternal(environmentId);
-			}
-		}
-
-		for (const environment of environments) {
-			const environmentId = environment.id || LOCAL_DOCKER_ENVIRONMENT_ID;
-			const existing = environmentStateInternal(environmentId);
-			if (!existing) {
-				_environmentStates = {
-					..._environmentStates,
-					[environmentId]: createEnvironmentStateInternal(environment)
-				};
-				// An already-open aggregated stream only picks new environments
-				// up on its server-side reconcile tick; fetch once so the first
-				// snapshot doesn't take up to that interval to appear.
-				if (streamAbortController) {
-					void refreshEnvironmentInternal(environmentId);
-				}
-				continue;
-			}
-
-			if (existing.name !== environmentNameInternal(environment)) {
-				const updatedActivities = (_environmentActivities[environmentId] ?? existing.activities).map((activity) =>
-					activity.sourceEnvironmentName
-						? activity
-						: {
-								...activity,
-								sourceEnvironmentName: environmentNameInternal(environment)
-							}
-				);
-				_environmentActivities = {
-					..._environmentActivities,
-					[environmentId]: updatedActivities
-				};
-				updateEnvironmentStateInternal(environmentId, (state) => ({
-					...state,
-					name: environmentNameInternal(environment),
-					activities: updatedActivities
-				}));
-				rebuildActivitiesInternal();
-			}
-		}
 	}
 
 	function activityEnvironmentIdInternal(activityId: string): string {
@@ -564,7 +319,7 @@ function createActivityStore() {
 	}
 
 	function environmentFailuresInternal(): ActivityEnvironmentFailure[] {
-		return Object.values(_environmentStates)
+		return Object.values(core.environmentStates)
 			.filter((state) => state.streamError)
 			.map((state) => ({
 				environmentId: state.id,
@@ -590,13 +345,13 @@ function createActivityStore() {
 			return _open;
 		},
 		get loading(): boolean {
-			return Object.values(_environmentStates).some((state) => state.loading);
+			return Object.values(core.environmentStates).some((state) => state.loading);
 		},
 		get connected(): boolean {
-			return _streamConnected;
+			return core.streamConnected;
 		},
 		get streamError(): boolean {
-			return _streamFailed || Object.values(_environmentStates).some((state) => state.streamError);
+			return core.streamFailed || Object.values(core.environmentStates).some((state) => state.streamError);
 		},
 		get environmentFailures(): ActivityEnvironmentFailure[] {
 			return environmentFailuresInternal();
@@ -626,30 +381,9 @@ function createActivityStore() {
 		getActivity(activityId: string): Activity | null {
 			return _details[activityId]?.activity ?? _activities.find((item) => item.id === activityId) ?? null;
 		},
-		start: async () => {
-			if (!browser || started) {
-				return;
-			}
-
-			started = true;
-			await environmentStore.ready;
-			_currentEnvironmentId = environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
-			reconcileEnvironmentsInternal();
-			void connectStreamInternal(nextGenerationInternal());
-			unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
-				_currentEnvironmentId = environment?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID;
-				reconcileEnvironmentsInternal();
-			});
-		},
-		stop: () => {
-			started = false;
-			unsubscribeEnvironment?.();
-			unsubscribeEnvironment = null;
-			nextGenerationInternal();
-			abortStreamInternal();
-			reconnectAttempt = 0;
-		},
-		refresh: () => refreshInternal(),
+		start: () => core.start(),
+		stop: () => core.stop(),
+		refresh: () => core.refresh(),
 		cancelActivity: async (activityId: string) => {
 			if (!activityId || _cancellingIds[activityId]) {
 				return;
@@ -666,12 +400,12 @@ function createActivityStore() {
 			}
 		},
 		clearHistory: async (): Promise<ActivityClearHistorySummary> => {
-			reconcileEnvironmentsInternal();
+			core.reconcileEnvironments();
 
 			let deleted = 0;
 			let succeeded = 0;
 			const failed: ActivityEnvironmentFailure[] = [];
-			const states = Object.values(_environmentStates);
+			const states = Object.values(core.environmentStates);
 			await Promise.all(
 				states.map(async (state) => {
 					try {
@@ -682,7 +416,7 @@ function createActivityStore() {
 						failed.push({
 							environmentId: state.id,
 							environmentName: state.name,
-							message: errorMessageInternal(error)
+							message: streamErrorMessage(error)
 						});
 					}
 				})
@@ -692,7 +426,7 @@ function createActivityStore() {
 			_expandedActivityIds = {};
 			_detailLoadingIds = {};
 			_detailErrorIds = {};
-			await refreshInternal();
+			await core.refresh();
 
 			return {
 				deleted,
@@ -721,13 +455,7 @@ function createActivityStore() {
 			_details = nextDetails;
 			void loadDetailInternal(activityId);
 		},
-		retryStream: () => {
-			_streamFailed = false;
-			reconnectAttempt = 0;
-			clearAllEnvironmentErrorsInternal();
-			abortStreamInternal();
-			void connectStreamInternal(nextGenerationInternal());
-		},
+		retryStream: () => core.retryStream(),
 		setActivityExpanded,
 		toggleActivity
 	};

@@ -2,14 +2,14 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { DockIcon, GlobeIcon, EllipsisIcon, TrashIcon, NetworksIcon, InspectIcon } from '$lib/icons';
+	import { DockIcon, GlobeIcon, TrashIcon, NetworksIcon, InspectIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
@@ -233,31 +233,19 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: SwarmServiceSummary })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => inspectService(item)}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<IfPermitted perm="swarm:services">
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+		<DropdownMenu.Item onclick={() => inspectService(item)}>
+			<InspectIcon class="size-4" />
+			{m.common_inspect()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+		<IfPermitted perm="swarm:services">
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)} disabled={isAnyLoading}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

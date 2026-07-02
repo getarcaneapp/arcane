@@ -11,23 +11,25 @@
 	import { toast } from 'svelte-sonner';
 	import { networkService } from '$lib/services/network-service';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Settings } from '$lib/types/settings';
 	import type { Readable } from 'svelte/store';
 
-	type TrivySecurityFormValues = {
-		trivyImage: string;
-		trivyNetwork: string;
-		trivySecurityOpts: string;
-		trivyPrivileged: boolean;
-		trivyPreserveCacheOnVolumePrune: boolean;
-		trivyResourceLimitsEnabled: boolean;
-		trivyCpuLimit: number;
-		trivyMemoryLimitMb: number;
-		trivyConcurrentScanContainers: number;
-		trivyServerEnabled: boolean;
-		trivyServerUrl: string;
-		trivyServerToken: string;
-		trivyIgnoreUnfixed: boolean;
-	};
+	type TrivySecurityFormValues = Pick<
+		Settings,
+		| 'trivyImage'
+		| 'trivyNetwork'
+		| 'trivySecurityOpts'
+		| 'trivyPrivileged'
+		| 'trivyPreserveCacheOnVolumePrune'
+		| 'trivyResourceLimitsEnabled'
+		| 'trivyCpuLimit'
+		| 'trivyMemoryLimitMb'
+		| 'trivyConcurrentScanContainers'
+		| 'trivyServerEnabled'
+		| 'trivyServerUrl'
+		| 'trivyServerToken'
+		| 'trivyIgnoreUnfixed'
+	>;
 
 	type FormField<T> = {
 		value: T;

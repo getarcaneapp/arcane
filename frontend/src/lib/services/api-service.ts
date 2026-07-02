@@ -406,6 +406,12 @@ abstract class BaseAPIService {
 		upgradeInProgressInternal = value;
 	}
 
+	protected postFile<T = any>(url: string, file: File, params?: SearchParamsOption): Promise<T> {
+		const formData = new FormData();
+		formData.append('file', file);
+		return this.handleResponse<T>(this.api.post(url, formData, params !== undefined ? { params } : undefined));
+	}
+
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {
 		const response = await promise;
 		const payload = response.data;

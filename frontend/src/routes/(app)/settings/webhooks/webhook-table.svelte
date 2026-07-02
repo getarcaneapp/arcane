@@ -2,9 +2,9 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -13,7 +13,7 @@
 	import type { Webhook } from '$lib/types/environment';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { webhookService } from '$lib/services/webhook-service';
-	import { TrashIcon, EllipsisIcon, GlobeIcon } from '$lib/icons';
+	import { TrashIcon, GlobeIcon } from '$lib/icons';
 	import * as m from '$lib/paraglide/messages.js';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
@@ -288,30 +288,18 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Webhook })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<IfPermitted perm="webhooks:update">
-					<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
-						{item.enabled ? m.webhook_disable() : m.webhook_enable()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-				<DropdownMenu.Separator />
-				<IfPermitted perm="webhooks:delete">
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<RowActionsMenu>
+		<IfPermitted perm="webhooks:update">
+			<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
+				{item.enabled ? m.webhook_disable() : m.webhook_enable()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+		<DropdownMenu.Separator />
+		<IfPermitted perm="webhooks:delete">
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteWebhook(item.id, item.name)}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}

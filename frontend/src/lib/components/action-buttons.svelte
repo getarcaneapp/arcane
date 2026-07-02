@@ -430,363 +430,190 @@
 	{/if}
 {/snippet}
 
+{#snippet DesktopActions(size: 'default' | 'icon', showLabel: boolean)}
+	{#if !isRunning && canStart}
+		{#if type === 'container'}
+			<ArcaneButton action="start" {size} {showLabel} onclick={() => handleStart()} loading={uiLoading.start} />
+		{:else}
+			<DeploySplitButton
+				{size}
+				{showLabel}
+				customLabel={deployButtonLabel}
+				onDeploy={() => handleDeploy()}
+				loading={uiLoading.start}
+			/>
+		{/if}
+	{/if}
+
+	{#if isRunning}
+		{#if canStop}
+			<ArcaneButton
+				action="stop"
+				{size}
+				{showLabel}
+				customLabel={type === 'project' ? m.common_down() : undefined}
+				onclick={() => handleStop()}
+				loading={uiLoading.stop}
+			/>
+		{/if}
+		{#if canRestart}
+			<ArcaneButton action="restart" {size} {showLabel} onclick={() => handleRestart()} loading={uiLoading.restart} />
+		{/if}
+	{/if}
+
+	{#if type === 'container'}
+		{@render RedeployActionButton(size, showLabel)}
+		{@render beforeRemoveActions?.(size, showLabel, isLifecycleActionPending)}
+		{#if canRemove}
+			<ArcaneButton action="remove" {size} {showLabel} onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
+		{/if}
+	{:else}
+		{@render RedeployActionButton(size, showLabel)}
+
+		{#if type === 'project'}
+			{#if projectHasBuildDirective && canBuild}
+				<ArcaneButton action="build" {size} {showLabel} onclick={() => handleProjectBuild()} loading={uiLoading.build} />
+			{/if}
+
+			{#if canPull}
+				<ArcaneButton action="pull" {size} {showLabel} onclick={() => handleProjectPull()} loading={uiLoading.pull} />
+			{/if}
+		{/if}
+
+		{#if onRefresh}
+			<ArcaneButton action="refresh" {size} {showLabel} onclick={() => handleRefresh()} loading={uiLoading.refresh} />
+		{/if}
+
+		{#if canRemove}
+			<ArcaneButton
+				customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
+				action="remove"
+				{size}
+				{showLabel}
+				onclick={() => confirmAction('remove')}
+				loading={uiLoading.remove}
+			/>
+		{/if}
+	{/if}
+{/snippet}
+
+{#snippet ActionsMenu()}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
+			<span class="sr-only">{m.common_open_menu()}</span>
+			<EllipsisIcon />
+		</DropdownMenu.Trigger>
+
+		<DropdownMenu.Content
+			align="end"
+			class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+		>
+			<DropdownMenu.Group>
+				{#if !isRunning && canStart}
+					{#if type === 'container'}
+						<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
+							{m.common_start()}
+						</DropdownMenu.Item>
+					{:else}
+						<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
+							{deployButtonLabel}
+						</DropdownMenu.Item>
+						{#if type === 'project'}
+							<DropdownMenu.Separator />
+							<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
+							<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
+								<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
+								<DropdownMenu.RadioItem value="always">
+									{m.common_always()}
+								</DropdownMenu.RadioItem>
+								<DropdownMenu.RadioItem value="never">
+									{m.common_never()}
+								</DropdownMenu.RadioItem>
+							</DropdownMenu.RadioGroup>
+							<DropdownMenu.Separator />
+							<DropdownMenu.CheckboxItem
+								checked={deployOptionsStore.forceRecreate}
+								onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
+							>
+								{m.deploy_force_recreate()}
+							</DropdownMenu.CheckboxItem>
+						{/if}
+					{/if}
+				{:else if isRunning}
+					{#if canStop}
+						<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
+							{type === 'project' ? m.common_down() : m.common_stop()}
+						</DropdownMenu.Item>
+					{/if}
+					{#if canRestart}
+						<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
+							{m.common_restart()}
+						</DropdownMenu.Item>
+					{/if}
+				{/if}
+
+				{#if type === 'container'}
+					{@render RedeployMenuItem()}
+					{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
+					{#if canRemove}
+						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+							{m.common_remove()}
+						</DropdownMenu.Item>
+					{/if}
+				{:else}
+					{@render RedeployMenuItem()}
+
+					{#if type === 'project'}
+						{#if projectHasBuildDirective && canBuild}
+							<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
+								{m.build()}
+							</DropdownMenu.Item>
+						{/if}
+						{#if canPull}
+							<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
+								{m.images_pull()}
+							</DropdownMenu.Item>
+						{/if}
+					{/if}
+
+					{#if onRefresh}
+						<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
+							{m.common_refresh()}
+						</DropdownMenu.Item>
+					{/if}
+
+					{#if canRemove}
+						<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
+							{type === 'project' ? m.compose_destroy() : m.common_remove()}
+						</DropdownMenu.Item>
+					{/if}
+				{/if}
+			</DropdownMenu.Group>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+{/snippet}
+
 {#if desktopVariant === 'adaptive'}
 	<div>
 		<!-- On xl+ show labels; below xl use icon-only to avoid overflow in constrained headers (sidebar layouts) -->
 		{#if isLgUp}
 			<div class="flex items-center gap-2">
-				{#if !isRunning && canStart}
-					{#if type === 'container'}
-						<ArcaneButton
-							action="start"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => handleStart()}
-							loading={uiLoading.start}
-						/>
-					{:else}
-						<DeploySplitButton
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							customLabel={deployButtonLabel}
-							onDeploy={() => handleDeploy()}
-							loading={uiLoading.start}
-						/>
-					{/if}
-				{/if}
-
-				{#if isRunning}
-					{#if canStop}
-						<ArcaneButton
-							action="stop"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							customLabel={type === 'project' ? m.common_down() : undefined}
-							onclick={() => handleStop()}
-							loading={uiLoading.stop}
-						/>
-					{/if}
-					{#if canRestart}
-						<ArcaneButton
-							action="restart"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => handleRestart()}
-							loading={uiLoading.restart}
-						/>
-					{/if}
-				{/if}
-
-				{#if type === 'container'}
-					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-					{@render beforeRemoveActions?.(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly, isLifecycleActionPending)}
-					{#if canRemove}
-						<ArcaneButton
-							action="remove"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => confirmAction('remove')}
-							loading={uiLoading.remove}
-						/>
-					{/if}
-				{:else}
-					{@render RedeployActionButton(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
-
-					{#if type === 'project'}
-						{#if projectHasBuildDirective && canBuild}
-							<ArcaneButton
-								action="build"
-								size={adaptiveIconOnly ? 'icon' : 'default'}
-								showLabel={!adaptiveIconOnly}
-								onclick={() => handleProjectBuild()}
-								loading={uiLoading.build}
-							/>
-						{/if}
-
-						{#if canPull}
-							<ArcaneButton
-								action="pull"
-								size={adaptiveIconOnly ? 'icon' : 'default'}
-								showLabel={!adaptiveIconOnly}
-								onclick={() => handleProjectPull()}
-								loading={uiLoading.pull}
-							/>
-						{/if}
-					{/if}
-
-					{#if onRefresh}
-						<ArcaneButton
-							action="refresh"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => handleRefresh()}
-							loading={uiLoading.refresh}
-						/>
-					{/if}
-
-					{#if canRemove}
-						<ArcaneButton
-							customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-							action="remove"
-							size={adaptiveIconOnly ? 'icon' : 'default'}
-							showLabel={!adaptiveIconOnly}
-							onclick={() => confirmAction('remove')}
-							loading={uiLoading.remove}
-						/>
-					{/if}
-				{/if}
+				{@render DesktopActions(adaptiveIconOnly ? 'icon' : 'default', !adaptiveIconOnly)}
 			</div>
 		{:else}
 			<div class="flex items-center">
-				<DropdownMenu.Root>
-					<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
-						<span class="sr-only">{m.common_open_menu()}</span>
-						<EllipsisIcon />
-					</DropdownMenu.Trigger>
-
-					<DropdownMenu.Content
-						align="end"
-						class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
-					>
-						<DropdownMenu.Group>
-							{#if !isRunning && canStart}
-								{#if type === 'container'}
-									<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-										{m.common_start()}
-									</DropdownMenu.Item>
-								{:else}
-									<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
-										{deployButtonLabel}
-									</DropdownMenu.Item>
-									{#if type === 'project'}
-										<DropdownMenu.Separator />
-										<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
-										<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
-											<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
-											<DropdownMenu.RadioItem value="always">
-												{m.common_always()}
-											</DropdownMenu.RadioItem>
-											<DropdownMenu.RadioItem value="never">
-												{m.common_never()}
-											</DropdownMenu.RadioItem>
-										</DropdownMenu.RadioGroup>
-										<DropdownMenu.Separator />
-										<DropdownMenu.CheckboxItem
-											checked={deployOptionsStore.forceRecreate}
-											onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
-										>
-											{m.deploy_force_recreate()}
-										</DropdownMenu.CheckboxItem>
-									{/if}
-								{/if}
-							{:else if isRunning}
-								{#if canStop}
-									<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-										{type === 'project' ? m.common_down() : m.common_stop()}
-									</DropdownMenu.Item>
-								{/if}
-								{#if canRestart}
-									<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-										{m.common_restart()}
-									</DropdownMenu.Item>
-								{/if}
-							{/if}
-
-							{#if type === 'container'}
-								{@render RedeployMenuItem()}
-								{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
-								{#if canRemove}
-									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-										{m.common_remove()}
-									</DropdownMenu.Item>
-								{/if}
-							{:else}
-								{@render RedeployMenuItem()}
-
-								{#if type === 'project'}
-									{#if projectHasBuildDirective && canBuild}
-										<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
-											{m.build()}
-										</DropdownMenu.Item>
-									{/if}
-									{#if canPull}
-										<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
-											{m.images_pull()}
-										</DropdownMenu.Item>
-									{/if}
-								{/if}
-
-								{#if onRefresh}
-									<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
-										{m.common_refresh()}
-									</DropdownMenu.Item>
-								{/if}
-
-								{#if canRemove}
-									<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-										{type === 'project' ? m.compose_destroy() : m.common_remove()}
-									</DropdownMenu.Item>
-								{/if}
-							{/if}
-						</DropdownMenu.Group>
-					</DropdownMenu.Content>
-				</DropdownMenu.Root>
+				{@render ActionsMenu()}
 			</div>
 		{/if}
 	</div>
 {:else}
 	<div>
 		<div class="hidden items-center gap-2 lg:flex">
-			{#if !isRunning && canStart}
-				{#if type === 'container'}
-					<ArcaneButton action="start" onclick={() => handleStart()} loading={uiLoading.start} />
-				{:else}
-					<DeploySplitButton customLabel={deployButtonLabel} onDeploy={() => handleDeploy()} loading={uiLoading.start} />
-				{/if}
-			{/if}
-
-			{#if isRunning}
-				{#if canStop}
-					<ArcaneButton
-						action="stop"
-						customLabel={type === 'project' ? m.common_down() : undefined}
-						onclick={() => handleStop()}
-						loading={uiLoading.stop}
-					/>
-				{/if}
-				{#if canRestart}
-					<ArcaneButton action="restart" onclick={() => handleRestart()} loading={uiLoading.restart} />
-				{/if}
-			{/if}
-
-			{#if type === 'container'}
-				{@render RedeployActionButton()}
-				{@render beforeRemoveActions?.('default', true, isLifecycleActionPending)}
-				{#if canRemove}
-					<ArcaneButton action="remove" onclick={() => confirmAction('remove')} loading={uiLoading.remove} />
-				{/if}
-			{:else}
-				{@render RedeployActionButton()}
-
-				{#if type === 'project'}
-					{#if projectHasBuildDirective && canBuild}
-						<ArcaneButton action="build" onclick={() => handleProjectBuild()} loading={uiLoading.build} />
-					{/if}
-
-					{#if canPull}
-						<ArcaneButton action="pull" onclick={() => handleProjectPull()} loading={uiLoading.pull} />
-					{/if}
-				{/if}
-
-				{#if onRefresh}
-					<ArcaneButton action="refresh" onclick={() => handleRefresh()} loading={uiLoading.refresh} />
-				{/if}
-
-				{#if canRemove}
-					<ArcaneButton
-						customLabel={type === 'project' ? m.compose_destroy() : m.common_remove()}
-						action="remove"
-						onclick={() => confirmAction('remove')}
-						loading={uiLoading.remove}
-					/>
-				{/if}
-			{/if}
+			{@render DesktopActions('default', true)}
 		</div>
 
 		<div class="flex items-center lg:hidden">
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</DropdownMenu.Trigger>
-
-				<DropdownMenu.Content
-					align="end"
-					class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
-				>
-					<DropdownMenu.Group>
-						{#if !isRunning && canStart}
-							{#if type === 'container'}
-								<DropdownMenu.Item onclick={handleStart} disabled={uiLoading.start}>
-									{m.common_start()}
-								</DropdownMenu.Item>
-							{:else}
-								<DropdownMenu.Item onclick={() => handleDeploy()} disabled={uiLoading.start}>
-									{deployButtonLabel}
-								</DropdownMenu.Item>
-								{#if type === 'project'}
-									<DropdownMenu.Separator />
-									<DropdownMenu.Label>{m.settings_default_deploy_pull_policy()}</DropdownMenu.Label>
-									<DropdownMenu.RadioGroup value={deployOptionsStore.pullPolicy} onValueChange={handleDeployPullPolicyChange}>
-										<DropdownMenu.RadioItem value="missing">Missing</DropdownMenu.RadioItem>
-										<DropdownMenu.RadioItem value="always">
-											{m.common_always()}
-										</DropdownMenu.RadioItem>
-										<DropdownMenu.RadioItem value="never">
-											{m.common_never()}
-										</DropdownMenu.RadioItem>
-									</DropdownMenu.RadioGroup>
-									<DropdownMenu.Separator />
-									<DropdownMenu.CheckboxItem
-										checked={deployOptionsStore.forceRecreate}
-										onCheckedChange={(checked) => deployOptionsStore.setForceRecreate(checked === true)}
-									>
-										{m.deploy_force_recreate()}
-									</DropdownMenu.CheckboxItem>
-								{/if}
-							{/if}
-						{:else if isRunning}
-							{#if canStop}
-								<DropdownMenu.Item onclick={handleStop} disabled={uiLoading.stop}>
-									{type === 'project' ? m.common_down() : m.common_stop()}
-								</DropdownMenu.Item>
-							{/if}
-							{#if canRestart}
-								<DropdownMenu.Item onclick={handleRestart} disabled={uiLoading.restart}>
-									{m.common_restart()}
-								</DropdownMenu.Item>
-							{/if}
-						{/if}
-
-						{#if type === 'container'}
-							{@render RedeployMenuItem()}
-							{@render beforeRemoveMenuItems?.(isLifecycleActionPending)}
-							{#if canRemove}
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{m.common_remove()}
-								</DropdownMenu.Item>
-							{/if}
-						{:else}
-							{@render RedeployMenuItem()}
-
-							{#if type === 'project'}
-								{#if projectHasBuildDirective && canBuild}
-									<DropdownMenu.Item onclick={handleProjectBuild} disabled={uiLoading.build}>
-										{m.build()}
-									</DropdownMenu.Item>
-								{/if}
-								{#if canPull}
-									<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
-										{m.images_pull()}
-									</DropdownMenu.Item>
-								{/if}
-							{/if}
-
-							{#if onRefresh}
-								<DropdownMenu.Item onclick={handleRefresh} disabled={uiLoading.refresh}>
-									{m.common_refresh()}
-								</DropdownMenu.Item>
-							{/if}
-
-							{#if canRemove}
-								<DropdownMenu.Item onclick={() => confirmAction('remove')} disabled={uiLoading.remove}>
-									{type === 'project' ? m.compose_destroy() : m.common_remove()}
-								</DropdownMenu.Item>
-							{/if}
-						{/if}
-					</DropdownMenu.Group>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+			{@render ActionsMenu()}
 		</div>
 	</div>
 {/if}

@@ -70,6 +70,17 @@ export function extractApiErrorMessage(error: any): string {
 	}
 }
 
+/**
+ * Shows a toast for a failed upgrade, avoiding double-wrapping when the extracted
+ * message is already the localized "upgrade failed" string. The localized message
+ * factory is passed in so this utility stays free of paraglide imports.
+ */
+export function toastUpgradeError(error: unknown, formatFailed: (args: { error: string }) => string): void {
+	const errorMessage = extractApiErrorMessage(error);
+	const wrappedPrefix = formatFailed({ error: '' });
+	toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : formatFailed({ error: errorMessage }));
+}
+
 export async function handleApiResultWithCallbacks<T>({
 	result,
 	message,

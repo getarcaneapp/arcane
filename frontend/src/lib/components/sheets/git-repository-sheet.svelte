@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
 	import * as Select from '$lib/components/ui/select/index.js';
@@ -252,25 +252,14 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-
-			<ArcaneButton
-				action={isEditMode ? 'save' : 'create'}
-				type="submit"
-				form="git-repository-form"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				customLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_repository_cap() })}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitAction={isEditMode ? 'save' : 'create'}
+			submitForm="git-repository-form"
+			submitDisabled={isLoading}
+			submitLoading={isLoading}
+			submitLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.resource_repository_cap() })}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

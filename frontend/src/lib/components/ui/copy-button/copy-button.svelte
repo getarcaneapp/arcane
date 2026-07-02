@@ -39,6 +39,17 @@
 	});
 </script>
 
+{#snippet idleIcon()}
+	<div in:scale={{ duration: animationDuration, start: 0.85 }}>
+		{#if icon}
+			{@render icon()}
+		{:else}
+			<CopyIcon tabindex={-1} />
+		{/if}
+		<span class="sr-only">{m.common_copy()}</span>
+	</div>
+{/snippet}
+
 {#if isSecure}
 	<ArcaneButton
 		bind:ref
@@ -66,14 +77,7 @@
 				<span class="sr-only">{m.common_copy_failed()}</span>
 			</div>
 		{:else}
-			<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-				{#if icon}
-					{@render icon()}
-				{:else}
-					<CopyIcon tabindex={-1} />
-				{/if}
-				<span class="sr-only">{m.common_copy()}</span>
-			</div>
+			{@render idleIcon()}
 		{/if}
 		{@render children?.()}
 	</ArcaneButton>
@@ -91,14 +95,7 @@
 				name="copy"
 				disabled
 			>
-				<div in:scale={{ duration: animationDuration, start: 0.85 }}>
-					{#if icon}
-						{@render icon()}
-					{:else}
-						<CopyIcon tabindex={-1} />
-					{/if}
-					<span class="sr-only">{m.common_copy()}</span>
-				</div>
+				{@render idleIcon()}
 				{@render children?.()}
 			</ArcaneButton>
 		</Tooltip.Trigger>

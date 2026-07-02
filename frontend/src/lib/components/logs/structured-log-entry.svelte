@@ -238,44 +238,48 @@
 	}
 </script>
 
+{#snippet entrySummary(showOverflowCount: boolean)}
+	{#if extracted.level}
+		<span class="mt-1.5 size-2.5 shrink-0 rounded-full {getLevelDotClass(extracted.level)}"></span>
+	{/if}
+
+	<div class="min-w-0 flex-1">
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+			{#if extracted.target}
+				<span class="truncate text-[11px] font-medium text-cyan-400" title={extracted.target}>
+					{extracted.target}
+				</span>
+			{/if}
+
+			{#if extracted.message}
+				<span class="min-w-0 text-gray-100">{extracted.message}</span>
+			{:else if !extracted.hasStructure}
+				<span class="min-w-0 text-gray-300">{safeStringify(data)}</span>
+			{/if}
+
+			{#each visibleSummaryFields as field (field.path)}
+				<span class="inline-flex max-w-full min-w-0 items-baseline gap-0.5 text-gray-300">
+					<span class="shrink-0 text-zinc-500">{field.label}=</span>
+					<span class="truncate font-semibold text-zinc-100" title={safeStringify(field.value)}>
+						{formatInlineValue(field.value)}
+					</span>
+				</span>
+			{/each}
+
+			{#if showOverflowCount && hiddenSummaryCount > 0}
+				<span class="text-[11px] font-medium text-zinc-500">+{hiddenSummaryCount}</span>
+			{/if}
+		</div>
+	</div>
+{/snippet}
+
 <Collapsible.Root bind:open={showDetails}>
 	<div class="flex min-w-0 items-start gap-2">
 		{#if hasDetails}
 			<Collapsible.Trigger
 				class="focus-visible:border-ring focus-visible:ring-ring/50 flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:ring-[3px]"
 			>
-				{#if extracted.level}
-					<span class="mt-1.5 size-2.5 shrink-0 rounded-full {getLevelDotClass(extracted.level)}"></span>
-				{/if}
-
-				<div class="min-w-0 flex-1">
-					<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-						{#if extracted.target}
-							<span class="truncate text-[11px] font-medium text-cyan-400" title={extracted.target}>
-								{extracted.target}
-							</span>
-						{/if}
-
-						{#if extracted.message}
-							<span class="min-w-0 text-gray-100">{extracted.message}</span>
-						{:else if !extracted.hasStructure}
-							<span class="min-w-0 text-gray-300">{safeStringify(data)}</span>
-						{/if}
-
-						{#each visibleSummaryFields as field (field.path)}
-							<span class="inline-flex max-w-full min-w-0 items-baseline gap-0.5 text-gray-300">
-								<span class="shrink-0 text-zinc-500">{field.label}=</span>
-								<span class="truncate font-semibold text-zinc-100" title={safeStringify(field.value)}>
-									{formatInlineValue(field.value)}
-								</span>
-							</span>
-						{/each}
-
-						{#if hiddenSummaryCount > 0}
-							<span class="text-[11px] font-medium text-zinc-500">+{hiddenSummaryCount}</span>
-						{/if}
-					</div>
-				</div>
+				{@render entrySummary(true)}
 
 				{#if showDetails}
 					<ArrowDownIcon class="mt-0.5 size-4 shrink-0 text-zinc-500" />
@@ -285,34 +289,7 @@
 			</Collapsible.Trigger>
 		{:else}
 			<div class="flex min-w-0 flex-1 items-start gap-3 px-1 py-0.5">
-				{#if extracted.level}
-					<span class="mt-1.5 size-2.5 shrink-0 rounded-full {getLevelDotClass(extracted.level)}"></span>
-				{/if}
-
-				<div class="min-w-0 flex-1">
-					<div class="flex flex-wrap items-center gap-x-4 gap-y-1">
-						{#if extracted.target}
-							<span class="truncate text-[11px] font-medium text-cyan-400" title={extracted.target}>
-								{extracted.target}
-							</span>
-						{/if}
-
-						{#if extracted.message}
-							<span class="min-w-0 text-gray-100">{extracted.message}</span>
-						{:else if !extracted.hasStructure}
-							<span class="min-w-0 text-gray-300">{safeStringify(data)}</span>
-						{/if}
-
-						{#each visibleSummaryFields as field (field.path)}
-							<span class="inline-flex max-w-full min-w-0 items-baseline gap-0.5 text-gray-300">
-								<span class="shrink-0 text-zinc-500">{field.label}=</span>
-								<span class="truncate font-semibold text-zinc-100" title={safeStringify(field.value)}>
-									{formatInlineValue(field.value)}
-								</span>
-							</span>
-						{/each}
-					</div>
-				</div>
+				{@render entrySummary(false)}
 			</div>
 		{/if}
 

@@ -6,11 +6,9 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import {
 		ArrowLeftIcon,
-		ArrowsUpDownIcon,
 		BoxIcon,
 		ProjectsIcon,
 		LayersIcon,
-		SearchIcon,
 		SettingsIcon,
 		FileTextIcon,
 		AlertIcon,
@@ -34,6 +32,7 @@
 	import { toGitCommitUrl } from '$lib/utils/navigation';
 	import { toSafeHref } from '$lib/utils/navigation';
 	import { PersistedState } from 'runed';
+	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import EditorTabStrip from '../components/EditorTabStrip.svelte';
@@ -69,7 +68,7 @@
 		remapSelectedProjectFileKey,
 		removeProjectFileRecord
 	} from '../components/project-file-tree-utils';
-	import { extractComposeYamlName } from '$lib/utils/compose-flow';
+	import { composeTreeSplitProps, extractComposeYamlName } from '$lib/utils/compose-flow';
 
 	let { data } = $props();
 	let projectId = $derived(data.projectId);
@@ -250,9 +249,6 @@
 	let selectedIncludeTabPreference = $state<string | null>(null);
 	let treePaneWidth = $state(420);
 	let composeSplitWidth = $state<number | null>(null);
-	const minTreePaneWidth = 200;
-	const maxTreePaneWidth = 480;
-	const minEditorPaneWidth = 360;
 	const minComposePaneWidth = 360;
 	const minEnvPaneWidth = 280;
 
@@ -288,6 +284,7 @@
 		const valid = openTabsPreference.filter((key) => {
 			if (key === 'compose' || key === 'env') return true;
 			if (!key.startsWith('file:')) return false;
+			// fallow-ignore-next-line code-duplication managed-file predicate; script-level, diverges per page
 			const entry = managedProjectFiles.find((file) => file.relativePath === key.slice(5));
 			return !!entry && !entry.isDirectory;
 		});
@@ -1106,9 +1103,51 @@
 
 		return '/projects';
 	});
+
+	function composePanelProps() {
+		return {
+			title: composeFileName,
+			language: 'yaml',
+			validationMode: 'compose',
+			error: $inputs.composeContent.error ?? undefined,
+			readOnly: !canEditCompose,
+			fileId: `project:${projectId}:compose`,
+			originalValue: serverComposeContent,
+			enableDiff: true,
+			editorContext: codeEditorContext
+		} as const;
+	}
+
+	function envPanelProps() {
+		return {
+			title: '.env',
+			language: 'env',
+			validationMode: 'env',
+			error: $inputs.envContent.error ?? undefined,
+			readOnly: !canEditEnv,
+			fileId: `project:${projectId}:env`,
+			originalValue: serverEnvContent,
+			enableDiff: true,
+			editorContext: codeEditorContext
+		} as const;
+	}
 </script>
 
 {#if project}
+	{#snippet archiveButton(compact: boolean)}
+		<ArcaneButton
+			action="base"
+			icon={BoxIcon}
+			size={compact ? 'icon' : undefined}
+			showLabel={!compact}
+			loading={isLoading.archiving}
+			onclick={handleArchiveToggle}
+			disabled={archiveRequiresStopped}
+			title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
+			customLabel={project?.isArchived ? m.projects_unarchive() : m.projects_archive()}
+			class={compact ? 'xl:hidden' : 'hidden xl:inline-flex'}
+		/>
+	{/snippet}
 	<TabbedPageLayout
 		{backUrl}
 		backLabel={m.common_back()}
@@ -1230,28 +1269,8 @@
 					/>
 				{/if}
 				<IfPermitted perm="projects:archive">
-					<ArcaneButton
-						action="base"
-						icon={BoxIcon}
-						loading={isLoading.archiving}
-						onclick={handleArchiveToggle}
-						disabled={archiveRequiresStopped}
-						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						class="hidden xl:inline-flex"
-					/>
-					<ArcaneButton
-						action="base"
-						icon={BoxIcon}
-						size="icon"
-						showLabel={false}
-						loading={isLoading.archiving}
-						onclick={handleArchiveToggle}
-						disabled={archiveRequiresStopped}
-						title={archiveRequiresStopped ? m.projects_archive_requires_stopped() : undefined}
-						customLabel={project.isArchived ? m.projects_unarchive() : m.projects_archive()}
-						class="xl:hidden"
-					/>
+					{@render archiveButton(false)}
+					{@render archiveButton(true)}
 				</IfPermitted>
 				<ActionButtons
 					id={project.id}
@@ -1371,15 +1390,8 @@
 							<div class="bg-card border-border flex h-full min-h-0 flex-col overflow-hidden rounded-lg border">
 								<ResizableSplit
 									class="h-full min-h-0 flex-1"
-									variant="flush"
-									firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-									secondClass="flex min-h-0 flex-col"
+									{...composeTreeSplitProps}
 									bind:size={treePaneWidth}
-									minSize={minTreePaneWidth}
-									maxSize={maxTreePaneWidth}
-									minSecondSize={minEditorPaneWidth}
-									defaultRatio={0.22}
-									stackBelow={1024}
 									ariaLabel={m.compose_editor_resize_files_panel()}
 									persistKey={`arcane.compose.split:${project.id}:tree`}
 									onResizeEnd={persistPrefs}
@@ -1402,37 +1414,18 @@
 
 									{#snippet second()}
 										<div class="flex h-full min-h-0 flex-1 flex-col">
+											<!-- fallow-ignore-next-line code-duplication compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
 											<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
 												{#snippet actions()}
-													<ArcaneButton
-														action="base"
-														tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
-														size="icon"
-														class="size-6"
-														showLabel={false}
-														icon={FileTextIcon}
-														customLabel={m.compose_editor_toggle_outline()}
-														onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
-													/>
-													<ArcaneButton
-														action="base"
-														tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
-														size="icon"
-														class="size-6"
-														showLabel={false}
-														icon={ArrowsUpDownIcon}
-														customLabel={m.compose_editor_toggle_diff()}
-														onclick={() => (treeDiffOpen = !treeDiffOpen)}
-													/>
-													<ArcaneButton
-														action="base"
-														tone="ghost"
-														size="icon"
-														class="size-6"
-														showLabel={false}
-														icon={SearchIcon}
-														customLabel={m.compose_editor_command_palette()}
-														onclick={() => (treeCommandPaletteOpen = true)}
+													<ComposeFileEditorPanel
+														outlineOpen={treeOutlineOpen}
+														outlineLabel={m.compose_editor_toggle_outline()}
+														onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+														diffOpen={treeDiffOpen}
+														diffLabel={m.compose_editor_toggle_diff()}
+														onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+														commandPaletteLabel={m.compose_editor_command_palette()}
+														onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
 													/>
 												{/snippet}
 											</EditorTabStrip>
@@ -1441,19 +1434,11 @@
 													{#if activeTreeTab === 'compose'}
 														<CodePanel
 															variant="plain"
+															{...composePanelProps()}
 															bind:open={composeOpen}
-															title={composeFileName}
-															language="yaml"
-															validationMode="compose"
 															bind:value={$inputs.composeContent.value}
-															error={$inputs.composeContent.error ?? undefined}
-															readOnly={!canEditCompose}
 															bind:hasErrors={composeHasErrors}
 															bind:validationReady={composeValidationReady}
-															fileId={`project:${projectId}:compose`}
-															originalValue={serverComposeContent}
-															enableDiff={true}
-															editorContext={codeEditorContext}
 															bind:outlineOpen={treeOutlineOpen}
 															bind:diffOpen={treeDiffOpen}
 															bind:commandPaletteOpen={treeCommandPaletteOpen}
@@ -1461,19 +1446,11 @@
 													{:else if activeTreeTab === 'env'}
 														<CodePanel
 															variant="plain"
+															{...envPanelProps()}
 															bind:open={envOpen}
-															title=".env"
-															language="env"
-															validationMode="env"
 															bind:value={$inputs.envContent.value}
-															error={$inputs.envContent.error ?? undefined}
-															readOnly={!canEditEnv}
 															bind:hasErrors={envHasErrors}
 															bind:validationReady={envValidationReady}
-															fileId={`project:${projectId}:env`}
-															originalValue={serverEnvContent}
-															enableDiff={true}
-															editorContext={codeEditorContext}
 															bind:outlineOpen={treeOutlineOpen}
 															bind:diffOpen={treeDiffOpen}
 															bind:commandPaletteOpen={treeCommandPaletteOpen}
@@ -1603,19 +1580,11 @@
 										{#snippet first()}
 											<div class="flex min-h-0 flex-1 flex-col">
 												<CodePanel
+													{...composePanelProps()}
 													bind:open={composeOpen}
-													title={composeFileName}
-													language="yaml"
-													validationMode="compose"
 													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
-													readOnly={!canEditCompose}
 													bind:hasErrors={composeHasErrors}
 													bind:validationReady={composeValidationReady}
-													fileId={`project:${projectId}:compose`}
-													originalValue={serverComposeContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
 												/>
 											</div>
 										{/snippet}
@@ -1623,19 +1592,11 @@
 										{#snippet second()}
 											<div class="flex min-h-0 flex-1 flex-col">
 												<CodePanel
+													{...envPanelProps()}
 													bind:open={envOpen}
-													title=".env"
-													language="env"
-													validationMode="env"
 													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
-													readOnly={!canEditEnv}
 													bind:hasErrors={envHasErrors}
 													bind:validationReady={envValidationReady}
-													fileId={`project:${projectId}:env`}
-													originalValue={serverEnvContent}
-													enableDiff={true}
-													editorContext={codeEditorContext}
 												/>
 											</div>
 										{/snippet}

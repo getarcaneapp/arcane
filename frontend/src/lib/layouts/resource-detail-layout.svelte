@@ -43,6 +43,16 @@
 	const secondaryActions = $derived(actions.slice(1));
 </script>
 
+{#snippet ActionMenuContent(items: DetailAction[], minWidthClass: string)}
+	<DropdownMenu.Content align="end" class={minWidthClass}>
+		{#each items as act (act.id)}
+			<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
+				{act.loading ? act.loadingLabel || act.label : act.label}
+			</DropdownMenu.Item>
+		{/each}
+	</DropdownMenu.Content>
+{/snippet}
+
 {#if showFloatingHeader}
 	<div
 		class="animate-in fade-in slide-in-from-top-2 fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 px-2 duration-200 sm:w-auto sm:px-0"
@@ -81,13 +91,7 @@
 									</ArcaneButton>
 								{/snippet}
 							</DropdownMenu.Trigger>
-							<DropdownMenu.Content align="end" class="min-w-[140px]">
-								{#each secondaryActions as act (act.id)}
-									<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
-										{act.loading ? act.loadingLabel || act.label : act.label}
-									</DropdownMenu.Item>
-								{/each}
-							</DropdownMenu.Content>
+							{@render ActionMenuContent(secondaryActions, 'min-w-[140px]')}
 						</DropdownMenu.Root>
 					{/if}
 				</div>
@@ -126,13 +130,7 @@
 								</ArcaneButton>
 							{/snippet}
 						</DropdownMenu.Trigger>
-						<DropdownMenu.Content align="end" class="min-w-[160px]">
-							{#each actions as act (act.id)}
-								<DropdownMenu.Item onclick={act.onclick} disabled={act.disabled || act.loading}>
-									{act.loading ? act.loadingLabel || act.label : act.label}
-								</DropdownMenu.Item>
-							{/each}
-						</DropdownMenu.Content>
+						{@render ActionMenuContent(actions, 'min-w-[160px]')}
 					</DropdownMenu.Root>
 				{/if}
 			</div>

@@ -3,6 +3,8 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import * as Empty from '$lib/components/ui/empty/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { PortBadge } from '$lib/components/badges/index.js';
@@ -370,53 +372,42 @@
 	/>
 {/snippet}
 
+{#snippet NotCreatedTooltip()}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
+				<EllipsisIcon class="size-4" />
+			</ArcaneButton>
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content>
+			<p>{m.compose_service_not_created()}</p>
+		</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{/snippet}
+
 {#snippet MobileRowActions({ item }: { item: ServiceWithId })}
 	{#if item.status === 'running'}
 		{#if !item.containerId}
-			<ArcaneTooltip.Root>
-				<ArcaneTooltip.Trigger>
-					<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
-						<EllipsisIcon class="size-4" />
-					</ArcaneButton>
-				</ArcaneTooltip.Trigger>
-				<ArcaneTooltip.Content>
-					<p>{m.compose_service_not_created()}</p>
-				</ArcaneTooltip.Content>
-			</ArcaneTooltip.Root>
+			{@render NotCreatedTooltip()}
 		{:else}
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger>
-					{#snippet child({ props })}
-						<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-							<span class="sr-only">{m.common_open_menu()}</span>
-							<EllipsisIcon />
-						</ArcaneButton>
-					{/snippet}
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end">
-					<DropdownMenu.Group>
-						<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
-							<InspectIcon class="size-4" />
-							{m.common_inspect()}
-						</DropdownMenu.Item>
-						{#if canDeleteContainer}
-							<DropdownMenu.Separator />
-							<DropdownMenu.Item
-								variant="destructive"
-								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
-								disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
-							>
-								{#if actionStatus[item.id] === 'removing'}
-									<Spinner class="size-4" />
-								{:else}
-									<TrashIcon class="size-4" />
-								{/if}
-								{m.common_remove()}
-							</DropdownMenu.Item>
-						{/if}
-					</DropdownMenu.Group>
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
+			<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+				<DropdownMenu.Item onclick={() => goto(getContainerUrl(item))} disabled={isAnyLoading}>
+					<InspectIcon class="size-4" />
+					{m.common_inspect()}
+				</DropdownMenu.Item>
+				<!-- fallow-ignore-next-line code-duplication mobile vs desktop row-action menus; items already share ContainerActionMenuItem/RemoveMenuItem, the menu shells differ -->
+				{#if canDeleteContainer}
+					<DropdownMenu.Separator />
+					<ContainerActionMenuItem
+						icon={TrashIcon}
+						label={m.common_remove()}
+						onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+						loading={actionStatus[item.id] === 'removing'}
+						disabled={actionStatus[item.id] === 'removing' || isAnyLoading}
+						destructive
+					/>
+				{/if}
+			</RowActionsMenu>
 		{/if}
 	{/if}
 {/snippet}
@@ -426,16 +417,7 @@
 
 	{#if item.status === 'running'}
 		{#if !item.containerId}
-			<ArcaneTooltip.Root>
-				<ArcaneTooltip.Trigger>
-					<ArcaneButton action="base" tone="ghost" size="icon" class="size-8" disabled>
-						<EllipsisIcon class="size-4" />
-					</ArcaneButton>
-				</ArcaneTooltip.Trigger>
-				<ArcaneTooltip.Content>
-					<p>{m.compose_service_not_created()}</p>
-				</ArcaneTooltip.Content>
-			</ArcaneTooltip.Root>
+			{@render NotCreatedTooltip()}
 		{:else}
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger>
@@ -460,48 +442,36 @@
 						<DropdownMenu.Separator />
 
 						{#if canStopContainer}
-							<DropdownMenu.Item
+							<ContainerActionMenuItem
+								icon={StopIcon}
+								label={m.common_stop()}
 								onclick={() => performContainerAction('stop', item.containerId!)}
+								loading={status === 'stopping'}
 								disabled={status === 'stopping' || isAnyLoading}
-							>
-								{#if status === 'stopping'}
-									<Spinner class="size-4" />
-								{:else}
-									<StopIcon class="size-4" />
-								{/if}
-								{m.common_stop()}
-							</DropdownMenu.Item>
+							/>
 						{/if}
 
 						{#if canRestartContainer}
-							<DropdownMenu.Item
+							<ContainerActionMenuItem
+								icon={RefreshIcon}
+								label={m.common_restart()}
 								onclick={() => performContainerAction('restart', item.containerId!)}
+								loading={status === 'restarting'}
 								disabled={status === 'restarting' || isAnyLoading}
-							>
-								{#if status === 'restarting'}
-									<Spinner class="size-4" />
-								{:else}
-									<RefreshIcon class="size-4" />
-								{/if}
-								{m.common_restart()}
-							</DropdownMenu.Item>
+							/>
 						{/if}
 
 						{#if canDeleteContainer}
 							<DropdownMenu.Separator />
 
-							<DropdownMenu.Item
-								variant="destructive"
+							<ContainerActionMenuItem
+								icon={TrashIcon}
+								label={m.common_remove()}
 								onclick={() => handleRemoveContainer(item.containerId!, item.containerName || item.name)}
+								loading={status === 'removing'}
 								disabled={status === 'removing' || isAnyLoading}
-							>
-								{#if status === 'removing'}
-									<Spinner class="size-4" />
-								{:else}
-									<TrashIcon class="size-4" />
-								{/if}
-								{m.common_remove()}
-							</DropdownMenu.Item>
+								destructive
+							/>
 						{/if}
 					</DropdownMenu.Group>
 				</DropdownMenu.Content>

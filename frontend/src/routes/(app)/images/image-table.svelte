@@ -1,14 +1,14 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { bytes } from '$lib/utils/formatting';
+	import { inUseBadge } from '$lib/utils/mobile-card-badges';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge/index.js';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
@@ -30,6 +30,8 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
+	import UnixCreatedCell from '$lib/components/arcane-table/cells/unix-created-cell.svelte';
 
 	import {
 		DownloadIcon,
@@ -38,7 +40,6 @@
 		ImagesIcon,
 		VolumesIcon,
 		ClockIcon,
-		EllipsisIcon,
 		ScanIcon,
 		ProjectsIcon,
 		ContainersIcon,
@@ -449,15 +450,55 @@
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: unknown })}
-	{format(new Date(Number(value || 0) * 1000), 'PP p')}
+	<UnixCreatedCell {value} />
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: ImageSummaryDto })}
-	{#if item.inUse}
-		<StatusBadge text={m.common_in_use()} variant="green" />
-	{:else}
-		<StatusBadge text={m.common_unused()} variant="amber" />
-	{/if}
+	<InUseStatus inUse={item.inUse} />
+{/snippet}
+
+{#snippet UsageBadgeList(usages: NonNullable<ImageSummaryDto['usedBy']>)}
+	{#each usages as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
+		{#if usage.type === 'project'}
+			{#if usage.id}
+				<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
+					<Badge
+						variant="outline"
+						class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+					>
+						<ProjectsIcon class="size-3" />
+						<span>{usage.name}</span>
+					</Badge>
+				</a>
+			{:else}
+				<Badge
+					variant="outline"
+					class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+				>
+					<ProjectsIcon class="size-3" />
+					<span>{usage.name}</span>
+				</Badge>
+			{/if}
+		{:else if usage.id}
+			<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
+				<Badge
+					variant="outline"
+					class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+				>
+					<ContainersIcon class="size-3" />
+					<span>{usage.name}</span>
+				</Badge>
+			</a>
+		{:else}
+			<Badge
+				variant="outline"
+				class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+			>
+				<ContainersIcon class="size-3" />
+				<span>{usage.name}</span>
+			</Badge>
+		{/if}
+	{/each}
 {/snippet}
 
 {#snippet UsedByCell({ item }: { item: ImageSummaryDto })}
@@ -467,47 +508,7 @@
 		{@const visibleUsage = hasOverflow ? item.usedBy.slice(0, maxVisible) : item.usedBy}
 		{@const overflowUsage = hasOverflow ? item.usedBy.slice(maxVisible) : []}
 		<div class="flex flex-wrap gap-1.5">
-			{#each visibleUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
-				{#if usage.type === 'project'}
-					{#if usage.id}
-						<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
-							<Badge
-								variant="outline"
-								class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-							>
-								<ProjectsIcon class="size-3" />
-								<span>{usage.name}</span>
-							</Badge>
-						</a>
-					{:else}
-						<Badge
-							variant="outline"
-							class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-						>
-							<ProjectsIcon class="size-3" />
-							<span>{usage.name}</span>
-						</Badge>
-					{/if}
-				{:else if usage.id}
-					<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
-						<Badge
-							variant="outline"
-							class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-						>
-							<ContainersIcon class="size-3" />
-							<span>{usage.name}</span>
-						</Badge>
-					</a>
-				{:else}
-					<Badge
-						variant="outline"
-						class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-					>
-						<ContainersIcon class="size-3" />
-						<span>{usage.name}</span>
-					</Badge>
-				{/if}
-			{/each}
+			{@render UsageBadgeList(visibleUsage)}
 			{#if hasOverflow}
 				<Tooltip.Provider>
 					<Tooltip.Root>
@@ -521,47 +522,7 @@
 						</Tooltip.Trigger>
 						<Tooltip.Content class="pointer-events-auto">
 							<div class="flex max-w-xs flex-wrap gap-1.5">
-								{#each overflowUsage as usage, usageIndex (`${usage.type}-${usage.id ?? usage.name}-${usageIndex}`)}
-									{#if usage.type === 'project'}
-										{#if usage.id}
-											<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
-												<Badge
-													variant="outline"
-													class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-												>
-													<ProjectsIcon class="size-3" />
-													<span>{usage.name}</span>
-												</Badge>
-											</a>
-										{:else}
-											<Badge
-												variant="outline"
-												class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-											>
-												<ProjectsIcon class="size-3" />
-												<span>{usage.name}</span>
-											</Badge>
-										{/if}
-									{:else if usage.id}
-										<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
-											<Badge
-												variant="outline"
-												class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-											>
-												<ContainersIcon class="size-3" />
-												<span>{usage.name}</span>
-											</Badge>
-										</a>
-									{:else}
-										<Badge
-											variant="outline"
-											class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
-										>
-											<ContainersIcon class="size-3" />
-											<span>{usage.name}</span>
-										</Badge>
-									{/if}
-								{/each}
+								{@render UsageBadgeList(overflowUsage)}
 							</div>
 						</Tooltip.Content>
 					</Tooltip.Root>
@@ -616,12 +577,7 @@
 		}}
 		subtitle={(item) => ((mobileFieldVisibility['id'] ?? false) ? item.id : null)}
 		badges={[
-			(item: ImageSummaryDto) =>
-				(mobileFieldVisibility['inUse'] ?? true)
-					? item.inUse
-						? { variant: 'green' as const, text: m.common_in_use() }
-						: { variant: 'amber' as const, text: m.common_unused() }
-					: null,
+			inUseBadge(mobileFieldVisibility['inUse'] ?? true),
 			(item: ImageSummaryDto) => {
 				if (!(mobileFieldVisibility['updates'] ?? false)) return null;
 				if (!item.repoDigests || item.repoDigests.length === 0) {
@@ -675,80 +631,68 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ImageSummaryDto })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => goto(`/images/${item.id}`)}>
+			<InspectIcon class="size-4" />
+			{m.common_inspect()}
+		</DropdownMenu.Item>
 
-				{#if canPullImage || canScanImage || canTagImage || canReadImage}
-					<DropdownMenu.Separator />
+		{#if canPullImage || canScanImage || canTagImage || canReadImage}
+			<DropdownMenu.Separator />
+		{/if}
+
+		{#if canTagImage}
+			<DropdownMenu.Item onclick={() => (tagDialogImage = item)}>
+				<TagIcon class="size-4" />
+				{m.images_tag_image()}
+			</DropdownMenu.Item>
+		{/if}
+
+		{#if canReadImage}
+			<DropdownMenu.Item onclick={() => handleExportImage(item.id)}>
+				<DownloadIcon class="size-4" />
+				{m.images_export()}
+			</DropdownMenu.Item>
+		{/if}
+
+		{#if canPullImage}
+			<DropdownMenu.Item
+				onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
+				disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
+			>
+				{#if isPullingInline[item.id]}
+					<Spinner class="size-4" />
+				{:else}
+					<DownloadIcon class="size-4" />
 				{/if}
+				{m.images_pull()}
+			</DropdownMenu.Item>
+		{/if}
 
-				{#if canTagImage}
-					<DropdownMenu.Item onclick={() => (tagDialogImage = item)}>
-						<TagIcon class="size-4" />
-						{m.images_tag_image()}
-					</DropdownMenu.Item>
+		{#if canScanImage}
+			<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
+				{#if isScanningInline[item.id]}
+					<Spinner class="size-4" />
+				{:else}
+					<ScanIcon class="size-4" />
 				{/if}
+				{m.vuln_scan()}
+			</DropdownMenu.Item>
+		{/if}
 
-				{#if canReadImage}
-					<DropdownMenu.Item onclick={() => handleExportImage(item.id)}>
-						<DownloadIcon class="size-4" />
-						{m.images_export()}
-					</DropdownMenu.Item>
+		{#if canDeleteImage}
+			<DropdownMenu.Separator />
+
+			<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
+				{#if isLoading.removing}
+					<Spinner class="size-4" />
+				{:else}
+					<TrashIcon class="size-4" />
 				{/if}
-
-				{#if canPullImage}
-					<DropdownMenu.Item
-						onclick={() => handleInlineImagePull(item.id, item.repoTags?.[0] || '')}
-						disabled={isPullingInline[item.id] || !item.repoTags?.[0]}
-					>
-						{#if isPullingInline[item.id]}
-							<Spinner class="size-4" />
-						{:else}
-							<DownloadIcon class="size-4" />
-						{/if}
-						{m.images_pull()}
-					</DropdownMenu.Item>
-				{/if}
-
-				{#if canScanImage}
-					<DropdownMenu.Item onclick={() => handleInlineVulnerabilityScan(item.id)} disabled={isScanningInline[item.id]}>
-						{#if isScanningInline[item.id]}
-							<Spinner class="size-4" />
-						{:else}
-							<ScanIcon class="size-4" />
-						{/if}
-						{m.vuln_scan()}
-					</DropdownMenu.Item>
-				{/if}
-
-				{#if canDeleteImage}
-					<DropdownMenu.Separator />
-
-					<DropdownMenu.Item variant="destructive" onclick={() => deleteImage(item.id)} disabled={isLoading.removing}>
-						{#if isLoading.removing}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+				{m.common_remove()}
+			</DropdownMenu.Item>
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

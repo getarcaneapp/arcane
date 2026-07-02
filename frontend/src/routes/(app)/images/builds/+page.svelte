@@ -340,9 +340,6 @@
 	});
 	const isIndeterminate = $derived(isIndeterminatePhase(layerProgress, buildProgress));
 	const progressValue = $derived(Math.round(hasReachedComplete ? 100 : buildProgress));
-	const selectedProviderLabel = $derived.by(
-		() => providerOptions.find((option) => option.value === $inputs.provider.value)?.label ?? m.local_docker()
-	);
 	const statusLabel = $derived.by(() => {
 		if (buildError) return m.common_error();
 		if (hasReachedComplete) return m.build_completed();
@@ -865,6 +862,21 @@
 	}
 </script>
 
+{#snippet workspaceCard()}
+	<Card.Root class="flex h-full flex-col overflow-hidden">
+		<BuildWorkspacePanel
+			rootLabel={buildsRootLabel}
+			rootPath={buildsRoot}
+			{contextMode}
+			{contextDir}
+			remoteContext={remoteContextSource}
+			onModeChange={(mode) => (contextMode = mode)}
+			onRemoteContextChange={(value: string) => (remoteContextSource = value)}
+			onSelectContext={(path: string) => (selectedContextPath = path)}
+		/>
+	</Card.Root>
+{/snippet}
+
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
 	<StatusBadge
 		variant={getStatusBadgeVariant(value as ImageBuildStatus)}
@@ -1273,7 +1285,7 @@
 				</Tabs.List>
 
 				<div class="flex items-center gap-3 pr-2">
-					<BuildControls {inputs} {providerOptions} {selectedProviderLabel} {isBuilding} onBuild={handleSubmit} />
+					<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 					<div class="bg-border hidden h-4 w-px xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
@@ -1351,18 +1363,7 @@
 						persistKey="arcane.build.workspace.split"
 					>
 						{#snippet first()}
-							<Card.Root class="flex h-full flex-col overflow-hidden">
-								<BuildWorkspacePanel
-									rootLabel={buildsRootLabel}
-									rootPath={buildsRoot}
-									{contextMode}
-									{contextDir}
-									remoteContext={remoteContextSource}
-									onModeChange={(mode) => (contextMode = mode)}
-									onRemoteContextChange={(value: string) => (remoteContextSource = value)}
-									onSelectContext={(path: string) => (selectedContextPath = path)}
-								/>
-							</Card.Root>
+							{@render workspaceCard()}
 						{/snippet}
 						{#snippet second()}
 							<Card.Root class="flex h-full flex-col overflow-hidden">
@@ -1396,7 +1397,7 @@
 
 		{#snippet headerActions()}
 			{#if mainTab === 'build'}
-				<BuildControls {inputs} {providerOptions} {selectedProviderLabel} {isBuilding} onBuild={handleSubmit} />
+				<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 			{/if}
 		{/snippet}
 
@@ -1416,22 +1417,11 @@
 							</div>
 						{/snippet}
 						{#snippet headerActions()}
-							<BuildControls {inputs} {providerOptions} {selectedProviderLabel} {isBuilding} onBuild={handleSubmit} />
+							<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
 						{/snippet}
 						{#snippet tabContent(buildTabValue)}
 							{#if buildTabValue === 'workspace'}
-								<Card.Root class="flex h-full flex-col overflow-hidden">
-									<BuildWorkspacePanel
-										rootLabel={buildsRootLabel}
-										rootPath={buildsRoot}
-										{contextMode}
-										{contextDir}
-										remoteContext={remoteContextSource}
-										onModeChange={(mode) => (contextMode = mode)}
-										onRemoteContextChange={(value: string) => (remoteContextSource = value)}
-										onSelectContext={(path: string) => (selectedContextPath = path)}
-									/>
-								</Card.Root>
+								{@render workspaceCard()}
 							{:else if buildTabValue === 'configuration'}
 								<Card.Root class="overflow-hidden">
 									<BuildConfigPanel {inputs} provider={$inputs.provider.value} bind:showAdvanced onSubmit={handleSubmit} />

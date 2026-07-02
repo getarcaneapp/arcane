@@ -659,18 +659,41 @@
 			if (persistTimeout) clearTimeout(persistTimeout);
 		};
 	});
+
+	// Styled/unstyled differ only in wrapper chrome; the inner table/mobile/pagination tree is shared.
+	const shellClass = $derived(
+		unstyled
+			? 'flex h-full min-h-0 flex-col'
+			: 'bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur-sm'
+	);
+	const toolbarWrapClass = $derived(unstyled ? 'w-full shrink-0 border-b' : 'border-border/50 w-full shrink-0 border-b');
 </script>
 
 {#snippet PaginationSnippet()}
 	<ArcaneTablePagination {items} {currentPage} {totalPages} {totalItems} {pageSize} {canPrev} {canNext} {setPage} {setPageSize} />
 {/snippet}
 
+{#snippet MobileViewSnippet()}
+	<ArcaneTableMobileView
+		{table}
+		{mobileCard}
+		{mobileFieldVisibility}
+		groupedRows={effectiveGroupedRows}
+		{groupIcon}
+		{unstyled}
+		{expandedRowContent}
+		{expandedRows}
+		onToggleRowExpanded={toggleRowExpanded}
+		{loading}
+	/>
+{/snippet}
+
 {#if customTableView}
 	{@render customTableView({ table, renderPagination: PaginationSnippet, mobileFieldsForOptions, onToggleMobileField })}
-{:else if unstyled}
-	<div class="flex h-full min-h-0 flex-col">
+{:else}
+	<div class={shellClass}>
 		{#if !withoutSearch}
-			<div class="w-full shrink-0 border-b">
+			<div class={toolbarWrapClass}>
 				<DataTableToolbar
 					{table}
 					{selectedIds}
@@ -712,83 +735,13 @@
 		</div>
 
 		<div class="bg-background/80 [isolation:isolate] block flex-1 overflow-auto md:hidden">
-			<div class="divide-border/40 divide-y">
-				<ArcaneTableMobileView
-					{table}
-					{mobileCard}
-					{mobileFieldVisibility}
-					groupedRows={effectiveGroupedRows}
-					{groupIcon}
-					{unstyled}
-					{expandedRowContent}
-					{expandedRows}
-					onToggleRowExpanded={toggleRowExpanded}
-					{loading}
-				/>
-			</div>
-		</div>
-
-		{#if !withoutPagination}
-			<div class="border-border/50 shrink-0 border-t px-4 py-3">
-				{@render PaginationSnippet()}
-			</div>
-		{/if}
-	</div>
-{:else}
-	<div class="bg-background/60 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border backdrop-blur-sm">
-		{#if !withoutSearch}
-			<div class="border-border/50 w-full shrink-0 border-b">
-				<DataTableToolbar
-					{table}
-					{selectedIds}
-					{selectionDisabled}
-					{bulkActions}
-					{withoutFilters}
-					mobileFields={mobileFieldsForOptions}
-					{onToggleMobileField}
-					{customViewOptions}
-					{customToolbarActions}
-					{imageNameFilterOptions}
-				/>
-			</div>
-		{/if}
-
-		<div
-			bind:this={desktopScrollEl}
-			class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block"
-		>
-			<ArcaneTableDesktopView
-				{table}
-				{selectedIds}
-				columnsCount={effectiveColumnsCount}
-				groupedRows={effectiveGroupedRows}
-				{groupIcon}
-				{groupCollapsedState}
-				{selectionDisabled}
-				onGroupToggle={handleGroupToggle}
-				{getGroupSelectionState}
-				{onToggleGroupSelection}
-				onToggleRowSelection={(id, selected) => onToggleRow(selected, id)}
-				{expandedRowContent}
-				{expandedRows}
-				onToggleRowExpanded={toggleRowExpanded}
-				scrollElement={desktopScrollEl}
-				{loading}
-			/>
-		</div>
-
-		<div class="bg-background/80 [isolation:isolate] block flex-1 overflow-auto md:hidden">
-			<ArcaneTableMobileView
-				{table}
-				{mobileCard}
-				{mobileFieldVisibility}
-				groupedRows={effectiveGroupedRows}
-				{groupIcon}
-				{expandedRowContent}
-				{expandedRows}
-				onToggleRowExpanded={toggleRowExpanded}
-				{loading}
-			/>
+			{#if unstyled}
+				<div class="divide-border/40 divide-y">
+					{@render MobileViewSnippet()}
+				</div>
+			{:else}
+				{@render MobileViewSnippet()}
+			{/if}
 		</div>
 
 		{#if !withoutPagination}

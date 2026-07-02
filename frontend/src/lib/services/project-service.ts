@@ -40,22 +40,9 @@ class ProjectService extends BaseAPIService {
 		const onLine = typeof onLineOrOptions === 'function' ? onLineOrOptions : undefined;
 		const options = typeof onLineOrOptions === 'function' ? maybeOptions : onLineOrOptions;
 
-		const res = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(options ?? {})
-		});
-		const status = String(res.status);
-		if (!res.ok || !res.body) {
-			throw new Error(m.progress_deploy_failed_to_start({ status }));
-		}
-
-		await this.readProjectStream(res.body, onLine, (obj) => {
-			if (obj?.error) {
-				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.progress_deploy_failed());
-			}
+		await this.postProjectStream(url, options ?? {}, onLine, {
+			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
+			streamFailed: () => m.progress_deploy_failed()
 		});
 
 		// The deploy stream doesn't return the project object; fetch fresh details.
@@ -118,6 +105,30 @@ class ProjectService extends BaseAPIService {
 		onMessage?: (data: any) => void
 	): Promise<void> {
 		await readNdjsonStream(body, onMessage, onLine);
+	}
+
+	private async postProjectStream(
+		url: string,
+		body: unknown,
+		onLine: ((data: any) => void) | undefined,
+		messages: { startFailed: (status: string) => string; streamFailed: () => string }
+	): Promise<void> {
+		const res = await fetch(url, {
+			method: 'POST',
+			headers: {
+				'Content-Type': 'application/json'
+			},
+			body: JSON.stringify(body)
+		});
+		if (!res.ok || !res.body) {
+			throw new Error(messages.startFailed(String(res.status)));
+		}
+
+		await this.readProjectStream(res.body, onLine, (obj) => {
+			if (obj?.error) {
+				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || messages.streamFailed());
+			}
+		});
 	}
 
 	async getProjectFile(projectId: string, relativePath: string): Promise<IncludeFile> {
@@ -233,21 +244,9 @@ class ProjectService extends BaseAPIService {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const url = `/api/environments/${envId}/projects/${projectId}/build`;
 
-		const res = await fetch(url, {
-			method: 'POST',
-			headers: {
-				'Content-Type': 'application/json'
-			},
-			body: JSON.stringify(options || {})
-		});
-		if (!res.ok || !res.body) {
-			throw new Error(`Failed to start project build (${res.status})`);
-		}
-
-		await this.readProjectStream(res.body, onLine, (obj) => {
-			if (obj?.error) {
-				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.build_failed());
-			}
+		await this.postProjectStream(url, options || {}, onLine, {
+			startFailed: (status) => `Failed to start project build (${status})`,
+			streamFailed: () => m.build_failed()
 		});
 	}
 

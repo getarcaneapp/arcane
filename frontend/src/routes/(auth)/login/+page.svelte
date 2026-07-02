@@ -213,7 +213,7 @@
 						</Alert.Root>
 					{/if}
 
-					{#if showOidcLoginButton && !showLocalLoginForm}
+					{#snippet oidcLoginButton()}
 						<ArcaneButton
 							hoverEffect="none"
 							action="oidc_login"
@@ -230,6 +230,10 @@
 							{/if}
 							{oidcButtonLabel}
 						</ArcaneButton>
+					{/snippet}
+
+					{#if showOidcLoginButton && !showLocalLoginForm}
+						{@render oidcLoginButton()}
 					{/if}
 
 					{#if showLocalLoginForm}
@@ -291,22 +295,7 @@
 						{/if}
 
 						{#if showOidcLoginButton && showDivider}
-							<ArcaneButton
-								action="oidc_login"
-								hoverEffect="none"
-								onclick={() => handleOidcLogin()}
-								loading={isOidcLoading}
-								disabled={isLocalLoading}
-								icon={null}
-								customLabel=""
-							>
-								{#if oidcProviderLogoUrl}
-									<img src={oidcProviderLogoUrl} alt="" class="size-4 object-contain" />
-								{:else}
-									<OpenIdIcon class="size-4" />
-								{/if}
-								{oidcButtonLabel}
-							</ArcaneButton>
+							{@render oidcLoginButton()}
 						{/if}
 					{/if}
 				</div>

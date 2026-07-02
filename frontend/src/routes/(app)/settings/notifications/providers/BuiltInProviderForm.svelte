@@ -5,7 +5,10 @@
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
-	import NotificationProviderTestMenu, { type NotificationProviderTestOption } from './NotificationProviderTestMenu.svelte';
+	import NotificationProviderTestMenu, {
+		type NotificationProviderTestOption,
+		getDefaultNotificationProviderTestOptions
+	} from './NotificationProviderTestMenu.svelte';
 	import { mapZodFieldErrors } from './provider-form-validation';
 	import type { ProviderFormSchema } from './provider-form-schema';
 
@@ -1040,14 +1043,7 @@
 		]
 	};
 
-	const testOptions: NotificationProviderTestOption[] = [
-		{ label: m.notifications_email_test_simple(), testType: 'simple' },
-		{ label: m.notifications_email_test_image_update(), testType: 'image-update' },
-		{ label: m.notifications_email_test_batch_image_update(), testType: 'batch-image-update' },
-		{ label: m.notifications_test_vulnerability_notification(), testType: 'vulnerability-found' },
-		{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' },
-		{ label: m.notifications_test_auto_heal_notification(), testType: 'auto-heal' }
-	];
+	const testOptions: NotificationProviderTestOption[] = getDefaultNotificationProviderTestOptions();
 
 	const validation = $derived.by(() => providerSchemas[provider].safeParse(values));
 	const fieldErrors = $derived.by(() =>

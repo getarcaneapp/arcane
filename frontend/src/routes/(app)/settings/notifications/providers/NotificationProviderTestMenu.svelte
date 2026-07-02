@@ -1,14 +1,26 @@
 <script module lang="ts">
+	import { m } from '$lib/paraglide/messages';
+
 	export interface NotificationProviderTestOption {
 		label: string;
 		testType?: string;
+	}
+
+	export function getDefaultNotificationProviderTestOptions(): NotificationProviderTestOption[] {
+		return [
+			{ label: m.notifications_email_test_simple(), testType: 'simple' },
+			{ label: m.notifications_email_test_image_update(), testType: 'image-update' },
+			{ label: m.notifications_email_test_batch_image_update(), testType: 'batch-image-update' },
+			{ label: m.notifications_test_vulnerability_notification(), testType: 'vulnerability-found' },
+			{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' },
+			{ label: m.notifications_test_auto_heal_notification(), testType: 'auto-heal' }
+		];
 	}
 </script>
 
 <script lang="ts">
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { m } from '$lib/paraglide/messages';
 	import { ArrowDownIcon, SendEmailIcon } from '$lib/icons';
 
 	interface Props {
@@ -18,19 +30,7 @@
 		options?: NotificationProviderTestOption[];
 	}
 
-	let {
-		disabled = false,
-		isTesting = false,
-		onTest,
-		options = [
-			{ label: m.notifications_email_test_simple(), testType: 'simple' },
-			{ label: m.notifications_email_test_image_update(), testType: 'image-update' },
-			{ label: m.notifications_email_test_batch_image_update(), testType: 'batch-image-update' },
-			{ label: m.notifications_test_vulnerability_notification(), testType: 'vulnerability-found' },
-			{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' },
-			{ label: m.notifications_test_auto_heal_notification(), testType: 'auto-heal' }
-		]
-	}: Props = $props();
+	let { disabled = false, isTesting = false, onTest, options = getDefaultNotificationProviderTestOptions() }: Props = $props();
 </script>
 
 {#if onTest}

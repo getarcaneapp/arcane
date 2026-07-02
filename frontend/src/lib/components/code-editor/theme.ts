@@ -28,114 +28,108 @@ function getAccentColorWithAlpha(alpha: number): string {
 	return accentColor;
 }
 
-export const arcaneDarkInit = (options?: Partial<CreateThemeOptions>) => {
-	const { theme = 'dark', settings = {}, styles = [] } = options || {};
+interface ArcaneThemePalette {
+	theme: 'dark' | 'light';
+	background: string;
+	foreground: string;
+	gutterForeground: string;
+	comment: string;
+	keyword: string;
+	typeName: string;
+	className: string;
+	variableName: string;
+	string: string;
+	operator: string;
+	separator: string;
+	invalid: string;
+}
 
-	const accentColor = getAccentColor();
-	const accentWithAlpha35 = getAccentColorWithAlpha(0.35);
-	const accentWithAlpha15 = getAccentColorWithAlpha(0.15);
-	const accentWithAlpha05 = getAccentColorWithAlpha(0.05);
+function createArcaneThemeInit(palette: ArcaneThemePalette) {
+	return (options?: Partial<CreateThemeOptions>) => {
+		const { theme = palette.theme, settings = {}, styles = [] } = options || {};
 
-	const dynamicSettings: CreateThemeOptions['settings'] = {
-		background: '#0d1117',
-		foreground: '#c9d1d9',
-		caret: accentColor,
-		selection: accentWithAlpha35,
-		selectionMatch: accentWithAlpha15,
-		lineHighlight: accentWithAlpha05,
-		gutterBackground: '#0d1117',
-		gutterForeground: '#8b949e',
-		gutterActiveForeground: '#c9d1d9',
-		gutterBorder: 'transparent',
+		const accentColor = getAccentColor();
+		const accentWithAlpha35 = getAccentColorWithAlpha(0.35);
+		const accentWithAlpha15 = getAccentColorWithAlpha(0.15);
+		const accentWithAlpha05 = getAccentColorWithAlpha(0.05);
 
-		fontFamily: '"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
-		fontSize: '13px'
+		const dynamicSettings: CreateThemeOptions['settings'] = {
+			background: palette.background,
+			foreground: palette.foreground,
+			caret: accentColor,
+			selection: accentWithAlpha35,
+			selectionMatch: accentWithAlpha15,
+			lineHighlight: accentWithAlpha05,
+			gutterBackground: palette.background,
+			gutterForeground: palette.gutterForeground,
+			gutterActiveForeground: palette.foreground,
+			gutterBorder: 'transparent',
+
+			fontFamily: '"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
+			fontSize: '13px'
+		};
+
+		const dynamicStyles: CreateThemeOptions['styles'] = [
+			{ tag: [t.comment, t.meta], color: palette.comment },
+			{ tag: [t.keyword, t.modifier, t.operatorKeyword], color: palette.keyword },
+
+			{ tag: [t.typeName, t.namespace, t.number, t.atom, t.bool], color: palette.typeName },
+			{ tag: [t.function(t.variableName), t.labelName], color: accentColor },
+			{
+				tag: [t.className, t.definition(t.variableName), t.propertyName, t.attributeName],
+				color: palette.className
+			},
+
+			{ tag: [t.variableName, t.name], color: palette.variableName },
+			{ tag: [t.string, t.inserted, t.regexp, t.special(t.string)], color: palette.string },
+			{ tag: [t.operator, t.url, t.link, t.escape], color: palette.operator },
+
+			{ tag: [t.separator, t.punctuation], color: palette.separator },
+
+			{ tag: t.heading, color: palette.variableName, fontWeight: 'bold' },
+			{ tag: t.strong, fontWeight: 'bold' },
+			{ tag: t.emphasis, fontStyle: 'italic' },
+			{ tag: t.strikethrough, textDecoration: 'line-through' },
+			{ tag: t.invalid, color: palette.invalid },
+			{ tag: t.link, textDecoration: 'underline' }
+		];
+
+		return createTheme({
+			theme,
+			settings: { ...dynamicSettings, ...settings },
+			styles: [...dynamicStyles, ...styles]
+		});
 	};
+}
 
-	const dynamicStyles: CreateThemeOptions['styles'] = [
-		{ tag: [t.comment, t.meta], color: '#8b949e' },
-		{ tag: [t.keyword, t.modifier, t.operatorKeyword], color: '#ff7b72' },
+export const arcaneDarkInit = createArcaneThemeInit({
+	theme: 'dark',
+	background: '#0d1117',
+	foreground: '#c9d1d9',
+	gutterForeground: '#8b949e',
+	comment: '#8b949e',
+	keyword: '#ff7b72',
+	typeName: '#ffa657',
+	className: '#d2a8ff',
+	variableName: '#e6edf3',
+	string: '#7ee787',
+	operator: '#a5d6ff',
+	separator: '#6e7681',
+	invalid: '#f85149'
+});
 
-		{ tag: [t.typeName, t.namespace, t.number, t.atom, t.bool], color: '#ffa657' },
-		{ tag: [t.function(t.variableName), t.labelName], color: accentColor },
-		{
-			tag: [t.className, t.definition(t.variableName), t.propertyName, t.attributeName],
-			color: '#d2a8ff'
-		},
-
-		{ tag: [t.variableName, t.name], color: '#e6edf3' },
-		{ tag: [t.string, t.inserted, t.regexp, t.special(t.string)], color: '#7ee787' },
-		{ tag: [t.operator, t.url, t.link, t.escape], color: '#a5d6ff' },
-
-		{ tag: [t.separator, t.punctuation], color: '#6e7681' },
-
-		{ tag: t.heading, color: '#e6edf3', fontWeight: 'bold' },
-		{ tag: t.strong, fontWeight: 'bold' },
-		{ tag: t.emphasis, fontStyle: 'italic' },
-		{ tag: t.strikethrough, textDecoration: 'line-through' },
-		{ tag: t.invalid, color: '#f85149' },
-		{ tag: t.link, textDecoration: 'underline' }
-	];
-
-	return createTheme({
-		theme,
-		settings: { ...dynamicSettings, ...settings },
-		styles: [...dynamicStyles, ...styles]
-	});
-};
-
-export const arcaneLightInit = (options?: Partial<CreateThemeOptions>) => {
-	const { theme = 'light', settings = {}, styles = [] } = options || {};
-
-	const accentColor = getAccentColor();
-	const accentWithAlpha35 = getAccentColorWithAlpha(0.35);
-	const accentWithAlpha15 = getAccentColorWithAlpha(0.15);
-	const accentWithAlpha05 = getAccentColorWithAlpha(0.05);
-
-	const dynamicSettings: CreateThemeOptions['settings'] = {
-		background: '#ffffff',
-		foreground: '#24292f',
-		caret: accentColor,
-		selection: accentWithAlpha35,
-		selectionMatch: accentWithAlpha15,
-		lineHighlight: accentWithAlpha05,
-		gutterBackground: '#ffffff',
-		gutterForeground: '#8c959f',
-		gutterActiveForeground: '#24292f',
-		gutterBorder: 'transparent',
-
-		fontFamily: '"Mona Sans Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", "Courier New", monospace',
-		fontSize: '13px'
-	};
-
-	const dynamicStyles: CreateThemeOptions['styles'] = [
-		{ tag: [t.comment, t.meta], color: '#6e7781' },
-		{ tag: [t.keyword, t.modifier, t.operatorKeyword], color: '#cf222e' },
-
-		{ tag: [t.typeName, t.namespace, t.number, t.atom, t.bool], color: '#953800' },
-		{ tag: [t.function(t.variableName), t.labelName], color: accentColor },
-		{
-			tag: [t.className, t.definition(t.variableName), t.propertyName, t.attributeName],
-			color: '#8250df'
-		},
-
-		{ tag: [t.variableName, t.name], color: '#24292f' },
-		{ tag: [t.string, t.inserted, t.regexp, t.special(t.string)], color: '#0a3069' },
-		{ tag: [t.operator, t.url, t.link, t.escape], color: '#0550ae' },
-
-		{ tag: [t.separator, t.punctuation], color: '#6e7781' },
-
-		{ tag: t.heading, color: '#24292f', fontWeight: 'bold' },
-		{ tag: t.strong, fontWeight: 'bold' },
-		{ tag: t.emphasis, fontStyle: 'italic' },
-		{ tag: t.strikethrough, textDecoration: 'line-through' },
-		{ tag: t.invalid, color: '#cf222e' },
-		{ tag: t.link, textDecoration: 'underline' }
-	];
-
-	return createTheme({
-		theme,
-		settings: { ...dynamicSettings, ...settings },
-		styles: [...dynamicStyles, ...styles]
-	});
-};
+export const arcaneLightInit = createArcaneThemeInit({
+	theme: 'light',
+	background: '#ffffff',
+	foreground: '#24292f',
+	gutterForeground: '#8c959f',
+	comment: '#6e7781',
+	keyword: '#cf222e',
+	typeName: '#953800',
+	className: '#8250df',
+	variableName: '#24292f',
+	string: '#0a3069',
+	operator: '#0550ae',
+	separator: '#6e7781',
+	invalid: '#cf222e'
+});

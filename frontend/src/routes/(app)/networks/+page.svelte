@@ -8,7 +8,7 @@
 	import NetworkTable from './network-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { ResourceListPageState } from '$lib/utils/resource-list-page.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
@@ -17,21 +17,20 @@
 
 	let { data } = $props();
 
-	let networks = $state(untrack(() => data.networks));
-	let requestOptions = $state(untrack(() => data.networkRequestOptions));
-	let selectedIds = $state<string[]>([]);
-	let isCreateDialogOpen = $state(false);
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const pageState = new ResourceListPageState(
+		untrack(() => data.networks),
+		untrack(() => data.networkRequestOptions)
+	);
 	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
 	const networksQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.list(envId, requestOptions),
-		queryFn: () => networkService.getNetworksForEnvironment(envId, requestOptions),
+		queryKey: queryKeys.networks.list(pageState.envId, pageState.requestOptions),
+		queryFn: () => networkService.getNetworksForEnvironment(pageState.envId, pageState.requestOptions),
 		initialData: data.networks
 	}));
 
 	const createNetworkMutation = createMutation(() => ({
-		mutationKey: ['networks', 'create', envId],
+		mutationKey: ['networks', 'create', pageState.envId],
 		mutationFn: ({ name, options }: { name: string; options: NetworkCreateOptions }) =>
 			networkService.createNetwork(name, options),
 		onSuccess: async (data, variables) => {
@@ -40,7 +39,7 @@
 				activityToastOptions(extractActivityId(data))
 			);
 			await networksQuery.refetch();
-			isCreateDialogOpen = false;
+			pageState.isCreateDialogOpen = false;
 		},
 		onError: (_error, variables) => {
 			toast.error(m.common_create_failed({ resource: `${m.resource_network()} "${variables.name}"` }));
@@ -49,7 +48,7 @@
 
 	$effect(() => {
 		if (networksQuery.data) {
-			networks = networksQuery.data;
+			pageState.items = networksQuery.data;
 		}
 	});
 
@@ -62,14 +61,14 @@
 	}
 
 	const isRefreshing = $derived(networksQuery.isFetching && !networksQuery.isPending);
-	const networkUsageCounts = $derived(networks.counts ?? countsFallback);
+	const networkUsageCounts = $derived(pageState.items.counts ?? countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
 		{
 			id: 'create',
 			action: 'create',
 			label: m.common_create_button({ resource: m.resource_network_cap() }),
-			onclick: () => (isCreateDialogOpen = true),
+			onclick: () => (pageState.isCreateDialogOpen = true),
 			loading: createNetworkMutation.isPending,
 			disabled: createNetworkMutation.isPending
 		},
@@ -109,17 +108,21 @@
 <ResourcePageLayout title={m.networks_title()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<NetworkTable
-			bind:networks
-			bind:selectedIds
-			bind:requestOptions
+			bind:networks={pageState.items}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
 			onRefreshData={async (options) => {
-				requestOptions = options;
+				pageState.requestOptions = options;
 				await networksQuery.refetch();
 			}}
 		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<CreateNetworkSheet bind:open={isCreateDialogOpen} isLoading={createNetworkMutation.isPending} onSubmit={handleCreate} />
+		<CreateNetworkSheet
+			bind:open={pageState.isCreateDialogOpen}
+			isLoading={createNetworkMutation.isPending}
+			onSubmit={handleCreate}
+		/>
 	{/snippet}
 </ResourcePageLayout>

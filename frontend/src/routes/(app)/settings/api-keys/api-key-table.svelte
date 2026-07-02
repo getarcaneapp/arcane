@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -15,7 +15,7 @@
 	import { apiKeyService } from '$lib/services/api-key-service';
 	import { formatOptionalDateTime, isPastDate } from '$lib/utils/formatting';
 	import * as m from '$lib/paraglide/messages.js';
-	import { ApiKeyIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
+	import { ApiKeyIcon, TrashIcon, EditIcon } from '$lib/icons';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
@@ -249,38 +249,26 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ApiKey })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<IfPermitted perm="apikeys:update">
-					<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}>
-						<EditIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-				<DropdownMenu.Separator />
+	<RowActionsMenu>
+		<IfPermitted perm="apikeys:update">
+			<DropdownMenu.Item onclick={() => onEditApiKey(item)} disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+		<DropdownMenu.Separator />
 
-				<IfPermitted perm="apikeys:delete">
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteApiKey(item.id, item.name)}
-						disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}
-					>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		<IfPermitted perm="apikeys:delete">
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDeleteApiKey(item.id, item.name)}
+				disabled={isStaticApiKey(item) || isBootstrapApiKey(item)}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

@@ -28,6 +28,8 @@
 	import { networkService } from '$lib/services/network-service';
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import PropertyItem from '$lib/components/property-item.svelte';
+	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
 
 	let { data }: PageProps = $props();
 	let errorMessage = $state('');
@@ -155,164 +157,81 @@
 				</Card.Header>
 				<Card.Content class="p-4">
 					<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10 p-2">
-								<HashIcon class="size-5 text-gray-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_id()}</p>
-								<p
-									class="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-									title={m.common_click_to_select()}
-								>
-									{network.id}
-								</p>
-							</div>
-						</div>
+						<PropertyItem
+							icon={HashIcon}
+							color="gray"
+							label={m.common_id()}
+							value={network.id}
+							valueClass="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
+						/>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-								<NetworksIcon class="size-5 text-blue-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
-								<p
-									class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
-									title={m.common_click_to_select()}
-								>
-									{network.name}
-								</p>
-							</div>
-						</div>
+						<PropertyItem
+							icon={NetworksIcon}
+							color="blue"
+							label={m.common_name()}
+							value={network.name}
+							valueClass="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
+						/>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-orange-500/10 p-2">
-								<VolumesIcon class="size-5 text-orange-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
-									{network.driver}
-								</p>
-							</div>
-						</div>
+						<PropertyItem icon={VolumesIcon} color="orange" label={m.common_driver()} value={network.driver} />
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-purple-500/10 p-2">
-								<GlobeIcon class="size-5 text-purple-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_scope()}</p>
-								<p
-									class="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
-									title={m.common_click_to_select()}
-								>
-									{network.scope}
-								</p>
-							</div>
-						</div>
+						<PropertyItem
+							icon={GlobeIcon}
+							color="purple"
+							label={m.common_scope()}
+							value={network.scope}
+							valueClass="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
+						/>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-500/10 p-2">
-								<ClockIcon class="size-5 text-green-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.common_created()}</p>
-								<p class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base" title={m.common_click_to_select()}>
-									{createdDate}
-								</p>
-							</div>
-						</div>
+						<PropertyItem icon={ClockIcon} color="green" label={m.common_created()} value={createdDate} />
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-yellow-500/10 p-2">
-								<LayersIcon class="size-5 text-yellow-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.attachable()}</p>
+						<PropertyItem icon={LayersIcon} color="yellow" label={m.attachable()}>
+							<p class="mt-1 text-base font-semibold">
+								<StatusBadge
+									variant={network.attachable ? 'green' : 'gray'}
+									text={network.attachable ? m.common_yes() : m.common_no()}
+								/>
+							</p>
+						</PropertyItem>
+
+						<PropertyItem icon={SettingsIcon} color="red" label={m.internal()}>
+							<p class="mt-1 text-base font-semibold">
+								<StatusBadge
+									variant={network.internal ? 'blue' : 'gray'}
+									text={network.internal ? m.common_yes() : m.common_no()}
+								/>
+							</p>
+						</PropertyItem>
+
+						{#snippet ipToggleTile(label: string, enabled: boolean | undefined)}
+							<PropertyItem icon={NetworksIcon} color="indigo" {label}>
 								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.attachable ? 'green' : 'gray'}
-										text={network.attachable ? m.common_yes() : m.common_no()}
-									/>
+									<StatusBadge variant={enabled ? 'indigo' : 'gray'} text={enabled ? m.common_yes() : m.common_no()} />
 								</p>
-							</div>
-						</div>
+							</PropertyItem>
+						{/snippet}
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-red-500/10 p-2">
-								<SettingsIcon class="size-5 text-red-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.internal()}</p>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.internal ? 'blue' : 'gray'}
-										text={network.internal ? m.common_yes() : m.common_no()}
-									/>
-								</p>
-							</div>
-						</div>
+						{@render ipToggleTile(m.ipv6_enabled(), network.enableIPv6)}
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
-								<NetworksIcon class="size-5 text-indigo-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.ipv6_enabled()}</p>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.enableIPv6 ? 'indigo' : 'gray'}
-										text={network.enableIPv6 ? m.common_yes() : m.common_no()}
-									/>
-								</p>
-							</div>
-						</div>
+						{@render ipToggleTile(m.ipv4_enabled(), network.enableIPv4)}
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-indigo-500/10 p-2">
-								<NetworksIcon class="size-5 text-indigo-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.ipv4_enabled()}</p>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.enableIPv4 ? 'indigo' : 'gray'}
-										text={network.enableIPv4 ? m.common_yes() : m.common_no()}
-									/>
-								</p>
-							</div>
-						</div>
+						<PropertyItem icon={SettingsIcon} color="cyan" label={m.ingress()}>
+							<p class="mt-1 text-base font-semibold">
+								<StatusBadge
+									variant={network.ingress ? 'cyan' : 'gray'}
+									text={network.ingress ? m.common_yes() : m.common_no()}
+								/>
+							</p>
+						</PropertyItem>
 
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-cyan-500/10 p-2">
-								<SettingsIcon class="size-5 text-cyan-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.ingress()}</p>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.ingress ? 'cyan' : 'gray'}
-										text={network.ingress ? m.common_yes() : m.common_no()}
-									/>
-								</p>
-							</div>
-						</div>
-
-						<div class="flex items-start gap-3">
-							<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10 p-2">
-								<SettingsIcon class="size-5 text-pink-500" />
-							</div>
-							<div class="min-w-0 flex-1">
-								<p class="text-muted-foreground text-sm font-medium">{m.config_only()}</p>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge
-										variant={network.configOnly ? 'pink' : 'gray'}
-										text={network.configOnly ? m.common_yes() : m.common_no()}
-									/>
-								</p>
-							</div>
-						</div>
+						<PropertyItem icon={SettingsIcon} color="pink" label={m.config_only()}>
+							<p class="mt-1 text-base font-semibold">
+								<StatusBadge
+									variant={network.configOnly ? 'pink' : 'gray'}
+									text={network.configOnly ? m.common_yes() : m.common_no()}
+								/>
+							</p>
+						</PropertyItem>
 					</div>
 				</Card.Content>
 			</Card.Root>
@@ -583,59 +502,21 @@
 			{/if}
 
 			{#if network.labels && Object.keys(network.labels).length > 0}
-				<Card.Root>
-					<Card.Header icon={TagIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.common_labels()}</Card.Title>
-							<Card.Description>{m.networks_labels_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-							{#each Object.entries(network.labels) as [key, value] (key)}
-								<Card.Root variant="subtle">
-									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
-										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title={m.common_click_to_select()}
-										>
-											{value}
-										</div>
-									</Card.Content>
-								</Card.Root>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<KeyValueGridCard
+					icon={TagIcon}
+					title={m.common_labels()}
+					description={m.networks_labels_description()}
+					entries={Object.entries(network.labels)}
+				/>
 			{/if}
 
 			{#if network.options && Object.keys(network.options).length > 0}
-				<Card.Root>
-					<Card.Header icon={SettingsIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_options_title()}</Card.Title>
-							<Card.Description>{m.networks_options_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-							{#each Object.entries(network.options) as [key, value] (key)}
-								<Card.Root variant="subtle">
-									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{key}</div>
-										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title={m.common_click_to_select()}
-										>
-											{value}
-										</div>
-									</Card.Content>
-								</Card.Root>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<KeyValueGridCard
+					icon={SettingsIcon}
+					title={m.networks_options_title()}
+					description={m.networks_options_description()}
+					entries={Object.entries(network.options)}
+				/>
 			{/if}
 		</div>
 	{:else}

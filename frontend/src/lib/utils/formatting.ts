@@ -159,18 +159,19 @@ export const bytes = bytesWithHelpers;
 
 // --- Locale-aware date/time formatting ---
 
-export function formatDateTime(date: Date | string | null | undefined): string {
+function formatWithPattern(date: Date | string | null | undefined, pattern: string): string {
 	if (!date) return '';
 	const d = typeof date === 'string' ? new Date(date) : date;
 	if (isNaN(d.getTime())) return '';
-	return formatDate(d, 'PPpp');
+	return formatDate(d, pattern);
+}
+
+export function formatDateTime(date: Date | string | null | undefined): string {
+	return formatWithPattern(date, 'PPpp');
 }
 
 export function formatDateTimeShort(date: Date | string | null | undefined): string {
-	if (!date) return '';
-	const d = typeof date === 'string' ? new Date(date) : date;
-	if (isNaN(d.getTime())) return '';
-	return formatDate(d, 'PPp');
+	return formatWithPattern(date, 'PPp');
 }
 
 export function formatOptionalDateTime(date: Date | string | null | undefined, fallback = '-'): string {
@@ -187,10 +188,7 @@ export function isPastDate(date: Date | string | null | undefined): boolean {
 }
 
 export function formatTime(date: Date | string | null | undefined): string {
-	if (!date) return '';
-	const d = typeof date === 'string' ? new Date(date) : date;
-	if (isNaN(d.getTime())) return '';
-	return formatDate(d, 'pp');
+	return formatWithPattern(date, 'pp');
 }
 
 type DateFnsLocaleModule = {

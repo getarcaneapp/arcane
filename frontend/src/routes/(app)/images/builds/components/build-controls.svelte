@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Label } from '$lib/components/ui/label';
-	import * as Select from '$lib/components/ui/select/index.js';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
@@ -10,36 +10,26 @@
 	let {
 		inputs,
 		providerOptions,
-		selectedProviderLabel,
 		isBuilding = false,
 		onBuild
 	}: {
 		inputs: BuildFormInputsStore;
 		providerOptions: BuildProviderOption[];
-		selectedProviderLabel: string;
 		isBuilding?: boolean;
 		onBuild?: () => void;
 	} = $props();
 </script>
 
 <div class="flex flex-wrap items-center justify-end gap-3">
-	<Select.Root type="single" bind:value={$inputs.provider.value}>
-		<Select.Trigger size="sm" class="w-[160px]">
-			<span class="truncate">{selectedProviderLabel}</span>
-		</Select.Trigger>
-		<Select.Content>
-			{#each providerOptions as option (option.value)}
-				<Select.Item value={option.value}>
-					<div class="flex flex-col items-start gap-0.5">
-						<span class="font-medium">{option.label}</span>
-						{#if option.description}
-							<span class="text-muted-foreground text-xs">{option.description}</span>
-						{/if}
-					</div>
-				</Select.Item>
-			{/each}
-		</Select.Content>
-	</Select.Root>
+	<SelectWithLabel
+		id="build-provider"
+		label={m.build_provider()}
+		hideLabel
+		triggerSize="sm"
+		triggerClass="w-[160px]"
+		options={providerOptions}
+		bind:value={$inputs.provider.value}
+	/>
 
 	<div class="bg-border hidden h-6 w-px lg:block"></div>
 

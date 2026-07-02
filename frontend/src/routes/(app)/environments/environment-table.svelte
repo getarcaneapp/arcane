@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
@@ -9,7 +9,7 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api';
+	import { toastUpgradeError } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import type { FilterOption } from '$lib/components/arcane-table/arcane-table.types.svelte';
@@ -25,7 +25,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
-	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon, EllipsisIcon } from '$lib/icons';
+	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon } from '$lib/icons';
 
 	let {
 		environments = $bindable(),
@@ -175,10 +175,8 @@
 				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 			toast.success(m.upgrade_success());
-		} catch (error: any) {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
+		} catch (error) {
+			toastUpgradeError(error, m.upgrade_failed);
 			throw error;
 		}
 	}
@@ -374,81 +372,65 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Environment })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item
-					onclick={async () => {
-						if (!item.enabled) {
-							toast.error(m.environments_cannot_switch_disabled());
-							return;
-						}
-						try {
-							await environmentStore.setEnvironment(item);
-							toast.success(m.environments_switched_to({ name: item.name }));
-						} catch (error) {
-							console.error('Failed to set environment:', error);
-						}
-					}}
-					disabled={!item.enabled || environmentStore.selected?.id === item.id}
-				>
-					<EnvironmentsIcon class="size-4" />
-					{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item
+			onclick={async () => {
+				if (!item.enabled) {
+					toast.error(m.environments_cannot_switch_disabled());
+					return;
+				}
+				try {
+					await environmentStore.setEnvironment(item);
+					toast.success(m.environments_switched_to({ name: item.name }));
+				} catch (error) {
+					console.error('Failed to set environment:', error);
+				}
+			}}
+			disabled={!item.enabled || environmentStore.selected?.id === item.id}
+		>
+			<EnvironmentsIcon class="size-4" />
+			{environmentStore.selected?.id === item.id ? m.environments_current_environment() : m.environments_use_environment()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
-					<InspectIcon class="size-4" />
-					{m.common_view_details()}
-				</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => goto(`/environments/${item.id}`)}>
+			<InspectIcon class="size-4" />
+			{m.common_view_details()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
-					<TestIcon class="size-4" />
-					{m.environments_test_connection()}
-				</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
+			<TestIcon class="size-4" />
+			{m.environments_test_connection()}
+		</DropdownMenu.Item>
 
-				{#if item.id !== '0'}
-					<DropdownMenu.Separator />
+		{#if item.id !== '0'}
+			<DropdownMenu.Separator />
 
-					<EnvironmentUpgradeMenuItem
-						environment={item}
-						isOnline={isEnvironmentOnline(item)}
-						disabled={isLoading.upgrading}
-						isUpgradingThis={upgradingEnvironmentId === item.id}
-						onSelect={handleUpgradeSelected}
-					/>
+			<EnvironmentUpgradeMenuItem
+				environment={item}
+				isOnline={isEnvironmentOnline(item)}
+				disabled={isLoading.upgrading}
+				isUpgradingThis={upgradingEnvironmentId === item.id}
+				onSelect={handleUpgradeSelected}
+			/>
 
-					<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
-						{#if item.enabled}
-							<EyeOffIcon class="size-4" />
-							{m.common_disable()}
-						{:else}
-							<EyeOnIcon class="size-4" />
-							{m.common_enable()}
-						{/if}
-					</DropdownMenu.Item>
-
-					<DropdownMenu.Separator />
-
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteOne(item.id, item.name)}
-						disabled={isLoading.removing}
-					>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => handleToggleEnabled(item)} disabled={isLoading.toggling}>
+				{#if item.enabled}
+					<EyeOffIcon class="size-4" />
+					{m.common_disable()}
+				{:else}
+					<EyeOnIcon class="size-4" />
+					{m.common_enable()}
 				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+			</DropdownMenu.Item>
+
+			<DropdownMenu.Separator />
+
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteOne(item.id, item.name)} disabled={isLoading.removing}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

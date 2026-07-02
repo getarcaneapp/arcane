@@ -114,6 +114,7 @@
 											<Card.Content class="flex flex-col p-3">
 												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_propagation()}</div>
 												<div class="text-foreground text-sm font-medium">
+													<!-- fallow-ignore-next-line code-duplication container vs swarm-service storage; typed Mount vs ServiceMount props diverge across the boundary -->
 													{mount.propagation}
 												</div>
 											</Card.Content>

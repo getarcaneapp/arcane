@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Alert from '$lib/components/ui/alert';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { CopyButton } from '$lib/components/ui/copy-button';
+	import AgentCommandBlock from '$lib/components/agent-command-block.svelte';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -79,25 +79,13 @@
 			</div>
 		{:else if isReady && deployment}
 			<div class="space-y-4">
-				<div class="space-y-2">
-					<div class="text-sm font-medium">{m.environments_docker_run_command()}</div>
-					<div class="relative">
-						<pre class="bg-muted overflow-x-auto rounded-md p-3 pr-12 text-xs"><code>{deployment.dockerRun}</code></pre>
-						<div class="absolute top-2 right-2">
-							<CopyButton text={deployment.dockerRun} size="icon" class="size-7" />
-						</div>
-					</div>
-				</div>
-
-				<div class="space-y-2">
-					<div class="text-sm font-medium">{m.environments_docker_compose()}</div>
-					<div class="relative">
-						<pre class="bg-muted overflow-x-auto rounded-md p-3 pr-12 text-xs"><code>{deployment.dockerCompose}</code></pre>
-						<div class="absolute top-2 right-2">
-							<CopyButton text={deployment.dockerCompose} size="icon" class="size-7" />
-						</div>
-					</div>
-				</div>
+				<AgentCommandBlock
+					dockerRunLabel={m.environments_docker_run_command()}
+					dockerRun={deployment.dockerRun}
+					dockerComposeLabel={m.environments_docker_compose()}
+					dockerCompose={deployment.dockerCompose}
+					preClass="pr-12"
+				/>
 			</div>
 		{/if}
 	</div>

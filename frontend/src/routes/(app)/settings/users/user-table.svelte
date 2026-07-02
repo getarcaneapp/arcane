@@ -1,8 +1,8 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -15,7 +15,7 @@
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
-	import { UserIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
+	import { UserIcon, TrashIcon, EditIcon } from '$lib/icons';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
 	let {
@@ -262,41 +262,29 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: User })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				{#if !item.oidcSubjectId}
-					<IfPermitted perm="users:update">
-						<DropdownMenu.Item onclick={() => onEditUser(item)}>
-							<EditIcon class="size-4" />
-							{m.common_edit()}
-						</DropdownMenu.Item>
+	<RowActionsMenu>
+		{#if !item.oidcSubjectId}
+			<IfPermitted perm="users:update">
+				<DropdownMenu.Item onclick={() => onEditUser(item)}>
+					<EditIcon class="size-4" />
+					{m.common_edit()}
+				</DropdownMenu.Item>
 
-						<DropdownMenu.Separator />
-					</IfPermitted>
-				{/if}
+				<DropdownMenu.Separator />
+			</IfPermitted>
+		{/if}
 
-				<IfPermitted perm="users:delete">
-					<DropdownMenu.Item
-						variant="destructive"
-						disabled={!canDeleteUser(item) || isLoading.removing}
-						onclick={() => handleDeleteUser(item)}
-					>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		<IfPermitted perm="users:delete">
+			<DropdownMenu.Item
+				variant="destructive"
+				disabled={!canDeleteUser(item) || isLoading.removing}
+				onclick={() => handleDeleteUser(item)}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

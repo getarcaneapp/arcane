@@ -87,6 +87,29 @@
 	const activeFilterCount = $derived(table.state.columnFilters.length);
 </script>
 
+{#snippet filterList()}
+	{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
+	{/if}
+	{#if usageColumn}
+		<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
+	{/if}
+	{#if updatesColumn}
+		<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
+	{/if}
+	{#if vulnSeverityColumn}
+		<DataTableFacetedFilter column={vulnSeverityColumn} title={m.events_col_severity()} options={vulnerabilitySeverityFilters} />
+	{:else if severityColumn}
+		<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
+	{/if}
+	{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
+		<DataTableFacetedFilter column={imageNameColumn} title={m.common_image()} options={imageNameFilterOptionsFormatted} />
+	{/if}
+	{#if statusColumn && serviceCountColumn}
+		<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
+	{/if}
+{/snippet}
+
 <div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
 	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
 		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
@@ -105,30 +128,7 @@
 
 		{#if hasFilterColumns}
 			<div class="hidden items-center gap-1.5 md:flex">
-				{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
-					<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
-				{/if}
-				{#if usageColumn}
-					<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
-				{/if}
-				{#if updatesColumn}
-					<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
-				{/if}
-				{#if vulnSeverityColumn}
-					<DataTableFacetedFilter
-						column={vulnSeverityColumn}
-						title={m.events_col_severity()}
-						options={vulnerabilitySeverityFilters}
-					/>
-				{:else if severityColumn}
-					<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
-				{/if}
-				{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
-					<DataTableFacetedFilter column={imageNameColumn} title={m.common_image()} options={imageNameFilterOptionsFormatted} />
-				{/if}
-				{#if statusColumn && serviceCountColumn}
-					<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
-				{/if}
+				{@render filterList()}
 			</div>
 
 			<div class="md:hidden">
@@ -149,34 +149,7 @@
 					</Popover.Trigger>
 					<Popover.Content align="end" class="w-56 p-2">
 						<div class="flex flex-col gap-1.5">
-							{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
-								<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
-							{/if}
-							{#if usageColumn}
-								<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
-							{/if}
-							{#if updatesColumn}
-								<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
-							{/if}
-							{#if vulnSeverityColumn}
-								<DataTableFacetedFilter
-									column={vulnSeverityColumn}
-									title={m.events_col_severity()}
-									options={vulnerabilitySeverityFilters}
-								/>
-							{:else if severityColumn}
-								<DataTableFacetedFilter column={severityColumn} title={m.events_col_severity()} options={severityFilters} />
-							{/if}
-							{#if imageNameColumn && imageNameFilterOptionsFormatted.length > 0}
-								<DataTableFacetedFilter
-									column={imageNameColumn}
-									title={m.common_image()}
-									options={imageNameFilterOptionsFormatted}
-								/>
-							{/if}
-							{#if statusColumn && serviceCountColumn}
-								<DataTableFacetedFilter column={statusColumn} title={m.common_status()} options={projectStatusFilters} />
-							{/if}
+							{@render filterList()}
 						</div>
 					</Popover.Content>
 				</Popover.Root>

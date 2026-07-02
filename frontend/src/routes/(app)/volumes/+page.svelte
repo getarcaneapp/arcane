@@ -6,7 +6,7 @@
 	import VolumeTable from './volume-table.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { volumeService } from '$lib/services/volume-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { ResourceListPageState } from '$lib/utils/resource-list-page.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
@@ -17,21 +17,20 @@
 	let { data } = $props();
 	const queryClient = useQueryClient();
 
-	let volumes = $state(untrack(() => data.volumes));
-	let requestOptions = $state(untrack(() => data.volumeRequestOptions));
-	let selectedIds = $state<string[]>([]);
-	let isCreateDialogOpen = $state(false);
-	const envId = $derived(environmentStore.selected?.id || '0');
+	const pageState = new ResourceListPageState(
+		untrack(() => data.volumes),
+		untrack(() => data.volumeRequestOptions)
+	);
 	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
 	const volumesQuery = createQuery(() => ({
-		queryKey: queryKeys.volumes.table(envId, requestOptions),
-		queryFn: () => volumeService.getVolumesForEnvironment(envId, requestOptions),
+		queryKey: queryKeys.volumes.table(pageState.envId, pageState.requestOptions),
+		queryFn: () => volumeService.getVolumesForEnvironment(pageState.envId, pageState.requestOptions),
 		initialData: data.volumes
 	}));
 
 	const createVolumeMutation = createMutation(() => ({
-		mutationKey: ['volumes', 'create', envId],
+		mutationKey: ['volumes', 'create', pageState.envId],
 		mutationFn: (options: VolumeCreateRequest) => volumeService.createVolume(options),
 		onSuccess: async (data, options) => {
 			const name = options.name?.trim() || m.common_unknown();
@@ -40,7 +39,7 @@
 				activityToastOptions(extractActivityId(data))
 			);
 			await loadVolumes();
-			isCreateDialogOpen = false;
+			pageState.isCreateDialogOpen = false;
 		},
 		onError: (_error, options) => {
 			const name = options.name?.trim() || m.common_unknown();
@@ -50,7 +49,7 @@
 
 	$effect(() => {
 		if (volumesQuery.data) {
-			volumes = volumesQuery.data;
+			pageState.items = volumesQuery.data;
 		}
 	});
 
@@ -58,11 +57,11 @@
 		await createVolumeMutation.mutateAsync(options);
 	}
 
-	async function loadVolumes(options = requestOptions) {
-		requestOptions = options;
-		volumes = await queryClient.fetchQuery({
-			queryKey: queryKeys.volumes.table(envId, options),
-			queryFn: () => volumeService.getVolumesForEnvironment(envId, options)
+	async function loadVolumes(options = pageState.requestOptions) {
+		pageState.requestOptions = options;
+		pageState.items = await queryClient.fetchQuery({
+			queryKey: queryKeys.volumes.table(pageState.envId, options),
+			queryFn: () => volumeService.getVolumesForEnvironment(pageState.envId, options)
 		});
 	}
 
@@ -71,9 +70,9 @@
 	}
 
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
-	const volumeUsageCounts = $derived(volumes.counts ?? countsFallback);
+	const volumeUsageCounts = $derived(pageState.items.counts ?? countsFallback);
 
-	const canCreateVolume = $derived(hasPermission('volumes:create', envId));
+	const canCreateVolume = $derived(hasPermission('volumes:create', pageState.envId));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -82,7 +81,7 @@
 				id: 'create',
 				action: 'create',
 				label: m.common_create_button({ resource: m.resource_volume_cap() }),
-				onclick: () => (isCreateDialogOpen = true),
+				onclick: () => (pageState.isCreateDialogOpen = true),
 				loading: createVolumeMutation.isPending,
 				disabled: createVolumeMutation.isPending
 			});
@@ -116,10 +115,19 @@
 
 <ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<VolumeTable bind:volumes bind:selectedIds bind:requestOptions onRefreshData={loadVolumes} />
+		<VolumeTable
+			bind:volumes={pageState.items}
+			bind:selectedIds={pageState.selectedIds}
+			bind:requestOptions={pageState.requestOptions}
+			onRefreshData={loadVolumes}
+		/>
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<CreateVolumeSheet bind:open={isCreateDialogOpen} isLoading={createVolumeMutation.isPending} onSubmit={handleCreate} />
+		<CreateVolumeSheet
+			bind:open={pageState.isCreateDialogOpen}
+			isLoading={createVolumeMutation.isPending}
+			onSubmit={handleCreate}
+		/>
 	{/snippet}
 </ResourcePageLayout>

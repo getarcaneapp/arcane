@@ -1,8 +1,9 @@
 <script lang="ts">
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Alert from '$lib/components/ui/alert/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button';
 	import FormInput from '$lib/components/form/form-input.svelte';
+	import RepoTagFields from '$lib/components/form/repo-tag-fields.svelte';
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { containerService } from '$lib/services/container-service';
 	import { m } from '$lib/paraglide/messages';
@@ -89,12 +90,7 @@
 				<InfoIcon class="size-4" />
 				<Alert.Description class="text-sm">{m.containers_commit_registry_note()}</Alert.Description>
 			</Alert.Root>
-			<FormInput
-				label={m.images_tag_repository()}
-				placeholder={m.images_tag_repository_placeholder()}
-				bind:input={$inputs.repository}
-			/>
-			<FormInput label={m.images_tag()} placeholder={m.images_tag_latest()} bind:input={$inputs.tag} />
+			<RepoTagFields bind:repository={$inputs.repository} bind:tag={$inputs.tag} />
 			<FormInput
 				label={m.common_description()}
 				placeholder={m.containers_commit_comment_placeholder()}
@@ -109,17 +105,13 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full gap-2">
-			<ArcaneButton action="cancel" tone="outline" type="button" class="flex-1" onclick={() => handleOpenChange(false)} />
-			<ArcaneButton
-				action="commit"
-				tone="outline-primary"
-				type="submit"
-				class="flex-1"
-				loading={isCommitting}
-				disabled={isCommitting}
-				onclick={handleSubmit}
-			/>
-		</div>
+		<SheetFooterActions
+			onCancel={() => handleOpenChange(false)}
+			submitAction="commit"
+			submitTone="outline-primary"
+			submitLoading={isCommitting}
+			submitDisabled={isCommitting}
+			onSubmit={handleSubmit}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

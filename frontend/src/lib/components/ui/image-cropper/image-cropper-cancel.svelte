@@ -1,18 +1,7 @@
 <script lang="ts">
-	import { ArcaneButton, type Action, type ArcaneButtonSize, type ArcaneButtonTone } from '$lib/components/arcane-button';
 	import { m } from '$lib/paraglide/messages';
 	import { useImageCropperCancel } from './image-cropper-state.svelte.js';
-
-	type CancelButtonProps = {
-		ref?: HTMLElement | null;
-		action?: Action;
-		size?: ArcaneButtonSize;
-		tone?: ArcaneButtonTone;
-		customLabel?: string;
-		disabled?: boolean;
-		class?: string;
-		onclick?: (event: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) => void;
-	};
+	import ActionButton, { type ImageCropperActionButtonProps } from './image-cropper-action-button.svelte';
 
 	let {
 		ref = $bindable(null),
@@ -23,12 +12,12 @@
 		tone = undefined,
 		class: className = undefined,
 		onclick
-	}: CancelButtonProps = $props();
+	}: ImageCropperActionButtonProps = $props();
 
 	const cancelState = useImageCropperCancel();
 </script>
 
-<ArcaneButton
+<ActionButton
 	bind:ref
 	{action}
 	{size}
@@ -36,8 +25,6 @@
 	{customLabel}
 	{disabled}
 	class={className}
-	onclick={(event: MouseEvent & { currentTarget: EventTarget & HTMLButtonElement }) => {
-		onclick?.(event);
-		cancelState.onclick();
-	}}
+	{onclick}
+	onAction={() => cancelState.onclick()}
 />
