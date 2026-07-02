@@ -2926,6 +2926,10 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, user models.User) error {
+	return s.RestartProjectServices(ctx, projectID, nil, user)
+}
+
+func (s *ProjectService) RestartProjectServices(ctx context.Context, projectID string, services []string, user models.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
@@ -2955,7 +2959,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 	}
 
 	writeProjectProgressInternal(ctx, "Restarting project services", 55, "restart")
-	if err := projects.ComposeRestart(ctx, compProj, nil); err != nil {
+	if err := projects.ComposeRestart(ctx, compProj, services); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to restart project: %w", err)
 	}
@@ -2964,6 +2968,9 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		"action":      "restart",
 		"projectID":   projectID,
 		"projectName": proj.Name,
+	}
+	if len(services) > 0 {
+		metadata["services"] = append([]string(nil), services...)
 	}
 	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project restart action", "error", logErr)

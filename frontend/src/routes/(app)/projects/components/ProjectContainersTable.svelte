@@ -14,11 +14,15 @@
 	import { m } from '$lib/paraglide/messages';
 	import { goto } from '$app/navigation';
 	import { containerService } from '$lib/services/container-service';
+	import { projectService } from '$lib/services/project-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { mode } from 'mode-watcher';
+	import { toast } from 'svelte-sonner';
+	import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { bulkConfirmAndRun, hasAnyLoadingState } from '$lib/utils/bulk-actions';
 	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
 	import {
@@ -45,6 +49,7 @@
 	const canStartContainer = $derived(hasPermission('containers:start', currentEnvId));
 	const canStopContainer = $derived(hasPermission('containers:stop', currentEnvId));
 	const canRestartContainer = $derived(hasPermission('containers:restart', currentEnvId));
+	const canRestartProject = $derived(hasPermission('projects:restart', currentEnvId));
 	const canDeleteContainer = $derived(hasPermission('containers:delete', currentEnvId));
 
 	// Convert RuntimeService to a format compatible with ArcaneTable
@@ -111,6 +116,34 @@
 			},
 			onRefresh
 		});
+	}
+
+	async function performServiceRestart(item: ServiceWithId) {
+		if (!projectId || !item.name) {
+			toast.error(m.containers_restart_failed());
+			return;
+		}
+
+		const id = item.id;
+		actionStatus[id] = 'restarting';
+
+		try {
+			handleApiResultWithCallbacks({
+				result: await tryCatch(projectService.restartProject(projectId, [item.name])),
+				message: m.containers_restart_failed(),
+				setLoadingState: (value) => {
+					actionStatus[id] = value ? 'restarting' : '';
+				},
+				async onSuccess(data) {
+					toast.success(m.containers_restart_success(), activityToastOptions(extractActivityId(data)));
+					await onRefresh?.();
+				}
+			});
+		} catch (error) {
+			console.error('Service restart failed:', error);
+			toast.error(m.containers_action_error());
+			actionStatus[id] = '';
+		}
 	}
 
 	async function handleRemoveContainer(id: string, name: string) {
@@ -473,11 +506,8 @@
 							</DropdownMenu.Item>
 						{/if}
 
-						{#if canRestartContainer}
-							<DropdownMenu.Item
-								onclick={() => performContainerAction('restart', item.containerId!)}
-								disabled={status === 'restarting' || isAnyLoading}
-							>
+						{#if canRestartProject}
+							<DropdownMenu.Item onclick={() => performServiceRestart(item)} disabled={status === 'restarting' || isAnyLoading}>
 								{#if status === 'restarting'}
 									<Spinner class="size-4" />
 								{:else}
