@@ -90,6 +90,100 @@ func TestDetectComposeFile_IgnoresSingleNonComposeYaml(t *testing.T) {
 	assert.Contains(t, err.Error(), "no compose file found")
 }
 
+func TestDetectComposeOverrideFile(t *testing.T) {
+	t.Parallel()
+
+	t.Run("returns empty when no override present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+		assert.Empty(t, DetectComposeOverrideFile(dir))
+	})
+
+	t.Run("detects override file", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		overridePath := filepath.Join(dir, "compose.override.yaml")
+		require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
+		assert.Equal(t, overridePath, DetectComposeOverrideFile(dir))
+	})
+
+	t.Run("prefers highest-preference override when multiple present", func(t *testing.T) {
+		t.Parallel()
+		dir := t.TempDir()
+		preferred := filepath.Join(dir, "compose.override.yml")
+		require.NoError(t, os.WriteFile(preferred, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, "docker-compose.override.yaml"), []byte("services:\n  app:\n    image: alpine:3\n"), 0o600))
+		assert.Equal(t, preferred, DetectComposeOverrideFile(dir))
+	})
+}
+
+func TestDetectComposeFile_ReturnsBaseNotOverride(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
+
+	detected, err := DetectComposeFile(dir)
+	require.NoError(t, err)
+	assert.Equal(t, basePath, detected)
+}
+
+func TestDetectComposeFile_IgnoresOverrideOnlyDirectory(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "compose.override.yaml"), []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
+
+	_, err := DetectComposeFile(dir)
+	require.Error(t, err)
+}
+
+func TestLoadComposeProject_MergesComposeOverrideFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	basePath := filepath.Join(dir, "compose.yaml")
+	overridePath := filepath.Join(dir, "compose.override.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"), 0o600))
+
+	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+
+	app := project.Services["app"]
+	assert.Equal(t, "busybox:latest", app.Image)
+	assert.Contains(t, app.Environment, "FROM_BASE")
+	assert.Contains(t, app.Environment, "FROM_OVERRIDE")
+	assert.Equal(t, []string{basePath, overridePath}, project.ComposeFiles)
+}
+
+func TestLoadComposeProject_DoesNotMergeOverrideForCustomBaseName(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	// A custom base filename (not a standard compose candidate) is the explicit
+	// `-f` case: `docker compose` does not auto-load an override for it, so neither
+	// do we, even though compose.override.yaml sits right beside it.
+	basePath := filepath.Join(dir, "mystack.yaml")
+	overridePath := filepath.Join(dir, "compose.override.yaml")
+	require.NoError(t, os.WriteFile(basePath, []byte("services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"), 0o600))
+	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"), 0o600))
+
+	project, err := LoadComposeProject(context.Background(), basePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+
+	app := project.Services["app"]
+	assert.Equal(t, "nginx:alpine", app.Image)
+	assert.Contains(t, app.Environment, "FROM_BASE")
+	assert.NotContains(t, app.Environment, "FROM_OVERRIDE")
+	assert.Equal(t, []string{basePath}, project.ComposeFiles)
+}
+
 func TestLoadComposeProjectFromDir_SupportsPodmanComposeNames(t *testing.T) {
 	composeContent := "services:\n  app:\n    image: nginx:alpine\n"
 

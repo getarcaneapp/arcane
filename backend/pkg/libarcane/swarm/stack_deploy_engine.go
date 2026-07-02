@@ -47,6 +47,7 @@ const (
 type StackDeployOptions struct {
 	Name                 string
 	ComposeContent       string
+	OverrideContent      string
 	EnvContent           string
 	WithRegistryAuth     bool
 	RegistryAuthForImage func(context.Context, string) (string, error)
@@ -57,11 +58,12 @@ type StackDeployOptions struct {
 }
 
 type StackRenderOptions struct {
-	Name           string
-	ComposeContent string
-	EnvContent     string
-	WorkingDir     string
-	PathMapper     *projects.PathMapper
+	Name            string
+	ComposeContent  string
+	OverrideContent string
+	EnvContent      string
+	WorkingDir      string
+	PathMapper      *projects.PathMapper
 }
 
 type StackRenderResult struct {
@@ -100,7 +102,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 		return err
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.OverrideContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
 	if err != nil {
 		return err
 	}
@@ -251,7 +253,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 		return nil, errors.New("stack name is required")
 	}
 
-	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
+	project, err := loadComposeProject(ctx, stackName, opts.ComposeContent, opts.OverrideContent, opts.EnvContent, opts.WorkingDir, opts.PathMapper)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +277,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 	}, nil
 }
 
-func loadComposeProject(ctx context.Context, projectName, composeContent, envContent, providedWorkingDir string, pathMapper *projects.PathMapper) (*composegotypes.Project, error) {
+func loadComposeProject(ctx context.Context, projectName, composeContent, overrideContent, envContent, providedWorkingDir string, pathMapper *projects.PathMapper) (*composegotypes.Project, error) {
 	composeContent = strings.TrimSpace(composeContent)
 	if composeContent == "" {
 		return nil, errors.New("compose content is required")
@@ -297,12 +299,19 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, envCon
 	}
 	envMap["PWD"] = workingDir
 
+	configFiles := []composegotypes.ConfigFile{
+		{Content: []byte(composeContent)},
+	}
+	// Merge an optional Docker Compose override on top of the base content, as
+	// `docker compose` does. Listing it last makes the override take precedence.
+	if trimmedOverride := strings.TrimSpace(overrideContent); trimmedOverride != "" {
+		configFiles = append(configFiles, composegotypes.ConfigFile{Content: []byte(trimmedOverride)})
+	}
+
 	configDetails := composegotypes.ConfigDetails{
-		Version:    api.ComposeVersion,
-		WorkingDir: workingDir,
-		ConfigFiles: []composegotypes.ConfigFile{
-			{Content: []byte(composeContent)},
-		},
+		Version:     api.ComposeVersion,
+		WorkingDir:  workingDir,
+		ConfigFiles: configFiles,
 		Environment: composegotypes.Mapping(envMap),
 	}
 

@@ -1218,10 +1218,11 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "target volume already exists")
 	assert.DirExists(t, originalPath)
@@ -1263,7 +1264,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	projectForUpdate := *project
 	journalActive := false
 	projectStateCommitted := false
-	err = svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+	err = svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	require.NoError(t, err)
 
 	assert.True(t, migration.applyCalled)
@@ -1333,7 +1334,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("skips volume made explicit in pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: fixed-data\n"
 
-		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil, nil)
 
 		require.NoError(t, err)
 		require.Nil(t, migration)
@@ -1346,7 +1347,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans unchanged auto-managed volume from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil, nil)
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
@@ -1363,7 +1364,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans auto-managed volume when pending compose name renames project", func(t *testing.T) {
 		newCompose := "name: web\nservices:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    driver: local\n"
 
-		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil, nil)
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
@@ -1380,7 +1381,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	t.Run("plans interpolated explicit name from pending compose", func(t *testing.T) {
 		newCompose := "services:\n  app:\n    image: nginx:alpine\n    volumes:\n      - data:/data\nvolumes:\n  data:\n    name: ${DATA_VOLUME:-nginx_data}\n"
 
-		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil)
+		migration, err := svc.prepareProjectRenameVolumeMigrationForUpdateInternal(ctx, project, new("web"), projectsDir, &newCompose, nil, nil, nil, nil)
 
 		require.NoError(t, err)
 		require.NotNil(t, migration)
@@ -1432,7 +1433,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	journalActive := false
 	projectStateCommitted := false
 	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
-		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "forced project save failure")
@@ -1477,7 +1478,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	journalActive := false
 	projectStateCommitted := false
 	err = svc.withProjectRenameRollback(ctx, &projectForUpdate, &projectStateCommitted, func() error {
-		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
+		return svc.applyProjectUpdateWithRenameJournalInternal(ctx, &projectForUpdate, new("bar"), projectsDir, nil, nil, nil, nil, nil, migration, nil, &journalActive, &projectStateCommitted)
 	})
 	require.NoError(t, err)
 	require.True(t, migration.applyCalled)
@@ -1542,10 +1543,11 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
 	envContent := "FOO=bar\n"
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &envContent, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &envContent, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.Equal(t, "nginx", updated.Name)
 
@@ -1606,10 +1608,11 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	require.NoError(t, err)
 	require.NoError(t, kvService.Set(ctx, projectRenameJournalKeyInternal(project.ID), string(payload)))
 
-	updated, err := svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, ptr("web"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 	require.Equal(t, "web", updated.Name)
@@ -1647,10 +1650,11 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 
 	expectedPath := filepath.Join(projectsDir, "bar")
@@ -1698,10 +1702,11 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project directory already exists")
 	assert.DirExists(t, originalPath)
@@ -1741,10 +1746,11 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
 	assert.DirExists(t, originalPath)
@@ -1799,10 +1805,11 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
 	assert.DirExists(t, originalPath)
@@ -1846,10 +1853,11 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 
 	expectedPath := filepath.Join(projectsDir, "bar")
@@ -1917,10 +1925,11 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, models.User{
+	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "project must be stopped before renaming (current status: running)")
 	assert.DirExists(t, originalPath)
@@ -1968,10 +1977,11 @@ services:
 `
 	env := "COMPOSE_PROJECT_NAME=\n"
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 	assert.Equal(t, "demo", updated.Name)
@@ -2010,10 +2020,11 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
       - .env
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2054,10 +2065,11 @@ services:
     image: nginx:alpine
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2118,10 +2130,11 @@ services:
     image: nginx:alpine
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, ptr(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Nil(t, updated)
 	assert.Contains(t, err.Error(), "invalid compose file")
@@ -2323,7 +2336,7 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	require.NoError(t, err)
 
 	updated := "updated\n"
-	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: "create_folder", RelativePath: "config"},
 		{Operation: "create_folder", RelativePath: "archive"},
 		{Operation: "create_file", RelativePath: "config/app.yaml", Content: new("hello\n")},
@@ -2334,6 +2347,7 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 
 	bytes, err := os.ReadFile(filepath.Join(project.Path, "archive", "renamed.yaml"))
@@ -2365,12 +2379,13 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
-	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 
 	var conflictErr *common.ProjectFileConflictError
@@ -2407,12 +2422,13 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	require.NoError(t, os.MkdirAll(deepParent, 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(deepParent, "external.txt"), []byte("external\n"), 0o644))
 
-	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &details.FileTreeRevision, []projecttypes.ProjectFileChange{
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, nil, &details.FileTreeRevision, []projecttypes.ProjectFileChange{
 		{Operation: "create_file", RelativePath: "notes.txt", Content: new("new\n")},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 
 	var conflictErr *common.ProjectFileConflictError
@@ -2628,16 +2644,131 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
       - .env
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
 	envBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	require.NoError(t, readErr)
 	assert.Equal(t, "FOO=bar\n", string(envBytes))
+}
+
+// newProjectServiceForOverrideTestInternal builds a project with a base compose
+// file on disk and returns the service, the project record, and the project path.
+func newProjectServiceForOverrideTestInternal(t *testing.T, dirName, baseCompose string) (*ProjectService, *models.Project, string) {
+	t.Helper()
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, config.Load())
+
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(baseCompose), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-" + dirName},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	return svc, project, projectPath
+}
+
+func TestProjectService_UpdateProject_CreatesOverrideWithDefaultName(t *testing.T) {
+	ctx := context.Background()
+	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-create", "services:\n  app:\n    image: nginx:alpine\n")
+
+	override := "services:\n  app:\n    image: busybox:latest\n"
+	_, err := svc.UpdateProject(ctx, project.ID, nil, nil, nil, new(override), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	// A project with no override on disk gets the .yaml default, matching Arcane's
+	// compose.yaml base default (not compose.override.yml, candidates[0]).
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.override.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, override, string(overrideBytes))
+
+	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{IncludeComposeContent: true})
+	require.NoError(t, err)
+	assert.Equal(t, "compose.override.yaml", details.OverrideFileName)
+	assert.Equal(t, override, details.OverrideContent)
+}
+
+func TestProjectService_UpdateProject_PreservesExistingOverrideName(t *testing.T) {
+	ctx := context.Background()
+	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-preserve", "services:\n  app:\n    image: nginx:alpine\n")
+
+	// An existing docker-compose.override.yml must keep its name on edit rather
+	// than being rewritten to the default compose.override.yaml.
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "docker-compose.override.yml"), []byte("services:\n  app:\n    image: alpine:3\n"), 0o600))
+
+	override := "services:\n  app:\n    image: busybox:latest\n"
+	_, err := svc.UpdateProject(ctx, project.ID, nil, nil, nil, new(override), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "docker-compose.override.yml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, override, string(overrideBytes))
+	assert.NoFileExists(t, filepath.Join(projectPath, "compose.override.yaml"))
+}
+
+func TestProjectService_UpdateProject_DeletesOverrideOnBlank(t *testing.T) {
+	ctx := context.Background()
+	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-delete", "services:\n  app:\n    image: nginx:alpine\n")
+
+	overridePath := filepath.Join(projectPath, "compose.override.yaml")
+	require.NoError(t, os.WriteFile(overridePath, []byte("services:\n  app:\n    image: busybox:latest\n"), 0o600))
+
+	// A non-nil blank override deletes the file so the deploy stops merging it.
+	_, err := svc.UpdateProject(ctx, project.ID, nil, nil, nil, new(""), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+
+	assert.NoFileExists(t, overridePath)
+}
+
+func TestProjectService_UpdateProject_MergedValidationFailureLeavesDiskUnchanged(t *testing.T) {
+	ctx := context.Background()
+	baseCompose := "services:\n  app:\n    image: nginx:alpine\n"
+	svc, project, projectPath := newProjectServiceForOverrideTestInternal(t, "override-invalid", baseCompose)
+
+	// A new base compose plus a malformed override must fail validation, and the
+	// backup/restore must leave both the base and the override untouched on disk.
+	newCompose := "services:\n  app:\n    image: nginx:1.27\n"
+	badOverride := "services:\n  app:\n    image: \"unterminated\n"
+	_, err := svc.UpdateProject(ctx, project.ID, nil, new(newCompose), nil, new(badOverride), nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+
+	baseBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, baseCompose, string(baseBytes))
+	assert.NoFileExists(t, filepath.Join(projectPath, "compose.override.yaml"))
 }
 
 func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidation(t *testing.T) {
@@ -2674,10 +2805,11 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 `
 	env := "FOO=updated\n"
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2720,10 +2852,11 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 `
 	env := "BROKEN=${UNTERMINATED\n"
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), new(env), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Nil(t, updated)
 	assert.Contains(t, err.Error(), "invalid compose file: parse provided env content")
@@ -2765,10 +2898,11 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
       - ${MYPATH}cats/templates:/app/templates
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2812,10 +2946,11 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
       - ${DATA_NAS_FOLDER}:/data
 `
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(compose), nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.Error(t, err)
 	assert.Nil(t, updated)
 	assert.Contains(t, err.Error(), "invalid compose file")
@@ -2850,10 +2985,11 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=example\n"), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=example\n"), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2897,10 +3033,11 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 
@@ -2945,7 +3082,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	require.NoError(t, db.Create(project).Error)
 
 	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -2997,7 +3134,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -3045,7 +3182,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -3093,7 +3230,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -3106,6 +3243,57 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	require.NoError(t, readErr)
 	assert.Equal(t, "BASE=git\n", string(effectiveBytes))
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-override"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-override"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	overrideContent := "services:\n  app:\n    image: busybox:latest\n"
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "compose.override.yaml"))
+	require.NoError(t, readErr)
+	assert.Equal(t, overrideContent, string(overrideBytes))
+
+	// A subsequent sync without an override removes the previously synced file.
+	updated, err = svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	_, statErr := os.Stat(filepath.Join(projectPath, "compose.override.yaml"))
+	assert.True(t, os.IsNotExist(statErr))
 }
 
 func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValidation(t *testing.T) {
@@ -3143,7 +3331,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
       - ${MYPATH}cats/templates:/app/templates
 `
 
-	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, models.User{
+	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
@@ -4968,7 +5156,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
 
-	composeFromContent, envFromContent, err := svc.GetProjectContent(ctx, syncProjectID)
+	composeFromContent, envFromContent, _, err := svc.GetProjectContent(ctx, syncProjectID)
 	require.NoError(t, err)
 	assert.Equal(t, composeContent, composeFromContent)
 	assert.Equal(t, "TZ=UTC\n", envFromContent)
@@ -5012,10 +5200,11 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	updatedCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
 	updatedEnv := "FOO=updated\n"
 
-	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(updatedCompose), new(updatedEnv), nil, nil, models.User{
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, new(updatedCompose), new(updatedEnv), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
 		Username:  "tester",
 	})
+
 	require.NoError(t, err)
 	require.NotNil(t, updated)
 	assert.Equal(t, linkPath, updated.Path)
@@ -5161,7 +5350,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
 	content := "new\n"
-	_, err = svc.UpdateProject(ctx, project.ID, ptr("bar"), nil, nil, &revision, []projecttypes.ProjectFileChange{
+	_, err = svc.UpdateProject(ctx, project.ID, ptr("bar"), nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
 		{Operation: projecttypes.FileOpCreateFile, RelativePath: "notes.txt", Content: &content},
 	}, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},

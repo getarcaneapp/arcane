@@ -31,12 +31,15 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	dockerclient "github.com/moby/moby/client"
+	"go.getarcane.app/sys/atomic"
 	"golang.org/x/sync/errgroup"
 )
 
-const swarmNodeIdentityProbeConcurrency = 5
-const KVKeySwarmEnabled = "swarm.enabled"
-const defaultSwarmListenAddr = "0.0.0.0:2377"
+const (
+	swarmNodeIdentityProbeConcurrency = 5
+	KVKeySwarmEnabled                 = "swarm.enabled"
+	defaultSwarmListenAddr            = "0.0.0.0:2377"
+)
 
 // SwarmService provides Docker Swarm related operations.
 type SwarmService struct {
@@ -851,7 +854,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 		return nil, err
 	}
 
-	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
+	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); err != nil {
 		slog.WarnContext(ctx, "failed to persist swarm stack source", "environmentID", normalizeSwarmEnvironmentIDInternal(environmentID), "stackName", stackName, "error", err)
 	}
 
@@ -865,6 +868,7 @@ func (s *SwarmService) DeployStack(ctx context.Context, environmentID string, re
 	if err := libswarm.DeployStack(ctx, dockerClient, libswarm.StackDeployOptions{
 		Name:             stackName,
 		ComposeContent:   req.ComposeContent,
+		OverrideContent:  req.OverrideContent,
 		EnvContent:       req.EnvContent,
 		WithRegistryAuth: req.WithRegistryAuth,
 		RegistryAuthForImage: func(ctx context.Context, imageRef string) (string, error) {
@@ -1342,6 +1346,14 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 		return nil, fmt.Errorf("failed to read swarm stack compose source: %w", err)
 	}
 
+	overrideContent := ""
+	overrideBytes, err := os.ReadFile(filepath.Join(stackSourceDir, swarmStackOverrideFilename))
+	if err == nil {
+		overrideContent = string(overrideBytes)
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("failed to read swarm stack override source: %w", err)
+	}
+
 	envContent := ""
 	envBytes, err := os.ReadFile(filepath.Join(stackSourceDir, swarmStackEnvFilename))
 	if err == nil {
@@ -1364,7 +1376,7 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 			if d.Type()&os.ModeSymlink != 0 {
 				return nil
 			}
-			if path == swarmStackComposeFilename || path == swarmStackEnvFilename {
+			if path == swarmStackComposeFilename || path == swarmStackOverrideFilename || path == swarmStackEnvFilename {
 				return nil
 			}
 			content, err := root.ReadFile(path)
@@ -1383,10 +1395,11 @@ func (s *SwarmService) GetStackSource(ctx context.Context, environmentID, stackN
 	}
 
 	return &swarmtypes.StackSource{
-		Name:           stackName,
-		ComposeContent: string(composeContent),
-		EnvContent:     envContent,
-		Files:          files,
+		Name:            stackName,
+		ComposeContent:  string(composeContent),
+		OverrideContent: overrideContent,
+		EnvContent:      envContent,
+		Files:           files,
 	}, nil
 }
 
@@ -1399,15 +1412,16 @@ func (s *SwarmService) UpdateStackSource(ctx context.Context, environmentID, sta
 		return nil, errors.New("stack compose source is required")
 	}
 
-	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.EnvContent, req.Files); err != nil {
+	if err := s.upsertStackSourceInternal(ctx, environmentID, stackName, req.ComposeContent, req.OverrideContent, req.EnvContent, req.Files); err != nil {
 		return nil, err
 	}
 
 	return &swarmtypes.StackSource{
-		Name:           stackName,
-		ComposeContent: req.ComposeContent,
-		EnvContent:     req.EnvContent,
-		Files:          req.Files,
+		Name:            stackName,
+		ComposeContent:  req.ComposeContent,
+		OverrideContent: req.OverrideContent,
+		EnvContent:      req.EnvContent,
+		Files:           req.Files,
 	}, nil
 }
 
@@ -1671,10 +1685,11 @@ func (s *SwarmService) RenderStackConfig(ctx context.Context, req swarmtypes.Sta
 	pm := s.getPathMapperInternal(ctx)
 
 	result, err := libswarm.RenderStackConfig(ctx, libswarm.StackRenderOptions{
-		Name:           req.Name,
-		ComposeContent: req.ComposeContent,
-		EnvContent:     req.EnvContent,
-		PathMapper:     pm,
+		Name:            req.Name,
+		ComposeContent:  req.ComposeContent,
+		OverrideContent: req.OverrideContent,
+		EnvContent:      req.EnvContent,
+		PathMapper:      pm,
 	})
 	if err != nil {
 		return nil, err
@@ -2115,7 +2130,7 @@ func decodeSecretSpecInternal(raw json.RawMessage) (swarm.SecretSpec, error) {
 	return spec, nil
 }
 
-func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmentID, stackName, composeContent, envContent string, files []swarmtypes.SyncFile) error {
+func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmentID, stackName, composeContent, overrideContent, envContent string, files []swarmtypes.SyncFile) error {
 	stackName = strings.TrimSpace(stackName)
 	if stackName == "" {
 		return errors.New("stack name is required")
@@ -2130,13 +2145,24 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		return fmt.Errorf("failed to create swarm stack source directory: %w", err)
 	}
 
-	if err := os.WriteFile(filepath.Join(stackSourceDir, swarmStackComposeFilename), []byte(composeContent), common.FilePerm); err != nil {
+	if err := atomic.WriteFile(filepath.Join(stackSourceDir, swarmStackComposeFilename), []byte(composeContent), common.FilePerm); err != nil {
 		return fmt.Errorf("failed to write swarm stack compose source: %w", err)
+	}
+
+	overridePath := filepath.Join(stackSourceDir, swarmStackOverrideFilename)
+	if overrideContent != "" {
+		if err := atomic.WriteFile(overridePath, []byte(overrideContent), common.FilePerm); err != nil {
+			return fmt.Errorf("failed to write swarm stack override source: %w", err)
+		}
+	} else {
+		if err := os.Remove(overridePath); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("failed to clear swarm stack override source: %w", err)
+		}
 	}
 
 	envPath := filepath.Join(stackSourceDir, swarmStackEnvFilename)
 	if envContent != "" {
-		if err := os.WriteFile(envPath, []byte(envContent), common.FilePerm); err != nil {
+		if err := atomic.WriteFile(envPath, []byte(envContent), common.FilePerm); err != nil {
 			return fmt.Errorf("failed to write swarm stack env source: %w", err)
 		}
 	} else {
@@ -2147,7 +2173,7 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 
 	// Write additional files
 	for _, f := range files {
-		if f.RelativePath == swarmStackComposeFilename || f.RelativePath == swarmStackEnvFilename {
+		if f.RelativePath == swarmStackComposeFilename || f.RelativePath == swarmStackOverrideFilename || f.RelativePath == swarmStackEnvFilename {
 			continue
 		}
 		fPath := filepath.Join(stackSourceDir, f.RelativePath)
@@ -2158,7 +2184,7 @@ func (s *SwarmService) upsertStackSourceInternal(ctx context.Context, environmen
 		if err := os.MkdirAll(filepath.Dir(fPath), common.DirPerm); err != nil {
 			return fmt.Errorf("failed to create directory for %s: %w", f.RelativePath, err)
 		}
-		if err := os.WriteFile(fPath, f.Content, common.FilePerm); err != nil {
+		if err := atomic.WriteFile(fPath, f.Content, common.FilePerm); err != nil {
 			return fmt.Errorf("failed to write %s: %w", f.RelativePath, err)
 		}
 	}
@@ -2212,6 +2238,7 @@ func normalizeSwarmEnvironmentIDInternal(environmentID string) string {
 const (
 	defaultSwarmStackSourceRootDir = "/app/data/swarm/sources"
 	swarmStackComposeFilename      = "compose.yaml"
+	swarmStackOverrideFilename     = "compose.override.yaml"
 	swarmStackEnvFilename          = ".env"
 )
 
