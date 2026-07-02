@@ -1038,11 +1038,42 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	// Stop the per-environment health job before the row is removed.
 	s.removeHealthJobInternal(ctx, id)
 
-	if err := s.db.WithContext(ctx).Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
+	var syncIDs []string
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.GitOpsSync{}).
+			Where("environment_id = ?", id).
+			Pluck("id", &syncIDs).Error; err != nil {
+			return fmt.Errorf("failed to list environment gitops syncs: %w", err)
+		}
+
+		if len(syncIDs) > 0 {
+			if err := tx.Model(&models.Project{}).
+				Where("gitops_managed_by IN ?", syncIDs).
+				Update("gitops_managed_by", nil).Error; err != nil {
+				return fmt.Errorf("failed to clear environment gitops project references: %w", err)
+			}
+			if err := tx.Where("environment_id = ?", id).Delete(&models.GitOpsSync{}).Error; err != nil {
+				return fmt.Errorf("failed to delete environment gitops syncs: %w", err)
+			}
+		}
+
+		if err := tx.Delete(&models.Environment{}, "id = ?", id).Error; err != nil {
+			return fmt.Errorf("failed to delete environment: %w", err)
+		}
+
+		return nil
+	}); err != nil {
 		if env.Enabled {
 			s.registerHealthJobInternal(ctx, env.ID)
 		}
-		return fmt.Errorf("failed to delete environment: %w", err)
+		return err
+	}
+
+	if s.scheduler != nil {
+		schedulerCtx := s.schedulerCtxInternal(ctx)
+		for _, syncID := range syncIDs {
+			s.scheduler.RemoveJob(schedulerCtx, gitOpsSyncJobNameInternal(syncID))
+		}
 	}
 
 	s.invalidateEnvironmentTokenInternal(id)

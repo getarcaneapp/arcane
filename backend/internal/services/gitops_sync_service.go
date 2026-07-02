@@ -458,7 +458,7 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	}
 	var syncs []models.GitOpsSync
 	if err := s.db.WithContext(ctx).
-		Where("auto_sync = ?", true).
+		Where("auto_sync = ? AND environment_id IN (SELECT id FROM environments)", true).
 		Find(&syncs).Error; err != nil {
 		slog.ErrorContext(ctx, "Failed to load auto-sync jobs on startup", "error", err)
 		return
@@ -1263,6 +1263,35 @@ func (s *GitOpsSyncService) CleanupLeakedScratchDirsOnStartup(ctx context.Contex
 	if removed > 0 {
 		slog.InfoContext(ctx, "Cleaned up leaked GitOps scratch directories on startup", "count", removed)
 	}
+	return nil
+}
+
+func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) error {
+	var syncIDs []string
+	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).
+		Where("environment_id NOT IN (SELECT id FROM environments)").
+		Pluck("id", &syncIDs).Error; err != nil {
+		return fmt.Errorf("failed to list orphaned gitops syncs: %w", err)
+	}
+	if len(syncIDs) == 0 {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Model(&models.Project{}).
+			Where("gitops_managed_by IN ?", syncIDs).
+			Update("gitops_managed_by", nil).Error; err != nil {
+			return fmt.Errorf("failed to clear orphaned gitops project references: %w", err)
+		}
+		if err := tx.Where("id IN ?", syncIDs).Delete(&models.GitOpsSync{}).Error; err != nil {
+			return fmt.Errorf("failed to delete orphaned gitops syncs: %w", err)
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Cleaned up orphaned GitOps syncs on startup", "syncIds", syncIDs)
 	return nil
 }
 

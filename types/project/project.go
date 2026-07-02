@@ -611,6 +611,8 @@ type Details struct {
 // Destroy is used to destroy a project.
 type Destroy struct {
 	// RemoveFiles indicates if project files should be removed. Defaults to true when omitted.
+	// When false and the project is stored under the projects directory, files are renamed
+	// to a hidden .arcane-trash-* directory so filesystem discovery does not re-import them.
 	//
 	// Required: false
 	RemoveFiles *bool `json:"removeFiles,omitempty"`

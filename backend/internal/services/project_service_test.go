@@ -141,8 +141,15 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 
 	require.NoError(t, svc.DestroyProject(ctx, project.ID, false, false, models.User{}))
 
-	assert.DirExists(t, projectPath)
-	assert.FileExists(t, projectDataPath)
+	assert.NoDirExists(t, projectPath)
+	assert.NoFileExists(t, projectDataPath)
+
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	require.Len(t, entries, 1)
+	trashName := entries[0].Name()
+	require.True(t, strings.HasPrefix(trashName, ".arcane-trash-demo-preserve-"), "trash dir name: %s", trashName)
+	assert.FileExists(t, filepath.Join(projectsDir, trashName, "project-data.txt"))
 }
 
 func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef map[string]dockertypesimage.InspectResponse, onPull func(fullRef string, authHeader string)) *httptest.Server {

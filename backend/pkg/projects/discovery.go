@@ -87,8 +87,11 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 }
 
 func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
-	if !isRoot && IsInternalScratchDirName(filepath.Base(path)) {
-		return nil
+	if !isRoot {
+		base := filepath.Base(path)
+		if strings.HasPrefix(base, ".arcane-trash-") || IsInternalScratchDirName(base) {
+			return nil
+		}
 	}
 
 	identity, err := ResolveDirectoryIdentityInternal(path)

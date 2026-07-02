@@ -2350,6 +2350,19 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	if err := s.db.WithContext(ctx).Delete(proj).Error; err != nil {
 		return fmt.Errorf("failed to delete project from database: %w", err)
 	}
+
+	if !removeFiles {
+		if projectsDir, dirErr := s.getProjectsDirectoryInternal(ctx); dirErr != nil {
+			slog.WarnContext(ctx, "Failed to resolve projects directory for quarantine", "error", dirErr)
+		} else if projects.IsSafeSubdirectory(projectsDir, proj.Path) && filepath.Clean(projectsDir) != filepath.Clean(proj.Path) {
+			trashPath := filepath.Join(filepath.Dir(proj.Path), fmt.Sprintf(".arcane-trash-%s-%d", filepath.Base(proj.Path), time.Now().Unix()))
+			if err := os.Rename(proj.Path, trashPath); err != nil {
+				slog.WarnContext(ctx, "Failed to quarantine project files", "path", proj.Path, "trashPath", trashPath, "error", err)
+			} else {
+				slog.InfoContext(ctx, "Project files quarantined successfully", "path", proj.Path, "trashPath", trashPath)
+			}
+		}
+	}
 	s.invalidateComposeCacheInternal(projectID)
 	writeProjectProgressInternal(ctx, "Project destroyed", 100, "complete")
 

@@ -145,16 +145,6 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		AgentMode:     cfg.AgentMode,
 	})
 	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
-	if appServices.GitOpsSync != nil {
-		// Sweep leaked gitops scratch dirs before the filesystem watcher can import
-		// them as phantom projects and before the directory-sync reconcile runs.
-		if err := appServices.GitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
-		}
-		if err := appServices.GitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
-			slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
-		}
-	}
 
 	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
@@ -167,6 +157,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
+	initializeGitOpsStartupStateInternal(appCtx, appServices.GitOpsSync)
 	if appServices.Project != nil {
 		if err := appServices.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
@@ -230,6 +221,23 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		}
 	} else if cfg.AgentMode && !cfg.EdgeAgent {
 		slog.InfoContext(appCtx, "Direct mode active: agent operates as a passive HTTP server; no outbound connection to manager required")
+	}
+}
+
+func initializeGitOpsStartupStateInternal(appCtx context.Context, gitOpsSync *services.GitOpsSyncService) {
+	if gitOpsSync == nil {
+		return
+	}
+	if err := gitOpsSync.CleanupOrphanedSyncsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up orphaned GitOps syncs on startup", "error", err)
+	}
+	// Sweep leaked gitops scratch dirs before the filesystem watcher can import
+	// them as phantom projects and before the directory-sync reconcile runs.
+	if err := gitOpsSync.CleanupLeakedScratchDirsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to clean up leaked GitOps scratch directories on startup", "error", err)
+	}
+	if err := gitOpsSync.ReconcileDirectorySyncProjectsOnStartup(appCtx); err != nil {
+		slog.WarnContext(appCtx, "Failed to reconcile directory GitOps projects on startup", "error", err)
 	}
 }
 

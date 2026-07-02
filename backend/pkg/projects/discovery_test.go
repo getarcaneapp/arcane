@@ -195,3 +195,14 @@ func TestDiscoverProjectDirectories_SkipsGitOpsScratchDirs(t *testing.T) {
 	names := discoveredNamesInternal(discoverProjectDirectoriesInternal(t, root))
 	require.ElementsMatch(t, []string{"app", "notes.gitops-backup-final"}, names)
 }
+
+func TestDiscoverProjectDirectories_SkipsArcaneTrashDirs(t *testing.T) {
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "app"))
+	writeComposeFileInternal(t, filepath.Join(root, ".arcane-trash-app-1234567890"))
+	writeComposeFileInternal(t, filepath.Join(root, ".hidden"))
+
+	names := discoveredNamesInternal(discoverProjectDirectoriesInternal(t, root))
+	require.ElementsMatch(t, []string{"app", ".hidden"}, names)
+}
