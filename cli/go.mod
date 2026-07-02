@@ -10,7 +10,7 @@ require (
 	charm.land/log/v2 v2.0.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.19.0
-	github.com/getarcaneapp/arcane/types/v2 v2.1.0
+	github.com/getarcaneapp/arcane/types/v2 v2.2.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/spf13/cobra v1.10.2
@@ -34,7 +34,7 @@ require (
 	github.com/charmbracelet/x/windows v0.2.2 // indirect
 	github.com/clipperhouse/displaywidth v0.11.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
-	github.com/compose-spec/compose-go/v2 v2.12.1 // indirect
+	github.com/compose-spec/compose-go/v2 v2.13.0 // indirect
 	github.com/containerd/errdefs v1.0.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect

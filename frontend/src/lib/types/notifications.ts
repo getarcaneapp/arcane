@@ -1,16 +1,7 @@
 // --- Notification settings ---
 
 export type NotificationProvider =
-	| 'discord'
-	| 'email'
-	| 'telegram'
-	| 'signal'
-	| 'slack'
-	| 'ntfy'
-	| 'pushover'
-	| 'gotify'
-	| 'matrix'
-	| 'generic';
+	'discord' | 'email' | 'telegram' | 'signal' | 'slack' | 'ntfy' | 'pushover' | 'gotify' | 'matrix' | 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
 export type EmailAuthMode = 'auto' | 'plain' | 'login' | 'crammd5';
 

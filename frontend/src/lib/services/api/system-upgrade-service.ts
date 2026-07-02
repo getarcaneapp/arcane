@@ -18,13 +18,7 @@ export interface HealthCheckResult {
 }
 
 export type UpdateAllEnvironmentStatus =
-	| 'pending'
-	| 'updating'
-	| 'updated'
-	| 'triggered'
-	| 'skipped_up_to_date'
-	| 'skipped_offline'
-	| 'failed';
+	'pending' | 'updating' | 'updated' | 'triggered' | 'skipped_up_to_date' | 'skipped_offline' | 'failed';
 
 export interface UpdateAllEnvironmentResult {
 	environmentId: string;

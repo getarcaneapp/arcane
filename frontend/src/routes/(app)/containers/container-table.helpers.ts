@@ -2,16 +2,7 @@ import { m } from '$lib/paraglide/messages';
 import type { ContainerSummaryDto } from '$lib/types/docker';
 
 export type ActionStatus =
-	| 'starting'
-	| 'stopping'
-	| 'restarting'
-	| 'pausing'
-	| 'unpausing'
-	| 'killing'
-	| 'updating'
-	| 'removing'
-	| 'redeploying'
-	| '';
+	'starting' | 'stopping' | 'restarting' | 'pausing' | 'unpausing' | 'killing' | 'updating' | 'removing' | 'redeploying' | '';
 export type StateBadgeVariant = 'green' | 'red' | 'amber';
 
 export function parseImageRef(imageRef: string): { repo: string; tag: string } {

@@ -1,10 +1,2 @@
 export type ActionStatus =
-	| 'starting'
-	| 'stopping'
-	| 'restarting'
-	| 'redeploying'
-	| 'archiving'
-	| 'unarchiving'
-	| 'destroying'
-	| 'syncing'
-	| '';
+	'starting' | 'stopping' | 'restarting' | 'redeploying' | 'archiving' | 'unarchiving' | 'destroying' | 'syncing' | '';
