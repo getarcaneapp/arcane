@@ -238,8 +238,8 @@ importers:
         specifier: ^0.37.1
         version: 0.37.1(@sveltejs/kit@3.0.0-next.4(@sveltejs/vite-plugin-svelte@7.1.2(svelte@5.56.4)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(@typescript/typescript6@6.0.1)(svelte@5.56.4)(vite@8.1.0(@types/node@26.0.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.22.4)(yaml@2.9.0)))(svelte@5.56.4)(zod@4.4.3)
       svelte-check-rs:
-        specifier: ^0.10.1
-        version: 0.10.1(@typescript/native-preview@7.0.0-dev.20260629.1)
+        specifier: ^0.10.2
+        version: 0.10.2(@typescript/native-preview@7.0.0-dev.20260629.1)
       svelte-sonner:
         specifier: ^1.1.1
         version: 1.1.1(svelte@5.56.4)
@@ -1175,28 +1175,28 @@ packages:
   '@standard-schema/spec@1.1.0':
     resolution: {integrity: sha512-l2aFy5jALhniG5HgqrD6jXLi/rUWrKvqN/qJx6yoJsgKhblVd+iqqU4RCXavm/jPityDo5TCvKMnpjKnOriy0w==}
 
-  '@svelte-check-rs/darwin-arm64@0.10.1':
-    resolution: {integrity: sha512-4zlVQNvNYFChuZ9Bm94e3MgwUdQfkjNY2v0DDw8qoGpnHxc3VMNSI81JmgfzZFqBNWfxEWqI6aMS9YbjElqcoA==}
+  '@svelte-check-rs/darwin-arm64@0.10.2':
+    resolution: {integrity: sha512-EQGvjRabLfuzg2GE9i2KZ9jziQ/BWI+K/9yKEkyfd9D28hdjJ0uNl0L2t9tr/RVZdj3P5QZl99hiDT1uNSeM3w==}
     cpu: [arm64]
     os: [darwin]
 
-  '@svelte-check-rs/darwin-x64@0.10.1':
-    resolution: {integrity: sha512-eEG69ektZ1NdA7UcWRYE4ShZ6wPDbm3EgiLb5CXOaL3SbzenHhdV/vZDDktQcvUBdSnb0B13xY9XWKfiJmYY7w==}
+  '@svelte-check-rs/darwin-x64@0.10.2':
+    resolution: {integrity: sha512-qZ0V7QbSEjmaPW2IOUr5Il62VUS50rO8XNbzwuQTOFV9QRM2QSiLpD/2AwF6dZCsFKAKrMvlytwIzq6wdobkCQ==}
     cpu: [x64]
     os: [darwin]
 
-  '@svelte-check-rs/linux-arm64@0.10.1':
-    resolution: {integrity: sha512-dd6Fox6yceLrQOgqAKOM8x1zZ8FtnT63EucDfXNx4db6iEPYsy7bwrazeerMBc9To5sf2Hhk3F5wf73h9puWow==}
+  '@svelte-check-rs/linux-arm64@0.10.2':
+    resolution: {integrity: sha512-47pzftsKMEnWrEGnEwX7pfH3SSefkx7f9PURAwG+jsdJ1sQP+92PDWGXkmaoTklQqA5v/ZYDO6Y+xPw+dlqlUQ==}
     cpu: [arm64]
     os: [linux]
 
-  '@svelte-check-rs/linux-x64@0.10.1':
-    resolution: {integrity: sha512-ocF4fmZ/4+DSGI4VHwLiKc/vVlDCnsds1KF+a9OGjgXci9T5bAo9QcgPYERDf1zTbNqCKlhoQTaBXNj45KECKA==}
+  '@svelte-check-rs/linux-x64@0.10.2':
+    resolution: {integrity: sha512-N68hGd8EVbc2cArIABSqDOpFR4hlCKEQwAInWI5onEUUHbzGVJ1u+Sdnq7N55feAPPCUJiBiXldt4tEECjXguQ==}
     cpu: [x64]
     os: [linux]
 
-  '@svelte-check-rs/win32-x64@0.10.1':
-    resolution: {integrity: sha512-wpNTAVGPhQiqFWrh4wDAuu8mbrnOFzwVJEgsjNws9P29+vKasbbo0xvdj6GbAZhGAejLS1kH2u3y9ihFnbIRAQ==}
+  '@svelte-check-rs/win32-x64@0.10.2':
+    resolution: {integrity: sha512-aeTNEIb5jDAg0GblnF5fA1BeYfgczyUd3/0pylI51JV1rXfceCGhl6aaaE8zo/nO4gjVtht1heX0y/OBtC9+uw==}
     cpu: [x64]
     os: [win32]
 
@@ -2681,8 +2681,8 @@ packages:
     resolution: {integrity: sha512-uV+TFRZdXsqXTL2pRvujROjdZQ4RAlBUS5BTh9IGm+jTqQntYThciG/qu57Gs69yjnVUSqdxF9YLmSnpupBW9A==}
     engines: {node: '>=14.0.0'}
 
-  svelte-check-rs@0.10.1:
-    resolution: {integrity: sha512-+UBmSvjExVbtM5u5HY612pKrCTHY2vTrTr2MQr6pm2ZvQYcs3boJJlCQIWUGG6iZ1Bf4bl3Kz9Pz23rg1KNi8g==}
+  svelte-check-rs@0.10.2:
+    resolution: {integrity: sha512-LIatEp6Jjch3xUA48KGl9I7Q3Vmy1EhwWE+AA/F34n0Dk9AkG5Aiyny6fiJoYfbphpRCe+pYouMrdaYEp2B78g==}
     hasBin: true
     peerDependencies:
       '@typescript/native-preview': '>=7.0.0-dev.0'
@@ -3767,19 +3767,19 @@ snapshots:
 
   '@standard-schema/spec@1.1.0': {}
 
-  '@svelte-check-rs/darwin-arm64@0.10.1':
+  '@svelte-check-rs/darwin-arm64@0.10.2':
     optional: true
 
-  '@svelte-check-rs/darwin-x64@0.10.1':
+  '@svelte-check-rs/darwin-x64@0.10.2':
     optional: true
 
-  '@svelte-check-rs/linux-arm64@0.10.1':
+  '@svelte-check-rs/linux-arm64@0.10.2':
     optional: true
 
-  '@svelte-check-rs/linux-x64@0.10.1':
+  '@svelte-check-rs/linux-x64@0.10.2':
     optional: true
 
-  '@svelte-check-rs/win32-x64@0.10.1':
+  '@svelte-check-rs/win32-x64@0.10.2':
     optional: true
 
   '@svelte-put/shortcut@4.2.0(svelte@5.56.4)':
@@ -5172,15 +5172,15 @@ snapshots:
   superstruct@2.0.2:
     optional: true
 
-  svelte-check-rs@0.10.1(@typescript/native-preview@7.0.0-dev.20260629.1):
+  svelte-check-rs@0.10.2(@typescript/native-preview@7.0.0-dev.20260629.1):
     dependencies:
       '@typescript/native-preview': 7.0.0-dev.20260629.1
     optionalDependencies:
-      '@svelte-check-rs/darwin-arm64': 0.10.1
-      '@svelte-check-rs/darwin-x64': 0.10.1
-      '@svelte-check-rs/linux-arm64': 0.10.1
-      '@svelte-check-rs/linux-x64': 0.10.1
-      '@svelte-check-rs/win32-x64': 0.10.1
+      '@svelte-check-rs/darwin-arm64': 0.10.2
+      '@svelte-check-rs/darwin-x64': 0.10.2
+      '@svelte-check-rs/linux-arm64': 0.10.2
+      '@svelte-check-rs/linux-x64': 0.10.2
+      '@svelte-check-rs/win32-x64': 0.10.2
 
   svelte-codemirror-editor@2.1.0(codemirror@6.0.2)(svelte@5.56.4):
     dependencies:
