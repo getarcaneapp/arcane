@@ -5,7 +5,6 @@
 	import {
 		UsersIcon,
 		EnvironmentsIcon,
-		EllipsisIcon,
 		InspectIcon,
 		TrashIcon,
 		EdgeConnectionIcon,
@@ -20,7 +19,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
@@ -362,52 +361,40 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: SwarmNodeSummary })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="relative size-8 p-0">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => openAgentDialog(item)} disabled={!canManageNodes}>
-					<EdgeConnectionIcon class="size-4" />
-					{getSwarmNodeAgentActionLabel(item.agent?.state)}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={!canManageNodes || isLoading || item.role === 'manager'}>
-					{m.swarm_node_promote()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={!canManageNodes || isLoading || item.role !== 'manager'}>
-					{m.swarm_node_demote()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item
-					onclick={() => setAvailability(item, 'drain')}
-					disabled={!canManageNodes || isLoading || item.availability === 'drain'}
-				>
-					{m.swarm_node_drain()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Item
-					onclick={() => setAvailability(item, 'active')}
-					disabled={!canManageNodes || isLoading || item.availability === 'active'}
-				>
-					{m.swarm_node_activate()}
-				</DropdownMenu.Item>
-				<DropdownMenu.Separator />
-				<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={!canManageNodes || isLoading}>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<RowActionsMenu triggerClass="relative size-8 p-0" iconClass="">
+		<DropdownMenu.Item onclick={() => inspectNodeTasks(item)}>
+			<InspectIcon class="size-4" />
+			{m.common_inspect()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => openAgentDialog(item)} disabled={!canManageNodes}>
+			<EdgeConnectionIcon class="size-4" />
+			{getSwarmNodeAgentActionLabel(item.agent?.state)}
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item onclick={() => promoteNode(item)} disabled={!canManageNodes || isLoading || item.role === 'manager'}>
+			{m.swarm_node_promote()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => demoteNode(item)} disabled={!canManageNodes || isLoading || item.role !== 'manager'}>
+			{m.swarm_node_demote()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Item
+			onclick={() => setAvailability(item, 'drain')}
+			disabled={!canManageNodes || isLoading || item.availability === 'drain'}
+		>
+			{m.swarm_node_drain()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Item
+			onclick={() => setAvailability(item, 'active')}
+			disabled={!canManageNodes || isLoading || item.availability === 'active'}
+		>
+			{m.swarm_node_activate()}
+		</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+		<DropdownMenu.Item variant="destructive" onclick={() => removeNode(item)} disabled={!canManageNodes || isLoading}>
+			<TrashIcon class="size-4" />
+			{m.common_delete()}
+		</DropdownMenu.Item>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

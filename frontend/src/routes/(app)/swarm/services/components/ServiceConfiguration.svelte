@@ -3,6 +3,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { SettingsIcon, TagIcon } from '$lib/icons';
 	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
+	import EnvVarsList from '$lib/components/env-vars-list.svelte';
 
 	interface Props {
 		envVars: string[];
@@ -31,22 +32,7 @@
 				</div>
 			</Card.Header>
 			<Card.Content class="p-4">
-				<KeyValueGrid>
-					{#each envVars as env, index (index)}
-						{#if env.includes('=')}
-							{@const [key, ...valueParts] = env.split('=')}
-							{@const value = valueParts.join('=')}
-							<KeyValueCard label={key ?? ''}>{value}</KeyValueCard>
-						{:else}
-							<KeyValueCard
-								label={m.common_name()}
-								labelClass="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
-							>
-								{env}
-							</KeyValueCard>
-						{/if}
-					{/each}
-				</KeyValueGrid>
+				<EnvVarsList {envVars} nameOnlyLabel={m.common_name()} />
 			</Card.Content>
 		</Card.Root>
 	{/if}

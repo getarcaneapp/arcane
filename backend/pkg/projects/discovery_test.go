@@ -3,8 +3,10 @@ package projects
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -157,6 +159,7 @@ func TestIsInternalScratchDirName(t *testing.T) {
 		".gitops-sync-stage-1219810203",
 		".gitops-backup-456",
 		"Makerra.gitops-backup-1780656786384743013", // legacy name-embedded form
+		".arcane-trash-app-1234567890",              // quarantined (soft-deleted) project files
 	}
 	for _, name := range scratch {
 		require.True(t, IsInternalScratchDirName(name), "expected %q to be an internal scratch dir", name)
@@ -194,4 +197,47 @@ func TestDiscoverProjectDirectories_SkipsGitOpsScratchDirs(t *testing.T) {
 
 	names := discoveredNamesInternal(discoverProjectDirectoriesInternal(t, root))
 	require.ElementsMatch(t, []string{"app", "notes.gitops-backup-final"}, names)
+}
+
+func TestDiscoverProjectDirectories_SkipsArcaneTrashDirs(t *testing.T) {
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "app"))
+	writeComposeFileInternal(t, filepath.Join(root, ".arcane-trash-app-1234567890"))
+	writeComposeFileInternal(t, filepath.Join(root, ".hidden"))
+
+	names := discoveredNamesInternal(discoverProjectDirectoriesInternal(t, root))
+	require.ElementsMatch(t, []string{"app", ".hidden"}, names)
+}
+
+// TestDiscoverProjectDirectories_SkipsUnreadableNestedSibling is a regression
+// test for #3080: a permission-denied error on a non-root nested directory
+// must be logged and skipped, not abort the entire discovery walk. Without the
+// fix, one unreadable sibling directory would cause every other project under
+// the root to go undiscovered.
+func TestDiscoverProjectDirectories_SkipsUnreadableNestedSibling(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX permission-denied behavior is not portable to Windows")
+	}
+	if os.Geteuid() == 0 {
+		t.Skip("test requires a non-root UID to trigger permission-denied on ReadDir")
+	}
+
+	root := t.TempDir()
+
+	writeComposeFileInternal(t, filepath.Join(root, "project1"))
+
+	unreadableDir := filepath.Join(root, "adguard-cheetah", "workingdir")
+	require.NoError(t, os.MkdirAll(unreadableDir, 0o755))
+	t.Cleanup(func() { _ = os.Chmod(unreadableDir, 0o700) })
+	require.NoError(t, os.Chmod(unreadableDir, 0))
+
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
+	require.NoError(t, err, "discovery must not fail when only a nested, non-root directory is unreadable")
+
+	// os.ReadDir returns entries sorted, so "adguard-cheetah" is walked before
+	// "project1" alphabetically. Finding project1 in the results proves the
+	// walk continued past the permission-denied failure rather than merely
+	// tolerating a failure at the very end of the scan.
+	assert.Equal(t, []string{"project1"}, discoveredNamesInternal(discovered))
 }

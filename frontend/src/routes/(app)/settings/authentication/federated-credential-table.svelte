@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -14,7 +14,7 @@
 	import { federatedCredentialService } from '$lib/services/federated-credential-service';
 	import { formatOptionalDateTime, isPastDate } from '$lib/utils/formatting';
 	import * as m from '$lib/paraglide/messages.js';
-	import { LockIcon, TrashIcon, EditIcon, EllipsisIcon } from '$lib/icons';
+	import { LockIcon, TrashIcon, EditIcon } from '$lib/icons';
 	import { isGlobalAdmin } from '$lib/utils/auth';
 
 	let {
@@ -236,29 +236,17 @@
 
 {#snippet RowActions({ item }: { item: FederatedCredential })}
 	{#if canManageFederatedCredentials}
-		<DropdownMenu.Root>
-			<DropdownMenu.Trigger>
-				{#snippet child({ props })}
-					<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-						<span class="sr-only">{m.common_open_menu()}</span>
-						<EllipsisIcon class="size-4" />
-					</ArcaneButton>
-				{/snippet}
-			</DropdownMenu.Trigger>
-			<DropdownMenu.Content align="end">
-				<DropdownMenu.Group>
-					<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
-						<EditIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteFederatedCredential(item.id, item.name)}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</DropdownMenu.Group>
-			</DropdownMenu.Content>
-		</DropdownMenu.Root>
+		<RowActionsMenu>
+			<DropdownMenu.Item onclick={() => onEditFederatedCredential(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDeleteFederatedCredential(item.id, item.name)}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</RowActionsMenu>
 	{/if}
 {/snippet}
 

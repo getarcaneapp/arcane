@@ -1,9 +1,9 @@
 <script lang="ts">
 	import type { Project } from '$lib/types/swarm';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon, EllipsisIcon } from '$lib/icons';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
@@ -376,155 +376,143 @@
 
 {#snippet RowActions({ item }: { item: Project })}
 	{@const status = actionStatus[item.id]}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
-					<EditIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => goto(`/projects/${item.id}`)} disabled={isAnyLoading}>
+			<EditIcon class="size-4" />
+			{m.common_edit()}
+		</DropdownMenu.Item>
 
-				{#if item.gitOpsManagedBy && canUpdateProject}
-					<DropdownMenu.Item
-						onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
-						disabled={status === 'syncing' || isAnyLoading}
-					>
-						{#if status === 'syncing'}
-							<Spinner class="size-4" />
-						{:else}
-							<RefreshIcon class="size-4" />
-						{/if}
-						{m.git_sync_from_git()}
-					</DropdownMenu.Item>
-				{/if}
-
-				<DropdownMenu.Separator />
-
-				{#if item.status !== 'running'}
-					{#if canDeployProject}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('start', item.id)}
-							disabled={item.isArchived || status === 'starting' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'starting'}
-								<Spinner class="size-4" />
-							{:else}
-								<StartIcon class="size-4" />
-							{/if}
-							{m.common_up()}
-						</DropdownMenu.Item>
-					{/if}
+		{#if item.gitOpsManagedBy && canUpdateProject}
+			<DropdownMenu.Item
+				onclick={() => handleSyncFromGit(item.id, item.gitOpsManagedBy!)}
+				disabled={status === 'syncing' || isAnyLoading}
+			>
+				{#if status === 'syncing'}
+					<Spinner class="size-4" />
 				{:else}
-					{#if canDownProject}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('stop', item.id)}
-							disabled={item.isArchived || status === 'stopping' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'stopping'}
-								<Spinner class="size-4" />
-							{:else}
-								<StopIcon class="size-4" />
-							{/if}
-							{m.common_down()}
-						</DropdownMenu.Item>
-					{/if}
-
-					<IfPermitted perm="projects:restart">
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('restart', item.id)}
-							disabled={item.isArchived || status === 'restarting' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'restarting'}
-								<Spinner class="size-4" />
-							{:else}
-								<RestartIcon class="size-4" />
-							{/if}
-							{m.common_restart()}
-						</DropdownMenu.Item>
-					</IfPermitted>
+					<RefreshIcon class="size-4" />
 				{/if}
+				{m.git_sync_from_git()}
+			</DropdownMenu.Item>
+		{/if}
 
-				{#if canDeployProject}
-					{#if item.redeployDisabled}
-						<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-							<RedeployIcon class="size-4 opacity-50" />
-							{m.compose_pull_redeploy()}
-						</DropdownMenu.Item>
+		<DropdownMenu.Separator />
+
+		{#if item.status !== 'running'}
+			{#if canDeployProject}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('start', item.id)}
+					disabled={item.isArchived || status === 'starting' || isAnyLoading}
+					title={item.isArchived ? m.projects_archived_badge() : undefined}
+				>
+					{#if status === 'starting'}
+						<Spinner class="size-4" />
 					{:else}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('redeploy', item.id)}
-							disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
-							title={item.isArchived ? m.projects_archived_badge() : undefined}
-						>
-							{#if status === 'redeploying'}
-								<Spinner class="size-4" />
-							{:else}
-								<RedeployIcon class="size-4" />
-							{/if}
-							{m.compose_pull_redeploy()}
-						</DropdownMenu.Item>
+						<StartIcon class="size-4" />
 					{/if}
-				{/if}
-
-				<DropdownMenu.Separator />
-
-				{#if canArchiveProject}
-					{#if item.isArchived}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('unarchive', item.id)}
-							disabled={status === 'unarchiving' || isAnyLoading}
-						>
-							{#if status === 'unarchiving'}
-								<Spinner class="size-4" />
-							{:else}
-								<BoxIcon class="size-4" />
-							{/if}
-							{m.projects_unarchive()}
-						</DropdownMenu.Item>
+					{m.common_up()}
+				</DropdownMenu.Item>
+			{/if}
+		{:else}
+			{#if canDownProject}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('stop', item.id)}
+					disabled={item.isArchived || status === 'stopping' || isAnyLoading}
+					title={item.isArchived ? m.projects_archived_badge() : undefined}
+				>
+					{#if status === 'stopping'}
+						<Spinner class="size-4" />
 					{:else}
-						<DropdownMenu.Item
-							onclick={() => performProjectAction('archive', item.id)}
-							disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
-							title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
-						>
-							{#if status === 'archiving'}
-								<Spinner class="size-4" />
-							{:else}
-								<BoxIcon class="size-4" />
-							{/if}
-							{m.projects_archive()}
-						</DropdownMenu.Item>
+						<StopIcon class="size-4" />
 					{/if}
-				{/if}
+					{m.common_down()}
+				</DropdownMenu.Item>
+			{/if}
 
-				<IfPermitted perm="projects:delete">
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDestroyProject(item.id)}
-						disabled={status === 'destroying' || isAnyLoading}
-					>
-						{#if status === 'destroying'}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.compose_destroy()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+			<IfPermitted perm="projects:restart">
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('restart', item.id)}
+					disabled={item.isArchived || status === 'restarting' || isAnyLoading}
+					title={item.isArchived ? m.projects_archived_badge() : undefined}
+				>
+					{#if status === 'restarting'}
+						<Spinner class="size-4" />
+					{:else}
+						<RestartIcon class="size-4" />
+					{/if}
+					{m.common_restart()}
+				</DropdownMenu.Item>
+			</IfPermitted>
+		{/if}
+
+		{#if canDeployProject}
+			{#if item.redeployDisabled}
+				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+					<RedeployIcon class="size-4 opacity-50" />
+					{m.compose_pull_redeploy()}
+				</DropdownMenu.Item>
+			{:else}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('redeploy', item.id)}
+					disabled={item.isArchived || status === 'redeploying' || isAnyLoading}
+					title={item.isArchived ? m.projects_archived_badge() : undefined}
+				>
+					{#if status === 'redeploying'}
+						<Spinner class="size-4" />
+					{:else}
+						<RedeployIcon class="size-4" />
+					{/if}
+					{m.compose_pull_redeploy()}
+				</DropdownMenu.Item>
+			{/if}
+		{/if}
+
+		<DropdownMenu.Separator />
+
+		{#if canArchiveProject}
+			{#if item.isArchived}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('unarchive', item.id)}
+					disabled={status === 'unarchiving' || isAnyLoading}
+				>
+					{#if status === 'unarchiving'}
+						<Spinner class="size-4" />
+					{:else}
+						<BoxIcon class="size-4" />
+					{/if}
+					{m.projects_unarchive()}
+				</DropdownMenu.Item>
+			{:else}
+				<DropdownMenu.Item
+					onclick={() => performProjectAction('archive', item.id)}
+					disabled={isProjectArchiveBlocked(item) || status === 'archiving' || isAnyLoading}
+					title={isProjectArchiveBlocked(item) ? m.projects_archive_requires_stopped() : undefined}
+				>
+					{#if status === 'archiving'}
+						<Spinner class="size-4" />
+					{:else}
+						<BoxIcon class="size-4" />
+					{/if}
+					{m.projects_archive()}
+				</DropdownMenu.Item>
+			{/if}
+		{/if}
+
+		<IfPermitted perm="projects:delete">
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDestroyProject(item.id)}
+				disabled={status === 'destroying' || isAnyLoading}
+			>
+				{#if status === 'destroying'}
+					<Spinner class="size-4" />
+				{:else}
+					<TrashIcon class="size-4" />
+				{/if}
+				{m.compose_destroy()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 {#snippet ArchivedToolbarAction()}

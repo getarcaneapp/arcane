@@ -4,6 +4,7 @@
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import type { ShortcutKey } from '$lib/utils/navigation';
+	import type { Snippet } from 'svelte';
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
@@ -74,6 +75,29 @@
 	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 </script>
 
+{#snippet itemAnchor(entry: { title: string; url: string; icon?: typeof ArrowRightIcon }, props: Record<string, unknown>)}
+	{@const Icon = entry.icon}
+	<a href={entry.url} {...props}>
+		{#if entry.icon}
+			<Icon />
+		{/if}
+		<span>{entry.title}</span>
+	</a>
+{/snippet}
+
+{#snippet menuEntry(
+	entry: { title: string; url: string; icon?: typeof ArrowRightIcon; isActive: boolean },
+	tooltip: Snippet | undefined
+)}
+	<Sidebar.MenuItem>
+		<Sidebar.MenuButton isActive={entry.isActive} tooltipContent={tooltip}>
+			{#snippet child({ props })}
+				{@render itemAnchor(entry, props)}
+			{/snippet}
+		</Sidebar.MenuButton>
+	</Sidebar.MenuItem>
+{/snippet}
+
 <Sidebar.Group class="p-1.5">
 	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
 	<Sidebar.Menu class="gap-0.5">
@@ -90,37 +114,13 @@
 						onmouseenter={() => (hoveredGroup = item.url)}
 						onmouseleave={() => (hoveredGroup = null)}
 					>
-						<Sidebar.MenuItem>
-							<Sidebar.MenuButton isActive={item.isActive} {tooltipContent}>
-								{#snippet child({ props })}
-									{@const Icon = item.icon}
-									<a href={item.url} {...props}>
-										{#if item.icon}
-											<Icon />
-										{/if}
-										<span>{item.title}</span>
-									</a>
-								{/snippet}
-							</Sidebar.MenuButton>
-						</Sidebar.MenuItem>
+						{@render menuEntry(item, tooltipContent)}
 						{#if groupExpanded}
 							{#each item.items ?? [] as subItem (subItem.url)}
 								{#snippet subItemTooltipContent()}
 									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
 								{/snippet}
-								<Sidebar.MenuItem>
-									<Sidebar.MenuButton isActive={subItem.isActive} tooltipContent={subItemTooltipContent}>
-										{#snippet child({ props })}
-											{@const SubIcon = subItem.icon}
-											<a href={subItem.url} {...props}>
-												{#if subItem.icon}
-													<SubIcon />
-												{/if}
-												<span>{subItem.title}</span>
-											</a>
-										{/snippet}
-									</Sidebar.MenuButton>
-								</Sidebar.MenuItem>
+								{@render menuEntry(subItem, subItemTooltipContent)}
 							{/each}
 						{/if}
 					</div>
@@ -136,13 +136,7 @@
 									<Sidebar.MenuSubItem>
 										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
 											{#snippet child({ props })}
-												{@const SubIcon = subItem.icon}
-												<a href={subItem.url} {...props}>
-													{#if subItem.icon}
-														<SubIcon />
-													{/if}
-													<span>{subItem.title}</span>
-												</a>
+												{@render itemAnchor(subItem, props)}
 											{/snippet}
 										</Sidebar.MenuSubButton>
 									</Sidebar.MenuSubItem>
@@ -165,22 +159,10 @@
 				{#snippet simpleItemTooltipContent()}
 					<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />
 				{/snippet}
-				<Sidebar.MenuItem>
-					<Sidebar.MenuButton
-						isActive={item.isActive}
-						tooltipContent={collapsed || (shortcutsEnabled && !!item.shortcut?.length) ? simpleItemTooltipContent : undefined}
-					>
-						{#snippet child({ props })}
-							{@const Icon = item.icon}
-							<a href={item.url} {...props}>
-								{#if item.icon}
-									<Icon />
-								{/if}
-								<span>{item.title}</span>
-							</a>
-						{/snippet}
-					</Sidebar.MenuButton>
-				</Sidebar.MenuItem>
+				{@render menuEntry(
+					item,
+					collapsed || (shortcutsEnabled && !!item.shortcut?.length) ? simpleItemTooltipContent : undefined
+				)}
 			{/if}
 		{/each}
 	</Sidebar.Menu>

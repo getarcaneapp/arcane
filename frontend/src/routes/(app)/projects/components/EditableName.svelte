@@ -37,6 +37,13 @@
 
 	let isEditing = $state(false);
 	let wrapperClass = $derived(cn('group', variant === 'block' ? 'w-full' : 'min-w-0', className));
+	let inputClass = $derived(
+		cn(
+			'h-8 px-2 font-semibold',
+			variant === 'block' ? 'max-w-[280px] min-w-[120px] text-left text-base' : 'max-w-[360px] text-lg',
+			error && 'border-destructive'
+		)
+	);
 
 	async function beginEdit() {
 		if (!canEdit) return;
@@ -48,57 +55,30 @@
 
 <div class={wrapperClass}>
 	{#if isEditing}
-		{#if variant === 'block'}
-			<Input
-				bind:ref
-				bind:value
-				{placeholder}
-				class="h-8 max-w-[280px] min-w-[120px] px-2 text-left text-base font-semibold {error ? 'border-destructive' : ''}"
-				autofocus
-				onkeydown={(e) => {
-					if (e.key === 'Enter') {
-						e.preventDefault();
-						onCommit?.();
-						isEditing = false;
-					}
-					if (e.key === 'Escape') {
-						value = originalValue;
-						isEditing = false;
-					}
-				}}
-				onblur={() => {
-					if (!isEditing) return;
+		<Input
+			bind:ref
+			bind:value
+			{placeholder}
+			class={inputClass}
+			autofocus
+			onkeydown={(e) => {
+				if (e.key === 'Enter') {
+					e.preventDefault();
 					onCommit?.();
 					isEditing = false;
-				}}
-				disabled={!canEdit}
-			/>
-		{:else}
-			<Input
-				bind:ref
-				bind:value
-				{placeholder}
-				class="h-8 max-w-[360px] px-2 text-lg font-semibold {error ? 'border-destructive' : ''}"
-				autofocus
-				onkeydown={(e) => {
-					if (e.key === 'Enter') {
-						e.preventDefault();
-						onCommit?.();
-						isEditing = false;
-					}
-					if (e.key === 'Escape') {
-						value = originalValue;
-						isEditing = false;
-					}
-				}}
-				onblur={() => {
-					if (!isEditing) return;
-					onCommit?.();
+				}
+				if (e.key === 'Escape') {
+					value = originalValue;
 					isEditing = false;
-				}}
-				disabled={!canEdit}
-			/>
-		{/if}
+				}
+			}}
+			onblur={() => {
+				if (!isEditing) return;
+				onCommit?.();
+				isEditing = false;
+			}}
+			disabled={!canEdit}
+		/>
 	{:else if variant === 'block'}
 		<h1 class="m-0 w-full">
 			<button

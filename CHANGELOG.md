@@ -1,3 +1,28 @@
+## v2.3.1
+
+### Bug fixes
+
+* discard env_file when loading projects to match compose CLI config-hash ([#3100](https://github.com/getarcaneapp/arcane/pull/3100) by @pkoutsovasilis)
+* set explicit gorm LRU cache TTL to avoid constantly rising heap memory ([#3102](https://github.com/getarcaneapp/arcane/pull/3102) by @kmendell)
+* only display memory usage thats non-reclaimable ([#3105](https://github.com/getarcaneapp/arcane/pull/3105) by @kmendell)
+
+### Dependencies
+
+* bump prettier from 3.9.0 to 3.9.3 ([#3116](https://github.com/getarcaneapp/arcane/pull/3116) by @dependabot[bot])
+* bump @tanstack/svelte-query from 6.1.35 to 6.1.36 ([#3115](https://github.com/getarcaneapp/arcane/pull/3115) by @dependabot[bot])
+* bump golangci/golangci-lint-action from 9.2.1 to 9.3.0 ([#3106](https://github.com/getarcaneapp/arcane/pull/3106) by @dependabot[bot])
+* bump the tanstack-table group across 1 directory with 2 updates ([#3126](https://github.com/getarcaneapp/arcane/pull/3126) by @dependabot[bot])
+* bump github.com/compose-spec/compose-go/v2 from 2.12.1 to 2.13.0 in /backend ([#3124](https://github.com/getarcaneapp/arcane/pull/3124) by @dependabot[bot])
+* bump github.com/compose-spec/compose-go/v2 from 2.12.1 to 2.13.0 in /types ([#3107](https://github.com/getarcaneapp/arcane/pull/3107) by @dependabot[bot])
+* bump github.com/shirou/gopsutil/v4 from 4.26.5 to 4.26.6 in /backend ([#3123](https://github.com/getarcaneapp/arcane/pull/3123) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types/v2 from 2.1.0 to 2.2.0 in /cli ([#3108](https://github.com/getarcaneapp/arcane/pull/3108) by @dependabot[bot])
+* bump the aws-sdk-go-v2 group in /backend with 3 updates ([#3130](https://github.com/getarcaneapp/arcane/pull/3130) by @dependabot[bot])
+* bump pnpm to v11.9.0([2a976b6](https://github.com/getarcaneapp/arcane/commit/2a976b6c74b9ab81e299fa5751aa0a5876cc2a27) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.3.0...v2.3.1
+
 ## v2.3.0
 
 ### New features

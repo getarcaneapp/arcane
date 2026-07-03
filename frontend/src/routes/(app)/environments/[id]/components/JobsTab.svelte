@@ -200,6 +200,64 @@
 	}
 </script>
 
+{#snippet ContainerExclusionList(config: {
+	term: string;
+	mapItem: (container: ContainerSummaryDto) => {
+		value: string;
+		label: string;
+		disabled?: boolean;
+		hint?: string;
+		selected: boolean;
+	};
+	idPrefix: string;
+	onToggle: (containerName: string) => void;
+})}
+	<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
+		<div class="space-y-2">
+			{#await containersPromise}
+				<div class="flex items-center justify-center p-4">
+					<Spinner class="size-4" />
+				</div>
+			{:then containers}
+				{@const allItems = containers.map(config.mapItem)}
+				{@const filteredItems = config.term
+					? allItems.filter((item) => item.label.toLowerCase().includes(config.term.toLowerCase()))
+					: allItems}
+
+				{#if filteredItems.length === 0}
+					<p class="text-muted-foreground py-4 text-center text-sm">
+						{m.common_no_results_found()}
+					</p>
+				{:else}
+					{#each filteredItems as container (container.value)}
+						<div class="flex items-center space-x-2">
+							<Checkbox
+								id="{config.idPrefix}{container.value}"
+								checked={container.selected}
+								disabled={container.disabled}
+								onCheckedChange={() => config.onToggle(container.value)}
+							/>
+							<Label
+								for="{config.idPrefix}{container.value}"
+								class="text-sm font-normal {container.disabled ? 'text-muted-foreground' : ''}"
+							>
+								{container.label}
+								{#if container.hint}
+									<span class="ml-1 text-xs opacity-70">{container.hint}</span>
+								{/if}
+							</Label>
+						</div>
+					{/each}
+				{/if}
+			{:catch error}
+				<div class="text-destructive p-2 text-sm">
+					{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
+				</div>
+			{/await}
+		</div>
+	</ScrollArea.Root>
+{/snippet}
+
 <div class="space-y-6">
 	<Card.Root>
 		<Card.Header icon={JobsIcon}>
@@ -264,50 +322,12 @@
 
 														<div class="space-y-2">
 															<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
-															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
-																<div class="space-y-2">
-																	{#await containersPromise}
-																		<div class="flex items-center justify-center p-4">
-																			<Spinner class="size-4" />
-																		</div>
-																	{:then containers}
-																		{@const allItems = containers.map(mapContainerToItem)}
-																		{@const filteredItems = searchTerm
-																			? allItems.filter((item) => item.label.toLowerCase().includes(searchTerm.toLowerCase()))
-																			: allItems}
-
-																		{#if filteredItems.length === 0}
-																			<p class="text-muted-foreground py-4 text-center text-sm">
-																				{m.common_no_results_found()}
-																			</p>
-																		{:else}
-																			{#each filteredItems as container (container.value)}
-																				<div class="flex items-center space-x-2">
-																					<Checkbox
-																						id="container-{container.value}"
-																						checked={container.selected}
-																						disabled={container.disabled}
-																						onCheckedChange={() => toggleContainerExclusion(container.value)}
-																					/>
-																					<Label
-																						for="container-{container.value}"
-																						class="text-sm font-normal {container.disabled ? 'text-muted-foreground' : ''}"
-																					>
-																						{container.label}
-																						{#if container.hint}
-																							<span class="ml-1 text-xs opacity-70">{container.hint}</span>
-																						{/if}
-																					</Label>
-																				</div>
-																			{/each}
-																		{/if}
-																	{:catch error}
-																		<div class="text-destructive p-2 text-sm">
-																			{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
-																		</div>
-																	{/await}
-																</div>
-															</ScrollArea.Root>
+															{@render ContainerExclusionList({
+																term: searchTerm,
+																mapItem: mapContainerToItem,
+																idPrefix: 'container-',
+																onToggle: toggleContainerExclusion
+															})}
 														</div>
 													</div>
 												{/if}
@@ -362,45 +382,12 @@
 																class="h-8"
 																bind:value={autoHealSearchTerm}
 															/>
-															<ScrollArea.Root class="h-64 w-full rounded-md border p-2">
-																<div class="space-y-2">
-																	{#await containersPromise}
-																		<div class="flex items-center justify-center p-4">
-																			<Spinner class="size-4" />
-																		</div>
-																	{:then containers}
-																		{@const allItems = containers.map(mapContainerToAutoHealItem)}
-																		{@const filteredItems = autoHealSearchTerm
-																			? allItems.filter((item) =>
-																					item.label.toLowerCase().includes(autoHealSearchTerm.toLowerCase())
-																				)
-																			: allItems}
-
-																		{#if filteredItems.length === 0}
-																			<p class="text-muted-foreground py-4 text-center text-sm">
-																				{m.common_no_results_found()}
-																			</p>
-																		{:else}
-																			{#each filteredItems as container (container.value)}
-																				<div class="flex items-center space-x-2">
-																					<Checkbox
-																						id="auto-heal-container-{container.value}"
-																						checked={container.selected}
-																						onCheckedChange={() => toggleAutoHealContainerExclusion(container.value)}
-																					/>
-																					<Label for="auto-heal-container-{container.value}" class="text-sm font-normal">
-																						{container.label}
-																					</Label>
-																				</div>
-																			{/each}
-																		{/if}
-																	{:catch error}
-																		<div class="text-destructive p-2 text-sm">
-																			{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
-																		</div>
-																	{/await}
-																</div>
-															</ScrollArea.Root>
+															{@render ContainerExclusionList({
+																term: autoHealSearchTerm,
+																mapItem: mapContainerToAutoHealItem,
+																idPrefix: 'auto-heal-container-',
+																onToggle: toggleAutoHealContainerExclusion
+															})}
 														</div>
 													</div>
 												{/if}

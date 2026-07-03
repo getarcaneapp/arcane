@@ -109,6 +109,29 @@
 	}
 </script>
 
+{#snippet FieldValue(field: FieldDefinition<T>, value: any, isCompact: boolean)}
+	{#if field.type === 'badge' && field.badgeVariant}
+		<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
+	{:else if field.type === 'mono'}
+		<span class={isCompact ? 'text-muted-foreground truncate font-mono text-xs leading-tight' : 'font-mono text-xs'}>{value}</span
+		>
+	{:else if field.type === 'component' && field.component}
+		{#if isCompact}
+			<span class="text-muted-foreground min-w-0 flex-1 text-xs leading-tight">
+				{@render field.component(value)}
+			</span>
+		{:else}
+			{@render field.component(value)}
+		{/if}
+	{:else if isCompact}
+		<span class="text-muted-foreground min-w-0 flex-1 truncate text-xs leading-tight">
+			{value}
+		</span>
+	{:else}
+		{value}
+	{/if}
+{/snippet}
+
 <div class={cn('group relative w-full px-3 py-2', className)}>
 	<Card.Root
 		variant="subtle"
@@ -197,15 +220,7 @@
 											{field.label}
 										</div>
 										<div class="truncate text-sm leading-snug font-medium">
-											{#if field.type === 'badge' && field.badgeVariant}
-												<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
-											{:else if field.type === 'mono'}
-												<span class="font-mono text-xs">{value}</span>
-											{:else if field.type === 'component' && field.component}
-												{@render field.component(value)}
-											{:else}
-												{value}
-											{/if}
+											{@render FieldValue(field, value, false)}
 										</div>
 									</div>
 								</div>
@@ -218,19 +233,7 @@
 						{#if value !== null && value !== undefined}
 							<div class="flex items-baseline gap-2">
 								<span class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{field.label}:</span>
-								{#if field.type === 'badge' && field.badgeVariant}
-									<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
-								{:else if field.type === 'mono'}
-									<span class="text-muted-foreground truncate font-mono text-xs leading-tight">{value}</span>
-								{:else if field.type === 'component' && field.component}
-									<span class="text-muted-foreground min-w-0 flex-1 text-xs leading-tight">
-										{@render field.component(value)}
-									</span>
-								{:else}
-									<span class="text-muted-foreground min-w-0 flex-1 truncate text-xs leading-tight">
-										{value}
-									</span>
-								{/if}
+								{@render FieldValue(field, value, true)}
 							</div>
 						{/if}
 					{/each}

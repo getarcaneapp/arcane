@@ -77,52 +77,38 @@
 	}
 </script>
 
+{#snippet localeSelect(triggerClass: string, ariaLabel?: string, contentClass?: string, itemClass?: string)}
+	<Select.Root
+		type="single"
+		value={currentLocale}
+		onValueChange={(v) => updateLocale(v as Locale)}
+		open={isOpen}
+		onOpenChange={(open) => {
+			isOpen = open;
+			onOpenChange?.(open);
+		}}
+	>
+		<Select.Trigger {id} class={triggerClass} aria-label={ariaLabel}>
+			<span class="truncate">{locales[currentLocale]}</span>
+		</Select.Trigger>
+		<Select.Content class={contentClass}>
+			{#each Object.entries(locales) as [value, label] (value)}
+				<Select.Item class={itemClass} {value}>{label}</Select.Item>
+			{/each}
+		</Select.Content>
+	</Select.Root>
+{/snippet}
+
 <div class={`locale-picker ${className}`}>
 	{#if inline}
-		<Select.Root
-			type="single"
-			value={currentLocale}
-			onValueChange={(v) => updateLocale(v as Locale)}
-			open={isOpen}
-			onOpenChange={(open) => {
-				isOpen = open;
-				onOpenChange?.(open);
-			}}
-		>
-			<Select.Trigger {id} class="h-9 w-32 text-sm font-medium">
-				<span class="truncate">{locales[currentLocale]}</span>
-			</Select.Trigger>
-			<Select.Content class="max-w-70 min-w-40">
-				{#each Object.entries(locales) as [value, label] (value)}
-					<Select.Item class="text-sm" {value}>{label}</Select.Item>
-				{/each}
-			</Select.Content>
-		</Select.Root>
+		{@render localeSelect('h-9 w-32 text-sm font-medium', undefined, 'max-w-70 min-w-40', 'text-sm')}
 	{:else}
 		<div class="px-3 py-2">
 			<div class="grid gap-2">
 				<Label for={id} class="text-sm leading-none font-medium">
 					{m.language()}
 				</Label>
-				<Select.Root
-					type="single"
-					value={currentLocale}
-					onValueChange={(v) => updateLocale(v as Locale)}
-					open={isOpen}
-					onOpenChange={(open) => {
-						isOpen = open;
-						onOpenChange?.(open);
-					}}
-				>
-					<Select.Trigger {id} class="w-full" aria-label={m.common_select_locale()}>
-						<span class="truncate">{locales[currentLocale]}</span>
-					</Select.Trigger>
-					<Select.Content>
-						{#each Object.entries(locales) as [value, label] (value)}
-							<Select.Item {value}>{label}</Select.Item>
-						{/each}
-					</Select.Content>
-				</Select.Root>
+				{@render localeSelect('w-full', m.common_select_locale())}
 			</div>
 		</div>
 	{/if}

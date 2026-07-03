@@ -5,7 +5,10 @@
 	import ProviderFormWrapper from './ProviderFormWrapper.svelte';
 	import EventSubscriptions from './EventSubscriptions.svelte';
 	import DynamicProviderFormBuilder from './DynamicProviderFormBuilder.svelte';
-	import NotificationProviderTestMenu, { type NotificationProviderTestOption } from './NotificationProviderTestMenu.svelte';
+	import NotificationProviderTestMenu, {
+		type NotificationProviderTestOption,
+		getDefaultNotificationProviderTestOptions
+	} from './NotificationProviderTestMenu.svelte';
 	import { mapZodFieldErrors } from './provider-form-validation';
 	import type { ProviderFormSchema } from './provider-form-schema';
 
@@ -276,6 +279,7 @@
 				icon: z.string(),
 				cache: z.boolean(),
 				firebase: z.boolean(),
+				disableTls: z.boolean(),
 				disableTlsVerification: z.boolean(),
 				...eventSubscriptionSchemaFields
 			})
@@ -788,6 +792,13 @@
 					},
 					{
 						kind: 'switch',
+						key: 'disableTls',
+						id: 'ntfy-use-http',
+						label: m.notifications_ntfy_use_http_label(),
+						description: m.notifications_ntfy_use_http_help()
+					},
+					{
+						kind: 'switch',
 						key: 'disableTlsVerification',
 						id: 'ntfy-disable-tls',
 						label: m.notifications_ntfy_disable_tls_label(),
@@ -1040,14 +1051,7 @@
 		]
 	};
 
-	const testOptions: NotificationProviderTestOption[] = [
-		{ label: m.notifications_email_test_simple(), testType: 'simple' },
-		{ label: m.notifications_email_test_image_update(), testType: 'image-update' },
-		{ label: m.notifications_email_test_batch_image_update(), testType: 'batch-image-update' },
-		{ label: m.notifications_test_vulnerability_notification(), testType: 'vulnerability-found' },
-		{ label: m.notifications_test_prune_report_notification(), testType: 'prune-report' },
-		{ label: m.notifications_test_auto_heal_notification(), testType: 'auto-heal' }
-	];
+	const testOptions: NotificationProviderTestOption[] = getDefaultNotificationProviderTestOptions();
 
 	const validation = $derived.by(() => providerSchemas[provider].safeParse(values));
 	const fieldErrors = $derived.by(() =>

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
+	import DashTableCardHeader from './dash-table-card-header.svelte';
 	import { getStatusVariant } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
@@ -14,7 +14,7 @@
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
-	import { ContainersIcon, ArrowRightIcon } from '$lib/icons';
+	import { ContainersIcon } from '$lib/icons';
 	import IconImage from '$lib/components/icon-image.svelte';
 	import { getThemedIconUrl } from '$lib/utils/docker';
 
@@ -102,20 +102,13 @@
 
 <div class="flex flex-col lg:h-full lg:min-h-0" bind:clientHeight={tableLimit.measuredHeight}>
 	<Card.Root class="flex flex-col lg:h-full lg:min-h-0">
-		<Card.Header icon={ContainersIcon} class="shrink-0">
-			<div class="flex flex-1 items-center justify-between">
-				<div class="flex flex-col space-y-1.5">
-					<Card.Title>
-						<h2><a class="hover:underline" href="/containers">{m.containers_title()}</a></h2>
-					</Card.Title>
-					<Card.Description>{m.containers_recent()}</Card.Description>
-				</div>
-				<ArcaneButton action="base" tone="ghost" size="sm" href="/containers" disabled={isLoading}>
-					{m.common_view_all()}
-					<ArrowRightIcon class="size-4" />
-				</ArcaneButton>
-			</div>
-		</Card.Header>
+		<DashTableCardHeader
+			icon={ContainersIcon}
+			href="/containers"
+			title={m.containers_title()}
+			description={m.containers_recent()}
+			{isLoading}
+		/>
 		<Card.Content class="px-0 lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
 			<ArcaneTable
 				items={{ ...containers, data: containers.data.slice(0, tableLimit.displayLimit) }}

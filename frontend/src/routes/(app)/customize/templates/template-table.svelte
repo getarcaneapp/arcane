@@ -1,9 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -30,8 +30,7 @@
 		DownloadIcon,
 		TagIcon,
 		MoveToFolderIcon,
-		RegistryIcon,
-		EllipsisIcon
+		RegistryIcon
 	} from '$lib/icons';
 
 	let {
@@ -273,59 +272,47 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Template })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)}>
-					<InspectIcon class="size-4" />
-					{m.common_view_details()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => goto(`/customize/templates/${item.id}`)}>
+			<InspectIcon class="size-4" />
+			{m.common_view_details()}
+		</DropdownMenu.Item>
 
-				<IfPermitted perm="projects:create">
-					<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
-						<MoveToFolderIcon class="size-4" />
-						{m.compose_create_project()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+		<IfPermitted perm="projects:create">
+			<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${item.id}`)}>
+				<MoveToFolderIcon class="size-4" />
+				{m.compose_create_project()}
+			</DropdownMenu.Item>
+		</IfPermitted>
 
-				{#if (item.isRemote && canReadTemplate) || (!item.isRemote && canDeleteTemplate)}
-					<DropdownMenu.Separator />
+		{#if (item.isRemote && canReadTemplate) || (!item.isRemote && canDeleteTemplate)}
+			<DropdownMenu.Separator />
+		{/if}
+
+		{#if item.isRemote && canReadTemplate}
+			<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
+				{#if downloadingId === item.id}
+					<Spinner class="size-4" />
+				{:else}
+					<DownloadIcon class="size-4" />
 				{/if}
-
-				{#if item.isRemote && canReadTemplate}
-					<DropdownMenu.Item onclick={() => handleDownloadTemplate(item.id, item.name)} disabled={downloadingId === item.id}>
-						{#if downloadingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<DownloadIcon class="size-4" />
-						{/if}
-						{m.templates_download()}
-					</DropdownMenu.Item>
-				{:else if !item.isRemote && canDeleteTemplate}
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteTemplate(item.id, item.name)}
-						disabled={deletingId === item.id}
-					>
-						{#if deletingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.templates_delete_template()}
-					</DropdownMenu.Item>
+				{m.templates_download()}
+			</DropdownMenu.Item>
+		{:else if !item.isRemote && canDeleteTemplate}
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDeleteTemplate(item.id, item.name)}
+				disabled={deletingId === item.id}
+			>
+				{#if deletingId === item.id}
+					<Spinner class="size-4" />
+				{:else}
+					<TrashIcon class="size-4" />
 				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+				{m.templates_delete_template()}
+			</DropdownMenu.Item>
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

@@ -24,11 +24,10 @@
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
+	import ResourceNotFound from '$lib/components/resource-not-found.svelte';
 	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
 	import { mode } from 'mode-watcher';
 	import {
-		ArrowLeftIcon,
-		AlertIcon,
 		VolumesIcon,
 		FileTextIcon,
 		SettingsIcon,
@@ -530,26 +529,12 @@
 		/>
 	{/if}
 {:else}
-	<div class="flex min-h-screen items-center justify-center">
-		<div class="text-center">
-			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
-				<AlertIcon class="text-muted-foreground size-10" />
-			</div>
-			<h2 class="mb-3 text-2xl font-medium">{m.common_not_found_title({ resource: m.container() })}</h2>
-			<p class="text-muted-foreground mb-8 max-w-md text-center">
-				{m.common_not_found_description({ resource: m.container().toLowerCase() })}
-			</p>
-			<div class="flex justify-center gap-4">
-				<ArcaneButton action="base" href="/containers">
-					<ArrowLeftIcon class="size-4" />
-					{m.common_back_to({ resource: m.containers_title() })}
-				</ArcaneButton>
-				<ArcaneButton action="refresh" onclick={refreshData}>
-					{m.common_retry()}
-				</ArcaneButton>
-			</div>
-		</div>
-	</div>
+	<ResourceNotFound
+		resource={m.container()}
+		resourceListTitle={m.containers_title()}
+		backHref="/containers"
+		onRetry={refreshData}
+	/>
 {/if}
 
 <style>

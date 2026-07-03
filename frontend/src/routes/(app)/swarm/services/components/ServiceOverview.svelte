@@ -7,6 +7,7 @@
 	import { InfoIcon, ConnectionIcon } from '$lib/icons';
 	import { truncateImageDigest } from '$lib/utils/formatting';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant, isSwarmServiceModeScalable } from '$lib/utils/docker';
+	import { KeyValueCard } from '$lib/components/resource-detail';
 
 	interface Props {
 		service: SwarmServiceInspect;
@@ -112,16 +113,7 @@
 				</Card.Content>
 			</Card.Root>
 
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-						{m.common_id()}
-					</div>
-					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
-						{service.id}
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<KeyValueCard label={m.common_id()}>{service.id}</KeyValueCard>
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">

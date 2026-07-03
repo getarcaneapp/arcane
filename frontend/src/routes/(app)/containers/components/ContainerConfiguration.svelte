@@ -4,6 +4,7 @@
 	import type { ContainerDetailsDto } from '$lib/types/docker';
 	import { SettingsIcon, TagIcon } from '$lib/icons';
 	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
+	import EnvVarsList from '$lib/components/env-vars-list.svelte';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -14,6 +15,7 @@
 	let { container, hasEnvVars, hasLabels }: Props = $props();
 </script>
 
+<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
 <div class="space-y-6">
 	{#if hasEnvVars}
 		<Card.Root>
@@ -29,28 +31,17 @@
 			</Card.Header>
 			<Card.Content class="p-4">
 				{#if container.config?.env && container.config.env.length > 0}
-					<KeyValueGrid>
-						{#each container.config.env as env, index (index)}
-							{#if env.includes('=')}
-								{@const [key, ...valueParts] = env.split('=')}
-								{@const value = valueParts.join('=')}
-								<KeyValueCard label={key ?? ''} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
-							{:else}
-								<KeyValueCard
-									label={m.swarm_service_env_var()}
-									labelClass="text-muted-foreground text-xs font-semibold tracking-wide uppercase"
-									valueTitle={m.common_click_to_select()}
-								>
-									{env}
-								</KeyValueCard>
-							{/if}
-						{/each}
-					</KeyValueGrid>
+					<EnvVarsList
+						envVars={container.config.env}
+						nameOnlyLabel={m.swarm_service_env_var()}
+						valueTitle={m.common_click_to_select()}
+					/>
 				{:else}
 					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
 						<div class="text-sm">{m.containers_no_env_vars()}</div>
 					</div>
 				{/if}
+				<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
 			</Card.Content>
 		</Card.Root>
 	{/if}

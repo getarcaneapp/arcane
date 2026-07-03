@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import type { WebhookActionType, WebhookTargetType, CreateWebhook } from '$lib/types/environment';
@@ -221,24 +221,13 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-			<ArcaneButton
-				action="create"
-				type="submit"
-				class="flex-1"
-				disabled={isLoading || (selectedTargetType !== 'updater' && !selectedTargetId)}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={m.webhook_create_button()}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitDisabled={isLoading || (selectedTargetType !== 'updater' && !selectedTargetId)}
+			submitLoading={isLoading}
+			onSubmit={handleSubmit}
+			submitLabel={m.webhook_create_button()}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

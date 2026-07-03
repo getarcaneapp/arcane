@@ -47,13 +47,14 @@ export function openConfirmDialog({
 		initialState?: boolean;
 	}>;
 }) {
-	confirmDialogStore.update((val) => ({
+	confirmDialogStore.update(() => ({
 		open: true,
 		title,
 		message,
 		confirm: {
-			...val.confirm,
-			...confirm
+			label: confirm.label ?? m.common_confirm(),
+			destructive: confirm.destructive ?? false,
+			action: confirm.action
 		},
 		checkboxes
 	}));

@@ -1,6 +1,7 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import { Checkbox } from '$lib/components/ui/checkbox/index.js';
 	import { Label } from '$lib/components/ui/label/index.js';
@@ -299,6 +300,7 @@
 									</div>
 								</div>
 							{/if}
+							<!-- fallow-ignore-next-line code-duplication network vs volume sheet share only structural closing tags + the already-shared SheetFooterActions footer; form bodies differ -->
 						</div>
 					</Accordion.Content>
 				</Accordion.Item>
@@ -307,24 +309,13 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-			<ArcaneButton
-				action="create"
-				type="submit"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={m.common_create_button({ resource: m.resource_network_cap() })}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitDisabled={isLoading}
+			submitLoading={isLoading}
+			onSubmit={handleSubmit}
+			submitLabel={m.common_create_button({ resource: m.resource_network_cap() })}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

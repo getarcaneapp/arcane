@@ -37,6 +37,7 @@ type ImageUpdateService struct {
 	notificationService *NotificationService
 	registryLimiter     *ratelimit.RegistryRateLimiter
 	activityService     *ActivityService
+	notifyMu            sync.Mutex
 }
 
 type ImageParts struct {
@@ -1324,6 +1325,12 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 	if s.notificationService == nil {
 		return
 	}
+
+	// Serialize the query→send→mark sequence so the poll-end flush and the
+	// updater consumption-path flush can't both read the same unnotified set
+	// and double-send.
+	s.notifyMu.Lock()
+	defer s.notifyMu.Unlock()
 
 	// completeImageUpdateActivityInternal cancels the activity-tracked ctx before
 	// we reach here, so detach from that cancellation (mirrors the helper it uses)

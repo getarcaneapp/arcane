@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -466,6 +467,82 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 	assert.Equal(t, &currentDigest, records[0].CurrentDigest)
 	assert.Equal(t, &latestDigest, records[0].LatestDigest)
 	assert.Equal(t, &lastError, records[0].LastError)
+}
+
+// TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal guards
+// issue #3132: the updater consumes and clears has_update records without checking
+// notification_sent, so an "Updates Available" notification pending at consumption
+// time was silently lost. PendingImageUpdates must flush it before the engine runs.
+func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}, &models.NotificationLog{}))
+
+	var calls atomic.Int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls.Add(1)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	require.NoError(t, db.Create(&models.NotificationSettings{
+		Provider: models.NotificationProviderGeneric,
+		Enabled:  true,
+		Config: models.JSON{
+			"webhookUrl":  server.URL,
+			"method":      "POST",
+			"contentType": "application/json",
+		},
+	}).Error)
+
+	notif := NewNotificationService(db, nil, nil)
+	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:               "sha256:pending-unnotified",
+		Repository:       "test/repo",
+		Tag:              "latest",
+		HasUpdate:        true,
+		NotificationSent: false,
+	}).Error)
+
+	records, err := svc.PendingImageUpdates(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	require.EqualValues(t, 1, calls.Load())
+	var reloaded models.ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-unnotified").Error)
+	assert.True(t, reloaded.NotificationSent)
+}
+
+// With no providers configured, PendingImageUpdates still returns the records and
+// leaves notification_sent false (preserves the #3079 "don't mark when nothing
+// delivered" semantics).
+func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}, &models.NotificationLog{}))
+
+	notif := NewNotificationService(db, nil, nil)
+	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+
+	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+		ID:               "sha256:pending-no-provider",
+		Repository:       "test/repo",
+		Tag:              "latest",
+		HasUpdate:        true,
+		NotificationSent: false,
+	}).Error)
+
+	records, err := svc.PendingImageUpdates(ctx)
+
+	require.NoError(t, err)
+	require.Len(t, records, 1)
+	var reloaded models.ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-no-provider").Error)
+	assert.False(t, reloaded.NotificationSent)
 }
 
 func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {

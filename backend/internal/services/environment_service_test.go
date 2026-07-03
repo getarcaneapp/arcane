@@ -41,6 +41,8 @@ func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 		&models.SettingVariable{},
 		&models.User{},
 		&models.ApiKey{},
+		&models.Project{},
+		&models.GitOpsSync{},
 	))
 
 	sqlDB, err := db.DB()
@@ -118,6 +120,46 @@ func createTestEnvironmentWithState(t *testing.T, db *database.DB, id, apiURL, s
 	}
 
 	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
+}
+
+func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.GitOpsSync{}))
+
+	createTestEnvironment(t, db, "env-delete-gitops", "http://env.example", nil)
+	syncID := "sync-delete-env"
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: syncID},
+		Name:          "delete-env-sync",
+		EnvironmentID: "env-delete-gitops",
+		RepositoryID:  "repo-1",
+		ComposePath:   "compose.yml",
+		ProjectName:   "demo",
+		SyncInterval:  15,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:       models.BaseModel{ID: "project-managed-by-deleted-env"},
+		Name:            "demo",
+		Path:            "/tmp/demo",
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &syncID,
+	}).Error)
+
+	scheduler := &gitOpsSyncTestSchedulerInternal{}
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	svc.SetScheduler(ctx, scheduler)
+
+	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-gitops", nil, nil))
+
+	var syncCount int64
+	require.NoError(t, db.Model(&models.GitOpsSync{}).Where("id = ?", syncID).Count(&syncCount).Error)
+	require.Zero(t, syncCount)
+
+	var project models.Project
+	require.NoError(t, db.First(&project, "id = ?", "project-managed-by-deleted-env").Error)
+	require.Nil(t, project.GitOpsManagedBy)
+	require.Contains(t, scheduler.removed, gitOpsSyncJobNameInternal(syncID))
 }
 
 func createTestRegistry(t *testing.T, db *database.DB, id string) {

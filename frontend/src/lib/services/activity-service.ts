@@ -13,7 +13,10 @@ class ActivityService extends BaseAPIService {
 	async getActivities(options?: SearchPaginationSortRequest, environmentId?: string): Promise<Paginated<Activity>> {
 		const envId = await this.resolveEnvironmentId(environmentId);
 		const params = transformPaginationParams(options);
-		const res = await this.api.get(`/environments/${envId}/activities`, { params });
+		const res = await this.api.get(`/environments/${envId}/activities`, {
+			params,
+			suppressAccessDeniedToast: true
+		});
 		return res.data;
 	}
 

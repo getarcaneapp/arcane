@@ -8,6 +8,7 @@ export interface APIRequestConfig {
 	params?: SearchParamsOption;
 	responseType?: 'json' | 'text' | 'blob' | 'arrayBuffer';
 	retry?: number;
+	suppressAccessDeniedToast?: boolean;
 	timeout?: number | false;
 }
 
@@ -316,7 +317,7 @@ class APIClient {
 					}
 				}
 
-				if (errorResponse.status === 403 && typeof window !== 'undefined') {
+				if (errorResponse.status === 403 && typeof window !== 'undefined' && !config.suppressAccessDeniedToast) {
 					const reason = extractServerMessage(parsed) ?? 'You do not have permission to perform this action.';
 					toast.error('Access denied', { description: reason });
 				}
@@ -404,6 +405,12 @@ abstract class BaseAPIService {
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
 		upgradeInProgressInternal = value;
+	}
+
+	protected postFile<T = any>(url: string, file: File, params?: SearchParamsOption): Promise<T> {
+		const formData = new FormData();
+		formData.append('file', file);
+		return this.handleResponse<T>(this.api.post(url, formData, params !== undefined ? { params } : undefined));
 	}
 
 	protected async handleResponse<T>(promise: Promise<APIResponse>): Promise<T> {

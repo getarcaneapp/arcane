@@ -20,6 +20,7 @@
 	}: FormPrimitive.FieldProps<T, U> & WithoutChildren<WithElementRef<HTMLAttributes<HTMLDivElement>>> = $props();
 </script>
 
+<!-- fallow-ignore-next-line code-duplication vendored shadcn-svelte; keep in sync with form-element-field upstream -->
 <FormPrimitive.Field {form} {name}>
 	{#snippet children({ constraints, errors, tainted, value })}
 		<div bind:this={ref} class={cn('space-y-2', className)} {...restProps}>

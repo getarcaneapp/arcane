@@ -1,4 +1,6 @@
 <script lang="ts">
+	// Close convention: the component that owns `open` must close it in the
+	// success path. Dialogs delegate closing to their parent and never self-close on submit.
 	import { MediaQuery } from 'svelte/reactivity';
 	import * as Dialog from '$lib/components/ui/dialog/index.js';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';

@@ -1,25 +1,14 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '$lib/utils/settings';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service.js';
-	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import {
-		ArrowLeftIcon,
-		TerminalIcon,
-		TemplateIcon,
-		AddIcon,
-		ArrowDownIcon as ChevronDown,
-		FileTextIcon,
-		GitBranchIcon,
-		SearchIcon
-	} from '$lib/icons';
+	import ComposeCreateMenu from '$lib/components/compose-create-menu.svelte';
+	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
+	import { ArrowLeftIcon } from '$lib/icons';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
@@ -31,10 +20,7 @@
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
-		dropdownContentClass,
-		dropdownItemClass,
 		submitComposeResourceForm,
-		templateBtnClass,
 		templateNameSlug
 	} from '$lib/utils/compose-flow';
 
@@ -194,88 +180,30 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				<ButtonGroup.Root>
-					<ArcaneTooltip.Root
-						open={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
-					>
-						<ArcaneTooltip.Trigger>
-							<span>
-								<ArcaneButton
-									action="create"
-									tone="ghost"
-									disabled={!canSubmit}
-									onclick={() => handleSubmit()}
-									class={`${templateBtnClass} gap-2 rounded-r-none`}
-									loading={ui.saving}
-									customLabel={submitLabel}
-									loadingLabel={submitLoadingLabel}
-								/>
-							</span>
-						</ArcaneTooltip.Trigger>
-						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
-							{#if $inputs.name.value === ''}
-								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
-								<p class="text-muted-foreground text-xs">{m.compose_project_name_tooltip_description()}</p>
-								<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
-									{m.compose_project_name_tooltip_example()}
-								</p>
-							{/if}
-						</ArcaneTooltip.Content>
-					</ArcaneTooltip.Root>
-
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger>
-							{#snippet child({ props })}
-								<ArcaneButton
-									{...props}
-									action="base"
-									tone="ghost"
-									class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
-									icon={ChevronDown}
-								/>
-							{/snippet}
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Content align="end" class={dropdownContentClass}>
-							<DropdownMenu.Group>
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									disabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
-									onclick={() => (ui.showTemplateDialog = true)}
-								>
-									<TemplateIcon class="size-4" />
-									{m.common_use_template()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (ui.showConverterDialog = true)}>
-									<TerminalIcon class="size-4" />
-									{m.compose_convert_from_docker_run()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									onclick={async () =>
-										goto(
-											`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`
-										)}
-								>
-									<GitBranchIcon class="size-4" />
-									{m.git_from_git_repo()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Separator />
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									disabled={!canSubmit || ui.creatingTemplate}
-									onclick={handleCreateTemplate}
-								>
-									{#if ui.creatingTemplate}
-										<Spinner class="size-4" />
-									{:else}
-										<AddIcon class="size-4" />
-									{/if}
-									{m.templates_create_template()}
-								</DropdownMenu.Item>
-							</DropdownMenu.Group>
-						</DropdownMenu.Content>
-					</DropdownMenu.Root>
-				</ButtonGroup.Root>
+				<ComposeCreateMenu
+					tooltipOpen={!$inputs.name.value && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+					tooltipVisible={$inputs.name.value === ''}
+					tooltipTitle={m.compose_project_name_tooltip_title()}
+					tooltipDescription={m.compose_project_name_tooltip_description()}
+					tooltipExample={m.compose_project_name_tooltip_example()}
+					createDisabled={!canSubmit}
+					createLoading={ui.saving}
+					createLabel={submitLabel}
+					createLoadingLabel={submitLoadingLabel}
+					onCreate={() => handleSubmit()}
+					itemsDisabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
+					useTemplateLabel={m.common_use_template()}
+					onUseTemplate={() => (ui.showTemplateDialog = true)}
+					convertLabel={m.compose_convert_from_docker_run()}
+					onConvert={() => (ui.showConverterDialog = true)}
+					fromGitLabel={m.git_from_git_repo()}
+					onFromGit={async () =>
+						goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create&targetType=swarm_stack`)}
+					createTemplateLabel={m.templates_create_template()}
+					createTemplateDisabled={!canSubmit || ui.creatingTemplate}
+					createTemplateLoading={ui.creatingTemplate}
+					onCreateTemplate={handleCreateTemplate}
+				/>
 			</div>
 		</div>
 	</div>
@@ -325,25 +253,13 @@
 								<div class="flex h-full min-h-0 flex-1 flex-col">
 									<EditorTabStrip tabs={stackTabs} activeKey={activeStackTab} onSelect={openStackTab} onClose={closeStackTab}>
 										{#snippet actions()}
-											<ArcaneButton
-												action="base"
-												tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
-												size="icon"
-												class="size-6"
-												showLabel={false}
-												icon={FileTextIcon}
-												customLabel={m.compose_editor_toggle_outline()}
-												onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
-											/>
-											<ArcaneButton
-												action="base"
-												tone="ghost"
-												size="icon"
-												class="size-6"
-												showLabel={false}
-												icon={SearchIcon}
-												customLabel={m.compose_editor_command_palette()}
-												onclick={() => (treeCommandPaletteOpen = true)}
+											<ComposeFileEditorPanel
+												outlineOpen={treeOutlineOpen}
+												outlineLabel={m.compose_editor_toggle_outline()}
+												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+												showDiff={false}
+												commandPaletteLabel={m.compose_editor_command_palette()}
+												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
 											/>
 										{/snippet}
 									</EditorTabStrip>

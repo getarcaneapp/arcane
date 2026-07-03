@@ -13,7 +13,6 @@
 		InfoIcon,
 		DownloadIcon,
 		RestartIcon,
-		EllipsisIcon,
 		FileTextIcon,
 		AlertIcon
 	} from '$lib/icons';
@@ -25,6 +24,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
+	import RowActionsMenu from '$lib/components/file-browser/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
 	import { Input } from '$lib/components/ui/input';
@@ -236,47 +236,29 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: BackupEntry })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				{#if canBackupVolume}
-					<DropdownMenu.Item onclick={() => handleRestore(item)}>
-						<RestartIcon class="size-4" />
-						Restore
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
-						<FileTextIcon class="size-4" />
-						Restore files
-					</DropdownMenu.Item>
-				{/if}
-				<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
-					<DownloadIcon class="size-4" />
-					{m.templates_download()}
-				</DropdownMenu.Item>
-				<IfPermitted perm="volumes:delete">
-					<DropdownMenu.Separator />
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-						<TrashIcon class="size-4" />
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
+		{#if canBackupVolume}
+			<DropdownMenu.Item onclick={() => handleRestore(item)}>
+				<RestartIcon class="size-4" />
+				Restore
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
+				<FileTextIcon class="size-4" />
+				Restore files
+			</DropdownMenu.Item>
+		{/if}
+		<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
+			<DownloadIcon class="size-4" />
+			{m.templates_download()}
+		</DropdownMenu.Item>
+		<IfPermitted perm="volumes:delete">
+			<DropdownMenu.Separator />
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+				<TrashIcon class="size-4" />
+				{m.common_remove()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 {#snippet ToolbarActions()}

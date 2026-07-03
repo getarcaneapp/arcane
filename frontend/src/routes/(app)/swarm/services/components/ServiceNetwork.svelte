@@ -46,6 +46,47 @@
 	});
 </script>
 
+{#snippet IpamConfigList(
+	configs: NonNullable<NonNullable<ServiceNetworkDetail['configNetwork']>['ipv4Configs']>,
+	heading: string
+)}
+	{#each configs as cfg (`${cfg.subnet ?? ''}:${cfg.gateway ?? ''}:${cfg.ipRange ?? ''}`)}
+		<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
+			<div class="text-muted-foreground mb-1 text-xs font-semibold">{heading}</div>
+			{#if cfg.subnet}
+				<div class="flex flex-col sm:flex-row sm:items-center">
+					<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_subnet()}:</span>
+					<code
+						class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+					>
+						{cfg.subnet}
+					</code>
+				</div>
+			{/if}
+			{#if cfg.gateway}
+				<div class="flex flex-col sm:flex-row sm:items-center">
+					<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.common_gateway()}:</span>
+					<code
+						class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+					>
+						{cfg.gateway}
+					</code>
+				</div>
+			{/if}
+			{#if cfg.ipRange}
+				<div class="flex flex-col sm:flex-row sm:items-center">
+					<span class="text-muted-foreground w-full text-sm font-medium sm:w-16">{m.networks_ipam_iprange_label()}:</span>
+					<code
+						class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+					>
+						{cfg.ipRange}
+					</code>
+				</div>
+			{/if}
+		</div>
+	{/each}
+{/snippet}
+
 <div class="space-y-6">
 	<Card.Root>
 		<Card.Header icon={GlobeIcon}>
@@ -203,90 +244,10 @@
 												</div>
 												<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 													{#if info.configNetwork.ipv4Configs && info.configNetwork.ipv4Configs.length > 0}
-														{#each info.configNetwork.ipv4Configs as cfg (`${cfg.subnet ?? ''}:${cfg.gateway ?? ''}:${cfg.ipRange ?? ''}`)}
-															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
-																<div class="text-muted-foreground mb-1 text-xs font-semibold">{m.ipv4_enabled()}</div>
-																{#if cfg.subnet}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.common_subnet()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.subnet}
-																		</code>
-																	</div>
-																{/if}
-																{#if cfg.gateway}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.common_gateway()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.gateway}
-																		</code>
-																	</div>
-																{/if}
-																{#if cfg.ipRange}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.networks_ipam_iprange_label()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.ipRange}
-																		</code>
-																	</div>
-																{/if}
-															</div>
-														{/each}
+														{@render IpamConfigList(info.configNetwork.ipv4Configs, m.ipv4_enabled())}
 													{/if}
 													{#if info.configNetwork.ipv6Configs && info.configNetwork.ipv6Configs.length > 0}
-														{#each info.configNetwork.ipv6Configs as cfg (`${cfg.subnet ?? ''}:${cfg.gateway ?? ''}:${cfg.ipRange ?? ''}`)}
-															<div class="bg-muted/30 space-y-1 rounded-lg p-2.5">
-																<div class="text-muted-foreground mb-1 text-xs font-semibold">{m.ipv6_enabled()}</div>
-																{#if cfg.subnet}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.common_subnet()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.subnet}
-																		</code>
-																	</div>
-																{/if}
-																{#if cfg.gateway}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.common_gateway()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.gateway}
-																		</code>
-																	</div>
-																{/if}
-																{#if cfg.ipRange}
-																	<div class="flex flex-col sm:flex-row sm:items-center">
-																		<span class="text-muted-foreground w-full text-sm font-medium sm:w-16"
-																			>{m.networks_ipam_iprange_label()}:</span
-																		>
-																		<code
-																			class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-																		>
-																			{cfg.ipRange}
-																		</code>
-																	</div>
-																{/if}
-															</div>
-														{/each}
+														{@render IpamConfigList(info.configNetwork.ipv6Configs, m.ipv6_enabled())}
 													{/if}
 												</div>
 											</Card.Content>

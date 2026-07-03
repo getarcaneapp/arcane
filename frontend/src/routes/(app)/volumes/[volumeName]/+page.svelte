@@ -21,6 +21,8 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import PropertyItem from '$lib/components/property-item.svelte';
+	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -138,96 +140,49 @@
 						</Card.Header>
 						<Card.Content class="p-4">
 							<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-								<div class="flex items-start gap-3">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10 p-2">
-										<BoxIcon class="size-5 text-gray-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_name()}</p>
-										<p
-											class="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
-											title={m.common_click_to_select()}
-										>
-											{volume.name}
-										</p>
-									</div>
-								</div>
+								<PropertyItem
+									icon={BoxIcon}
+									color="gray"
+									label={m.common_name()}
+									value={volume.name}
+									valueClass="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
+								/>
 
-								<div class="flex items-start gap-3">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-blue-500/10 p-2">
-										<VolumesIcon class="size-5 text-blue-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_driver()}</p>
-										<p
-											class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base"
-											title={m.common_click_to_select()}
-										>
-											{volume.driver}
-										</p>
-									</div>
-								</div>
+								<PropertyItem icon={VolumesIcon} color="blue" label={m.common_driver()} value={volume.driver} />
 
-								<div class="flex items-start gap-3">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-500/10 p-2">
-										<ClockIcon class="size-5 text-green-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_created()}</p>
-										<p
-											class="mt-1 cursor-pointer text-sm font-semibold select-all sm:text-base"
-											title={m.common_click_to_select()}
-										>
-											{createdDate}
-										</p>
-									</div>
-								</div>
+								<PropertyItem icon={ClockIcon} color="green" label={m.common_created()} value={createdDate} />
 
-								<div class="flex items-start gap-3">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-purple-500/10 p-2">
-										<GlobeIcon class="size-5 text-purple-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_scope()}</p>
-										<p
-											class="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
-											title={m.common_click_to_select()}
-										>
-											{volume.scope}
-										</p>
-									</div>
-								</div>
+								<PropertyItem
+									icon={GlobeIcon}
+									color="purple"
+									label={m.common_scope()}
+									value={volume.scope}
+									valueClass="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
+								/>
 
-								<div class="flex items-start gap-3">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-amber-500/10 p-2">
-										<InfoIcon class="size-5 text-amber-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_status()}</p>
-										<p class="mt-1 text-base font-semibold">
-											{#if volume.inUse}
-												<StatusBadge variant="green" text={m.common_in_use()} />
-											{:else}
-												<StatusBadge variant="amber" text={m.common_unused()} />
-											{/if}
-										</p>
-									</div>
-								</div>
+								<PropertyItem icon={InfoIcon} color="amber" label={m.common_status()}>
+									<p class="mt-1 text-base font-semibold">
+										{#if volume.inUse}
+											<StatusBadge variant="green" text={m.common_in_use()} />
+										{:else}
+											<StatusBadge variant="amber" text={m.common_unused()} />
+										{/if}
+									</p>
+								</PropertyItem>
 
-								<div class="col-span-1 flex items-start gap-3 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-6">
-									<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-teal-500/10 p-2">
-										<LayersIcon class="size-5 text-teal-500" />
+								<PropertyItem
+									icon={LayersIcon}
+									color="teal"
+									label={m.common_mountpoint()}
+									class="col-span-1 flex items-start gap-3 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-6"
+								>
+									<div
+										class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all"
+										title={m.common_click_to_select()}
+									>
+										<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
 									</div>
-									<div class="min-w-0 flex-1">
-										<p class="text-muted-foreground text-sm font-medium">{m.common_mountpoint()}</p>
-										<div
-											class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all"
-											title={m.common_click_to_select()}
-										>
-											<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
-										</div>
-									</div>
-								</div>
+								</PropertyItem>
 							</div>
 						</Card.Content>
 					</Card.Root>
@@ -282,63 +237,21 @@
 					</Card.Root>
 
 					{#if volume.labels && Object.keys(volume.labels).length > 0}
-						<Card.Root>
-							<Card.Header icon={TagIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>{m.common_labels()}</Card.Title>
-									<Card.Description>{m.volumes_labels_description()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="p-4">
-								<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-									{#each Object.entries(volume.labels) as [key, value] (key)}
-										<Card.Root variant="subtle">
-											<Card.Content class="flex flex-col gap-2 p-4">
-												<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">
-													{key}
-												</div>
-												<div
-													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title={m.common_click_to_select()}
-												>
-													{value}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/each}
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueGridCard
+							icon={TagIcon}
+							title={m.common_labels()}
+							description={m.volumes_labels_description()}
+							entries={Object.entries(volume.labels)}
+						/>
 					{/if}
 
 					{#if volume.options && Object.keys(volume.options).length > 0}
-						<Card.Root>
-							<Card.Header icon={VolumesIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>{m.common_driver_options()}</Card.Title>
-									<Card.Description>{m.volumes_driver_options_description()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="p-4">
-								<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-									{#each Object.entries(volume.options) as [key, value] (key)}
-										<Card.Root variant="subtle">
-											<Card.Content class="flex flex-col gap-2 p-4">
-												<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">
-													{key}
-												</div>
-												<div
-													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-													title={m.common_click_to_select()}
-												>
-													{value}
-												</div>
-											</Card.Content>
-										</Card.Root>
-									{/each}
-								</div>
-							</Card.Content>
-						</Card.Root>
+						<KeyValueGridCard
+							icon={VolumesIcon}
+							title={m.common_driver_options()}
+							description={m.volumes_driver_options_description()}
+							entries={Object.entries(volume.options)}
+						/>
 					{/if}
 
 					{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}

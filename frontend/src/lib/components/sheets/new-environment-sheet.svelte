@@ -8,6 +8,7 @@
 	import UrlInput from '$lib/components/form/url-input.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
+	import AgentCommandBlock from '$lib/components/agent-command-block.svelte';
 	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '$lib/types/environment';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '$lib/utils/settings';
@@ -280,25 +281,12 @@
 							<Spinner class="size-6" />
 						</div>
 					{:else if createdEnvironment.dockerRun && createdEnvironment.dockerCompose}
-						<div class="space-y-2">
-							<div class="text-sm font-medium">{m.environments_docker_run_command()}</div>
-							<div class="relative">
-								<pre class="bg-muted overflow-x-auto rounded-md p-3 text-xs"><code>{createdEnvironment.dockerRun}</code></pre>
-								<div class="absolute top-2 right-2">
-									<CopyButton text={createdEnvironment.dockerRun} size="icon" class="size-7" />
-								</div>
-							</div>
-						</div>
-
-						<div class="space-y-2">
-							<div class="text-sm font-medium">{m.environments_docker_compose()}</div>
-							<div class="relative">
-								<pre class="bg-muted overflow-x-auto rounded-md p-3 text-xs"><code>{createdEnvironment.dockerCompose}</code></pre>
-								<div class="absolute top-2 right-2">
-									<CopyButton text={createdEnvironment.dockerCompose} size="icon" class="size-7" />
-								</div>
-							</div>
-						</div>
+						<AgentCommandBlock
+							dockerRunLabel={m.environments_docker_run_command()}
+							dockerRun={createdEnvironment.dockerRun}
+							dockerComposeLabel={m.environments_docker_compose()}
+							dockerCompose={createdEnvironment.dockerCompose}
+						/>
 					{/if}
 
 					<ArcaneButton action="base" class="w-full" onclick={handleDone} customLabel={m.common_done()} />

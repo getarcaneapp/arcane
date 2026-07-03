@@ -12,6 +12,15 @@
 		restoreFromBackup?: (backupId: string, path: string) => Promise<unknown>;
 		backupHasPath?: (backupId: string, path: string) => Promise<boolean>;
 	}
+
+	// Sorts file entries in place: directories first, then alphabetically by name.
+	export function sortFileEntries(files: FileEntry[]): FileEntry[] {
+		return files.sort((a, b) => {
+			if (a.isDirectory && !b.isDirectory) return -1;
+			if (!a.isDirectory && b.isDirectory) return 1;
+			return a.name.localeCompare(b.name);
+		});
+	}
 </script>
 
 <script lang="ts">
@@ -71,11 +80,7 @@
 		try {
 			const result = await provider.list(path);
 			// Sort: directories first, then alphabetically
-			files = result.sort((a, b) => {
-				if (a.isDirectory && !b.isDirectory) return -1;
-				if (!a.isDirectory && b.isDirectory) return 1;
-				return a.name.localeCompare(b.name);
-			});
+			files = sortFileEntries(result);
 			currentPath = path;
 		} catch (e: any) {
 			error = e.message || m.common_failed();

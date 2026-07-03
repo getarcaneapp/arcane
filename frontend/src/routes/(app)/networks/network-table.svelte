@@ -1,8 +1,8 @@
 <script lang="ts">
 	import type { NetworkSummaryDto, NetworkUsageCounts } from '$lib/types/docker';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -10,13 +10,14 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { DEFAULT_NETWORK_NAMES } from '$lib/constants';
+	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { networkService } from '$lib/services/network-service';
-	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon, EllipsisIcon } from '$lib/icons';
+	import { NetworksIcon, GlobeIcon, InspectIcon, TrashIcon } from '$lib/icons';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 
@@ -185,10 +186,8 @@
 {#snippet StatusCell({ item }: { item: NetworkSummaryDto })}
 	{#if item.isDefault}
 		<StatusBadge text={m.networks_predefined()} variant="sky" />
-	{:else if item.inUse}
-		<StatusBadge text={m.common_in_use()} variant="green" />
 	{:else}
-		<StatusBadge text={m.common_unused()} variant="amber" />
+		<InUseStatus inUse={item.inUse} />
 	{/if}
 {/snippet}
 
@@ -243,35 +242,23 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: NetworkSummaryDto })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => goto(`/networks/${item.id}`)} disabled={isAnyLoading}>
-					<InspectIcon class="size-4" />
-					{m.common_inspect()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => goto(`/networks/${item.id}`)} disabled={isAnyLoading}>
+			<InspectIcon class="size-4" />
+			{m.common_inspect()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
+		<DropdownMenu.Separator />
 
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteNetwork(item.id, item.name)}
-					disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
-				>
-					<TrashIcon class="size-4" />
-					{m.common_delete()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		<DropdownMenu.Item
+			variant="destructive"
+			onclick={() => handleDeleteNetwork(item.id, item.name)}
+			disabled={isAnyLoading || item.isDefault || DEFAULT_NETWORK_NAMES.has(item.name)}
+		>
+			<TrashIcon class="size-4" />
+			{m.common_delete()}
+		</DropdownMenu.Item>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

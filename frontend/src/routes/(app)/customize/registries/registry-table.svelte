@@ -1,8 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
@@ -12,10 +11,11 @@
 	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/docker';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { format } from 'date-fns';
+	import EnabledStatusCell from '$lib/components/arcane-table/cells/enabled-status-cell.svelte';
+	import CreatedAtCell from '$lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { containerRegistryService } from '$lib/services/container-registry-service';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon, EllipsisIcon } from '$lib/icons';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 
@@ -167,7 +167,7 @@
 			accessorKey: 'enabled',
 			title: m.common_status(),
 			sortable: true,
-			cell: StatusCell
+			cell: enabledStatusCol
 		},
 		{
 			id: 'pullUsage',
@@ -179,7 +179,7 @@
 			accessorKey: 'createdAt',
 			title: m.common_created(),
 			sortable: true,
-			cell: CreatedCell
+			cell: createdAtCol
 		}
 	] satisfies ColumnSpec<ContainerRegistry>[];
 
@@ -211,6 +211,14 @@
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
+{#snippet enabledStatusCol({ value }: { value: unknown })}
+	<EnabledStatusCell {value} />
+{/snippet}
+
+{#snippet createdAtCol({ value }: { value: unknown })}
+	<CreatedAtCell {value} />
+{/snippet}
+
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		<span class="font-medium">{item.url || 'docker.io'}</span>
@@ -230,17 +238,8 @@
 	<span class="text-muted-foreground text-sm">{String(value ?? m.common_no_description())}</span>
 {/snippet}
 
-{#snippet StatusCell({ value }: { value: unknown })}
-	{@const enabled = Boolean(value)}
-	<StatusBadge variant={enabled ? 'green' : 'red'} text={enabled ? m.common_enabled() : m.common_disabled()} />
-{/snippet}
-
 {#snippet PullUsageCell({ item }: { item: ContainerRegistry })}
 	<span class="text-sm">{formatPullUsage(item)}</span>
-{/snippet}
-
-{#snippet CreatedCell({ value }: { value: unknown })}
-	<span class="text-sm">{value ? format(new Date(String(value)), 'PP p') : m.common_na()}</span>
 {/snippet}
 
 {#snippet RegistryMobileCardSnippet({
@@ -287,54 +286,42 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerRegistry })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<IfPermitted perm="registries:test">
-					<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
-						{#if testingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<TestIcon class="size-4" />
-						{/if}
-						{m.registries_test_connection()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-
-				<IfPermitted perm="registries:update">
-					<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
-						<EditIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-
-				{#if canDeleteRegistry}
-					<DropdownMenu.Separator />
-
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteOne(item.id, item.url)}
-						disabled={removingId === item.id}
-					>
-						{#if removingId === item.id}
-							<Spinner class="size-4" />
-						{:else}
-							<TrashIcon class="size-4" />
-						{/if}
-						{m.common_remove()}
-					</DropdownMenu.Item>
+	<RowActionsMenu>
+		<IfPermitted perm="registries:test">
+			<DropdownMenu.Item onclick={() => handleTest(item.id, item.url)} disabled={testingId === item.id}>
+				{#if testingId === item.id}
+					<Spinner class="size-4" />
+				{:else}
+					<TestIcon class="size-4" />
 				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+				{m.registries_test_connection()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+
+		<IfPermitted perm="registries:update">
+			<DropdownMenu.Item onclick={() => onEditRegistry(item)}>
+				<EditIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+
+		{#if canDeleteRegistry}
+			<DropdownMenu.Separator />
+
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDeleteOne(item.id, item.url)}
+				disabled={removingId === item.id}
+			>
+				{#if removingId === item.id}
+					<Spinner class="size-4" />
+				{:else}
+					<TrashIcon class="size-4" />
+				{/if}
+				{m.common_remove()}
+			</DropdownMenu.Item>
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 <div>

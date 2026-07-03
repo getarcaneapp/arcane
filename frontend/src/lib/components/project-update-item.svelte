@@ -3,6 +3,7 @@
 	import { getProjectUpdateStatus, getProjectUpdateText } from '$lib/utils/docker';
 	import { m } from '$lib/paraglide/messages';
 	import UpdateStatusPopover from '$lib/components/update-status-popover.svelte';
+	import UpdateStatusBanner from '$lib/components/update-status-banner.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '$lib/icons';
 	import type { Component } from 'svelte';
@@ -204,15 +205,17 @@
 	{#snippet content()}
 		<div class="overflow-hidden rounded-xl">
 			{#if checking}
-				<div class="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10">
-					<div class="flex items-center gap-3">
-						{@render iconCircle(Spinner, 'from-blue-500', 'to-cyan-500', 'shadow-blue-500/25')}
-						<div>
-							<div class="text-sm font-semibold text-blue-950 dark:text-blue-100">{m.image_update_checking_title()}</div>
-							<div class="text-xs text-blue-900/80 dark:text-blue-300/80">{m.image_update_querying_registry()}</div>
-						</div>
-					</div>
-				</div>
+				<UpdateStatusBanner
+					icon={Spinner}
+					wrapperClass="bg-linear-to-br from-blue-50 to-cyan-50/30 p-4 dark:from-blue-950/20 dark:to-cyan-950/10"
+					gradientFrom="from-blue-500"
+					gradientTo="to-cyan-500"
+					shadowColor="shadow-blue-500/25"
+					titleClass="text-blue-950 dark:text-blue-100"
+					descriptionClass="text-blue-900/80 dark:text-blue-300/80"
+					title={m.image_update_checking_title()}
+					description={m.image_update_querying_registry()}
+				/>
 			{:else}
 				<div class="p-4 {stateMeta.headerClass}">
 					<div class="flex items-start gap-3">

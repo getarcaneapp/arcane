@@ -1,8 +1,9 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import RemoveMenuItem from '$lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
@@ -10,7 +11,8 @@
 	import type { GitRepository } from '$lib/types/automation';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { format } from 'date-fns';
+	import EnabledStatusCell from '$lib/components/arcane-table/cells/enabled-status-cell.svelte';
+	import CreatedAtCell from '$lib/components/arcane-table/cells/created-at-cell.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { gitRepositoryService } from '$lib/services/git-repository-service';
 	import {
@@ -19,8 +21,7 @@
 		TrashIcon as Trash2Icon,
 		GitBranchIcon,
 		ApiKeyIcon as KeyIcon,
-		ExternalLinkIcon as LinkIcon,
-		EllipsisIcon
+		ExternalLinkIcon as LinkIcon
 	} from '$lib/icons';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
@@ -81,6 +82,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
+					// fallow-ignore-next-line code-duplication refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
 					repositories = await gitRepositoryService.getRepositories(requestOptions);
 				}
 			},
@@ -145,13 +147,13 @@
 			accessorKey: 'enabled',
 			title: m.common_status(),
 			sortable: true,
-			cell: StatusCell
+			cell: enabledStatusCol
 		},
 		{
 			accessorKey: 'createdAt',
 			title: m.common_created(),
 			sortable: true,
-			cell: CreatedCell
+			cell: createdAtCol
 		}
 	] satisfies ColumnSpec<GitRepository>[];
 
@@ -164,6 +166,15 @@
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 </script>
+
+<!-- fallow-ignore-next-line code-duplication cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
+{#snippet enabledStatusCol({ value }: { value: unknown })}
+	<EnabledStatusCell {value} />
+{/snippet}
+
+{#snippet createdAtCol({ value }: { value: unknown })}
+	<CreatedAtCell {value} />
+{/snippet}
 
 {#snippet NameCell({ value }: { value: unknown })}
 	<div class="flex items-center gap-2">
@@ -185,15 +196,6 @@
 	{:else}
 		<StatusBadge variant="gray" text={m.git_repository_auth_none()} />
 	{/if}
-{/snippet}
-
-{#snippet StatusCell({ value }: { value: unknown })}
-	{@const enabled = Boolean(value)}
-	<StatusBadge variant={enabled ? 'green' : 'red'} text={enabled ? m.common_enabled() : m.common_disabled()} />
-{/snippet}
-
-{#snippet CreatedCell({ value }: { value: unknown })}
-	<span class="text-sm">{value ? format(new Date(String(value)), 'PP p') : m.common_na()}</span>
 {/snippet}
 
 {#snippet RepositoryMobileCardSnippet({
@@ -231,46 +233,25 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: GitRepository })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<IfPermitted perm="git-repositories:test">
-					<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
-						<TestTubeIcon class="size-4" />
-						{m.git_repository_test_connection()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+	<RowActionsMenu>
+		<IfPermitted perm="git-repositories:test">
+			<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
+				<TestTubeIcon class="size-4" />
+				{m.git_repository_test_connection()}
+			</DropdownMenu.Item>
+		</IfPermitted>
 
-				<IfPermitted perm="git-repositories:update">
-					<DropdownMenu.Item onclick={() => onEditRepository(item)}>
-						<PencilIcon class="size-4" />
-						{m.common_edit()}
-					</DropdownMenu.Item>
-				</IfPermitted>
+		<IfPermitted perm="git-repositories:update">
+			<DropdownMenu.Item onclick={() => onEditRepository(item)}>
+				<PencilIcon class="size-4" />
+				{m.common_edit()}
+			</DropdownMenu.Item>
+		</IfPermitted>
 
-				{#if canDeleteRepository}
-					<DropdownMenu.Separator />
-
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteOne(item.id, item.name)}
-						disabled={isLoading.removing}
-					>
-						<Trash2Icon class="size-4" />
-						{m.common_remove()}
-					</DropdownMenu.Item>
-				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		{#if canDeleteRepository}
+			<RemoveMenuItem onclick={() => handleDeleteOne(item.id, item.name)} disabled={isLoading.removing} />
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

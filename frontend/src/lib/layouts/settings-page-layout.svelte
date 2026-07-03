@@ -47,6 +47,20 @@
 	}>('settingsFormState');
 </script>
 
+{#snippet ActionButtonList(buttons: SettingsActionButton[])}
+	{#each buttons as button}
+		<ArcaneButton
+			action={button.action}
+			customLabel={button.label}
+			loadingLabel={button.loadingLabel}
+			loading={button.loading}
+			disabled={button.disabled}
+			onclick={button.onclick}
+			size="sm"
+		/>
+	{/each}
+{/snippet}
+
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
 	<div class="border-border/50 border-b pb-4 sm:pb-6">
 		<div class="flex items-center justify-between gap-4">
@@ -126,31 +140,11 @@
 
 				{#if pageType === 'management' && actionButtons.length > 0}
 					<div class="hidden items-center gap-2 sm:flex">
-						{#each actionButtons as button}
-							<ArcaneButton
-								action={button.action}
-								customLabel={button.label}
-								loadingLabel={button.loadingLabel}
-								loading={button.loading}
-								disabled={button.disabled}
-								onclick={button.onclick}
-								size="sm"
-							/>
-						{/each}
+						{@render ActionButtonList(actionButtons)}
 					</div>
 
 					<div class="flex items-center gap-2 sm:hidden">
-						{#each mobileVisibleButtons as button}
-							<ArcaneButton
-								action={button.action}
-								customLabel={button.label}
-								loadingLabel={button.loadingLabel}
-								loading={button.loading}
-								disabled={button.disabled}
-								onclick={button.onclick}
-								size="sm"
-							/>
-						{/each}
+						{@render ActionButtonList(mobileVisibleButtons)}
 
 						{#if mobileDropdownButtons.length > 0}
 							<DropdownMenu.Root>

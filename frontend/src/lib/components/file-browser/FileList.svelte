@@ -5,7 +5,6 @@
 		FileTextIcon,
 		DownloadIcon,
 		TrashIcon,
-		EllipsisIcon,
 		EyeOnIcon,
 		ClockIcon,
 		RestartIcon,
@@ -19,7 +18,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	import RowActionsMenu from './row-actions-menu.svelte';
 	import { bytes } from '$lib/utils/formatting';
 	import { format } from 'date-fns';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
@@ -193,49 +192,31 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: FileEntry })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton
-					{...props}
-					action="base"
-					tone="ghost"
-					size="icon"
-					class="relative size-8 p-0"
-					icon={EllipsisIcon}
-					showLabel={false}
-					customLabel={m.common_open_menu()}
-				/>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				{#if !item.isDirectory}
-					<DropdownMenu.Item onclick={() => onPreview(item)}>
-						<EyeOnIcon class="size-4" />
-						{m.common_view()}
-					</DropdownMenu.Item>
-					<DropdownMenu.Item onclick={() => handleDownload(item)}>
-						<DownloadIcon class="size-4" />
-						{m.templates_download()}
-					</DropdownMenu.Item>
-					{#if onRestoreFromBackup && !item.isSymlink}
-						<DropdownMenu.Item onclick={() => onRestoreFromBackup(item)}>
-							<RestartIcon class="size-4" />
-							Restore from backup
-						</DropdownMenu.Item>
-					{/if}
-					<DropdownMenu.Separator />
-				{/if}
-				{#if onDelete}
-					<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				{/if}
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+	<RowActionsMenu openMenuLabel={m.common_open_menu()}>
+		{#if !item.isDirectory}
+			<DropdownMenu.Item onclick={() => onPreview(item)}>
+				<EyeOnIcon class="size-4" />
+				{m.common_view()}
+			</DropdownMenu.Item>
+			<DropdownMenu.Item onclick={() => handleDownload(item)}>
+				<DownloadIcon class="size-4" />
+				{m.templates_download()}
+			</DropdownMenu.Item>
+			{#if onRestoreFromBackup && !item.isSymlink}
+				<DropdownMenu.Item onclick={() => onRestoreFromBackup(item)}>
+					<RestartIcon class="size-4" />
+					Restore from backup
+				</DropdownMenu.Item>
+			{/if}
+			<DropdownMenu.Separator />
+		{/if}
+		{#if onDelete}
+			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		{/if}
+	</RowActionsMenu>
 {/snippet}
 
 {#snippet FileMobileCardSnippet({

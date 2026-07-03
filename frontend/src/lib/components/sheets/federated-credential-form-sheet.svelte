@@ -2,7 +2,8 @@
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
 	import * as Select from '$lib/components/ui/select';
 	import * as Alert from '$lib/components/ui/alert';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
+	import RoleScopeSelects from '$lib/components/sheets/role-scope-selects.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
@@ -215,46 +216,20 @@
 					</Alert.Description>
 				</Alert.Root>
 			{/if}
-			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
-				<div class="space-y-2">
-					<Label for="federated-role" class="mb-0">{m.common_role()}</Label>
-					<Select.Root type="single" bind:value={$inputs.roleId.value} disabled={isLoading}>
-						<Select.Trigger id="federated-role" class="w-full {$inputs.roleId.error ? 'border-destructive' : ''}">
-							<span>{roleSelectedLabel($inputs.roleId.value)}</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each roles as role (role.id)}
-								<Select.Item value={role.id} label={role.name}>
-									<div class="flex flex-col items-start gap-0.5">
-										<span class="font-medium">{role.name}</span>
-										{#if role.description}
-											<span class="text-muted-foreground text-xs">{role.description}</span>
-										{/if}
-									</div>
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-					{#if $inputs.roleId.error}
-						<p class="text-destructive text-xs font-medium">{$inputs.roleId.error}</p>
-					{/if}
-				</div>
-				<div class="space-y-2">
-					<Label for="federated-env" class="mb-0">{m.common_scope()}</Label>
-					<Select.Root type="single" bind:value={$inputs.environmentId.value} disabled={isLoading}>
-						<Select.Trigger id="federated-env" class="w-full">
-							<span>{envSelectedLabel($inputs.environmentId.value)}</span>
-						</Select.Trigger>
-						<Select.Content>
-							{#each envOptions as option (option.id)}
-								<Select.Item value={option.id} label={option.name}>
-									{option.name}
-								</Select.Item>
-							{/each}
-						</Select.Content>
-					</Select.Root>
-				</div>
-			</div>
+			<RoleScopeSelects
+				idPrefix="federated"
+				roleLabel={m.common_role()}
+				scopeLabel={m.common_scope()}
+				{roles}
+				{envOptions}
+				bind:roleValue={$inputs.roleId.value}
+				bind:environmentValue={$inputs.environmentId.value}
+				roleError={$inputs.roleId.error}
+				{roleSelectedLabel}
+				{envSelectedLabel}
+				disabled={isLoading}
+				class="grid grid-cols-1 gap-4 sm:grid-cols-2"
+			/>
 			<div class="grid grid-cols-1 gap-4 sm:grid-cols-2">
 				<FormInput
 					label={m.federated_credential_ttl_label()}
@@ -281,29 +256,20 @@
 						{m.federated_credential_enabled_description()}
 					</p>
 				</div>
+				<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 			</div>
 		</form>
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-			<ArcaneButton
-				action={isEditMode ? 'save' : 'create'}
-				type="submit"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={isEditMode ? m.common_save() : m.common_create()}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitAction={isEditMode ? 'save' : 'create'}
+			submitDisabled={isLoading}
+			submitLoading={isLoading}
+			onSubmit={handleSubmit}
+			submitLabel={isEditMode ? m.common_save() : m.common_create()}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

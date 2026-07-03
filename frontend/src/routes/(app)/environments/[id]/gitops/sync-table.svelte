@@ -2,8 +2,9 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { LifecycleIndicator } from '$lib/components/lifecycle-indicator';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import RemoveMenuItem from '$lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { toast } from 'svelte-sonner';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
@@ -22,8 +23,7 @@
 		RefreshIcon as RefreshCwIcon,
 		GitBranchIcon,
 		ProjectsIcon as FolderIcon,
-		HashIcon,
-		EllipsisIcon
+		HashIcon
 	} from '$lib/icons';
 	import { bulkConfirmAndRun, confirmAndRun } from '$lib/utils/bulk-actions';
 
@@ -289,40 +289,19 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: GitOpsSync })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => handlePerformSync(item.id, item.name)} disabled={isLoading.syncing}>
-					<PlayIcon class="size-4" />
-					{m.git_sync_perform()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => handlePerformSync(item.id, item.name)} disabled={isLoading.syncing}>
+			<PlayIcon class="size-4" />
+			{m.git_sync_perform()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Item onclick={() => onEditSync(item)}>
-					<PencilIcon class="size-4" />
-					{m.common_edit()}
-				</DropdownMenu.Item>
+		<DropdownMenu.Item onclick={() => onEditSync(item)}>
+			<PencilIcon class="size-4" />
+			{m.common_edit()}
+		</DropdownMenu.Item>
 
-				<DropdownMenu.Separator />
-
-				<DropdownMenu.Item
-					variant="destructive"
-					onclick={() => handleDeleteOne(item.id, item.name)}
-					disabled={isLoading.removing}
-				>
-					<Trash2Icon class="size-4" />
-					{m.common_remove()}
-				</DropdownMenu.Item>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+		<RemoveMenuItem onclick={() => handleDeleteOne(item.id, item.name)} disabled={isLoading.removing} />
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

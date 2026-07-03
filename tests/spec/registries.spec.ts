@@ -95,9 +95,9 @@ test.describe('Container Registries', () => {
 		).toBeVisible();
 
 		await page.getByRole('button', { name: 'Refresh' }).click();
-		await expect(page.locator('li[data-sonner-toast] div[data-title]')).toBeVisible({
-			timeout: 10000
-		});
+		await expect(
+			page.locator('li[data-sonner-toast]').filter({ hasText: 'Registries Refreshed!' })
+		).toBeVisible({ timeout: 10000 });
 	});
 
 	test('should open Add Registry dialog and validate required fields', async ({ page }) => {

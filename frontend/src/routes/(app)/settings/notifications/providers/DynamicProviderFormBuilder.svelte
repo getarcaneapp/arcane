@@ -67,17 +67,10 @@
 		setValue(key, value);
 	}
 
-	function setNativeSelectValue(field: ProviderNativeSelectField<T>, value: string): void {
-		const currentValue = values[field.key];
-		if (field.valueType === 'number' || typeof currentValue === 'number') {
-			setValue(field.key, Number(value));
-			return;
-		}
-
-		setValue(field.key, value);
-	}
-
-	function setSelectValue(field: Extract<ProviderFormField<T>, { kind: 'select' }>, value: string): void {
+	function setSelectValue(
+		field: ProviderNativeSelectField<T> | Extract<ProviderFormField<T>, { kind: 'select' }>,
+		value: string
+	): void {
 		const currentValue = values[field.key];
 		if (field.valueType === 'number' || typeof currentValue === 'number') {
 			setValue(field.key, Number(value));
@@ -149,7 +142,7 @@
 			<select
 				id={getFieldId(field)}
 				value={getStringValue(field.key)}
-				onchange={(event) => setNativeSelectValue(field, (event.target as HTMLSelectElement).value)}
+				onchange={(event) => setSelectValue(field, (event.target as HTMLSelectElement).value)}
 				{disabled}
 				class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 rounded-md border px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
 			>

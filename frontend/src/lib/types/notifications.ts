@@ -103,6 +103,7 @@ export interface NtfyFormValues extends BaseProviderFormValues {
 	icon: string;
 	cache: boolean;
 	firebase: boolean;
+	disableTls: boolean;
 	disableTlsVerification: boolean;
 }
 
@@ -427,6 +428,7 @@ export function ntfySettingsToFormValues(settings?: NotificationSettings): NtfyF
 		icon: getString(cfg, 'icon'),
 		cache: getBoolean(cfg, 'cache', true),
 		firebase: getBoolean(cfg, 'firebase', true),
+		disableTls: getBoolean(cfg, 'disableTls', false),
 		disableTlsVerification: getBoolean(cfg, 'disableTlsVerification', false),
 		...eventFlagsToFormValues(events)
 	};
@@ -517,6 +519,7 @@ export function ntfyFormValuesToSettings(values: NtfyFormValues): NotificationSe
 			icon: values.icon,
 			cache: values.cache,
 			firebase: values.firebase,
+			disableTls: values.disableTls,
 			disableTlsVerification: values.disableTlsVerification,
 			events: {
 				image_update: values.eventImageUpdate,

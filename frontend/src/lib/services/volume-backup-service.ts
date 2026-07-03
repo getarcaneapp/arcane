@@ -70,9 +70,7 @@ class VolumeBackupService extends BaseAPIService {
 
 	async uploadAndRestore(volumeName: string, file: File): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const formData = new FormData();
-		formData.append('file', file);
-		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/${volumeName}/backups/upload`, formData));
+		return this.postFile(`/environments/${envId}/volumes/${volumeName}/backups/upload`, file);
 	}
 }
 

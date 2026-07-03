@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -41,10 +42,12 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 }
 
 type gitOpsSyncTestSchedulerInternal struct {
+	added   []string
 	removed []string
 }
 
-func (s *gitOpsSyncTestSchedulerInternal) AddJob(_ context.Context, _ schedulertypes.Job) error {
+func (s *gitOpsSyncTestSchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
+	s.added = append(s.added, job.Name())
 	return nil
 }
 
@@ -89,6 +92,98 @@ func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 
 	var notFound *models.NotFoundError
 	require.ErrorAs(t, err, &notFound)
+}
+
+func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	require.NoError(t, db.AutoMigrate(&models.Environment{}))
+
+	require.NoError(t, db.Create(&models.Environment{
+		BaseModel: models.BaseModel{ID: "env-live"},
+		Name:      "Live",
+	}).Error)
+	orphanSyncID := "sync-orphan"
+	liveSyncID := "sync-live"
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: orphanSyncID},
+		Name:          "orphan",
+		EnvironmentID: "env-missing",
+		RepositoryID:  "repo-1",
+		ComposePath:   "compose.yml",
+		ProjectName:   "orphan",
+		SyncInterval:  15,
+	}).Error)
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: liveSyncID},
+		Name:          "live",
+		EnvironmentID: "env-live",
+		RepositoryID:  "repo-1",
+		ComposePath:   "compose.yml",
+		ProjectName:   "live",
+		SyncInterval:  15,
+	}).Error)
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:       models.BaseModel{ID: "project-orphan"},
+		Name:            "orphan",
+		Path:            "/tmp/orphan",
+		Status:          models.ProjectStatusStopped,
+		GitOpsManagedBy: &orphanSyncID,
+	}).Error)
+
+	require.NoError(t, svc.CleanupOrphanedSyncsOnStartup(ctx))
+
+	var orphanCount int64
+	require.NoError(t, db.Model(&models.GitOpsSync{}).Where("id = ?", orphanSyncID).Count(&orphanCount).Error)
+	require.Zero(t, orphanCount)
+
+	var liveCount int64
+	require.NoError(t, db.Model(&models.GitOpsSync{}).Where("id = ?", liveSyncID).Count(&liveCount).Error)
+	require.EqualValues(t, 1, liveCount)
+
+	var project models.Project
+	require.NoError(t, db.First(&project, "id = ?", "project-orphan").Error)
+	require.Nil(t, project.GitOpsManagedBy)
+}
+
+func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing.T) {
+	ctx := context.Background()
+	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
+	require.NoError(t, db.AutoMigrate(&models.Environment{}))
+
+	require.NoError(t, db.Create(&models.Environment{
+		BaseModel: models.BaseModel{ID: "env-live"},
+		Name:      "Live",
+	}).Error)
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-orphan"},
+		Name:          "orphan",
+		EnvironmentID: "env-missing",
+		RepositoryID:  "repo-1",
+		ComposePath:   "compose.yml",
+		ProjectName:   "orphan",
+		AutoSync:      true,
+		SyncInterval:  15,
+	}).Error)
+	now := time.Now()
+	require.NoError(t, db.Create(&models.GitOpsSync{
+		BaseModel:     models.BaseModel{ID: "sync-live"},
+		Name:          "live",
+		EnvironmentID: "env-live",
+		RepositoryID:  "repo-1",
+		ComposePath:   "compose.yml",
+		ProjectName:   "live",
+		AutoSync:      true,
+		SyncInterval:  15,
+		LastSyncAt:    &now,
+	}).Error)
+
+	scheduler := &gitOpsSyncTestSchedulerInternal{}
+	svc.SetScheduler(ctx, scheduler)
+	svc.RegisterAutoSyncJobsOnStartup(ctx)
+
+	require.Equal(t, []string{gitOpsSyncJobNameInternal("sync-live")}, scheduler.added)
+	require.Empty(t, scheduler.removed)
 }
 
 func TestGitOpsSyncService_DeleteSync_DeletesStaleProjectReference(t *testing.T) {

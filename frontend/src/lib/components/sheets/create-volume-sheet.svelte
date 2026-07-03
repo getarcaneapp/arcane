@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import * as Accordion from '$lib/components/ui/accordion/index.js';
 	import type { VolumeCreateRequest } from '$lib/types/docker';
@@ -131,24 +131,13 @@
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full flex-row gap-2">
-			<ArcaneButton
-				action="cancel"
-				tone="outline"
-				type="button"
-				class="flex-1"
-				onclick={() => (open = false)}
-				disabled={isLoading}
-			/>
-			<ArcaneButton
-				action="create"
-				type="submit"
-				class="flex-1"
-				disabled={isLoading}
-				loading={isLoading}
-				onclick={handleSubmit}
-				customLabel={m.common_create_button({ resource: m.resource_volume_cap() })}
-			/>
-		</div>
+		<SheetFooterActions
+			bind:open
+			cancelDisabled={isLoading}
+			submitDisabled={isLoading}
+			submitLoading={isLoading}
+			onSubmit={handleSubmit}
+			submitLabel={m.common_create_button({ resource: m.resource_volume_cap() })}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

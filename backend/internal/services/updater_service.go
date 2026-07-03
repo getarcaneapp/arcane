@@ -389,6 +389,13 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes
 	if err := s.deps.DB.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
 		return nil, fmt.Errorf("query pending image updates: %w", err)
 	}
+
+	// Flush pending "Updates Available" notifications before the engine
+	// consumes and clears these records, otherwise the notification for an
+	// update applied here is silently lost (#3132).
+	if s.deps.ImageUpdates != nil {
+		s.deps.ImageUpdates.sendBatchImageUpdateNotificationsInternal(ctx)
+	}
 	s.appendAutoUpdateActivityMessageInternal(
 		ctx,
 		activityIDFromContextInternal(ctx),

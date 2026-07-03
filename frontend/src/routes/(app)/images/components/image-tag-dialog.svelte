@@ -1,7 +1,7 @@
 <script lang="ts">
+	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import FormInput from '$lib/components/form/form-input.svelte';
+	import RepoTagFields from '$lib/components/form/repo-tag-fields.svelte';
 	import { createForm, preventDefault } from '$lib/utils/settings';
 	import { imageService } from '$lib/services/image-service';
 	import { m } from '$lib/paraglide/messages';
@@ -68,27 +68,18 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-4">
-			<FormInput
-				label={m.images_tag_repository()}
-				placeholder={m.images_tag_repository_placeholder()}
-				bind:input={$inputs.repository}
-			/>
-			<FormInput label={m.images_tag()} placeholder={m.images_tag_latest()} bind:input={$inputs.tag} />
+			<RepoTagFields bind:repository={$inputs.repository} bind:tag={$inputs.tag} />
 		</form>
 	{/snippet}
 
 	{#snippet footer()}
-		<div class="flex w-full gap-2">
-			<ArcaneButton action="cancel" tone="outline" type="button" class="flex-1" onclick={() => handleOpenChange(false)} />
-			<ArcaneButton
-				action="base"
-				type="submit"
-				class="flex-1"
-				customLabel={m.images_tag_image()}
-				loading={isTagging}
-				disabled={isTagging}
-				onclick={handleSubmit}
-			/>
-		</div>
+		<SheetFooterActions
+			onCancel={() => handleOpenChange(false)}
+			submitAction="base"
+			submitLabel={m.images_tag_image()}
+			submitLoading={isTagging}
+			submitDisabled={isTagging}
+			onSubmit={handleSubmit}
+		/>
 	{/snippet}
 </ResponsiveDialog.Root>

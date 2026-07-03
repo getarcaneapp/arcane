@@ -8,6 +8,7 @@
 	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
 	import { DownloadIcon } from '$lib/icons';
 	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
+	import UpdateAvailableBanner from './update-available-banner.svelte';
 
 	let {
 		isCollapsed,
@@ -47,25 +48,13 @@
 		<Separator.Root class="mb-2 opacity-30" />
 
 		{#if !isCollapsed}
-			<button
-				type="button"
-				onclick={upgradeCheck.openDialog}
+			<UpdateAvailableBanner
+				class="rounded-lg px-2.5 py-2"
+				label={m.sidebar_update_available()}
+				versionChip={upgradeCheck.versionChip}
 				disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
-				class="group hover:bg-muted/50 focus-visible:ring-primary/40 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
-			>
-				<span class="relative flex size-2 shrink-0 items-center justify-center">
-					<span class="absolute inline-flex size-2 animate-ping rounded-full bg-blue-500 opacity-60"></span>
-					<span class="relative inline-flex size-1.5 rounded-full bg-blue-500"></span>
-				</span>
-				<span class="text-foreground flex-1 text-sm font-medium">
-					{m.sidebar_update_available()}
-				</span>
-				{#if upgradeCheck.versionChip}
-					<span class="bg-muted text-muted-foreground rounded-md px-1.5 py-0.5 font-mono text-[11px]">
-						{upgradeCheck.versionChip}
-					</span>
-				{/if}
-			</button>
+				onclick={upgradeCheck.openDialog}
+			/>
 		{:else}
 			<Tooltip.Root>
 				<Tooltip.Trigger>

@@ -32,13 +32,7 @@ class VolumeBrowserService extends BaseAPIService {
 
 	async uploadFile(volumeName: string, path: string, file: File): Promise<any> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const formData = new FormData();
-		formData.append('file', file);
-		return this.handleResponse(
-			this.api.post(`/environments/${envId}/volumes/${volumeName}/browse/upload`, formData, {
-				params: { path }
-			})
-		);
+		return this.postFile(`/environments/${envId}/volumes/${volumeName}/browse/upload`, file, { path });
 	}
 
 	async createDirectory(volumeName: string, path: string): Promise<any> {

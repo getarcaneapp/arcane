@@ -24,7 +24,7 @@
 		SwarmServicePort,
 		SwarmServiceModeSpec
 	} from '$lib/types/swarm';
-	import ServiceEditorDialog from '../service-editor-dialog.svelte';
+	import ServiceEditorDialog from '$lib/components/dialogs/service-editor-dialog.svelte';
 	import ServiceOverview from '../components/ServiceOverview.svelte';
 	import ServiceLogsPanel from '../components/ServiceLogsPanel.svelte';
 	import ServiceTasksPanel from '../components/ServiceTasksPanel.svelte';
@@ -32,9 +32,8 @@
 	import ServiceNetwork from '../components/ServiceNetwork.svelte';
 	import ServiceStorage from '../components/ServiceStorage.svelte';
 	import { Input } from '$lib/components/ui/input/index.js';
+	import ResourceNotFound from '$lib/components/resource-not-found.svelte';
 	import {
-		ArrowLeftIcon,
-		AlertIcon,
 		DockIcon,
 		FileTextIcon,
 		JobsIcon,
@@ -400,26 +399,10 @@
 		/>
 	{/if}
 {:else}
-	<div class="flex min-h-screen items-center justify-center">
-		<div class="text-center">
-			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
-				<AlertIcon class="text-muted-foreground size-10" />
-			</div>
-			<h2 class="mb-3 text-2xl font-medium">
-				{m.common_not_found_title({ resource: m.swarm_service() })}
-			</h2>
-			<p class="text-muted-foreground mb-8 max-w-md text-center">
-				{m.common_not_found_description({ resource: m.swarm_service().toLowerCase() })}
-			</p>
-			<div class="flex justify-center gap-4">
-				<ArcaneButton action="base" href="/swarm/services">
-					<ArrowLeftIcon class="size-4" />
-					{m.common_back_to({ resource: m.swarm_services_title() })}
-				</ArcaneButton>
-				<ArcaneButton action="refresh" onclick={refreshData}>
-					{m.common_retry()}
-				</ArcaneButton>
-			</div>
-		</div>
-	</div>
+	<ResourceNotFound
+		resource={m.swarm_service()}
+		resourceListTitle={m.swarm_services_title()}
+		backHref="/swarm/services"
+		onRetry={refreshData}
+	/>
 {/if}

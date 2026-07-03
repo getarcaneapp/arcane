@@ -8,7 +8,7 @@
 	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { Environment } from '$lib/types/environment';
-	import { extractApiErrorMessage } from '$lib/utils/api';
+	import { toastUpgradeError } from '$lib/utils/api';
 	import { DownloadIcon } from '$lib/icons';
 
 	// open/upgrading have no $bindable fallback: they bind to per-environment
@@ -103,9 +103,7 @@
 			toast.success(m.upgrade_success());
 			await onRefreshRequested?.();
 		} catch (error) {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
+			toastUpgradeError(error, m.upgrade_failed);
 			throw error;
 		}
 	}

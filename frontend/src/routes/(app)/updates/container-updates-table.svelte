@@ -2,6 +2,8 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
+	import DigestCell from '$lib/components/arcane-table/cells/digest-cell.svelte';
+	import CheckedAtCell from '$lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
@@ -59,9 +61,9 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCell },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCell },
+		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol },
 		{ id: 'actions', title: m.common_actions(), sortable: false, cell: ActionsCell }
 	] satisfies ColumnSpec<ContainerUpdateRow>[];
 
@@ -98,18 +100,16 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerUpdateRow })}
+	<!-- fallow-ignore-next-line code-duplication parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
 	<code class="text-xs">{item.imageRef}</code>
 {/snippet}
 
-{#snippet DigestCell({ value }: { value: unknown })}
-	{@const text = typeof value === 'string' ? value : '-'}
-	<span class="font-mono text-xs break-all whitespace-normal" title={text !== '-' ? text : undefined}>
-		{text}
-	</span>
+{#snippet DigestCol({ value }: { value: unknown })}
+	<DigestCell {value} />
 {/snippet}
 
-{#snippet CheckedAtCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatImageUpdateCheckedAt(typeof value === 'string' ? value : '')}</span>
+{#snippet CheckedAtCol({ value }: { value: unknown })}
+	<CheckedAtCell {value} />
 {/snippet}
 
 {#snippet ActionsCell({ item }: { item: ContainerUpdateRow })}

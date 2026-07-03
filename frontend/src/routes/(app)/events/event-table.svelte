@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
@@ -18,7 +18,7 @@
 	import { eventService } from '$lib/services/event-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon, EllipsisIcon } from '$lib/icons';
+	import { TrashIcon, InfoIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
 
 	let {
 		events = $bindable(),
@@ -253,37 +253,25 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: Event })}
-	<DropdownMenu.Root>
-		<DropdownMenu.Trigger>
-			{#snippet child({ props })}
-				<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8">
-					<span class="sr-only">{m.common_open_menu()}</span>
-					<EllipsisIcon class="size-4" />
-				</ArcaneButton>
-			{/snippet}
-		</DropdownMenu.Trigger>
-		<DropdownMenu.Content align="end">
-			<DropdownMenu.Group>
-				<DropdownMenu.Item onclick={() => openDetails(item)}>
-					<InfoIcon class="size-4" />
-					{m.common_view_details()}
-				</DropdownMenu.Item>
+	<RowActionsMenu>
+		<DropdownMenu.Item onclick={() => openDetails(item)}>
+			<InfoIcon class="size-4" />
+			{m.common_view_details()}
+		</DropdownMenu.Item>
 
-				<IfPermitted perm="events:delete">
-					<DropdownMenu.Separator />
+		<IfPermitted perm="events:delete">
+			<DropdownMenu.Separator />
 
-					<DropdownMenu.Item
-						variant="destructive"
-						onclick={() => handleDeleteEvent(item.id, item.title)}
-						disabled={isLoading.removing}
-					>
-						<TrashIcon class="size-4" />
-						{m.common_delete()}
-					</DropdownMenu.Item>
-				</IfPermitted>
-			</DropdownMenu.Group>
-		</DropdownMenu.Content>
-	</DropdownMenu.Root>
+			<DropdownMenu.Item
+				variant="destructive"
+				onclick={() => handleDeleteEvent(item.id, item.title)}
+				disabled={isLoading.removing}
+			>
+				<TrashIcon class="size-4" />
+				{m.common_delete()}
+			</DropdownMenu.Item>
+		</IfPermitted>
+	</RowActionsMenu>
 {/snippet}
 
 <ArcaneTable

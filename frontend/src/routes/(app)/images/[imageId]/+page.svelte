@@ -38,6 +38,7 @@
 	let securityTab = $state('attestations');
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	// fallow-ignore-next-line code-duplication permission $derived declarations; script-level, no shared render surface
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));

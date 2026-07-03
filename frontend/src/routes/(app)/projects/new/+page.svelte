@@ -1,33 +1,20 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import {
-		ArrowLeftIcon,
-		ArrowsUpDownIcon,
-		TerminalIcon,
-		TemplateIcon,
-		AddIcon,
-		GitBranchIcon,
-		FileTextIcon,
-		SearchIcon
-	} from '$lib/icons';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { ArrowLeftIcon } from '$lib/icons';
 	import { goto, invalidateAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '$lib/utils/settings';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service.js';
-	import * as ButtonGroup from '$lib/components/ui/button-group/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArrowDownIcon as ChevronDown } from '$lib/icons';
+	import ComposeCreateMenu from '$lib/components/compose-create-menu.svelte';
+	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import EditorTabStrip from '../components/EditorTabStrip.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { ComposeEditorSplit } from '$lib/components/compose';
 	import ResizableSplit from '$lib/components/resizable-split.svelte';
 	import { Switch } from '$lib/components/ui/switch';
@@ -50,13 +37,11 @@
 		type ManagedProjectFileEntry
 	} from '../components/project-file-tree-utils';
 	import {
+		composeTreeSplitProps,
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
-		dropdownContentClass,
-		dropdownItemClass,
 		extractComposeYamlName,
 		submitComposeResourceForm,
-		templateBtnClass,
 		templateNameSlug
 	} from '$lib/utils/compose-flow';
 	import {
@@ -96,9 +81,6 @@
 	let layoutMode = $state<'classic' | 'tree'>('classic');
 	let selectedProjectFile = $state<'compose' | 'env' | string>('compose');
 	let treePaneWidth = $state(420);
-	const minTreePaneWidth = 200;
-	const maxTreePaneWidth = 480;
-	const minEditorPaneWidth = 360;
 	let newProjectFiles = $state<ProjectFileDraft[]>([]);
 	let newProjectFileContents = $state<Record<string, string>>({});
 	let newProjectFileHasErrors = $state<Record<string, boolean>>({});
@@ -208,6 +190,7 @@
 					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
 					activityToastOptions(extractActivityId(project))
 				);
+				// fallow-ignore-next-line code-duplication create-success handler; navigation target diverges per page
 				goto(`/projects/${project.id}`, { invalidateAll: true });
 			}
 		});
@@ -299,6 +282,28 @@
 			content: file.isDirectory ? undefined : (newProjectFileContents[file.relativePath] ?? '')
 		}));
 	}
+
+	function composePanelProps() {
+		return {
+			title: m.compose_compose_file_title(),
+			language: 'yaml',
+			validationMode: 'compose',
+			error: $inputs.composeContent.error ?? undefined,
+			fileId: 'projects:new:compose',
+			editorContext: codeEditorContext
+		} as const;
+	}
+
+	function envPanelProps() {
+		return {
+			title: m.compose_env_title(),
+			language: 'env',
+			validationMode: 'env',
+			error: $inputs.envContent.error ?? undefined,
+			fileId: 'projects:new:env',
+			editorContext: codeEditorContext
+		} as const;
+	}
 </script>
 
 <div class="bg-background flex h-full min-h-0 flex-col">
@@ -332,103 +337,45 @@
 			</div>
 
 			<div class="flex items-center gap-2">
-				<ButtonGroup.Root>
-					<ArcaneTooltip.Root
-						open={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
-					>
-						<ArcaneTooltip.Trigger>
-							<span>
-								{#if !hasEditorErrors && canCreateProject}
-									<ArcaneButton
-										action="create"
-										tone="ghost"
-										disabled={!effectiveName ||
-											!$inputs.composeContent.value ||
-											hasEditorErrors ||
-											ui.saving ||
-											ui.converting ||
-											ui.isLoadingTemplateContent}
-										onclick={() => handleSubmit()}
-										class={`${templateBtnClass} gap-2 rounded-r-none`}
-										loading={ui.saving}
-										customLabel={m.compose_create_project()}
-										loadingLabel={m.common_action_creating()}
-									/>
-								{/if}
-							</span>
-						</ArcaneTooltip.Trigger>
-						<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
-							{#if effectiveName === ''}
-								<p class="mb-1 text-sm font-medium">{m.compose_project_name_tooltip_title()}</p>
-								<p class="text-muted-foreground text-xs">
-									{m.compose_project_name_tooltip_description()}
-								</p>
-								<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
-									{m.compose_project_name_tooltip_example()}
-								</p>
-							{/if}
-						</ArcaneTooltip.Content>
-					</ArcaneTooltip.Root>
-
-					<DropdownMenu.Root>
-						<DropdownMenu.Trigger>
-							{#snippet child({ props })}
-								<ArcaneButton
-									{...props}
-									action="base"
-									tone="ghost"
-									class={`${templateBtnClass} -ml-px rounded-l-none px-2`}
-									icon={ChevronDown}
-								/>
-							{/snippet}
-						</DropdownMenu.Trigger>
-						<DropdownMenu.Content align="end" class={dropdownContentClass}>
-							<DropdownMenu.Group>
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									disabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
-									onclick={() => (ui.showTemplateDialog = true)}
-								>
-									<TemplateIcon class="size-4" />
-									{m.common_use_template()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item class={dropdownItemClass} onclick={() => (ui.showConverterDialog = true)}>
-									<TerminalIcon class="size-4" />
-									{m.compose_convert_from_docker_run()}
-								</DropdownMenu.Item>
-								<DropdownMenu.Item
-									class={dropdownItemClass}
-									onclick={async () =>
-										goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
-								>
-									<GitBranchIcon class="size-4" />
-									{m.git_from_git_repo()}
-								</DropdownMenu.Item>
-								<IfPermitted perm="templates:create">
-									<DropdownMenu.Separator />
-									<DropdownMenu.Item
-										class={dropdownItemClass}
-										disabled={!$inputs.name.value ||
-											!$inputs.composeContent.value ||
-											hasEditorErrors ||
-											ui.saving ||
-											ui.converting ||
-											ui.creatingTemplate ||
-											ui.isLoadingTemplateContent}
-										onclick={handleCreateTemplate}
-									>
-										{#if ui.creatingTemplate}
-											<Spinner class="size-4" />
-										{:else}
-											<AddIcon class="size-4" />
-										{/if}
-										{m.templates_create_template()}
-									</DropdownMenu.Item>
-								</IfPermitted>
-							</DropdownMenu.Group>
-						</DropdownMenu.Content>
-					</DropdownMenu.Root>
-				</ButtonGroup.Root>
+				<ComposeCreateMenu
+					tooltipOpen={!effectiveName && !ui.saving && !ui.converting && !ui.isLoadingTemplateContent ? undefined : false}
+					tooltipVisible={effectiveName === ''}
+					tooltipTitle={m.compose_project_name_tooltip_title()}
+					tooltipDescription={m.compose_project_name_tooltip_description()}
+					tooltipExample={m.compose_project_name_tooltip_example()}
+					showCreateButton={!hasEditorErrors && canCreateProject}
+					createDisabled={!effectiveName ||
+						!$inputs.composeContent.value ||
+						hasEditorErrors ||
+						ui.saving ||
+						ui.converting ||
+						ui.isLoadingTemplateContent}
+					createLoading={ui.saving}
+					createLabel={m.compose_create_project()}
+					createLoadingLabel={m.common_action_creating()}
+					onCreate={() => handleSubmit()}
+					itemsDisabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
+					useTemplateLabel={m.common_use_template()}
+					onUseTemplate={() => {
+						// fallow-ignore-next-line code-duplication shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
+						ui.showTemplateDialog = true;
+					}}
+					convertLabel={m.compose_convert_from_docker_run()}
+					onConvert={() => (ui.showConverterDialog = true)}
+					fromGitLabel={m.git_from_git_repo()}
+					onFromGit={async () => goto(`/environments/${await environmentStore.getCurrentEnvironmentId()}/gitops?action=create`)}
+					createTemplateLabel={m.templates_create_template()}
+					createTemplateDisabled={!$inputs.name.value ||
+						!$inputs.composeContent.value ||
+						hasEditorErrors ||
+						ui.saving ||
+						ui.converting ||
+						ui.creatingTemplate ||
+						ui.isLoadingTemplateContent}
+					createTemplateLoading={ui.creatingTemplate}
+					onCreateTemplate={handleCreateTemplate}
+					createTemplatePermission="templates:create"
+				/>
 			</div>
 		</div>
 	</div>
@@ -473,15 +420,8 @@
 					<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
 						<ResizableSplit
 							class="min-h-0 flex-1"
-							variant="flush"
-							firstClass="bg-muted/20 border-border flex min-h-0 flex-col border-b lg:border-r lg:border-b-0"
-							secondClass="flex min-h-0 flex-col"
+							{...composeTreeSplitProps}
 							bind:size={treePaneWidth}
-							minSize={minTreePaneWidth}
-							maxSize={maxTreePaneWidth}
-							minSecondSize={minEditorPaneWidth}
-							defaultRatio={0.22}
-							stackBelow={1024}
 							ariaLabel={m.compose_editor_resize_files_panel()}
 							persistKey="arcane.compose.split:new-project:tree"
 						>
@@ -509,35 +449,15 @@
 										onClose={closeProjectFileTab}
 									>
 										{#snippet actions()}
-											<ArcaneButton
-												action="base"
-												tone={treeOutlineOpen ? 'outline-primary' : 'ghost'}
-												size="icon"
-												class="size-6"
-												showLabel={false}
-												icon={FileTextIcon}
-												customLabel={m.compose_editor_toggle_outline()}
-												onclick={() => (treeOutlineOpen = !treeOutlineOpen)}
-											/>
-											<ArcaneButton
-												action="base"
-												tone={treeDiffOpen ? 'outline-primary' : 'ghost'}
-												size="icon"
-												class="size-6"
-												showLabel={false}
-												icon={ArrowsUpDownIcon}
-												customLabel={m.compose_editor_toggle_diff()}
-												onclick={() => (treeDiffOpen = !treeDiffOpen)}
-											/>
-											<ArcaneButton
-												action="base"
-												tone="ghost"
-												size="icon"
-												class="size-6"
-												showLabel={false}
-												icon={SearchIcon}
-												customLabel={m.compose_editor_command_palette()}
-												onclick={() => (treeCommandPaletteOpen = true)}
+											<ComposeFileEditorPanel
+												outlineOpen={treeOutlineOpen}
+												outlineLabel={m.compose_editor_toggle_outline()}
+												onToggleOutline={() => (treeOutlineOpen = !treeOutlineOpen)}
+												diffOpen={treeDiffOpen}
+												diffLabel={m.compose_editor_toggle_diff()}
+												onToggleDiff={() => (treeDiffOpen = !treeDiffOpen)}
+												commandPaletteLabel={m.compose_editor_command_palette()}
+												onOpenCommandPalette={() => (treeCommandPaletteOpen = true)}
 											/>
 										{/snippet}
 									</EditorTabStrip>
@@ -546,16 +466,11 @@
 											{#if activeProjectTab === 'compose'}
 												<CodePanel
 													variant="plain"
+													{...composePanelProps()}
 													bind:open={composeOpen}
-													title={m.compose_compose_file_title()}
-													language="yaml"
-													validationMode="compose"
 													bind:value={$inputs.composeContent.value}
-													error={$inputs.composeContent.error ?? undefined}
 													bind:hasErrors={validation.composeHasErrors}
 													bind:validationReady={validation.composeValidationReady}
-													fileId="projects:new:compose"
-													editorContext={codeEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
 													bind:diffOpen={treeDiffOpen}
 													bind:commandPaletteOpen={treeCommandPaletteOpen}
@@ -563,16 +478,11 @@
 											{:else if activeProjectTab === 'env'}
 												<CodePanel
 													variant="plain"
+													{...envPanelProps()}
 													bind:open={envOpen}
-													title={m.compose_env_title()}
-													language="env"
-													validationMode="env"
 													bind:value={$inputs.envContent.value}
-													error={$inputs.envContent.error ?? undefined}
 													bind:hasErrors={validation.envHasErrors}
 													bind:validationReady={validation.envValidationReady}
-													fileId="projects:new:env"
-													editorContext={codeEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
 													bind:diffOpen={treeDiffOpen}
 													bind:commandPaletteOpen={treeCommandPaletteOpen}
@@ -607,35 +517,26 @@
 					<ComposeEditorSplit onsubmit={preventDefault(handleSubmit)}>
 						{#snippet compose()}
 							<CodePanel
+								{...composePanelProps()}
 								bind:open={composeOpen}
-								title={m.compose_compose_file_title()}
-								language="yaml"
-								validationMode="compose"
 								bind:value={$inputs.composeContent.value}
-								error={$inputs.composeContent.error ?? undefined}
 								bind:hasErrors={validation.composeHasErrors}
 								bind:validationReady={validation.composeValidationReady}
-								fileId="projects:new:compose"
-								editorContext={codeEditorContext}
 							/>
 						{/snippet}
 
 						{#snippet env()}
 							<CodePanel
+								{...envPanelProps()}
 								bind:open={envOpen}
-								title={m.compose_env_title()}
-								language="env"
-								validationMode="env"
 								bind:value={$inputs.envContent.value}
-								error={$inputs.envContent.error ?? undefined}
 								bind:hasErrors={validation.envHasErrors}
 								bind:validationReady={validation.envValidationReady}
-								fileId="projects:new:env"
-								editorContext={codeEditorContext}
 							/>
 						{/snippet}
 					</ComposeEditorSplit>
 				{/if}
+				<!-- fallow-ignore-next-line code-duplication compose editor panel closing structure; ResizableSplit bindings/persistKey diverge per page -->
 			</div>
 		</div>
 	</div>

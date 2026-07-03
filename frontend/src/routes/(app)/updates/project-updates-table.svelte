@@ -1,6 +1,8 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
+	import DigestCell from '$lib/components/arcane-table/cells/digest-cell.svelte';
+	import CheckedAtCell from '$lib/components/arcane-table/cells/checked-at-cell.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { Project } from '$lib/types/swarm';
@@ -82,9 +84,9 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCell },
-		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCell },
-		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCell }
+		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol }
 	] satisfies ColumnSpec<ProjectUpdateRow>[];
 
 	const mobileFields = [
@@ -114,15 +116,12 @@
 	</div>
 {/snippet}
 
-{#snippet DigestCell({ value }: { value: unknown })}
-	{@const text = typeof value === 'string' ? value : '-'}
-	<span class="font-mono text-xs break-all whitespace-normal" title={text !== '-' ? text : undefined}>
-		{text}
-	</span>
+{#snippet DigestCol({ value }: { value: unknown })}
+	<DigestCell {value} />
 {/snippet}
 
-{#snippet CheckedAtCell({ value }: { value: unknown })}
-	<span class="text-sm">{formatImageUpdateCheckedAt(typeof value === 'string' ? value : '')}</span>
+{#snippet CheckedAtCol({ value }: { value: unknown })}
+	<CheckedAtCell {value} />
 {/snippet}
 
 {#snippet ProjectUpdatesMobileCard({ item }: { item: ProjectUpdateRow })}

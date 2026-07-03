@@ -22,8 +22,10 @@
 	});
 
 	function handleConfirm() {
-		$confirmDialogStore.confirm.action(checkboxStates);
+		const action = $confirmDialogStore.confirm.action;
+		const states = $state.snapshot(checkboxStates);
 		$confirmDialogStore.open = false;
+		action(states);
 	}
 </script>
 

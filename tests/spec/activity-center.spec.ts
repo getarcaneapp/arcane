@@ -123,7 +123,8 @@ function aggregatedActivityStreamBody(
 async function mockActivityReads(
 	page: Page,
 	activitiesByEnvironment: Record<string, MockActivity[]>,
-	failedEnvironmentIds = new Set<string>()
+	failedEnvironmentIds = new Set<string>(),
+	failedActivityStatus = 503
 ) {
 	await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route: Route) => {
 		await route.fulfill({
@@ -145,9 +146,13 @@ async function mockActivityReads(
 
 			if (failedEnvironmentIds.has(environmentId)) {
 				await route.fulfill({
-					status: 503,
+					status: failedActivityStatus,
 					contentType: 'application/json',
-					body: JSON.stringify({ success: false, message: 'environment unavailable' })
+					body: JSON.stringify({
+						success: false,
+						message: 'environment unavailable',
+						detail: 'permission denied: activities:read'
+					})
 				});
 				return;
 			}
@@ -158,6 +163,16 @@ async function mockActivityReads(
 				body: JSON.stringify(paginated(activitiesByEnvironment[environmentId] ?? []))
 			});
 		});
+}
+
+function waitForActivityRead(page: Page, environmentId: string) {
+	return page.waitForResponse((response) => {
+		const url = new URL(response.url());
+		return (
+			response.request().method() === 'GET' &&
+			activityEnvironmentIdFromPath(url.pathname) === environmentId
+		);
+	});
 }
 
 function extractActivityId(value: unknown): string | undefined {
@@ -284,13 +299,23 @@ test.describe('Activity Center', () => {
 			{
 				'0': [activity('local-activity', '0', 'Local', 'local-network', 5)]
 			},
-			new Set(['remote-activity-test'])
+			new Set(['remote-activity-test']),
+			403
 		);
 
 		const activityStream = waitForActivityStream(page);
+		const remoteActivityRead = waitForActivityRead(page, 'remote-activity-test');
 		await page.goto('/dashboard');
 		await activityStream;
+		await remoteActivityRead;
 		await page.waitForLoadState('load');
+		await page.waitForTimeout(250);
+
+		await expect(
+			page.locator('li[data-sonner-toast]').filter({ hasText: 'Access denied' })
+		).toHaveCount(0, {
+			timeout: 500
+		});
 
 		const activityCenter = await openActivityCenter(page);
 		await activityCenter.getByRole('button', { name: 'Completed' }).click();

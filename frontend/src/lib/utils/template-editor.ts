@@ -56,6 +56,20 @@ export function getTemplateEditorValidationState(
 	};
 }
 
+export function getTemplateEditorSaveState(
+	validation: TemplateEditorValidationState,
+	hasChanges: boolean
+): { validationState: TemplateEditorValidationState; canSave: boolean } {
+	const validationState = getTemplateEditorValidationState(
+		validation.composeValidationReady,
+		validation.envValidationReady,
+		validation.composeHasErrors,
+		validation.envHasErrors
+	);
+
+	return { validationState, canSave: hasChanges && !hasTemplateEditorErrors(validationState) };
+}
+
 export function hasTemplateEditorErrors(state: TemplateEditorValidationState): boolean {
 	return !state.composeValidationReady || !state.envValidationReady || state.composeHasErrors || state.envHasErrors;
 }

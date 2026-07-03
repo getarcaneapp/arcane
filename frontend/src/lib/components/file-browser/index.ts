@@ -7,6 +7,7 @@ import CreateFolderDialog from './CreateFolderDialog.svelte';
 import VolumeBrowser from './VolumeBrowser.svelte';
 
 export type { FileProvider } from './GenericFileBrowser.svelte';
+export { sortFileEntries } from './GenericFileBrowser.svelte';
 
 export {
 	Root,
