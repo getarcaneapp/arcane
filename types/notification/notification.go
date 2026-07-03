@@ -77,6 +77,16 @@ type Response struct {
 	Config base.JsonObject `json:"config"`
 }
 
+// TestResponse is the result of a test notification send.
+type TestResponse struct {
+	// Message describes the test outcome.
+	Message string `json:"message"`
+
+	// Warning explains why a real notification of the tested kind would not
+	// send (provider disabled or event unsubscribed). Empty when none applies.
+	Warning string `json:"warning,omitempty"`
+}
+
 type DispatchKind string
 
 const (

@@ -476,7 +476,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}, &models.NotificationLog{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}))
 
 	var calls atomic.Int32
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -494,7 +494,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 		},
 	}).Error)
 
-	notif := NewNotificationService(db, nil, nil)
+	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 
@@ -522,9 +522,9 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}, &models.NotificationLog{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}))
 
-	notif := NewNotificationService(db, nil, nil)
+	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 

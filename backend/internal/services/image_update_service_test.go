@@ -1304,7 +1304,7 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 // with "context canceled" so notifications were never dispatched (issue #2920).
 func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.NotificationLog{}))
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
 
 	// A provider that actually delivers (returns 200), so the record is only marked
 	// notified when the send genuinely reaches it.
@@ -1324,7 +1324,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 		},
 	}).Error)
 
-	notif := NewNotificationService(db, nil, nil)
+	notif := NewNotificationService(db, nil, nil, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := models.ImageUpdateRecord{
@@ -1360,7 +1360,7 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
 
-	notif := NewNotificationService(db, nil, nil)
+	notif := NewNotificationService(db, nil, nil, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := models.ImageUpdateRecord{
@@ -1381,6 +1381,54 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 	unnotified, err := svc.GetUnnotifiedUpdates(context.Background())
 	require.NoError(t, err)
 	require.Contains(t, unnotified, "sha256:img-no-provider")
+}
+
+// TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotified
+// guards the duplicate-notification bug: when one provider delivers and another
+// fails, the record must still be marked notified — otherwise the healthy provider
+// re-sends the same update on every poll until the broken provider is fixed.
+func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotified(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
+
+	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer healthy.Close()
+	broken := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer broken.Close()
+
+	for _, url := range []string{healthy.URL, broken.URL} {
+		require.NoError(t, db.Create(&models.NotificationSettings{
+			Provider: models.NotificationProviderGeneric,
+			Enabled:  true,
+			Config: models.JSON{
+				"webhookUrl":  url,
+				"method":      "POST",
+				"contentType": "application/json",
+			},
+		}).Error)
+	}
+
+	notif := NewNotificationService(db, nil, nil, nil)
+	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
+
+	rec := models.ImageUpdateRecord{
+		ID:               "sha256:img-partial",
+		Repository:       "test/repo",
+		Tag:              "latest",
+		HasUpdate:        true,
+		NotificationSent: false,
+	}
+	require.NoError(t, db.Create(&rec).Error)
+
+	svc.sendBatchImageUpdateNotificationsInternal(context.Background())
+
+	var reloaded models.ImageUpdateRecord
+	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img-partial").Error)
+	assert.True(t, reloaded.NotificationSent)
 }
 
 func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *testing.T) {

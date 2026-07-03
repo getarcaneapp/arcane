@@ -6,13 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
+	"html/template"
 	"io"
 	"log/slog"
 	"maps"
 	"net/http"
 	"net/mail"
 	"strings"
-	"text/template"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -25,26 +26,6 @@ import (
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 )
-
-const (
-	logoURLPath = "/api/app-images/logo-email"
-
-	notificationTestTypeSimple           = "simple"
-	notificationTestTypeImageUpdate      = "image-update"
-	notificationTestTypeBatchImageUpdate = "batch-image-update"
-	notificationTestTypeVulnerability    = "vulnerability-found"
-	notificationTestTypePruneReport      = "prune-report"
-	notificationTestTypeAutoHeal         = "auto-heal"
-)
-
-var supportedNotificationTestTypes = map[string]struct{}{
-	notificationTestTypeSimple:           {},
-	notificationTestTypeImageUpdate:      {},
-	notificationTestTypeBatchImageUpdate: {},
-	notificationTestTypeVulnerability:    {},
-	notificationTestTypePruneReport:      {},
-	notificationTestTypeAutoHeal:         {},
-}
 
 var notificationCredentialFieldsByProviderInternal = map[models.NotificationProvider][]string{
 	models.NotificationProviderDiscord:  {"token"},
@@ -61,22 +42,11 @@ var notificationCredentialFieldsByProviderInternal = map[models.NotificationProv
 var ErrUnauthorizedNotificationDispatch = errors.New("unauthorized notification dispatch")
 var ErrUnsupportedDispatchKind = errors.New("unsupported notification dispatch kind")
 
-// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
-// Only vulnerabilities with a fixed version should trigger this notification.
-type VulnerabilityNotificationPayload struct {
-	CVEID            string // e.g. CVE-2024-1234
-	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
-	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
-	ImageName        string // e.g. nginx:latest
-	FixedVersion     string
-	PkgName          string // optional
-	InstalledVersion string // optional
-}
-
 type NotificationService struct {
 	db             *database.DB
 	config         *config.Config
 	environmentSvc *EnvironmentService
+	eventSvc       *EventService
 	httpClient     *http.Client
 }
 
@@ -98,11 +68,12 @@ func (s *NotificationService) ResolveNotificationTarget(ctx context.Context, env
 	return s.resolveNotificationTargetInternal(ctx, environmentID)
 }
 
-func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *EnvironmentService) *NotificationService {
+func NewNotificationService(db *database.DB, cfg *config.Config, environmentSvc *EnvironmentService, eventSvc *EventService) *NotificationService {
 	return &NotificationService{
 		db:             db,
 		config:         cfg,
 		environmentSvc: environmentSvc,
+		eventSvc:       eventSvc,
 		httpClient:     &http.Client{Timeout: 15 * time.Second},
 	}
 }
@@ -292,11 +263,6 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 		existingConfig = setting.Config
 	}
 
-	// Clear config if provider is disabled
-	if !enabled {
-		config = models.JSON{}
-	}
-
 	encryptedConfig, encryptErr := encryptNotificationConfigCredentialsInternal(provider, config, existingConfig)
 	if encryptErr != nil {
 		return nil, encryptErr
@@ -407,6 +373,285 @@ func (s *NotificationService) DeleteSettings(ctx context.Context, provider model
 }
 
 // SendImageUpdateNotification dispatches a single-image update notification and
+
+func (s *NotificationService) isEventEnabled(config models.JSON, eventType models.NotificationEventType) bool {
+	events, ok := config["events"].(map[string]any)
+	if !ok {
+		return true // If no events config, default to enabled
+	}
+
+	enabled, ok := events[string(eventType)].(bool)
+	if !ok {
+		return true // If event type not specified, default to enabled
+	}
+
+	return enabled
+}
+
+// logNotification records a delivery attempt in the event log so sends and
+// failures are visible alongside every other Arcane event.
+func (s *NotificationService) logNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, subject, status string, errMsg *string, metadata models.JSON) {
+	if s.eventSvc == nil {
+		return
+	}
+
+	severity := models.EventSeveritySuccess
+	title := fmt.Sprintf("Notification sent via %s", provider)
+	description := subject
+	if errMsg != nil {
+		severity = models.EventSeverityError
+		title = fmt.Sprintf("Notification failed via %s", provider)
+		description = fmt.Sprintf("%s: %s", subject, *errMsg)
+	}
+
+	eventMetadata := cloneNotificationConfigInternal(metadata)
+	eventMetadata["provider"] = string(provider)
+	eventMetadata["status"] = status
+
+	resourceType := "notification"
+	providerName := string(provider)
+	if _, err := s.eventSvc.CreateEvent(ctx, CreateEventRequest{
+		Type:          models.EventTypeNotificationSend,
+		Severity:      severity,
+		Title:         title,
+		Description:   description,
+		ResourceType:  &resourceType,
+		ResourceName:  &providerName,
+		EnvironmentID: &environmentID,
+		Metadata:      eventMetadata,
+	}); err != nil {
+		slog.WarnContext(ctx, "Failed to log notification event", "provider", providerName, "error", err.Error())
+	}
+}
+
+// SendBatchImageUpdateNotification dispatches a batched image-update notification
+// and returns the number of eligible providers it was delivered to (0 means no
+
+// notifyEnabledProvidersInternal is the single fan-out loop behind every
+// notification event: it walks all provider settings, skips disabled providers
+// and providers with the event unsubscribed, dispatches to the rest, logs each
+// attempt, and aggregates send errors. It returns how many providers the
+// notification was actually delivered to.
+func (s *NotificationService) notifyEnabledProvidersInternal(
+	ctx context.Context,
+	target NotificationTarget,
+	eventType models.NotificationEventType,
+	logRef string,
+	metadata models.JSON,
+	dispatch func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (handled bool, err error),
+) (int, error) {
+	settings, err := s.GetAllSettings(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("failed to get notification settings: %w", err)
+	}
+
+	delivered := 0
+	var errs []string
+	for _, setting := range settings {
+		if !setting.Enabled {
+			continue
+		}
+		if !s.isEventEnabled(setting.Config, eventType) {
+			continue
+		}
+
+		handled, sendErr := dispatch(ctx, setting.Provider, setting.Config)
+		if !handled {
+			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
+			continue
+		}
+
+		if sendErr == nil {
+			delivered++
+		}
+
+		status, errMsg := collectNotificationSendResultInternal(&errs, setting.Provider, sendErr)
+		s.logNotification(ctx, target.EnvironmentID, setting.Provider, logRef, status, errMsg, metadata)
+	}
+
+	if len(errs) > 0 {
+		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
+	}
+	return delivered, nil
+}
+
+func collectNotificationSendResultInternal(errors *[]string, provider models.NotificationProvider, sendErr error) (string, *string) {
+	if sendErr == nil {
+		return "success", nil
+	}
+
+	msg := sendErr.Error()
+	*errors = append(*errors, fmt.Sprintf("%s: %s", provider, msg))
+	return "failed", &msg
+}
+
+func unknownNotificationProviderErrorInternal(provider models.NotificationProvider) error {
+	return fmt.Errorf("unknown provider: %s", provider)
+}
+
+const (
+	notificationTestTypeSimple           = "simple"
+	notificationTestTypeImageUpdate      = "image-update"
+	notificationTestTypeBatchImageUpdate = "batch-image-update"
+	notificationTestTypeVulnerability    = "vulnerability-found"
+	notificationTestTypePruneReport      = "prune-report"
+	notificationTestTypeAutoHeal         = "auto-heal"
+)
+
+var supportedNotificationTestTypes = map[string]struct{}{
+	notificationTestTypeSimple:           {},
+	notificationTestTypeImageUpdate:      {},
+	notificationTestTypeBatchImageUpdate: {},
+	notificationTestTypeVulnerability:    {},
+	notificationTestTypePruneReport:      {},
+	notificationTestTypeAutoHeal:         {},
+}
+
+// VulnerabilityNotificationPayload is the data sent to all providers for vulnerability_found events.
+// Only vulnerabilities with a fixed version should trigger this notification.
+type VulnerabilityNotificationPayload struct {
+	CVEID            string // e.g. CVE-2024-1234
+	CVELink          string // e.g. https://nvd.nist.gov/vuln/detail/CVE-2024-1234
+	Severity         string // CRITICAL, HIGH, MEDIUM, LOW, UNKNOWN
+	ImageName        string // e.g. nginx:latest
+	FixedVersion     string
+	PkgName          string // optional
+	InstalledVersion string // optional
+}
+
+// --- Per-event notification content ---
+
+func (s *NotificationService) imageUpdateNotificationContentInternal(environmentName, imageRef string, updateInfo *imageupdate.Response) notifications.Content {
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildImageUpdateNotificationMessage(format, environmentName, imageRef, updateInfo)
+		}),
+		Title: "Container Image Update",
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderEmailTemplate(environmentName, imageRef, updateInfo)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to render email template: %w", err)
+			}
+			subject := notifications.BuildEmailSubject(environmentName, "Container Update Available: "+notifications.SanitizeForEmail(imageRef))
+			return subject, htmlBody, nil
+		},
+		RequireNtfyTopic:     true,
+		ValidatePushoverUser: true,
+	}
+}
+
+func (s *NotificationService) containerUpdateNotificationContentInternal(environmentName, containerName, imageRef, oldDigest, newDigest string) notifications.Content {
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildContainerUpdateNotificationMessage(format, environmentName, containerName, imageRef, oldDigest, newDigest)
+		}),
+		Title: "Container Updated",
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to render email template: %w", err)
+			}
+			subject := notifications.BuildEmailSubject(environmentName, "Container Updated: "+notifications.SanitizeForEmail(containerName))
+			return subject, htmlBody, nil
+		},
+		RequireNtfyTopic:     true,
+		ValidatePushoverUser: true,
+	}
+}
+
+func (s *NotificationService) vulnerabilityNotificationContentInternal(environmentName string, payload VulnerabilityNotificationPayload) notifications.Content {
+	defaultTitle := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildVulnerabilitySummaryNotificationMessage(
+				format,
+				environmentName,
+				payload.CVEID,
+				payload.ImageName,
+				payload.FixedVersion,
+				payload.Severity,
+				payload.PkgName,
+			)
+		}),
+		Title:        defaultTitle,
+		DefaultTitle: defaultTitle,
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to render summary email template: %w", err)
+			}
+			subject := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary: "+notifications.SanitizeForEmail(payload.CVEID))
+			return subject, htmlBody, nil
+		},
+		RequireNtfyTopic:     true,
+		ValidatePushoverUser: true,
+	}
+}
+
+func (s *NotificationService) batchImageUpdateNotificationContentInternal(environmentName string, updates map[string]*imageupdate.Response) notifications.Content {
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildBatchImageUpdateNotificationMessage(format, environmentName, updates)
+		}),
+		Title: "Container Image Updates Available",
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderBatchEmailTemplate(environmentName, updates)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to render email template: %w", err)
+			}
+			updateCount := len(updates)
+			plural := ""
+			if updateCount > 1 {
+				plural = "s"
+			}
+			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("%d Image Update%s Available", updateCount, plural))
+			return subject, htmlBody, nil
+		},
+	}
+}
+
+func (s *NotificationService) pruneReportNotificationContentInternal(environmentName string, result *system.PruneAllResult) notifications.Content {
+	defaultTitle := notifications.BuildEmailSubject(environmentName, "System Prune Report")
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildPruneReportNotificationMessage(format, environmentName, result)
+		}),
+		Title:        defaultTitle,
+		DefaultTitle: defaultTitle,
+		RenderEmail: func() (string, string, error) {
+			htmlBody, _, err := s.renderPruneReportEmailTemplate(environmentName, result)
+			if err != nil {
+				return "", "", fmt.Errorf("failed to render email template: %w", err)
+			}
+			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("System Prune Report: %s Reclaimed", notifications.FormatBytes(result.SpaceReclaimed)))
+			return subject, htmlBody, nil
+		},
+	}
+}
+
+func (s *NotificationService) autoHealNotificationContentInternal(environmentName, containerName string) notifications.Content {
+	defaultTitle := notifications.BuildEmailSubject(environmentName, "Auto Heal")
+	return notifications.Content{
+		Text: notifications.TextByFormat(func(format notifications.MessageFormat) string {
+			return notifications.BuildAutoHealNotificationMessage(format, environmentName, containerName)
+		}),
+		Title:        defaultTitle,
+		DefaultTitle: defaultTitle,
+		RenderEmail: func() (string, string, error) {
+			subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName))
+			body := fmt.Sprintf(
+				"<p><strong>Environment:</strong> %s</p><p><strong>Container:</strong> %s</p><p>Automatically restarted because it was unhealthy.</p>",
+				html.EscapeString(environmentName),
+				html.EscapeString(containerName),
+			)
+			return subject, body, nil
+		},
+	}
+}
+
+// --- Event entry points ---
+
+// SendImageUpdateNotification dispatches a single-image update notification and
 // returns the number of eligible providers it was delivered to (0 means no
 // provider has this event enabled, so callers must not mark the update notified).
 func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
@@ -437,90 +682,17 @@ func (s *NotificationService) SendImageUpdateNotification(ctx context.Context, i
 }
 
 func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, imageRef string, updateInfo *imageupdate.Response, eventType models.NotificationEventType) (int, error) {
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get notification settings: %w", err)
+	metadata := models.JSON{
+		"hasUpdate":     updateInfo.HasUpdate,
+		"currentDigest": updateInfo.CurrentDigest,
+		"latestDigest":  updateInfo.LatestDigest,
+		"updateType":    updateInfo.UpdateType,
+		"eventType":     string(eventType),
 	}
-
-	delivered := 0
-	var errors []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
-		}
-
-		// Check if this event type is enabled for this provider
-		if !s.isEventEnabled(setting.Config, eventType) {
-			continue
-		}
-
-		var sendErr error
-		switch setting.Provider {
-		case models.NotificationProviderDiscord:
-			sendErr = s.sendDiscordNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderEmail:
-			sendErr = s.sendEmailNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderTelegram:
-			sendErr = s.sendTelegramNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderSignal:
-			sendErr = s.sendSignalNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderSlack:
-			sendErr = s.sendSlackNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderNtfy:
-			sendErr = s.sendNtfyNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderPushover:
-			sendErr = s.sendPushoverNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderGotify:
-			sendErr = s.sendGotifyNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderMatrix:
-			sendErr = s.sendMatrixNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		case models.NotificationProviderGeneric:
-			sendErr = s.sendGenericNotification(ctx, target.EnvironmentName, imageRef, updateInfo, setting.Config)
-		default:
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
-		}
-
-		status := "success"
-		var errMsg *string
-		if sendErr != nil {
-			status = "failed"
-			msg := sendErr.Error()
-			errMsg = new(msg)
-			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
-		} else {
-			delivered++
-		}
-
-		s.logNotification(ctx, setting.Provider, imageRef, status, errMsg, models.JSON{
-			"hasUpdate":     updateInfo.HasUpdate,
-			"currentDigest": updateInfo.CurrentDigest,
-			"latestDigest":  updateInfo.LatestDigest,
-			"updateType":    updateInfo.UpdateType,
-			"eventType":     string(eventType),
-		})
-	}
-
-	if len(errors) > 0 {
-		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-
-	return delivered, nil
-}
-
-// isEventEnabled checks if a specific event type is enabled in the config
-func (s *NotificationService) isEventEnabled(config models.JSON, eventType models.NotificationEventType) bool {
-	events, ok := config["events"].(map[string]any)
-	if !ok {
-		return true // If no events config, default to enabled
-	}
-
-	enabled, ok := events[string(eventType)].(bool)
-	if !ok {
-		return true // If event type not specified, default to enabled
-	}
-
-	return enabled
+	content := s.imageUpdateNotificationContentInternal(target.EnvironmentName, imageRef, updateInfo)
+	return s.notifyEnabledProvidersInternal(ctx, target, eventType, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
 }
 
 func (s *NotificationService) SendContainerUpdateNotification(ctx context.Context, containerName, imageRef, oldDigest, newDigest string) error {
@@ -546,71 +718,17 @@ func (s *NotificationService) SendContainerUpdateNotification(ctx context.Contex
 }
 
 func (s *NotificationService) sendContainerUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, imageRef, oldDigest, newDigest string) error {
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
+	metadata := models.JSON{
+		"containerName": containerName,
+		"oldDigest":     oldDigest,
+		"newDigest":     newDigest,
+		"eventType":     string(models.NotificationEventContainerUpdate),
 	}
-
-	var errors []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
-		}
-
-		// Check if container update event is enabled for this provider
-		if !s.isEventEnabled(setting.Config, models.NotificationEventContainerUpdate) {
-			continue
-		}
-
-		var sendErr error
-		switch setting.Provider {
-		case models.NotificationProviderDiscord:
-			sendErr = s.sendDiscordContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderEmail:
-			sendErr = s.sendEmailContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderTelegram:
-			sendErr = s.sendTelegramContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderSignal:
-			sendErr = s.sendSignalContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderSlack:
-			sendErr = s.sendSlackContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderNtfy:
-			sendErr = s.sendNtfyContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderPushover:
-			sendErr = s.sendPushoverContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderGotify:
-			sendErr = s.sendGotifyContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderMatrix:
-			sendErr = s.sendMatrixContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		case models.NotificationProviderGeneric:
-			sendErr = s.sendGenericContainerUpdateNotification(ctx, target.EnvironmentName, containerName, imageRef, oldDigest, newDigest, setting.Config)
-		default:
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
-		}
-
-		status := "success"
-		var errMsg *string
-		if sendErr != nil {
-			status = "failed"
-			msg := sendErr.Error()
-			errMsg = new(msg)
-			errors = append(errors, fmt.Sprintf("%s: %s", setting.Provider, msg))
-		}
-
-		s.logNotification(ctx, setting.Provider, imageRef, status, errMsg, models.JSON{
-			"containerName": containerName,
-			"oldDigest":     oldDigest,
-			"newDigest":     newDigest,
-			"eventType":     string(models.NotificationEventContainerUpdate),
-		})
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-
-	return nil
+	content := s.containerUpdateNotificationContentInternal(target.EnvironmentName, containerName, imageRef, oldDigest, newDigest)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventContainerUpdate, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+	return err
 }
 
 func isVulnerabilitySummaryPayload(payload VulnerabilityNotificationPayload) bool {
@@ -650,156 +768,314 @@ func (s *NotificationService) SendVulnerabilityNotification(ctx context.Context,
 }
 
 func (s *NotificationService) sendVulnerabilityNotificationForTargetInternal(ctx context.Context, target NotificationTarget, payload VulnerabilityNotificationPayload) error {
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
+	metadata := models.JSON{
+		"cveId":        payload.CVEID,
+		"severity":     payload.Severity,
+		"fixedVersion": payload.FixedVersion,
+		"eventType":    string(models.NotificationEventVulnerabilityFound),
+	}
+	content := s.vulnerabilityNotificationContentInternal(target.EnvironmentName, payload)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventVulnerabilityFound, payload.ImageName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+	return err
+}
+
+// SendBatchImageUpdateNotification dispatches a batched image-update notification
+// and returns the number of eligible providers it was delivered to (0 means no
+// provider has this event enabled, so callers must not mark the updates notified).
+func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) (int, error) {
+	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
+	if len(updatesWithChanges) == 0 {
+		return 0, nil
 	}
 
-	var errors []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
+	if s.config != nil && s.config.AgentMode {
+		dispatchResponse, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+			Kind: notificationdto.DispatchKindBatchImageUpdate,
+			BatchImageUpdate: &notificationdto.DispatchBatchImageUpdate{
+				Updates: updatesWithChanges,
+			},
+		})
+		if err != nil {
+			return 0, err
 		}
-		if !s.isEventEnabled(setting.Config, models.NotificationEventVulnerabilityFound) {
-			continue
+		return dispatchResponse.Delivered, nil
+	}
+
+	target, err := s.resolveNotificationTargetInternal(ctx, "")
+	if err != nil {
+		return 0, err
+	}
+
+	return s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, updatesWithChanges)
+}
+
+func filterUpdatesWithChangesInternal(updates map[string]*imageupdate.Response) map[string]*imageupdate.Response {
+	updatesWithChanges := make(map[string]*imageupdate.Response, len(updates))
+	for imageRef, update := range updates {
+		if update != nil && update.HasUpdate {
+			updatesWithChanges[imageRef] = update
 		}
+	}
+	return updatesWithChanges
+}
 
-		handled, sendErr := sendProviderNotificationInternal(ctx, setting.Provider, target.EnvironmentName, payload, setting.Config, s.vulnerabilityNotificationSendersInternal())
-		if !handled {
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
+func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, updates map[string]*imageupdate.Response) (int, error) {
+	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
+
+	if len(updatesWithChanges) == 0 {
+		return 0, nil
+	}
+
+	imageRefs := make([]string, 0, len(updatesWithChanges))
+	for ref := range updatesWithChanges {
+		imageRefs = append(imageRefs, ref)
+	}
+
+	metadata := models.JSON{
+		"updateCount": len(updatesWithChanges),
+		"eventType":   string(models.NotificationEventImageUpdate),
+		"batch":       true,
+	}
+	content := s.batchImageUpdateNotificationContentInternal(target.EnvironmentName, updatesWithChanges)
+	return s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventImageUpdate, strings.Join(imageRefs, ", "), metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+}
+
+func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
+	hasChanges := pruneResultHasChangesInternal(result)
+	hasErrors := result != nil && len(result.Errors) > 0
+	if !hasChanges && !hasErrors {
+		slog.InfoContext(ctx, "skipping prune report notification because no resources were pruned and no errors were reported")
+		return nil
+	}
+
+	if s.config != nil && s.config.AgentMode {
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+			Kind: notificationdto.DispatchKindPruneReport,
+			PruneReport: &notificationdto.DispatchPruneReport{
+				Result: *result,
+			},
+		})
+		return err
+	}
+
+	target, err := s.resolveNotificationTargetInternal(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	return s.sendPruneReportNotificationForTargetInternal(ctx, target, result)
+}
+
+func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) error {
+	hasChanges := pruneResultHasChangesInternal(result)
+	hasErrors := result != nil && len(result.Errors) > 0
+
+	metadata := models.JSON{
+		"spaceReclaimed": result.SpaceReclaimed,
+		"eventType":      string(models.NotificationEventPruneReport),
+	}
+	content := s.pruneReportNotificationContentInternal(target.EnvironmentName, result)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventPruneReport, "System Prune Report", metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+	if err != nil {
+		return err
+	}
+	if hasErrors && !hasChanges {
+		slog.WarnContext(ctx, "sending prune report notification with errors but no resources were pruned", "errorCount", len(result.Errors))
+	}
+
+	return nil
+}
+
+func pruneResultHasChangesInternal(result *system.PruneAllResult) bool {
+	if result == nil {
+		return false
+	}
+
+	if result.SpaceReclaimed > 0 {
+		return true
+	}
+
+	return len(result.ContainersPruned) > 0 ||
+		len(result.ImagesDeleted) > 0 ||
+		len(result.VolumesDeleted) > 0 ||
+		len(result.NetworksDeleted) > 0
+}
+
+// SendAutoHealNotification sends a notification when a container is auto-healed.
+func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
+	if s.config != nil && s.config.AgentMode {
+		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
+			Kind: notificationdto.DispatchKindAutoHeal,
+			AutoHeal: &notificationdto.DispatchAutoHeal{
+				ContainerName: containerName,
+				ContainerID:   containerID,
+			},
+		})
+		return err
+	}
+
+	target, err := s.resolveNotificationTargetInternal(ctx, "")
+	if err != nil {
+		return err
+	}
+
+	return s.sendAutoHealNotificationForTargetInternal(ctx, target, containerName, containerID)
+}
+
+func (s *NotificationService) sendAutoHealNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, containerID string) error {
+	metadata := models.JSON{
+		"containerID": containerID,
+		"eventType":   string(models.NotificationEventAutoHeal),
+	}
+	content := s.autoHealNotificationContentInternal(target.EnvironmentName, containerName)
+	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventAutoHeal, containerName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
+		return notifications.Deliver(ctx, provider, config, content)
+	})
+	return err
+}
+
+// --- Test notifications ---
+
+// notificationEventTypeForTestTypeInternal maps a test type to the event type a
+// real notification of that kind would be gated on ("" = no event gate).
+func notificationEventTypeForTestTypeInternal(testType string) models.NotificationEventType {
+	switch testType {
+	case notificationTestTypeImageUpdate, notificationTestTypeBatchImageUpdate:
+		return models.NotificationEventImageUpdate
+	case notificationTestTypeVulnerability:
+		return models.NotificationEventVulnerabilityFound
+	case notificationTestTypePruneReport:
+		return models.NotificationEventPruneReport
+	case notificationTestTypeAutoHeal:
+		return models.NotificationEventAutoHeal
+	default:
+		return ""
+	}
+}
+
+// testNotificationWarningInternal reports why a real notification would not send
+// even though the test did: the provider is disabled, or the tested event type is
+// unsubscribed. Empty means real notifications would send.
+func (s *NotificationService) testNotificationWarningInternal(setting *models.NotificationSettings, testType string) string {
+	if !setting.Enabled {
+		return fmt.Sprintf("%s is disabled, so real notifications will not send", setting.Provider)
+	}
+	if eventType := notificationEventTypeForTestTypeInternal(testType); eventType != "" && !s.isEventEnabled(setting.Config, eventType) {
+		return fmt.Sprintf("%s events are disabled for %s, so real notifications will not send", eventType, setting.Provider)
+	}
+	return ""
+}
+
+func (s *NotificationService) testNotificationContentInternal(environmentName, testType string) notifications.Content {
+	switch testType {
+	case notificationTestTypeVulnerability:
+		return s.vulnerabilityNotificationContentInternal(environmentName, VulnerabilityNotificationPayload{
+			CVEID:        "Daily Summary - " + time.Now().UTC().Format("2006-01-02"),
+			Severity:     "Critical:1 High:3 Medium:2 Low:1 Unknown:0",
+			ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
+			FixedVersion: "7 fixable vulnerability record(s)",
+			PkgName:      "CVE-2025-1234, CVE-2025-5678, CVE-2026-0001",
+		})
+	case notificationTestTypeAutoHeal:
+		return s.autoHealNotificationContentInternal(environmentName, "test-container")
+	case notificationTestTypePruneReport:
+		return s.pruneReportNotificationContentInternal(environmentName, &system.PruneAllResult{
+			Success:                  true,
+			ContainersPruned:         []string{"a1b2c3d4e5f6", "f6e5d4c3b2a1"},
+			ImagesDeleted:            []string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"},
+			VolumesDeleted:           []string{"arcane_test_volume"},
+			NetworksDeleted:          []string{"arcane_test_network"},
+			SpaceReclaimed:           3825205248,
+			ContainerSpaceReclaimed:  503316480,
+			ImageSpaceReclaimed:      2449473536,
+			VolumeSpaceReclaimed:     641728512,
+			BuildCacheSpaceReclaimed: 230162432,
+			Errors:                   []string{},
+		})
+	case notificationTestTypeBatchImageUpdate:
+		return s.batchImageUpdateNotificationContentInternal(environmentName, map[string]*imageupdate.Response{
+			"nginx:latest": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:abc123def456789012345678901234567890",
+				LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 100,
+			},
+			"postgres:16-alpine": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:def456abc123789012345678901234567890",
+				LatestDigest:   "sha256:ghi789xyz012345678901234567890123456",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 120,
+			},
+			"redis:7.2-alpine": {
+				HasUpdate:      true,
+				UpdateType:     "digest",
+				CurrentDigest:  "sha256:123456789abc012345678901234567890def",
+				LatestDigest:   "sha256:456789012def345678901234567890123abc",
+				CheckTime:      time.Now(),
+				ResponseTimeMs: 95,
+			},
+		})
+	default: // simple and image-update
+		imageRef := "nginx:latest"
+		if testType == notificationTestTypeSimple {
+			imageRef = "test/image:latest"
 		}
-
-		status, errMsg := collectNotificationSendResultInternal(&errors, setting.Provider, sendErr)
-
-		s.logNotification(ctx, setting.Provider, payload.ImageName, status, errMsg, models.JSON{
-			"cveId":        payload.CVEID,
-			"severity":     payload.Severity,
-			"fixedVersion": payload.FixedVersion,
-			"eventType":    string(models.NotificationEventVulnerabilityFound),
+		return s.imageUpdateNotificationContentInternal(environmentName, imageRef, &imageupdate.Response{
+			HasUpdate:      true,
+			UpdateType:     "digest",
+			CurrentDigest:  "sha256:abc123def456789012345678901234567890",
+			LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
+			CheckTime:      time.Now(),
+			ResponseTimeMs: 100,
 		})
 	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-	return nil
 }
 
-func (s *NotificationService) sendDiscordNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
+// TestNotification sends a test message to the provider regardless of its enabled
+// state (testing before enabling is legitimate) and returns a warning when a real
+// notification of the tested kind would not send.
+func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, testType string) (string, error) {
+	setting, err := s.GetSettingsByProvider(ctx, provider)
 	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
+		return "", fmt.Errorf("please save your %s settings before testing", provider)
 	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
+	testType = strings.TrimSpace(testType)
+	if testType == "" {
+		testType = notificationTestTypeSimple
 	}
-
-	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return errors.New("discord webhook ID or token not configured")
+	if _, ok := supportedNotificationTestTypes[testType]; !ok {
+		return "", fmt.Errorf("unsupported notification test type: %s", testType)
 	}
+	warning := s.testNotificationWarningInternal(setting, testType)
 
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatMarkdown,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
-		return fmt.Errorf("failed to send Discord notification: %w", err)
+	target, err := s.resolveNotificationTargetInternal(ctx, environmentID)
+	if err != nil {
+		return "", err
 	}
 
-	return nil
+	if provider == models.NotificationProviderEmail && testType == notificationTestTypeSimple {
+		return warning, s.sendTestEmail(ctx, target.EnvironmentName, setting.Config)
+	}
+
+	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
+	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
+	if !handled {
+		return "", unknownNotificationProviderErrorInternal(provider)
+	}
+	return warning, sendErr
 }
 
-func (s *NotificationService) sendTelegramNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Telegram config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
-	}
-
-	if telegramConfig.BotToken == "" {
-		return errors.New("telegram bot token not configured")
-	}
-	if len(telegramConfig.ChatIDs) == 0 {
-		return errors.New("no telegram chat IDs configured")
-	}
-
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatHTML,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	// Set parse mode to HTML if not already set
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
-		return fmt.Errorf("failed to send Telegram notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendEmailNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-
-	htmlBody, _, err := s.renderEmailTemplate(environmentName, imageRef, updateInfo)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	subject := notifications.BuildEmailSubject(environmentName, "Container Update Available: "+notifications.SanitizeForEmail(imageRef))
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
-}
+const logoURLPath = "/api/app-images/logo-email"
 
 func (s *NotificationService) renderEmailTemplate(environmentName, imageRef string, updateInfo *imageupdate.Response) (string, string, error) {
 	appURL := s.config.GetAppURL()
@@ -849,125 +1125,6 @@ func (s *NotificationService) renderEmailTemplate(environmentName, imageRef stri
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func (s *NotificationService) sendDiscordContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
-	}
-
-	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return errors.New("discord webhook ID or token not configured")
-	}
-
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatMarkdown,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
-		return fmt.Errorf("failed to send Discord notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendTelegramContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Telegram config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
-	}
-
-	if telegramConfig.BotToken == "" {
-		return errors.New("telegram bot token not configured")
-	}
-	if len(telegramConfig.ChatIDs) == 0 {
-		return errors.New("no telegram chat IDs configured")
-	}
-
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatHTML,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	// Set parse mode to HTML if not already set
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
-		return fmt.Errorf("failed to send Telegram notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendEmailContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-
-	htmlBody, _, err := s.renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	subject := notifications.BuildEmailSubject(environmentName, "Container Updated: "+notifications.SanitizeForEmail(containerName))
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
-}
-
 func (s *NotificationService) renderContainerUpdateEmailTemplate(environmentName, containerName, imageRef, oldDigest, newDigest string) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
@@ -1013,272 +1170,6 @@ func (s *NotificationService) renderContainerUpdateEmailTemplate(environmentName
 	}
 
 	return htmlBuf.String(), textBuf.String(), nil
-}
-
-func (s *NotificationService) TestNotification(ctx context.Context, environmentID string, provider models.NotificationProvider, testType string) error {
-	setting, err := s.GetSettingsByProvider(ctx, provider)
-	if err != nil {
-		return fmt.Errorf("please save your %s settings before testing", provider)
-	}
-	testType = strings.TrimSpace(testType)
-	if testType == "" {
-		testType = notificationTestTypeSimple
-	}
-	if _, ok := supportedNotificationTestTypes[testType]; !ok {
-		return fmt.Errorf("unsupported notification test type: %s", testType)
-	}
-
-	target, err := s.resolveNotificationTargetInternal(ctx, environmentID)
-	if err != nil {
-		return err
-	}
-
-	// Test vulnerability notification (all providers)
-	if testType == notificationTestTypeVulnerability {
-		payload := VulnerabilityNotificationPayload{
-			CVEID:        "Daily Summary - " + time.Now().UTC().Format("2006-01-02"),
-			Severity:     "Critical:1 High:3 Medium:2 Low:1 Unknown:0",
-			ImageName:    "5 image(s) scanned, 2 with fixable vulnerabilities",
-			FixedVersion: "7 fixable vulnerability record(s)",
-			PkgName:      "CVE-2025-1234, CVE-2025-5678, CVE-2026-0001",
-		}
-		handled, sendErr := sendProviderNotificationInternal(ctx, provider, target.EnvironmentName, payload, setting.Config, s.vulnerabilityNotificationSendersInternal())
-		if !handled {
-			return unknownNotificationProviderErrorInternal(provider)
-		}
-		return sendErr
-	}
-
-	if testType == notificationTestTypeAutoHeal {
-		testContainerName := "test-container"
-		handled, sendErr := sendProviderNotificationInternal(ctx, provider, target.EnvironmentName, testContainerName, setting.Config, s.autoHealNotificationSendersInternal())
-		if !handled {
-			return unknownNotificationProviderErrorInternal(provider)
-		}
-		return sendErr
-	}
-
-	if testType == notificationTestTypePruneReport {
-		result := &system.PruneAllResult{
-			Success:                  true,
-			ContainersPruned:         []string{"a1b2c3d4e5f6", "f6e5d4c3b2a1"},
-			ImagesDeleted:            []string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"},
-			VolumesDeleted:           []string{"arcane_test_volume"},
-			NetworksDeleted:          []string{"arcane_test_network"},
-			SpaceReclaimed:           3825205248,
-			ContainerSpaceReclaimed:  503316480,
-			ImageSpaceReclaimed:      2449473536,
-			VolumeSpaceReclaimed:     641728512,
-			BuildCacheSpaceReclaimed: 230162432,
-			Errors:                   []string{},
-		}
-
-		handled, sendErr := sendProviderNotificationInternal(ctx, provider, target.EnvironmentName, result, setting.Config, s.pruneReportNotificationSendersInternal())
-		if !handled {
-			return unknownNotificationProviderErrorInternal(provider)
-		}
-		return sendErr
-	}
-
-	testUpdate := &imageupdate.Response{
-		HasUpdate:      true,
-		UpdateType:     "digest",
-		CurrentDigest:  "sha256:abc123def456789012345678901234567890",
-		LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
-		CheckTime:      time.Now(),
-		ResponseTimeMs: 100,
-	}
-
-	if testType == notificationTestTypeBatchImageUpdate {
-		// Create test batch updates with multiple images
-		testUpdates := map[string]*imageupdate.Response{
-			"nginx:latest": {
-				HasUpdate:      true,
-				UpdateType:     "digest",
-				CurrentDigest:  "sha256:abc123def456789012345678901234567890",
-				LatestDigest:   "sha256:xyz789ghi012345678901234567890123456",
-				CheckTime:      time.Now(),
-				ResponseTimeMs: 100,
-			},
-			"postgres:16-alpine": {
-				HasUpdate:      true,
-				UpdateType:     "digest",
-				CurrentDigest:  "sha256:def456abc123789012345678901234567890",
-				LatestDigest:   "sha256:ghi789xyz012345678901234567890123456",
-				CheckTime:      time.Now(),
-				ResponseTimeMs: 120,
-			},
-			"redis:7.2-alpine": {
-				HasUpdate:      true,
-				UpdateType:     "digest",
-				CurrentDigest:  "sha256:123456789abc012345678901234567890def",
-				LatestDigest:   "sha256:456789012def345678901234567890123abc",
-				CheckTime:      time.Now(),
-				ResponseTimeMs: 95,
-			},
-		}
-		handled, sendErr := sendProviderNotificationInternal(ctx, provider, target.EnvironmentName, testUpdates, setting.Config, s.batchImageUpdateNotificationSendersInternal())
-		if !handled {
-			return unknownNotificationProviderErrorInternal(provider)
-		}
-		return sendErr
-	}
-
-	imageRef := "nginx:latest"
-	if testType == notificationTestTypeSimple {
-		imageRef = "test/image:latest"
-	}
-
-	switch provider {
-	case models.NotificationProviderDiscord:
-		return s.sendDiscordNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderEmail:
-		if testType == notificationTestTypeSimple {
-			return s.sendTestEmail(ctx, target.EnvironmentName, setting.Config)
-		}
-		return s.sendEmailNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderTelegram:
-		return s.sendTelegramNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderSignal:
-		return s.sendSignalNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderSlack:
-		return s.sendSlackNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderNtfy:
-		return s.sendNtfyNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderPushover:
-		return s.sendPushoverNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderGotify:
-		return s.sendGotifyNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderMatrix:
-		return s.sendMatrixNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	case models.NotificationProviderGeneric:
-		return s.sendGenericNotification(ctx, target.EnvironmentName, imageRef, testUpdate, setting.Config)
-	default:
-		return fmt.Errorf("unknown provider: %s", provider)
-	}
-}
-
-type notificationProviderSenderInternal[T any] func(context.Context, string, T, models.JSON) error
-
-type notificationProviderSendersInternal[T any] struct {
-	Discord  notificationProviderSenderInternal[T]
-	Email    notificationProviderSenderInternal[T]
-	Telegram notificationProviderSenderInternal[T]
-	Signal   notificationProviderSenderInternal[T]
-	Slack    notificationProviderSenderInternal[T]
-	Ntfy     notificationProviderSenderInternal[T]
-	Pushover notificationProviderSenderInternal[T]
-	Gotify   notificationProviderSenderInternal[T]
-	Matrix   notificationProviderSenderInternal[T]
-	Generic  notificationProviderSenderInternal[T]
-}
-
-func (s *NotificationService) vulnerabilityNotificationSendersInternal() notificationProviderSendersInternal[VulnerabilityNotificationPayload] {
-	return notificationProviderSendersInternal[VulnerabilityNotificationPayload]{
-		Discord:  s.sendDiscordVulnerabilityNotification,
-		Email:    s.sendEmailVulnerabilityNotification,
-		Telegram: s.sendTelegramVulnerabilityNotification,
-		Signal:   s.sendSignalVulnerabilityNotification,
-		Slack:    s.sendSlackVulnerabilityNotification,
-		Ntfy:     s.sendNtfyVulnerabilityNotification,
-		Pushover: s.sendPushoverVulnerabilityNotification,
-		Gotify:   s.sendGotifyVulnerabilityNotification,
-		Matrix:   s.sendMatrixVulnerabilityNotification,
-		Generic:  s.sendGenericVulnerabilityNotification,
-	}
-}
-
-func (s *NotificationService) batchImageUpdateNotificationSendersInternal() notificationProviderSendersInternal[map[string]*imageupdate.Response] {
-	return notificationProviderSendersInternal[map[string]*imageupdate.Response]{
-		Discord:  s.sendBatchDiscordNotification,
-		Email:    s.sendBatchEmailNotification,
-		Telegram: s.sendBatchTelegramNotification,
-		Signal:   s.sendBatchSignalNotification,
-		Slack:    s.sendBatchSlackNotification,
-		Ntfy:     s.sendBatchNtfyNotification,
-		Pushover: s.sendBatchPushoverNotification,
-		Gotify:   s.sendBatchGotifyNotification,
-		Matrix:   s.sendBatchMatrixNotification,
-		Generic:  s.sendBatchGenericNotification,
-	}
-}
-
-func (s *NotificationService) pruneReportNotificationSendersInternal() notificationProviderSendersInternal[*system.PruneAllResult] {
-	return notificationProviderSendersInternal[*system.PruneAllResult]{
-		Discord:  s.sendDiscordPruneNotification,
-		Email:    s.sendEmailPruneNotification,
-		Telegram: s.sendTelegramPruneNotification,
-		Signal:   s.sendSignalPruneNotification,
-		Slack:    s.sendSlackPruneNotification,
-		Ntfy:     s.sendNtfyPruneNotification,
-		Pushover: s.sendPushoverPruneNotification,
-		Gotify:   s.sendGotifyPruneNotification,
-		Matrix:   s.sendMatrixPruneNotification,
-		Generic:  s.sendGenericPruneNotification,
-	}
-}
-
-func (s *NotificationService) autoHealNotificationSendersInternal() notificationProviderSendersInternal[string] {
-	return notificationProviderSendersInternal[string]{
-		Discord:  s.sendDiscordAutoHealNotification,
-		Email:    s.sendEmailAutoHealNotification,
-		Telegram: s.sendTelegramAutoHealNotification,
-		Signal:   s.sendSignalAutoHealNotification,
-		Slack:    s.sendSlackAutoHealNotification,
-		Ntfy:     s.sendNtfyAutoHealNotification,
-		Pushover: s.sendPushoverAutoHealNotification,
-		Gotify:   s.sendGotifyAutoHealNotification,
-		Matrix:   s.sendMatrixAutoHealNotification,
-		Generic:  s.sendGenericAutoHealNotification,
-	}
-}
-
-func sendProviderNotificationInternal[T any](
-	ctx context.Context,
-	provider models.NotificationProvider,
-	environmentName string,
-	payload T,
-	config models.JSON,
-	senders notificationProviderSendersInternal[T],
-) (bool, error) {
-	switch provider {
-	case models.NotificationProviderDiscord:
-		return true, senders.Discord(ctx, environmentName, payload, config)
-	case models.NotificationProviderEmail:
-		return true, senders.Email(ctx, environmentName, payload, config)
-	case models.NotificationProviderTelegram:
-		return true, senders.Telegram(ctx, environmentName, payload, config)
-	case models.NotificationProviderSignal:
-		return true, senders.Signal(ctx, environmentName, payload, config)
-	case models.NotificationProviderSlack:
-		return true, senders.Slack(ctx, environmentName, payload, config)
-	case models.NotificationProviderNtfy:
-		return true, senders.Ntfy(ctx, environmentName, payload, config)
-	case models.NotificationProviderPushover:
-		return true, senders.Pushover(ctx, environmentName, payload, config)
-	case models.NotificationProviderGotify:
-		return true, senders.Gotify(ctx, environmentName, payload, config)
-	case models.NotificationProviderMatrix:
-		return true, senders.Matrix(ctx, environmentName, payload, config)
-	case models.NotificationProviderGeneric:
-		return true, senders.Generic(ctx, environmentName, payload, config)
-	default:
-		return false, nil
-	}
-}
-
-func collectNotificationSendResultInternal(errors *[]string, provider models.NotificationProvider, sendErr error) (string, *string) {
-	if sendErr == nil {
-		return "success", nil
-	}
-
-	msg := sendErr.Error()
-	*errors = append(*errors, fmt.Sprintf("%s: %s", provider, msg))
-	return "failed", &msg
-}
-
-func unknownNotificationProviderErrorInternal(provider models.NotificationProvider) error {
-	return fmt.Errorf("unknown provider: %s", provider)
 }
 
 func (s *NotificationService) sendTestEmail(ctx context.Context, environmentName string, config models.JSON) error {
@@ -1366,218 +1257,6 @@ func (s *NotificationService) renderTestEmailTemplate(environmentName string) (s
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func (s *NotificationService) logNotification(ctx context.Context, provider models.NotificationProvider, imageRef, status string, errMsg *string, metadata models.JSON) {
-	log := &models.NotificationLog{
-		Provider: provider,
-		ImageRef: imageRef,
-		Status:   status,
-		Error:    errMsg,
-		Metadata: metadata,
-		SentAt:   time.Now(),
-	}
-
-	if err := s.db.WithContext(ctx).Create(log).Error; err != nil {
-		slog.WarnContext(ctx, "Failed to log notification", "provider", string(provider), "error", err.Error())
-	}
-}
-
-// SendBatchImageUpdateNotification dispatches a batched image-update notification
-// and returns the number of eligible providers it was delivered to (0 means no
-// provider has this event enabled, so callers must not mark the updates notified).
-func (s *NotificationService) SendBatchImageUpdateNotification(ctx context.Context, updates map[string]*imageupdate.Response) (int, error) {
-	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
-	if len(updatesWithChanges) == 0 {
-		return 0, nil
-	}
-
-	if s.config != nil && s.config.AgentMode {
-		dispatchResponse, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
-			Kind: notificationdto.DispatchKindBatchImageUpdate,
-			BatchImageUpdate: &notificationdto.DispatchBatchImageUpdate{
-				Updates: updatesWithChanges,
-			},
-		})
-		if err != nil {
-			return 0, err
-		}
-		return dispatchResponse.Delivered, nil
-	}
-
-	target, err := s.resolveNotificationTargetInternal(ctx, "")
-	if err != nil {
-		return 0, err
-	}
-
-	return s.sendBatchImageUpdateNotificationForTargetInternal(ctx, target, updatesWithChanges)
-}
-
-func filterUpdatesWithChangesInternal(updates map[string]*imageupdate.Response) map[string]*imageupdate.Response {
-	updatesWithChanges := make(map[string]*imageupdate.Response, len(updates))
-	for imageRef, update := range updates {
-		if update != nil && update.HasUpdate {
-			updatesWithChanges[imageRef] = update
-		}
-	}
-	return updatesWithChanges
-}
-
-func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(ctx context.Context, target NotificationTarget, updates map[string]*imageupdate.Response) (int, error) {
-	updatesWithChanges := filterUpdatesWithChangesInternal(updates)
-
-	if len(updatesWithChanges) == 0 {
-		return 0, nil
-	}
-
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return 0, fmt.Errorf("failed to get notification settings: %w", err)
-	}
-
-	delivered := 0
-	var errors []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
-		}
-
-		if !s.isEventEnabled(setting.Config, models.NotificationEventImageUpdate) {
-			continue
-		}
-
-		handled, sendErr := sendProviderNotificationInternal(ctx, setting.Provider, target.EnvironmentName, updatesWithChanges, setting.Config, s.batchImageUpdateNotificationSendersInternal())
-		if !handled {
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
-		}
-
-		if sendErr == nil {
-			delivered++
-		}
-
-		status, errMsg := collectNotificationSendResultInternal(&errors, setting.Provider, sendErr)
-
-		imageRefs := make([]string, 0, len(updatesWithChanges))
-		for ref := range updatesWithChanges {
-			imageRefs = append(imageRefs, ref)
-		}
-
-		s.logNotification(ctx, setting.Provider, strings.Join(imageRefs, ", "), status, errMsg, models.JSON{
-			"updateCount": len(updatesWithChanges),
-			"eventType":   string(models.NotificationEventImageUpdate),
-			"batch":       true,
-		})
-	}
-
-	if len(errors) > 0 {
-		return delivered, fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-
-	return delivered, nil
-}
-
-func (s *NotificationService) sendBatchDiscordNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	discordConfig, err := notifications.DecodeConfig[models.DiscordConfig](config, "discord")
-	if err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatMarkdown,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Discord notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchTelegramNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal telegram config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal telegram config: %w", err)
-	}
-
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatHTML,
-		environmentName,
-		updates,
-	)
-
-	// Set parse mode to HTML if not already set
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Telegram notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchEmailNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-
-	htmlBody, _, err := s.renderBatchEmailTemplate(environmentName, updates)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	updateCount := len(updates)
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("%d Image Update%s Available", updateCount, func() string {
-		if updateCount > 1 {
-			return "s"
-		}
-		return ""
-	}()))
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
-}
-
 func (s *NotificationService) renderBatchEmailTemplate(environmentName string, updates map[string]*imageupdate.Response) (string, string, error) {
 	// Build list of image names
 	imageList := make([]string, 0, len(updates))
@@ -1629,413 +1308,6 @@ func (s *NotificationService) renderBatchEmailTemplate(environmentName string, u
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func (s *NotificationService) sendSignalNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Signal config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
-	}
-
-	if signalConfig.Host == "" {
-		return errors.New("signal host not configured")
-	}
-	if signalConfig.Port == 0 {
-		return errors.New("signal port not configured")
-	}
-	if signalConfig.Source == "" {
-		return errors.New("signal source phone number not configured")
-	}
-	if len(signalConfig.Recipients) == 0 {
-		return errors.New("no signal recipients configured")
-	}
-
-	// Validate authentication
-	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
-	hasTokenAuth := signalConfig.Token != ""
-	if !hasBasicAuth && !hasTokenAuth {
-		return errors.New("signal requires either basic auth (user/password) or token authentication")
-	}
-	if hasBasicAuth && hasTokenAuth {
-		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
-	}
-
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
-		return fmt.Errorf("failed to send Signal notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendSignalContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Signal config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
-	}
-
-	if signalConfig.Host == "" {
-		return errors.New("signal host not configured")
-	}
-	if signalConfig.Port == 0 {
-		return errors.New("signal port not configured")
-	}
-	if signalConfig.Source == "" {
-		return errors.New("signal source phone number not configured")
-	}
-	if len(signalConfig.Recipients) == 0 {
-		return errors.New("no signal recipients configured")
-	}
-
-	// Validate authentication
-	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
-	hasTokenAuth := signalConfig.Token != ""
-	if !hasBasicAuth && !hasTokenAuth {
-		return errors.New("signal requires either basic auth (user/password) or token authentication")
-	}
-	if hasBasicAuth && hasTokenAuth {
-		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
-	}
-
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
-		return fmt.Errorf("failed to send Signal notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchSignalNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal signal config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal signal config: %w", err)
-	}
-
-	// Validate authentication
-	hasBasicAuth := signalConfig.User != "" && signalConfig.Password != ""
-	hasTokenAuth := signalConfig.Token != ""
-	if !hasBasicAuth && !hasTokenAuth {
-		return errors.New("signal requires either basic auth (user/password) or token authentication")
-	}
-	if hasBasicAuth && hasTokenAuth {
-		return errors.New("signal cannot use both basic auth and token authentication simultaneously")
-	}
-
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Signal notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendSlackNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatSlack,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
-		return fmt.Errorf("failed to send Slack notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendSlackContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatSlack,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
-		return fmt.Errorf("failed to send Slack notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchSlackNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	slackConfig, err := notifications.PrepareSlackConfig(config, "slack", false)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatSlack,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Slack notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendNtfyNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Ntfy notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendNtfyContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Ntfy notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchNtfyNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "ntfy", false)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Ntfy notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendPushoverNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
-	if err != nil {
-		return err
-	}
-
-	if pushoverConfig.Token == "" {
-		return errors.New("pushover API token not configured")
-	}
-	if pushoverConfig.User == "" {
-		return errors.New("pushover user key not configured")
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
-		return fmt.Errorf("failed to send Pushover notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendPushoverContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
-	if err != nil {
-		return err
-	}
-
-	if pushoverConfig.Token == "" {
-		return errors.New("pushover API token not configured")
-	}
-	if pushoverConfig.User == "" {
-		return errors.New("pushover user key not configured")
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
-		return fmt.Errorf("failed to send Pushover notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchPushoverNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	pushoverConfig, err := notifications.PreparePushoverConfig(config, "pushover")
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Pushover notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendGenericNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Generic config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
-	}
-
-	if genericConfig.WebhookURL == "" {
-		return errors.New("webhook URL not configured")
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	title := "Container Image Update"
-	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
-		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendGenericContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Generic config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
-	}
-
-	if genericConfig.WebhookURL == "" {
-		return errors.New("webhook URL not configured")
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	title := "Container Updated"
-	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
-		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
-	}
-
-	return nil
-}
-
 func (s *NotificationService) renderVulnerabilitySummaryEmailTemplate(environmentName string, payload VulnerabilityNotificationPayload) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
@@ -2078,550 +1350,6 @@ func (s *NotificationService) renderVulnerabilitySummaryEmailTemplate(environmen
 	return htmlBuf.String(), textBuf.String(), nil
 }
 
-func (s *NotificationService) sendEmailVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal email config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &emailConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal email config: %w", err)
-	}
-	if emailConfig.SMTPHost == "" || emailConfig.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(emailConfig.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-	if _, err := mail.ParseAddress(emailConfig.FromAddress); err != nil {
-		return fmt.Errorf("invalid from address: %w", err)
-	}
-	for _, addr := range emailConfig.ToAddresses {
-		if _, err := mail.ParseAddress(addr); err != nil {
-			return fmt.Errorf("invalid to address %s: %w", addr, err)
-		}
-	}
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-	htmlBody, _, err := s.renderVulnerabilitySummaryEmailTemplate(environmentName, payload)
-	if err != nil {
-		return fmt.Errorf("failed to render summary email template: %w", err)
-	}
-	subject := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary: "+notifications.SanitizeForEmail(payload.CVEID))
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendDiscordVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Discord config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &discordConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Discord config: %w", err)
-	}
-	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return errors.New("discord webhook ID or token not configured")
-	}
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
-		notifications.MessageFormatMarkdown,
-		environmentName,
-		payload.CVEID,
-		payload.ImageName,
-		payload.FixedVersion,
-		payload.Severity,
-		payload.PkgName,
-	)
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
-		return fmt.Errorf("failed to send Discord notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendTelegramVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Telegram config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &telegramConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Telegram config: %w", err)
-	}
-	if telegramConfig.BotToken == "" {
-		return errors.New("telegram bot token not configured")
-	}
-	if len(telegramConfig.ChatIDs) == 0 {
-		return errors.New("no telegram chat IDs configured")
-	}
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
-		notifications.MessageFormatHTML,
-		environmentName,
-		payload.CVEID,
-		payload.ImageName,
-		payload.FixedVersion,
-		payload.Severity,
-		payload.PkgName,
-	)
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
-		return fmt.Errorf("failed to send Telegram notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendSignalVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Signal config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &signalConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Signal config: %w", err)
-	}
-	if signalConfig.Host == "" || signalConfig.Port == 0 || signalConfig.Source == "" || len(signalConfig.Recipients) == 0 {
-		return errors.New("signal not fully configured")
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		payload.CVEID,
-		payload.ImageName,
-		payload.FixedVersion,
-		payload.Severity,
-		payload.PkgName,
-	)
-	if err := notifications.SendSignal(ctx, signalConfig, message); err != nil {
-		return fmt.Errorf("failed to send Signal notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendSlackVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	slackConfig, err := notifications.PrepareSlackConfig(config, "Slack", true)
-	if err != nil {
-		return err
-	}
-	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatSlack, environmentName, payload)
-	if err := notifications.SendSlack(ctx, slackConfig, message); err != nil {
-		return fmt.Errorf("failed to send Slack notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendNtfyVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	ntfyConfig, err := notifications.PrepareNtfyConfig(config, "Ntfy", true)
-	if err != nil {
-		return err
-	}
-	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatPlain, environmentName, payload)
-	if err := notifications.SendNtfy(ctx, ntfyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Ntfy notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendPushoverVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	pushoverConfig, err := notifications.PreparePushoverConfig(config, "Pushover")
-	if err != nil {
-		return err
-	}
-	if pushoverConfig.Token == "" || pushoverConfig.User == "" {
-		return errors.New("pushover token or user not configured")
-	}
-	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatPlain, environmentName, payload)
-	if pushoverConfig.Title == "" {
-		pushoverConfig.Title = notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
-	}
-	if err := notifications.SendPushover(ctx, pushoverConfig, message); err != nil {
-		return fmt.Errorf("failed to send Pushover notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendGotifyVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
-	if err != nil {
-		return err
-	}
-	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatPlain, environmentName, payload)
-	if gotifyConfig.Title == "" {
-		gotifyConfig.Title = notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
-	}
-	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Gotify notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendMatrixVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	matrixConfig, err := notifications.PrepareMatrixConfig(config)
-	if err != nil {
-		return err
-	}
-	message := buildVulnerabilitySummaryMessageInternal(notifications.MessageFormatPlain, environmentName, payload)
-	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
-		return fmt.Errorf("failed to send Matrix notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendGenericVulnerabilityNotification(ctx context.Context, environmentName string, payload VulnerabilityNotificationPayload, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal Generic config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal Generic config: %w", err)
-	}
-	if genericConfig.WebhookURL == "" {
-		return errors.New("webhook URL not configured")
-	}
-	message := notifications.BuildVulnerabilitySummaryNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		payload.CVEID,
-		payload.ImageName,
-		payload.FixedVersion,
-		payload.Severity,
-		payload.PkgName,
-	)
-	title := notifications.BuildEmailSubject(environmentName, "Daily Vulnerability Summary")
-	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
-		return fmt.Errorf("failed to send Generic webhook notification: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) sendBatchGenericNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal generic config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, &genericConfig); err != nil {
-		return fmt.Errorf("failed to unmarshal generic config: %w", err)
-	}
-
-	if genericConfig.WebhookURL == "" {
-		return errors.New("webhook URL not configured")
-	}
-
-	title := "Container Image Updates Available"
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendGenericWithTitle(ctx, genericConfig, title, message); err != nil {
-		return fmt.Errorf("failed to send batch Generic webhook notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendGotifyNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Gotify notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendGotifyContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "Gotify")
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
-		return fmt.Errorf("failed to send Gotify notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchGotifyNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	gotifyConfig, err := notifications.PrepareGotifyConfig(config, "gotify")
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendGotify(ctx, gotifyConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Gotify notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendMatrixNotification(ctx context.Context, environmentName, imageRef string, updateInfo *imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := notifications.PrepareMatrixConfig(config)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		imageRef,
-		updateInfo,
-	)
-
-	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
-		return fmt.Errorf("failed to send Matrix notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendMatrixContainerUpdateNotification(ctx context.Context, environmentName, containerName, imageRef, oldDigest, newDigest string, config models.JSON) error {
-	matrixConfig, err := notifications.PrepareMatrixConfig(config)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildContainerUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		containerName,
-		imageRef,
-		oldDigest,
-		newDigest,
-	)
-
-	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
-		return fmt.Errorf("failed to send Matrix notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendBatchMatrixNotification(ctx context.Context, environmentName string, updates map[string]*imageupdate.Response, config models.JSON) error {
-	matrixConfig, err := notifications.PrepareMatrixConfig(config)
-	if err != nil {
-		return err
-	}
-
-	message := notifications.BuildBatchImageUpdateNotificationMessage(
-		notifications.MessageFormatPlain,
-		environmentName,
-		updates,
-	)
-
-	if err := notifications.SendMatrix(ctx, matrixConfig, message); err != nil {
-		return fmt.Errorf("failed to send batch Matrix notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) SendPruneReportNotification(ctx context.Context, result *system.PruneAllResult) error {
-	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
-	if !hasChanges && !hasErrors {
-		slog.InfoContext(ctx, "skipping prune report notification because no resources were pruned and no errors were reported")
-		return nil
-	}
-
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
-			Kind: notificationdto.DispatchKindPruneReport,
-			PruneReport: &notificationdto.DispatchPruneReport{
-				Result: *result,
-			},
-		})
-		return err
-	}
-
-	target, err := s.resolveNotificationTargetInternal(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	return s.sendPruneReportNotificationForTargetInternal(ctx, target, result)
-}
-
-func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx context.Context, target NotificationTarget, result *system.PruneAllResult) error {
-	hasChanges := pruneResultHasChangesInternal(result)
-	hasErrors := result != nil && len(result.Errors) > 0
-
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
-	}
-
-	var errors []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
-		}
-
-		if !s.isEventEnabled(setting.Config, models.NotificationEventPruneReport) {
-			continue
-		}
-
-		handled, sendErr := sendProviderNotificationInternal(ctx, setting.Provider, target.EnvironmentName, result, setting.Config, s.pruneReportNotificationSendersInternal())
-		if !handled {
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
-		}
-
-		status, errMsg := collectNotificationSendResultInternal(&errors, setting.Provider, sendErr)
-
-		s.logNotification(ctx, setting.Provider, "System Prune Report", status, errMsg, models.JSON{
-			"spaceReclaimed": result.SpaceReclaimed,
-			"eventType":      string(models.NotificationEventPruneReport),
-		})
-	}
-
-	if len(errors) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errors, "; "))
-	}
-	if hasErrors && !hasChanges {
-		slog.WarnContext(ctx, "sending prune report notification with errors but no resources were pruned", "errorCount", len(result.Errors))
-	}
-
-	return nil
-}
-
-func pruneResultHasChangesInternal(result *system.PruneAllResult) bool {
-	if result == nil {
-		return false
-	}
-
-	if result.SpaceReclaimed > 0 {
-		return true
-	}
-
-	return len(result.ContainersPruned) > 0 ||
-		len(result.ImagesDeleted) > 0 ||
-		len(result.VolumesDeleted) > 0 ||
-		len(result.NetworksDeleted) > 0
-}
-
-func (s *NotificationService) sendDiscordPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
-		return err
-	}
-
-	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return errors.New("discord webhook ID or token not configured")
-	}
-
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatMarkdown, environmentName, result)
-
-	if err := notifications.SendDiscord(ctx, discordConfig, message); err != nil {
-		return fmt.Errorf("failed to send Discord notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendTelegramPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
-		return err
-	}
-
-	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
-		return errors.New("telegram bot token or chat IDs not configured")
-	}
-
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatHTML, environmentName, result)
-
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-
-	if err := notifications.SendTelegram(ctx, telegramConfig, message); err != nil {
-		return fmt.Errorf("failed to send Telegram notification: %w", err)
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendEmailPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
-		return err
-	}
-
-	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
-		return err
-	}
-
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-
-	htmlBody, _, err := s.renderPruneReportEmailTemplate(environmentName, result)
-	if err != nil {
-		return fmt.Errorf("failed to render email template: %w", err)
-	}
-
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("System Prune Report: %s Reclaimed", notifications.FormatBytes(result.SpaceReclaimed)))
-	if err := notifications.SendEmail(ctx, emailConfig, subject, htmlBody); err != nil {
-		return fmt.Errorf("failed to send email: %w", err)
-	}
-
-	return nil
-}
-
 func (s *NotificationService) renderPruneReportEmailTemplate(environmentName string, result *system.PruneAllResult) (string, string, error) {
 	appURL := s.config.GetAppURL()
 	logoURL := appURL + logoURLPath
@@ -2638,348 +1366,6 @@ func (s *NotificationService) renderPruneReportEmailTemplate(environmentName str
 	}
 
 	return s.renderTemplatesInternal("prune-report", data)
-}
-
-func (s *NotificationService) sendSignalPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-
-	return notifications.SendSignal(ctx, signalConfig, message)
-}
-
-func (s *NotificationService) sendSlackPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var slackConfig models.SlackConfig
-	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&slackConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatSlack, environmentName, result)
-
-	return notifications.SendSlack(ctx, slackConfig, message)
-}
-
-func (s *NotificationService) sendNtfyPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var ntfyConfig models.NtfyConfig
-	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&ntfyConfig.Password); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-
-	return notifications.SendNtfy(ctx, ntfyConfig, message)
-}
-
-func (s *NotificationService) sendPushoverPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var pushoverConfig models.PushoverConfig
-	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&pushoverConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-
-	if pushoverConfig.Title == "" {
-		pushoverConfig.Title = notifications.BuildEmailSubject(environmentName, "System Prune Report")
-	}
-
-	return notifications.SendPushover(ctx, pushoverConfig, message)
-}
-
-func (s *NotificationService) sendGotifyPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var gotifyConfig models.GotifyConfig
-	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&gotifyConfig.Token); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-
-	if gotifyConfig.Title == "" {
-		gotifyConfig.Title = notifications.BuildEmailSubject(environmentName, "System Prune Report")
-	}
-
-	return notifications.SendGotify(ctx, gotifyConfig, message)
-}
-
-func (s *NotificationService) sendMatrixPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var matrixConfig models.MatrixConfig
-	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&matrixConfig.Password); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-
-	return notifications.SendMatrix(ctx, matrixConfig, message)
-}
-
-func (s *NotificationService) sendGenericPruneNotification(ctx context.Context, environmentName string, result *system.PruneAllResult, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
-		return err
-	}
-
-	message := notifications.BuildPruneReportNotificationMessage(notifications.MessageFormatPlain, environmentName, result)
-	title := notifications.BuildEmailSubject(environmentName, "System Prune Report")
-	return notifications.SendGenericWithTitle(ctx, genericConfig, title, message)
-}
-
-// SendAutoHealNotification sends a notification when a container is auto-healed.
-func (s *NotificationService) SendAutoHealNotification(ctx context.Context, containerName, containerID string) error {
-	if s.config != nil && s.config.AgentMode {
-		_, err := s.dispatchNotificationToManagerInternal(ctx, notificationdto.DispatchRequest{
-			Kind: notificationdto.DispatchKindAutoHeal,
-			AutoHeal: &notificationdto.DispatchAutoHeal{
-				ContainerName: containerName,
-				ContainerID:   containerID,
-			},
-		})
-		return err
-	}
-
-	target, err := s.resolveNotificationTargetInternal(ctx, "")
-	if err != nil {
-		return err
-	}
-
-	return s.sendAutoHealNotificationForTargetInternal(ctx, target, containerName, containerID)
-}
-
-func (s *NotificationService) sendAutoHealNotificationForTargetInternal(ctx context.Context, target NotificationTarget, containerName, containerID string) error {
-	settings, err := s.GetAllSettings(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to get notification settings: %w", err)
-	}
-
-	var errs []string
-	for _, setting := range settings {
-		if !setting.Enabled {
-			continue
-		}
-
-		if !s.isEventEnabled(setting.Config, models.NotificationEventAutoHeal) {
-			continue
-		}
-
-		handled, sendErr := sendProviderNotificationInternal(ctx, setting.Provider, target.EnvironmentName, containerName, setting.Config, s.autoHealNotificationSendersInternal())
-		if !handled {
-			slog.WarnContext(ctx, "Unknown notification provider", "provider", setting.Provider)
-			continue
-		}
-
-		status, errMsg := collectNotificationSendResultInternal(&errs, setting.Provider, sendErr)
-
-		s.logNotification(ctx, setting.Provider, containerName, status, errMsg, models.JSON{
-			"containerID": containerID,
-			"eventType":   string(models.NotificationEventAutoHeal),
-		})
-	}
-
-	if len(errs) > 0 {
-		return fmt.Errorf("notification errors: %s", strings.Join(errs, "; "))
-	}
-
-	return nil
-}
-
-func (s *NotificationService) sendDiscordAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var discordConfig models.DiscordConfig
-	if err := s.unmarshalConfigInternal(config, &discordConfig); err != nil {
-		return err
-	}
-	if discordConfig.WebhookID == "" || discordConfig.Token == "" {
-		return errors.New("discord webhook ID or token not configured")
-	}
-	if err := notifications.DecryptStringCredential(&discordConfig.Token); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatMarkdown, environmentName, containerName)
-	return notifications.SendDiscord(ctx, discordConfig, message)
-}
-
-func (s *NotificationService) sendEmailAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var emailConfig models.EmailConfig
-	if err := s.unmarshalConfigInternal(config, &emailConfig); err != nil {
-		return err
-	}
-	if err := s.validateEmailConfigInternal(&emailConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&emailConfig.SMTPPassword); err != nil {
-		return err
-	}
-	subject := notifications.BuildEmailSubject(environmentName, fmt.Sprintf("Auto Heal: Container '%s' Restarted", containerName))
-	body := fmt.Sprintf(
-		"<p><strong>Environment:</strong> %s</p><p><strong>Container:</strong> %s</p><p>Automatically restarted because it was unhealthy.</p>",
-		environmentName,
-		containerName,
-	)
-	return notifications.SendEmail(ctx, emailConfig, subject, body)
-}
-
-func (s *NotificationService) sendTelegramAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var telegramConfig models.TelegramConfig
-	if err := s.unmarshalConfigInternal(config, &telegramConfig); err != nil {
-		return err
-	}
-	if telegramConfig.BotToken == "" || len(telegramConfig.ChatIDs) == 0 {
-		return errors.New("telegram bot token or chat IDs not configured")
-	}
-	if err := notifications.DecryptStringCredential(&telegramConfig.BotToken); err != nil {
-		return err
-	}
-	if telegramConfig.ParseMode == "" {
-		telegramConfig.ParseMode = "HTML"
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatHTML, environmentName, containerName)
-	return notifications.SendTelegram(ctx, telegramConfig, message)
-}
-
-func (s *NotificationService) sendSignalAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var signalConfig models.SignalConfig
-	if err := s.unmarshalConfigInternal(config, &signalConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Password); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&signalConfig.Token); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	return notifications.SendSignal(ctx, signalConfig, message)
-}
-
-func (s *NotificationService) sendSlackAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var slackConfig models.SlackConfig
-	if err := s.unmarshalConfigInternal(config, &slackConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&slackConfig.Token); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatSlack, environmentName, containerName)
-	return notifications.SendSlack(ctx, slackConfig, message)
-}
-
-func (s *NotificationService) sendNtfyAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var ntfyConfig models.NtfyConfig
-	if err := s.unmarshalConfigInternal(config, &ntfyConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&ntfyConfig.Password); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	return notifications.SendNtfy(ctx, ntfyConfig, message)
-}
-
-func (s *NotificationService) sendPushoverAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var pushoverConfig models.PushoverConfig
-	if err := s.unmarshalConfigInternal(config, &pushoverConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&pushoverConfig.Token); err != nil {
-		return err
-	}
-	if pushoverConfig.Title == "" {
-		pushoverConfig.Title = notifications.BuildEmailSubject(environmentName, "Auto Heal")
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	return notifications.SendPushover(ctx, pushoverConfig, message)
-}
-
-func (s *NotificationService) sendGotifyAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var gotifyConfig models.GotifyConfig
-	if err := s.unmarshalConfigInternal(config, &gotifyConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&gotifyConfig.Token); err != nil {
-		return err
-	}
-	if gotifyConfig.Title == "" {
-		gotifyConfig.Title = notifications.BuildEmailSubject(environmentName, "Auto Heal")
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	return notifications.SendGotify(ctx, gotifyConfig, message)
-}
-
-func (s *NotificationService) sendMatrixAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var matrixConfig models.MatrixConfig
-	if err := s.unmarshalConfigInternal(config, &matrixConfig); err != nil {
-		return err
-	}
-	if err := notifications.DecryptStringCredential(&matrixConfig.Password); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	return notifications.SendMatrix(ctx, matrixConfig, message)
-}
-
-func (s *NotificationService) sendGenericAutoHealNotification(ctx context.Context, environmentName, containerName string, config models.JSON) error {
-	var genericConfig models.GenericConfig
-	if err := s.unmarshalConfigInternal(config, &genericConfig); err != nil {
-		return err
-	}
-	message := notifications.BuildAutoHealNotificationMessage(notifications.MessageFormatPlain, environmentName, containerName)
-	title := notifications.BuildEmailSubject(environmentName, "Auto Heal")
-	return notifications.SendGenericWithTitle(ctx, genericConfig, title, message)
-}
-
-// Helper methods to reduce code duplication
-func (s *NotificationService) unmarshalConfigInternal(config models.JSON, dest any) error {
-	configBytes, err := json.Marshal(config)
-	if err != nil {
-		return fmt.Errorf("failed to marshal config: %w", err)
-	}
-	if err := json.Unmarshal(configBytes, dest); err != nil {
-		return fmt.Errorf("failed to unmarshal config: %w", err)
-	}
-	return nil
-}
-
-func (s *NotificationService) validateEmailConfigInternal(config *models.EmailConfig) error {
-	if config.SMTPHost == "" || config.SMTPPort == 0 {
-		return errors.New("SMTP host or port not configured")
-	}
-	if len(config.ToAddresses) == 0 {
-		return errors.New("no recipient email addresses configured")
-	}
-	return nil
-}
-
-func buildVulnerabilitySummaryMessageInternal(format notifications.MessageFormat, environmentName string, payload VulnerabilityNotificationPayload) string {
-	return notifications.BuildVulnerabilitySummaryNotificationMessage(
-		format,
-		environmentName,
-		payload.CVEID,
-		payload.ImageName,
-		payload.FixedVersion,
-		payload.Severity,
-		payload.PkgName,
-	)
 }
 
 func (s *NotificationService) renderTemplatesInternal(name string, data any) (string, string, error) {
