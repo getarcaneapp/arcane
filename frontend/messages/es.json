@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "No se pudo guardar la configuración de {provider} : {error}",
 	"notifications_test_success": "Notificación de prueba enviada con éxito a través de {provider}",
 	"notifications_test_failed": "Error al enviar la notificación de prueba: {error}",
+	"notifications_test_warning": "Prueba enviada — {warning}",
 	"notifications_events_title": "Eventos de notificación",
 	"notifications_events_description": "Elegir qué eventos activar notificaciones",
 	"notifications_event_image_update_label": "Actualización de imagen detectada",
