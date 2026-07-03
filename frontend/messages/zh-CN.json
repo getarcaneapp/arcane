@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "{provider}设置保存失败：{error}",
 	"notifications_test_success": "通过{provider}成功发射测试通知",
 	"notifications_test_failed": "发送测试通知失败：{error}",
+	"notifications_test_warning": "测试已发送 — {warning}",
 	"notifications_events_title": "通知事件",
 	"notifications_events_description": "选择触发哪个事件的通知",
 	"notifications_event_image_update_label": "检测到镜像更新",
