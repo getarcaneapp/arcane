@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "Απέτυχε η αποθήκευση των ρυθμίσεων {provider}: {error}",
 	"notifications_test_success": "Δοκιμή ειδοποίησης εστάλη επιτυχώς μέσω του {provider}",
 	"notifications_test_failed": "Αποτυχία αποστολής δοκιμαστικής ειδοποίησης: {error}",
+	"notifications_test_warning": "Η δοκιμή εστάλη — {warning}",
 	"notifications_events_title": "Συμβάντα Ειδοποιήσεων",
 	"notifications_events_description": "Επιλέξτε ποια συμβάντα ενεργοποιούν ειδοποιήσεις",
 	"notifications_event_image_update_label": "Εντοπίστηκε Ενημέρωση Image",
