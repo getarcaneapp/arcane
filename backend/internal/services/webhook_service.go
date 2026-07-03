@@ -673,7 +673,7 @@ func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context
 		}
 		return nil, nil
 	case models.WebhookActionTypeRestart:
-		if err := s.projectService.RestartProject(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.projectService.RestartProject(ctx, wh.TargetID, nil, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil

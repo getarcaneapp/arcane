@@ -197,8 +197,14 @@ class ProjectService extends BaseAPIService {
 
 	async restartProject(projectId: string, services?: string[]): Promise<unknown> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const payload = services && services.length > 0 ? { services } : undefined;
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, payload));
+		let params: URLSearchParams | undefined;
+		if (services && services.length > 0) {
+			params = new URLSearchParams();
+			for (const service of services) {
+				params.append('services', service);
+			}
+		}
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, undefined, { params }));
 	}
 
 	async archiveProject(projectId: string): Promise<void> {

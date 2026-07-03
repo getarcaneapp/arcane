@@ -2938,11 +2938,7 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 	return nil
 }
 
-func (s *ProjectService) RestartProject(ctx context.Context, projectID string, user models.User) error {
-	return s.RestartProjectServices(ctx, projectID, nil, user)
-}
-
-func (s *ProjectService) RestartProjectServices(ctx context.Context, projectID string, services []string, user models.User) error {
+func (s *ProjectService) RestartProject(ctx context.Context, projectID string, services []string, user models.User) error {
 	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
 		return err
