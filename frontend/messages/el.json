@@ -2647,6 +2647,8 @@
 	"notifications_ntfy_firebase_help": "Αποστολή ειδοποιήσεων μέσω Firebase (ενεργοποιημένη από προεπιλογή)",
 	"notifications_ntfy_disable_tls_label": "Απενεργοποίηση Επαλήθευσης Tls",
 	"notifications_ntfy_disable_tls_help": "Απενεργοποίηση επαλήθευσης πιστοποιητικού TLS (δεν συνιστάται)",
+	"notifications_ntfy_use_http_label": "Χρήση HTTP (Απενεργοποίηση TLS)",
+	"notifications_ntfy_use_http_help": "Σύνδεση μέσω απλού HTTP αντί για HTTPS, για αυτο-φιλοξενούμενους διακομιστές ntfy χωρίς TLS",
 	"notifications_pushover_description": "Αποστολή ειδοποιήσεων μέσω Pushover όταν ανιχνεύονται ενημερώσεις περιέκτη",
 	"notifications_pushover_enabled_label": "Ενεργοποίηση Ειδοποιήσεων Pushover",
 	"notifications_pushover_token_label": "API Token",
