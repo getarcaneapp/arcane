@@ -48,6 +48,15 @@ type ProjectEnvState struct {
 	HasGitSource     bool
 	OverrideContent  string
 	HasOverride      bool
+	// The *Unreadable fields report a file that exists on disk but could not be
+	// read because of a permission error (e.g. a chmod 000 or foreign-owned
+	// file reachable through a bind mount). Such a file is treated as absent
+	// for merge purposes, and callers persisting env state must not attempt to
+	// write or remove it — its contents are unknown, so writing could either
+	// fail (bricking the caller) or silently clobber operator intent.
+	EffectiveUnreadable bool
+	GitSourceUnreadable bool
+	OverrideUnreadable  bool
 }
 
 type EnvLoader struct {
@@ -335,29 +344,41 @@ func buildOverrideEnvContentInternal(gitContent, effectiveContent string) (strin
 }
 
 func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
-	effectiveContent, hasEffective, err := readOptionalProjectFileInternal(projectPath, EffectiveEnvFileName)
+	effectiveContent, hasEffective, effectiveUnreadable, err := readOptionalProjectFileInternal(projectPath, EffectiveEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	gitContent, hasGitSource, err := readOptionalProjectFileInternal(projectPath, GitSourceEnvFileName)
+	gitContent, hasGitSource, gitSourceUnreadable, err := readOptionalProjectFileInternal(projectPath, GitSourceEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
 	}
 
-	overrideContent, hasOverride, err := readOptionalProjectFileInternal(projectPath, OverrideEnvFileName)
+	overrideContent, hasOverride, overrideUnreadable, err := readOptionalProjectFileInternal(projectPath, OverrideEnvFileName)
 	if err != nil {
 		return ProjectEnvState{}, err
+	}
+
+	if effectiveUnreadable || gitSourceUnreadable || overrideUnreadable {
+		slog.Warn("skipping permission-locked project env file(s); leaving them untouched",
+			"projectPath", projectPath,
+			"effectiveUnreadable", effectiveUnreadable,
+			"gitSourceUnreadable", gitSourceUnreadable,
+			"overrideUnreadable", overrideUnreadable,
+		)
 	}
 
 	state := ProjectEnvState{
-		DirectContent:    effectiveContent,
-		EffectiveContent: effectiveContent,
-		HasEffective:     hasEffective,
-		GitContent:       gitContent,
-		HasGitSource:     hasGitSource,
-		OverrideContent:  overrideContent,
-		HasOverride:      hasOverride,
+		DirectContent:       effectiveContent,
+		EffectiveContent:    effectiveContent,
+		HasEffective:        hasEffective,
+		EffectiveUnreadable: effectiveUnreadable,
+		GitContent:          gitContent,
+		HasGitSource:        hasGitSource,
+		GitSourceUnreadable: gitSourceUnreadable,
+		OverrideContent:     overrideContent,
+		HasOverride:         hasOverride,
+		OverrideUnreadable:  overrideUnreadable,
 	}
 
 	if hasGitSource || hasOverride {
@@ -383,6 +404,33 @@ func ReadProjectEnvState(projectPath string) (ProjectEnvState, error) {
 	return state, nil
 }
 
+// WriteManagedEnvFile writes (or, for project.env, removes) one of the three
+// env-merge bookkeeping files — fileName must be EffectiveEnvFileName,
+// GitSourceEnvFileName, or OverrideEnvFileName. If the existing file is
+// permission-locked, the write is skipped and a warning logged instead: its
+// contents can't be verified, and a locked file is typically unwritable too,
+// so attempting the write would abort the whole caller.
+func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unreadable bool, content string) error {
+	if unreadable {
+		slog.Warn("skipping permission-locked project env file; leaving it untouched", "projectPath", projectPath, "file", fileName)
+		return nil
+	}
+
+	switch fileName {
+	case EffectiveEnvFileName:
+		return WriteEnvFile(projectsDirectory, projectPath, content)
+	case GitSourceEnvFileName:
+		return WriteProjectFile(projectsDirectory, projectPath, GitSourceEnvFileName, content)
+	case OverrideEnvFileName:
+		if strings.TrimSpace(content) == "" {
+			return RemoveProjectFile(projectsDirectory, projectPath, OverrideEnvFileName)
+		}
+		return WriteProjectFile(projectsDirectory, projectPath, OverrideEnvFileName, content)
+	default:
+		return fmt.Errorf("write managed env file: unsupported file name %q", fileName)
+	}
+}
+
 // parseEnvWithContext parses environment variables from an io.Reader using compose-go's
 // dotenv parser with variable expansion using the provided context lookup map.
 func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
@@ -404,15 +452,24 @@ func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
 	return envMap, nil
 }
 
-func readOptionalProjectFileInternal(projectPath, fileName string) (string, bool, error) {
-	content, err := os.ReadFile(filepath.Join(projectPath, fileName))
-	if err == nil {
-		return string(content), true, nil
+// readOptionalProjectFileInternal reads fileName from projectPath. A missing
+// file is reported via exists=false with no error. A permission error is
+// reported via unreadable=true with no error: the file is present but its
+// contents cannot be verified, so callers must treat it as absent for merge
+// purposes and must not attempt to overwrite or remove it. Any other I/O
+// error (e.g. the path is a directory) is still returned as a hard failure.
+func readOptionalProjectFileInternal(projectPath, fileName string) (content string, exists, unreadable bool, err error) {
+	raw, readErr := os.ReadFile(filepath.Join(projectPath, fileName))
+	if readErr == nil {
+		return string(raw), true, false, nil
 	}
-	if errors.Is(err, os.ErrNotExist) {
-		return "", false, nil
+	if errors.Is(readErr, os.ErrNotExist) {
+		return "", false, false, nil
 	}
-	return "", false, fmt.Errorf("read %s: %w", fileName, err)
+	if errors.Is(readErr, os.ErrPermission) {
+		return "", false, true, nil
+	}
+	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
 }
 
 // formatEnvMapInternal serializes env maps into Arcane's canonical generated
