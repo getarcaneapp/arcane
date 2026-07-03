@@ -158,6 +158,7 @@ type NtfyConfig struct {
 	Icon                   string                         `json:"icon,omitempty"`
 	Cache                  bool                           `json:"cache"`
 	Firebase               bool                           `json:"firebase"`
+	DisableTLS             bool                           `json:"disableTls"`
 	DisableTLSVerification bool                           `json:"disableTlsVerification"`
 	Events                 map[NotificationEventType]bool `json:"events,omitempty"`
 }

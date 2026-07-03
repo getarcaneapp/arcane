@@ -279,6 +279,7 @@
 				icon: z.string(),
 				cache: z.boolean(),
 				firebase: z.boolean(),
+				disableTls: z.boolean(),
 				disableTlsVerification: z.boolean(),
 				...eventSubscriptionSchemaFields
 			})
@@ -788,6 +789,13 @@
 						id: 'ntfy-firebase',
 						label: m.notifications_ntfy_firebase_label(),
 						description: m.notifications_ntfy_firebase_help()
+					},
+					{
+						kind: 'switch',
+						key: 'disableTls',
+						id: 'ntfy-use-http',
+						label: m.notifications_ntfy_use_http_label(),
+						description: m.notifications_ntfy_use_http_help()
 					},
 					{
 						kind: 'switch',

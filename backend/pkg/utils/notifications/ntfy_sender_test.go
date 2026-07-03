@@ -147,3 +147,21 @@ func TestBuildNtfyURLDisableTLSVerificationUsesCertificateVerificationFlag(t *te
 	assert.Equal(t, "yes", query.Get("disabletlsverification"))
 	assert.Empty(t, query.Get("disabletls"))
 }
+
+func TestBuildNtfyURLDisableTLSUsesPlainHTTPFlag(t *testing.T) {
+	gotURL, err := BuildNtfyURL(models.NtfyConfig{
+		Host:       "ntfy.example.com",
+		Topic:      "alerts",
+		Cache:      true,
+		Firebase:   true,
+		DisableTLS: true,
+	})
+	require.NoError(t, err)
+
+	parsedURL, err := url.Parse(gotURL)
+	require.NoError(t, err)
+
+	query := parsedURL.Query()
+	assert.Equal(t, "yes", query.Get("disabletls"))
+	assert.Empty(t, query.Get("disabletlsverification"))
+}

@@ -77,6 +77,10 @@ func BuildNtfyURL(config models.NtfyConfig) (string, error) {
 		q.Set("firebase", "no")
 	}
 
+	if config.DisableTLS {
+		q.Set("disabletls", "yes")
+	}
+
 	if config.DisableTLSVerification {
 		q.Set("disabletlsverification", "yes")
 	}
