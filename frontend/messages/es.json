@@ -2647,6 +2647,8 @@
 	"notifications_ntfy_firebase_help": "Enviar notificaciones a través de Firebase (habilitado por defecto)",
 	"notifications_ntfy_disable_tls_label": "Desactivar la verificación TLS",
 	"notifications_ntfy_disable_tls_help": "Desactivar verificación de certificado TLS (no recomendado)",
+	"notifications_ntfy_use_http_label": "Utilizar HTTP (desactivar TLS)",
+	"notifications_ntfy_use_http_help": "Conéctate mediante HTTP sin cifrar en lugar de HTTPS, para servidores ntfy autohospedados sin TLS",
 	"notifications_pushover_description": "Enviar notificaciones a través de Pushover cuando se detecten actualizaciones de contenedores",
 	"notifications_pushover_enabled_label": "Habilitar notificaciones de Pushover",
 	"notifications_pushover_token_label": "API Token",
