@@ -1,7 +1,9 @@
 package projects
 
 import (
+	"errors"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -87,15 +89,16 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 }
 
 func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
-	if !isRoot {
-		base := filepath.Base(path)
-		if strings.HasPrefix(base, ".arcane-trash-") || IsInternalScratchDirName(base) {
-			return nil
-		}
+	if !isRoot && IsInternalScratchDirName(filepath.Base(path)) {
+		return nil
 	}
 
 	identity, err := ResolveDirectoryIdentityInternal(path)
 	if err != nil {
+		if !isRoot && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 	if _, seen := ancestors[identity]; seen {
@@ -129,6 +132,10 @@ func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, 
 
 	entries, err := os.ReadDir(path)
 	if err != nil {
+		if !isRoot && errors.Is(err, os.ErrPermission) {
+			slog.Warn("Skipping unreadable project directory during discovery", "path", path, "error", err)
+			return nil
+		}
 		return err
 	}
 
@@ -170,17 +177,26 @@ func IsGitOpsScratchDirName(name string) bool {
 	return gitOpsScratchEmbeddedNameRe.MatchString(name)
 }
 
+// ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a
+// project's files, e.g. ".arcane-trash-<name>-<unix>". Trash directories are
+// Arcane-managed and must never be discovered or imported as user projects.
+const ArcaneTrashPrefix = ".arcane-trash-"
+
 // IsInternalScratchDirName reports whether name is any Arcane-managed scratch
 // directory that must never be discovered or imported as a user project: the
-// project-update preview/backup temp dirs, or the GitOps sync-stage/backup dirs
-// (see IsGitOpsScratchDirName). This is the single source of truth for the
-// discovery walker and the DB cleanup pass.
+// project-update preview/backup temp dirs, the quarantine/trash dirs (see
+// ArcaneTrashPrefix), or the GitOps sync-stage/backup dirs (see
+// IsGitOpsScratchDirName). This is the single source of truth for the discovery
+// walker and the DB cleanup pass.
 func IsInternalScratchDirName(name string) bool {
 	name = strings.TrimSpace(name)
 	if name == "" {
 		return false
 	}
 	if strings.HasPrefix(name, ".project-update-preview-") || strings.HasPrefix(name, ".project-update-backup-") {
+		return true
+	}
+	if strings.HasPrefix(name, ArcaneTrashPrefix) {
 		return true
 	}
 	return IsGitOpsScratchDirName(name)
