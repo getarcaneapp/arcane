@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "儲存 {provider} 設定時失敗：{error}",
 	"notifications_test_success": "測試通知透過 {provider} 發送成功",
 	"notifications_test_failed": "發送測試通知時失敗：{error}",
+	"notifications_test_warning": "測試已發送 — {warning}",
 	"notifications_events_title": "通知事件",
 	"notifications_events_description": "選擇觸發通知的事件",
 	"notifications_event_image_update_label": "偵測到映像檔更新",
