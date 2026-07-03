@@ -16,6 +16,7 @@ import (
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	glsqlite "github.com/glebarez/sqlite"
 	dockertypescontainer "github.com/moby/moby/api/types/container"
@@ -1336,8 +1337,11 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 	}
 	require.NoError(t, db.Create(&rec).Error)
 
-	// Simulate the post-activity-completion state: the tracked ctx is already canceled.
-	ctx, cancel := context.WithCancel(context.Background())
+	// Simulate the post-activity-completion state: the tracked ctx is already
+	// canceled. Derive it from a lifecycle-marked parent to mirror production,
+	// where every request/scheduler ctx inherits the marker via the server
+	// BaseContext — the detach must work even then.
+	ctx, cancel := context.WithCancel(utils.WithAppLifecycleContext(context.Background()))
 	cancel()
 
 	svc.sendBatchImageUpdateNotificationsInternal(ctx)
