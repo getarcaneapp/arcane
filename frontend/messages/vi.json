@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "Lưu cài đặt {provider} thất bại: {error}",
 	"notifications_test_success": "Gửi thông báo kiểm tra thành công qua {provider}",
 	"notifications_test_failed": "Gửi thông báo kiểm tra thất bại: {error}",
+	"notifications_test_warning": "Đã gửi tin nhắn thử nghiệm — {warning}",
 	"notifications_events_title": "Sự kiện thông báo",
 	"notifications_events_description": "Chọn sự kiện nào sẽ kích hoạt thông báo",
 	"notifications_event_image_update_label": "Phát hiện Image có bản cập nhật",
