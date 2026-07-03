@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "Opslaan van {provider} instellingen mislukt: {error}",
 	"notifications_test_success": "Test melding succesvol verzonden via {provider}",
 	"notifications_test_failed": "Test melding verzenden mislukt: {error}",
+	"notifications_test_warning": "Test verzonden — {warning}",
 	"notifications_events_title": "Notificatie Gebeurtenissen",
 	"notifications_events_description": "Kiezen welke gebeurtenissen leiden tot meldingen",
 	"notifications_event_image_update_label": "Afbeelding update gedetecteerd",
