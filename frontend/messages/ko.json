@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "{provider} 설정 저장 실패: {error}",
 	"notifications_test_success": "{provider}를 통해 테스트 알림이 성공적으로 전송되었습니다.",
 	"notifications_test_failed": "테스트 알림 전송 실패: {error}",
+	"notifications_test_warning": "테스트 메시지 전송됨 — {warning}",
 	"notifications_events_title": "알림 발생 이벤트",
 	"notifications_events_description": "알림을 트리거할 이벤트를 선택하세요.",
 	"notifications_event_image_update_label": "이미지 업데이트 감지됨",
