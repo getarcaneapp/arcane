@@ -2647,6 +2647,8 @@
 	"notifications_ntfy_firebase_help": "Skicka notifieringar via Firebase (aktiverat som standard)",
 	"notifications_ntfy_disable_tls_label": "Inaktivera TLS-verifiering",
 	"notifications_ntfy_disable_tls_help": "Inaktivera TLS-certifikatverifiering (rekommenderas inte)",
+	"notifications_ntfy_use_http_label": "Använd HTTP (inaktivera TLS)",
+	"notifications_ntfy_use_http_help": "Anslut via vanlig HTTP istället för HTTPS för egenhostade ntfy-servrar utan TLS",
 	"notifications_pushover_description": "Skicka notifieringar via Pushover när uppdateringar av behållare upptäcks",
 	"notifications_pushover_enabled_label": "Aktivera Pushover aviseringar",
 	"notifications_pushover_token_label": "API Token",
