@@ -2647,6 +2647,8 @@
 	"notifications_ntfy_firebase_help": "Firebase를 통해 푸시 알림을 전송합니다. (기본값: 활성화)",
 	"notifications_ntfy_disable_tls_label": "TLS 검증 비활성화",
 	"notifications_ntfy_disable_tls_help": "TLS 인증서 검증을 비활성화합니다. (권장 안 함)",
+	"notifications_ntfy_use_http_label": "HTTP 사용 (TLS 비활성화)",
+	"notifications_ntfy_use_http_help": "TLS를 지원하지 않는 자체 호스팅 ntfy 서버의 경우, HTTPS 대신 일반 HTTP를 통해 연결하십시오.",
 	"notifications_pushover_description": "컨테이너 업데이트가 감지되면 Pushover를 통해 알림을 보냅니다.",
 	"notifications_pushover_enabled_label": "Pushover 알림 활성화",
 	"notifications_pushover_token_label": "API 토큰",
