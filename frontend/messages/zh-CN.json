@@ -2647,6 +2647,8 @@
 	"notifications_ntfy_firebase_help": "通过 Firebase 发送通知（默认启用）",
 	"notifications_ntfy_disable_tls_label": "禁用 TLS 验证",
 	"notifications_ntfy_disable_tls_help": "禁用 TLS 证书验证（不推荐）",
+	"notifications_ntfy_use_http_label": "使用 HTTP（禁用 TLS）",
+	"notifications_ntfy_use_http_help": "对于不支持 TLS 的自托管 ntfy 服务器，请通过普通 HTTP 而非 HTTPS 建立连接",
 	"notifications_pushover_description": "检测到容器更新时通过 Pushover 发送通知",
 	"notifications_pushover_enabled_label": "启用 Pushover 通知",
 	"notifications_pushover_token_label": "API Token",
