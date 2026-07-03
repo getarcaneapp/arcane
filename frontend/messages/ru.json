@@ -2530,6 +2530,7 @@
 	"notifications_saved_failed": "Не удалось сохранить настройки {provider}: {error}",
 	"notifications_test_success": "Тестовое уведомление успешно отправлено через {provider}",
 	"notifications_test_failed": "Не удалось отправить тестовое уведомление: {error}",
+	"notifications_test_warning": "Тест отправлен — {warning}",
 	"notifications_events_title": "Уведомления о событиях",
 	"notifications_events_description": "Выберите, какие события запускают уведомления",
 	"notifications_event_image_update_label": "Обнаружено обновление образа",
