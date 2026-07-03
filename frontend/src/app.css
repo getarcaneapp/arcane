@@ -599,23 +599,35 @@ html.no-blur *::after {
 	backdrop-filter: none !important;
 }
 
-html.no-blur :is([class^='bg-card/'], [class*=' bg-card/']) {
-	background-color: var(--card) !important;
-}
-html.no-blur :is([class^='bg-background/'], [class*=' bg-background/']) {
-	background-color: var(--background) !important;
-}
-html.no-blur :is([class^='bg-popover/'], [class*=' bg-popover/']) {
-	background-color: var(--popover) !important;
-}
-html.no-blur :is([class^='bg-input/'], [class*=' bg-input/']) {
-	background-color: var(--input) !important;
-}
-
 /* Modal/sheet/drawer scrims relied on blur for separation — keep them dimmed
-   (not solid) so dialogs stay legible in light and dark mode. */
+   (not solid) so dialogs stay legible in light and dark mode. Declared before
+   the opaque-surface rules below so that content surfaces which also carry a
+   scrim utility (e.g. the drawer's `bg-white/10 dark:bg-surface/10`) end up
+   opaque, while the true overlays — which carry no surface token — stay dimmed. */
 html.no-blur :is(.bg-white\/10, .bg-black\/40, .bg-black\/60) {
 	background-color: color-mix(in oklab, black 55%, transparent) !important;
+}
+
+/* Glass surfaces (cards, popovers, dialogs, sheets, drawers, menus) drop to a
+   translucent bg + backdrop-blur. With blur stripped they must fall back to an
+   opaque themed color or they show through to the page. The substring match
+   (no leading-space anchor) is deliberate: it catches the `dark:`-prefixed
+   variants (e.g. `dark:bg-surface/10`, `dark:bg-popover/20`) that are the
+   active background in dark mode — the reason the previous rules missed them. */
+html.no-blur [class*='bg-card/'] {
+	background-color: var(--card) !important;
+}
+html.no-blur [class*='bg-background/'] {
+	background-color: var(--background) !important;
+}
+html.no-blur [class*='bg-popover/'] {
+	background-color: var(--popover) !important;
+}
+html.no-blur [class*='bg-input/'] {
+	background-color: var(--input) !important;
+}
+html.no-blur [class*='bg-surface/'] {
+	background-color: var(--surface) !important;
 }
 
 /* Neutralize every animation and transition — catches CSS keyframes as well as
