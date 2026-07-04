@@ -35,7 +35,7 @@ require (
 	github.com/google/wire v0.7.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jinzhu/copier v0.4.0
-	github.com/klauspost/compress v1.18.6
+	github.com/klauspost/compress v1.19.0
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/lmittmann/tint v1.1.3
 	github.com/moby/buildkit v0.31.1
