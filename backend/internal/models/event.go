@@ -94,6 +94,10 @@ const (
 	EventTypeWebhookDelete  EventType = "webhook.delete"
 	EventTypeWebhookTrigger EventType = "webhook.trigger"
 
+	// EventTypeNotificationSend is emitted for every notification delivery
+	// attempt; severity is success or error depending on the send result.
+	EventTypeNotificationSend EventType = "notification.send"
+
 	// EventTypeLifecycleExecute is emitted by LifecycleService each time a
 	// pre-deploy script runs. Severity is success on a clean exit and warning
 	// on non-zero exit or timeout.

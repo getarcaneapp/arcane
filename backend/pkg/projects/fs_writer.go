@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/sys/atomic"
@@ -213,6 +214,54 @@ func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	}
 
 	return nil
+}
+
+// RollbackRenamedProjectDirectory restores a project directory rename when possible.
+func RollbackRenamedProjectDirectory(oldPath, newPath string) (pathsMissing bool, err error) {
+	oldPath = filepath.Clean(oldPath)
+	newPath = filepath.Clean(newPath)
+	if oldPath == "" || newPath == "" || oldPath == newPath {
+		return false, nil
+	}
+
+	oldExists, _ := pathExistsInternal(oldPath)
+	newExists, _ := pathExistsInternal(newPath)
+	switch {
+	case oldExists && newExists:
+		conflictPath, err := relocateRenameConflictDirectoryInternal(newPath)
+		if err != nil {
+			slog.Warn("project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal", "oldPath", oldPath, "newPath", newPath, "error", err)
+		} else {
+			slog.Warn("project rename directory rollback found both paths; moved target path aside and kept old path", "oldPath", oldPath, "newPath", newPath, "conflictPath", conflictPath)
+		}
+	case !oldExists && newExists:
+		if err := os.Rename(newPath, oldPath); err != nil {
+			return false, fmt.Errorf("rollback project directory rename: %w", err)
+		}
+	case !oldExists && !newExists:
+		pathsMissing = true
+		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
+	}
+	return pathsMissing, nil
+}
+
+func relocateRenameConflictDirectoryInternal(path string) (string, error) {
+	parent := filepath.Dir(path)
+	base := filepath.Base(path)
+	now := time.Now().UTC().UnixNano()
+	for attempt := range 10 {
+		conflictPath := filepath.Join(parent, fmt.Sprintf(".%s.rename-conflict-%d-%d", base, now, attempt))
+		if _, err := os.Stat(conflictPath); err == nil {
+			continue
+		} else if !os.IsNotExist(err) {
+			return "", fmt.Errorf("check conflict path: %w", err)
+		}
+		if err := os.Rename(path, conflictPath); err != nil {
+			return "", fmt.Errorf("relocate project rename target path: %w", err)
+		}
+		return conflictPath, nil
+	}
+	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", path)
 }
 
 // SyncFile represents a file to be written during directory sync

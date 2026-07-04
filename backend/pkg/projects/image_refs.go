@@ -1,12 +1,40 @@
 package projects
 
 import (
+	"encoding/json"
 	"sort"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 )
+
+// ParseImageRefsJSON parses a JSON array of image references, returning nil
+// for empty or invalid input.
+func ParseImageRefsJSON(raw string) []string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return nil
+	}
+	var refs []string
+	if err := json.Unmarshal([]byte(raw), &refs); err != nil {
+		return nil
+	}
+	return refs
+}
+
+// MarshalImageRefsJSON serializes image references to JSON, returning an empty
+// string when there are no refs or encoding fails.
+func MarshalImageRefsJSON(refs []string) string {
+	if len(refs) == 0 {
+		return ""
+	}
+	data, err := json.Marshal(refs)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
 
 // ImageRefsFromComposeServices returns unique, non-empty image references from
 // a compose service map in stable service-name order.

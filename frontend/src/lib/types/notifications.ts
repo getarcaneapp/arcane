@@ -13,6 +13,10 @@ export interface NotificationSettings {
 
 export interface TestNotificationResponse {
 	success: boolean;
+	data?: {
+		message?: string;
+		warning?: string;
+	};
 	message?: string;
 	error?: string;
 }

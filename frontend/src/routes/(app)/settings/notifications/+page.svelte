@@ -394,8 +394,12 @@
 	async function executeTest(provider: NotificationProviderKey, testType: string = 'simple') {
 		isTesting = true;
 		try {
-			await notificationService.testNotification(provider, testType);
-			toast.success(m.notifications_test_success({ provider: provider.charAt(0).toUpperCase() + provider.slice(1) }));
+			const result = await notificationService.testNotification(provider, testType);
+			if (result?.data?.warning) {
+				toast.warning(m.notifications_test_warning({ warning: result.data.warning }));
+			} else {
+				toast.success(m.notifications_test_success({ provider: provider.charAt(0).toUpperCase() + provider.slice(1) }));
+			}
 		} catch (error: any) {
 			const errorMsg = error?.response?.data?.error || error.message || m.common_unknown();
 			toast.error(m.notifications_test_failed({ error: errorMsg }));

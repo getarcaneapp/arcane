@@ -263,10 +263,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 }
 
 // notifyImageUpdateInternal sends the single-image update notification and marks the
-// record notified only when it was actually delivered to at least one provider with
-// no send errors. Mirroring the batch path, any send error leaves the record
-// unnotified so a later check retries it — a failed send must never silently poison
-// the notification_sent flag. Prefer the snapshot's image ID: it is the same key
+// record notified once it was delivered to at least one provider. A partial provider
+// failure still counts as notified — the user saw the update, and re-sending on every
+// poll would duplicate it forever; the failure stays visible in the delivery history.
+// Only a total failure (delivered == 0) leaves the record unnotified for retry.
+// Prefer the snapshot's image ID: it is the same key
 // saveUpdateResultWithSnapshotInternal stored the record under.
 func (s *ImageUpdateService) notifyImageUpdateInternal(ctx context.Context, imageRef string, digestResult *imageupdate.Response, snapshot *localImageSnapshot) {
 	if !digestResult.HasUpdate || s.notificationService == nil {
@@ -277,7 +278,7 @@ func (s *ImageUpdateService) notifyImageUpdateInternal(ctx context.Context, imag
 	if notifErr != nil {
 		slog.WarnContext(ctx, "Failed to send update notification", "imageRef", imageRef, "error", notifErr.Error())
 	}
-	if notifErr != nil || delivered == 0 {
+	if delivered == 0 {
 		return
 	}
 
@@ -1333,10 +1334,14 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 	defer s.notifyMu.Unlock()
 
 	// completeImageUpdateActivityInternal cancels the activity-tracked ctx before
-	// we reach here, so detach from that cancellation (mirrors the helper it uses)
-	// — otherwise the unnotified-updates query dies with "context canceled" and no
-	// notification is ever dispatched.
-	ctx = utils.ActivityRuntimeContext(ctx, nil)
+	// we reach here, so detach from that cancellation — otherwise the
+	// unnotified-updates query dies with "context canceled" and no notification is
+	// ever dispatched. Deliberately not utils.ActivityRuntimeContext: that helper
+	// short-circuits (returns ctx unchanged) for app-lifecycle-marked contexts, and
+	// every request/scheduler ctx carries that marker via the server BaseContext,
+	// making the detach a no-op in production. WithoutCancel keeps all values and
+	// the WithTimeout below keeps the flush bounded.
+	ctx = context.WithoutCancel(ctx)
 
 	notifCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
@@ -1374,10 +1379,12 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 		delivered, notifErr := s.notificationService.SendBatchImageUpdateNotification(notifCtx, updatesToNotify)
 		if notifErr != nil {
 			slog.WarnContext(ctx, "Failed to send batch update notification", "error", notifErr.Error())
-			return
 		}
+		// Mark notified when at least one provider delivered — a partial provider
+		// failure must not make every healthy provider re-send the same updates on
+		// the next poll. Failures remain visible in the delivery history.
 		if delivered == 0 {
-			slog.DebugContext(ctx, "No eligible notification providers for image updates; leaving records unnotified", "count", len(imageIDsToMark))
+			slog.DebugContext(ctx, "No providers delivered image update notifications; leaving records unnotified", "count", len(imageIDsToMark))
 			return
 		}
 		if markErr := s.MarkUpdatesAsNotified(notifCtx, imageIDsToMark); markErr != nil {

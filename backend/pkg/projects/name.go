@@ -25,3 +25,16 @@ func ComposeContentProjectName(composeContent string) string {
 	}
 	return loader.NormalizeProjectName(raw)
 }
+
+// NormalizeProjectName returns compose-go's normalized project name. If
+// compose-go returns empty, the input is returned unchanged.
+func NormalizeProjectName(name string) string {
+	if name == "" {
+		return ""
+	}
+	normalized := loader.NormalizeProjectName(name)
+	if normalized == "" {
+		return name
+	}
+	return normalized
+}

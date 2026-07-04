@@ -36,7 +36,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	containerRegistryService := provideContainerRegistryServiceInternal(db, dockerClientService, kvService)
 	apiKeyService := provideApiKeyServiceInternal(db, userService, roleService)
 	environmentService := services.NewEnvironmentService(db, httpClient, dockerClientService, eventService, settingsService, apiKeyService)
-	notificationService := services.NewNotificationService(db, cfg, environmentService)
+	notificationService := services.NewNotificationService(db, cfg, environmentService, eventService)
 	activityService := services.NewActivityService(db)
 	imageUpdateService := services.NewImageUpdateService(db, settingsService, containerRegistryService, dockerClientService, eventService, notificationService, activityService)
 	vulnerabilityService := services.NewVulnerabilityService(db, dockerClientService, eventService, settingsService, notificationService, activityService, containerRegistryService)

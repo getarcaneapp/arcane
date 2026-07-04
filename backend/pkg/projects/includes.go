@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -33,6 +34,87 @@ type IncludeFile struct {
 	Path         string `json:"path"`
 	RelativePath string `json:"relative_path"`
 	Content      string `json:"content"`
+}
+
+// MissingIncludeStubLoader creates temporary stub compose files for missing
+// include paths during validation.
+type MissingIncludeStubLoader struct {
+	projectPath string
+	tempDir     string
+	stubs       map[string]string
+}
+
+// NewMissingIncludeStubLoader creates a loader for validation stubs under projectPath.
+func NewMissingIncludeStubLoader(projectPath string) *MissingIncludeStubLoader {
+	return &MissingIncludeStubLoader{projectPath: projectPath}
+}
+
+func (l *MissingIncludeStubLoader) Accept(path string) bool {
+	_, ok := l.resolveMissingIncludeInternal(path)
+	return ok
+}
+
+func (l *MissingIncludeStubLoader) Load(_ context.Context, path string) (string, error) {
+	validatedPath, ok := l.resolveMissingIncludeInternal(path)
+	if !ok {
+		return "", fmt.Errorf("include file is not eligible for validation stub: %s", path)
+	}
+
+	if l.stubs == nil {
+		l.stubs = make(map[string]string)
+	}
+	if stubPath, ok := l.stubs[validatedPath]; ok {
+		return stubPath, nil
+	}
+
+	if l.tempDir == "" {
+		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
+		if err != nil {
+			return "", fmt.Errorf("create validation include temp dir: %w", err)
+		}
+		l.tempDir = tempDir
+	}
+
+	relPath, err := filepath.Rel(l.projectPath, validatedPath)
+	if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
+		relPath = filepath.Base(validatedPath)
+	}
+	stubPath := filepath.Join(l.tempDir, relPath)
+	if err := os.MkdirAll(filepath.Dir(stubPath), 0o755); err != nil {
+		return "", fmt.Errorf("create validation include directory: %w", err)
+	}
+	if err := os.WriteFile(stubPath, []byte("services: {}\n"), 0o600); err != nil {
+		return "", fmt.Errorf("write validation include stub: %w", err)
+	}
+
+	l.stubs[validatedPath] = stubPath
+	return stubPath, nil
+}
+
+func (l *MissingIncludeStubLoader) Dir(path string) string {
+	return filepath.Dir(path)
+}
+
+func (l *MissingIncludeStubLoader) resolveMissingIncludeInternal(path string) (string, bool) {
+	validatedPath, err := ValidateIncludePathForWrite(l.projectPath, path)
+	if err != nil {
+		return "", false
+	}
+
+	if _, err := os.Stat(validatedPath); err == nil {
+		return "", false
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return "", false
+	}
+
+	return validatedPath, true
+}
+
+// Cleanup removes any temporary validation stub files created by the loader.
+func (l *MissingIncludeStubLoader) Cleanup() {
+	if l.tempDir != "" {
+		_ = os.RemoveAll(l.tempDir)
+	}
 }
 
 // ParseIncludes reads a compose file and extracts all include directives.

@@ -64,7 +64,7 @@ type TestNotificationInput struct {
 }
 
 type TestNotificationOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
+	Body base.ApiResponse[notification.TestResponse]
 }
 
 type DispatchNotificationInput struct {
@@ -268,14 +268,18 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 		return nil, huma.Error400BadRequest("invalid notification test type")
 	}
 
-	if err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType); err != nil {
+	warning, err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType)
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
 	}
 
 	return &TestNotificationOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
+		Body: base.ApiResponse[notification.TestResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Test notification sent successfully"},
+			Data: notification.TestResponse{
+				Message: "Test notification sent successfully",
+				Warning: warning,
+			},
 		},
 	}, nil
 }

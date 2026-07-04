@@ -22,3 +22,36 @@ func TestComposeContentProjectName(t *testing.T) {
 		})
 	}
 }
+
+func TestNormalizeProjectName(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "simple",
+			input:    "myproject",
+			expected: "myproject",
+		},
+		{
+			name:     "with special chars",
+			input:    "My Project!",
+			expected: "myproject",
+		},
+		{
+			name:     "empty",
+			input:    "",
+			expected: "",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := NormalizeProjectName(tt.input)
+			if got != tt.expected {
+				t.Fatalf("NormalizeProjectName() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
