@@ -247,6 +247,52 @@ services:
 	require.Equal(t, expectedConfigFiles, includedService.CustomLabels[api.ConfigFilesLabel])
 }
 
+func TestLoadComposeProject_YamlNameOverridesDefaultName(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		composeBody string
+		wantName    string
+	}{
+		{
+			name: "yaml name",
+			composeBody: `name: ai_tools
+services:
+  app:
+    image: nginx:alpine
+`,
+			wantName: "ai_tools",
+		},
+		{
+			name: "default name",
+			composeBody: `services:
+  app:
+    image: nginx:alpine
+`,
+			wantName: "aitools",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			projectDir := t.TempDir()
+			composePath := filepath.Join(projectDir, "compose.yaml")
+			require.NoError(t, os.WriteFile(composePath, []byte(tt.composeBody), 0o600))
+
+			project, err := LoadComposeProject(context.Background(), composePath, "aitools", projectDir, false, nil)
+			require.NoError(t, err)
+			require.NotNil(t, project)
+			require.Equal(t, tt.wantName, project.Name)
+
+			service := project.Services["app"]
+			require.Equal(t, tt.wantName, service.CustomLabels[api.ProjectLabel])
+		})
+	}
+}
+
 func TestResolveRelativeProjectPaths(t *testing.T) {
 	t.Parallel()
 

@@ -296,7 +296,7 @@ func loadComposeProjectInternal(
 
 	project, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 		if projectName != "" {
-			opts.SetProjectName(projectName, true)
+			opts.SetProjectName(projectName, false)
 		}
 		// Discard env_file after folding into environment, as the compose CLI
 		// does, so config-hashes match and both tools stop recreating services.

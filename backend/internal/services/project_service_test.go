@@ -5002,6 +5002,67 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	assert.Equal(t, 2, project.ServiceCount)
 }
 
+func TestProjectService_SyncProjectsFromFileSystem_AlignsNameToEffectiveComposeName(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	projectPath := createComposeProjectDir(t, projectsRoot, "aitools")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`name: ai_tools
+services:
+  app:
+    image: nginx:alpine
+`), 0o644))
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var project models.Project
+	require.NoError(t, db.WithContext(ctx).Where("path = ?", projectPath).First(&project).Error)
+	assert.Equal(t, "ai_tools", project.Name)
+	require.NotNil(t, project.DirName)
+	assert.Equal(t, "aitools", *project.DirName)
+	require.NotNil(t, project.ComposeProjectName)
+	assert.Equal(t, "ai_tools", *project.ComposeProjectName)
+}
+
+func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWithoutExplicitComposeName(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+
+	projectPath := createComposeProjectDir(t, projectsRoot, "folder-name")
+	dirName := "folder-name"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-custom-name"},
+		Name:      "custom-name",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, config.Load())
+	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
+
+	var fromDB models.Project
+	require.NoError(t, db.WithContext(ctx).Where("id = ?", project.ID).First(&fromDB).Error)
+	assert.Equal(t, "custom-name", fromDB.Name)
+	require.NotNil(t, fromDB.DirName)
+	assert.Equal(t, "folder-name", *fromDB.DirName)
+	require.Nil(t, fromDB.ComposeProjectName)
+}
+
 func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCustomComposeFilename(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()

@@ -1590,20 +1590,20 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Where("path = ?", dirPath).
 		First(&existing).Error
 
-	serviceCount, composeProjectName, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
+	composeMetadata, serviceCountErr := s.loadComposeMetadataForSyncInternal(ctx, dirPath, dirName)
 
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		// Create a minimal project entry
 		reason := "Project discovered from filesystem, status pending Docker service query"
 		proj := &models.Project{
-			Name:               dirName,
+			Name:               composeMetadata.resolvedProjectName,
 			DirName:            new(dirName),
 			Path:               dirPath,
 			Status:             models.ProjectStatusUnknown,
 			StatusReason:       new(reason),
-			ServiceCount:       serviceCount,
+			ServiceCount:       composeMetadata.serviceCount,
 			RunningCount:       0,
-			ComposeProjectName: composeProjectName,
+			ComposeProjectName: composeMetadata.composeProjectName,
 		}
 		slog.InfoContext(ctx, "Discovered new project with unknown status",
 			"project", dirName,
@@ -1615,6 +1615,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
 			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
+		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, proj.ID)
 		return nil
 	}
 	if err != nil {
@@ -1628,13 +1629,22 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	if existing.DirName == nil || *existing.DirName != dirName {
 		updates["dir_name"] = dirName
 	}
-	if serviceCountErr == nil && existing.ServiceCount != serviceCount {
-		updates["service_count"] = serviceCount
+	if serviceCountErr == nil && existing.ServiceCount != composeMetadata.serviceCount {
+		updates["service_count"] = composeMetadata.serviceCount
 	} else if serviceCountErr != nil {
 		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
-	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeProjectName) {
-		updates["compose_project_name"] = composeProjectName
+	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeMetadata.composeProjectName) {
+		updates["compose_project_name"] = composeMetadata.composeProjectName
+	}
+	if serviceCountErr == nil {
+		if composeMetadata.explicitProjectName {
+			if existing.Name != composeMetadata.resolvedProjectName {
+				updates["name"] = composeMetadata.resolvedProjectName
+			}
+		} else if normalizedExistingName := normalizeComposeProjectName(existing.Name); normalizedExistingName != existing.Name {
+			updates["name"] = normalizedExistingName
+		}
 	}
 	if len(updates) == 0 {
 		return nil
@@ -1647,7 +1657,28 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		Updates(updates).Error; uerr != nil {
 		return fmt.Errorf("update project %s failed: %w", existing.ID, uerr)
 	}
+	if serviceCountErr == nil {
+		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, existing.ID)
+	}
 	return nil
+}
+
+func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Context, composeProjectName, dirPath, projectID string) {
+	if strings.TrimSpace(composeProjectName) == "" {
+		return
+	}
+
+	var count int64
+	if err := s.db.WithContext(ctx).
+		Model(&models.Project{}).
+		Where("name = ? AND path <> ? AND id <> ?", composeProjectName, dirPath, projectID).
+		Count(&count).Error; err != nil {
+		slog.WarnContext(ctx, "failed to check duplicate compose project names during project sync", "composeProjectName", composeProjectName, "path", dirPath, "error", err)
+		return
+	}
+	if count > 0 {
+		slog.WarnContext(ctx, "multiple project directories resolve to the same compose project name", "composeProjectName", composeProjectName, "path", dirPath, "duplicates", count)
+	}
 }
 
 // projectCleanupDecision records a project the reconcile pass intends to delete,
@@ -2297,10 +2328,11 @@ func (s *ProjectService) createProjectInternal(ctx context.Context, name, compos
 		_ = os.RemoveAll(projectPath)
 		return nil, fmt.Errorf("failed to create project: %w", err)
 	}
+	s.refreshComposeProjectNameInternal(ctx, proj)
 	s.refreshProjectImageRefsInternal(ctx, proj)
 
-	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": name, "path": projectPath}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectCreate, proj.ID, name, user.ID, user.Username, "0", metadata); logErr != nil {
+	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
+	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectCreate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
 		slog.ErrorContext(ctx, "could not log project creation", "error", logErr)
 	}
 
@@ -3251,6 +3283,7 @@ func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Co
 		return
 	}
 
+	s.refreshComposeProjectNameInternal(ctx, proj)
 	s.refreshProjectImageRefsInternal(ctx, proj)
 	if err := s.updateProjectStatusandCountsInternal(ctx, proj.ID, proj.Status); err != nil {
 		slog.WarnContext(ctx, "failed to update service counts after compose edit", "projectID", proj.ID, "error", err)
@@ -3284,6 +3317,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
 		return nil, fmt.Errorf("failed to update project: %w", err)
 	}
+	s.refreshComposeProjectNameInternal(ctx, &proj)
 	s.refreshProjectImageRefsInternal(ctx, &proj)
 
 	// Recalculate service counts and status after compose file sync
@@ -3629,7 +3663,7 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
-				opts.SetProjectName(validationProjectName, true)
+				opts.SetProjectName(validationProjectName, false)
 			}
 			if lenient {
 				projects.ApplyLenientLoaderOptions(ctx, opts, cfg.ConfigFiles[0].Filename)
@@ -4970,21 +5004,29 @@ func (s *ProjectService) countServicesFromCompose(ctx context.Context, p models.
 	return len(proj.Services), nil
 }
 
+type composeSyncMetadataInternal struct {
+	serviceCount        int
+	resolvedProjectName string
+	composeProjectName  *string
+	explicitProjectName bool
+}
+
 // loadComposeMetadataForSyncInternal loads the compose file once and returns
-// both the service count and the effective compose project name. This avoids
-// parsing the compose file twice during project sync (once for service count
-// and once for the project name).
-// The effective name is nil when it matches the normalized directory name.
-func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (serviceCount int, composeProjectName *string, err error) {
+// the service count plus compose-go's effective project name.
+func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (composeSyncMetadataInternal, error) {
+	normName := normalizeComposeProjectName(dirName)
+	meta := composeSyncMetadataInternal{
+		resolvedProjectName: normName,
+	}
+
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory, pErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
 	if pErr != nil {
-		return 0, nil, pErr
+		return meta, pErr
 	}
 
 	pathMapper := s.getPathMapperInternal(ctx)
 
-	normName := normalizeComposeProjectName(dirName)
 	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
 
 	// First, try loading without forcing a project name so compose-go can
@@ -4995,19 +5037,69 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 	if err != nil {
 		proj, _, err = projects.LoadComposeProjectFromDir(ctx, dirPath, normName, projectsDirectory, autoInjectEnv, pathMapper)
 		if err != nil {
-			return 0, nil, err
+			return meta, err
 		}
+	} else if proj.Name != "" && proj.Name != normName {
+		meta.explicitProjectName = true
 	}
 
-	serviceCount = len(proj.Services)
+	meta.serviceCount = len(proj.Services)
+	if proj.Name != "" {
+		meta.resolvedProjectName = proj.Name
+	}
 
 	// If compose-go resolved a different name (from COMPOSE_PROJECT_NAME),
 	// store it so we can match containers correctly.
 	if proj.Name != "" && proj.Name != normName {
-		composeProjectName = new(proj.Name)
+		meta.composeProjectName = new(proj.Name)
 	}
 
-	return serviceCount, composeProjectName, nil
+	return meta, nil
+}
+
+func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, proj *models.Project) {
+	if proj == nil {
+		return
+	}
+
+	dirName := proj.Name
+	if proj.DirName != nil && *proj.DirName != "" {
+		dirName = *proj.DirName
+	}
+
+	meta, err := s.loadComposeMetadataForSyncInternal(ctx, proj.Path, dirName)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to refresh compose project name", "projectID", proj.ID, "path", proj.Path, "error", err)
+		return
+	}
+
+	updates := map[string]any{}
+	shouldUpdateName := meta.explicitProjectName || normalizeComposeProjectName(proj.Name) != proj.Name
+	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
+		updates["name"] = meta.resolvedProjectName
+	}
+	if !utils.StringPtrEqual(proj.ComposeProjectName, meta.composeProjectName) {
+		updates["compose_project_name"] = meta.composeProjectName
+	}
+	if len(updates) == 0 {
+		return
+	}
+
+	updates["updated_at"] = time.Now()
+	if err := s.db.WithContext(ctx).
+		Model(&models.Project{}).
+		Where("id = ?", proj.ID).
+		Updates(updates).Error; err != nil {
+		slog.WarnContext(ctx, "failed to persist refreshed compose project name", "projectID", proj.ID, "error", err)
+		return
+	}
+
+	if name, ok := updates["name"].(string); ok {
+		proj.Name = name
+	}
+	if _, ok := updates["compose_project_name"]; ok {
+		proj.ComposeProjectName = meta.composeProjectName
+	}
 }
 
 func (s *ProjectService) calculateProjectStatus(services []ProjectServiceInfo) models.ProjectStatus {
