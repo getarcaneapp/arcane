@@ -543,6 +543,8 @@ go.getarcane.app/sys/atomic v0.1.0 h1:0HhUeGXYdKAmMW24O+OaqcjDZx6twAuYPBu9T91zKs
 go.getarcane.app/sys/atomic v0.1.0/go.mod h1:QPb5eUXYKYG5acp9jJBAZ/PTbHbByDAQG6eDNAsZZ2w=
 go.getarcane.app/sys/cgroup v0.1.0 h1:SCAbuU+rZ/EjMU8kkVxmXZsMchiZp9eFdMQFnbU+asA=
 go.getarcane.app/sys/cgroup v0.1.0/go.mod h1:Paj4QOazrTXO/Ivhmvt1E/RjPJFTdKkxRgRDk4qBCUI=
+go.getarcane.app/sys/crypto v0.1.0 h1:HDQ2CKHkm+wZe5xb/qR7MzW5fKi0Wq8Jcyr7qDVgRWg=
+go.getarcane.app/sys/crypto v0.1.0/go.mod h1:YtoRB0TENwfdNl0ZUTWkeas/8rT7NhCbI8ENsZzCCdU=
 go.getarcane.app/updater v0.5.0 h1:H7CtjrFWb7CbOBHq0sqRsmGlGr+MMh4Lt5/pIpgQWec=
 go.getarcane.app/updater v0.5.0/go.mod h1:8f0/0pi7J0yFqgwFTywiwk/NoUN/g6AfmprOuAUrI20=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=

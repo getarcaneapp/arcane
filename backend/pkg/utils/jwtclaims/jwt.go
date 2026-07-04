@@ -96,7 +96,7 @@ const (
 //
 // When requireExplicit is true (production manager), a real secret is mandatory:
 // an empty, default, or too-short JWT_SECRET panics at startup — mirroring the
-// ENCRYPTION_KEY guard in libarcane/crypto. Otherwise (development / agent mode)
+// ENCRYPTION_KEY guard in go.getarcane.app/sys/crypto. Otherwise (development / agent mode)
 // a random per-boot key is generated when none (or only the public default) is
 // configured, so the public default never becomes a live signing key.
 func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {

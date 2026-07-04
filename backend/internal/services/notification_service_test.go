@@ -21,11 +21,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/notifications"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	"go.getarcane.app/sys/crypto"
 )
 
 func setupNotificationTestDB(t *testing.T) *database.DB {

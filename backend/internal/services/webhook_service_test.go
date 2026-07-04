@@ -9,11 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/types/v2"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"

@@ -20,8 +20,8 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/stretchr/testify/require"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 )

@@ -14,7 +14,6 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -27,6 +26,7 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 

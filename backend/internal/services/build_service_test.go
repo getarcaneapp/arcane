@@ -13,11 +13,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	glsqlite "github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	buildtypes "go.getarcane.app/builds/types"
+	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 

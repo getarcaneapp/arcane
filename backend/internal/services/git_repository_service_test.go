@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"go.getarcane.app/sys/crypto"
 )
 
 func setupGitRepositoryServiceTestInternal(t *testing.T) (*GitRepositoryService, *database.DB) {

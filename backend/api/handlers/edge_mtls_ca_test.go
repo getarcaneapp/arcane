@@ -8,9 +8,9 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/stretchr/testify/require"
+	libcrypto "go.getarcane.app/sys/crypto"
 )
 
 func TestMain(m *testing.M) {
