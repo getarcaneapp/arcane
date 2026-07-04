@@ -38,7 +38,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
 	buildtypes "go.getarcane.app/builds/types"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 	"gorm.io/gorm"
@@ -176,6 +175,46 @@ func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (stri
 	return filepath.Clean(projectsDir), nil
 }
 
+func (s *ProjectService) getProjectsDirectoryOrDefaultInternal(ctx context.Context, cfg *models.Settings) string {
+	projectsDirectory, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
+	if err != nil {
+		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", err)
+		return "/app/data/projects"
+	}
+	return projectsDirectory
+}
+
+func (s *ProjectService) getMutableProjectInternal(ctx context.Context, projectID string) (*models.Project, error) {
+	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureProjectMutableInternal(proj); err != nil {
+		return nil, err
+	}
+	return proj, nil
+}
+
+func (s *ProjectService) logProjectEventInternal(ctx context.Context, eventType models.EventType, projectID, projectName string, user models.User, metadata models.JSON, action string) {
+	if s.eventService == nil {
+		return
+	}
+	if logErr := s.eventService.LogProjectEvent(ctx, eventType, projectID, projectName, user.ID, user.Username, "0", metadata); logErr != nil {
+		slog.ErrorContext(ctx, action, "error", logErr)
+	}
+}
+
+func groupComposeContainersByProjectInternal(containers []container.Summary) map[string][]container.Summary {
+	containersByProject := make(map[string][]container.Summary)
+	for _, c := range containers {
+		projectName := dockerutil.ComposeProjectLabel(c.Labels)
+		if projectName != "" {
+			containersByProject[projectName] = append(containersByProject[projectName], c)
+		}
+	}
+	return containersByProject
+}
+
 func (s *ProjectService) GetProjectRelativePath(ctx context.Context, projectPath string) string {
 	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
@@ -228,87 +267,16 @@ type ProjectBuildOptions struct {
 	Load     *bool
 }
 
-type deployImageDecision struct {
-	Build                   bool
-	PullAlways              bool
-	PullIfMissing           bool
-	FallbackBuildOnPullFail bool
-	RequireLocalOnly        bool
-}
-
-type imagePullMode int
-
-const (
-	imagePullModeNever imagePullMode = iota
-	imagePullModeIfMissing
-	imagePullModeAlways
-)
-
 var (
 	composeStopProjectServicesInternal = projects.ComposeStop
 	composeUpProjectServicesInternal   = projects.ComposeUp
 )
 
-func resolveServiceImagePullMode(svc composetypes.ServiceConfig) imagePullMode {
-	rawPolicy := strings.ToLower(strings.TrimSpace(svc.PullPolicy))
-	switch {
-	case rawPolicy == composetypes.PullPolicyNever:
-		return imagePullModeNever
-	case rawPolicy == composetypes.PullPolicyAlways:
-		return imagePullModeAlways
-	case rawPolicy == composetypes.PullPolicyRefresh,
-		rawPolicy == "daily",
-		rawPolicy == "weekly",
-		strings.HasPrefix(rawPolicy, "every_"):
-		return imagePullModeAlways
-	case rawPolicy == composetypes.PullPolicyMissing,
-		rawPolicy == composetypes.PullPolicyIfNotPresent,
-		rawPolicy == composetypes.PullPolicyBuild,
-		rawPolicy == "":
-		return imagePullModeIfMissing
-	}
-
-	policy, _, err := svc.GetPullPolicy()
-	if err != nil {
-		slog.Warn("failed to parse service pull_policy, defaulting to missing", "service", svc.Name, "pull_policy", svc.PullPolicy, "error", err)
-		return imagePullModeIfMissing
-	}
-
-	switch policy {
-	case composetypes.PullPolicyNever:
-		return imagePullModeNever
-	case composetypes.PullPolicyAlways, composetypes.PullPolicyRefresh:
-		return imagePullModeAlways
-	case composetypes.PullPolicyMissing, composetypes.PullPolicyIfNotPresent, composetypes.PullPolicyBuild:
-		return imagePullModeIfMissing
-	default:
-		return imagePullModeIfMissing
-	}
-}
-
-func buildProjectImagePullPlan(services composetypes.Services) map[string]imagePullMode {
-	plan := map[string]imagePullMode{}
-	for _, svc := range services {
-		if svc.Build != nil {
-			continue
-		}
-		img := strings.TrimSpace(svc.Image)
-		if img == "" {
-			continue
-		}
-		mode := resolveServiceImagePullMode(svc)
-		if existing, exists := plan[img]; !exists || mode > existing {
-			plan[img] = mode
-		}
-	}
-	return plan
-}
-
 // lookupProjectContainers returns containers matched to a project, trying the
 // normalized directory name first and falling back to the effective compose
 // project name (from COMPOSE_PROJECT_NAME) when it differs.
 func lookupProjectContainers(p models.Project, containersByProject map[string][]container.Summary) []container.Summary {
-	normName := normalizeComposeProjectName(p.Name)
+	normName := projects.NormalizeProjectName(p.Name)
 	if c := containersByProject[normName]; len(c) > 0 {
 		return c
 	}
@@ -316,17 +284,6 @@ func lookupProjectContainers(p models.Project, containersByProject map[string][]
 		return containersByProject[*p.ComposeProjectName]
 	}
 	return nil
-}
-
-func normalizeComposeProjectName(name string) string {
-	if name == "" {
-		return ""
-	}
-	normalized := loader.NormalizeProjectName(name)
-	if normalized == "" {
-		return name
-	}
-	return normalized
 }
 
 func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
@@ -387,7 +344,7 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 		}
 		return nil, false, fmt.Errorf("failed to get project by cached compose name: %w", err)
 	}
-	if normalizeComposeProjectName(project.Name) != normalizedName {
+	if projects.NormalizeProjectName(project.Name) != normalizedName {
 		s.invalidateCachedComposeProjectIDInternal(normalizedName)
 		return nil, false, nil
 	}
@@ -396,19 +353,19 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 }
 
 func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
-	var projects []models.Project
-	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+	var projectModels []models.Project
+	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projectModels).Error; err != nil {
 		return err
 	}
 
-	cache := make(map[string]string, len(projects))
-	for i := range projects {
-		normalizedName := normalizeComposeProjectName(projects[i].Name)
+	cache := make(map[string]string, len(projectModels))
+	for i := range projectModels {
+		normalizedName := projects.NormalizeProjectName(projectModels[i].Name)
 		if normalizedName == "" {
 			continue
 		}
 		if _, exists := cache[normalizedName]; !exists {
-			cache[normalizedName] = projects[i].ID
+			cache[normalizedName] = projectModels[i].ID
 		}
 	}
 
@@ -437,7 +394,7 @@ func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name strin
 	if name == "" {
 		return nil, errors.New("project name is empty")
 	}
-	normalized := normalizeComposeProjectName(name)
+	normalized := projects.NormalizeProjectName(name)
 
 	var proj models.Project
 	err := s.db.WithContext(ctx).Where("name = ? OR name = ?", name, normalized).First(&proj).Error
@@ -512,15 +469,11 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 	if cfg == nil {
 		cfg = s.settingsService.GetSettingsOrDefaults(ctx)
 	}
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
+	projectsDirectory := s.getProjectsDirectoryOrDefaultInternal(ctx, cfg)
 
 	pathMapper := s.getPathMapperInternal(ctx)
 
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}
@@ -617,7 +570,7 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 		slog.WarnContext(ctx, "failed to refresh project image refs", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 		return
 	}
-	imageRefsJSON := marshalProjectImageRefsJSONInternal(refs)
+	imageRefsJSON := projects.MarshalImageRefsJSON(refs)
 	if err := s.db.WithContext(ctx).
 		Model(&models.Project{}).
 		Where("id = ?", proj.ID).
@@ -861,9 +814,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 		"projectName": projectFromDb.Name,
 		"services":    append([]string(nil), servicesToUpdate...),
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project service update action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, projectFromDb.Name, user, metadata, "could not log project service update action")
 
 	return nil
 }
@@ -1306,29 +1257,6 @@ func (s *ProjectService) enrichProjectUpdateInfoInternal(ctx context.Context, re
 	resp.UpdateInfo = buildProjectUpdateInfoSummaryInternal(imageRefs, updateInfoByRef)
 }
 
-func parseProjectImageRefsJSONInternal(raw string) []string {
-	raw = strings.TrimSpace(raw)
-	if raw == "" {
-		return nil
-	}
-	var refs []string
-	if err := json.Unmarshal([]byte(raw), &refs); err != nil {
-		return nil
-	}
-	return refs
-}
-
-func marshalProjectImageRefsJSONInternal(refs []string) string {
-	if len(refs) == 0 {
-		return ""
-	}
-	data, err := json.Marshal(refs)
-	if err != nil {
-		return ""
-	}
-	return string(data)
-}
-
 func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	ctx context.Context,
 	projectsList []models.Project,
@@ -1353,7 +1281,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 
 	var wg sync.WaitGroup
 	for _, proj := range projectsList {
-		if refs := parseProjectImageRefsJSONInternal(proj.ImageRefsJSON); len(refs) > 0 {
+		if refs := projects.ParseImageRefsJSON(proj.ImageRefsJSON); len(refs) > 0 {
 			imageRefsByProjectID[proj.ID] = refs
 			allImageRefs = append(allImageRefs, refs...)
 			continue
@@ -1642,7 +1570,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 			if existing.Name != composeMetadata.resolvedProjectName {
 				updates["name"] = composeMetadata.resolvedProjectName
 			}
-		} else if normalizedExistingName := normalizeComposeProjectName(existing.Name); normalizedExistingName != existing.Name {
+		} else if normalizedExistingName := projects.NormalizeProjectName(existing.Name); normalizedExistingName != existing.Name {
 			updates["name"] = normalizedExistingName
 		}
 	}
@@ -2011,13 +1939,7 @@ func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCoun
 	}
 
 	// 2. Group by project
-	containersByProject := make(map[string][]container.Summary)
-	for _, c := range containers {
-		projName := dockerutil.ComposeProjectLabel(c.Labels)
-		if projName != "" {
-			containersByProject[projName] = append(containersByProject[projName], c)
-		}
-	}
+	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	// 3. Calculate status for each project
 	for _, p := range activeProjects {
@@ -2093,11 +2015,7 @@ func (s *ProjectService) ArchiveProject(ctx context.Context, projectID string, u
 	}
 
 	metadata := models.JSON{"action": "archived", "projectID": projectID, "projectName": proj.Name}
-	if s.eventService != nil {
-		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-			slog.ErrorContext(ctx, "could not log project archive action", "error", logErr)
-		}
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project archive action")
 
 	return nil
 }
@@ -2119,11 +2037,7 @@ func (s *ProjectService) UnarchiveProject(ctx context.Context, projectID string,
 	}
 
 	metadata := models.JSON{"action": "unarchived", "projectID": projectID, "projectName": proj.Name}
-	if s.eventService != nil {
-		if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-			slog.ErrorContext(ctx, "could not log project unarchive action", "error", logErr)
-		}
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, projectID, proj.Name, user, metadata, "could not log project unarchive action")
 
 	return nil
 }
@@ -2147,11 +2061,11 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	resolvedPullPolicy := ""
 	forceRecreate := false
 	if options != nil {
-		resolvedPullPolicy = normalizeDeployPullPolicyInternal(options.PullPolicy)
+		resolvedPullPolicy = projects.NormalizeDeployPullPolicy(options.PullPolicy)
 		forceRecreate = options.ForceRecreate
 	}
 	if resolvedPullPolicy == "" {
-		resolvedPullPolicy = normalizeDeployPullPolicyInternal(s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"))
+		resolvedPullPolicy = projects.NormalizeDeployPullPolicy(s.settingsService.GetStringSetting(ctx, "defaultDeployPullPolicy", "missing"))
 	}
 	if resolvedPullPolicy == "" {
 		resolvedPullPolicy = "missing"
@@ -2206,9 +2120,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", project.Name)
 
 	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project deployment action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user, metadata, "could not log project deployment action")
 
 	err = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
 	if err != nil {
@@ -2218,11 +2130,8 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 }
 
 func (s *ProjectService) DownProject(ctx context.Context, projectID string, user models.User) error {
-	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	projectFromDb, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
 		return err
 	}
 
@@ -2247,9 +2156,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		"projectID":   projectID,
 		"projectName": projectFromDb.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project down action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user, metadata, "could not log project down action")
 
 	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
 	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
@@ -2332,9 +2239,7 @@ func (s *ProjectService) createProjectInternal(ctx context.Context, name, compos
 	s.refreshProjectImageRefsInternal(ctx, proj)
 
 	metadata := models.JSON{"action": "create", "projectID": proj.ID, "projectName": proj.Name, "path": projectPath}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectCreate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project creation", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectCreate, proj.ID, proj.Name, user, metadata, "could not log project creation")
 
 	return proj, nil
 }
@@ -2402,19 +2307,14 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	writeProjectProgressInternal(ctx, "Project destroyed", 100, "complete")
 
 	metadata := models.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDelete, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project destroy action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")
 
 	return nil
 }
 
 func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, user models.User, options *project.DeployOptions) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2436,9 +2336,7 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 	}
 
 	metadata := models.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project redeploy action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user, metadata, "could not log project redeploy action")
 
 	if _, writeErr := progressWriter.Write([]byte(`{"type":"deploy","phase":"up","status":"starting project deployment"}` + "\n")); writeErr != nil {
 		slog.DebugContext(ctx, "failed to write redeploy deploy progress", "error", writeErr)
@@ -2454,13 +2352,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 		return false
 	}
 
-	containersByProject := make(map[string][]container.Summary)
-	for _, c := range containers {
-		projectName := dockerutil.ComposeProjectLabel(c.Labels)
-		if projectName != "" {
-			containersByProject[projectName] = append(containersByProject[projectName], c)
-		}
-	}
+	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
 	for _, container := range lookupProjectContainers(proj, containersByProject) {
@@ -2473,11 +2365,8 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 }
 
 func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2507,11 +2396,8 @@ func (s *ProjectService) PullProjectImages(ctx context.Context, projectID string
 }
 
 func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID string, options ProjectBuildOptions, progressWriter io.Writer, user *models.User) error {
-	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	projectFromDb, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(projectFromDb); err != nil {
 		return err
 	}
 
@@ -2529,11 +2415,8 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 // - missing/if_not_present/default: pull only if local image is missing
 // - never: never pull (fails early if image is missing locally)
 func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, projectID string, progressWriter io.Writer, user models.User, credentials []containerregistry.Credential) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2542,20 +2425,20 @@ func (s *ProjectService) EnsureProjectImagesPresent(ctx context.Context, project
 		return fmt.Errorf("failed to load compose project: %w", lerr)
 	}
 
-	pullPlan := buildProjectImagePullPlan(compProj.Services)
+	pullPlan := projects.BuildImagePullPlan(compProj.Services)
 
 	return s.ensureImagesPresent(ctx, pullPlan, progressWriter, credentials, user)
 }
 
-func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]imagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
+func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[string]projects.ImagePullMode, progressWriter io.Writer, credentials []containerregistry.Credential, user models.User) error {
 	for img, mode := range pullPlan {
 		exists, ierr := s.imageService.ImageExistsLocally(ctx, img)
-		if ierr != nil && mode != imagePullModeAlways {
+		if ierr != nil && mode != projects.ImagePullModeAlways {
 			slog.WarnContext(ctx, "failed to check local image existence", "image", img, "error", ierr)
 			// Non-fatal: attempt to pull to be safe
 		}
 
-		if mode == imagePullModeNever {
+		if mode == projects.ImagePullModeNever {
 			if ierr != nil {
 				slog.WarnContext(ctx, "pull_policy is 'never' but image presence check failed; continuing without pull", "image", img, "error", ierr)
 				continue
@@ -2567,7 +2450,7 @@ func (s *ProjectService) ensureImagesPresent(ctx context.Context, pullPlan map[s
 			continue
 		}
 
-		if mode == imagePullModeIfMissing && exists {
+		if mode == projects.ImagePullModeIfMissing && exists {
 			slog.DebugContext(ctx, "image already present locally; skipping pull", "image", img)
 			continue
 		}
@@ -2602,9 +2485,9 @@ func (s *ProjectService) prepareProjectImagesForDeploy(
 			continue
 		}
 
-		decision := decideDeployImageAction(svc, pullPolicyOverride)
+		decision := projects.DecideDeployImageAction(svc, pullPolicyOverride)
 		if updated {
-			decision = deployImageDecision{Build: true}
+			decision = projects.DeployImageDecision{Build: true}
 		}
 		if err := s.ensureDeployServiceImageReady(ctx, projectID, project, name, svc, imageName, decision, progressWriter, credentials, user); err != nil {
 			return err
@@ -2623,7 +2506,7 @@ func prepareDeployServiceConfig(projectID, projectName, serviceName string, svc 
 	return updatedSvc, resolvedImage, updated
 }
 
-func shouldPullDeployImage(decision deployImageDecision, exists bool) bool {
+func shouldPullDeployImage(decision projects.DeployImageDecision, exists bool) bool {
 	return decision.PullAlways || (decision.PullIfMissing && !exists)
 }
 
@@ -2634,7 +2517,7 @@ func (s *ProjectService) ensureDeployServiceImageReady(
 	serviceName string,
 	svc composetypes.ServiceConfig,
 	imageName string,
-	decision deployImageDecision,
+	decision projects.DeployImageDecision,
 	progressWriter io.Writer,
 	credentials []containerregistry.Credential,
 	user *models.User,
@@ -2728,93 +2611,6 @@ func ensureServiceImage(projectID, projectName, serviceName string, svc composet
 	return imageName, svc, false
 }
 
-func normalizePullPolicy(policy string) string {
-	policy = strings.ToLower(strings.TrimSpace(policy))
-	if policy == "if_not_present" {
-		return "missing"
-	}
-	return policy
-}
-
-func normalizeDeployPullPolicyInternal(policy string) string {
-	normalized := normalizePullPolicy(policy)
-	switch normalized {
-	case "always", "missing", "never":
-		return normalized
-	default:
-		return ""
-	}
-}
-
-func isAlwaysPullPolicy(policy string) bool {
-	if policy == "always" || policy == "daily" || policy == "weekly" {
-		return true
-	}
-	return strings.HasPrefix(policy, "every_")
-}
-
-func decideDeployImageAction(svc composetypes.ServiceConfig, pullPolicyOverride string) deployImageDecision {
-	policy := normalizePullPolicy(svc.PullPolicy)
-	if policy == "" {
-		if override := normalizeDeployPullPolicyInternal(pullPolicyOverride); override != "" {
-			policy = override
-		}
-	}
-	buildEnabled := svc.Build != nil
-
-	if buildEnabled {
-		switch {
-		case policy == "build":
-			return deployImageDecision{Build: true}
-		case policy == "never":
-			return deployImageDecision{RequireLocalOnly: true}
-		case isAlwaysPullPolicy(policy):
-			return deployImageDecision{PullAlways: true}
-		case policy == "missing":
-			return deployImageDecision{PullIfMissing: true}
-		case policy == "":
-			return deployImageDecision{PullIfMissing: true, FallbackBuildOnPullFail: true}
-		default:
-			return deployImageDecision{PullIfMissing: true}
-		}
-	}
-
-	switch {
-	case policy == "never":
-		return deployImageDecision{RequireLocalOnly: true}
-	case isAlwaysPullPolicy(policy):
-		return deployImageDecision{PullAlways: true}
-	default:
-		return deployImageDecision{PullIfMissing: true}
-	}
-}
-
-func resolveBuildContextInternal(workingDir string, svc composetypes.ServiceConfig, serviceName string) (string, error) {
-	contextDir := strings.TrimSpace(svc.Build.Context)
-	if contextDir == "" {
-		contextDir = workingDir
-	} else if _, isGitContext, err := contextsource.ParseGitBuildContextSource(contextDir); err != nil {
-		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
-	} else if !isGitContext && !filepath.IsAbs(contextDir) {
-		contextDir = filepath.Join(workingDir, contextDir)
-	}
-
-	if contextDir == "" {
-		return "", fmt.Errorf("build context not set for service %s", serviceName)
-	}
-
-	return contextDir, nil
-}
-
-func resolveDockerfilePathInternal(svc composetypes.ServiceConfig) string {
-	dockerfilePath := strings.TrimSpace(svc.Build.Dockerfile)
-	if dockerfilePath == "" {
-		dockerfilePath = "Dockerfile"
-	}
-
-	return dockerfilePath
-}
-
 func (s *ProjectService) resolveEffectiveBuildProvider(override string) string {
 	provider := strings.ToLower(strings.TrimSpace(override))
 	if provider != "" {
@@ -2859,7 +2655,7 @@ func (s *ProjectService) prepareServiceBuildRequest(
 	// (which is what bind mount sources need) makes `os.Stat` fail because
 	// the host path doesn't exist inside the Arcane container. See #2314.
 	// For that reason the build context dir is deliberately left untranslated.
-	contextDir, err := resolveBuildContextInternal(project.WorkingDir, updatedSvc, serviceName)
+	contextDir, err := projects.ResolveBuildContext(project.WorkingDir, updatedSvc, serviceName)
 	if err != nil {
 		return buildtypes.BuildRequest{}, updatedSvc, updated, err
 	}
@@ -2871,7 +2667,7 @@ func (s *ProjectService) prepareServiceBuildRequest(
 
 	dockerfilePath := ""
 	if strings.TrimSpace(dockerfileInline) == "" {
-		dockerfilePath = resolveDockerfilePathInternal(updatedSvc)
+		dockerfilePath = projects.ResolveDockerfilePath(updatedSvc)
 	}
 
 	buildReq := buildtypes.BuildRequest{
@@ -2974,11 +2770,8 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 }
 
 func (s *ProjectService) RestartProject(ctx context.Context, projectID string, user models.User) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -2988,15 +2781,11 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 
 	// Get configured projects directory from settings
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
-	projectsDirectory, pdErr := projects.GetProjectsDirectory(ctx, strings.TrimSpace(cfg.ProjectsDirectory.Value))
-	if pdErr != nil {
-		slog.WarnContext(ctx, "unable to determine projects directory; using default", "error", pdErr)
-		projectsDirectory = "/app/data/projects"
-	}
+	projectsDirectory := s.getProjectsDirectoryOrDefaultInternal(ctx, cfg)
 
 	pathMapper := s.getPathMapperInternal(ctx)
 
-	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, normalizeComposeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
+	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return fmt.Errorf("failed to load compose project: %w", lerr)
@@ -3013,9 +2802,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, u
 		"projectID":   projectID,
 		"projectName": proj.Name,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectStart, projectID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project restart action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
 	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
 	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
@@ -3273,9 +3060,7 @@ func (s *ProjectService) logProjectUpdateEventInternal(ctx context.Context, proj
 		metadata["projectFilesUpdated"] = true
 		metadata["projectFileChangeCount"] = len(fileChanges)
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project update action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log project update action")
 }
 
 func (s *ProjectService) refreshProjectAfterContentUpdateInternal(ctx context.Context, proj *models.Project, composeContent *string, fileChanges []project.ProjectFileChange) {
@@ -3335,9 +3120,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if gitEnvContent == nil {
 		metadata["envSourceRemoved"] = true
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log git sync project update action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log git sync project update action")
 
 	return &proj, nil
 }
@@ -3434,8 +3217,8 @@ func projectRenameVolumeMigrationComposeNamesInternal(s *ProjectService, proj *m
 		return "", "", false
 	}
 
-	oldComposeName := normalizeComposeProjectName(proj.Name)
-	newComposeName := normalizeComposeProjectName(newProjectName)
+	oldComposeName := projects.NormalizeProjectName(proj.Name)
+	newComposeName := projects.NormalizeProjectName(newProjectName)
 	if oldComposeName == "" || newComposeName == "" || oldComposeName == newComposeName {
 		return "", "", false
 	}
@@ -3646,7 +3429,7 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		return err
 	}
 
-	validationProjectName := normalizeComposeProjectName(projectName)
+	validationProjectName := projects.NormalizeProjectName(projectName)
 	cfg := composetypes.ConfigDetails{
 		Version:    api.ComposeVersion,
 		WorkingDir: projectPath,
@@ -3656,10 +3439,10 @@ func (s *ProjectService) validateComposeContentForUpdate(ctx context.Context, pr
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	missingIncludeLoader := &missingIncludeStubResourceLoaderInternal{projectPath: projectPath}
-	defer missingIncludeLoader.cleanupInternal()
+	missingIncludeLoader := projects.NewMissingIncludeStubLoader(projectPath)
+	defer missingIncludeLoader.Cleanup()
 
-	err = withTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
+	err = projects.WithTransientValidationEnvFile(projectPath, effectiveEnvContent, func() error {
 		_, loadErr := loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
 			opts.ResourceLoaders = append([]loader.ResourceLoader{missingIncludeLoader}, opts.ResourceLoaders...)
 			if validationProjectName != "" {
@@ -3686,79 +3469,6 @@ func validateComposeIncludePathsForProjectInternal(projectPath, composeContent s
 		}
 	}
 	return nil
-}
-
-type missingIncludeStubResourceLoaderInternal struct {
-	projectPath string
-	tempDir     string
-	stubs       map[string]string
-}
-
-func (l *missingIncludeStubResourceLoaderInternal) Accept(path string) bool {
-	_, ok := l.resolveMissingIncludeInternal(path)
-	return ok
-}
-
-func (l *missingIncludeStubResourceLoaderInternal) Load(_ context.Context, path string) (string, error) {
-	validatedPath, ok := l.resolveMissingIncludeInternal(path)
-	if !ok {
-		return "", fmt.Errorf("include file is not eligible for validation stub: %s", path)
-	}
-
-	if l.stubs == nil {
-		l.stubs = make(map[string]string)
-	}
-	if stubPath, ok := l.stubs[validatedPath]; ok {
-		return stubPath, nil
-	}
-
-	if l.tempDir == "" {
-		tempDir, err := os.MkdirTemp("", "arcane-compose-include-*")
-		if err != nil {
-			return "", fmt.Errorf("create validation include temp dir: %w", err)
-		}
-		l.tempDir = tempDir
-	}
-
-	relPath, err := filepath.Rel(l.projectPath, validatedPath)
-	if err != nil || strings.HasPrefix(relPath, "..") || filepath.IsAbs(relPath) {
-		relPath = filepath.Base(validatedPath)
-	}
-	stubPath := filepath.Join(l.tempDir, relPath)
-	if err := os.MkdirAll(filepath.Dir(stubPath), 0o755); err != nil {
-		return "", fmt.Errorf("create validation include directory: %w", err)
-	}
-	if err := os.WriteFile(stubPath, []byte("services: {}\n"), 0o600); err != nil {
-		return "", fmt.Errorf("write validation include stub: %w", err)
-	}
-
-	l.stubs[validatedPath] = stubPath
-	return stubPath, nil
-}
-
-func (l *missingIncludeStubResourceLoaderInternal) Dir(path string) string {
-	return filepath.Dir(path)
-}
-
-func (l *missingIncludeStubResourceLoaderInternal) resolveMissingIncludeInternal(path string) (string, bool) {
-	validatedPath, err := projects.ValidateIncludePathForWrite(l.projectPath, path)
-	if err != nil {
-		return "", false
-	}
-
-	if _, err := os.Stat(validatedPath); err == nil {
-		return "", false
-	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", false
-	}
-
-	return validatedPath, true
-}
-
-func (l *missingIncludeStubResourceLoaderInternal) cleanupInternal() {
-	if l.tempDir != "" {
-		_ = os.RemoveAll(l.tempDir)
-	}
 }
 
 func buildComposeValidationEnvironment(projectsDirectory, projectPath string, effectiveEnvContent *string) (projects.EnvMap, error) {
@@ -3825,61 +3535,6 @@ func parseComposeValidationEnvContent(content string, contextEnv projects.EnvMap
 	}
 
 	return envMap, nil
-}
-
-func withTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
-	envPath := filepath.Join(projectPath, ".env")
-	originalContent, readErr := os.ReadFile(envPath)
-	originalExists := readErr == nil
-	if readErr != nil && !os.IsNotExist(readErr) {
-		if !errors.Is(readErr, os.ErrPermission) {
-			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
-		}
-		// The file exists but is permission-locked (e.g. chmod 000, foreign-owned).
-		// Its contents can't be verified or safely overwritten, so leave it
-		// untouched and validate against whatever's already on disk instead of
-		// aborting the whole update.
-		slog.Warn("skipping permission-locked .env file during compose validation; leaving it untouched", "projectPath", projectPath)
-		if run == nil {
-			return nil
-		}
-		return run()
-	}
-
-	shouldWrite := effectiveEnvContent != nil || !originalExists
-	if shouldWrite {
-		content := ""
-		if effectiveEnvContent != nil {
-			content = *effectiveEnvContent
-		}
-		if writeErr := projects.WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
-			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
-		}
-
-		defer func() {
-			var restoreErr error
-			switch {
-			case originalExists:
-				restoreErr = projects.WriteEnvFile(projectPath, projectPath, string(originalContent))
-			case effectiveEnvContent != nil:
-				restoreErr = os.Remove(envPath)
-			default:
-				restoreErr = os.Remove(envPath)
-			}
-
-			if restoreErr != nil && !os.IsNotExist(restoreErr) {
-				if err == nil {
-					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
-				}
-			}
-		}()
-	}
-
-	if run == nil {
-		return nil
-	}
-
-	return run()
 }
 
 func (s *ProjectService) resolveEffectiveEnvContentForUpdateInternal(projectPath string, envContent *string) (*string, error) {
@@ -4158,11 +3813,8 @@ func (s *ProjectService) applyProjectRenameIfNeeded(proj *models.Project, name *
 }
 
 func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID, relativePath, content string, user models.User) error {
-	proj, err := s.GetProjectFromDatabaseByID(ctx, projectID)
+	proj, err := s.getMutableProjectInternal(ctx, projectID)
 	if err != nil {
-		return err
-	}
-	if err := ensureProjectMutableInternal(proj); err != nil {
 		return err
 	}
 
@@ -4187,9 +3839,7 @@ func (s *ProjectService) UpdateProjectIncludeFile(ctx context.Context, projectID
 		"projectName":  proj.Name,
 		"relativePath": relativePath,
 	}
-	if logErr := s.eventService.LogProjectEvent(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user.ID, user.Username, "0", metadata); logErr != nil {
-		slog.ErrorContext(ctx, "could not log project include update action", "error", logErr)
-	}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectUpdate, proj.ID, proj.Name, user, metadata, "could not log project include update action")
 
 	slog.InfoContext(ctx, "project include file updated", "projectID", proj.ID, "file", relativePath)
 	return nil
@@ -4263,7 +3913,7 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 	// Writer goroutine: compose logs -> pipe
 	go func() {
 		// since/timestamps not currently supported by ComposeLogs helper; follow/tail are used.
-		err := projects.ComposeLogs(ctx, normalizeComposeProjectName(proj.Name), pw, follow, tail)
+		err := projects.ComposeLogs(ctx, projects.NormalizeProjectName(proj.Name), pw, follow, tail)
 		_ = pw.Close()
 		done <- err
 	}()
@@ -4461,7 +4111,7 @@ func addKnownComposeProjectNameInternal(known map[string]struct{}, name string) 
 	}
 
 	known[name] = struct{}{}
-	if normalized := normalizeComposeProjectName(name); normalized != "" {
+	if normalized := projects.NormalizeProjectName(name); normalized != "" {
 		known[normalized] = struct{}{}
 	}
 }
@@ -4482,7 +4132,7 @@ func buildDiscoveredComposeProjectUpdateRowsInternal(
 		if _, exists := knownProjectNames[projectName]; exists {
 			continue
 		}
-		if normalized := normalizeComposeProjectName(projectName); normalized != "" {
+		if normalized := projects.NormalizeProjectName(projectName); normalized != "" {
 			if _, exists := knownProjectNames[normalized]; exists {
 				continue
 			}
@@ -4812,13 +4462,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	}
 
 	// 2. Group containers by project name
-	containersByProject := make(map[string][]container.Summary)
-	for _, c := range containers {
-		projName := dockerutil.ComposeProjectLabel(c.Labels)
-		if projName != "" {
-			containersByProject[projName] = append(containersByProject[projName], c)
-		}
-	}
+	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	// 3. Map to DTOs
 	results := make([]project.Details, len(projectsList))
@@ -4848,7 +4492,6 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	projectContainers := lookupProjectContainers(p, containersByProject)
 
 	services := make([]ProjectServiceInfo, 0, len(projectContainers))
-	runningCount := 0
 
 	for _, c := range projectContainers {
 		svcName := dockerutil.ComposeServiceLabel(c.Labels)
@@ -4891,11 +4534,8 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 			Labels:           c.Labels,
 			RedeployDisabled: redeployDisabled,
 		})
-
-		if state == "running" {
-			runningCount++
-		}
 	}
+	_, runningCount := s.getServiceCounts(services)
 
 	// Convert to RuntimeServices
 	runtimeServices := make([]project.RuntimeService, len(services))
@@ -5014,7 +4654,7 @@ type composeSyncMetadataInternal struct {
 // loadComposeMetadataForSyncInternal loads the compose file once and returns
 // the service count plus compose-go's effective project name.
 func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context, dirPath, dirName string) (composeSyncMetadataInternal, error) {
-	normName := normalizeComposeProjectName(dirName)
+	normName := projects.NormalizeProjectName(dirName)
 	meta := composeSyncMetadataInternal{
 		resolvedProjectName: normName,
 	}
@@ -5074,7 +4714,7 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 	}
 
 	updates := map[string]any{}
-	shouldUpdateName := meta.explicitProjectName || normalizeComposeProjectName(proj.Name) != proj.Name
+	shouldUpdateName := meta.explicitProjectName || projects.NormalizeProjectName(proj.Name) != proj.Name
 	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
 		updates["name"] = meta.resolvedProjectName
 	}
@@ -5392,7 +5032,7 @@ func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.
 }
 
 func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) error {
-	directoryRollback, directoryErr := rollbackProjectRenameDirectoryInternal(journal)
+	pathsMissing, directoryErr := projects.RollbackRenamedProjectDirectory(journal.OldPath, journal.NewPath)
 
 	volumeErr := s.rollbackProjectRenameJournalVolumesInternal(ctx, journal)
 
@@ -5407,17 +5047,17 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 	}
 
 	if directoryErr != nil {
-		slog.WarnContext(ctx, "keeping project rename journal after restoring database state because directory rollback failed", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", directoryErr)
+		slog.WarnContext(ctx, "keeping project rename journal after restoring database state because directory rollback failed", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", directoryErr)
 	}
 
 	if volumeErr != nil {
 		if volumes.OnlyPreservedTargetErrors(volumeErr) {
-			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
+			slog.WarnContext(ctx, "clearing project rename journal after preserving target volume data", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
 		} else {
 			if cleanupErr := s.writeProjectRenameRollbackCleanupInternal(ctx, journal); cleanupErr != nil {
 				return errors.Join(directoryErr, volumeErr, cleanupErr)
 			}
-			slog.WarnContext(ctx, "queued project rename target volume cleanup after restoring database state despite volume rollback failure", "projectID", journal.ProjectID, "pathsMissing", directoryRollback.PathsMissing, "error", volumeErr)
+			slog.WarnContext(ctx, "queued project rename target volume cleanup after restoring database state despite volume rollback failure", "projectID", journal.ProjectID, "pathsMissing", pathsMissing, "error", volumeErr)
 		}
 	}
 
@@ -5517,63 +5157,6 @@ func (s *ProjectService) projectRenameRecoveryDockerInternal(ctx context.Context
 	}
 
 	return dockerClient, nil
-}
-
-type projectRenameDirectoryRollbackInternal struct {
-	PathsMissing bool
-}
-
-func rollbackProjectRenameDirectoryInternal(journal *projectRenameJournalInternal) (projectRenameDirectoryRollbackInternal, error) {
-	var result projectRenameDirectoryRollbackInternal
-	oldPath := filepath.Clean(journal.OldPath)
-	newPath := filepath.Clean(journal.NewPath)
-	if oldPath == "" || newPath == "" || oldPath == newPath {
-		return result, nil
-	}
-
-	oldExists := pathExistsInternal(oldPath)
-	newExists := pathExistsInternal(newPath)
-	switch {
-	case oldExists && newExists:
-		conflictPath, err := relocateProjectRenameConflictDirectoryInternal(newPath)
-		if err != nil {
-			slog.Warn("project rename directory rollback found both paths and failed to relocate target path; keeping old path and clearing journal", "oldPath", oldPath, "newPath", newPath, "error", err)
-		} else {
-			slog.Warn("project rename directory rollback found both paths; moved target path aside and kept old path", "oldPath", oldPath, "newPath", newPath, "conflictPath", conflictPath)
-		}
-	case !oldExists && newExists:
-		if err := os.Rename(newPath, oldPath); err != nil {
-			return result, fmt.Errorf("rollback project directory rename: %w", err)
-		}
-	case !oldExists && !newExists:
-		result.PathsMissing = true
-		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
-	}
-	return result, nil
-}
-
-func relocateProjectRenameConflictDirectoryInternal(path string) (string, error) {
-	parent := filepath.Dir(path)
-	base := filepath.Base(path)
-	now := time.Now().UTC().UnixNano()
-	for attempt := range 10 {
-		conflictPath := filepath.Join(parent, fmt.Sprintf(".%s.rename-conflict-%d-%d", base, now, attempt))
-		if _, err := os.Stat(conflictPath); err == nil {
-			continue
-		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("check conflict path: %w", err)
-		}
-		if err := os.Rename(path, conflictPath); err != nil {
-			return "", fmt.Errorf("relocate project rename target path: %w", err)
-		}
-		return conflictPath, nil
-	}
-	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", path)
-}
-
-func pathExistsInternal(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
 }
 
 func cloneStringPtrInternal(value *string) *string {

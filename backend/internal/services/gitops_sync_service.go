@@ -2010,7 +2010,7 @@ func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context
 	}
 
 	if sync.ProjectID != nil && *sync.ProjectID == project.ID && project.GitOpsManagedBy != nil && *project.GitOpsManagedBy == sync.ID {
-		s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+		s.projectService.cacheComposeProjectIDInternal(projects.NormalizeProjectName(project.Name), project.ID)
 		return nil
 	}
 
@@ -2024,7 +2024,7 @@ func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context
 	}
 
 	if len(updatesSync) == 0 && len(updatesProject) == 0 {
-		s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+		s.projectService.cacheComposeProjectIDInternal(projects.NormalizeProjectName(project.Name), project.ID)
 		return nil
 	}
 
@@ -2046,7 +2046,7 @@ func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context
 
 	sync.ProjectID = &project.ID
 	project.GitOpsManagedBy = &sync.ID
-	s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+	s.projectService.cacheComposeProjectIDInternal(projects.NormalizeProjectName(project.Name), project.ID)
 
 	return nil
 }
@@ -2168,7 +2168,7 @@ func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx cont
 	}
 
 	sync.ProjectID = &project.ID
-	s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+	s.projectService.cacheComposeProjectIDInternal(projects.NormalizeProjectName(project.Name), project.ID)
 
 	return project, nil
 }
@@ -2275,7 +2275,7 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 	project, err := projects.LoadComposeProjectLenient(
 		ctx,
 		filepath.Join(stagePath, composeFileName),
-		normalizeComposeProjectName(projectName),
+		projects.NormalizeProjectName(projectName),
 		projectsDir,
 		autoInjectEnv,
 		pathMapper,
@@ -2348,7 +2348,7 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 	}
 
 	sync.ProjectID = &project.ID
-	s.projectService.cacheComposeProjectIDInternal(normalizeComposeProjectName(project.Name), project.ID)
+	s.projectService.cacheComposeProjectIDInternal(projects.NormalizeProjectName(project.Name), project.ID)
 
 	if s.projectService.eventService != nil {
 		metadata := models.JSON{"action": "create", "projectID": project.ID, "projectName": project.Name, "path": projectPath}

@@ -400,37 +400,6 @@ func TestProjectService_FormatDockerPorts(t *testing.T) {
 	}
 }
 
-func TestProjectService_NormalizeComposeProjectName(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{
-			name:     "simple",
-			input:    "myproject",
-			expected: "myproject",
-		},
-		{
-			name:     "with special chars",
-			input:    "My Project!",
-			expected: "myproject",
-		},
-		{
-			name:     "empty",
-			input:    "",
-			expected: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got := normalizeComposeProjectName(tt.input)
-			assert.Equal(t, tt.expected, got)
-		})
-	}
-}
-
 func TestProjectService_GetProjectByComposeName(t *testing.T) {
 	ctx := context.Background()
 
@@ -550,87 +519,6 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
 		assert.False(t, cached)
 	})
-}
-
-func TestResolveServiceImagePullMode(t *testing.T) {
-	tests := []struct {
-		name     string
-		service  composetypes.ServiceConfig
-		expected imagePullMode
-	}{
-		{
-			name:     "default policy is missing",
-			service:  composetypes.ServiceConfig{},
-			expected: imagePullModeIfMissing,
-		},
-		{
-			name:     "always policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyAlways},
-			expected: imagePullModeAlways,
-		},
-		{
-			name:     "refresh policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyRefresh},
-			expected: imagePullModeAlways,
-		},
-		{
-			name:     "missing policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyMissing},
-			expected: imagePullModeIfMissing,
-		},
-		{
-			name:     "if not present policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyIfNotPresent},
-			expected: imagePullModeIfMissing,
-		},
-		{
-			name:     "never policy",
-			service:  composetypes.ServiceConfig{PullPolicy: composetypes.PullPolicyNever},
-			expected: imagePullModeNever,
-		},
-		{
-			name:     "invalid policy defaults to missing behavior",
-			service:  composetypes.ServiceConfig{PullPolicy: "definitely_invalid"},
-			expected: imagePullModeIfMissing,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, resolveServiceImagePullMode(tt.service))
-		})
-	}
-}
-
-func TestBuildProjectImagePullPlan(t *testing.T) {
-	services := composetypes.Services{
-		"web": {
-			Name:       "web",
-			Image:      "redis:latest",
-			PullPolicy: composetypes.PullPolicyIfNotPresent,
-		},
-		"worker": {
-			Name:       "worker",
-			Image:      "redis:latest",
-			PullPolicy: composetypes.PullPolicyAlways,
-		},
-		"api": {
-			Name:       "api",
-			Image:      "nginx:latest",
-			PullPolicy: composetypes.PullPolicyNever,
-		},
-		"empty-image": {
-			Name:       "empty-image",
-			Image:      "",
-			PullPolicy: composetypes.PullPolicyAlways,
-		},
-	}
-
-	plan := buildProjectImagePullPlan(services)
-
-	assert.Len(t, plan, 2)
-	assert.Equal(t, imagePullModeAlways, plan["redis:latest"])
-	assert.Equal(t, imagePullModeNever, plan["nginx:latest"])
 }
 
 func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -770,8 +658,8 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 		CheckTime:      time.Now().UTC().Add(-time.Hour),
 	}).Error)
 
-	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]imagePullMode{
-		imageRef: imagePullModeAlways,
+	require.NoError(t, svc.ensureImagesPresent(ctx, map[string]projects.ImagePullMode{
+		imageRef: projects.ImagePullModeAlways,
 	}, io.Discard, nil, systemUser))
 
 	// sha256:old-api may still be in use by another container — pulling for one container
@@ -4197,47 +4085,6 @@ func TestProjectService_PrepareServiceBuildRequest_UsesInlineDockerfile(t *testi
 	assert.Equal(t, "FROM alpine:3.20\nRUN echo inline\n", req.DockerfileInline)
 }
 
-func TestNormalizePullPolicy(t *testing.T) {
-	assert.Equal(t, "missing", normalizePullPolicy("if_not_present"))
-	assert.Equal(t, "build", normalizePullPolicy(" BUILD "))
-	assert.Equal(t, "", normalizePullPolicy(""))
-}
-
-func TestDecideDeployImageAction(t *testing.T) {
-	t.Run("build service with explicit build policy", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{
-			PullPolicy: "build",
-			Build:      &composetypes.BuildConfig{Context: "."},
-		}
-
-		decision := decideDeployImageAction(svc, "")
-		assert.True(t, decision.Build)
-		assert.False(t, decision.PullAlways)
-	})
-
-	t.Run("build service default policy uses pull then fallback build", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{Build: &composetypes.BuildConfig{Context: "."}}
-		decision := decideDeployImageAction(svc, "")
-		assert.True(t, decision.PullIfMissing)
-		assert.True(t, decision.FallbackBuildOnPullFail)
-		assert.False(t, decision.Build)
-	})
-
-	t.Run("non-build service never policy requires local only", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{PullPolicy: "never"}
-		decision := decideDeployImageAction(svc, "")
-		assert.True(t, decision.RequireLocalOnly)
-		assert.False(t, decision.PullIfMissing)
-	})
-
-	t.Run("compose pull policy wins over deploy override", func(t *testing.T) {
-		svc := composetypes.ServiceConfig{PullPolicy: "never"}
-		decision := decideDeployImageAction(svc, "always")
-		assert.True(t, decision.RequireLocalOnly)
-		assert.False(t, decision.PullAlways)
-	})
-}
-
 func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardrails(t *testing.T) {
 	svc := &ProjectService{}
 	proj := &composetypes.Project{WorkingDir: "/tmp/project", Name: "demo"}
@@ -4348,30 +4195,6 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 	assert.Contains(t, err.Error(), "boom build")
 	assert.NotContains(t, err.Error(), "failed to pull image arcane.local/")
 	assert.NotContains(t, err.Error(), "failed to resolve reference \"arcane.local/")
-}
-
-func TestResolveBuildContextInternal_AllowsRemoteGitContext(t *testing.T) {
-	svc := composetypes.ServiceConfig{
-		Build: &composetypes.BuildConfig{
-			Context: "https://github.com/getarcaneapp/arcane.git#main:docker/app",
-		},
-	}
-
-	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
-	require.NoError(t, err)
-	assert.Equal(t, "https://github.com/getarcaneapp/arcane.git#main:docker/app", contextDir)
-}
-
-func TestResolveBuildContextInternal_AllowsRemoteGitContextWithoutGitSuffix(t *testing.T) {
-	svc := composetypes.ServiceConfig{
-		Build: &composetypes.BuildConfig{
-			Context: "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app",
-		},
-	}
-
-	contextDir, err := resolveBuildContextInternal("/projects/demo", svc, "web")
-	require.NoError(t, err)
-	assert.Equal(t, "https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app", contextDir)
 }
 
 func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWhenDisabled(t *testing.T) {

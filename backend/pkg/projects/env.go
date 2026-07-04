@@ -253,6 +253,63 @@ func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
 	return parseEnvWithContext(strings.NewReader(content), contextEnv)
 }
 
+// WithTransientValidationEnvFile temporarily writes a project .env file while
+// running compose validation, then restores the original file state.
+func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *string, run func() error) (err error) {
+	envPath := filepath.Join(projectPath, ".env")
+	originalContent, readErr := os.ReadFile(envPath)
+	originalExists := readErr == nil
+	if readErr != nil && !os.IsNotExist(readErr) {
+		if !errors.Is(readErr, os.ErrPermission) {
+			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
+		}
+		// The file exists but is permission-locked (e.g. chmod 000, foreign-owned).
+		// Its contents can't be verified or safely overwritten, so leave it
+		// untouched and validate against whatever's already on disk instead of
+		// aborting the whole update.
+		slog.Warn("skipping permission-locked .env file during compose validation; leaving it untouched", "projectPath", projectPath)
+		if run == nil {
+			return nil
+		}
+		return run()
+	}
+
+	shouldWrite := effectiveEnvContent != nil || !originalExists
+	if shouldWrite {
+		content := ""
+		if effectiveEnvContent != nil {
+			content = *effectiveEnvContent
+		}
+		if writeErr := WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
+			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
+		}
+
+		defer func() {
+			var restoreErr error
+			switch {
+			case originalExists:
+				restoreErr = WriteEnvFile(projectPath, projectPath, string(originalContent))
+			case effectiveEnvContent != nil:
+				restoreErr = os.Remove(envPath)
+			default:
+				restoreErr = os.Remove(envPath)
+			}
+
+			if restoreErr != nil && !os.IsNotExist(restoreErr) {
+				if err == nil {
+					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
+				}
+			}
+		}()
+	}
+
+	if run == nil {
+		return nil
+	}
+
+	return run()
+}
+
 // BuildEffectiveEnvContent merges git and override env sources into the effective
 // .env content written to disk. The output is normalized: comments are dropped,
 // keys are sorted, and values are rewritten with Arcane's formatter.
