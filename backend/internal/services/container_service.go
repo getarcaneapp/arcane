@@ -14,6 +14,12 @@ import (
 	"time"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/events"
+	"github.com/moby/moby/api/types/network"
+	"github.com/moby/moby/client"
+	"golang.org/x/sync/singleflight"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -28,12 +34,8 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/api/types/events"
-	"github.com/moby/moby/api/types/network"
-	"github.com/moby/moby/client"
+	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
-	"golang.org/x/sync/singleflight"
 )
 
 type ContainerService struct {
@@ -593,7 +595,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	wasRunning := containerInfo.State != nil && containerInfo.State.Running
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
-	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	if libupdater.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
 		err = &common.ArcaneSelfRedeployError{}
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
@@ -731,7 +733,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 	}
 
 	details := containertypes.NewDetails(containerInspect)
-	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	s.applyContainerDetailsIconInternal(ctx, &details)
 
@@ -997,7 +999,7 @@ func (s *ContainerService) ListContainersPaginated(
 	dockerContainers = filterInternalContainers(dockerContainers, includeInternal)
 	imageIDs := collectImageIDs(dockerContainers)
 	updateInfoMap := s.getUpdateInfoMap(ctx, imageIDs)
-	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	items := s.buildContainerSummaries(dockerContainers, updateInfoMap, currentContainerID, currentContainerErr)
 
 	config := s.buildContainerPaginationConfig()

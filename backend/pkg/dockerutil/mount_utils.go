@@ -5,10 +5,12 @@ import (
 	"os"
 	"strings"
 
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/sys/cgroup"
 )
 
 func getCurrentContainerInspectTargetInternal(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
@@ -38,11 +40,11 @@ func getCurrentContainerInspectTargetInternal(currentContainerID func() (string,
 // at target. Returns nil + no error if Arcane isn't running inside a
 // container or no suitable mount is found — callers can fall back to a
 // plain bind on containerPath in that case.
-func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Client, containerPath, target string) (*mounttypes.Mount, error) {
+func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Client, containerPath, target string) (*mount.Mount, error) {
 	if dockerCli == nil {
 		return nil, nil
 	}
-	inspectTarget, err := getCurrentContainerInspectTargetInternal(GetCurrentContainerID, os.Hostname)
+	inspectTarget, err := getCurrentContainerInspectTargetInternal(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -76,7 +78,7 @@ func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Clie
 //
 // Returns nil if no mount destination is a prefix of containerPath or if
 // the matching mount is of an unsupported type.
-func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, target string) *mounttypes.Mount {
+func MountForSubpath(mounts []container.MountPoint, containerPath string, target string) *mount.Mount {
 	if strings.TrimSpace(containerPath) == "" {
 		return nil
 	}
@@ -84,7 +86,7 @@ func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, t
 		target = containerPath
 	}
 
-	var best *containertypes.MountPoint
+	var best *container.MountPoint
 	for i := range mounts {
 		m := &mounts[i]
 		if m.Destination == "" {
@@ -105,7 +107,7 @@ func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, t
 	readOnly := !best.RW
 
 	switch best.Type { //nolint:exhaustive // only bind and volume mounts are translatable; the default returns nil for the rest
-	case mounttypes.TypeBind:
+	case mount.TypeBind:
 		if strings.TrimSpace(best.Source) == "" {
 			return nil
 		}
@@ -113,14 +115,14 @@ func MountForSubpath(mounts []containertypes.MountPoint, containerPath string, t
 		if relative != "" {
 			source = strings.TrimRight(source, "/") + "/" + relative
 		}
-		return &mounttypes.Mount{Type: mounttypes.TypeBind, Source: source, Target: target, ReadOnly: readOnly}
-	case mounttypes.TypeVolume:
+		return &mount.Mount{Type: mount.TypeBind, Source: source, Target: target, ReadOnly: readOnly}
+	case mount.TypeVolume:
 		if strings.TrimSpace(best.Name) == "" {
 			return nil
 		}
-		m := &mounttypes.Mount{Type: mounttypes.TypeVolume, Source: best.Name, Target: target, ReadOnly: readOnly}
+		m := &mount.Mount{Type: mount.TypeVolume, Source: best.Name, Target: target, ReadOnly: readOnly}
 		if relative != "" {
-			m.VolumeOptions = &mounttypes.VolumeOptions{Subpath: relative}
+			m.VolumeOptions = &mount.VolumeOptions{Subpath: relative}
 		}
 		return m
 	default:
@@ -144,7 +146,7 @@ func pathHasPrefixInternal(containerPath, prefix string) bool {
 //
 // It currently supports bind and named volume mounts. If target is empty, destination
 // is used as the target.
-func MountForDestination(mounts []containertypes.MountPoint, destination string, target string) *mounttypes.Mount {
+func MountForDestination(mounts []container.MountPoint, destination string, target string) *mount.Mount {
 	if strings.TrimSpace(destination) == "" {
 		return nil
 	}
@@ -160,23 +162,23 @@ func MountForDestination(mounts []containertypes.MountPoint, destination string,
 		readOnly := !m.RW
 
 		switch m.Type {
-		case mounttypes.TypeVolume:
+		case mount.TypeVolume:
 			if strings.TrimSpace(m.Name) == "" {
 				return nil
 			}
-			return &mounttypes.Mount{Type: mounttypes.TypeVolume, Source: m.Name, Target: target, ReadOnly: readOnly}
-		case mounttypes.TypeBind:
+			return &mount.Mount{Type: mount.TypeVolume, Source: m.Name, Target: target, ReadOnly: readOnly}
+		case mount.TypeBind:
 			if strings.TrimSpace(m.Source) == "" {
 				return nil
 			}
-			return &mounttypes.Mount{Type: mounttypes.TypeBind, Source: m.Source, Target: target, ReadOnly: readOnly}
-		case mounttypes.TypeTmpfs:
+			return &mount.Mount{Type: mount.TypeBind, Source: m.Source, Target: target, ReadOnly: readOnly}
+		case mount.TypeTmpfs:
 			return nil
-		case mounttypes.TypeNamedPipe:
+		case mount.TypeNamedPipe:
 			return nil
-		case mounttypes.TypeCluster:
+		case mount.TypeCluster:
 			return nil
-		case mounttypes.TypeImage:
+		case mount.TypeImage:
 			return nil
 		default:
 			return nil

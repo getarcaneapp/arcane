@@ -7,14 +7,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/sync/errgroup"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/sys/cgroup"
 )
 
 const AutoHealJobName = "auto-heal"
@@ -130,7 +132,7 @@ func (j *AutoHealJob) selfContainerIDInternal(ctx context.Context) string {
 	j.selfIDOnce.Do(func() {
 		detect := j.getSelfContainerID
 		if detect == nil {
-			detect = dockerutil.GetCurrentContainerID
+			detect = cgroup.CurrentContainerID
 		}
 		id, err := detect()
 		if err != nil {

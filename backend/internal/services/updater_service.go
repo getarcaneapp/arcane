@@ -12,6 +12,9 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/loader"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -21,8 +24,7 @@ import (
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	"go.getarcane.app/sys/cgroup"
 	moduleapi "go.getarcane.app/updater/api"
 	updaterdigest "go.getarcane.app/updater/pkg/digest"
 	"go.getarcane.app/updater/pkg/labels"
@@ -113,7 +115,7 @@ func (s *UpdaterService) configInternal() moduleapi.Config {
 // the updater engine routes it through the CLI self-updater even when the
 // container is missing the Arcane labels. Empty when not running in Docker.
 func selfContainerIDInternal() string {
-	id, err := dockerutil.GetCurrentContainerID()
+	id, err := cgroup.CurrentContainerID()
 	if err != nil {
 		return ""
 	}

@@ -7,6 +7,9 @@ import (
 	"sort"
 	"time"
 
+	dockercontainer "github.com/moby/moby/api/types/container"
+	"golang.org/x/sync/errgroup"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -15,9 +18,8 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
-	dockercontainer "github.com/moby/moby/api/types/container"
+	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
-	"golang.org/x/sync/errgroup"
 )
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
@@ -78,7 +80,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 
 	filteredContainers := filterInternalContainers(dockerContainers, false)
 	containerItems := make([]containertypes.Summary, 0, len(filteredContainers))
-	currentContainerID, currentContainerErr := dockerutils.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	if s.containerService != nil {
 		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
 	} else {

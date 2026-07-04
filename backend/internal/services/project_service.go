@@ -19,6 +19,10 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"gorm.io/gorm"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -36,11 +40,9 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
 	buildtypes "go.getarcane.app/builds/types"
+	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
-	"gorm.io/gorm"
 )
 
 type ProjectService struct {
@@ -892,7 +894,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 		slog.Error("compose ps error", "projectName", composeProject.Name, "error", err)
 		return nil, fmt.Errorf("failed to get compose services status: %w", err)
 	}
-	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 
 	have := map[string]bool{}
 	var services []ProjectServiceInfo
@@ -2354,7 +2356,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 
 	containersByProject := groupComposeContainersByProjectInternal(containers)
 
-	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	for _, container := range lookupProjectContainers(proj, containersByProject) {
 		if libupdater.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
 			return true
@@ -4466,7 +4468,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 
 	// 3. Map to DTOs
 	results := make([]project.Details, len(projectsList))
-	currentContainerID, currentContainerErr := dockerutil.GetCurrentContainerID()
+	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	for i, p := range projectsList {
 		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr)
 	}

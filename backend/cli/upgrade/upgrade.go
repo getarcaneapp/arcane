@@ -9,12 +9,14 @@ import (
 	"strings"
 	"time"
 
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
 	"github.com/spf13/cobra"
+
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/sys/cgroup"
 	updaterlabels "go.getarcane.app/updater/pkg/labels"
 	updaterlogs "go.getarcane.app/updater/pkg/logs"
 )
@@ -127,7 +129,7 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 		return container.InspectResponse{}, err
 	}
 
-	selfID, _ := docker.GetCurrentContainerID()
+	selfID, _ := cgroup.CurrentContainerID()
 	slog.Info("Searching for Arcane container", "selfID", selfID, "totalContainers", len(containers.Items))
 
 	now := time.Now()

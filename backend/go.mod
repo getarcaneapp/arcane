@@ -55,6 +55,7 @@ require (
 	github.com/wneessen/go-mail v0.7.3
 	go.getarcane.app/builds v0.1.0
 	go.getarcane.app/sys/atomic v0.1.0
+	go.getarcane.app/sys/cgroup v0.1.0
 	go.getarcane.app/updater v0.4.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.53.0
