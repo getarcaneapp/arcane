@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
 	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
@@ -288,64 +288,64 @@
 
 <ResourceDetailLayout backUrl="/images" backLabel={m.images_title()} title={image?.repoTags?.[0] || shortId} {actions}>
 	{#if image}
-		<div class="space-y-6">
-			{#snippet tile(label: string, value: string, opts?: { mono?: boolean; class?: string })}
-				<Card.Root variant="subtle" class={opts?.class}>
-					<Card.Content class="flex flex-col gap-1 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-						<div class={cn('text-foreground text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
-							{value}
-						</div>
-					</Card.Content>
-				</Card.Root>
-			{/snippet}
-
-			<div class="bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3">
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
-					<VolumesIcon class="size-4 shrink-0" />
-					<span>{imageSize}</span>
-				</div>
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
-					<ClockIcon class="size-4 shrink-0" />
-					<span>{createdDate}</span>
-				</div>
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
-					<CpuIcon class="size-4 shrink-0" />
-					<span>{architecture} · {osName}</span>
+		{#snippet tile(label: string, value: string, opts?: { mono?: boolean; class?: string })}
+			<div class={opts?.class}>
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-all uppercase">{label}</div>
+				<div class={cn('text-foreground mt-1 text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
+					{value}
 				</div>
 			</div>
+		{/snippet}
 
-			{#if hasTags}
-				<div class="flex flex-wrap items-center gap-2">
-					<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
-						<TagIcon class="size-4" />
-						{m.common_tags()}
-					</span>
-					{#each repoTags as tag (tag)}
-						<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
-							{tag}
-						</Badge>
-					{/each}
+		<DetailPanel>
+			<section class="space-y-4 p-4 sm:p-5">
+				<div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+					<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+						<VolumesIcon class="size-4 shrink-0" />
+						<span>{imageSize}</span>
+					</div>
+					<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+						<ClockIcon class="size-4 shrink-0" />
+						<span>{createdDate}</span>
+					</div>
+					<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+						<CpuIcon class="size-4 shrink-0" />
+						<span>{architecture} · {osName}</span>
+					</div>
 				</div>
-			{/if}
 
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-				{@render tile(m.common_id(), image?.id || m.common_na(), { mono: true, class: 'sm:col-span-2 lg:col-span-3' })}
-				{#if image?.dockerVersion}
-					{@render tile(m.common_docker_version(), image.dockerVersion)}
+				{#if hasTags}
+					<div class="flex flex-wrap items-center gap-2">
+						<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+							<TagIcon class="size-4" />
+							{m.common_tags()}
+						</span>
+						{#each repoTags as tag (tag)}
+							<Badge variant="secondary" class="cursor-pointer text-xs select-all" title={m.common_click_to_select()}>
+								{tag}
+							</Badge>
+						{/each}
+					</div>
 				{/if}
-				{#if image?.author}
-					{@render tile(m.common_author(), image.author)}
-				{/if}
-				{#if image.config?.workingDir}
-					{@render tile(m.common_working_dir(), image.config.workingDir, { mono: true })}
-				{/if}
-			</div>
+
+				<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
+					{@render tile(m.common_id(), image?.id || m.common_na(), { mono: true, class: 'sm:col-span-2 lg:col-span-3' })}
+					{#if image?.dockerVersion}
+						{@render tile(m.common_docker_version(), image.dockerVersion)}
+					{/if}
+					{#if image?.author}
+						{@render tile(m.common_author(), image.author)}
+					{/if}
+					{#if image.config?.workingDir}
+						{@render tile(m.common_working_dir(), image.config.workingDir, { mono: true })}
+					{/if}
+				</div>
+			</section>
 
 			{#if hasEnv}
-				<div class="space-y-4 border-t pt-6">
-					<h3 class="text-sm font-medium">{m.common_environment_variables()}</h3>
-					<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+				<section class="space-y-4 p-4 sm:p-5">
+					<h3 class="text-sm font-semibold">{m.common_environment_variables()}</h3>
+					<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
 						{#each envVars as env (env)}
 							{#if env.includes('=')}
 								{@const [key, ...valueParts] = env.split('=')}
@@ -355,12 +355,12 @@
 							{/if}
 						{/each}
 					</div>
-				</div>
+				</section>
 			{/if}
 
-			<div class="space-y-4 border-t pt-6">
-				<h3 class="flex items-center gap-2 text-sm font-medium">
-					<ShieldCheckIcon class="size-4" />
+			<section class="space-y-4 p-4 sm:p-5">
+				<h3 class="flex items-center gap-2 text-sm font-semibold">
+					<ShieldCheckIcon class="text-primary size-4" />
 					{m.images_details_title()}
 				</h3>
 				<Tabs.Root bind:value={securityTab} class="space-y-4">
@@ -379,8 +379,8 @@
 						<VulnerabilityScanPanel scan={vulnerabilityScan} isScanning={isLoading.scanning} onScan={handleScanImage} />
 					</Tabs.Content>
 				</Tabs.Root>
-			</div>
-		</div>
+			</section>
+		</DetailPanel>
 	{:else}
 		<div class="py-12 text-center">
 			<p class="text-muted-foreground text-lg font-medium">{m.common_not_found_title({ resource: m.images_title() })}</p>

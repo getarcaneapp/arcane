@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/docker';
@@ -14,21 +13,18 @@
 	const json = $derived(JSON.stringify(container, null, 2));
 </script>
 
-<Card.Root>
-	<Card.Header icon={CodeIcon}>
-		<div class="flex flex-col space-y-1.5">
-			<Card.Title>
-				<h2>{m.containers_inspect_title()}</h2>
-			</Card.Title>
-			<Card.Description>{m.containers_inspect_description()}</Card.Description>
+<div class="border-border/70 overflow-hidden rounded-xl border">
+	<div class="border-border/50 flex items-start justify-between gap-3 border-b p-4">
+		<div class="flex items-start gap-2">
+			<CodeIcon class="text-primary mt-0.5 size-4 shrink-0" />
+			<div>
+				<h2 class="text-sm font-semibold">{m.containers_inspect_title()}</h2>
+				<p class="text-muted-foreground text-xs">{m.containers_inspect_description()}</p>
+			</div>
 		</div>
-		<div class="ml-auto">
-			<CopyButton text={json} variant="outline" size="default">
-				{m.common_copy_json()}
-			</CopyButton>
-		</div>
-	</Card.Header>
-	<Card.Content class="p-0">
-		<pre class="bg-muted/40 overflow-auto rounded-b-lg p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
-	</Card.Content>
-</Card.Root>
+		<CopyButton text={json} variant="outline" size="default">
+			{m.common_copy_json()}
+		</CopyButton>
+	</div>
+	<pre class="bg-muted/40 overflow-auto p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
+</div>

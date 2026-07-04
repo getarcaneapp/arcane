@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import Terminal from '$lib/components/terminal/terminal.svelte';
 	import TerminalControls from '$lib/components/terminal/terminal-controls.svelte';
 	import { m } from '$lib/paraglide/messages';
@@ -74,16 +73,13 @@
 	}
 </script>
 
-<Card.Root>
-	<Card.Header icon={TerminalIcon}>
+<div class="border-border/70 overflow-hidden rounded-xl border">
+	<div class="border-border/50 border-b p-4">
 		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex flex-col gap-1.5">
 				<div class="flex items-center gap-2">
-					<Card.Title>
-						<h2>
-							{m.common_shell()}
-						</h2>
-					</Card.Title>
+					<TerminalIcon class="text-primary size-4 shrink-0" />
+					<h2 class="text-sm font-semibold">{m.common_shell()}</h2>
 					{#if isConnected}
 						<div class="flex items-center gap-2">
 							<div class="size-2 animate-pulse rounded-full bg-green-500"></div>
@@ -91,12 +87,12 @@
 						</div>
 					{/if}
 				</div>
-				<Card.Description>{m.shell_interactive_access()}</Card.Description>
+				<p class="text-muted-foreground text-sm">{m.shell_interactive_access()}</p>
 			</div>
 			<TerminalControls bind:selectedShell onShellChange={handleShellChange} onReconnect={handleReconnect} />
 		</div>
-	</Card.Header>
-	<Card.Content class="overflow-hidden p-2">
+	</div>
+	<div class="overflow-hidden p-2">
 		<div class="h-full overflow-hidden rounded-lg border">
 			{#if websocketUrl}
 				{#key reconnectKey}
@@ -109,5 +105,5 @@
 				{/key}
 			{/if}
 		</div>
-	</Card.Content>
-</Card.Root>
+	</div>
+</div>

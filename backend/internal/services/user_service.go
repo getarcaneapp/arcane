@@ -444,6 +444,7 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		Locale:                 u.Locale,
 		TimeFormat:             u.TimeFormat,
 		FontSize:               u.FontSize,
+		NavigationLayout:       u.NavigationLayout,
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),
 		UpdatedAt:              u.UpdatedAt.Format("2006-01-02T15:04:05.999999Z"),

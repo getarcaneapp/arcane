@@ -1,6 +1,7 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 	import { Switch } from '$lib/components/ui/switch';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/docker';
@@ -123,18 +124,12 @@
 	const networkCount = $derived(container.networkSettings?.networks ? Object.keys(container.networkSettings.networks).length : 0);
 </script>
 
-<Card.Root>
-	<Card.Header icon={InfoIcon}>
-		<div class="flex flex-col space-y-1.5">
-			<Card.Title>
-				<h2>
-					{m.common_details_title({ resource: m.resource_container_cap() })}
-				</h2>
-			</Card.Title>
-			<Card.Description>{m.common_details_description({ resource: m.resource_container() })}</Card.Description>
-		</div>
-	</Card.Header>
-	<Card.Content class="p-4">
+<DetailPanel>
+	<DetailSectionCard
+		icon={InfoIcon}
+		title={m.common_details_title({ resource: m.resource_container_cap() })}
+		description={m.common_details_description({ resource: m.resource_container() })}
+	>
 		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
 			<div>
 				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
@@ -217,190 +212,161 @@
 			{/if}
 		</div>
 
-		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+		<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 			<KeyValueCard label={m.common_id()} valueTitle={m.common_click_to_select()}>{container.id}</KeyValueCard>
 
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-						{m.common_created()}
-					</div>
-					<div class="text-foreground text-sm font-medium">
-						{formatRelativeDate(container?.created)}
-					</div>
-					<div class="text-muted-foreground text-xs">
-						{formatDockerDate(container?.created)}
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+					{m.common_created()}
+				</div>
+				<div class="text-foreground text-sm font-medium">
+					{formatRelativeDate(container?.created)}
+				</div>
+				<div class="text-muted-foreground text-xs">
+					{formatDockerDate(container?.created)}
+				</div>
+			</div>
 
 			{#if container.state?.running}
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_started()}</div>
-						<div class="text-foreground text-sm font-medium">
-							{formatRelativeDate(container.state.startedAt)}
-						</div>
-						<div class="text-muted-foreground text-xs">
-							{formatDockerDate(container.state.startedAt)}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<div class="flex flex-col gap-1">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_started()}</div>
+					<div class="text-foreground text-sm font-medium">
+						{formatRelativeDate(container.state.startedAt)}
+					</div>
+					<div class="text-muted-foreground text-xs">
+						{formatDockerDate(container.state.startedAt)}
+					</div>
+				</div>
 			{:else if container.state?.finishedAt && !container.state.finishedAt.startsWith('0001')}
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_finished()}</div>
-						<div class="text-foreground text-sm font-medium">
-							{formatRelativeDate(container.state.finishedAt)}
-						</div>
-						<div class="text-muted-foreground text-xs">
-							{formatDockerDate(container.state.finishedAt)}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<div class="flex flex-col gap-1">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_finished()}</div>
+					<div class="text-foreground text-sm font-medium">
+						{formatRelativeDate(container.state.finishedAt)}
+					</div>
+					<div class="text-muted-foreground text-xs">
+						{formatDockerDate(container.state.finishedAt)}
+					</div>
+				</div>
 			{/if}
 
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_restart_policy()}</div>
-					<div class="text-foreground text-sm font-medium capitalize">
-						{restartPolicy}
-					</div>
-				</Card.Content>
-			</Card.Root>
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_restart_policy()}</div>
+				<div class="text-foreground text-sm font-medium capitalize">
+					{restartPolicy}
+				</div>
+			</div>
 
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.auto_update_title()}</div>
-					<div class="flex items-center gap-3">
-						<Switch
-							checked={autoUpdateEnabled}
-							disabled={autoUpdateToggling || autoUpdateLabelControlled}
-							onCheckedChange={handleAutoUpdateToggle}
-						/>
-						<span class="text-foreground text-sm font-medium">
-							{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
-						</span>
-					</div>
-					{#if autoUpdateLabelControlled}
-						<span class="text-muted-foreground text-xs">{m.auto_update_controlled_by_label()}</span>
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.auto_update_title()}</div>
+				<div class="flex items-center gap-3">
+					<Switch
+						checked={autoUpdateEnabled}
+						disabled={autoUpdateToggling || autoUpdateLabelControlled}
+						onCheckedChange={handleAutoUpdateToggle}
+					/>
+					<span class="text-foreground text-sm font-medium">
+						{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
+					</span>
+				</div>
+				{#if autoUpdateLabelControlled}
+					<span class="text-muted-foreground text-xs">{m.auto_update_controlled_by_label()}</span>
+				{/if}
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_ports()}</div>
+				<div class="text-foreground text-sm font-medium">
+					{#if uniquePorts.total === 0}
+						{m.containers_no_ports()}
+					{:else if uniquePorts.published > 0 && uniquePorts.exposed > 0}
+						{m.containers_ports_published_exposed({ published: uniquePorts.published, exposed: uniquePorts.exposed })}
+					{:else if uniquePorts.published > 0}
+						{m.containers_ports_published({ published: uniquePorts.published })}
+					{:else}
+						{m.containers_ports_exposed({ exposed: uniquePorts.exposed })}
 					{/if}
-				</Card.Content>
-			</Card.Root>
+				</div>
+				{#if onViewPortMappings && uniquePorts.total > 0}
+					<button type="button" class="text-primary w-fit text-xs font-medium hover:underline" onclick={onViewPortMappings}>
+						{m.common_view_details()} → {m.containers_nav_networks()}
+					</button>
+				{/if}
+			</div>
 
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_ports()}</div>
-					<div class="text-foreground text-sm font-medium">
-						{#if uniquePorts.total === 0}
-							{m.containers_no_ports()}
-						{:else if uniquePorts.published > 0 && uniquePorts.exposed > 0}
-							{m.containers_ports_published_exposed({ published: uniquePorts.published, exposed: uniquePorts.exposed })}
-						{:else if uniquePorts.published > 0}
-							{m.containers_ports_published({ published: uniquePorts.published })}
-						{:else}
-							{m.containers_ports_exposed({ exposed: uniquePorts.exposed })}
-						{/if}
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.resource_volumes_cap()}</div>
+				<div class="text-foreground text-sm font-medium">
+					{mountCount}
+					{mountCount === 1 ? m.common_mount() : m.common_mounts()}
+				</div>
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.resource_networks_cap()}</div>
+				<div class="text-foreground text-sm font-medium">
+					{networkCount}
+					{networkCount === 1 ? m.resource_network() : m.resource_networks()}
+				</div>
+			</div>
+
+			<div class="flex flex-col gap-1">
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_image_id()}</div>
+				<div
+					class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+					title={m.common_click_to_select()}
+				>
+					{container.imageId}
+				</div>
+			</div>
+
+			{#if container.config?.workingDir}
+				<div class="flex flex-col gap-1">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+						{m.common_working_directory()}
 					</div>
-					{#if onViewPortMappings && uniquePorts.total > 0}
-						<button type="button" class="text-primary w-fit text-xs font-medium hover:underline" onclick={onViewPortMappings}>
-							{m.common_view_details()} → {m.containers_nav_networks()}
-						</button>
-					{/if}
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_volumes_cap()}</div>
-					<div class="text-foreground text-sm font-medium">
-						{mountCount}
-						{mountCount === 1 ? m.common_mount() : m.common_mounts()}
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_networks_cap()}</div>
-					<div class="text-foreground text-sm font-medium">
-						{networkCount}
-						{networkCount === 1 ? m.resource_network() : m.resource_networks()}
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root variant="subtle">
-				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_image_id()}</div>
 					<div
 						class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
 						title={m.common_click_to_select()}
 					>
-						{container.imageId}
+						{container.config.workingDir}
 					</div>
-				</Card.Content>
-			</Card.Root>
-
-			{#if container.config?.workingDir}
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-							{m.common_working_directory()}
-						</div>
-						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title={m.common_click_to_select()}
-						>
-							{container.config.workingDir}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				</div>
 			{/if}
 
 			{#if container.config?.user}
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_user_cap()}</div>
-						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium select-all"
-							title={m.common_click_to_select()}
-						>
-							{container.config.user}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<div class="flex flex-col gap-1">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.resource_user_cap()}</div>
+					<div class="text-foreground cursor-pointer font-mono text-sm font-medium select-all" title={m.common_click_to_select()}>
+						{container.config.user}
+					</div>
+				</div>
 			{/if}
 
 			{#if container.config?.entrypoint && container.config.entrypoint.length > 0}
-				<Card.Root variant="subtle" class="sm:col-span-2">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_entrypoint()}</div>
-						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title={m.common_click_to_select()}
-						>
-							{container.config.entrypoint.join(' ')}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<div class="flex flex-col gap-1 sm:col-span-2">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_entrypoint()}</div>
+					<div
+						class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+						title={m.common_click_to_select()}
+					>
+						{container.config.entrypoint.join(' ')}
+					</div>
+				</div>
 			{/if}
 
 			{#if container.config?.cmd && container.config.cmd.length > 0}
-				<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-							{m.common_command()}
-						</div>
-						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-							title={m.common_click_to_select()}
-						>
-							{container.config.cmd.join(' ')}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<div class="flex flex-col gap-1 sm:col-span-2 lg:col-span-3 xl:col-span-4">
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+						{m.common_command()}
+					</div>
+					<div
+						class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+						title={m.common_click_to_select()}
+					>
+						{container.config.cmd.join(' ')}
+					</div>
+				</div>
 			{/if}
 		</div>
-	</Card.Content>
-</Card.Root>
+	</DetailSectionCard>
+</DetailPanel>

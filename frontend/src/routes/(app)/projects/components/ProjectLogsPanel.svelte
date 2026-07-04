@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import LogPanelTitle from '$lib/components/logs/log-panel-title.svelte';
@@ -49,12 +48,15 @@
 	});
 </script>
 
-<Card.Root>
-	<Card.Header icon={TerminalIcon}>
+<div class="border-border/70 overflow-hidden rounded-xl border">
+	<div class="border-border/50 border-b p-4">
 		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex flex-col gap-1.5">
 				<div class="flex items-start justify-between gap-3 lg:block">
-					<LogPanelTitle title={m.compose_logs_title()} live={isStreaming} />
+					<div class="flex items-center gap-2">
+						<TerminalIcon class="text-primary size-4 shrink-0" />
+						<LogPanelTitle title={m.compose_logs_title()} live={isStreaming} />
+					</div>
 					<LogControls
 						bind:autoScroll
 						bind:tailLines
@@ -69,7 +71,7 @@
 						onRefresh={handleRefresh}
 					/>
 				</div>
-				<Card.Description>{m.project_logs_realtime_desc()}</Card.Description>
+				<p class="text-muted-foreground text-sm">{m.project_logs_realtime_desc()}</p>
 			</div>
 			<LogControls
 				bind:autoScroll
@@ -84,8 +86,8 @@
 				onRefresh={handleRefresh}
 			/>
 		</div>
-	</Card.Header>
-	<Card.Content class="p-0">
+	</div>
+	<div>
 		<LogViewer
 			bind:this={viewer}
 			bind:autoScroll
@@ -99,5 +101,5 @@
 			onStart={handleStart}
 			onStop={handleStop}
 		/>
-	</Card.Content>
-</Card.Root>
+	</div>
+</div>

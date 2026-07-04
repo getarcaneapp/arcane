@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import {
 		AlertIcon,
 		VolumesIcon,
@@ -29,7 +28,9 @@
 	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import PropertyItem from '$lib/components/property-item.svelte';
-	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
+	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
 
 	let { data }: PageProps = $props();
 	let errorMessage = $state('');
@@ -147,378 +148,314 @@
 	{/if}
 
 	{#if network}
-		<div class="space-y-6">
-			<Card.Root>
-				<Card.Header icon={InfoIcon}>
-					<div class="flex flex-col space-y-1.5">
-						<Card.Title>{m.common_details_title({ resource: m.resource_network_cap() })}</Card.Title>
-						<Card.Description>{m.common_details_description({ resource: m.resource_network() })}</Card.Description>
-					</div>
-				</Card.Header>
-				<Card.Content class="p-4">
-					<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
-						<PropertyItem
-							icon={HashIcon}
-							color="gray"
-							label={m.common_id()}
-							value={network.id}
-							valueClass="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
-						/>
+		<DetailPanel>
+			<DetailSectionCard
+				icon={InfoIcon}
+				title={m.common_details_title({ resource: m.resource_network_cap() })}
+				description={m.common_details_description({ resource: m.resource_network() })}
+			>
+				<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+					<PropertyItem
+						icon={HashIcon}
+						color="gray"
+						label={m.common_id()}
+						value={network.id}
+						valueClass="mt-1 cursor-pointer font-mono text-xs font-semibold break-all select-all sm:text-sm"
+					/>
 
-						<PropertyItem
-							icon={NetworksIcon}
-							color="blue"
-							label={m.common_name()}
-							value={network.name}
-							valueClass="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
-						/>
+					<PropertyItem
+						icon={NetworksIcon}
+						color="blue"
+						label={m.common_name()}
+						value={network.name}
+						valueClass="mt-1 cursor-pointer text-sm font-semibold break-all select-all sm:text-base"
+					/>
 
-						<PropertyItem icon={VolumesIcon} color="orange" label={m.common_driver()} value={network.driver} />
+					<PropertyItem icon={VolumesIcon} color="orange" label={m.common_driver()} value={network.driver} />
 
-						<PropertyItem
-							icon={GlobeIcon}
-							color="purple"
-							label={m.common_scope()}
-							value={network.scope}
-							valueClass="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
-						/>
+					<PropertyItem
+						icon={GlobeIcon}
+						color="purple"
+						label={m.common_scope()}
+						value={network.scope}
+						valueClass="mt-1 cursor-pointer text-sm font-semibold capitalize select-all sm:text-base"
+					/>
 
-						<PropertyItem icon={ClockIcon} color="green" label={m.common_created()} value={createdDate} />
+					<PropertyItem icon={ClockIcon} color="green" label={m.common_created()} value={createdDate} />
 
-						<PropertyItem icon={LayersIcon} color="yellow" label={m.attachable()}>
+					<PropertyItem icon={LayersIcon} color="yellow" label={m.attachable()}>
+						<p class="mt-1 text-base font-semibold">
+							<StatusBadge
+								variant={network.attachable ? 'green' : 'gray'}
+								text={network.attachable ? m.common_yes() : m.common_no()}
+							/>
+						</p>
+					</PropertyItem>
+
+					<PropertyItem icon={SettingsIcon} color="red" label={m.internal()}>
+						<p class="mt-1 text-base font-semibold">
+							<StatusBadge
+								variant={network.internal ? 'blue' : 'gray'}
+								text={network.internal ? m.common_yes() : m.common_no()}
+							/>
+						</p>
+					</PropertyItem>
+
+					{#snippet ipToggleTile(label: string, enabled: boolean | undefined)}
+						<PropertyItem icon={NetworksIcon} color="indigo" {label}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.attachable ? 'green' : 'gray'}
-									text={network.attachable ? m.common_yes() : m.common_no()}
-								/>
+								<StatusBadge variant={enabled ? 'indigo' : 'gray'} text={enabled ? m.common_yes() : m.common_no()} />
 							</p>
 						</PropertyItem>
+					{/snippet}
 
-						<PropertyItem icon={SettingsIcon} color="red" label={m.internal()}>
-							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.internal ? 'blue' : 'gray'}
-									text={network.internal ? m.common_yes() : m.common_no()}
-								/>
-							</p>
-						</PropertyItem>
+					{@render ipToggleTile(m.ipv6_enabled(), network.enableIPv6)}
 
-						{#snippet ipToggleTile(label: string, enabled: boolean | undefined)}
-							<PropertyItem icon={NetworksIcon} color="indigo" {label}>
-								<p class="mt-1 text-base font-semibold">
-									<StatusBadge variant={enabled ? 'indigo' : 'gray'} text={enabled ? m.common_yes() : m.common_no()} />
-								</p>
-							</PropertyItem>
-						{/snippet}
+					{@render ipToggleTile(m.ipv4_enabled(), network.enableIPv4)}
 
-						{@render ipToggleTile(m.ipv6_enabled(), network.enableIPv6)}
+					<PropertyItem icon={SettingsIcon} color="cyan" label={m.ingress()}>
+						<p class="mt-1 text-base font-semibold">
+							<StatusBadge variant={network.ingress ? 'cyan' : 'gray'} text={network.ingress ? m.common_yes() : m.common_no()} />
+						</p>
+					</PropertyItem>
 
-						{@render ipToggleTile(m.ipv4_enabled(), network.enableIPv4)}
-
-						<PropertyItem icon={SettingsIcon} color="cyan" label={m.ingress()}>
-							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.ingress ? 'cyan' : 'gray'}
-									text={network.ingress ? m.common_yes() : m.common_no()}
-								/>
-							</p>
-						</PropertyItem>
-
-						<PropertyItem icon={SettingsIcon} color="pink" label={m.config_only()}>
-							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.configOnly ? 'pink' : 'gray'}
-									text={network.configOnly ? m.common_yes() : m.common_no()}
-								/>
-							</p>
-						</PropertyItem>
-					</div>
-				</Card.Content>
-			</Card.Root>
+					<PropertyItem icon={SettingsIcon} color="pink" label={m.config_only()}>
+						<p class="mt-1 text-base font-semibold">
+							<StatusBadge
+								variant={network.configOnly ? 'pink' : 'gray'}
+								text={network.configOnly ? m.common_yes() : m.common_no()}
+							/>
+						</p>
+					</PropertyItem>
+				</div>
+			</DetailSectionCard>
 
 			{#if network.peers && network.peers.length > 0}
-				<Card.Root>
-					<Card.Header icon={GlobeIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_peers_title()}</Card.Title>
-							<Card.Description>{m.networks_peers_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="grid grid-cols-1 gap-3 lg:grid-cols-2 2xl:grid-cols-3">
-							{#each network.peers as peer (`${peer.Name ?? ''}:${peer.IP ?? ''}`)}
-								<Card.Root variant="subtle">
-									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{peer.Name}</div>
-										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
-											title={m.common_click_to_select()}
-										>
-											{peer.IP}
-										</div>
-									</Card.Content>
-								</Card.Root>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
+				<DetailSectionCard icon={GlobeIcon} title={m.networks_peers_title()} description={m.networks_peers_description()}>
+					<KeyValueGrid>
+						{#each network.peers as peer (`${peer.Name ?? ''}:${peer.IP ?? ''}`)}
+							<KeyValueCard label={peer.Name ?? ''} valueTitle={m.common_click_to_select()}>{peer.IP}</KeyValueCard>
+						{/each}
+					</KeyValueGrid>
+				</DetailSectionCard>
 			{/if}
 
 			{#if network.services && Object.keys(network.services).length > 0}
-				<Card.Root>
-					<Card.Header icon={LayersIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_services_title()}</Card.Title>
-							<Card.Description>{m.networks_services_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="space-y-3">
-							{#each Object.entries(network.services) as [name, service] (name)}
-								<Card.Root variant="outlined">
-									<Card.Content class="p-4">
-										<div class="space-y-2">
-											<div class="flex flex-col sm:flex-row sm:items-center">
-												<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-													>{m.networks_service_name_label()}:</span
-												>
-												<code
-													class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
-												>
-													{name}
+				<DetailSectionCard icon={LayersIcon} title={m.networks_services_title()} description={m.networks_services_description()}>
+					<div class="divide-border/50 divide-y">
+						{#each Object.entries(network.services) as [name, service] (name)}
+							<div class="space-y-2 py-3 first:pt-0 last:pb-0">
+								<div class="flex flex-col sm:flex-row sm:items-center">
+									<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.networks_service_name_label()}:</span>
+									<code class="text-muted-foreground mt-1 font-mono text-xs sm:mt-0 sm:text-sm">
+										{name}
+									</code>
+								</div>
+								{#if service.VIP}
+									<div class="flex flex-col sm:flex-row sm:items-center">
+										<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.networks_service_vip_label()}:</span
+										>
+										<code class="text-muted-foreground mt-1 font-mono text-xs sm:mt-0 sm:text-sm">
+											{service.VIP}
+										</code>
+									</div>
+								{/if}
+								{#if service.Ports && service.Ports.length > 0}
+									<div class="flex flex-col sm:flex-row sm:items-start">
+										<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+											>{m.networks_service_ports_label()}:</span
+										>
+										<div class="flex flex-wrap gap-1">
+											{#each service.Ports as port (port)}
+												<code class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs sm:text-sm">
+													{port}
 												</code>
-											</div>
-											{#if service.VIP}
-												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_service_vip_label()}:</span
-													>
-													<code
-														class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
-													>
-														{service.VIP}
-													</code>
-												</div>
-											{/if}
-											{#if service.Ports && service.Ports.length > 0}
-												<div class="flex flex-col sm:flex-row sm:items-start">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_service_ports_label()}:</span
-													>
-													<div class="flex flex-wrap gap-1">
-														{#each service.Ports as port (port)}
-															<code class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs sm:text-sm">
-																{port}
-															</code>
-														{/each}
-													</div>
-												</div>
-											{/if}
+											{/each}
 										</div>
-									</Card.Content>
-								</Card.Root>
-							{/each}
-						</div>
-					</Card.Content>
-				</Card.Root>
+									</div>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				</DetailSectionCard>
 			{/if}
 
 			{#if network.ipam?.config && network.ipam.config.length > 0}
-				<Card.Root>
-					<Card.Header icon={SettingsIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_ipam_title()}</Card.Title>
-							<Card.Description>{m.networks_ipam_description()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<div class="space-y-3">
-							{#each network.ipam.config as config, i (i)}
-								<Card.Root variant="outlined">
-									<Card.Content class="p-4">
-										<div class="space-y-2">
-											{#if config.subnet}
-												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.common_subnet()}:</span>
+				<DetailSectionCard icon={SettingsIcon} title={m.networks_ipam_title()} description={m.networks_ipam_description()}>
+					<div class="divide-border/50 divide-y">
+						{#each network.ipam.config as config, i (i)}
+							<div class="space-y-2 py-3 first:pt-0 last:pb-0">
+								{#if config.subnet}
+									<div class="flex flex-col sm:flex-row sm:items-center">
+										<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.common_subnet()}:</span>
+										<code
+											class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+											title={m.common_click_to_select()}
+										>
+											{config.subnet}
+										</code>
+									</div>
+								{/if}
+
+								{#if config.gateway}
+									<div class="flex flex-col sm:flex-row sm:items-center">
+										<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+											>{m.networks_ipam_gateway_label()}:</span
+										>
+										<code
+											class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+											title={m.common_click_to_select()}
+										>
+											{config.gateway}
+										</code>
+									</div>
+								{/if}
+
+								{#if config.ipRange}
+									<div class="flex flex-col sm:flex-row sm:items-center">
+										<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+											>{m.networks_ipam_iprange_label()}:</span
+										>
+										<code
+											class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+											title={m.common_click_to_select()}
+										>
+											{config.ipRange}
+										</code>
+									</div>
+								{/if}
+
+								{#if config.auxAddress && Object.keys(config.auxAddress).length > 0}
+									<div class="mt-3">
+										<p class="text-muted-foreground mb-1 text-sm font-medium">{m.networks_ipam_aux_addresses_label()}:</p>
+										<ul class="ml-4 space-y-1">
+											{#each Object.entries(config.auxAddress) as [name, addr] (name)}
+												<li class="flex font-mono text-xs">
+													<span class="text-muted-foreground mr-2">{name}:</span>
 													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title={m.common_click_to_select()}
+														class="bg-muted text-muted-foreground cursor-pointer rounded px-1 py-0.5 select-all"
+														title={m.common_click_to_select()}>{addr}</code
 													>
-														{config.subnet}
-													</code>
-												</div>
-											{/if}
-
-											{#if config.gateway}
-												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_ipam_gateway_label()}:</span
-													>
-													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title={m.common_click_to_select()}
-													>
-														{config.gateway}
-													</code>
-												</div>
-											{/if}
-
-											{#if config.ipRange}
-												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_ipam_iprange_label()}:</span
-													>
-													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
-														title={m.common_click_to_select()}
-													>
-														{config.ipRange}
-													</code>
-												</div>
-											{/if}
-
-											{#if config.auxAddress && Object.keys(config.auxAddress).length > 0}
-												<div class="mt-3">
-													<p class="text-muted-foreground mb-1 text-sm font-medium">{m.networks_ipam_aux_addresses_label()}:</p>
-													<ul class="ml-4 space-y-1">
-														{#each Object.entries(config.auxAddress) as [name, addr] (name)}
-															<li class="flex font-mono text-xs">
-																<span class="text-muted-foreground mr-2">{name}:</span>
-																<code
-																	class="bg-muted text-muted-foreground cursor-pointer rounded px-1 py-0.5 select-all"
-																	title={m.common_click_to_select()}>{addr}</code
-																>
-															</li>
-														{/each}
-													</ul>
-												</div>
-											{/if}
-										</div>
-									</Card.Content>
-								</Card.Root>
-							{/each}
-						</div>
-
-						{#if network.ipam.driver}
-							<div class="mt-4 flex items-center">
-								<span class="text-muted-foreground mr-2 text-sm font-medium">{m.networks_ipam_driver_label()}:</span>
-								<StatusBadge variant="cyan" text={network.ipam.driver} />
+												</li>
+											{/each}
+										</ul>
+									</div>
+								{/if}
 							</div>
-						{/if}
+						{/each}
+					</div>
 
-						{#if network.ipam.options && Object.keys(network.ipam.options).length > 0}
-							<div class="mt-4">
-								<p class="text-muted-foreground mb-2 text-sm font-medium">{m.networks_ipam_options_label()}</p>
-								<div class="bg-muted/50 rounded-lg border p-3">
-									{#each Object.entries(network.ipam.options) as [key, value] (key)}
-										<div class="mb-1 flex justify-between font-mono text-xs last:mb-0">
-											<span class="text-muted-foreground">{key}:</span>
-											<span>{value}</span>
-										</div>
-									{/each}
-								</div>
+					{#if network.ipam.driver}
+						<div class="mt-4 flex items-center">
+							<span class="text-muted-foreground mr-2 text-sm font-medium">{m.networks_ipam_driver_label()}:</span>
+							<StatusBadge variant="cyan" text={network.ipam.driver} />
+						</div>
+					{/if}
+
+					{#if network.ipam.options && Object.keys(network.ipam.options).length > 0}
+						<div class="mt-4">
+							<p class="text-muted-foreground mb-2 text-sm font-medium">{m.networks_ipam_options_label()}</p>
+							<div class="divide-border/50 divide-y">
+								{#each Object.entries(network.ipam.options) as [key, value] (key)}
+									<div class="flex justify-between py-1.5 font-mono text-xs first:pt-0 last:pb-0">
+										<span class="text-muted-foreground">{key}:</span>
+										<span>{value}</span>
+									</div>
+								{/each}
 							</div>
-						{/if}
-					</Card.Content>
-				</Card.Root>
+						</div>
+					{/if}
+				</DetailSectionCard>
 			{/if}
 
 			{#if connectedContainers.length > 0}
-				<Card.Root>
-					<Card.Header icon={ContainersIcon}>
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_connected_containers_title()}</Card.Title>
-							<Card.Description
-								>{m.networks_connected_containers_description({ count: connectedContainers.length })}</Card.Description
-							>
+				<DetailSectionCard
+					icon={ContainersIcon}
+					title={m.networks_connected_containers_title()}
+					description={m.networks_connected_containers_description({ count: connectedContainers.length })}
+				>
+					<div class="border-border/50 flex flex-col border-b pb-2 sm:flex-row sm:items-center">
+						<div
+							class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center text-sm font-medium sm:w-1/3"
+							onclick={() => handleSort('name')}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
+						>
+							{m.common_name()}
+							{#if sortCol === 'name'}
+								{#if sortDir === 'asc'}
+									<ArrowUpIcon class="ml-1 size-3" />
+								{:else}
+									<ArrowDownIcon class="ml-1 size-3" />
+								{/if}
+							{/if}
 						</div>
-					</Card.Header>
-					<Card.Content class="p-4">
-						<Card.Root variant="outlined">
-							<Card.Content class="p-0">
-								<div class="bg-muted/30 flex flex-col border-b p-3 sm:flex-row sm:items-center">
-									<div
-										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center text-sm font-medium sm:w-1/3"
-										onclick={() => handleSort('name')}
-										role="button"
-										tabindex="0"
-										onkeydown={(e) => e.key === 'Enter' && handleSort('name')}
-									>
-										{m.common_name()}
-										{#if sortCol === 'name'}
-											{#if sortDir === 'asc'}
-												<ArrowUpIcon class="ml-1 size-3" />
-											{:else}
-												<ArrowDownIcon class="ml-1 size-3" />
-											{/if}
-										{/if}
-									</div>
-									<div
-										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center pl-0 text-sm font-medium sm:w-2/3 sm:pl-4"
-										onclick={() => handleSort('ip')}
-										role="button"
-										tabindex="0"
-										onkeydown={(e) => e.key === 'Enter' && handleSort('ip')}
-									>
-										{m.containers_ip_address()}
-										{#if sortCol === 'ip'}
-											{#if sortDir === 'asc'}
-												<ArrowUpIcon class="ml-1 size-3" />
-											{:else}
-												<ArrowDownIcon class="ml-1 size-3" />
-											{/if}
-										{/if}
-									</div>
-								</div>
+						<div
+							class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center pl-0 text-sm font-medium sm:w-2/3 sm:pl-4"
+							onclick={() => handleSort('ip')}
+							role="button"
+							tabindex="0"
+							onkeydown={(e) => e.key === 'Enter' && handleSort('ip')}
+						>
+							{m.containers_ip_address()}
+							{#if sortCol === 'ip'}
+								{#if sortDir === 'asc'}
+									<ArrowUpIcon class="ml-1 size-3" />
+								{:else}
+									<ArrowDownIcon class="ml-1 size-3" />
+								{/if}
+							{/if}
+						</div>
+					</div>
 
-								<div class="divide-y">
-									{#each connectedContainers as container (container.id)}
-										<div class="flex flex-col p-3 sm:flex-row sm:items-center">
-											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-												<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
-													<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
-													{container.name ?? container.Name}
-												</a>
-											</div>
-											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-												<code
-													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-													title={m.common_click_to_select()}
-												>
-													{container.ipv4Address ??
-														container.IPv4Address ??
-														container.ipv6Address ??
-														container.IPv6Address ??
-														m.common_unknown()}
-												</code>
-											</div>
-										</div>
-									{/each}
+					<div class="divide-border/50 divide-y">
+						{#each connectedContainers as container (container.id)}
+							<div class="flex flex-col py-3 last:pb-0 sm:flex-row sm:items-center">
+								<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
+									<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
+										<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
+										{container.name ?? container.Name}
+									</a>
 								</div>
-							</Card.Content>
-						</Card.Root>
-					</Card.Content>
-				</Card.Root>
+								<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
+									<code
+										class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+										title={m.common_click_to_select()}
+									>
+										{container.ipv4Address ??
+											container.IPv4Address ??
+											container.ipv6Address ??
+											container.IPv6Address ??
+											m.common_unknown()}
+									</code>
+								</div>
+							</div>
+						{/each}
+					</div>
+				</DetailSectionCard>
 			{/if}
 
 			{#if network.labels && Object.keys(network.labels).length > 0}
-				<KeyValueGridCard
-					icon={TagIcon}
-					title={m.common_labels()}
-					description={m.networks_labels_description()}
-					entries={Object.entries(network.labels)}
-				/>
+				<DetailSectionCard icon={TagIcon} title={m.common_labels()} description={m.networks_labels_description()}>
+					<KeyValueGrid>
+						{#each Object.entries(network.labels) as [key, value] (key)}
+							<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+						{/each}
+					</KeyValueGrid>
+				</DetailSectionCard>
 			{/if}
 
 			{#if network.options && Object.keys(network.options).length > 0}
-				<KeyValueGridCard
-					icon={SettingsIcon}
-					title={m.networks_options_title()}
-					description={m.networks_options_description()}
-					entries={Object.entries(network.options)}
-				/>
+				<DetailSectionCard icon={SettingsIcon} title={m.networks_options_title()} description={m.networks_options_description()}>
+					<KeyValueGrid>
+						{#each Object.entries(network.options) as [key, value] (key)}
+							<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+						{/each}
+					</KeyValueGrid>
+				</DetailSectionCard>
 			{/if}
-		</div>
+		</DetailPanel>
 	{:else}
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 			<div class="bg-muted/30 mb-4 rounded-full p-4">

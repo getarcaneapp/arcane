@@ -1,7 +1,6 @@
 <script lang="ts">
 	// Dozzle reference: the compact CPU/memory monitors in the logs header were informed
 	// by amir20/dozzle's ContainerLog.vue and MultiContainerStat.vue.
-	import * as Card from '$lib/components/ui/card';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import LogPanelTitle from '$lib/components/logs/log-panel-title.svelte';
@@ -190,12 +189,15 @@
 	});
 </script>
 
-<Card.Root class="flex h-full min-h-0 flex-col">
-	<Card.Header icon={FileTextIcon}>
+<div class="border-border/70 flex h-full min-h-0 flex-col overflow-hidden rounded-xl border">
+	<div class="border-border/50 border-b p-4">
 		<div class="flex flex-1 flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
 			<div class="flex flex-col gap-1.5">
 				<div class="flex items-start justify-between gap-3 lg:block">
-					<LogPanelTitle title={m.containers_logs_title()} live={isStreaming} />
+					<div class="flex items-center gap-2">
+						<FileTextIcon class="text-primary size-4 shrink-0" />
+						<LogPanelTitle title={m.containers_logs_title()} live={isStreaming} />
+					</div>
 					<LogControls
 						bind:autoScroll
 						bind:autoStartLogs
@@ -209,7 +211,7 @@
 						onRefresh={handleRefresh}
 					/>
 				</div>
-				<Card.Description>{m.containers_logs_description()}</Card.Description>
+				<p class="text-muted-foreground text-sm">{m.containers_logs_description()}</p>
 			</div>
 			<LogControls
 				bind:autoScroll
@@ -223,9 +225,9 @@
 				onRefresh={handleRefresh}
 			/>
 		</div>
-	</Card.Header>
-	<Card.Content class="flex min-h-0 flex-1 flex-col p-0">
-		<div class="shrink-0 border-b px-4 pb-4" data-testid="container-log-stats">
+	</div>
+	<div class="flex min-h-0 flex-1 flex-col">
+		<div class="shrink-0 border-b px-4 py-4" data-testid="container-log-stats">
 			<div class="grid gap-3 md:grid-cols-2">
 				<ContainerLogStatMonitor
 					icon={CpuIcon}
@@ -266,5 +268,5 @@
 				onStop={handleStreamStop}
 			/>
 		</div>
-	</Card.Content>
-</Card.Root>
+	</div>
+</div>

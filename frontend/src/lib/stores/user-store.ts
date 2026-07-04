@@ -4,6 +4,7 @@ import { writable, get } from 'svelte/store';
 import { setLocale } from '$lib/utils/formatting';
 import { applyFontSize, FONT_SIZE_DEFAULT } from '$lib/utils/theme';
 import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
+import { navigationLayoutStore } from '$lib/stores/navigation-layout.svelte';
 
 const userStore = writable<User | null>(null);
 
@@ -20,12 +21,14 @@ const setUser = async (user: User) => {
 	}
 	applyFontSize(user.fontSize ?? FONT_SIZE_DEFAULT);
 	timeFormatStore.set(user.timeFormat ?? 'auto');
+	navigationLayoutStore.current = user.navigationLayout ?? 'sidebar';
 	userStore.set(user);
 };
 
 const clearUser = () => {
 	applyFontSize(FONT_SIZE_DEFAULT);
 	timeFormatStore.reset();
+	navigationLayoutStore.current = 'sidebar';
 	userStore.set(null);
 };
 

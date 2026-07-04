@@ -4,6 +4,8 @@
 	import { getAuthRedirectPath } from '$lib/utils/auth';
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import AppSidebar from '$lib/components/sidebar/sidebar.svelte';
+	import HeaderNav from '$lib/components/header-nav/header-nav.svelte';
+	import { navigationLayoutStore } from '$lib/stores/navigation-layout.svelte';
 	import MobileNav from '$lib/components/mobile-nav/mobile-nav.svelte';
 	import ActivityCenter from '$lib/components/activity/activity-center.svelte';
 	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
@@ -27,6 +29,8 @@
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
+
+	const headerMode = $derived(!isMobile.current && navigationLayoutStore.current === 'header');
 
 	const navigationSettings = $derived.by(() => {
 		settings;
@@ -101,12 +105,21 @@
 	unsaved edits (e.g. the project compose editor). Only the surrounding chrome and
 	classes are toggled by viewport. See issue #2938.
 -->
-<Sidebar.Provider class={isMobile.current ? 'h-auto min-h-dvh' : undefined}>
+<Sidebar.Provider class={cn(isMobile.current && 'h-auto min-h-dvh', headerMode && 'h-dvh flex-col')}>
 	{#if !isMobile.current}
-		<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
+		{#if headerMode}
+			<HeaderNav {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
+		{:else}
+			<AppSidebar {versionInformation} {user} {swarmEnabled} {permissionsManifest} />
+		{/if}
 	{/if}
 
-	<main class={cn('relative z-[var(--arcane-z-content)]', isMobile.current ? 'flex-1' : 'h-dvh flex-1')}>
+	<main
+		class={cn(
+			'relative z-[var(--arcane-z-content)]',
+			isMobile.current ? 'flex-1' : headerMode ? 'min-h-0 flex-1' : 'h-dvh flex-1'
+		)}
+	>
 		<section
 			class={isMobile.current
 				? cn(
@@ -119,7 +132,9 @@
 								? 'py-5'
 								: 'py-5 pb-(--mobile-floating-nav-offset,6rem)'
 					)
-				: 'h-full p-3 sm:p-5'}
+				: headerMode
+					? 'h-full overflow-y-auto p-3 sm:px-6 sm:pt-3 sm:pb-5'
+					: 'h-full p-3 sm:p-5'}
 		>
 			{#key page.url.pathname}
 				{@render children()}

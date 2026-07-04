@@ -1,11 +1,10 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import LogViewer from '$lib/components/logs/log-viewer.svelte';
 	import LogControls from '$lib/components/logs/log-controls.svelte';
 	import LogPanelTitle from '$lib/components/logs/log-panel-title.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '$lib/utils/log-viewer';
-	import { FileTextIcon } from '$lib/icons';
+	import { TerminalIcon } from '$lib/icons';
 
 	let {
 		serviceId
@@ -46,10 +45,11 @@
 	});
 </script>
 
-<Card.Root>
-	<Card.Header icon={FileTextIcon}>
+<div class="border-border/70 overflow-hidden rounded-xl border">
+	<div class="border-border/50 border-b p-4">
 		<div class="flex flex-1 flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
-			<div class="flex flex-col gap-1.5">
+			<div class="flex items-center gap-2">
+				<TerminalIcon class="text-primary size-4 shrink-0" />
 				<LogPanelTitle title={m.swarm_service_logs_title()} live={isStreaming} />
 			</div>
 			<LogControls
@@ -63,21 +63,19 @@
 				onRefresh={handleRefresh}
 			/>
 		</div>
-	</Card.Header>
-	<Card.Content class="p-0">
-		<div class="bg-card/90 rounded-lg border p-0 backdrop-blur-sm">
-			<LogViewer
-				bind:this={viewer}
-				bind:autoScroll
-				type="service"
-				{serviceId}
-				{showParsedJson}
-				maxLines={500}
-				showTimestamps={true}
-				height="calc(100vh - 320px)"
-				onStart={handleStreamStart}
-				onStop={handleStreamStop}
-			/>
-		</div>
-	</Card.Content>
-</Card.Root>
+	</div>
+	<div>
+		<LogViewer
+			bind:this={viewer}
+			bind:autoScroll
+			type="service"
+			{serviceId}
+			{showParsedJson}
+			maxLines={500}
+			showTimestamps={true}
+			height="calc(100vh - 320px)"
+			onStart={handleStreamStart}
+			onStop={handleStreamStop}
+		/>
+	</div>
+</div>

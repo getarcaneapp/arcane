@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import type { Snippet } from 'svelte';
 
 	interface Props {
@@ -10,21 +9,18 @@
 		children: Snippet;
 	}
 
-	let { icon, title, description, id, children }: Props = $props();
+	let { icon: Icon, title, description, id, children }: Props = $props();
 </script>
 
-<Card.Root {id}>
-	<Card.Header {icon}>
-		<div class="flex flex-col space-y-1.5">
-			<Card.Title>
-				<h2>{title}</h2>
-			</Card.Title>
+<section {id} class="scroll-mt-24 p-4 sm:p-5">
+	<div class="mb-3 flex items-start gap-2">
+		<Icon class="text-primary mt-0.5 size-4 shrink-0" />
+		<div class="min-w-0">
+			<h3 class="text-sm font-semibold">{title}</h3>
 			{#if description}
-				<Card.Description>{description}</Card.Description>
+				<p class="text-muted-foreground text-xs">{description}</p>
 			{/if}
 		</div>
-	</Card.Header>
-	<Card.Content class="p-4">
-		{@render children()}
-	</Card.Content>
-</Card.Root>
+	</div>
+	{@render children()}
+</section>

@@ -786,9 +786,11 @@
 		<h2 class="text-base font-semibold tracking-tight">{m.common_overview()}</h2>
 
 		{#if boardSummaryLoading}
-			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
+			<div
+				class="border-border/50 bg-background/50 divide-border/50 grid grid-cols-2 divide-y rounded-xl border sm:divide-x xl:grid-cols-4 xl:divide-y-0"
+			>
 				{#each [{ icon: EnvironmentsIcon, label: m.environments_title() }, { icon: ContainersIcon, label: m.containers_title() }, { icon: ImagesIcon, label: m.images_title() }, { icon: VolumesIcon, label: m.dashboard_all_storage_title() }] as tile (tile.label)}
-					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+					<div class="p-3">
 						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 							<tile.icon class="size-3.5" />
 							<span>{tile.label}</span>
@@ -800,8 +802,10 @@
 			</div>
 		{:else}
 			{@const summary = boardState.summary}
-			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+			<div
+				class="border-border/50 bg-background/50 divide-border/50 grid grid-cols-2 divide-y rounded-xl border sm:divide-x xl:grid-cols-4 xl:divide-y-0"
+			>
+				<div class="p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<EnvironmentsIcon class="size-3.5" />
 						<span>{m.environments_title()}</span>
@@ -810,7 +814,7 @@
 					<div class="text-muted-foreground mt-0.5 text-xs">{formatEnvironmentOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+				<div class="p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<ContainersIcon class="size-3.5" />
 						<span>{m.containers_title()}</span>
@@ -819,7 +823,7 @@
 					<div class="text-muted-foreground mt-0.5 text-xs">{formatContainerOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+				<div class="p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<ImagesIcon class="size-3.5" />
 						<span>{m.images_title()}</span>
@@ -828,7 +832,7 @@
 					<div class="text-muted-foreground mt-0.5 text-xs">{formatImageOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
+				<div class="p-3">
 					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
 						<VolumesIcon class="size-3.5" />
 						<span>{m.dashboard_all_storage_title()}</span>
@@ -988,8 +992,8 @@
 								</div>
 
 								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-									<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+									<div class="divide-border/50 grid grid-cols-3 sm:divide-x">
+										<div class="px-3 first:pl-0 last:pr-0">
 											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 												{m.containers_title()}
 											</div>
@@ -1010,7 +1014,7 @@
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+										<div class="px-3 first:pl-0 last:pr-0">
 											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 												{m.images_title()}
 											</div>
@@ -1030,7 +1034,7 @@
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
+										<div class="px-3 first:pl-0 last:pr-0">
 											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 												{m.dashboard_action_items_title()}
 											</div>
@@ -1054,7 +1058,7 @@
 								{/if}
 
 								{#if shouldLoadEnvironment(environment)}
-									<div class="pt-1">
+									<div class="border-border/60 border-t pt-3">
 										<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
 											{#if liveStatsLoading}
 												{#each [1, 2, 3] as tile (tile)}

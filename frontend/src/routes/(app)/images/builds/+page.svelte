@@ -25,7 +25,6 @@
 		EllipsisIcon,
 		RedeployIcon
 	} from '$lib/icons';
-	import * as Card from '$lib/components/ui/card';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
@@ -865,7 +864,9 @@
 </script>
 
 {#snippet workspaceCard()}
-	<Card.Root class="flex h-full flex-col overflow-hidden">
+	<div
+		class="bg-card/60 dark:bg-surface/40 border-border/70 flex h-full flex-col overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+	>
 		<BuildWorkspacePanel
 			rootLabel={buildsRootLabel}
 			rootPath={buildsRoot}
@@ -876,7 +877,7 @@
 			onRemoteContextChange={(value: string) => (remoteContextSource = value)}
 			onSelectContext={(path: string) => (selectedContextPath = path)}
 		/>
-	</Card.Root>
+	</div>
 {/snippet}
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
@@ -1037,150 +1038,156 @@
 				<div class="grid gap-4 lg:h-[70vh] lg:grid-cols-[360px_minmax(0,1fr)] lg:items-stretch">
 					<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
 						{#if buildHistorySelected}
-							<div class="grid gap-3">
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+							<div class="divide-border/50 divide-y">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_context()}
 									</div>
-									<div class="mt-2 font-mono text-xs break-all">{buildHistorySelected.contextDir}</div>
+									<div class="text-foreground mt-1 font-mono text-sm font-medium break-all">
+										{buildHistorySelected.contextDir}
+									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.common_tags()}
 									</div>
-									<div class="mt-2 text-xs">
+									<div class="text-foreground mt-1 text-sm font-medium">
 										{buildHistorySelected.tags?.join(', ') || '-'}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.dockerfile()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.dockerfile || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.dockerfile || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.target_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.target || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.target || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.platforms_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.platforms?.join(', ') || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.platforms?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_provider()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.provider || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.provider || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.push()} / {m.load()}
 									</div>
-									<div class="mt-2 text-xs">
+									<div class="text-foreground mt-1 text-sm font-medium">
 										{buildHistorySelected.push ? m.common_yes() : m.common_no()} / {buildHistorySelected.load
 											? m.common_yes()
 											: m.common_no()}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_no_cache_pull_base_label()}
 									</div>
-									<div class="mt-2 text-xs">
+									<div class="text-foreground mt-1 text-sm font-medium">
 										{buildHistorySelected.noCache ? m.common_yes() : m.common_no()} / {buildHistorySelected.pull
 											? m.common_yes()
 											: m.common_no()}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_network_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.network || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.network || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_args()}
 									</div>
 									{#if buildHistorySelected.buildArgs && Object.keys(buildHistorySelected.buildArgs).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
+										<pre class="mt-1 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 												{formatBuildArgs(buildHistorySelected.buildArgs)}
 											</pre>
 									{:else}
-										<div class="mt-2 text-xs">-</div>
+										<div class="text-foreground mt-1 text-sm font-medium">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.common_labels()}
 									</div>
 									{#if buildHistorySelected.labels && Object.keys(buildHistorySelected.labels).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
+										<pre class="mt-1 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 											{formatKeyValueMap(buildHistorySelected.labels)}
 										</pre>
 									{:else}
-										<div class="mt-2 text-xs">-</div>
+										<div class="text-foreground mt-1 text-sm font-medium">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_cache_from_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.cacheFrom?.join(', ') || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.cacheFrom?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_cache_to_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.cacheTo?.join(', ') || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.cacheTo?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_isolation_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.isolation || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.isolation || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_shm_size_short_label()}
 									</div>
-									<div class="mt-2 text-xs">
+									<div class="text-foreground mt-1 text-sm font-medium">
 										{buildHistorySelected.shmSize ? m.build_bytes({ size: String(buildHistorySelected.shmSize) }) : '-'}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_ulimits_label()}
 									</div>
 									{#if buildHistorySelected.ulimits && Object.keys(buildHistorySelected.ulimits).length > 0}
-										<pre class="mt-2 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
+										<pre class="mt-1 font-mono text-[11px] wrap-break-word whitespace-pre-wrap">
 											{formatKeyValueMap(buildHistorySelected.ulimits)}
 										</pre>
 									{:else}
-										<div class="mt-2 text-xs">-</div>
+										<div class="text-foreground mt-1 text-sm font-medium">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_entitlements_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.entitlements?.join(', ') || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">
+										{buildHistorySelected.entitlements?.join(', ') || '-'}
+									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_privileged_heading_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.privileged ? m.common_yes() : m.common_no()}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">
+										{buildHistorySelected.privileged ? m.common_yes() : m.common_no()}
+									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="py-3 first:pt-0 last:pb-0">
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
 										{m.build_extra_hosts_label()}
 									</div>
-									<div class="mt-2 text-xs">{buildHistorySelected.extraHosts?.join(', ') || '-'}</div>
+									<div class="text-foreground mt-1 text-sm font-medium">{buildHistorySelected.extraHosts?.join(', ') || '-'}</div>
 								</div>
 							</div>
 						{/if}
@@ -1368,18 +1375,22 @@
 							{@render workspaceCard()}
 						{/snippet}
 						{#snippet second()}
-							<Card.Root class="flex h-full flex-col overflow-hidden">
+							<div
+								class="bg-card/60 dark:bg-surface/40 border-border/70 flex h-full flex-col overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+							>
 								{@render rightPanel()}
-							</Card.Root>
+							</div>
 						{/snippet}
 					</ResizableSplit>
 				</div>
 			</Tabs.Content>
 
 			<Tabs.Content value="history" class="min-h-0 flex-1">
-				<Card.Root class="flex h-full flex-col overflow-hidden">
+				<div
+					class="bg-card/60 dark:bg-surface/40 border-border/70 flex h-full flex-col overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+				>
 					{@render historyContent()}
-				</Card.Root>
+				</div>
 			</Tabs.Content>
 		</Tabs.Root>
 	</ResourceDetailLayout>
@@ -1425,11 +1436,15 @@
 							{#if buildTabValue === 'workspace'}
 								{@render workspaceCard()}
 							{:else if buildTabValue === 'configuration'}
-								<Card.Root class="overflow-hidden">
+								<div
+									class="bg-card/60 dark:bg-surface/40 border-border/70 overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+								>
 									<BuildConfigPanel {inputs} provider={$inputs.provider.value} bind:showAdvanced onSubmit={handleSubmit} />
-								</Card.Root>
+								</div>
 							{:else}
-								<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
+								<div
+									class="bg-card/60 dark:bg-surface/40 border-border/70 flex h-full min-h-[500px] flex-col overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+								>
 									<BuildOutputPanel
 										{logLines}
 										{layerStats}
@@ -1442,14 +1457,16 @@
 										bind:autoScroll
 										onReset={resetState}
 									/>
-								</Card.Root>
+								</div>
 							{/if}
 						{/snippet}
 					</TabbedPageLayout>
 				{:else}
-					<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
+					<div
+						class="bg-card/60 dark:bg-surface/40 border-border/70 flex h-full min-h-[500px] flex-col overflow-hidden rounded-xl border shadow-xs backdrop-blur-md"
+					>
 						{@render historyContent()}
-					</Card.Root>
+					</div>
 				{/if}
 			</div>
 		{/snippet}

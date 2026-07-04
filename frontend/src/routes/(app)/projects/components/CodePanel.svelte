@@ -1,5 +1,4 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import { CodeIcon, FileTextIcon, SearchIcon, ArrowsUpDownIcon } from '$lib/icons';
@@ -101,12 +100,16 @@
 		{@render editorBody()}
 	</div>
 {:else}
-	<Card.Root class="flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden" data-open={open}>
-		<Card.Header icon={CodeIcon} class="flex-shrink-0 items-center">
-			<Card.Title>
-				<h2>{title}</h2>
-			</Card.Title>
-			<Card.Action class="flex items-center gap-1 pt-1">
+	<div
+		class="border-border/70 flex {effectiveAutoHeight ? '' : 'flex-1'} min-h-0 flex-col overflow-hidden rounded-xl border"
+		data-open={open}
+	>
+		<div class="border-border/50 flex flex-shrink-0 items-center justify-between border-b px-4 py-2.5">
+			<div class="flex min-w-0 items-center gap-2">
+				<CodeIcon class="text-primary size-4 shrink-0" />
+				<h2 class="truncate text-sm font-semibold">{title}</h2>
+			</div>
+			<div class="flex items-center gap-1">
 				<ArcaneButton
 					action="base"
 					tone={outlineOpen ? 'outline-primary' : 'ghost'}
@@ -136,14 +139,12 @@
 					customLabel={m.compose_editor_command_palette()}
 					onclick={() => (commandPaletteOpen = true)}
 				/>
-			</Card.Action>
-		</Card.Header>
-		<Card.Content
-			class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight
-				? ''
-				: 'flex-1'} flex-col overflow-visible p-0"
+			</div>
+		</div>
+		<div
+			class="relative z-[var(--arcane-z-content)] flex min-h-0 {effectiveAutoHeight ? '' : 'flex-1'} flex-col overflow-visible"
 		>
 			{@render editorBody()}
-		</Card.Content>
-	</Card.Root>
+		</div>
+	</div>
 {/if}

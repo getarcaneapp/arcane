@@ -101,7 +101,7 @@
 	matchingItemsLabel={m.customize_available_options()}
 	goToPageLabel={m.customize_button()}
 	rootClass="space-y-8 pb-5 md:space-y-10 md:pb-5"
-	cardClass="hover:border-primary/20 group cursor-pointer transition-all duration-200 hover:shadow-md"
+	cardClass="group hover:bg-muted/40 cursor-pointer transition-colors duration-200"
 	resultCardClass="bg-background/40 rounded-lg border shadow-sm"
 	searchIconClass="size-4"
 	categories={normalizedCategories}

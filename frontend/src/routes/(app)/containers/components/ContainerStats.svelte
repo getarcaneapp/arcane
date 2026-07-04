@@ -1,11 +1,12 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import { Progress } from '$lib/components/ui/progress';
 	import { Skeleton } from '$lib/components/ui/skeleton';
 	import { m } from '$lib/paraglide/messages';
 	import { bytes } from '$lib/utils/formatting';
 	import type { ContainerDetailsDto, ContainerStats as ContainerStatsType } from '$lib/types/docker';
 	import { StatsIcon } from '$lib/icons';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -88,90 +89,74 @@
 {/snippet}
 
 {#snippet statCardSkeleton()}
-	<Card.Root variant="subtle" class="flex flex-col">
-		<Card.Content class="flex flex-col p-4">
-			<Skeleton class="mb-3 h-3 w-24" />
-			<div class="grid flex-1 grid-cols-2 gap-3">
-				<div class="space-y-1">
-					<Skeleton class="h-3 w-16" />
-					<Skeleton class="h-5 w-20" />
-					<Skeleton class="h-3 w-24" />
-				</div>
-				<div class="space-y-1">
-					<Skeleton class="h-3 w-16" />
-					<Skeleton class="h-5 w-20" />
-					<Skeleton class="h-3 w-24" />
-				</div>
+	<div class="flex flex-col">
+		<Skeleton class="mb-3 h-3 w-24" />
+		<div class="grid flex-1 grid-cols-2 gap-3">
+			<div class="space-y-1">
+				<Skeleton class="h-3 w-16" />
+				<Skeleton class="h-5 w-20" />
+				<Skeleton class="h-3 w-24" />
 			</div>
-		</Card.Content>
-	</Card.Root>
+			<div class="space-y-1">
+				<Skeleton class="h-3 w-16" />
+				<Skeleton class="h-5 w-20" />
+				<Skeleton class="h-3 w-24" />
+			</div>
+		</div>
+	</div>
 {/snippet}
 
 {#snippet processCardSkeleton()}
-	<Card.Root variant="subtle" class="flex flex-col justify-center">
-		<Card.Content class="flex flex-col justify-center p-4">
-			<Skeleton class="mb-2 h-3 w-32" />
-			<Skeleton class="h-8 w-16" />
-			<Skeleton class="mt-1 h-3 w-24" />
-		</Card.Content>
-	</Card.Root>
+	<div class="flex flex-col justify-center">
+		<Skeleton class="mb-2 h-3 w-32" />
+		<Skeleton class="h-8 w-16" />
+		<Skeleton class="mt-1 h-3 w-24" />
+	</div>
 {/snippet}
 
 {#snippet networkInterfacesSkeleton()}
-	<Card.Root variant="subtle">
-		<Card.Content class="p-4">
-			<Skeleton class="mb-3 h-3 w-36" />
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-				{#each Array(4) as _}
-					<Card.Root class="flex flex-col">
-						<Card.Content class="flex flex-col p-3">
-							<Skeleton class="mb-2 h-4 w-16" />
-							<div class="flex-1 space-y-1">
-								<div class="flex justify-between">
-									<Skeleton class="h-3 w-8" />
-									<Skeleton class="h-3 w-16" />
-								</div>
-								<div class="flex justify-between">
-									<Skeleton class="h-3 w-8" />
-									<Skeleton class="h-3 w-16" />
-								</div>
-							</div>
-						</Card.Content>
-					</Card.Root>
-				{/each}
-			</div>
-		</Card.Content>
-	</Card.Root>
+	<div>
+		<Skeleton class="mb-3 h-3 w-36" />
+		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			{#each Array(4) as _}
+				<div class="flex flex-col">
+					<Skeleton class="mb-2 h-4 w-16" />
+					<div class="flex-1 space-y-1">
+						<div class="flex justify-between">
+							<Skeleton class="h-3 w-8" />
+							<Skeleton class="h-3 w-16" />
+						</div>
+						<div class="flex justify-between">
+							<Skeleton class="h-3 w-8" />
+							<Skeleton class="h-3 w-16" />
+						</div>
+					</div>
+				</div>
+			{/each}
+		</div>
+	</div>
 {/snippet}
 
 {#snippet detailsSkeleton()}
-	<Card.Root variant="subtle" class="flex flex-col">
-		<Card.Content class="flex flex-col p-4">
-			<Skeleton class="mb-3 h-3 w-28" />
-			<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2">
-				{#each Array(8) as _}
-					<div class="flex justify-between">
-						<Skeleton class="h-3 w-24" />
-						<Skeleton class="h-3 w-16" />
-					</div>
-				{/each}
-			</div>
-		</Card.Content>
-	</Card.Root>
+	<div class="flex flex-col">
+		<Skeleton class="mb-3 h-3 w-28" />
+		<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2">
+			{#each Array(8) as _}
+				<div class="flex justify-between">
+					<Skeleton class="h-3 w-24" />
+					<Skeleton class="h-3 w-16" />
+				</div>
+			{/each}
+		</div>
+	</div>
 {/snippet}
 
-<Card.Root>
-	<Card.Header icon={StatsIcon}>
-		<div class="flex flex-col space-y-1.5">
-			<Card.Title>
-				<h2>
-					{m.containers_resource_metrics()}
-				</h2>
-			</Card.Title>
-			<Card.Description>{m.containers_resource_metrics_description()}</Card.Description>
-		</div>
-	</Card.Header>
-	<Card.Content class="p-4">
+<DetailPanel>
+	<DetailSectionCard
+		icon={StatsIcon}
+		title={m.containers_resource_metrics()}
+		description={m.containers_resource_metrics_description()}
+	>
 		{#if loading}
 			<div class="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
 				<div class="lg:col-span-2">
@@ -276,223 +261,209 @@
 			<div class="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
 				<!-- Process Count -->
 				{#if stats.pids_stats && stats.pids_stats.current !== undefined}
-					<Card.Root variant="subtle" class="flex flex-col justify-center">
-						<Card.Content class="flex flex-col justify-center p-4">
-							<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
-								{m.containers_process_count()}
+					<div class="flex flex-col justify-center">
+						<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+							{m.containers_process_count()}
+						</div>
+						<div class="text-foreground text-2xl font-semibold">{stats.pids_stats.current}</div>
+						{#if stats.pids_stats.limit && stats.pids_stats.limit < Number.MAX_SAFE_INTEGER}
+							<div class="text-muted-foreground mt-1 text-xs">
+								{m.common_limit()}: {stats.pids_stats.limit}
 							</div>
-							<div class="text-foreground text-2xl font-semibold">{stats.pids_stats.current}</div>
-							{#if stats.pids_stats.limit && stats.pids_stats.limit < Number.MAX_SAFE_INTEGER}
-								<div class="text-muted-foreground mt-1 text-xs">
-									{m.common_limit()}: {stats.pids_stats.limit}
-								</div>
-							{/if}
-						</Card.Content>
-					</Card.Root>
+						{/if}
+					</div>
 				{/if}
 
 				<!-- Network I/O Summary -->
-				<Card.Root variant="subtle" class="flex flex-col">
-					<Card.Content class="flex flex-col p-4">
+				<div class="flex flex-col">
+					<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+						{m.containers_network_io()}
+					</div>
+					<div class="grid flex-1 grid-cols-2 gap-3">
+						<div>
+							<div class="text-muted-foreground text-xs font-medium">
+								{m.containers_network_received()}
+							</div>
+							<div class="text-foreground text-sm font-semibold">
+								{bytes.format(totalNetworkRx)}
+							</div>
+							<div class="text-muted-foreground text-xs">
+								{totalNetworkRxPackets}
+								{m.containers_stats_packets()}
+							</div>
+						</div>
+						<div>
+							<div class="text-muted-foreground text-xs font-medium">
+								{m.containers_network_transmitted()}
+							</div>
+							<div class="text-foreground text-sm font-semibold">
+								{bytes.format(totalNetworkTx)}
+							</div>
+							<div class="text-muted-foreground text-xs">
+								{totalNetworkTxPackets}
+								{m.containers_stats_packets()}
+							</div>
+						</div>
+					</div>
+				</div>
+
+				<!-- Block I/O -->
+				{#if stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive && stats.blkio_stats.io_service_bytes_recursive.length > 0}
+					<div class="flex flex-col">
 						<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-							{m.containers_network_io()}
+							{m.containers_block_io()}
 						</div>
 						<div class="grid flex-1 grid-cols-2 gap-3">
 							<div>
 								<div class="text-muted-foreground text-xs font-medium">
-									{m.containers_network_received()}
+									{m.containers_block_io_read()}
 								</div>
 								<div class="text-foreground text-sm font-semibold">
-									{bytes.format(totalNetworkRx)}
-								</div>
-								<div class="text-muted-foreground text-xs">
-									{totalNetworkRxPackets}
-									{m.containers_stats_packets()}
+									{bytes.format(blockIoRead)}
 								</div>
 							</div>
 							<div>
 								<div class="text-muted-foreground text-xs font-medium">
-									{m.containers_network_transmitted()}
+									{m.containers_block_io_write()}
 								</div>
 								<div class="text-foreground text-sm font-semibold">
-									{bytes.format(totalNetworkTx)}
-								</div>
-								<div class="text-muted-foreground text-xs">
-									{totalNetworkTxPackets}
-									{m.containers_stats_packets()}
+									{bytes.format(blockIoWrite)}
 								</div>
 							</div>
 						</div>
-					</Card.Content>
-				</Card.Root>
-
-				<!-- Block I/O -->
-				{#if stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive && stats.blkio_stats.io_service_bytes_recursive.length > 0}
-					<Card.Root variant="subtle" class="flex flex-col">
-						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-								{m.containers_block_io()}
-							</div>
-							<div class="grid flex-1 grid-cols-2 gap-3">
-								<div>
-									<div class="text-muted-foreground text-xs font-medium">
-										{m.containers_block_io_read()}
-									</div>
-									<div class="text-foreground text-sm font-semibold">
-										{bytes.format(blockIoRead)}
-									</div>
-								</div>
-								<div>
-									<div class="text-muted-foreground text-xs font-medium">
-										{m.containers_block_io_write()}
-									</div>
-									<div class="text-foreground text-sm font-semibold">
-										{bytes.format(blockIoWrite)}
-									</div>
-								</div>
-							</div>
-						</Card.Content>
-					</Card.Root>
+					</div>
 				{/if}
 			</div>
 
 			<!-- Network Interfaces Details -->
 			{#if networkInterfaces.length > 0}
 				<div class="mt-4">
-					<Card.Root variant="subtle">
-						<Card.Content class="p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-								{m.containers_stats_network_interfaces()}
-							</div>
-							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-								{#each networkInterfaces as [interfaceName, interfaceStats]}
-									<Card.Root variant="outlined" class="flex flex-col">
-										<Card.Content class="flex flex-col p-3">
-											<div class="text-foreground mb-2 text-sm font-semibold">
-												{interfaceName}
+					<div>
+						<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							{m.containers_stats_network_interfaces()}
+						</div>
+						<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+							{#each networkInterfaces as [interfaceName, interfaceStats] (interfaceName)}
+								<div class="flex flex-col">
+									<div class="text-foreground mb-2 text-sm font-semibold">
+										{interfaceName}
+									</div>
+									<div class="flex-1 space-y-1 text-xs">
+										<div class="flex justify-between">
+											<span class="text-muted-foreground">RX:</span>
+											<span class="text-foreground font-medium">{bytes.format(interfaceStats.rx_bytes)}</span>
+										</div>
+										<div class="flex justify-between">
+											<span class="text-muted-foreground">TX:</span>
+											<span class="text-foreground font-medium">{bytes.format(interfaceStats.tx_bytes)}</span>
+										</div>
+										{#if interfaceStats.rx_errors > 0 || interfaceStats.tx_errors > 0}
+											<div class="text-destructive mt-1 text-xs">
+												{m.containers_stats_errors()}: {interfaceStats.rx_errors + interfaceStats.tx_errors}
 											</div>
-											<div class="flex-1 space-y-1 text-xs">
-												<div class="flex justify-between">
-													<span class="text-muted-foreground">RX:</span>
-													<span class="text-foreground font-medium">{bytes.format(interfaceStats.rx_bytes)}</span>
-												</div>
-												<div class="flex justify-between">
-													<span class="text-muted-foreground">TX:</span>
-													<span class="text-foreground font-medium">{bytes.format(interfaceStats.tx_bytes)}</span>
-												</div>
-												{#if interfaceStats.rx_errors > 0 || interfaceStats.tx_errors > 0}
-													<div class="text-destructive mt-1 text-xs">
-														{m.containers_stats_errors()}: {interfaceStats.rx_errors + interfaceStats.tx_errors}
-													</div>
-												{/if}
-												{#if interfaceStats.rx_dropped > 0 || interfaceStats.tx_dropped > 0}
-													<div class="text-warning mt-1 text-xs">
-														{m.containers_stats_dropped()}: {interfaceStats.rx_dropped + interfaceStats.tx_dropped}
-													</div>
-												{/if}
+										{/if}
+										{#if interfaceStats.rx_dropped > 0 || interfaceStats.tx_dropped > 0}
+											<div class="text-warning mt-1 text-xs">
+												{m.containers_stats_dropped()}: {interfaceStats.rx_dropped + interfaceStats.tx_dropped}
 											</div>
-										</Card.Content>
-									</Card.Root>
-								{/each}
-							</div>
-						</Card.Content>
-					</Card.Root>
+										{/if}
+									</div>
+								</div>
+							{/each}
+						</div>
+					</div>
 				</div>
 			{/if}
 
 			<div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
 				<!-- Memory Details -->
 				{#if stats.memory_stats?.stats}
-					<Card.Root variant="subtle" class="flex flex-col">
-						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-								{m.containers_stats_memory_details()}
+					<div class="flex flex-col">
+						<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							{m.containers_stats_memory_details()}
+						</div>
+						<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.common_usage()}:</span>
+								<span class="text-foreground font-medium">{memoryUsageFormatted}</span>
 							</div>
-							<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.common_usage()}:</span>
-									<span class="text-foreground font-medium">{memoryUsageFormatted}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.common_limit()}:</span>
-									<span class="text-foreground font-medium">{memoryLimitFormatted}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_cache()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(memoryCacheBytes)}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_memory_rss()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.anon || 0)}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_memory_active_file()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.active_file || 0)}</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_memory_inactive_file()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.inactive_file || 0)}</span>
-								</div>
-								{#if stats.memory_stats.stats.pgfault}
-									<div class="flex justify-between">
-										<span class="text-muted-foreground">{m.containers_stats_memory_page_faults()}:</span>
-										<span class="text-foreground font-medium">{stats.memory_stats.stats.pgfault.toLocaleString()}</span>
-									</div>
-								{/if}
-								{#if stats.memory_stats.stats.pgmajfault}
-									<div class="flex justify-between">
-										<span class="text-muted-foreground">{m.containers_stats_memory_major_faults()}:</span>
-										<span class="text-foreground font-medium">{stats.memory_stats.stats.pgmajfault.toLocaleString()}</span>
-									</div>
-								{/if}
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.common_limit()}:</span>
+								<span class="text-foreground font-medium">{memoryLimitFormatted}</span>
 							</div>
-						</Card.Content>
-					</Card.Root>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_cache()}:</span>
+								<span class="text-foreground font-medium">{bytes.format(memoryCacheBytes)}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_memory_rss()}:</span>
+								<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.anon || 0)}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_memory_active_file()}:</span>
+								<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.active_file || 0)}</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_memory_inactive_file()}:</span>
+								<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.inactive_file || 0)}</span>
+							</div>
+							{#if stats.memory_stats.stats.pgfault}
+								<div class="flex justify-between">
+									<span class="text-muted-foreground">{m.containers_stats_memory_page_faults()}:</span>
+									<span class="text-foreground font-medium">{stats.memory_stats.stats.pgfault.toLocaleString()}</span>
+								</div>
+							{/if}
+							{#if stats.memory_stats.stats.pgmajfault}
+								<div class="flex justify-between">
+									<span class="text-muted-foreground">{m.containers_stats_memory_major_faults()}:</span>
+									<span class="text-foreground font-medium">{stats.memory_stats.stats.pgmajfault.toLocaleString()}</span>
+								</div>
+							{/if}
+						</div>
+					</div>
 				{/if}
 
 				<!-- CPU Details -->
 				{#if stats.cpu_stats}
-					<Card.Root variant="subtle" class="flex flex-col">
-						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
-								{m.containers_stats_cpu_details()}
+					<div class="flex flex-col">
+						<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							{m.containers_stats_cpu_details()}
+						</div>
+						<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_online_cpus()}:</span>
+								<span class="text-foreground font-medium">{stats.cpu_stats.online_cpus}</span>
 							</div>
-							<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.common_usage()}:</span>
+								<span class="text-foreground font-medium">{cpuUsagePercent.toFixed(2)}%</span>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_cpu_user_mode()}:</span>
+								<span class="text-foreground font-medium"
+									>{(stats.cpu_stats.cpu_usage.usage_in_usermode / 1000000000).toFixed(2)}s</span
+								>
+							</div>
+							<div class="flex justify-between">
+								<span class="text-muted-foreground">{m.containers_stats_cpu_kernel_mode()}:</span>
+								<span class="text-foreground font-medium"
+									>{(stats.cpu_stats.cpu_usage.usage_in_kernelmode / 1000000000).toFixed(2)}s</span
+								>
+							</div>
+							{#if stats.cpu_stats.throttling_data}
 								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_online_cpus()}:</span>
-									<span class="text-foreground font-medium">{stats.cpu_stats.online_cpus}</span>
+									<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_periods()}:</span>
+									<span class="text-foreground font-medium">{stats.cpu_stats.throttling_data.throttled_periods}</span>
 								</div>
 								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.common_usage()}:</span>
-									<span class="text-foreground font-medium">{cpuUsagePercent.toFixed(2)}%</span>
-								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_cpu_user_mode()}:</span>
+									<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_time()}:</span>
 									<span class="text-foreground font-medium"
-										>{(stats.cpu_stats.cpu_usage.usage_in_usermode / 1000000000).toFixed(2)}s</span
+										>{(stats.cpu_stats.throttling_data.throttled_time / 1000000000).toFixed(2)}s</span
 									>
 								</div>
-								<div class="flex justify-between">
-									<span class="text-muted-foreground">{m.containers_stats_cpu_kernel_mode()}:</span>
-									<span class="text-foreground font-medium"
-										>{(stats.cpu_stats.cpu_usage.usage_in_kernelmode / 1000000000).toFixed(2)}s</span
-									>
-								</div>
-								{#if stats.cpu_stats.throttling_data}
-									<div class="flex justify-between">
-										<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_periods()}:</span>
-										<span class="text-foreground font-medium">{stats.cpu_stats.throttling_data.throttled_periods}</span>
-									</div>
-									<div class="flex justify-between">
-										<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_time()}:</span>
-										<span class="text-foreground font-medium"
-											>{(stats.cpu_stats.throttling_data.throttled_time / 1000000000).toFixed(2)}s</span
-										>
-									</div>
-								{/if}
-							</div>
-						</Card.Content>
-					</Card.Root>
+							{/if}
+						</div>
+					</div>
 				{/if}
 			</div>
 		{:else if !container.state?.running}
@@ -504,5 +475,5 @@
 				<div class="text-sm">{m.containers_stats_loading()}</div>
 			</div>
 		{/if}
-	</Card.Content>
-</Card.Root>
+	</DetailSectionCard>
+</DetailPanel>

@@ -50,6 +50,16 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	};
 }
 
+// --- Active-route matching (shared by sidebar and header nav) ---
+
+export function isActiveNavItem(pathname: string, url: string): boolean {
+	// Special case: Don't highlight "Environments" when on GitOps page
+	if (url === '/environments' && pathname.includes('/gitops')) {
+		return false;
+	}
+	return pathname === url || (pathname.startsWith(url) && url !== '/');
+}
+
 // --- Keyboard shortcuts ---
 
 export type ShortcutKey = 'mod' | 'shift' | 'alt' | 'ctrl' | 'meta' | string;

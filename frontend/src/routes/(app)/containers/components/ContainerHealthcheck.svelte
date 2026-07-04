@@ -1,9 +1,10 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 	import { formatDistanceToNow } from 'date-fns';
 	import { formatDateTime } from '$lib/utils/formatting';
 
@@ -117,210 +118,118 @@
 	}
 </script>
 
-<div class="space-y-6">
-	<Card.Root>
-		<Card.Header icon={HealthIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.common_health_status()}</h2>
-				</Card.Title>
-				<Card.Description>{m.health_status_description()}</Card.Description>
+{#snippet kv(label: string, value: string, mono = false)}
+	<div>
+		<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{label}</div>
+		<div class={mono ? 'text-foreground mt-1 font-mono text-sm font-medium' : 'text-foreground mt-1 text-sm font-medium'}>
+			{value}
+		</div>
+	</div>
+{/snippet}
+
+<DetailPanel>
+	<DetailSectionCard icon={HealthIcon} title={m.common_health_status()} description={m.health_status_description()}>
+		<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+			<div>
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+					{m.common_health_status()}
+				</div>
+				<div class="mt-1">
+					<StatusBadge variant={statusVariant} text={health?.status ?? m.common_unknown()} size="md" />
+				</div>
 			</div>
-		</Card.Header>
-		<Card.Content class="p-4">
-			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-							{m.common_health_status()}
-						</div>
-						<div>
-							<StatusBadge variant={statusVariant} text={health?.status ?? m.common_unknown()} size="md" />
-						</div>
-					</Card.Content>
-				</Card.Root>
 
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-							{m.health_failing_streak()}
-						</div>
-						<div class="text-foreground text-sm font-medium">
-							{health?.failingStreak ?? 0}
-						</div>
-					</Card.Content>
-				</Card.Root>
+			{@render kv(m.health_failing_streak(), String(health?.failingStreak ?? 0))}
 
-				{#if retriesBudget}
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_retries_remaining()}
-							</div>
-							<div class="text-foreground text-sm font-medium">
-								{retriesBudget.remaining} / {retriesBudget.retries}
-							</div>
-						</Card.Content>
-					</Card.Root>
-				{/if}
+			{#if retriesBudget}
+				{@render kv(m.health_retries_remaining(), `${retriesBudget.remaining} / ${retriesBudget.retries}`)}
+			{/if}
 
-				{#if nextCheck}
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_next_check()}
-							</div>
-							<div class="text-foreground text-sm font-medium" title={formatProbeDate(nextCheck.at)}>
-								{#if nextCheck.overdue}
-									{m.health_next_check_running_now()}
-								{:else}
-									{formatDistanceToNow(nextCheck.at, { addSuffix: true })}
-								{/if}
-							</div>
-						</Card.Content>
-					</Card.Root>
-				{/if}
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header icon={SettingsIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.health_configuration()}</h2>
-				</Card.Title>
-				<Card.Description>{m.health_configuration_description()}</Card.Description>
-			</div>
-		</Card.Header>
-		<Card.Content class="p-4">
-			<div class="space-y-3">
-				<Card.Root variant="subtle">
-					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-							{m.health_test_command()}
-						</div>
-						{#if testCommand.type === 'inherit'}
-							<div class="text-muted-foreground text-sm italic">
-								{m.health_inherit_from_image()}
-							</div>
-						{:else if testCommand.type === 'none'}
-							<div class="text-muted-foreground text-sm italic">
-								{m.health_disabled_in_image()}
-							</div>
+			{#if nextCheck}
+				<div>
+					<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+						{m.health_next_check()}
+					</div>
+					<div class="text-foreground mt-1 text-sm font-medium" title={formatProbeDate(nextCheck.at)}>
+						{#if nextCheck.overdue}
+							{m.health_next_check_running_now()}
 						{:else}
-							<pre
-								class="text-foreground cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap select-all dark:bg-white/5"
-								title={m.common_click_to_select()}>{testCommand.text}</pre>
+							{formatDistanceToNow(nextCheck.at, { addSuffix: true })}
 						{/if}
-					</Card.Content>
-				</Card.Root>
-
-				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_interval()}
-							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
-								{formatDurationNs(healthcheck?.interval)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_timeout()}
-							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
-								{formatDurationNs(healthcheck?.timeout)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_start_period()}
-							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
-								{formatDurationNs(healthcheck?.startPeriod)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_start_interval()}
-							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
-								{formatDurationNs(healthcheck?.startInterval)}
-							</div>
-						</Card.Content>
-					</Card.Root>
-					<Card.Root variant="subtle">
-						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-								{m.health_retries()}
-							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
-								{healthcheck?.retries ?? 0}
-							</div>
-						</Card.Content>
-					</Card.Root>
-				</div>
-			</div>
-		</Card.Content>
-	</Card.Root>
-
-	<Card.Root>
-		<Card.Header icon={FileTextIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.health_recent_probes()}</h2>
-				</Card.Title>
-				<Card.Description>{m.health_recent_probes_description()}</Card.Description>
-			</div>
-		</Card.Header>
-		<Card.Content class="p-4">
-			{#if recentProbes.length === 0}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
-					<div class="text-sm">{m.health_no_probes_yet()}</div>
-				</div>
-			{:else}
-				<div class="space-y-2">
-					{#each recentProbes as probe (probeKey(probe))}
-						{@const key = probeKey(probe)}
-						<Card.Root variant="subtle">
-							<Card.Content class="flex flex-col gap-2 p-4">
-								<div class="flex flex-wrap items-center justify-between gap-2">
-									<div class="flex items-center gap-3">
-										<StatusBadge
-											variant={probe.exitCode === 0 ? 'green' : 'red'}
-											text={`${m.health_exit_code()}: ${probe.exitCode}`}
-											size="sm"
-										/>
-										<span class="text-muted-foreground text-xs" title={formatProbeDate(probe.start)}>
-											{probe.start ? formatDistanceToNow(probe.start, { addSuffix: true }) : '—'}
-										</span>
-										<span class="text-muted-foreground text-xs">
-											{m.health_probe_duration()}: {probeDuration(probe.start, probe.end)}
-										</span>
-									</div>
-									{#if probe.output}
-										<button type="button" class="text-primary text-xs hover:underline" onclick={() => toggleExpanded(key)}>
-											{expanded[key] ? m.common_hide() : m.common_show()}
-										</button>
-									{/if}
-								</div>
-								{#if probe.output && expanded[key]}
-									<pre
-										class="text-foreground max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap dark:bg-white/5">{probe.output}</pre>
-								{/if}
-							</Card.Content>
-						</Card.Root>
-					{/each}
+					</div>
 				</div>
 			{/if}
-		</Card.Content>
-	</Card.Root>
-</div>
+		</div>
+	</DetailSectionCard>
+
+	<DetailSectionCard icon={SettingsIcon} title={m.health_configuration()} description={m.health_configuration_description()}>
+		<div class="space-y-4">
+			<div>
+				<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+					{m.health_test_command()}
+				</div>
+				{#if testCommand.type === 'inherit'}
+					<div class="text-muted-foreground mt-1 text-sm italic">
+						{m.health_inherit_from_image()}
+					</div>
+				{:else if testCommand.type === 'none'}
+					<div class="text-muted-foreground mt-1 text-sm italic">
+						{m.health_disabled_in_image()}
+					</div>
+				{:else}
+					<pre
+						class="text-foreground mt-1 cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap select-all dark:bg-white/5"
+						title={m.common_click_to_select()}>{testCommand.text}</pre>
+				{/if}
+			</div>
+
+			<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+				{@render kv(m.health_interval(), formatDurationNs(healthcheck?.interval), true)}
+				{@render kv(m.health_timeout(), formatDurationNs(healthcheck?.timeout), true)}
+				{@render kv(m.health_start_period(), formatDurationNs(healthcheck?.startPeriod), true)}
+				{@render kv(m.health_start_interval(), formatDurationNs(healthcheck?.startInterval), true)}
+				{@render kv(m.health_retries(), String(healthcheck?.retries ?? 0), true)}
+			</div>
+		</div>
+	</DetailSectionCard>
+
+	<DetailSectionCard icon={FileTextIcon} title={m.health_recent_probes()} description={m.health_recent_probes_description()}>
+		{#if recentProbes.length === 0}
+			<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+				<div class="text-sm">{m.health_no_probes_yet()}</div>
+			</div>
+		{:else}
+			<div class="divide-border/50 divide-y">
+				{#each recentProbes as probe (probeKey(probe))}
+					{@const key = probeKey(probe)}
+					<div class="flex flex-col gap-2 py-3 first:pt-0 last:pb-0">
+						<div class="flex flex-wrap items-center justify-between gap-2">
+							<div class="flex items-center gap-3">
+								<StatusBadge
+									variant={probe.exitCode === 0 ? 'green' : 'red'}
+									text={`${m.health_exit_code()}: ${probe.exitCode}`}
+									size="sm"
+								/>
+								<span class="text-muted-foreground text-xs" title={formatProbeDate(probe.start)}>
+									{probe.start ? formatDistanceToNow(probe.start, { addSuffix: true }) : '—'}
+								</span>
+								<span class="text-muted-foreground text-xs">
+									{m.health_probe_duration()}: {probeDuration(probe.start, probe.end)}
+								</span>
+							</div>
+							{#if probe.output}
+								<button type="button" class="text-primary text-xs hover:underline" onclick={() => toggleExpanded(key)}>
+									{expanded[key] ? m.common_hide() : m.common_show()}
+								</button>
+							{/if}
+						</div>
+						{#if probe.output && expanded[key]}
+							<pre
+								class="text-foreground max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap dark:bg-white/5">{probe.output}</pre>
+						{/if}
+					</div>
+				{/each}
+			</div>
+		{/if}
+	</DetailSectionCard>
+</DetailPanel>

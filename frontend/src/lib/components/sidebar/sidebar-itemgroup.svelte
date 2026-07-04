@@ -3,7 +3,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import type { ShortcutKey } from '$lib/utils/navigation';
+	import { isActiveNavItem, type ShortcutKey } from '$lib/utils/navigation';
 	import type { Snippet } from 'svelte';
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
@@ -32,11 +32,7 @@
 	const sidebar = useSidebar();
 
 	function isActiveItem(url: string): boolean {
-		// Special case: Don't highlight "Environments" when on GitOps page
-		if (url === '/environments' && page.url.pathname.includes('/gitops')) {
-			return false;
-		}
-		return page.url.pathname === url || (page.url.pathname.startsWith(url) && url !== '/');
+		return isActiveNavItem(page.url.pathname, url);
 	}
 
 	function hasActiveChild(items?: { url: string }[]): boolean {

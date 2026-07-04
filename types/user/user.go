@@ -55,6 +55,7 @@ type User struct {
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
 	TimeFormat             TimeFormat              `json:"timeFormat" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
 	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
+	NavigationLayout       *string                 `json:"navigationLayout,omitempty" enum:"sidebar,header" doc:"Preferred desktop navigation layout" example:"sidebar"`
 	CreatedAt              string                  `json:"createdAt,omitempty" doc:"Date and time when the user was created"`
 	UpdatedAt              string                  `json:"updatedAt,omitempty" doc:"Date and time when the user was last updated"`
 	RequiresPasswordChange bool                    `json:"requiresPasswordChange" doc:"Whether the user must change their password"`

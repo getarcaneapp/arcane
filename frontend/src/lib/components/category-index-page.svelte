@@ -1,7 +1,6 @@
 <script lang="ts">
 	import type { Component, ComponentProps, Snippet } from 'svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Card } from '$lib/components/ui/card';
 	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
 	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
@@ -131,28 +130,31 @@
 	</HeaderCard>
 
 	{#if !categorySearch.showSearchResults}
-		<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-6 xl:grid-cols-3">
-			{#each categories as category (category.id)}
-				{@const Icon = category.icon}
-				<Card class={cardClass}>
-					<button onclick={() => navigate(category.href)} class="w-full p-4 text-left sm:p-6">
-						<div class="flex items-start justify-between gap-3">
-							<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
+		<div class="bg-card/60 dark:bg-surface/40 border-border/70 rounded-xl border shadow-xs backdrop-blur-md">
+			<div class="divide-border/50 divide-y">
+				{#each categories as category (category.id)}
+					{@const Icon = category.icon}
+					<button
+						onclick={() => navigate(category.href)}
+						class={`block w-full p-4 text-left first:rounded-t-xl last:rounded-b-xl sm:px-5 ${cardClass}`}
+					>
+						<div class="flex items-center justify-between gap-3">
+							<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
 								<div
-									class="bg-primary/5 text-primary ring-primary/10 group-hover:bg-primary/10 flex size-10 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors sm:size-12"
+									class="bg-primary/5 text-primary ring-primary/10 group-hover:bg-primary/10 flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 transition-colors"
 								>
-									<Icon class="size-5 sm:size-6" />
+									<Icon class="size-4 sm:size-5" />
 								</div>
 								<div class="min-w-0 flex-1">
-									<h2 class="text-sm leading-tight font-semibold sm:text-base">{category.title}</h2>
-									<p class="text-muted-foreground mt-1 text-xs leading-relaxed sm:text-sm">{category.description}</p>
+									<h2 class="text-sm leading-tight font-semibold">{category.title}</h2>
+									<p class="text-muted-foreground mt-0.5 text-xs leading-relaxed sm:text-sm">{category.description}</p>
 								</div>
 							</div>
-							<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground mt-1 size-4 shrink-0 transition-colors" />
+							<ArrowRightIcon class="text-muted-foreground group-hover:text-foreground size-4 shrink-0 transition-colors" />
 						</div>
 					</button>
-				</Card>
-			{/each}
+				{/each}
+			</div>
 		</div>
 	{:else}
 		<div class="space-y-6 sm:space-y-8">

@@ -1,8 +1,9 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { NetworksIcon, GlobeIcon } from '$lib/icons';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '$lib/types/swarm';
 
 	interface Props {
@@ -87,182 +88,148 @@
 	{/each}
 {/snippet}
 
-<div class="space-y-6">
-	<Card.Root>
-		<Card.Header icon={GlobeIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.common_port_mappings()}</h2>
-				</Card.Title>
+<DetailPanel>
+	<DetailSectionCard icon={GlobeIcon} title={m.common_port_mappings()}>
+		{#if ports.length > 0}
+			<div class="flex flex-wrap gap-2">
+				{#each ports as port (`${port.publishedPort ?? 'internal'}:${port.targetPort}/${port.protocol}:${port.publishMode ?? ''}`)}
+					<StatusBadge text={formatPort(port)} variant="gray" size="md" minWidth="none" />
+				{/each}
 			</div>
-		</Card.Header>
-		<Card.Content class="p-4">
-			{#if ports.length > 0}
-				<div class="flex flex-wrap gap-2">
-					{#each ports as port (`${port.publishedPort ?? 'internal'}:${port.targetPort}/${port.protocol}:${port.publishMode ?? ''}`)}
-						<StatusBadge text={formatPort(port)} variant="gray" size="md" minWidth="none" />
-					{/each}
-				</div>
-			{:else}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
-					<div class="text-sm">{m.containers_no_ports()}</div>
-				</div>
-			{/if}
-		</Card.Content>
-	</Card.Root>
+		{:else}
+			<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+				<div class="text-sm">{m.containers_no_ports()}</div>
+			</div>
+		{/if}
+	</DetailSectionCard>
 
-	<Card.Root>
-		<Card.Header icon={NetworksIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.swarm_networks()}</h2>
-				</Card.Title>
-			</div>
-		</Card.Header>
-		<Card.Content class="p-4">
-			{#if networks.length > 0 || virtualIPs.length > 0}
-				<div class="grid grid-cols-1 gap-4">
-					{#each networks as network (network.target)}
-						{@const networkId = network.target}
-						{@const aliases = network.aliases}
-						{@const vip = vipMap[networkId]}
-						{@const info = networkDetails[networkId]}
-						<Card.Root variant="subtle">
-							<Card.Content class="p-4">
-								<div class="border-border mb-4 flex items-center gap-3 border-b pb-4">
-									<div class="rounded-lg bg-blue-500/10 p-2">
-										<NetworksIcon class="size-5 text-blue-500" />
-									</div>
-									<div class="min-w-0 flex-1">
-										<div class="text-foreground text-base font-semibold break-all">
-											{info?.name ?? (aliases.length > 0 ? aliases[0] : networkId.slice(0, 12))}
-										</div>
-										<div class="mt-1 flex flex-wrap items-center gap-2">
-											{#if info?.driver}
-												<StatusBadge text={info.driver} variant={driverVariant(info.driver)} />
-											{/if}
-											{#if info?.scope}
-												<StatusBadge text={info.scope} variant="gray" />
-											{/if}
-											{#if info?.internal}
-												<StatusBadge text={m.internal()} variant="blue" />
-											{/if}
-											{#if info?.attachable}
-												<StatusBadge text={m.attachable()} variant="green" />
-											{/if}
-											{#if info?.ingress}
-												<StatusBadge text={m.ingress()} variant="cyan" />
-											{/if}
-											{#if info?.configOnly}
-												<StatusBadge text={m.config_only()} variant="pink" />
-											{/if}
-											{#if info?.configFrom}
-												<span class="text-muted-foreground text-xs">{info.configFrom}</span>
-											{/if}
-										</div>
-									</div>
+	<DetailSectionCard icon={NetworksIcon} title={m.swarm_networks()}>
+		{#if networks.length > 0 || virtualIPs.length > 0}
+			<div class="divide-border/50 divide-y">
+				{#each networks as network (network.target)}
+					{@const networkId = network.target}
+					{@const aliases = network.aliases}
+					{@const vip = vipMap[networkId]}
+					{@const info = networkDetails[networkId]}
+					<div class="space-y-4 py-4 first:pt-0 last:pb-0">
+						<div class="flex items-center gap-2">
+							<NetworksIcon class="size-4 shrink-0 text-blue-500" />
+							<div class="min-w-0 flex-1">
+								<div class="text-foreground text-sm font-semibold break-all">
+									{info?.name ?? (aliases.length > 0 ? aliases[0] : networkId.slice(0, 12))}
 								</div>
-
-								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-									{#if vip}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.networks_service_vip_label()}</div>
-												<code
-													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-sm break-all select-all"
-												>
-													{vip}
-												</code>
-											</Card.Content>
-										</Card.Root>
+								<div class="mt-1 flex flex-wrap items-center gap-2">
+									{#if info?.driver}
+										<StatusBadge text={info.driver} variant={driverVariant(info.driver)} />
 									{/if}
-
-									<Card.Root variant="outlined">
-										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.common_id()}</div>
-											<code
-												class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-											>
-												{networkId}
-											</code>
-										</Card.Content>
-									</Card.Root>
-
-									{#if aliases.length > 0}
-										<Card.Root variant="outlined">
-											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">
-													{m.containers_aliases()}
-												</div>
-												<div class="space-y-1">
-													{#each aliases as alias (alias)}
-														<code
-															class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-														>
-															{alias}
-														</code>
-													{/each}
-												</div>
-											</Card.Content>
-										</Card.Root>
+									{#if info?.scope}
+										<StatusBadge text={info.scope} variant="gray" />
 									{/if}
-
-									{#if info?.configNetwork}
-										<Card.Root variant="outlined" class="sm:col-span-2">
-											<Card.Content class="p-3">
-												<div class="border-border mb-3 flex items-center justify-between border-b pb-3">
-													<div>
-														<div class="text-foreground text-sm font-semibold">
-															{m.config_only()}: {info.configNetwork.name}
-														</div>
-														<div class="mt-1 flex flex-wrap items-center gap-1.5">
-															{#if info.configNetwork.driver}
-																<StatusBadge text={info.configNetwork.driver} variant="gray" size="sm" minWidth="none" />
-															{/if}
-															{#if info.configNetwork.scope}
-																<StatusBadge text={info.configNetwork.scope} variant="gray" size="sm" minWidth="none" />
-															{/if}
-															{#if info.configNetwork.options?.['parent']}
-																<span class="text-muted-foreground text-xs">{info.configNetwork.options['parent']}</span>
-															{/if}
-														</div>
-													</div>
-													<div class="flex items-center gap-2">
-														<StatusBadge
-															text={info.configNetwork.enableIPv4 ? m.ipv4_enabled() : m.common_disabled()}
-															variant={info.configNetwork.enableIPv4 ? 'indigo' : 'gray'}
-															size="sm"
-															minWidth="none"
-														/>
-														<StatusBadge
-															text={info.configNetwork.enableIPv6 ? m.ipv6_enabled() : m.common_disabled()}
-															variant={info.configNetwork.enableIPv6 ? 'indigo' : 'gray'}
-															size="sm"
-															minWidth="none"
-														/>
-													</div>
-												</div>
-												<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-													{#if info.configNetwork.ipv4Configs && info.configNetwork.ipv4Configs.length > 0}
-														{@render IpamConfigList(info.configNetwork.ipv4Configs, m.ipv4_enabled())}
-													{/if}
-													{#if info.configNetwork.ipv6Configs && info.configNetwork.ipv6Configs.length > 0}
-														{@render IpamConfigList(info.configNetwork.ipv6Configs, m.ipv6_enabled())}
-													{/if}
-												</div>
-											</Card.Content>
-										</Card.Root>
+									{#if info?.internal}
+										<StatusBadge text={m.internal()} variant="blue" />
+									{/if}
+									{#if info?.attachable}
+										<StatusBadge text={m.attachable()} variant="green" />
+									{/if}
+									{#if info?.ingress}
+										<StatusBadge text={m.ingress()} variant="cyan" />
+									{/if}
+									{#if info?.configOnly}
+										<StatusBadge text={m.config_only()} variant="pink" />
+									{/if}
+									{#if info?.configFrom}
+										<span class="text-muted-foreground text-xs">{info.configFrom}</span>
 									{/if}
 								</div>
-							</Card.Content>
-						</Card.Root>
-					{/each}
-				</div>
-			{:else}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
-					<div class="text-sm">{m.containers_no_networks_connected()}</div>
-				</div>
-			{/if}
-		</Card.Content>
-	</Card.Root>
-</div>
+							</div>
+						</div>
+
+						<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+							{#if vip}
+								<div>
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										{m.networks_service_vip_label()}
+									</div>
+									<div class="text-foreground mt-1 cursor-pointer font-mono text-sm font-medium break-all select-all">
+										{vip}
+									</div>
+								</div>
+							{/if}
+
+							<div>
+								<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{m.common_id()}</div>
+								<div class="text-foreground mt-1 cursor-pointer font-mono text-sm font-medium break-all select-all">
+									{networkId}
+								</div>
+							</div>
+
+							{#if aliases.length > 0}
+								<div>
+									<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										{m.containers_aliases()}
+									</div>
+									<div class="text-foreground mt-1 space-y-1 text-sm font-medium">
+										{#each aliases as alias (alias)}
+											<div class="cursor-pointer font-mono break-all select-all">
+												{alias}
+											</div>
+										{/each}
+									</div>
+								</div>
+							{/if}
+
+							{#if info?.configNetwork}
+								<div class="sm:col-span-2">
+									<div class="border-border/50 mb-3 flex items-center justify-between border-b pb-3">
+										<div>
+											<div class="text-foreground text-sm font-semibold">
+												{m.config_only()}: {info.configNetwork.name}
+											</div>
+											<div class="mt-1 flex flex-wrap items-center gap-1.5">
+												{#if info.configNetwork.driver}
+													<StatusBadge text={info.configNetwork.driver} variant="gray" size="sm" minWidth="none" />
+												{/if}
+												{#if info.configNetwork.scope}
+													<StatusBadge text={info.configNetwork.scope} variant="gray" size="sm" minWidth="none" />
+												{/if}
+												{#if info.configNetwork.options?.['parent']}
+													<span class="text-muted-foreground text-xs">{info.configNetwork.options['parent']}</span>
+												{/if}
+											</div>
+										</div>
+										<div class="flex items-center gap-2">
+											<StatusBadge
+												text={info.configNetwork.enableIPv4 ? m.ipv4_enabled() : m.common_disabled()}
+												variant={info.configNetwork.enableIPv4 ? 'indigo' : 'gray'}
+												size="sm"
+												minWidth="none"
+											/>
+											<StatusBadge
+												text={info.configNetwork.enableIPv6 ? m.ipv6_enabled() : m.common_disabled()}
+												variant={info.configNetwork.enableIPv6 ? 'indigo' : 'gray'}
+												size="sm"
+												minWidth="none"
+											/>
+										</div>
+									</div>
+									<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2">
+										{#if info.configNetwork.ipv4Configs && info.configNetwork.ipv4Configs.length > 0}
+											{@render IpamConfigList(info.configNetwork.ipv4Configs, m.ipv4_enabled())}
+										{/if}
+										{#if info.configNetwork.ipv6Configs && info.configNetwork.ipv6Configs.length > 0}
+											{@render IpamConfigList(info.configNetwork.ipv6Configs, m.ipv6_enabled())}
+										{/if}
+									</div>
+								</div>
+							{/if}
+						</div>
+					</div>
+				{/each}
+			</div>
+		{:else}
+			<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+				<div class="text-sm">{m.containers_no_networks_connected()}</div>
+			</div>
+		{/if}
+	</DetailSectionCard>
+</DetailPanel>

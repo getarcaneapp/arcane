@@ -1,4 +1,6 @@
 <script lang="ts">
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
@@ -360,95 +362,79 @@
 
 		<div class="min-h-0 flex-1">
 			<div class="grid h-full min-h-0 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-				<Card.Root class="flex h-full min-h-0 min-w-0 flex-col lg:col-span-1 xl:col-span-2">
-					<Card.Header icon={CodeIcon} class="flex-shrink-0">
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>
-								<h2>{m.common_docker_compose()}</h2>
-							</Card.Title>
-							<Card.Description>{m.templates_service_definitions()}</Card.Description>
+				<div
+					class="border-border/70 flex h-full min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border lg:col-span-1 xl:col-span-2"
+				>
+					<div class="border-border/50 flex-shrink-0 border-b px-4 py-2.5">
+						<div class="flex items-center gap-2">
+							<CodeIcon class="text-primary size-4 shrink-0" />
+							<h2 class="text-sm font-semibold">{m.common_docker_compose()}</h2>
 						</div>
-					</Card.Header>
-					<Card.Content class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
-						<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-t-none rounded-b-xl">
+						<p class="text-muted-foreground mt-0.5 text-xs">{m.templates_service_definitions()}</p>
+					</div>
+					<div class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible">
+						<div class="absolute inset-0 min-h-0 w-full min-w-0">
 							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
 						</div>
-					</Card.Content>
-				</Card.Root>
+					</div>
+				</div>
 
 				<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 lg:col-span-1">
 					{#if services?.length}
-						<Card.Root class="min-w-0 flex-shrink-0">
-							<Card.Header icon={ContainersIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.services()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_containers_to_create()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each services as service (service)}
-									<Card.Root variant="subtle" class="min-w-0">
-										<Card.Content class="flex min-w-0 items-center gap-3 p-3">
-											<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-												<BoxIcon class="size-4 text-blue-500" />
-											</div>
+						<DetailPanel class="min-w-0 flex-shrink-0">
+							<DetailSectionCard icon={ContainersIcon} title={m.services()} description={m.templates_containers_to_create()}>
+								<div class="divide-border/50 divide-y">
+									{#each services as service (service)}
+										<div class="flex min-w-0 items-center gap-2 py-2 first:pt-0 last:pb-0">
+											<BoxIcon class="size-4 shrink-0 text-blue-500" />
 											<div class="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{service}</div>
-										</Card.Content>
-									</Card.Root>
-								{/each}
-							</Card.Content>
-						</Card.Root>
+										</div>
+									{/each}
+								</div>
+							</DetailSectionCard>
+						</DetailPanel>
 					{/if}
 
 					{#if envVars?.length}
-						<Card.Root class="min-w-0 flex-shrink-0">
-							<Card.Header icon={VariableIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.common_environment_variables()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_default_config_values()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each envVars as envVar (envVar.key)}
-									<Card.Root variant="subtle" class="min-w-0">
-										<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
-											<div class="text-muted-foreground text-xs font-semibold tracking-wide break-words uppercase select-all">
+						<DetailPanel class="min-w-0 flex-shrink-0">
+							<DetailSectionCard
+								icon={VariableIcon}
+								title={m.common_environment_variables()}
+								description={m.templates_default_config_values()}
+							>
+								<div class="grid grid-cols-1 gap-x-6 gap-y-4">
+									{#each envVars as envVar (envVar.key)}
+										<div class="min-w-0">
+											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide break-words uppercase select-all">
 												{envVar.key}
 											</div>
 											{#if envVar.value}
-												<div class="text-foreground min-w-0 font-mono text-sm break-words select-all">{envVar.value}</div>
+												<div class="text-foreground mt-1 min-w-0 font-mono text-sm break-words select-all">{envVar.value}</div>
 											{:else}
-												<div class="text-muted-foreground text-xs italic">{m.common_no_default_value()}</div>
+												<div class="text-muted-foreground mt-1 text-xs italic">{m.common_no_default_value()}</div>
 											{/if}
-										</Card.Content>
-									</Card.Root>
-								{/each}
-							</Card.Content>
-						</Card.Root>
+										</div>
+									{/each}
+								</div>
+							</DetailSectionCard>
+						</DetailPanel>
 					{/if}
 
 					{#if data.templateData.envContent}
-						<Card.Root class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-							<Card.Header icon={FileTextIcon} class="flex-shrink-0">
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.environment_file()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_raw_env_config()}</Card.Description>
+						<div class="border-border/70 flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-xl border">
+							<div class="border-border/50 flex-shrink-0 border-b px-4 py-2.5">
+								<div class="flex items-center gap-2">
+									<FileTextIcon class="text-primary size-4 shrink-0" />
+									<h2 class="text-sm font-semibold">{m.environment_file()}</h2>
 								</div>
-							</Card.Header>
-							<Card.Content
-								class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0"
-							>
-								<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
+								<p class="text-muted-foreground mt-0.5 text-xs">{m.templates_raw_env_config()}</p>
+							</div>
+							<div class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible">
+								<div class="absolute inset-0 min-h-0 w-full min-w-0">
 									<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
 								</div>
-							</Card.Content>
-						</Card.Root>
+							</div>
+						</div>
 					{/if}
 				</div>
 			</div>

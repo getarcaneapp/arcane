@@ -1,6 +1,8 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
+	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
 	import { goto } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { formatDateTimeShort, truncateString } from '$lib/utils/formatting';
@@ -21,7 +23,6 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import PropertyItem from '$lib/components/property-item.svelte';
-	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
 	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
@@ -134,15 +135,13 @@
 		{#snippet tabContent(tab)}
 			<div class="space-y-6">
 				{#if tab === 'overview'}
-					<Card.Root>
-						<Card.Header icon={InfoIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.common_details_title({ resource: m.resource_volume_cap() })}</Card.Title>
-								<Card.Description>{m.common_details_description({ resource: m.resource_volume() })}</Card.Description>
-							</div>
-						</Card.Header>
-						<Card.Content class="p-4">
-							<div class="grid grid-cols-1 gap-x-4 gap-y-6 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
+					<DetailPanel>
+						<DetailSectionCard
+							icon={InfoIcon}
+							title={m.common_details_title({ resource: m.resource_volume_cap() })}
+							description={m.common_details_description({ resource: m.resource_volume() })}
+						>
+							<div class="grid grid-cols-1 gap-x-6 gap-y-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-6">
 								<PropertyItem
 									icon={BoxIcon}
 									color="gray"
@@ -179,96 +178,92 @@
 									label={m.common_mountpoint()}
 									class="col-span-1 flex items-start gap-3 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-6"
 								>
-									<div
-										class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all"
+									<code
+										class="mt-1 block cursor-pointer font-mono text-sm break-all select-all"
 										title={m.common_click_to_select()}
 									>
-										<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
-									</div>
+										{volume.mountpoint}
+									</code>
 								</PropertyItem>
 							</div>
-						</Card.Content>
-					</Card.Root>
+						</DetailSectionCard>
 
-					<Card.Root>
-						<Card.Header icon={ContainersIcon}>
-							<div class="flex flex-col space-y-1.5">
-								<Card.Title>{m.volumes_containers_using_title()}</Card.Title>
-								<Card.Description>{m.volumes_containers_using_description()}</Card.Description>
-							</div>
-						</Card.Header>
-						<Card.Content class="p-4">
+						<DetailSectionCard
+							icon={ContainersIcon}
+							title={m.volumes_containers_using_title()}
+							description={m.volumes_containers_using_description()}
+						>
 							{#if containersDetailed.length > 0}
-								<Card.Root variant="outlined">
-									<Card.Content class="divide-y p-0">
-										{#each containersDetailed as c (c.id)}
-											<div class="flex flex-col p-3 sm:flex-row sm:items-center">
-												<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-													<a href="/containers/{c.id}" class="text-primary flex items-center hover:underline">
-														<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
-														{c.name}
-													</a>
-												</div>
-												<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
-													<code
-														class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
-														title={m.common_click_to_select()}
-													>
-														{truncateString(c.id, 48)}
-													</code>
-												</div>
+								<div class="divide-border/50 divide-y">
+									{#each containersDetailed as c (c.id)}
+										<div class="flex flex-col py-3 first:pt-0 last:pb-0 sm:flex-row sm:items-center">
+											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
+												<a href="/containers/{c.id}" class="text-primary flex items-center hover:underline">
+													<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
+													{c.name}
+												</a>
 											</div>
-										{/each}
-									</Card.Content>
-								</Card.Root>
+											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
+												<code
+													class="text-muted-foreground cursor-pointer font-mono text-xs break-all select-all sm:text-sm"
+													title={m.common_click_to_select()}
+												>
+													{truncateString(c.id, 48)}
+												</code>
+											</div>
+										</div>
+									{/each}
+								</div>
 							{:else if volume.containers && volume.containers.length > 0}
 								<!-- Fallback to IDs if names not resolved -->
-								<Card.Root variant="subtle">
-									<Card.Content class="divide-y p-0">
-										{#each volume.containers as id (id)}
-											<div class="flex items-center justify-between gap-3 p-3">
-												<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-												<a href={`/containers/${id}`} class="text-primary text-sm hover:underline">{m.common_view()}</a>
-											</div>
-										{/each}
-									</Card.Content>
-								</Card.Root>
+								<div class="divide-border/50 divide-y">
+									{#each volume.containers as id (id)}
+										<div class="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
+											<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
+											<a href={`/containers/${id}`} class="text-primary text-sm hover:underline">{m.common_view()}</a>
+										</div>
+									{/each}
+								</div>
 							{:else}
 								<div class="text-muted-foreground">{m.volumes_no_containers_using()}</div>
 							{/if}
-						</Card.Content>
-					</Card.Root>
+						</DetailSectionCard>
 
-					{#if volume.labels && Object.keys(volume.labels).length > 0}
-						<KeyValueGridCard
-							icon={TagIcon}
-							title={m.common_labels()}
-							description={m.volumes_labels_description()}
-							entries={Object.entries(volume.labels)}
-						/>
-					{/if}
+						{#if volume.labels && Object.keys(volume.labels).length > 0}
+							<DetailSectionCard icon={TagIcon} title={m.common_labels()} description={m.volumes_labels_description()}>
+								<KeyValueGrid>
+									{#each Object.entries(volume.labels) as [key, value] (key)}
+										<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+									{/each}
+								</KeyValueGrid>
+							</DetailSectionCard>
+						{/if}
 
-					{#if volume.options && Object.keys(volume.options).length > 0}
-						<KeyValueGridCard
-							icon={VolumesIcon}
-							title={m.common_driver_options()}
-							description={m.volumes_driver_options_description()}
-							entries={Object.entries(volume.options)}
-						/>
-					{/if}
+						{#if volume.options && Object.keys(volume.options).length > 0}
+							<DetailSectionCard
+								icon={VolumesIcon}
+								title={m.common_driver_options()}
+								description={m.volumes_driver_options_description()}
+							>
+								<KeyValueGrid>
+									{#each Object.entries(volume.options) as [key, value] (key)}
+										<KeyValueCard label={key} valueTitle={m.common_click_to_select()}>{value}</KeyValueCard>
+									{/each}
+								</KeyValueGrid>
+							</DetailSectionCard>
+						{/if}
 
-					{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}
-						<Card.Root class="bg-muted/10 border shadow-sm">
-							<Card.Content class="pt-6 pb-6 text-center">
+						{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}
+							<section class="p-4 text-center sm:p-5">
 								<div class="flex flex-col items-center justify-center">
-									<div class="bg-muted/30 mb-4 rounded-full p-3">
+									<div class="bg-muted/30 mb-3 rounded-full p-3">
 										<TagIcon class="text-muted-foreground size-5 opacity-50" />
 									</div>
 									<p class="text-muted-foreground">{m.volumes_no_labels_or_options()}</p>
 								</div>
-							</Card.Content>
-						</Card.Root>
-					{/if}
+							</section>
+						{/if}
+					</DetailPanel>
 				{:else if tab === 'browser'}
 					<VolumeBrowser volumeName={volume.name} />
 				{:else if tab === 'backups'}

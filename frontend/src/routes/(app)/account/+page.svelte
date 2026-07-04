@@ -15,6 +15,7 @@
 	import LocalePicker from '$lib/components/locale-picker.svelte';
 	import TimeFormatPicker from '$lib/components/time-format-picker.svelte';
 	import FontSizePicker from '$lib/components/font-size-picker.svelte';
+	import NavigationLayoutPicker from '$lib/components/navigation-layout-picker.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
 	import { apiKeyService } from '$lib/services/api-key-service';
@@ -624,6 +625,13 @@
 								<div class="text-muted-foreground text-xs">{m.font_size_description()}</div>
 							</div>
 							<FontSizePicker />
+						</div>
+						<div class="flex items-center justify-between gap-4 p-3">
+							<div class="min-w-0">
+								<div class="text-sm font-medium">{m.navigation_layout_label()}</div>
+								<div class="text-muted-foreground text-xs">{m.navigation_layout_description()}</div>
+							</div>
+							<NavigationLayoutPicker />
 						</div>
 					</div>
 				</Card>

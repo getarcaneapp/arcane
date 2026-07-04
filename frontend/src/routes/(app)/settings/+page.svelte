@@ -133,7 +133,7 @@
 	goToPageLabel={m.settings_go_to_page()}
 	goToPageButtonTone="outline"
 	rootClass="space-y-6 pb-5 md:space-y-8 md:pb-5"
-	cardClass="hover:border-primary/30 group cursor-pointer transition-colors duration-200"
+	cardClass="group hover:bg-muted/40 cursor-pointer transition-colors duration-200"
 	resultCardClass="bg-background/40 rounded-lg border"
 	searchIconClass=""
 	categories={normalizedCategories}

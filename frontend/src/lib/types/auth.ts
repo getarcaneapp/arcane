@@ -148,6 +148,7 @@ export type User = {
 	locale?: Locale;
 	timeFormat: TimeFormat;
 	fontSize?: number;
+	navigationLayout?: 'sidebar' | 'header';
 	requiresPasswordChange?: boolean;
 };
 

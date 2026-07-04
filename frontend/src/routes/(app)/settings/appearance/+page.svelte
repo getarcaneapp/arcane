@@ -11,12 +11,10 @@
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
 	import { createSettingsForm } from '$lib/utils/settings-form';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
-	import LocalePicker from '$lib/components/locale-picker.svelte';
-	import TimeFormatPicker from '$lib/components/time-format-picker.svelte';
+	import { navigationLayoutStore } from '$lib/stores/navigation-layout.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
-	import ThemeModeSelector from '$lib/components/theme-mode/theme-mode-selector.svelte';
 	import { applyAccentColor } from '$lib/utils/theme';
 	import { APPLICATION_THEME_VALUES, applyApplicationTheme } from '$lib/utils/theme';
 	import { applyOledMode } from '$lib/utils/theme';
@@ -230,30 +228,6 @@
 							{/if}
 						</div>
 					</SettingsRow>
-
-					<!-- Language -->
-					<SettingsRow label={m.language()} description={m.appearance_language_current_user_description()} layout="inline">
-						<LocalePicker
-							inline={true}
-							id="appearanceLocalePicker"
-							class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
-						/>
-					</SettingsRow>
-
-					<!-- Time Format -->
-					<SettingsRow label={m.time_format()} description={m.time_format_description()} layout="inline">
-						<TimeFormatPicker id="appearanceTimeFormatPicker" />
-					</SettingsRow>
-
-					<!-- Theme -->
-					<SettingsRow
-						label={m.common_toggle_theme()}
-						description={m.appearance_theme_current_user_description()}
-						layout="inline"
-					>
-						<ThemeModeSelector disabled={isReadOnly} />
-					</SettingsRow>
-
 					<!-- OLED Mode -->
 					<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
 						{#snippet helpText()}
@@ -295,23 +269,25 @@
 			<div class="space-y-4">
 				<h3 class="text-base font-semibold">{m.navigation_desktop_sidebar_title()}</h3>
 				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
-					<SettingsRow
-						label={m.navigation_sidebar_hover_expansion_label()}
-						description={m.navigation_sidebar_hover_expansion_description()}
-						layout="inline"
-					>
-						<Switch
-							id="sidebarHoverExpansion"
-							checked={$formInputs.sidebarHoverExpansion.value}
-							disabled={isReadOnly}
-							onCheckedChange={(checked) => {
-								$formInputs.sidebarHoverExpansion.value = checked;
-								if (sidebar) {
-									sidebar.setHoverExpansion(checked);
-								}
-							}}
-						/>
-					</SettingsRow>
+					{#if navigationLayoutStore.current !== 'header'}
+						<SettingsRow
+							label={m.navigation_sidebar_hover_expansion_label()}
+							description={m.navigation_sidebar_hover_expansion_description()}
+							layout="inline"
+						>
+							<Switch
+								id="sidebarHoverExpansion"
+								checked={$formInputs.sidebarHoverExpansion.value}
+								disabled={isReadOnly}
+								onCheckedChange={(checked) => {
+									$formInputs.sidebarHoverExpansion.value = checked;
+									if (sidebar) {
+										sidebar.setHoverExpansion(checked);
+									}
+								}}
+							/>
+						</SettingsRow>
+					{/if}
 
 					<!-- Keyboard Shortcuts -->
 					<SettingsRow

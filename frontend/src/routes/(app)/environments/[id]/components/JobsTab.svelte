@@ -1,4 +1,6 @@
 <script lang="ts">
+	import DetailPanel from '$lib/components/resource-detail/detail-panel.svelte';
+	import DetailSectionCard from '$lib/components/detail-section-card.svelte';
 	import { SvelteSet } from 'svelte/reactivity';
 	import { jobScheduleService } from '$lib/services/job-schedule-service';
 	import { containerService } from '$lib/services/container-service';
@@ -6,7 +8,6 @@
 	import JobCard from '$lib/components/job-card/job-card.svelte';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import { m } from '$lib/paraglide/messages';
-	import * as Card from '$lib/components/ui/card';
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch';
 	import { Input } from '$lib/components/ui/input';
@@ -258,152 +259,142 @@
 	</ScrollArea.Root>
 {/snippet}
 
-<div class="space-y-6">
-	<Card.Root>
-		<Card.Header icon={JobsIcon}>
-			<div class="flex flex-col space-y-1.5">
-				<Card.Title>
-					<h2>{m.jobs_title()}</h2>
-				</Card.Title>
-				<Card.Description>{m.jobs_environment_scope_description()}</Card.Description>
+<DetailPanel>
+	<DetailSectionCard icon={JobsIcon} title={m.jobs_title()} description={m.jobs_environment_scope_description()}>
+		{#await jobsPromise}
+			<div class="flex h-32 items-center justify-center">
+				<Spinner class="size-8" />
 			</div>
-		</Card.Header>
-		<Card.Content class="p-4 sm:p-6">
-			{#await jobsPromise}
-				<div class="flex h-32 items-center justify-center">
-					<Spinner class="size-8" />
-				</div>
-			{:then jobsResponse}
-				{#if jobsResponse}
-					<div class="space-y-8">
-						{#each categories as category (category.id)}
-							{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
-							{#if categoryJobs.length > 0}
-								<div class="space-y-4">
-									<h3 class="text-muted-foreground text-sm font-semibold tracking-tight uppercase">
-										{category.label}
-									</h3>
-									<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
-										{#each categoryJobs as job (job.id)}
-											<JobCard
-												{job}
-												{environmentId}
-												isAgent={jobsResponse.isAgent}
-												onScheduleUpdate={loadJobs}
-												enabledOverride={getEnabledOverride(job)}
-											>
-												{#snippet headerAccessory()}
-													{#if job.id === 'image-polling'}
-														<Switch bind:checked={$formInputs.pollingEnabled.value} />
-													{:else if job.id === 'auto-update'}
-														<Switch bind:checked={$formInputs.autoUpdate.value} disabled={!$formInputs.pollingEnabled.value} />
-													{:else if job.id === 'scheduled-prune'}
-														<Switch bind:checked={$formInputs.scheduledPruneEnabled.value} />
-													{:else if job.id === 'vulnerability-scan'}
-														<Switch bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
-													{:else if job.id === 'auto-heal'}
-														<Switch bind:checked={$formInputs.autoHealEnabled.value} />
-													{/if}
-												{/snippet}
-
-												{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
-													<div class="border-border/20 space-y-3 border-t pt-3">
-														<div class="space-y-1">
-															<Label class="text-sm font-medium">
-																{m.auto_update_excluded_containers()}
-																{#await containersPromise then containers}
-																	<span class="text-muted-foreground ml-1 font-normal">
-																		({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
-																	</span>
-																{/await}
-															</Label>
-															<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
-														</div>
-
-														<div class="space-y-2">
-															<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
-															{@render ContainerExclusionList({
-																term: searchTerm,
-																mapItem: mapContainerToItem,
-																idPrefix: 'container-',
-																onToggle: toggleContainerExclusion
-															})}
-														</div>
-													</div>
+		{:then jobsResponse}
+			{#if jobsResponse}
+				<div class="space-y-8">
+					{#each categories as category (category.id)}
+						{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
+						{#if categoryJobs.length > 0}
+							<div class="space-y-4">
+								<h3 class="text-muted-foreground text-sm font-semibold tracking-tight uppercase">
+									{category.label}
+								</h3>
+								<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
+									{#each categoryJobs as job (job.id)}
+										<JobCard
+											{job}
+											{environmentId}
+											isAgent={jobsResponse.isAgent}
+											onScheduleUpdate={loadJobs}
+											enabledOverride={getEnabledOverride(job)}
+										>
+											{#snippet headerAccessory()}
+												{#if job.id === 'image-polling'}
+													<Switch bind:checked={$formInputs.pollingEnabled.value} />
+												{:else if job.id === 'auto-update'}
+													<Switch bind:checked={$formInputs.autoUpdate.value} disabled={!$formInputs.pollingEnabled.value} />
+												{:else if job.id === 'scheduled-prune'}
+													<Switch bind:checked={$formInputs.scheduledPruneEnabled.value} />
+												{:else if job.id === 'vulnerability-scan'}
+													<Switch bind:checked={$formInputs.vulnerabilityScanEnabled.value} />
+												{:else if job.id === 'auto-heal'}
+													<Switch bind:checked={$formInputs.autoHealEnabled.value} />
 												{/if}
+											{/snippet}
 
-												{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
-													<div class="border-border/20 space-y-3 border-t pt-3">
-														<div class="grid gap-3 sm:grid-cols-2">
-															<div class="space-y-1">
-																<Label for="auto-heal-max-restarts" class="text-sm font-medium"
-																	>{m.auto_heal_max_restarts_label()}</Label
-																>
-																<p class="text-muted-foreground text-xs">{m.auto_heal_max_restarts_description()}</p>
-																<Input
-																	id="auto-heal-max-restarts"
-																	type="number"
-																	min="1"
-																	class="h-8 w-full"
-																	bind:value={$formInputs.autoHealMaxRestarts.value}
-																/>
-															</div>
-															<div class="space-y-1">
-																<Label for="auto-heal-restart-window" class="text-sm font-medium"
-																	>{m.auto_heal_restart_window_label()}</Label
-																>
-																<p class="text-muted-foreground text-xs">{m.auto_heal_restart_window_description()}</p>
-																<Input
-																	id="auto-heal-restart-window"
-																	type="number"
-																	min="1"
-																	class="h-8 w-full"
-																	bind:value={$formInputs.autoHealRestartWindow.value}
-																/>
-															</div>
-														</div>
+											{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
+												<div class="border-border/20 space-y-3 border-t pt-3">
+													<div class="space-y-1">
+														<Label class="text-sm font-medium">
+															{m.auto_update_excluded_containers()}
+															{#await containersPromise then containers}
+																<span class="text-muted-foreground ml-1 font-normal">
+																	({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
+																</span>
+															{/await}
+														</Label>
+														<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
+													</div>
 
+													<div class="space-y-2">
+														<Input type="search" placeholder={m.jobs_search_containers()} class="h-8" bind:value={searchTerm} />
+														{@render ContainerExclusionList({
+															term: searchTerm,
+															mapItem: mapContainerToItem,
+															idPrefix: 'container-',
+															onToggle: toggleContainerExclusion
+														})}
+													</div>
+												</div>
+											{/if}
+
+											{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
+												<div class="border-border/20 space-y-3 border-t pt-3">
+													<div class="grid gap-3 sm:grid-cols-2">
 														<div class="space-y-1">
-															<Label class="text-sm font-medium">
-																{m.auto_heal_excluded_containers()}
-																{#await containersPromise then containers}
-																	<span class="text-muted-foreground ml-1 font-normal">
-																		({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
-																	</span>
-																{/await}
-															</Label>
-															<p class="text-muted-foreground text-xs">{m.auto_heal_exclude_description()}</p>
-														</div>
-
-														<div class="space-y-2">
+															<Label for="auto-heal-max-restarts" class="text-sm font-medium"
+																>{m.auto_heal_max_restarts_label()}</Label
+															>
+															<p class="text-muted-foreground text-xs">{m.auto_heal_max_restarts_description()}</p>
 															<Input
-																type="search"
-																placeholder={m.jobs_search_containers()}
-																class="h-8"
-																bind:value={autoHealSearchTerm}
+																id="auto-heal-max-restarts"
+																type="number"
+																min="1"
+																class="h-8 w-full"
+																bind:value={$formInputs.autoHealMaxRestarts.value}
 															/>
-															{@render ContainerExclusionList({
-																term: autoHealSearchTerm,
-																mapItem: mapContainerToAutoHealItem,
-																idPrefix: 'auto-heal-container-',
-																onToggle: toggleAutoHealContainerExclusion
-															})}
+														</div>
+														<div class="space-y-1">
+															<Label for="auto-heal-restart-window" class="text-sm font-medium"
+																>{m.auto_heal_restart_window_label()}</Label
+															>
+															<p class="text-muted-foreground text-xs">{m.auto_heal_restart_window_description()}</p>
+															<Input
+																id="auto-heal-restart-window"
+																type="number"
+																min="1"
+																class="h-8 w-full"
+																bind:value={$formInputs.autoHealRestartWindow.value}
+															/>
 														</div>
 													</div>
-												{/if}
-											</JobCard>
-										{/each}
-									</div>
+
+													<div class="space-y-1">
+														<Label class="text-sm font-medium">
+															{m.auto_heal_excluded_containers()}
+															{#await containersPromise then containers}
+																<span class="text-muted-foreground ml-1 font-normal">
+																	({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
+																</span>
+															{/await}
+														</Label>
+														<p class="text-muted-foreground text-xs">{m.auto_heal_exclude_description()}</p>
+													</div>
+
+													<div class="space-y-2">
+														<Input
+															type="search"
+															placeholder={m.jobs_search_containers()}
+															class="h-8"
+															bind:value={autoHealSearchTerm}
+														/>
+														{@render ContainerExclusionList({
+															term: autoHealSearchTerm,
+															mapItem: mapContainerToAutoHealItem,
+															idPrefix: 'auto-heal-container-',
+															onToggle: toggleAutoHealContainerExclusion
+														})}
+													</div>
+												</div>
+											{/if}
+										</JobCard>
+									{/each}
 								</div>
-							{/if}
-						{/each}
-					</div>
-				{/if}
-			{:catch error}
-				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
-					{(error instanceof Error ? error.message : '') || String(error)}
+							</div>
+						{/if}
+					{/each}
 				</div>
-			{/await}
-		</Card.Content>
-	</Card.Root>
-</div>
+			{/if}
+		{:catch error}
+			<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
+				{(error instanceof Error ? error.message : '') || String(error)}
+			</div>
+		{/await}
+	</DetailSectionCard>
+</DetailPanel>

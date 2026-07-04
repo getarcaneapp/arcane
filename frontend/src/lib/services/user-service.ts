@@ -44,6 +44,7 @@ class UserAPIService extends BaseAPIService {
 		locale?: string;
 		timeFormat?: TimeFormat;
 		fontSize?: number;
+		navigationLayout?: 'sidebar' | 'header';
 	}): Promise<User> {
 		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}
