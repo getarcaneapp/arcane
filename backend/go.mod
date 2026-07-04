@@ -56,7 +56,7 @@ require (
 	go.getarcane.app/builds v0.1.0
 	go.getarcane.app/sys/atomic v0.1.0
 	go.getarcane.app/sys/cgroup v0.1.0
-	go.getarcane.app/updater v0.4.0
+	go.getarcane.app/updater v0.5.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.53.0
 	golang.org/x/mod v0.37.0
@@ -115,7 +115,7 @@ require (
 	github.com/eclipse/paho.golang v0.23.0 // indirect
 	github.com/eiannone/keyboard v0.0.0-20220611211555-0d226195f203 // indirect
 	github.com/emirpasic/gods v1.18.1 // indirect
-	github.com/felixge/httpsnoop v1.0.4 // indirect
+	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
 	github.com/fvbommel/sortorder v1.1.0 // indirect
 	github.com/glebarez/go-sqlite v1.22.0 // indirect
