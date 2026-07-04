@@ -21,7 +21,7 @@ require (
 	github.com/danielgtaylor/huma/v2 v2.38.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.1+incompatible
-	github.com/docker/compose/v5 v5.2.0
+	github.com/docker/compose/v5 v5.3.0
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.1.0
