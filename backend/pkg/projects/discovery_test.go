@@ -241,3 +241,20 @@ func TestDiscoverProjectDirectories_SkipsUnreadableNestedSibling(t *testing.T) {
 	// tolerating a failure at the very end of the scan.
 	assert.Equal(t, []string{"project1"}, discoveredNamesInternal(discovered))
 }
+
+// TestDiscoverProjectDirectories_SkipsFilesystemSnapshotDirs verifies that
+// point-in-time copies inside filesystem snapshot/trash directories (e.g.
+// Synology BTRFS #snapshot) are never discovered as projects.
+func TestDiscoverProjectDirectories_SkipsFilesystemSnapshotDirs(t *testing.T) {
+	t.Parallel()
+
+	root := t.TempDir()
+	writeComposeFileInternal(t, filepath.Join(root, "arcane"))
+	writeComposeFileInternal(t, filepath.Join(root, "#snapshot", "GMT+10-2026.07.04-03.30.01", "arcane"))
+	writeComposeFileInternal(t, filepath.Join(root, "#recycle", "arcane"))
+	writeComposeFileInternal(t, filepath.Join(root, ".snapshots", "1", "arcane"))
+
+	discovered, err := DiscoverProjectDirectories(root, false, 0)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"arcane"}, discoveredNamesInternal(discovered))
+}

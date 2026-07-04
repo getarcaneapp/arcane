@@ -112,6 +112,13 @@
 		refetchOnMount: false
 	}));
 
+	// The file tree walk can be slow on large projects, so it loads lazily and
+	// never blocks navigation; +page.ts prefetches this key without awaiting.
+	const projectFilesQuery = createQuery(() => ({
+		queryKey: queryKeys.projects.files(envId, projectId),
+		queryFn: () => projectService.getProjectFiles(envId, projectId)
+	}));
+
 	const lifecycleSyncQuery = createQuery(() => {
 		const syncId = data.project?.gitOpsManagedBy;
 		return {
@@ -172,7 +179,11 @@
 		};
 	}
 
-	const project = $derived.by(() => withLoadedProjectFileContent(projectDetailQuery.data ?? data.project));
+	const project = $derived.by(() => {
+		const detail = projectDetailQuery.data ?? data.project;
+		if (!detail) return null;
+		return withLoadedProjectFileContent({ ...detail, ...(projectFilesQuery.data ?? {}) });
+	});
 	const projectImageRefs = $derived.by(() => getProjectImageRefs(project));
 	const serverName = $derived(project?.name ?? '');
 	const serverComposeContent = $derived(project?.composeContent ?? '');
@@ -514,7 +525,28 @@
 	async function syncProjectQueries(updatedProject: Project) {
 		const currentEnvId = envId ?? (await environmentStore.getCurrentEnvironmentId());
 
-		queryClient.setQueryData(queryKeys.projects.detail(currentEnvId, updatedProject.id), updatedProject);
+		// The save response is slim (no directory walks), so merge it into the
+		// cached detail instead of replacing it wholesale.
+		queryClient.setQueryData(
+			queryKeys.projects.detail(currentEnvId, updatedProject.id),
+			(old: Project | undefined) => ({ ...(old ?? {}), ...updatedProject }) as Project
+		);
+		if (updatedProject.projectFiles || updatedProject.fileTreeRevision) {
+			// A file-changes save returns a fresh tree + revision; sync it into the
+			// files cache so the next file save doesn't hit a revision conflict.
+			queryClient.setQueryData(
+				queryKeys.projects.files(currentEnvId, updatedProject.id),
+				(old: Project | undefined) =>
+					({
+						...(old ?? {}),
+						projectFiles: updatedProject.projectFiles,
+						fileTreeRevision: updatedProject.fileTreeRevision,
+						fileTreeTruncated: updatedProject.fileTreeTruncated
+					}) as Project
+			);
+		} else {
+			await queryClient.invalidateQueries({ queryKey: queryKeys.projects.files(currentEnvId, updatedProject.id) });
+		}
 		await Promise.all([
 			queryClient.invalidateQueries({ queryKey: ['projects', currentEnvId] }),
 			queryClient.invalidateQueries({ queryKey: queryKeys.projects.statusCounts(currentEnvId) })
@@ -556,9 +588,13 @@
 		if (!project?.id) return;
 		if (lastPrefsProjectId === project.id) return;
 
-		lastPrefsProjectId = project.id;
 		const prefsStorageKey = `arcane.compose.ui:${project.id}`;
 		const hadStoredPrefs = sessionStorage.getItem(prefsStorageKey) !== null;
+		// The tree/classic auto-detect needs the lazily loaded file tree; without
+		// stored prefs, wait for the files query to settle before finalizing.
+		if (!hadStoredPrefs && !(projectFilesQuery.isSuccess || projectFilesQuery.isError)) return;
+
+		lastPrefsProjectId = project.id;
 		prefs = new PersistedState<ComposeUIPrefs>(prefsStorageKey, defaultComposeUIPrefs, {
 			storage: 'session',
 			syncTabs: false

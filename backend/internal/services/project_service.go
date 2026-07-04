@@ -10,7 +10,9 @@ import (
 	"log/slog"
 	"maps"
 	"os"
+	"path"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -1448,7 +1450,7 @@ func (s *ProjectService) enrichWithProjectFiles(ctx context.Context, projectPath
 		return
 	}
 
-	files, revision, err := projects.ReadProjectFileTree(projectPath, s.config.ProjectFileTreeMaxDepth, s.config.ProjectScanSkipDirs, composeFileName)
+	files, revision, truncated, err := projects.ReadProjectFileTree(projectPath, s.config.ProjectFileTreeMaxDepth, s.config.ProjectScanSkipDirs, composeFileName, projects.DefaultProjectFileTreeMaxEntries)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to scan project file tree", "error", err, "path", projectPath)
 		return
@@ -1456,6 +1458,7 @@ func (s *ProjectService) enrichWithProjectFiles(ctx context.Context, projectPath
 
 	resp.ProjectFiles = files
 	resp.FileTreeRevision = revision
+	resp.FileTreeTruncated = truncated
 }
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
@@ -1704,6 +1707,14 @@ func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map
 		}
 		if isInternalScratchProjectInternal(p) {
 			tempDeletions = append(tempDeletions, projectCleanupDecision{project: p, reason: "removed internal Arcane scratch record (project-update/gitops temp dir)"})
+			continue
+		}
+		// Projects inside filesystem snapshot/trash directories (e.g. BTRFS
+		// #snapshot) are point-in-time copies mistakenly registered by earlier
+		// discovery passes. The decision is name-based, not missing-path-based,
+		// so it bypasses the mass-wipe guard like the scratch records above.
+		if rel := s.getProjectRelativePathInternal(projectsDir, p.Path); rel != "" && projects.PathContainsSnapshotDirectory(rel) {
+			tempDeletions = append(tempDeletions, projectCleanupDecision{project: p, reason: "removed project inside a filesystem snapshot/trash directory"})
 			continue
 		}
 		candidates++
@@ -2880,7 +2891,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 
 	renameJournal := s.prepareProjectRenameJournalInternal(&proj, name, projectsDirectory, volumeMigration)
 
-	backupPath, backupSkipped, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, composeContent, envContent, fileChanges)
+	backup, cleanupBackup, err := s.prepareProjectUpdateBackupInternal(ctx, projectsDirectory, proj.Path, composeContent, envContent, fileChanges)
 	if err != nil {
 		return nil, err
 	}
@@ -2895,7 +2906,7 @@ func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, na
 	if err := s.withProjectRenameRollback(ctx, &proj, &projectStateCommitted, func() error {
 		return s.applyProjectUpdateWithRenameJournalInternal(ctx, &proj, name, projectsDirectory, composeContent, envContent, fileTreeRevision, fileChanges, volumeMigration, renameJournal, &journalActive, &projectStateCommitted)
 	}); err != nil {
-		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backupPath, backupSkipped, &journalActive, projectStateCommitted, err)
+		err = s.handleProjectUpdateFailureInternal(ctx, projectID, projectsDirectory, &proj, backup, &journalActive, projectStateCommitted, err)
 		return nil, err
 	}
 
@@ -2927,17 +2938,22 @@ func resolveAuthoritativeProjectNameInternal(proj *models.Project, name *string,
 	return name
 }
 
-func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context, projectsDirectory, projectPath string, composeContent, envContent *string, fileChanges []project.ProjectFileChange) (string, []string, func(), error) {
+func (s *ProjectService) prepareProjectUpdateBackupInternal(ctx context.Context, projectsDirectory, projectPath string, composeContent, envContent *string, fileChanges []project.ProjectFileChange) (*projects.ProjectUpdateBackup, func(), error) {
 	if composeContent == nil && envContent == nil && len(fileChanges) == 0 {
-		return "", nil, func() {}, nil
+		return nil, func() {}, nil
 	}
 
-	backupPath, skipped, err := s.backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath)
+	scope := projectUpdateBackupScopeInternal(projectPath, composeContent, envContent, fileChanges)
+	if scope.IsEmpty() {
+		return nil, func() {}, nil
+	}
+
+	backup, err := s.backupProjectDirectoryInternal(ctx, projectsDirectory, projectPath, scope)
 	if err != nil {
-		return "", nil, nil, err
+		return nil, nil, err
 	}
 
-	return backupPath, skipped, func() { _ = os.RemoveAll(backupPath) }, nil
+	return backup, func() { _ = os.RemoveAll(backup.BackupDir) }, nil
 }
 
 func (s *ProjectService) startProjectRenameJournalInternal(ctx context.Context, journal *projectRenameJournalInternal) (bool, error) {
@@ -3053,13 +3069,13 @@ func (s *ProjectService) completeProjectRenameJournalForUpdateInternal(ctx conte
 	*journalActive = false
 }
 
-func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backupPath string, backupSkipped []string, journalActive *bool, projectStateCommitted bool, err error) error {
+func (s *ProjectService) handleProjectUpdateFailureInternal(ctx context.Context, projectID, projectsDirectory string, proj *models.Project, backup *projects.ProjectUpdateBackup, journalActive *bool, projectStateCommitted bool, err error) error {
 	if projectStateCommitted {
 		return err
 	}
 
-	if backupPath != "" {
-		if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backupPath, backupSkipped); restoreErr != nil {
+	if backup != nil {
+		if restoreErr := s.restoreProjectDirectoryBackupInternal(ctx, projectsDirectory, proj.Path, backup); restoreErr != nil {
 			err = errors.Join(err, fmt.Errorf("failed to restore project files after update failure: %w", restoreErr))
 		}
 	}
@@ -3308,6 +3324,7 @@ func (s *ProjectService) projectFileApplyOptionsInternal(ctx context.Context, pr
 	return projects.ProjectFileApplyOptions{
 		ExpectedRevision: strings.TrimSpace(expectedRevision),
 		MaxDepth:         s.config.ProjectFileTreeMaxDepth,
+		MaxEntries:       projects.DefaultProjectFileTreeMaxEntries,
 		SkipDirectories:  s.config.ProjectScanSkipDirs,
 		ComposeFileName:  composeFileName,
 	}
@@ -3328,41 +3345,124 @@ func wrapProjectFileErrorInternal(err error) error {
 	}
 }
 
-func (s *ProjectService) backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, projectPath string) (string, []string, error) {
+// projectUpdateBackupScopeInternal derives the exact set of paths an update
+// can mutate so the backup never copies out-of-scope data directories.
+// Changes that fail normalization are skipped: the apply step rejects them
+// before mutating anything, so there is nothing to roll back for them.
+func projectUpdateBackupScopeInternal(projectPath string, composeContent, envContent *string, fileChanges []project.ProjectFileChange) projects.ProjectUpdateBackupScope {
+	scope := projects.ProjectUpdateBackupScope{
+		TopLevelFiles: composeContent != nil || envContent != nil,
+	}
+
+	for _, change := range fileChanges {
+		rel, err := projects.NormalizeProjectRelativePath(change.RelativePath)
+		if err != nil {
+			continue
+		}
+
+		var dest string
+		switch change.Operation {
+		case project.FileOpRename:
+			newName, nameErr := projects.ValidateProjectFileName(change.NewName)
+			if nameErr != nil {
+				continue
+			}
+			dest = path.Join(path.Dir(rel), newName)
+		case project.FileOpMove:
+			parent := strings.TrimSpace(change.NewParentPath)
+			if parent != "" {
+				normalizedParent, parentErr := projects.NormalizeProjectRelativePath(parent)
+				if parentErr != nil {
+					continue
+				}
+				parent = normalizedParent
+			}
+			dest = path.Join(parent, path.Base(rel))
+		default:
+			scope.Paths = append(scope.Paths, rel)
+			continue
+		}
+
+		// Rename/move of an existing directory rolls back via an inverse
+		// rename — never a copy of a potentially huge tree.
+		if info, statErr := os.Lstat(filepath.Join(projectPath, filepath.FromSlash(rel))); statErr == nil && info.IsDir() {
+			scope.RenamedDirs = append(scope.RenamedDirs, [2]string{rel, dest})
+		} else {
+			scope.Paths = append(scope.Paths, rel, dest)
+		}
+	}
+
+	demoteInterferingRenamedDirsInternal(&scope)
+	return scope
+}
+
+// demoteInterferingRenamedDirsInternal downgrades a directory rename to a full
+// copy when another change in the same batch touches its source or destination
+// subtree (e.g. rename a -> b then delete b, or update_file b/x). The inverse
+// rename alone cannot roll those back: the destination may be mutated or gone
+// by the time the batch fails, so the original directory must be backed up.
+func demoteInterferingRenamedDirsInternal(scope *projects.ProjectUpdateBackupScope) {
+	overlaps := func(a, b string) bool {
+		return a == b || strings.HasPrefix(a, b+"/") || strings.HasPrefix(b, a+"/")
+	}
+	touchesPair := func(p string, pair [2]string) bool {
+		return overlaps(p, pair[0]) || overlaps(p, pair[1])
+	}
+
+	for i := 0; i < len(scope.RenamedDirs); i++ {
+		pair := scope.RenamedDirs[i]
+		conflict := slices.ContainsFunc(scope.Paths, func(p string) bool { return touchesPair(p, pair) })
+		if !conflict {
+			for j, other := range scope.RenamedDirs {
+				if j != i && (touchesPair(other[0], pair) || touchesPair(other[1], pair)) {
+					conflict = true
+					break
+				}
+			}
+		}
+		if conflict {
+			scope.Paths = append(scope.Paths, pair[0], pair[1])
+			scope.RenamedDirs = slices.Delete(scope.RenamedDirs, i, i+1)
+			i--
+		}
+	}
+}
+
+func (s *ProjectService) backupProjectDirectoryInternal(ctx context.Context, projectsDirectory, projectPath string, scope projects.ProjectUpdateBackupScope) (*projects.ProjectUpdateBackup, error) {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to resolve project path: %w", err)
+		return nil, fmt.Errorf("failed to resolve project path: %w", err)
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
 	rootAbs, err := filepath.Abs(projectsDirectory)
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to resolve projects directory: %w", err)
+		return nil, fmt.Errorf("failed to resolve projects directory: %w", err)
 	}
 	rootAbs = filepath.Clean(rootAbs)
 	if !projects.IsSafeSubdirectory(rootAbs, projectAbs) || projectAbs == rootAbs {
-		return "", nil, errors.New("project path is outside projects directory")
+		return nil, errors.New("project path is outside projects directory")
 	}
 
 	backupPath, err := os.MkdirTemp(projectsDirectory, ".project-update-backup-*")
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create project backup directory: %w", err)
+		return nil, fmt.Errorf("failed to create project backup directory: %w", err)
 	}
 	// Tolerate files Arcane cannot read (e.g. foreign-owned secrets): skip them
 	// in the backup so an unrelated unreadable file can't block the whole save.
-	// The skipped paths are returned so the rollback restore can preserve them.
-	skipped, err := projects.CopyDirectoryContentsTolerant(projectAbs, backupPath)
+	// The skipped paths are recorded so the rollback restore can preserve them.
+	backup, err := projects.BackupProjectUpdateScope(projectAbs, backupPath, scope)
 	if err != nil {
 		_ = os.RemoveAll(backupPath)
-		return "", nil, fmt.Errorf("failed to backup project files: %w", err)
+		return nil, fmt.Errorf("failed to backup project files: %w", err)
 	}
-	if len(skipped) > 0 {
-		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", skipped)
+	if len(backup.Skipped) > 0 {
+		slog.WarnContext(ctx, "skipped unreadable files while backing up project; they will be left untouched on rollback", "projectPath", projectAbs, "skipped", backup.Skipped)
 	}
-	return backupPath, skipped, nil
+	return backup, nil
 }
 
-func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath, backupPath string, skipped []string) error {
+func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Context, projectsDirectory, projectPath string, backup *projects.ProjectUpdateBackup) error {
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
 		return fmt.Errorf("failed to resolve project path: %w", err)
@@ -3378,14 +3478,14 @@ func (s *ProjectService) restoreProjectDirectoryBackupInternal(ctx context.Conte
 		return errors.New("project path is outside projects directory")
 	}
 
-	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backupPath)
+	slog.DebugContext(ctx, "restoring project directory backup", "path", projectAbs, "backup", backup.BackupDir)
 	if err := os.MkdirAll(projectAbs, common.DirPerm); err != nil {
 		return fmt.Errorf("failed to recreate project directory: %w", err)
 	}
-	// Mirror the backup back over the live directory rather than wiping it: files
+	// Restore only the paths the update could have mutated, in place: files
 	// that were skipped during backup (unreadable, e.g. foreign-owned secrets)
-	// are absent from the backup and must be preserved, not deleted.
-	if err := projects.MirrorDirectoryContentsPreserving(backupPath, projectAbs, skipped); err != nil {
+	// are preserved, and out-of-scope files are never touched.
+	if err := projects.RestoreProjectUpdateBackup(projectAbs, backup); err != nil {
 		return fmt.Errorf("failed to restore project backup: %w", err)
 	}
 	return nil

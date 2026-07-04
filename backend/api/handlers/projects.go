@@ -965,7 +965,18 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.AllDetails())
+	// Skip the recursive directory walks on save: the file tree is only
+	// re-read when the save actually staged file changes (fresh revision),
+	// and the frontend fetches /files lazily otherwise.
+	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeProjectFiles:    len(input.Body.FileChanges) > 0,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
@@ -1017,7 +1028,14 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.AllDetails())
+	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}

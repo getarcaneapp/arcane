@@ -24,6 +24,10 @@ import (
 const (
 	MaxManagedProjectFileBytes  = 1024 * 1024
 	ProjectFileTreeUseScanDepth = -1
+	// DefaultProjectFileTreeMaxEntries bounds the file-tree walk so a project
+	// with a huge data directory cannot stall the details load. Not a user
+	// setting; pass 0 to use it.
+	DefaultProjectFileTreeMaxEntries = 2000
 )
 
 var (
@@ -36,90 +40,46 @@ var (
 type ProjectFileApplyOptions struct {
 	ExpectedRevision string
 	MaxDepth         int
+	MaxEntries       int
 	SkipDirectories  string
 	ComposeFileName  string
 }
 
-func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, composeFileName string) ([]project.ProjectFile, string, error) {
+func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, composeFileName string, maxEntries int) ([]project.ProjectFile, string, bool, error) {
 	if maxDepth == ProjectFileTreeUseScanDepth {
 		maxDepth = config.LoadProjectFilesConfig().ProjectFileTreeMaxDepth
+	}
+	if maxEntries <= 0 {
+		maxEntries = DefaultProjectFileTreeMaxEntries
 	}
 
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("resolve project path: %w", err)
+		return nil, "", false, fmt.Errorf("resolve project path: %w", err)
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
 	root, err := os.OpenRoot(projectAbs)
 	if err != nil {
-		return nil, "", fmt.Errorf("open project directory: %w", err)
+		return nil, "", false, fmt.Errorf("open project directory: %w", err)
 	}
 	defer func() { _ = root.Close() }()
 
-	protected := ProtectedProjectFilePaths(composeFileName)
-	skipDirs := projectScanSkipDirectorySetInternal(skipDirectories)
-	files := []project.ProjectFile{}
-	revisionHash := sha256.New()
-
-	err = fs.WalkDir(root.FS(), ".", func(rel string, entry fs.DirEntry, walkErr error) error {
-		if walkErr != nil {
-			return walkErr
-		}
-		if rel == "." {
-			return nil
-		}
-
-		depth := strings.Count(rel, "/") + 1
-		if depth > maxDepth {
-			if entry.IsDir() {
-				return fs.SkipDir
-			}
-			return nil
-		}
-
-		if entry.Type()&fs.ModeSymlink != 0 {
-			return nil
-		}
-		if entry.IsDir() && skipDirs[entry.Name()] {
-			return fs.SkipDir
-		}
-
-		info, err := entry.Info()
-		if err != nil {
-			return fmt.Errorf("inspect project file: %w", err)
-		}
-
-		// fs.WalkDir visits entries in deterministic lexical order, so hashing
-		// in visit order yields a stable revision.
-		isProtected := protected[rel]
-		writeProjectFileRevisionEntryInternal(revisionHash, rel, info, entry.IsDir(), isProtected)
-
-		if isProtected {
-			return nil
-		}
-
-		size := info.Size()
-		if entry.IsDir() {
-			size = 0
-		}
-		files = append(files, project.ProjectFile{
-			Path:         filepath.Join(projectAbs, filepath.FromSlash(rel)),
-			RelativePath: rel,
-			Name:         entry.Name(),
-			IsDirectory:  entry.IsDir(),
-			Size:         size,
-			ModTime:      info.ModTime(),
-			Protected:    false,
-		})
-
-		return nil
-	})
-	if err != nil {
-		return nil, "", err
+	walker := &projectFileTreeWalkerInternal{
+		projectAbs:   projectAbs,
+		maxDepth:     maxDepth,
+		maxEntries:   maxEntries,
+		protected:    ProtectedProjectFilePaths(composeFileName),
+		skipDirs:     projectScanSkipDirectorySetInternal(skipDirectories),
+		files:        []project.ProjectFile{},
+		revisionHash: sha256.New(),
 	}
 
-	slices.SortFunc(files, func(a, b project.ProjectFile) int {
+	if err := fs.WalkDir(root.FS(), ".", walker.visit); err != nil {
+		return nil, "", false, err
+	}
+
+	slices.SortFunc(walker.files, func(a, b project.ProjectFile) int {
 		if a.IsDirectory != b.IsDirectory {
 			if a.IsDirectory {
 				return -1
@@ -129,7 +89,82 @@ func ReadProjectFileTree(projectPath string, maxDepth int, skipDirectories, comp
 		return strings.Compare(a.RelativePath, b.RelativePath)
 	})
 
-	return files, hex.EncodeToString(revisionHash.Sum(nil)), nil
+	return walker.files, hex.EncodeToString(walker.revisionHash.Sum(nil)), walker.truncated, nil
+}
+
+type projectFileTreeWalkerInternal struct {
+	projectAbs   string
+	maxDepth     int
+	maxEntries   int
+	protected    map[string]bool
+	skipDirs     map[string]bool
+	files        []project.ProjectFile
+	revisionHash hash.Hash
+	entryCount   int
+	truncated    bool
+}
+
+func (w *projectFileTreeWalkerInternal) visit(rel string, entry fs.DirEntry, walkErr error) error {
+	if walkErr != nil {
+		return walkErr
+	}
+	if rel == "." {
+		return nil
+	}
+
+	// The walk visits entries in deterministic lexical order, so cutting
+	// off after maxEntries still yields a stable revision as long as the
+	// concurrency compare walk uses the same cap.
+	if w.entryCount >= w.maxEntries {
+		w.truncated = true
+		return fs.SkipAll
+	}
+
+	depth := strings.Count(rel, "/") + 1
+	if depth > w.maxDepth {
+		if entry.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
+	}
+
+	if entry.Type()&fs.ModeSymlink != 0 {
+		return nil
+	}
+	if entry.IsDir() && w.skipDirs[entry.Name()] {
+		return fs.SkipDir
+	}
+
+	info, err := entry.Info()
+	if err != nil {
+		return fmt.Errorf("inspect project file: %w", err)
+	}
+
+	// fs.WalkDir visits entries in deterministic lexical order, so hashing
+	// in visit order yields a stable revision.
+	isProtected := w.protected[rel]
+	writeProjectFileRevisionEntryInternal(w.revisionHash, rel, info, entry.IsDir(), isProtected)
+	w.entryCount++
+
+	if isProtected {
+		return nil
+	}
+
+	size := info.Size()
+	if entry.IsDir() {
+		size = 0
+	}
+	w.files = append(w.files, project.ProjectFile{
+		Path:         filepath.Join(w.projectAbs, filepath.FromSlash(rel)),
+		RelativePath: rel,
+		Name:         entry.Name(),
+		IsDirectory:  entry.IsDir(),
+		Size:         size,
+		ModTime:      info.ModTime(),
+		Protected:    false,
+	})
+
+	return nil
 }
 
 func ApplyProjectFileDrafts(projectPath string, drafts []project.ProjectFileDraft, opts ProjectFileApplyOptions) error {
@@ -163,7 +198,7 @@ func ApplyProjectFileChanges(projectPath string, changes []project.ProjectFileCh
 	}
 
 	if opts.ExpectedRevision != "" {
-		_, currentRevision, err := ReadProjectFileTree(projectPath, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName)
+		_, currentRevision, _, err := ReadProjectFileTree(projectPath, opts.MaxDepth, opts.SkipDirectories, opts.ComposeFileName, opts.MaxEntries)
 		if err != nil {
 			return fmt.Errorf("read project file tree revision: %w", err)
 		}
