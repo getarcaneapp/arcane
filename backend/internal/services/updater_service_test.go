@@ -406,7 +406,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		registrySvc := NewContainerRegistryService(db, nil, NewKVService(db))
 		imageSvc := NewImageService(db, dockerSvc, registrySvc, nil, nil, NewEventService(db, nil, nil))
 		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
-		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil).
+		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, nil).
 			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
 		svc := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
 		var progress bytes.Buffer

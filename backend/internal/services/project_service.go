@@ -20,6 +20,7 @@ import (
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/moby/moby/api/types/container"
+	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 	"gorm.io/gorm"
 
@@ -54,6 +55,7 @@ type ProjectService struct {
 	buildService                *BuildService
 	lifecycleService            *LifecycleService
 	kvService                   *KVService
+	containerRegistryService    *ContainerRegistryService
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
 
@@ -71,17 +73,18 @@ type composeCacheEntry struct {
 	project       *composetypes.Project
 }
 
-func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, lifecycleService *LifecycleService, cfg *config.Config) *ProjectService {
+func NewProjectService(db *database.DB, settingsService *SettingsService, eventService *EventService, imageService *ImageService, dockerService *DockerClientService, buildService *BuildService, lifecycleService *LifecycleService, containerRegistryService *ContainerRegistryService, cfg *config.Config) *ProjectService {
 	return &ProjectService{
-		db:               db,
-		settingsService:  settingsService,
-		eventService:     eventService,
-		imageService:     imageService,
-		dockerService:    dockerService,
-		buildService:     buildService,
-		lifecycleService: lifecycleService,
-		config:           cfg,
-		composeCache:     cache.NewKeyed[string, composeCacheEntry](),
+		db:                       db,
+		settingsService:          settingsService,
+		eventService:             eventService,
+		imageService:             imageService,
+		dockerService:            dockerService,
+		buildService:             buildService,
+		lifecycleService:         lifecycleService,
+		containerRegistryService: containerRegistryService,
+		config:                   cfg,
+		composeCache:             cache.NewKeyed[string, composeCacheEntry](),
 	}
 }
 
@@ -112,6 +115,20 @@ func (s *ProjectService) resolveRegistryCredentialsInternal(ctx context.Context)
 	}
 
 	return credentials, nil
+}
+
+func (s *ProjectService) composeRegistryAuthConfigsInternal(ctx context.Context) map[string]dockerregistry.AuthConfig {
+	if s == nil || s.containerRegistryService == nil {
+		return nil
+	}
+
+	authConfigs, err := s.containerRegistryService.GetAllRegistryAuthConfigs(ctx)
+	if err != nil {
+		slog.WarnContext(ctx, "failed to load registry auth for compose pulls", "error", err)
+		return nil
+	}
+
+	return authConfigs
 }
 
 func (s *ProjectService) getPathMapperInternal(ctx context.Context) *projects.PathMapper {
@@ -798,7 +815,7 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 
 	// 5. Up specific services
 	writeProjectProgressInternal(ctx, "Starting selected services", 70, "up")
-	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true); err != nil {
+	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return fmt.Errorf("failed to up services: %w", err)
 	}
@@ -2094,8 +2111,14 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return fmt.Errorf("failed to load compose project in %s: %w", projectFromDb.Path, derr)
 	}
 
+	credentials, cerr := s.resolveRegistryCredentialsInternal(ctx)
+	if cerr != nil {
+		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
+		return fmt.Errorf("resolve registry credentials: %w", cerr)
+	}
+
 	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, nil, &user, resolvedPullPolicy); perr != nil {
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, credentials, &user, resolvedPullPolicy); perr != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return fmt.Errorf("failed to prepare project images for deploy: %w", perr)
 	}
@@ -2105,7 +2128,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 
 	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, project, nil, removeOrphans, forceRecreate); err != nil {
+	if err := projects.ComposeUp(ctx, project, nil, removeOrphans, forceRecreate, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
 		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
@@ -2333,7 +2356,11 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		slog.DebugContext(ctx, "failed to write redeploy pull progress", "error", writeErr)
 	}
 
-	if err := s.PullProjectImages(ctx, projectID, progressWriter, user, nil); err != nil {
+	credentials, cerr := s.resolveRegistryCredentialsInternal(ctx)
+	if cerr != nil {
+		slog.WarnContext(ctx, "failed to resolve registry credentials for redeploy pull", "error", cerr)
+	}
+	if err := s.PullProjectImages(ctx, projectID, progressWriter, user, credentials); err != nil {
 		slog.WarnContext(ctx, "failed to pull project images", "error", err)
 	}
 

@@ -156,7 +156,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, nil, config.Load())
+	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
