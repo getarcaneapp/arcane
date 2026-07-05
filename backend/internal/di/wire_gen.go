@@ -44,7 +44,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	gitRepositoryService := provideGitRepositoryServiceInternal(db, cfg, eventService, settingsService)
 	buildService := services.NewBuildService(db, settingsService, dockerClientService, containerRegistryService, gitRepositoryService, eventService)
 	lifecycleService := services.NewLifecycleService(db, settingsService, eventService, dockerClientService)
-	projectService := provideProjectServiceInternal(db, settingsService, eventService, imageService, dockerClientService, buildService, lifecycleService, kvService, environmentService, cfg)
+	projectService := provideProjectServiceInternal(db, settingsService, eventService, imageService, dockerClientService, buildService, lifecycleService, kvService, containerRegistryService, environmentService, cfg)
 	jobService := services.NewJobService(db, settingsService, cfg)
 	settingsSearchService := services.NewSettingsSearchService()
 	customizeSearchService := services.NewCustomizeSearchService()

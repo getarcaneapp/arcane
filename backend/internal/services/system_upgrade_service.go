@@ -12,6 +12,10 @@ import (
 	"sync/atomic"
 	"time"
 
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -22,9 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 	updatertypes "go.getarcane.app/updater/types"
 )
@@ -197,7 +199,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 			return projects.GetHostPathForContainerPath(ctx, dockerClient, containerPath)
 		},
 		func() bool {
-			_, err := dockerutils.GetCurrentContainerID()
+			_, err := cgroup.CurrentContainerID()
 			return err == nil
 		},
 	)
@@ -345,7 +347,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 
 // getCurrentContainerID detects if we're running in Docker and returns container ID
 func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
-	id, err := dockerutils.GetCurrentContainerID()
+	id, err := cgroup.CurrentContainerID()
 	if err != nil {
 		return "", &common.NotRunningInDockerError{}
 	}

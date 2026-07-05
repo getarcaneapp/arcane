@@ -7,7 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	glsqlite "github.com/glebarez/sqlite"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -111,7 +111,7 @@ func TestUpsertPendingResult(t *testing.T) {
 
 func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	ctx := context.Background()
-	gormDB, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}
@@ -160,7 +160,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 // and complete the job, NOT re-run the agents phase.
 func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 	ctx := context.Background()
-	gormDB, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 
 	db := &database.DB{DB: gormDB}

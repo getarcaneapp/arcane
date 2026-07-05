@@ -5,10 +5,11 @@ import (
 	"os"
 	"strings"
 
-	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"go.getarcane.app/sys/cgroup"
 )
 
 // GetCurrentContainerMounts inspects Arcane's own container and returns its bind and
@@ -21,7 +22,7 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	}
 
 	// Prefer robust current-container detection and fall back to hostname.
-	inspectTarget, err := getCurrentContainerInspectTargetInternal(dockerutil.GetCurrentContainerID, os.Hostname)
+	inspectTarget, err := getCurrentContainerInspectTargetInternal(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}

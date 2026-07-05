@@ -1,3 +1,43 @@
+## v2.3.2
+
+### Bug fixes
+
+* dialog now owning there own close states, cause mutiple to show at one time([d253fc5](https://github.com/getarcaneapp/arcane/commit/d253fc5d7c081ca43c1385d13da2e127d8bc9e3e) by @kmendell)
+* hide phantom projects from showing in the frontend when deleted ([#3136](https://github.com/getarcaneapp/arcane/pull/3136) by @kmendell)
+* keep modals and menus opaque in dark mode when Glass & Blur is off ([#3139](https://github.com/getarcaneapp/arcane/pull/3139) by @othyn)
+* nested compose files discovery permission issues ([#3096](https://github.com/getarcaneapp/arcane/pull/3096) by @kmendell)
+* ntfy tls regression, image update notifcation flag not be recognized ([#3143](https://github.com/getarcaneapp/arcane/pull/3143) by @kmendell)
+* notification sending rework for reliability ([#3144](https://github.com/getarcaneapp/arcane/pull/3144) by @kmendell)
+* use explicit context for notifications([6987b5e](https://github.com/getarcaneapp/arcane/commit/6987b5e046c3a00c54c88ee54219dc8f79d87c1e) by @kmendell)
+* preserve .env overrides during git directory sync ([#3095](https://github.com/getarcaneapp/arcane/pull/3095) by @kmendell)
+* use correct compose name so services match the project ([#3156](https://github.com/getarcaneapp/arcane/pull/3156) by @kmendell)
+* pass registry auth to compose-initiated pulls during up ([#3162](https://github.com/getarcaneapp/arcane/pull/3162) by @kmendell)
+
+### Documentation
+
+* add development startup troubleshooting ([#3129](https://github.com/getarcaneapp/arcane/pull/3129) by @dashitongzhi)
+
+### Dependencies
+
+* bump github.com/pressly/goose/v3 from 3.27.1 to 3.27.2 in /backend ([#3153](https://github.com/getarcaneapp/arcane/pull/3153) by @dependabot[bot])
+* bump github.com/klauspost/compress from 1.18.6 to 1.19.0 in /backend ([#3155](https://github.com/getarcaneapp/arcane/pull/3155) by @dependabot[bot])
+* bump github.com/docker/compose/v5 from 5.2.0 to 5.3.0 in /backend ([#3154](https://github.com/getarcaneapp/arcane/pull/3154) by @dependabot[bot])
+* bump github.com/getarcaneapp/arcane/types/v2 from 2.2.0 to 2.3.0 in /cli ([#3150](https://github.com/getarcaneapp/arcane/pull/3150) by @dependabot[bot])
+* bump the aws-sdk-go-v2 group in /backend with 3 updates ([#3151](https://github.com/getarcaneapp/arcane/pull/3151) by @dependabot[bot])
+* bump google.golang.org/grpc from 1.81.1 to 1.82.0 in /backend ([#3152](https://github.com/getarcaneapp/arcane/pull/3152) by @dependabot[bot])
+* bump charm.land/lipgloss/v2 from 2.0.4 to 2.0.5 in /cli ([#3149](https://github.com/getarcaneapp/arcane/pull/3149) by @dependabot[bot])
+* bump go.getarcane.app/updater to v0.5.0([8b21564](https://github.com/getarcaneapp/arcane/commit/8b215643a42a13011ce214c67a9effc050971ab6) by @kmendell)
+
+### Other
+
+* cleanup duplicate frontend code ([#3138](https://github.com/getarcaneapp/arcane/pull/3138) by @kmendell)
+* streamline project service with better reusable functions ([#3157](https://github.com/getarcaneapp/arcane/pull/3157) by @kmendell)
+* move cgroup logic to go.getarcane.app/sys/cgroup ([#3159](https://github.com/getarcaneapp/arcane/pull/3159) by @kmendell)
+
+
+
+**Full Changelog**: https://github.com/getarcaneapp/arcane/compare/v2.3.1...v2.3.2
+
 ## v2.3.1
 
 ### Bug fixes

@@ -17,17 +17,18 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
 
+	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/logstream"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"go.getarcane.app/streams/logs"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc"
 )
 
@@ -52,7 +53,7 @@ func Bootstrap(ctx context.Context) error {
 	SetupSlogLogger(cfg)
 	// Tee all slog output into the in-memory ring buffer that powers the
 	// diagnostics live log tail.
-	slog.SetDefault(slog.New(logstream.NewSlogHandler(slog.Default().Handler(), logstream.Default())))
+	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
@@ -113,6 +114,21 @@ func Bootstrap(ctx context.Context) error {
 	return nil
 }
 
+// isWeakProductionEncryptionKeyInternal reports whether an explicit
+// ENCRYPTION_KEY is an unprefixed passphrase shorter than 32 characters in
+// production. libcrypto derives a key from any non-empty passphrase, so this
+// preserves the historical fail-fast rejection of low-entropy production keys.
+func isWeakProductionEncryptionKeyInternal(encryptionKey, environment string, agentMode bool) bool {
+	if environment != "production" || agentMode {
+		return false
+	}
+	key := strings.TrimSpace(encryptionKey)
+	if key == "" || strings.HasPrefix(key, "hex:") || strings.HasPrefix(key, "base64:") {
+		return false
+	}
+	return len(strings.TrimPrefix(key, "raw:")) < 32
+}
+
 func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	if cfg.HTTPClientTimeout > 0 {
 		return httputils.NewHTTPClientWithTimeout(time.Duration(cfg.HTTPClientTimeout) * time.Second)
@@ -138,6 +154,10 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 	startup.EnsureEncryptionKey(appCtx, runtimeCfg, appServices.Settings.EnsureEncryptionKey)
 	cfg.AgentToken = runtimeCfg.AgentToken
 	cfg.EncryptionKey = runtimeCfg.EncryptionKey
+
+	if isWeakProductionEncryptionKeyInternal(cfg.EncryptionKey, string(cfg.Environment), cfg.AgentMode) {
+		panic("ENCRYPTION_KEY passphrase must be at least 32 characters in production (or use a hex:/base64: encoded 32-byte key)")
+	}
 
 	libcrypto.InitEncryption(&libcrypto.Config{
 		EncryptionKey: cfg.EncryptionKey,

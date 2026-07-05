@@ -11,18 +11,18 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	notificationdto "github.com/getarcaneapp/arcane/types/v2/notification"
-	glsqlite "github.com/glebarez/sqlite"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 
 func setupNotificationHandlerTestService(t *testing.T) (*database.DB, *services.NotificationService) {
 	t.Helper()
 
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}, &models.SettingVariable{}, &models.Environment{}))
 

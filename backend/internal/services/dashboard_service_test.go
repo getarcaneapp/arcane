@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
-	glsqlite "github.com/glebarez/sqlite"
+	sqlite "github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
@@ -26,7 +26,7 @@ import (
 func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *SettingsService) {
 	t.Helper()
 
-	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
@@ -156,7 +156,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, nil, config.Load())
+	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, nil, nil, config.Load())
 	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})

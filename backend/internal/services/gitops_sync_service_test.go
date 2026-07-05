@@ -36,7 +36,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
 	eventService := NewEventService(db, config.Load(), nil)
-	projectService := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, config.Load())
+	projectService := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
 }

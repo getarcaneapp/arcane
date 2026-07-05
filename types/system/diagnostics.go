@@ -81,22 +81,3 @@ type WebSocketDiagnostics struct {
 	Snapshot    WebSocketMetricsSnapshot  `json:"snapshot"`
 	Connections []WebSocketConnectionInfo `json:"connections"`
 }
-
-// LogEntry is a single captured backend log record, exposed via the recent-logs
-// endpoint and the live log WebSocket stream.
-type LogEntry struct {
-	// Time is when the record was emitted.
-	//
-	// Required: true
-	Time time.Time `json:"time"`
-	// Level is the slog level name (DEBUG, INFO, WARN, ERROR).
-	//
-	// Required: true
-	Level string `json:"level"`
-	// Message is the log message.
-	//
-	// Required: true
-	Message string `json:"message"`
-	// Attrs holds the record's structured attributes, if any.
-	Attrs map[string]any `json:"attrs,omitempty"`
-}

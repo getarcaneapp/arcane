@@ -16,13 +16,13 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/sys/crypto"
 	moduleapi "go.getarcane.app/updater/api"
 	updaterlabels "go.getarcane.app/updater/pkg/labels"
 	moduletypes "go.getarcane.app/updater/types"
@@ -406,7 +406,7 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		registrySvc := NewContainerRegistryService(db, nil, NewKVService(db))
 		imageSvc := NewImageService(db, dockerSvc, registrySvc, nil, nil, NewEventService(db, nil, nil))
 		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
-		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil).
+		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, nil).
 			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
 		svc := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
 		var progress bytes.Buffer

@@ -10,8 +10,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/logstream"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	"go.getarcane.app/streams/logs"
 )
 
 // DiagnosticsHandler serves the REST diagnostics endpoints. The live WebSocket
@@ -28,7 +28,7 @@ type GetDiagnosticsOutput struct {
 }
 
 type GetDiagnosticsLogsOutput struct {
-	Body []system.LogEntry
+	Body []logs.Entry
 }
 
 // RegisterDiagnostics registers the Huma diagnostics REST endpoints.
@@ -69,5 +69,5 @@ func (h *DiagnosticsHandler) GetDiagnostics(_ context.Context, _ *DiagnosticsInp
 }
 
 func (h *DiagnosticsHandler) GetRecentLogs(_ context.Context, _ *DiagnosticsInput) (*GetDiagnosticsLogsOutput, error) {
-	return &GetDiagnosticsLogsOutput{Body: logstream.Default().Recent()}, nil
+	return &GetDiagnosticsLogsOutput{Body: ws.LogBroadcaster().Recent()}, nil
 }

@@ -11,16 +11,17 @@ import (
 	"time"
 
 	ref "github.com/distribution/reference"
+	containertypes "github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"golang.org/x/mod/semver"
+
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
-	containertypes "github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
+	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
-	"golang.org/x/mod/semver"
 )
 
 const (
@@ -459,7 +460,7 @@ func (s *VersionService) normalizeImageRef(configImage string) string {
 
 // getCurrentContainerID detects if we're running in Docker via cgroup, mountinfo, or hostname
 func (s *VersionService) getCurrentContainerID() (string, error) {
-	return docker.GetCurrentContainerID()
+	return cgroup.CurrentContainerID()
 }
 
 // extractTagFromImageRef extracts the tag from an image reference using distribution/reference

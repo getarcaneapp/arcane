@@ -3,13 +3,16 @@ package projects
 import (
 	"context"
 	"io"
+	"maps"
 	"strings"
 
 	"github.com/docker/cli/cli/command"
+	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/cli/cli/flags"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
 )
 
@@ -18,7 +21,7 @@ type Client struct {
 	dockerCli command.Cli
 }
 
-func NewClient(ctx context.Context) (*Client, error) {
+func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig) (*Client, error) {
 	cli, err := command.NewDockerCli()
 	if err != nil {
 		return nil, err
@@ -26,6 +29,13 @@ func NewClient(ctx context.Context) (*Client, error) {
 	opts := flags.NewClientOptions()
 	if err := cli.Initialize(opts); err != nil {
 		return nil, err
+	}
+	if composeAuthConfigs := buildComposeAuthConfigsInternal(authConfigs); len(composeAuthConfigs) > 0 {
+		configFile := cli.ConfigFile()
+		if configFile.AuthConfigs == nil {
+			configFile.AuthConfigs = map[string]clitypes.AuthConfig{}
+		}
+		maps.Copy(configFile.AuthConfigs, composeAuthConfigs)
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
@@ -37,6 +47,37 @@ func NewClient(ctx context.Context) (*Client, error) {
 	}
 
 	return &Client{svc: svc, dockerCli: composeCLI}, nil
+}
+
+func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {
+	if len(authConfigs) == 0 {
+		return nil
+	}
+
+	composeAuthConfigs := make(map[string]clitypes.AuthConfig, len(authConfigs))
+	for host, authConfig := range authConfigs {
+		key := strings.TrimSpace(host)
+		if key == "" {
+			continue
+		}
+		// Docker CLI auth lookup still uses the legacy index URL for Docker Hub.
+		if key == "docker.io" {
+			key = "https://index.docker.io/v1/"
+		}
+		composeAuthConfigs[key] = clitypes.AuthConfig{
+			Username:      authConfig.Username,
+			Password:      authConfig.Password,
+			Auth:          authConfig.Auth,
+			ServerAddress: authConfig.ServerAddress,
+			IdentityToken: authConfig.IdentityToken,
+			RegistryToken: authConfig.RegistryToken,
+		}
+	}
+	if len(composeAuthConfigs) == 0 {
+		return nil
+	}
+
+	return composeAuthConfigs
 }
 
 type inspectCompatibleDockerCli struct {

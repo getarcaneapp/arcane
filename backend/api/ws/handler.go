@@ -14,21 +14,22 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
-	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
-	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"go.getarcane.app/sys/cgroup"
 )
 
 const cgroupCacheTTL = 30 * time.Second
@@ -74,7 +75,7 @@ type WebSocketHandler struct {
 		running     bool
 	}
 	containerStatsHubs sync.Map
-	cgroupCache        *system.CgroupCache
+	cgroupCache        *cgroup.Cache
 	gpuMonitor         *system.GPUMonitor
 
 	diskUsagePathCache struct {
@@ -230,7 +231,7 @@ func NewWebSocketHandler(
 		diagnosticsService: diagnosticsService,
 		wsMetrics:          defaultWebSocketMetrics,
 		logStreams:         make(map[string]*wsLogStream),
-		cgroupCache:        system.NewCgroupCache(cgroupCacheTTL),
+		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
 		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
@@ -1167,7 +1168,7 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 	// MemAvailable). Treat the reclaimable portion as cache, matching
 	// btop/htop, so the dashboard does not over-report usage on ZFS hosts.
 	used := memInfo.Used
-	if arc := docker.ZFSARCReclaimable(); arc > 0 {
+	if arc := cgroup.ZFSARCReclaimable(); arc > 0 {
 		used -= min(used, arc)
 	}
 	return used, memInfo.Total
@@ -1188,7 +1189,7 @@ func (h *WebSocketHandler) getMemoryInfo() (uint64, uint64) {
 // resources actually allocated to the LXC guest. The cgroup limits ARE the
 // correct numbers to show.
 func (h *WebSocketHandler) applyCgroupLimits(cpuCount int, memUsed, memTotal uint64) (int, uint64, uint64) {
-	if docker.IsDockerContainer() {
+	if cgroup.IsDockerContainer() {
 		return cpuCount, memUsed, memTotal
 	}
 	cgroupLimits := h.getCachedCgroupLimitsInternal()
@@ -1296,7 +1297,7 @@ func (h *WebSocketHandler) storeCPUCacheValueInternal(value float64) {
 	h.cpuCache.Unlock()
 }
 
-func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *docker.CgroupLimits {
+func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
 	if h.cgroupCache == nil {
 		return nil
 	}

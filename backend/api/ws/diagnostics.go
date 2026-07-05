@@ -9,11 +9,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/logstream"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"go.getarcane.app/streams/logs"
 )
 
 // diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
@@ -102,11 +102,11 @@ func (h *WebSocketHandler) ServerLogsStream(c echo.Context) error {
 
 	// Subscribe before replaying the backlog so no entry is missed in the gap; at
 	// worst the newest backlog entry is delivered twice, which is harmless.
-	ch, cancel := logstream.Default().Subscribe()
+	ch, cancel := defaultLogBroadcaster.Subscribe()
 	defer cancel()
 
 	done := diagnosticsReadLoopInternal(conn)
-	write := func(e systemtypes.LogEntry) bool {
+	write := func(e logs.Entry) bool {
 		b, marshalErr := json.Marshal(e)
 		if marshalErr != nil {
 			return true
@@ -114,7 +114,7 @@ func (h *WebSocketHandler) ServerLogsStream(c echo.Context) error {
 		return conn.WriteMessage(websocket.TextMessage, b) == nil
 	}
 
-	for _, e := range logstream.Default().Recent() {
+	for _, e := range defaultLogBroadcaster.Recent() {
 		if !write(e) {
 			return nil
 		}

@@ -8,7 +8,7 @@ import (
 	"log/slog"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
+	"go.getarcane.app/sys/crypto"
 )
 
 // DecodeConfig round-trips a provider config (models.JSON) into a typed struct T.

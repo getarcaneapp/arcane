@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	glsqlite "github.com/glebarez/sqlite"
+	sqlite "github.com/libtnb/sqlite"
 	goose "github.com/pressly/goose/v3"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -115,7 +115,7 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 		if err := ensureSQLiteDirectoryInternal(connString); err != nil {
 			return nil, fmt.Errorf("failed to prepare SQLite directory: %w", err)
 		}
-		dialector = glsqlite.Open(connString)
+		dialector = sqlite.Open(connString)
 	case strings.HasPrefix(databaseURL, "postgres"):
 		dialector = postgres.Open(databaseURL)
 	default:
