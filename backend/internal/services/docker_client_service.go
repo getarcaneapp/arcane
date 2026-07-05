@@ -15,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/eventbus"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
@@ -26,6 +25,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"go.getarcane.app/streams/bus"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -44,7 +44,7 @@ type DockerClientService struct {
 	imageCache        *cache.Cache[[]image.Summary]
 	networkCache      *cache.Cache[[]network.Summary]
 	volumeCache       *cache.Cache[*client.VolumeListResult]
-	eventBus          *eventbus.DockerEventBus
+	eventBus          *bus.DockerEventBus
 	subscriptionCtx   context.Context
 	subscriptionStop  context.CancelFunc
 	subscriptionUnsub []func()
@@ -60,7 +60,7 @@ func NewDockerClientService(ctx context.Context, db *database.DB, cfg *config.Co
 		imageCache:       cache.New[[]image.Summary](dockerListCacheTTL),
 		networkCache:     cache.New[[]network.Summary](dockerListCacheTTL),
 		volumeCache:      cache.New[*client.VolumeListResult](dockerListCacheTTL),
-		eventBus:         eventbus.NewDockerEventBus(),
+		eventBus:         bus.NewDockerEventBus(),
 		subscriptionCtx:  subscriptionCtx,
 		subscriptionStop: subscriptionStop,
 	}
@@ -226,11 +226,11 @@ func (s *DockerClientService) Close() {
 	closeDockerClientInternal(oldClient, "failed to close Docker client")
 }
 
-func (s *DockerClientService) EventBus() *eventbus.DockerEventBus {
+func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.eventBus == nil {
-		s.eventBus = eventbus.NewDockerEventBus()
+		s.eventBus = bus.NewDockerEventBus()
 	}
 	return s.eventBus
 }
@@ -276,8 +276,7 @@ func (s *DockerClientService) subscribeListCacheInvalidationInternal(ctx context
 }
 
 func (s *DockerClientService) subscribeCacheInvalidationInternal(ctx context.Context, eventType events.Type, invalidate func()) {
-	ch := make(chan events.Message, 16)
-	unsubscribe := s.EventBus().Subscribe(eventType, ch)
+	ch, unsubscribe := s.EventBus().Subscribe(eventType, bus.WithSubscriberBuffer(16))
 	s.mu.Lock()
 	s.subscriptionUnsub = append(s.subscriptionUnsub, unsubscribe)
 	s.mu.Unlock()

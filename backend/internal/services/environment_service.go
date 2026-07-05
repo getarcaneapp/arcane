@@ -925,7 +925,7 @@ func (s *EnvironmentService) ListVisibleEnvironments(ctx context.Context) ([]env
 }
 
 // ListRemoteEnvironmentIDs returns the IDs of enabled remote environments; it
-// satisfies aggstream.RemoteEnvironmentLister for aggregated stream handlers.
+// satisfies agg.RemoteEnvironmentLister for aggregated stream handlers.
 func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]string, error) {
 	envs, err := s.ListRemoteEnvironments(ctx)
 	if err != nil {

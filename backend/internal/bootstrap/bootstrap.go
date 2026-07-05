@@ -17,16 +17,17 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
 
+	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/logstream"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc"
 )
@@ -52,7 +53,7 @@ func Bootstrap(ctx context.Context) error {
 	SetupSlogLogger(cfg)
 	// Tee all slog output into the in-memory ring buffer that powers the
 	// diagnostics live log tail.
-	slog.SetDefault(slog.New(logstream.NewSlogHandler(slog.Default().Handler(), logstream.Default())))
+	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
 	ConfigureGormLogger(cfg)
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())

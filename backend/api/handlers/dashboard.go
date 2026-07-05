@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/aggstream"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/base"
@@ -20,6 +19,7 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	"go.getarcane.app/streams/agg"
 )
 
 type DashboardHandler struct {
@@ -136,17 +136,23 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
 func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, debugAllGood bool, encoder *json.Encoder, flush func()) {
-	aggstream.Run(ctx, encoder, flush, dashboardStreamEventBuffer, dashboardStreamHeartbeatInterval,
-		func() dashboardtypes.StreamEvent {
+	_ = agg.Run(ctx, agg.Config[dashboardtypes.StreamEvent]{
+		Encoder:           encoder,
+		Flush:             flush,
+		Buffer:            dashboardStreamEventBuffer,
+		HeartbeatInterval: dashboardStreamHeartbeatInterval,
+		MakeHeartbeat: func() dashboardtypes.StreamEvent {
 			return dashboardtypes.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
 		},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runLocalDashboardStreamProducerInternal(ctx, debugAllGood, events)
+		Producers: []agg.Producer[dashboardtypes.StreamEvent]{
+			func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
+				h.runLocalDashboardStreamProducerInternal(ctx, debugAllGood, events)
+			},
+			func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
+				h.runRemoteDashboardStreamPollersInternal(ctx, debugAllGood, events)
+			},
 		},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runRemoteDashboardStreamPollersInternal(ctx, debugAllGood, events)
-		},
-	)
+	})
 }
 
 // trimDashboardStreamSnapshotInternal drops the first-page container/image
@@ -180,7 +186,7 @@ func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.C
 			// once per distinct message and keep polling.
 			if msg := err.Error(); msg != lastError {
 				lastError = msg
-				aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
+				agg.Send(ctx, events, dashboardtypes.StreamEvent{
 					Type:          "error",
 					EnvironmentID: "0",
 					Error:         msg,
@@ -190,7 +196,7 @@ func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.C
 			return
 		}
 		lastError = ""
-		aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
+		agg.Send(ctx, events, dashboardtypes.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: "0",
 			Snapshot:      trimDashboardStreamSnapshotInternal(snapshot),
@@ -217,7 +223,7 @@ func (h *DashboardHandler) runLocalDashboardStreamProducerInternal(ctx context.C
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
 func (h *DashboardHandler) runRemoteDashboardStreamPollersInternal(ctx context.Context, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
-	aggstream.ReconcileEnvironmentPollers(ctx, h.environmentService, dashboardStreamEnvReconcileInterval, "dashboard stream",
+	agg.ReconcileEnvironmentPollers(ctx, h.environmentService, dashboardStreamEnvReconcileInterval, "dashboard stream",
 		func(pollCtx context.Context, environmentID string) {
 			h.runRemoteDashboardStreamPollerInternal(pollCtx, environmentID, debugAllGood, events)
 		})
@@ -226,7 +232,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollersInternal(ctx context.C
 func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Context, environmentID string, debugAllGood bool, events chan<- dashboardtypes.StreamEvent) {
 	// Tell the client this environment is covered before the first poll
 	// completes so it can hold skeletons instead of assuming no data exists.
-	if !aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
+	if !agg.Send(ctx, events, dashboardtypes.StreamEvent{
 		Type:          "pending",
 		EnvironmentID: environmentID,
 		Timestamp:     time.Now(),
@@ -256,7 +262,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 			message, code := classifyDashboardStreamErrorInternal(err)
 			if message != lastError {
 				lastError = message
-				aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
+				agg.Send(ctx, events, dashboardtypes.StreamEvent{
 					Type:          "error",
 					EnvironmentID: environmentID,
 					Error:         message,
@@ -267,7 +273,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 			return
 		}
 		lastError = ""
-		aggstream.Send(ctx, events, dashboardtypes.StreamEvent{
+		agg.Send(ctx, events, dashboardtypes.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
 			Snapshot:      trimDashboardStreamSnapshotInternal(snapshot),
