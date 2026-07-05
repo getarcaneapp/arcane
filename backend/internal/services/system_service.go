@@ -5,21 +5,18 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"regexp"
 	"strings"
 	"sync"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/dockerrun"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
-	libupdater "go.getarcane.app/updater/pkg/labels"
-	"go.yaml.in/yaml/v4"
+	"go.getarcane.app/updater/pkg/labels"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -402,7 +399,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 	result := s.performBatchContainerAction(ctx, containers, "stop",
 		func(c container.Summary) bool {
 			// Skip Arcane container
-			return !libupdater.IsArcaneContainer(c.Labels)
+			return !labels.IsArcaneContainer(c.Labels)
 		},
 		func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, systemUser)
@@ -602,146 +599,6 @@ func (s *SystemService) pruneNetworksInternal(ctx context.Context, options syste
 
 	result.NetworksDeleted = report.Report.NetworksDeleted
 	return nil
-}
-
-var dockerRunPrefixPattern = regexp.MustCompile(`^docker\s+run\s+`)
-
-func (s *SystemService) ParseDockerRunCommand(command string) (*system.DockerRunCommand, error) {
-	if command == "" {
-		return nil, errors.New("docker run command must be a non-empty string")
-	}
-
-	cmd := strings.TrimSpace(command)
-	cmd = dockerRunPrefixPattern.ReplaceAllString(cmd, "")
-
-	if cmd == "" {
-		return nil, errors.New("no arguments found after 'docker run'")
-	}
-
-	result := &system.DockerRunCommand{}
-	tokens, err := dockerrun.ParseCommandTokens(cmd)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse command tokens: %w", err)
-	}
-
-	if len(tokens) == 0 {
-		return nil, errors.New("no valid tokens found in docker run command")
-	}
-
-	if err := dockerrun.ParseTokens(tokens, result); err != nil {
-		return nil, err
-	}
-
-	if result.Image == "" {
-		return nil, errors.New("no Docker image specified in command")
-	}
-
-	return result, nil
-}
-
-func (s *SystemService) ConvertToDockerCompose(parsed *system.DockerRunCommand) (string, string, string, error) {
-	if parsed.Image == "" {
-		return "", "", "", errors.New("cannot convert to Docker Compose: no image specified")
-	}
-
-	serviceName := parsed.Name
-	if serviceName == "" {
-		serviceName = "app"
-	}
-
-	service := system.DockerComposeService{
-		Image: parsed.Image,
-	}
-
-	if parsed.Name != "" {
-		service.ContainerName = parsed.Name
-	}
-
-	if len(parsed.Ports) > 0 {
-		service.Ports = parsed.Ports
-	}
-
-	if len(parsed.Volumes) > 0 {
-		service.Volumes = parsed.Volumes
-	}
-
-	if len(parsed.Environment) > 0 {
-		service.Environment = parsed.Environment
-	}
-
-	if len(parsed.Networks) > 0 {
-		service.Networks = parsed.Networks
-	}
-
-	if parsed.Restart != "" {
-		service.Restart = parsed.Restart
-	}
-
-	if parsed.Workdir != "" {
-		service.WorkingDir = parsed.Workdir
-	}
-
-	if parsed.User != "" {
-		service.User = parsed.User
-	}
-
-	if parsed.Entrypoint != "" {
-		service.Entrypoint = parsed.Entrypoint
-	}
-
-	if parsed.Command != "" {
-		service.Command = parsed.Command
-	}
-
-	if parsed.Interactive && parsed.TTY {
-		service.StdinOpen = true
-		service.TTY = true
-	}
-
-	if parsed.Privileged {
-		service.Privileged = true
-	}
-
-	if len(parsed.Labels) > 0 {
-		service.Labels = parsed.Labels
-	}
-
-	if parsed.HealthCheck != "" {
-		service.Healthcheck = &system.DockerComposeHealthcheck{
-			Test: parsed.HealthCheck,
-		}
-	}
-
-	if parsed.MemoryLimit != "" || parsed.CPULimit != "" {
-		service.Deploy = &system.DockerComposeDeploy{
-			Resources: &system.DockerComposeResources{
-				Limits: &system.DockerComposeResourceLimits{},
-			},
-		}
-		if parsed.MemoryLimit != "" {
-			service.Deploy.Resources.Limits.Memory = parsed.MemoryLimit
-		}
-		if parsed.CPULimit != "" {
-			service.Deploy.Resources.Limits.CPUs = parsed.CPULimit
-		}
-	}
-
-	compose := system.DockerComposeConfig{
-		Services: map[string]system.DockerComposeService{
-			serviceName: service,
-		},
-	}
-
-	// Convert to YAML
-	yamlData, err := yaml.Marshal(&compose)
-	if err != nil {
-		return "", "", "", fmt.Errorf("failed to convert to YAML: %w", err)
-	}
-
-	// Generate environment variables file content
-	envVars := strings.Join(parsed.Environment, "\n")
-
-	return string(yamlData), envVars, serviceName, nil
 }
 
 func (s *SystemService) GetDiskUsagePath(ctx context.Context) string {

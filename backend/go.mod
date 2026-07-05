@@ -54,6 +54,7 @@ require (
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.7.3
 	go.getarcane.app/builds v0.1.0
+	go.getarcane.app/docker/convert v0.1.0
 	go.getarcane.app/sys/atomic v0.1.0
 	go.getarcane.app/sys/cgroup v0.1.0
 	go.getarcane.app/updater v0.5.0

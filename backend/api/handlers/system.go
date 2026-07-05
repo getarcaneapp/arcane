@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -21,6 +22,8 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/getarcaneapp/arcane/types/v2/system"
+	"go.getarcane.app/docker/convert"
+	converttypes "go.getarcane.app/docker/convert/types"
 	"go.getarcane.app/sys/cgroup"
 	updatertypes "go.getarcane.app/updater/types"
 )
@@ -506,21 +509,24 @@ func (h *SystemHandler) ConvertDockerRun(ctx context.Context, input *ConvertDock
 		return nil, huma.Error500InternalServerError("service not available")
 	}
 
-	parsed, err := h.systemService.ParseDockerRunCommand(input.Body.DockerRunCommand)
+	result, err := convert.Convert(input.Body.DockerRunCommand, converttypes.Options{})
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.DockerRunParseError{Err: err}).Error())
+		if errors.Is(err, converttypes.ErrParse) {
+			return nil, huma.Error400BadRequest((&common.DockerRunParseError{Err: err}).Error())
+		}
+		return nil, huma.Error500InternalServerError((&common.DockerComposeConversionError{Err: err}).Error())
 	}
 
-	dockerCompose, envVars, serviceName, err := h.systemService.ConvertToDockerCompose(parsed)
-	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.DockerComposeConversionError{Err: err}).Error())
+	serviceName := ""
+	if len(result.Services) > 0 {
+		serviceName = result.Services[0].Name
 	}
 
 	return &ConvertDockerRunOutput{
 		Body: system.ConvertDockerRunResponse{
 			Success:       true,
-			DockerCompose: dockerCompose,
-			EnvVars:       envVars,
+			DockerCompose: string(result.YAML),
+			EnvVars:       strings.TrimSuffix(string(result.EnvFile), "\n"),
 			ServiceName:   serviceName,
 		},
 	}, nil

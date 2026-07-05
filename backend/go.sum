@@ -537,6 +537,8 @@ github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
 go.getarcane.app/builds v0.1.0 h1:BOEFFFI35nQq/jowWs7+Uhi1XNoKIEKmNd7xnassCVg=
 go.getarcane.app/builds v0.1.0/go.mod h1:3g7+969+qWH33EXnA+nu5MKhs72JYDPf9Q/OtYO6CIA=
+go.getarcane.app/docker/convert v0.1.0 h1:prlIOs6dMx6CdnetsJFZ6ak0vcistM3DcH5lrZiFHBU=
+go.getarcane.app/docker/convert v0.1.0/go.mod h1:o9y4z/vah8HiHFtI+jJVFHbs8nLrkARYt88OaUlvGig=
 go.getarcane.app/sys/atomic v0.1.0 h1:0HhUeGXYdKAmMW24O+OaqcjDZx6twAuYPBu9T91zKsk=
 go.getarcane.app/sys/atomic v0.1.0/go.mod h1:QPb5eUXYKYG5acp9jJBAZ/PTbHbByDAQG6eDNAsZZ2w=
 go.getarcane.app/sys/cgroup v0.1.0 h1:SCAbuU+rZ/EjMU8kkVxmXZsMchiZp9eFdMQFnbU+asA=
