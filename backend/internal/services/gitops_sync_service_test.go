@@ -1397,15 +1397,6 @@ func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.
 	return svc, ctx
 }
 
-//go:fix inline
-func strPtr(s string) *string { return new(s) }
-
-//go:fix inline
-func intPtr(i int) *int { return new(i) }
-
-//go:fix inline
-func boolPtr(b bool) *bool { return new(b) }
-
 func TestValidateLifecycleConfig_AllNilNoError(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)
 	require.NoError(t, svc.validateLifecycleConfigInternal(ctx, nil, lifecycleConfigInputInternal{}))

@@ -2178,7 +2178,7 @@ func TestProjectService_GetProjectDetails_UsesFileTreeMaxDepthForProjectFiles(t 
 
 	assert.DirExists(t, filepath.Join(project.Path, filepath.FromSlash(deepFolder)))
 
-	filesAtScanDepth, _, err := projects.ReadProjectFileTree(project.Path, cfg.ProjectScanMaxDepth, cfg.ProjectScanSkipDirs, "compose.yaml")
+	filesAtScanDepth, _, _, err := projects.ReadProjectFileTree(project.Path, cfg.ProjectScanMaxDepth, cfg.ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)
 	scanDepthRelativePaths := make([]string, 0, len(filesAtScanDepth))
 	for _, file := range filesAtScanDepth {
@@ -2215,7 +2215,7 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	})
 	require.NoError(t, err)
 
-	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
+	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)
 
 	updated := "updated\n"
@@ -2257,7 +2257,7 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	})
 	require.NoError(t, err)
 
-	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
+	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectScanMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
@@ -5166,7 +5166,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	_, revision, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml")
+	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(project.Path, "external.txt"), []byte("external\n"), 0o644))
 
@@ -6905,4 +6905,116 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 	require.False(t, targetRemoved.Load(), "target volume may be the only complete copy and must stay when source restore fails")
 	require.FileExists(t, filepath.Join(oldPath, "compose.yaml"))
 	require.NoDirExists(t, newPath)
+}
+
+func TestProjectUpdateBackup_ScopedBackupAndRestore(t *testing.T) {
+	projectsDir := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsDir, "scoped")
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte("A=1\n"), 0o644))
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "data"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "data", "keep.bin"), []byte("keep"), 0o644))
+
+	compose := "services: {}\n"
+	scope := projectUpdateBackupScopeInternal(projectPath, &compose, nil, []projecttypes.ProjectFileChange{
+		{Operation: projecttypes.FileOpCreateFile, RelativePath: "notes.txt", Content: ptr("notes\n")},
+	})
+
+	backupDir := t.TempDir()
+	backup, err := projects.BackupProjectUpdateScope(projectPath, backupDir, scope)
+	require.NoError(t, err)
+	require.FileExists(t, filepath.Join(backupDir, "compose.yaml"))
+	require.FileExists(t, filepath.Join(backupDir, ".env"))
+	require.NoDirExists(t, filepath.Join(backupDir, "data"))
+	require.Equal(t, []string{"notes.txt"}, backup.AbsentEntries)
+
+	// Simulate a failed update: compose overwritten, notes.txt created, and an
+	// out-of-scope file written into data/ by a running container.
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("broken\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "notes.txt"), []byte("notes\n"), 0o644))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "data", "new.bin"), []byte("new"), 0o644))
+
+	require.NoError(t, projects.RestoreProjectUpdateBackup(projectPath, backup))
+
+	restored, err := os.ReadFile(filepath.Join(projectPath, "compose.yaml"))
+	require.NoError(t, err)
+	require.Equal(t, "services:\n  app:\n    image: nginx:alpine\n", string(restored))
+	require.NoFileExists(t, filepath.Join(projectPath, "notes.txt"))
+	require.FileExists(t, filepath.Join(projectPath, "data", "keep.bin"))
+	require.FileExists(t, filepath.Join(projectPath, "data", "new.bin"))
+}
+
+func TestProjectService_UpdateProject_FileChangeFailureRollsBackScoped(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	configureProjectRuntimeDockerInternal(t, nil)
+
+	dirName := "rollback"
+	projectPath := createComposeProjectDir(t, projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "data"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "data", "keep.bin"), []byte("keep"), 0o644))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-scoped-rollback"},
+		Name:      "rollback",
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
+	require.NoError(t, err)
+
+	// The second change fails after the first has mutated the directory.
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, nil, &revision, []projecttypes.ProjectFileChange{
+		{Operation: projecttypes.FileOpCreateFile, RelativePath: "notes.txt", Content: ptr("notes\n")},
+		{Operation: projecttypes.FileOpUpdateFile, RelativePath: "missing.txt", Content: ptr("nope\n")},
+	}, models.User{BaseModel: models.BaseModel{ID: "u1"}, Username: "tester"})
+
+	require.Error(t, err)
+	require.NoFileExists(t, filepath.Join(projectPath, "notes.txt"))
+	require.FileExists(t, filepath.Join(projectPath, "compose.yaml"))
+	require.FileExists(t, filepath.Join(projectPath, "data", "keep.bin"))
+
+	entries, err := os.ReadDir(projectsDir)
+	require.NoError(t, err)
+	for _, entry := range entries {
+		require.False(t, strings.HasPrefix(entry.Name(), ".project-update-backup-"), "leftover backup dir: %s", entry.Name())
+	}
+}
+
+func TestProjectUpdateBackup_RenamedDirDemotedToCopyWhenBatchTouchesIt(t *testing.T) {
+	projectsDir := t.TempDir()
+	projectPath := createComposeProjectDir(t, projectsDir, "demote")
+	require.NoError(t, os.MkdirAll(filepath.Join(projectPath, "a"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "a", "keep.txt"), []byte("keep\n"), 0o644))
+
+	// Batch: rename a -> b, then delete b — the inverse rename cannot roll
+	// this back, so the rename must be demoted to a full copy of a.
+	scope := projectUpdateBackupScopeInternal(projectPath, nil, nil, []projecttypes.ProjectFileChange{
+		{Operation: projecttypes.FileOpRename, RelativePath: "a", NewName: "b"},
+		{Operation: projecttypes.FileOpDelete, RelativePath: "b", Recursive: true},
+	})
+	require.Empty(t, scope.RenamedDirs)
+
+	backup, err := projects.BackupProjectUpdateScope(projectPath, t.TempDir(), scope)
+	require.NoError(t, err)
+
+	// Simulate the batch running, then failing on a later change.
+	require.NoError(t, os.Rename(filepath.Join(projectPath, "a"), filepath.Join(projectPath, "b")))
+	require.NoError(t, os.RemoveAll(filepath.Join(projectPath, "b")))
+
+	require.NoError(t, projects.RestoreProjectUpdateBackup(projectPath, backup))
+	require.FileExists(t, filepath.Join(projectPath, "a", "keep.txt"))
+	require.NoDirExists(t, filepath.Join(projectPath, "b"))
 }
