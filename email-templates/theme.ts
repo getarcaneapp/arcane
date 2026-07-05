@@ -4,7 +4,7 @@
  * Single source of truth for the palette so retheming is a one-file change.
  * Values are plain hex (no oklch / CSS variables) because email clients don't
  * support those. Colors mirror Arcane's default *dark* app theme — see the
- * published previews in frontend/src/lib/utils/theme.ts and frontend/src/app.css.
+ * published previews in frontend/src/lib/utils/theme.ts and frontend/src/routes/layout.css.
  *
  * Only theming lives here; layout stays table-based in the components/emails.
  */

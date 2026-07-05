@@ -18,7 +18,7 @@
 	import { SvelteQueryDevtools } from '@tanstack/svelte-query-devtools';
 	import { ModeWatcher } from 'mode-watcher';
 	import { onMount } from 'svelte';
-	import '../app.css';
+	import './layout.css';
 
 	let { data, children }: LayoutProps = $props();
 
