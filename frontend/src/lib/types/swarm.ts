@@ -551,6 +551,7 @@ export interface Project {
 	directoryFiles?: IncludeFile[];
 	projectFiles?: ProjectFile[];
 	fileTreeRevision?: string;
+	fileTreeTruncated?: boolean;
 }
 
 export interface ProjectStatusCounts {

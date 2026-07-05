@@ -77,10 +77,11 @@ class ProjectService extends BaseAPIService {
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
 		const basePath = `/environments/${environmentId}/projects/${projectId}`;
-		const [summary, compose, files, runtime, updates] = await Promise.all([
+		// The /files section walks the project directory recursively and can be
+		// slow on large projects, so it is fetched lazily via getProjectFiles.
+		const [summary, compose, runtime, updates] = await Promise.all([
 			this.getProjectSection(basePath),
 			this.getProjectSection(`${basePath}/compose`),
-			this.getProjectSection(`${basePath}/files`),
 			this.getProjectSection(`${basePath}/runtime`),
 			this.getProjectSection(`${basePath}/updates`)
 		]);
@@ -88,10 +89,13 @@ class ProjectService extends BaseAPIService {
 		return {
 			...summary,
 			...compose,
-			...files,
 			...runtime,
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
+	}
+
+	async getProjectFiles(environmentId: string, projectId: string): Promise<Project> {
+		return this.getProjectSection(`/environments/${environmentId}/projects/${projectId}/files`);
 	}
 
 	private async getProjectSection(path: string): Promise<Project> {

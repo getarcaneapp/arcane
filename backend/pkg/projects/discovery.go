@@ -89,8 +89,11 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 }
 
 func walkProjectDirectoriesInternal(path string, isRoot bool, currentDepth int, maxDepth int, followSymlinks bool, ancestors map[string]struct{}, discovered *[]DiscoveredProjectDir) error {
-	if !isRoot && IsInternalScratchDirName(filepath.Base(path)) {
-		return nil
+	if !isRoot {
+		name := filepath.Base(path)
+		if IsInternalScratchDirName(name) || IsFilesystemSnapshotDirName(name) {
+			return nil
+		}
 	}
 
 	identity, err := ResolveDirectoryIdentityInternal(path)
@@ -175,6 +178,37 @@ func IsGitOpsScratchDirName(name string) bool {
 		return true
 	}
 	return gitOpsScratchEmbeddedNameRe.MatchString(name)
+}
+
+// filesystemSnapshotDirNames are directory names used by filesystems and NAS
+// appliances for read-only snapshots or trash. They contain point-in-time
+// copies of real project directories and must never be discovered as projects:
+// #snapshot/#recycle (Synology BTRFS), .snapshot (NetApp), .snapshots
+// (snapper/btrbk), .zfs (ZFS snapdir).
+var filesystemSnapshotDirNames = map[string]bool{
+	"#snapshot":  true,
+	"#recycle":   true,
+	".snapshot":  true,
+	".snapshots": true,
+	".zfs":       true,
+}
+
+// IsFilesystemSnapshotDirName reports whether name is a well-known filesystem
+// snapshot/trash directory (see filesystemSnapshotDirNames).
+func IsFilesystemSnapshotDirName(name string) bool {
+	return filesystemSnapshotDirNames[strings.ToLower(strings.TrimSpace(name))]
+}
+
+// PathContainsSnapshotDirectory reports whether any segment of relPath is a
+// filesystem snapshot/trash directory name, i.e. the path points into a
+// point-in-time copy rather than a live project directory.
+func PathContainsSnapshotDirectory(relPath string) bool {
+	for segment := range strings.SplitSeq(filepath.ToSlash(relPath), "/") {
+		if IsFilesystemSnapshotDirName(segment) {
+			return true
+		}
+	}
+	return false
 }
 
 // ArcaneTrashPrefix is the prefix Arcane uses when quarantining (soft-deleting) a

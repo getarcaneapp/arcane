@@ -517,6 +517,12 @@ type Details struct {
 	// Required: false
 	FileTreeRevision string `json:"fileTreeRevision,omitempty"`
 
+	// FileTreeTruncated indicates the file tree walk hit the entry cap and
+	// ProjectFiles is only a prefix of the full tree.
+	//
+	// Required: false
+	FileTreeTruncated bool `json:"fileTreeTruncated,omitempty"`
+
 	// Status is the current status of the project.
 	//
 	// Required: true

@@ -1149,7 +1149,7 @@ func (s *GitOpsSyncService) performSwarmStackSyncInternal(ctx context.Context, s
 // *common.RedeployAfterSyncFailedError when the redeploy itself fails; callers
 // surface that on the sync row's LastSyncError.
 func (s *GitOpsSyncService) redeployIfRunningAfterSync(ctx context.Context, project *models.Project, actor models.User, syncMode string) error {
-	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
+	details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
 	if err != nil {
 		return nil //nolint:nilerr // best-effort: skip post-sync redeploy when project state can't be determined
 	}
@@ -1562,7 +1562,7 @@ func (s *GitOpsSyncService) updateProjectForSyncInternal(ctx context.Context, sy
 	// is bubbled up as a *common.RedeployAfterSyncFailedError so the parent flow
 	// can reflect it on the sync row's LastSyncError.
 	if contentChanged {
-		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
+		details, err := s.projectService.GetProjectDetails(ctx, project.ID, projecttypes.DetailsOptions{})
 		if err == nil && (details.Status == string(models.ProjectStatusRunning) || details.Status == string(models.ProjectStatusPartiallyRunning)) {
 			slog.InfoContext(ctx, "Redeploying project due to content change from Git sync", "projectName", project.Name, "projectId", project.ID)
 			if err := s.projectService.RedeployProject(ctx, project.ID, actor, nil); err != nil {
