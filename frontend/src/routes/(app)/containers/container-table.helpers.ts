@@ -59,3 +59,16 @@ export function getProjectName(container: ContainerSummaryDto): string {
 export function groupContainerByProject(container: ContainerSummaryDto): string {
 	return getProjectName(container);
 }
+
+export function getContainerStatusLabel(state: string): string {
+	switch (state) {
+		case 'created': return m.containers_status_created();
+		case 'restarting': return m.containers_status_restarting();
+		case 'running': return m.containers_status_running();
+		case 'removing': return m.containers_status_removing();
+		case 'paused': return m.containers_status_paused();
+		case 'exited': return m.containers_status_exited();
+		case 'dead': return m.containers_status_dead();
+		default: return state ? state.charAt(0).toUpperCase() + state.slice(1) : m.common_unknown();
+	}
+}

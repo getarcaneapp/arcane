@@ -3459,5 +3459,12 @@
 	"common_back_to_projects": "Back to Projects",
 	"common_edit_name": "Edit name",
 	"common_ive_saved_it": "I've saved it",
-	"file_browser_restore_file": "Restore file"
+	"file_browser_restore_file": "Restore file",
+	"containers_status_created": "Created",
+	"containers_status_restarting": "Restarting",
+	"containers_status_running": "Running",
+	"containers_status_removing": "Removing",
+	"containers_status_paused": "Paused",
+	"containers_status_exited": "Exited",
+	"containers_status_dead": "Dead"
 }

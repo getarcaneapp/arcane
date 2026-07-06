@@ -40,6 +40,7 @@
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
+		getContainerStatusLabel,
 		type ActionStatus
 	} from './container-table.helpers';
 	import {
@@ -412,7 +413,7 @@
 				</span>
 			</div>
 		{:else}
-			<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+			<StatusBadge variant={getStateBadgeVariant(item.state)} text={getContainerStatusLabel(item.state)} />
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
@@ -515,7 +516,7 @@
 				(mobileFieldVisibility['state'] ?? true)
 					? {
 							variant: getStateBadgeVariant(item.state),
-							text: capitalizeFirstLetter(item.state)
+							text: getContainerStatusLabel(item.state)
 						}
 					: null
 		]}
