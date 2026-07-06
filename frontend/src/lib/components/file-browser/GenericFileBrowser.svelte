@@ -258,7 +258,7 @@
 	open={showRestoreFile}
 	onOpenChange={(nextOpen) => (showRestoreFile = nextOpen)}
 	title={m.file_browser_restore()}
-	description="Select a backup to restore the chosen file."
+	description={m.file_browser_backup_restore_desc()}
 	contentClass="sm:max-w-[520px]"
 >
 	{#snippet children()}
@@ -333,7 +333,7 @@
 		{#if canBackupVolume}
 			<ArcaneButton
 				action="create"
-				customLabel="Restore file"
+				customLabel={m.file_browser_restore_file()}
 				onclick={handleRestoreFile}
 				loading={restoringFile}
 				disabled={restoringFile ||

@@ -219,7 +219,7 @@
 			toast.success(m.environments_switched_to({ name: env.name }));
 		} catch (error) {
 			console.error('Failed to set environment:', error);
-			toast.error('Failed to Connect to Environment');
+			toast.error(m.environments_connect_error());
 		}
 	}
 

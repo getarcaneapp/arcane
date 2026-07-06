@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { m } from '$lib/paraglide/messages';
 	import type { WithoutChildren } from 'bits-ui';
 	import { ArrowLeftIcon } from '$lib/icons';
 	import type { Props } from '$lib/components/ui/button/index.js';
@@ -7,4 +8,4 @@
 	let { ref = $bindable(null), ...restProps }: WithoutChildren<Props> = $props();
 </script>
 
-<CarouselControl bind:ref direction="previous" icon={ArrowLeftIcon} label="Previous slide" {...restProps} />
+<CarouselControl bind:ref direction="previous" icon={ArrowLeftIcon} label={m.carousel_previous_slide()} {...restProps} />

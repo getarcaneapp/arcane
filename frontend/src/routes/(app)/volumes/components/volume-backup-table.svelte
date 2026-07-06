@@ -335,7 +335,7 @@
 <ResponsiveDialog
 	bind:open={showRestoreFiles}
 	title={m.volume_restore_files()}
-	description="Select files from this backup to restore."
+	description={m.volumes_backup_restore_desc()}
 	contentClass="sm:max-w-[640px]"
 >
 	{#snippet children()}

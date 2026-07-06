@@ -138,7 +138,7 @@
 				email: profileEmail.trim()
 			});
 			await userStore.setUser(updated);
-			toast.success('Profile updated');
+			toast.success(m.account_profile_updated());
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Failed to update profile';
 			toast.error(msg);
@@ -202,7 +202,7 @@
 		passwordSaving = true;
 		try {
 			await userService.changePassword({ currentPassword, newPassword });
-			toast.success('Password updated');
+			toast.success(m.account_password_updated());
 			currentPassword = '';
 			newPassword = '';
 			confirmPassword = '';
@@ -255,7 +255,7 @@
 		if (!confirm(`Delete API key "${name}"? This cannot be undone.`)) return;
 		try {
 			await apiKeyService.deleteMine(id);
-			toast.success('API key deleted');
+			toast.success(m.account_api_key_deleted());
 			await loadApiKeys();
 		} catch (err) {
 			toast.error(err instanceof Error ? err.message : 'Failed to delete API key');
@@ -264,7 +264,7 @@
 
 	function copyKeyToClipboard(key: string) {
 		void navigator.clipboard.writeText(key);
-		toast.success('Key copied to clipboard');
+		toast.success(m.common_key_copied());
 	}
 
 	onMount(() => {
@@ -276,7 +276,7 @@
 		revokingAll = true;
 		try {
 			await userService.logoutAllOtherSessions();
-			toast.success('All other sessions signed out');
+			toast.success(m.account_sessions_signed_out());
 		} catch (err) {
 			const msg = err instanceof Error ? err.message : 'Failed to sign out other sessions';
 			toast.error(msg);
@@ -520,7 +520,7 @@
 										action="base"
 										tone="outline"
 										size="sm"
-										customLabel="Copy"
+										customLabel={m.common_copy()}
 										icon={CopyIcon}
 										onclick={() => copyKeyToClipboard(createdKey!.key)}
 									/>
@@ -530,7 +530,7 @@
 										action="cancel"
 										tone="ghost"
 										size="sm"
-										customLabel="I've saved it"
+										customLabel={m.common_ive_saved_it()}
 										onclick={() => (createdKey = null)}
 									/>
 								</div>
@@ -574,7 +574,7 @@
 											tone="ghost"
 											size="sm"
 											icon={TrashIcon}
-											customLabel="Delete"
+											customLabel={m.common_delete()}
 											showLabel={false}
 											class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
 											onclick={() => deleteApiKey(key.id, key.name)}

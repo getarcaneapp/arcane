@@ -121,7 +121,7 @@
 					/>
 					<TextInputWithLabel
 						id="swarm-stack-sources-directory"
-						label="Swarm Stack Sources Directory"
+						label={m.environments_swarm_stack_source_label()}
 						bind:value={$formInputs.swarmStackSourcesDirectory.value}
 						error={$formInputs.swarmStackSourcesDirectory.error}
 						helpText="Directory where original compose/env sources for Swarm stack deploys are stored. Supports the same container:host bind-mount format as Projects Directory."

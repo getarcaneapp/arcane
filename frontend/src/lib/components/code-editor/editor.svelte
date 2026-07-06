@@ -855,7 +855,7 @@
 		{/if}
 	</div>
 
-	<Command.Dialog bind:open={commandPaletteOpen} title={m.editor_commands()} description="Run editor commands">
+	<Command.Dialog bind:open={commandPaletteOpen} title={m.editor_commands()} description={m.editor_commands_desc()}>
 		{#snippet children()}
 			<Command.Input placeholder={m.editor_search_commands()} />
 			<Command.List>

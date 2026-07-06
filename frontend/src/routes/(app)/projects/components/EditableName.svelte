@@ -133,7 +133,7 @@
 					tone="ghost"
 					size="icon"
 					class="pointer-events-none size-6 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100"
-					customLabel="Edit name"
+					customLabel={m.common_edit_name()}
 					showLabel={false}
 					icon={EditIcon}
 					onclick={beginEdit}

@@ -83,7 +83,7 @@
 
 				toast.success(m.environments_created_success());
 			} else {
-				toast.error('Failed to generate API key');
+				toast.error(m.environments_api_key_error());
 			}
 		},
 		onError: (error) => {
@@ -190,7 +190,7 @@
 			return;
 		}
 		if (!file.downloadUrl) {
-			toast.error('Unable to download file.');
+			toast.error(m.common_download_error());
 			return;
 		}
 		try {
@@ -209,7 +209,7 @@
 			URL.revokeObjectURL(url);
 		} catch (err) {
 			console.error('Failed to download mTLS asset:', err);
-			toast.error('Unable to download file.');
+			toast.error(m.common_download_error());
 		}
 	}
 </script>
@@ -306,7 +306,7 @@
 
 					<Tabs.Content value="direct" class="mt-4">
 						<p class="text-muted-foreground mb-4 text-sm">
-							Manager connects directly to the agent. Requires the agent port to be accessible.
+							{m.environments_direct_desc()}
 						</p>
 						<form onsubmit={preventDefault(handleDirectSubmit)} class="space-y-4">
 							<FormInput
@@ -340,15 +340,15 @@
 
 					<Tabs.Content value="edge" class="mt-4">
 						<p class="text-muted-foreground mb-4 text-sm">
-							Agent connects outbound to the manager. No exposed ports required - ideal for firewalled environments.
+							{m.environments_edge_desc()}
 						</p>
 						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">
 							<FormInput label={m.common_name()} placeholder={m.env_remote_docker_host()} bind:input={$edgeInputs.name} />
 
 							<LabeledSwitch
 								id="new-edge-agent-mtls"
-								label="Enable manager mTLS"
-								description="Use Arcane-generated edge mTLS assets when they are available on the manager."
+								label={m.environments_edge_mtls_enable()}
+								description={m.environments_edge_mtls_desc()}
 								checked={edgeMTLSEnabled}
 								onCheckedChange={(checked) => (edgeMTLSEnabled = checked)}
 								disabled={isSubmittingNewAgent}
