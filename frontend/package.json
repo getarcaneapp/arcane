@@ -60,7 +60,7 @@
     "@sveltejs/vite-plugin-svelte": "^7.1.2",
     "@tailwindcss/vite": "^4.3.2",
     "@tanstack/svelte-query-devtools": "^6.1.36",
-    "@types/node": "^26.0.1",
+    "@types/node": "^26.1.0",
     "@typescript/native-preview": "7.0.0-dev.20260703.1",
     "bits-ui": "^2.18.1",
     "clsx": "^2.1.1",
