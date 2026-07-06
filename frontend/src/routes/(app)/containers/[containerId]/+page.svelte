@@ -316,7 +316,7 @@
 					class="size-5"
 					containerClass="size-9"
 				/>
-				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={containerDisplayName}>
+				<h1 class="max-w-75 truncate text-lg font-semibold" title={containerDisplayName}>
 					{containerDisplayName}
 				</h1>
 				{#if container?.state}

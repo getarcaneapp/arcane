@@ -9,7 +9,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/formatting';
+	import { truncateImageDigest } from '$lib/utils/formatting';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
