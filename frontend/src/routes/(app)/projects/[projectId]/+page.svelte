@@ -533,16 +533,21 @@
 
 		const normalizedProject = withLoadedProjectFileContent(details);
 		if (!normalizedProject) return;
+		// A slim save response (no file changes) carries no projectFiles; the tree is
+		// unchanged server-side, so keep the current contents instead of deriving
+		// them from an empty tree.
 		const savedManagedProjectFileContents =
 			options.preserveManagedProjectFileContents === true
-				? Object.fromEntries(
-						(normalizedProject.projectFiles ?? []).flatMap((file) => {
-							if (file.isDirectory) return [];
-							const content =
-								loadedManagedProjectFileContents[file.relativePath] ?? managedProjectFileContents[file.relativePath];
-							return content === undefined ? [] : [[file.relativePath, content] as const];
-						})
-					)
+				? details.projectFiles === undefined
+					? { ...managedProjectFileContents }
+					: Object.fromEntries(
+							(normalizedProject.projectFiles ?? []).flatMap((file) => {
+								if (file.isDirectory) return [];
+								const content =
+									loadedManagedProjectFileContents[file.relativePath] ?? managedProjectFileContents[file.relativePath];
+								return content === undefined ? [] : [[file.relativePath, content] as const];
+							})
+						)
 				: {};
 
 		$inputs.name.value = normalizedProject.name || '';
@@ -551,8 +556,16 @@
 		$inputs.envContent.value = shouldPreserveEnvDraft ? envDraft : normalizedProject.envContent || '';
 		managedProjectFileChanges = [];
 		managedProjectFileContents = savedManagedProjectFileContents;
-		managedProjectFileHasErrors = {};
-		managedProjectFileValidationReady = {};
+		// Seed the per-file UI-state records for every retained path. A mounted
+		// CodePanel binds these entries; handing a bound $bindable-with-fallback
+		// prop an undefined entry throws props_invalid_value and kills the page's
+		// effect tree (stale editor shown until a full refresh).
+		managedProjectFileHasErrors = Object.fromEntries(
+			Object.keys(savedManagedProjectFileContents).map((relativePath) => [relativePath, false])
+		);
+		managedProjectFileValidationReady = Object.fromEntries(
+			Object.keys(savedManagedProjectFileContents).map((relativePath) => [relativePath, true])
+		);
 		managedProjectFileLoadErrors = {};
 		managedProjectFileLoading = {};
 
@@ -956,6 +969,11 @@
 	}
 
 	function openFileTab(key: string) {
+		// The file panel's bound UI-state entries must exist before mount; binding
+		// an undefined entry to a $bindable-with-fallback prop throws props_invalid_value.
+		if (key.startsWith('file:') && !isManagedDirectoryKey(key)) {
+			ensureManagedProjectFileUiState(key.slice(5));
+		}
 		if (!isManagedDirectoryKey(key) && !openTabsPreference.includes(key)) {
 			openTabsPreference = [...openTabsPreference, key];
 		}
