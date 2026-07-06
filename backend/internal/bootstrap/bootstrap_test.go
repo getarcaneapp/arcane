@@ -14,10 +14,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"golang.org/x/net/http2"
 )
 
@@ -293,4 +293,11 @@ func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
 	require.FileExists(t, edgeCfg.EdgeMTLSCAFile)
 	require.FileExists(t, assetsDir+"/ca.crt")
 	require.FileExists(t, assetsDir+"/ca.key")
+}
+
+func TestIsWeakProductionEncryptionKeyInternal(t *testing.T) {
+	assert.True(t, isWeakProductionEncryptionKeyInternal("short", "production", false))
+	assert.False(t, isWeakProductionEncryptionKeyInternal("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
+	assert.False(t, isWeakProductionEncryptionKeyInternal("hex:abc", "production", false))
+	assert.False(t, isWeakProductionEncryptionKeyInternal("short", "development", false))
 }

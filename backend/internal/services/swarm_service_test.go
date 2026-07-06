@@ -121,6 +121,45 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	require.Len(t, source.Files, 2)
 }
 
+func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	rootDir := t.TempDir()
+	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
+
+	overridePath := filepath.Join(rootDir, "0", "demo-stack", "compose.override.yaml")
+
+	updated, err := svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent:  "services:\n  web:\n    image: nginx:alpine\n",
+		OverrideContent: "services:\n  web:\n    image: busybox:latest\n",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "services:\n  web:\n    image: busybox:latest\n", updated.OverrideContent)
+	require.FileExists(t, overridePath)
+
+	source, err := svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Equal(t, updated.OverrideContent, source.OverrideContent)
+	// The override is a first-class field, never surfaced as an extra file.
+	require.Empty(t, source.Files)
+
+	// Clearing the override removes the file so a UI redeploy stops merging it.
+	_, err = svc.UpdateStackSource(ctx, "0", "demo-stack", swarmtypes.StackSourceUpdateRequest{
+		ComposeContent: "services:\n  web:\n    image: nginx:alpine\n",
+	})
+	require.NoError(t, err)
+	require.NoFileExists(t, overridePath)
+
+	source, err = svc.GetStackSource(ctx, "0", "demo-stack")
+	require.NoError(t, err)
+	require.Empty(t, source.OverrideContent)
+}
+
 func TestSwarmService_getPathMapperInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)

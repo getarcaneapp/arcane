@@ -70,6 +70,7 @@
     "mode-watcher": "^1.1.0",
     "paneforge": "^1.0.2",
     "runed": "^0.37.1",
+    "shadcn-svelte": "^1.3.0",
     "svelte-check-rs": "^0.10.2",
     "svelte-sonner": "^1.1.1",
     "svelte-toolbelt": "^0.10.6",

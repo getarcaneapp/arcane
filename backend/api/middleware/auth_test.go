@@ -15,9 +15,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
-	glsqlite "github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/labstack/echo/v4"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -308,7 +308,7 @@ func TestParseSecurityRequirements(t *testing.T) {
 
 func setupAuthMiddlewareTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}, &models.User{}, &models.UserSession{}))
 	return &database.DB{DB: db}

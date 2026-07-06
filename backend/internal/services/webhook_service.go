@@ -15,11 +15,11 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 	webhooktypes "github.com/getarcaneapp/arcane/types/v2/webhook"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
 
@@ -673,7 +673,7 @@ func (s *WebhookService) executeProjectWebhookActionInternal(ctx context.Context
 		}
 		return nil, nil
 	case models.WebhookActionTypeRestart:
-		if err := s.projectService.RestartProject(ctx, wh.TargetID, systemUser); err != nil {
+		if err := s.projectService.RestartProject(ctx, wh.TargetID, nil, systemUser); err != nil {
 			return nil, s.wrapWebhookActionErrorInternal(ctx, wh, "project", actionType, err)
 		}
 		return nil, nil

@@ -546,11 +546,14 @@ export interface Project {
 	runtimeServices?: RuntimeService[];
 	composeContent?: string;
 	composeFileName?: string;
+	overrideContent?: string;
+	overrideFileName?: string;
 	envContent?: string;
 	includeFiles?: IncludeFile[];
 	directoryFiles?: IncludeFile[];
 	projectFiles?: ProjectFile[];
 	fileTreeRevision?: string;
+	fileTreeTruncated?: boolean;
 }
 
 export interface ProjectStatusCounts {

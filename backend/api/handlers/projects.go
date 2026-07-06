@@ -153,8 +153,9 @@ type UpdateProjectIncludeOutput struct {
 }
 
 type RestartProjectInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ProjectID     string `path:"projectId" doc:"Project ID"`
+	EnvironmentID string   `path:"id" doc:"Environment ID"`
+	ProjectID     string   `path:"projectId" doc:"Project ID"`
+	Services      []string `query:"services" doc:"Service names to restart; empty restarts all services"`
 }
 
 type RestartProjectOutput struct {
@@ -955,7 +956,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		SuccessMessage: "Project updated successfully",
 		Metadata:       models.JSON{"action": "update_project", "projectID": input.ProjectID},
 	}, func(runtimeCtx context.Context) error {
-		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
+		_, updateErr := h.projectService.UpdateProject(runtimeCtx, input.ProjectID, input.Body.Name, input.Body.ComposeContent, input.Body.EnvContent, input.Body.OverrideContent, input.Body.FileTreeRevision, input.Body.FileChanges, *user)
 		return updateErr
 	})
 	if err != nil {
@@ -965,7 +966,18 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.AllDetails())
+	// Skip the recursive directory walks on save: the file tree is only
+	// re-read when the save actually staged file changes (fresh revision),
+	// and the frontend fetches /files lazily otherwise.
+	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeProjectFiles:    len(input.Body.FileChanges) > 0,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
@@ -1017,7 +1029,14 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
 	}
 
-	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.AllDetails())
+	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	})
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
@@ -1031,9 +1050,10 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 	}, nil
 }
 
-// RestartProject restarts all containers in a project.
+// RestartProject restarts the given services in a project (all services when none
+// are specified).
 func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProjectInput) (*RestartProjectOutput, error) {
-	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.restartProjectActivityConfigInternal())
+	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.restartProjectActivityConfigInternal(input.Services))
 	if err != nil {
 		return nil, err
 	}
@@ -1108,7 +1128,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 	}
 }
 
-func (h *ProjectHandler) restartProjectActivityConfigInternal() projectActivityActionConfigInternal {
+func (h *ProjectHandler) restartProjectActivityConfigInternal(services []string) projectActivityActionConfigInternal {
 	return projectActivityActionConfigInternal{
 		ActivityType:    models.ActivityTypeProjectRestart,
 		Step:            "Restarting project",
@@ -1118,7 +1138,7 @@ func (h *ProjectHandler) restartProjectActivityConfigInternal() projectActivityA
 		SuccessComplete: "Project restarted",
 		SuccessMessage:  "Project restarted successfully",
 		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
-			return h.projectService.RestartProject(runtimeCtx, projectID, user)
+			return h.projectService.RestartProject(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
 			return huma.Error400BadRequest((&common.ProjectRestartError{Err: err}).Error())

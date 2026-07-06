@@ -373,7 +373,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 	require.NoError(t, db.Create(sync).Error)
 
 	result := &gitops.SyncResult{}
-	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, result, models.User{})
+	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
 	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
 	require.ErrorAs(t, err, &bindingErr)
 
@@ -1225,7 +1225,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	require.NoError(t, db.Create(sync).Error)
 
 	result := &gitops.SyncResult{}
-	project, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, result, models.User{})
+	project, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
 	require.Error(t, err)
 	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
 	require.ErrorAs(t, err, &bindingErr)
@@ -1396,15 +1396,6 @@ func setupLifecycleValidationService(t *testing.T) (*GitOpsSyncService, context.
 	require.NoError(t, svc.settingsService.SetStringSetting(ctx, "lifecycleEnabled", "true"))
 	return svc, ctx
 }
-
-//go:fix inline
-func strPtr(s string) *string { return new(s) }
-
-//go:fix inline
-func intPtr(i int) *int { return new(i) }
-
-//go:fix inline
-func boolPtr(b bool) *bool { return new(b) }
 
 func TestValidateLifecycleConfig_AllNilNoError(t *testing.T) {
 	svc, ctx := setupLifecycleValidationService(t)

@@ -14,8 +14,8 @@ import (
 	"testing"
 	"time"
 
-	glsqlite "github.com/glebarez/sqlite"
 	"github.com/golang-jwt/jwt/v5"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -103,7 +103,7 @@ func setupFederatedCredentialServiceTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
 
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.NewReplacer("/", "_", " ", "_").Replace(t.Name()))
-	db, err := gorm.Open(glsqlite.Open(dsn), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&models.SettingVariable{},

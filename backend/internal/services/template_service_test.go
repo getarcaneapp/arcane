@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	glsqlite "github.com/glebarez/sqlite"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -29,7 +29,7 @@ import (
 func setupTemplateServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
 
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.TemplateRegistry{}, &models.ComposeTemplate{}))
 
@@ -491,7 +491,7 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 
 func minimalSettingsServiceForTest(t *testing.T) *SettingsService {
 	t.Helper()
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 	svc, err := NewSettingsService(context.Background(), &database.DB{DB: db})
@@ -502,7 +502,7 @@ func minimalSettingsServiceForTest(t *testing.T) *SettingsService {
 func TestUpdateGlobalVariables_RejectsNewlineInjectionKey(t *testing.T) {
 	projectsDir := t.TempDir()
 
-	db, err := gorm.Open(glsqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 	dbWrap := &database.DB{DB: db}

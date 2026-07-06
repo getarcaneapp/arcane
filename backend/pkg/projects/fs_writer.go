@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -17,6 +18,11 @@ import (
 // has no existing compose file.
 const DefaultComposeFileName = "compose.yaml"
 
+// composeFileCandidates lists supported base compose filenames in Arcane's
+// detection order. This order is intentionally explicit rather than sourced
+// from compose-go's cli.DefaultFileNames: compose-go prefers docker-compose.yml
+// over docker-compose.yaml, and adopting that order would silently switch the
+// base file for existing projects that ship both.
 var composeFileCandidates = []string{
 	DefaultComposeFileName,
 	"compose.yml",
@@ -26,10 +32,10 @@ var composeFileCandidates = []string{
 	"podman-compose.yml",
 }
 
-// ComposeFileCandidates returns the supported compose filenames in Arcane's
+// ComposeFileCandidates returns the supported base compose filenames in Arcane's
 // detection order. A copy is returned so callers can't mutate package state.
 func ComposeFileCandidates() []string {
-	return append([]string(nil), composeFileCandidates...)
+	return slices.Clone(composeFileCandidates)
 }
 
 // detectExistingComposeFileInternal finds an existing compose file in the directory

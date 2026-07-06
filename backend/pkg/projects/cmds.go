@@ -67,7 +67,7 @@ func ComposeRestart(ctx context.Context, proj *types.Project, services []string)
 
 	progressWriter, _ := ctx.Value(ProgressWriterKey{}).(io.Writer)
 	return runWithContainerPolling(restartCtx, c.svc, proj.Name, progressWriter, func() error {
-		return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Services: services})
+		return c.svc.Restart(restartCtx, proj.Name, api.RestartOptions{Project: proj, Services: services})
 	})
 }
 

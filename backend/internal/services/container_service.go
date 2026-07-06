@@ -25,7 +25,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/containerstats"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
@@ -34,6 +33,8 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"go.getarcane.app/streams/bus"
+	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 )
@@ -83,8 +84,7 @@ func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal(ctx cont
 	if s.dockerService == nil || s.updateInfoCache == nil || s.dockerService.EventBus() == nil {
 		return
 	}
-	ch := make(chan events.Message, 16)
-	unsubscribe := s.dockerService.EventBus().Subscribe(events.ImageEventType, ch)
+	ch, unsubscribe := s.dockerService.EventBus().Subscribe(events.ImageEventType, bus.WithSubscriberBuffer(16))
 	go func() {
 		defer unsubscribe()
 		for {
@@ -919,7 +919,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 			recordedAt = time.Now()
 		}
 
-		payload := containertypes.StatsStreamPayload{
+		payload := containerstats.StatsStreamPayload{
 			StatsResponse:        statsData,
 			CurrentHistorySample: containerstats.BuildSample(statsData),
 		}

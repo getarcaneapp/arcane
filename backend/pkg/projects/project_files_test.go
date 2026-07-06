@@ -2,6 +2,7 @@ package projects
 
 import (
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -26,7 +27,7 @@ func TestReadProjectFileTree_ExcludesProtectedFilesAndReturnsFolders(t *testing.
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, ".git"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, ".git", "config"), []byte("private"), 0o644))
 
-	files, revision, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml")
+	files, revision, _, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml", 0)
 	require.NoError(t, err)
 	require.NotEmpty(t, revision)
 
@@ -46,7 +47,7 @@ func TestReadProjectFileTree_ZeroMaxDepthDisablesExpansion(t *testing.T) {
 	require.NoError(t, os.MkdirAll(filepath.Join(projectDir, "config"), 0o755))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "config", "app.yaml"), []byte("value: true\n"), 0o644))
 
-	files, revision, err := ReadProjectFileTree(projectDir, 0, "", "compose.yaml")
+	files, revision, _, err := ReadProjectFileTree(projectDir, 0, "", "compose.yaml", 0)
 	require.NoError(t, err)
 	assert.NotEmpty(t, revision)
 	assert.Empty(t, files)
@@ -61,7 +62,7 @@ func TestReadProjectFileTree_UseScanDepthSentinelUsesFileTreeMaxDepth(t *testing
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "visible.txt"), []byte("visible\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "level1", "level2", "hidden.txt"), []byte("hidden\n"), 0o644))
 
-	files, _, err := ReadProjectFileTree(projectDir, ProjectFileTreeUseScanDepth, "", "compose.yaml")
+	files, _, _, err := ReadProjectFileTree(projectDir, ProjectFileTreeUseScanDepth, "", "compose.yaml", 0)
 	require.NoError(t, err)
 
 	relativePaths := make([]string, 0, len(files))
@@ -194,7 +195,7 @@ func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("old\n"), 0o644))
 
-	_, revision, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml")
+	_, revision, _, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml", 0)
 	require.NoError(t, err)
 	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "notes.txt"), []byte("changed elsewhere\n"), 0o644))
 
@@ -333,4 +334,60 @@ func TestValidateProjectFileName_RejectsPathSeparators(t *testing.T) {
 
 	_, err := ValidateProjectFileName(strings.Join([]string{"folder", "name"}, string(filepath.Separator)))
 	require.Error(t, err)
+}
+
+func TestReadProjectFileTree_CapsEntriesWithStableRevision(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+
+	files, revision, truncated, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml", 3)
+	require.NoError(t, err)
+	assert.True(t, truncated)
+	// compose.yaml is hashed but protected (not returned), so the cap of 3
+	// hashed entries yields 2 listed files.
+	assert.Len(t, files, 2)
+
+	_, again, truncatedAgain, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml", 3)
+	require.NoError(t, err)
+	assert.True(t, truncatedAgain)
+	assert.Equal(t, revision, again)
+}
+
+func TestApplyProjectFileChanges_SucceedsWithCappedRevision(t *testing.T) {
+	t.Parallel()
+
+	projectDir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectDir, "compose.yaml"), []byte("services: {}\n"), 0o644))
+	for i := range 5 {
+		require.NoError(t, os.WriteFile(filepath.Join(projectDir, fmt.Sprintf("file-%d.txt", i)), []byte("x\n"), 0o644))
+	}
+
+	_, revision, truncated, err := ReadProjectFileTree(projectDir, 3, "", "compose.yaml", 3)
+	require.NoError(t, err)
+	require.True(t, truncated)
+
+	err = ApplyProjectFileChanges(projectDir, []project.ProjectFileChange{
+		{Operation: "update_file", RelativePath: "file-0.txt", Content: new("new\n")},
+	}, ProjectFileApplyOptions{
+		ExpectedRevision: revision,
+		MaxDepth:         3,
+		MaxEntries:       3,
+		ComposeFileName:  "compose.yaml",
+	})
+	require.NoError(t, err)
+}
+
+func TestProtectedProjectFilePaths_IncludesComposeOverrideCandidates(t *testing.T) {
+	t.Parallel()
+
+	protected := ProtectedProjectFilePaths("compose.yaml")
+
+	for _, candidate := range ComposeOverrideFileCandidates() {
+		assert.Truef(t, protected[candidate], "expected %q to be protected", candidate)
+	}
 }

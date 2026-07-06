@@ -77,10 +77,11 @@ class ProjectService extends BaseAPIService {
 
 	async getProjectForEnvironment(environmentId: string, projectId: string): Promise<Project> {
 		const basePath = `/environments/${environmentId}/projects/${projectId}`;
-		const [summary, compose, files, runtime, updates] = await Promise.all([
+		// The /files section walks the project directory recursively and can be
+		// slow on large projects, so it is fetched lazily via getProjectFiles.
+		const [summary, compose, runtime, updates] = await Promise.all([
 			this.getProjectSection(basePath),
 			this.getProjectSection(`${basePath}/compose`),
-			this.getProjectSection(`${basePath}/files`),
 			this.getProjectSection(`${basePath}/runtime`),
 			this.getProjectSection(`${basePath}/updates`)
 		]);
@@ -88,10 +89,13 @@ class ProjectService extends BaseAPIService {
 		return {
 			...summary,
 			...compose,
-			...files,
 			...runtime,
 			updateInfo: updates.updateInfo ?? compose.updateInfo ?? summary.updateInfo
 		};
+	}
+
+	async getProjectFiles(environmentId: string, projectId: string): Promise<Project> {
+		return this.getProjectSection(`/environments/${environmentId}/projects/${projectId}/files`);
 	}
 
 	private async getProjectSection(path: string): Promise<Project> {
@@ -159,6 +163,7 @@ class ProjectService extends BaseAPIService {
 		name?: string,
 		composeContent?: string,
 		envContent?: string,
+		overrideContent?: string,
 		fileTreeRevision?: string,
 		fileChanges?: ProjectFileChange[]
 	): Promise<Project> {
@@ -167,6 +172,7 @@ class ProjectService extends BaseAPIService {
 			name?: string;
 			composeContent?: string;
 			envContent?: string;
+			overrideContent?: string;
 			fileTreeRevision?: string;
 			fileChanges?: ProjectFileChange[];
 		} = {};
@@ -178,6 +184,9 @@ class ProjectService extends BaseAPIService {
 		}
 		if (envContent !== undefined) {
 			payload.envContent = envContent;
+		}
+		if (overrideContent !== undefined) {
+			payload.overrideContent = overrideContent;
 		}
 		if (fileChanges && fileChanges.length > 0) {
 			payload.fileTreeRevision = fileTreeRevision;
@@ -195,9 +204,16 @@ class ProjectService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/projects/${projectId}/includes`, payload));
 	}
 
-	async restartProject(projectId: string): Promise<void> {
+	async restartProject(projectId: string, services?: string[]): Promise<unknown> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`));
+		let params: URLSearchParams | undefined;
+		if (services && services.length > 0) {
+			params = new URLSearchParams();
+			for (const service of services) {
+				params.append('services', service);
+			}
+		}
+		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/restart`, undefined, { params }));
 	}
 
 	async archiveProject(projectId: string): Promise<void> {

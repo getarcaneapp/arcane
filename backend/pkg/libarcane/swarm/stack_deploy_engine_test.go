@@ -1,6 +1,7 @@
 package swarm
 
 import (
+	"context"
 	"path/filepath"
 	"testing"
 
@@ -16,6 +17,29 @@ func TestResolvePathWithinWorkingDirInternal_AllowsPathsWithinWorkingDir(t *test
 	path, err := resolvePathWithinWorkingDirInternal(workingDir, filepath.Join("configs", "app.env"))
 	require.NoError(t, err)
 	require.Equal(t, filepath.Join(workingDir, "configs", "app.env"), path)
+}
+
+func TestLoadComposeProject_MergesOverrideContent(t *testing.T) {
+	base := "services:\n  app:\n    image: nginx:alpine\n    environment:\n      FROM_BASE: \"1\"\n"
+	override := "services:\n  app:\n    image: busybox:latest\n    environment:\n      FROM_OVERRIDE: \"1\"\n"
+
+	project, err := loadComposeProject(context.Background(), "stack", base, override, "", "", nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+
+	app := project.Services["app"]
+	require.Equal(t, "busybox:latest", app.Image)
+	require.Contains(t, app.Environment, "FROM_BASE")
+	require.Contains(t, app.Environment, "FROM_OVERRIDE")
+}
+
+func TestLoadComposeProject_WithoutOverrideContent(t *testing.T) {
+	base := "services:\n  app:\n    image: nginx:alpine\n"
+
+	project, err := loadComposeProject(context.Background(), "stack", base, "", "", "", nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	require.Equal(t, "nginx:alpine", project.Services["app"].Image)
 }
 
 func TestResolvePathWithinWorkingDirInternal_RejectsEscapingPaths(t *testing.T) {

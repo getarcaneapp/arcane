@@ -26,7 +26,6 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.3.1
 	github.com/getarcaneapp/arcane/types/v2 v2.3.1
-	github.com/glebarez/sqlite v1.11.0
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -37,6 +36,7 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/compress v1.19.0
 	github.com/labstack/echo/v4 v4.15.4
+	github.com/libtnb/sqlite v1.1.2
 	github.com/lmittmann/tint v1.1.3
 	github.com/moby/buildkit v0.31.1
 	github.com/moby/moby/api v1.55.0
@@ -54,8 +54,11 @@ require (
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.7.3
 	go.getarcane.app/builds v0.1.0
+	go.getarcane.app/docker/convert v0.1.0
+	go.getarcane.app/streams v0.1.0
 	go.getarcane.app/sys/atomic v0.1.0
 	go.getarcane.app/sys/cgroup v0.1.0
+	go.getarcane.app/sys/crypto v0.1.0
 	go.getarcane.app/updater v0.5.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.53.0
@@ -118,7 +121,6 @@ require (
 	github.com/felixge/httpsnoop v1.1.0 // indirect
 	github.com/fsnotify/fsevents v0.2.0 // indirect
 	github.com/fvbommel/sortorder v1.1.0 // indirect
-	github.com/glebarez/go-sqlite v1.22.0 // indirect
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect

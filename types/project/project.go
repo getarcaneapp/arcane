@@ -180,6 +180,15 @@ type UpdateProject struct {
 	// Required: false
 	EnvContent *string `json:"envContent,omitempty"`
 
+	// OverrideContent is the Docker Compose override file content merged on top of
+	// the base compose file at deploy. Its tri-state controls the on-disk override:
+	// nil leaves any existing override untouched (it still participates in
+	// validation of a base-compose edit); a non-nil blank string deletes the
+	// override file; a non-nil non-empty string writes it.
+	//
+	// Required: false
+	OverrideContent *string `json:"overrideContent,omitempty"`
+
 	// FileTreeRevision is the revision observed by the client before staging
 	// FileChanges. The server rejects stale revisions to avoid clobbering
 	// concurrent filesystem changes.
@@ -495,6 +504,16 @@ type Details struct {
 	// Required: false
 	EnvContent string `json:"envContent,omitempty"`
 
+	// OverrideContent is the Docker Compose override file content, when present.
+	//
+	// Required: false
+	OverrideContent string `json:"overrideContent,omitempty"`
+
+	// OverrideFileName is the detected compose override file name, when present.
+	//
+	// Required: false
+	OverrideFileName string `json:"overrideFileName,omitempty"`
+
 	// IncludeFiles is a list of included files in the project.
 	//
 	// Required: false
@@ -516,6 +535,12 @@ type Details struct {
 	//
 	// Required: false
 	FileTreeRevision string `json:"fileTreeRevision,omitempty"`
+
+	// FileTreeTruncated indicates the file tree walk hit the entry cap and
+	// ProjectFiles is only a prefix of the full tree.
+	//
+	// Required: false
+	FileTreeTruncated bool `json:"fileTreeTruncated,omitempty"`
 
 	// Status is the current status of the project.
 	//

@@ -34,15 +34,24 @@ export const load: PageLoad = async ({ params, parent }) => {
 		throwPageLoadError(err, 'Failed to load project');
 	}
 
+	// Kick off the file-tree walk without awaiting it: on large projects it can
+	// take a while and must not block navigation.
+	void queryClient.prefetchQuery({
+		queryKey: queryKeys.projects.files(envId, params.projectId),
+		queryFn: () => projectService.getProjectFiles(envId, params.projectId)
+	});
+
 	const globalVariables = await loadGlobalVariables(queryClient);
 
 	const editorState = {
 		name: project.name || '',
 		composeContent: project.composeContent || '',
 		envContent: project.envContent || '',
+		overrideContent: project.overrideContent || '',
 		originalName: project.name || '',
 		originalComposeContent: project.composeContent || '',
-		originalEnvContent: project.envContent || ''
+		originalEnvContent: project.envContent || '',
+		originalOverrideContent: project.overrideContent || ''
 	};
 
 	return {

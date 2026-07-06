@@ -26,9 +26,9 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
-	libcrypto "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/crypto"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"go.getarcane.app/sys/atomic"
+	libcrypto "go.getarcane.app/sys/crypto"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/peer"
 )

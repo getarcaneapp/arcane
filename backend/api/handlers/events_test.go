@@ -14,8 +14,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	glsqlite "github.com/glebarez/sqlite"
 	"github.com/labstack/echo/v4"
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -132,7 +132,7 @@ func TestAgentEventIngestionRequiresAgentTokenAndPersists(t *testing.T) {
 
 func setupEventIngestionTestDBInternal(t *testing.T) *database.DB {
 	t.Helper()
-	db, err := gorm.Open(glsqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.Event{}))
 	return &database.DB{DB: db}
