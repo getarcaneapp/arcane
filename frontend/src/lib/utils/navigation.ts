@@ -145,12 +145,19 @@ export function toPortHref(hostPort: string, baseServerUrl?: string): string {
 	try {
 		const base = baseServerUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
 		const scheme = hostPort.endsWith('443') ? 'https' : 'http';
-		const url = new URL(base.startsWith('http') ? base.replace('http://', `${scheme}://`) : `${scheme}://${base}`);
+		const host = afterSubstring(base, "://");
+
+		const url = new URL(`${scheme}://${host}`);
 		url.port = hostPort;
 		return url.toString();
 	} catch {
 		return '#';
 	}
+}
+
+function afterSubstring(text: string, search: string): string {
+  const index = text.indexOf(search);
+  return index === -1 ? text : text.slice(index + search.length);
 }
 
 export function toSafeHref(raw: string, scheme: string = 'https'): string {
