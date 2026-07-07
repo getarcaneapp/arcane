@@ -1993,7 +1993,7 @@
 	"git_syncs_title": "Git synchronizace",
 	"git_sync_name": "Název synchronizace",
 	"git_sync_repository": "Git repozitář",
-	"git_sync_branch": "Branch",
+	"git_sync_branch": "Větev",
 	"git_sync_compose_path": "Compose File Path",
 	"git_sync_sync_files": "Sync Files",
 	"git_sync_sync_files_description": "Copy sibling files from the compose directory into the managed project. When disabled, Arcane only syncs the selected compose file.",
