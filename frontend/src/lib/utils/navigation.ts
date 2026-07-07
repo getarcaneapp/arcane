@@ -144,7 +144,8 @@ function getExpectedCode(key: string): string | null {
 export function toPortHref(hostPort: string, baseServerUrl?: string): string {
 	try {
 		const base = baseServerUrl || (typeof window !== 'undefined' ? window.location.origin : 'http://localhost');
-		const url = new URL(base.startsWith('http') ? base : `http://${base}`);
+		const scheme = hostPort.endsWith('443') ? 'https' : 'http';
+		const url = new URL(base.startsWith('http') ? base.replace('http://', `${scheme}://`) : `${scheme}://${base}`);
 		url.port = hostPort;
 		return url.toString();
 	} catch {
