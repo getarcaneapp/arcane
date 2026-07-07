@@ -9,7 +9,7 @@
 	import MobileUserCard from './mobile-user-card.svelte';
 	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
 	import * as Drawer from '$lib/components/ui/drawer/index.js';
-	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
+	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
 	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
 	import UpdateAvailableBanner from '$lib/components/sidebar/update-available-banner.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
@@ -192,7 +192,7 @@
 						class="mt-3 rounded-xl px-3 py-2.5"
 						label={m.sidebar_update_available()}
 						versionChip={upgradeCheck.versionChip}
-						disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
+						disabled={upgradeCheck.checkingUpgrade}
 						onclick={upgradeCheck.openDialog}
 					/>
 				{/if}
@@ -201,14 +201,7 @@
 	</Drawer.Content>
 </Drawer.Root>
 
-<UpdateCenterDialog
-	bind:open={upgradeCheck.showConfirmDialog}
-	bind:upgrading={upgradeCheck.upgrading}
-	{versionInformation}
-	canInstall={upgradeCheck.shouldShowUpgrade}
-	{debug}
-	onConfirm={upgradeCheck.confirmUpgrade}
-/>
+<UpdateAllDialog bind:open={upgradeCheck.showConfirmDialog} {versionInformation} canConfirm={upgradeCheck.shouldShowUpgrade} />
 
 <style>
 	:global(.scrollbar-hide) {

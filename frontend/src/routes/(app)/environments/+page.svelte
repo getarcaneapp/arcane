@@ -13,7 +13,7 @@
 	import { simpleRefresh } from '$lib/utils/api';
 	import { hasPermission } from '$lib/utils/auth';
 	import { DownloadIcon, UpdateIcon } from '$lib/icons';
-	import UpdateAllDialog from './update-all-dialog.svelte';
+	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
 
 	let { data } = $props();
 

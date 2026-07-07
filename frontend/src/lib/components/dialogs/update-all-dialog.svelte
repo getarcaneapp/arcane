@@ -11,12 +11,25 @@
 		type UpdateAllJob,
 		type UpdateAllEnvironmentStatus
 	} from '$lib/services/api/system-upgrade-service';
-	import { SuccessIcon, CheckIcon, ClockIcon, AlertIcon, AlertTriangleIcon } from '$lib/icons';
+	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '$lib/icons';
 	import BaseAPIService from '$lib/services/api-service';
+	import ReleaseNotes from '$lib/components/release-notes.svelte';
+	import type { AppVersionInformation } from '$lib/types/settings';
+	import { formatDistanceToNow } from 'date-fns';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
 	// binding undefined to a $bindable with a fallback throws props_invalid_value.
-	let { open = $bindable(undefined), onFinished }: { open?: boolean; onFinished?: () => void | Promise<void> } = $props();
+	let {
+		open = $bindable(undefined),
+		versionInformation,
+		canConfirm = true,
+		onFinished
+	}: {
+		open?: boolean;
+		versionInformation?: AppVersionInformation;
+		canConfirm?: boolean;
+		onFinished?: () => void | Promise<void>;
+	} = $props();
 
 	type Phase = 'confirm' | 'running' | 'finished';
 
@@ -116,6 +129,24 @@
 		BaseAPIService.setUpgradeInProgress(false);
 	});
 
+	// Version/release presentation for the confirm step, rendered when the caller
+	// has the manager's version information at hand (sidebar / mobile nav).
+	const isSemver = $derived(!!versionInformation?.isSemverVersion);
+	const trackingTag = $derived(versionInformation?.currentTag ?? '');
+	const currentDigest = $derived(versionInformation?.currentDigest ?? '');
+	const newDigest = $derived(versionInformation?.newestDigest ?? '');
+	const semverCurrent = $derived(versionInformation?.displayVersion || versionInformation?.currentVersion || '');
+	const semverNew = $derived(versionInformation?.newestVersion ?? '');
+	const releaseNotes = $derived(versionInformation?.releaseNotes?.trim() ?? '');
+	const releaseUrl = $derived(versionInformation?.releaseUrl ?? '');
+	const releasedAgo = $derived.by(() => {
+		const at = versionInformation?.releasedAt;
+		if (!at) return '';
+		const date = new Date(at);
+		if (Number.isNaN(date.getTime())) return '';
+		return formatDistanceToNow(date, { addSuffix: true });
+	});
+
 	const title = $derived.by(() => {
 		if (phase === 'confirm') return m.environments_update_all_title();
 		if (phase === 'finished') {
@@ -138,8 +169,6 @@
 				return m.environments_update_all_status_updated();
 			case 'triggered':
 				return m.environments_update_all_status_triggered();
-			case 'skipped_up_to_date':
-				return m.environments_update_all_status_skipped_up_to_date();
 			case 'skipped_offline':
 				return m.environments_update_all_status_skipped_offline();
 			case 'failed':
@@ -172,6 +201,93 @@
 			{/if}
 		</Dialog.Header>
 
+		{#if phase === 'confirm' && versionInformation}
+			<div class="space-y-4">
+				{#if isSemver && (semverCurrent || semverNew)}
+					<div class="flex flex-wrap items-center gap-2 text-sm">
+						{#if semverCurrent}
+							<span class="bg-muted text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs">
+								{semverCurrent}
+							</span>
+						{/if}
+						{#if semverCurrent && semverNew}
+							<span class="text-muted-foreground/60">→</span>
+						{/if}
+						{#if semverNew}
+							<span
+								class="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-medium"
+							>
+								{semverNew}
+							</span>
+						{/if}
+						{#if releasedAgo}
+							<span class="text-muted-foreground/70 text-xs">· {m.update_center_released_at({ date: releasedAgo })}</span>
+						{/if}
+					</div>
+				{:else if !isSemver && (trackingTag || currentDigest || newDigest)}
+					<div class="space-y-1.5 text-xs">
+						{#if trackingTag}
+							<div class="flex items-baseline gap-2">
+								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase">{m.update_center_tag_label()}</span>
+								<span class="bg-muted text-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono">
+									{trackingTag}
+								</span>
+							</div>
+						{/if}
+						{#if currentDigest}
+							<div class="flex items-baseline gap-2">
+								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase"
+									>{m.update_center_current_label()}</span
+								>
+								<code
+									class="text-muted-foreground bg-muted/50 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] break-all"
+								>
+									{currentDigest}
+								</code>
+							</div>
+						{/if}
+						{#if newDigest}
+							<div class="flex items-baseline gap-2">
+								<span class="text-primary/80 w-16 shrink-0 tracking-wide uppercase">{m.update_center_new_label()}</span>
+								<code
+									class="text-primary bg-primary/10 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium break-all"
+								>
+									{newDigest}
+								</code>
+							</div>
+						{/if}
+						{#if releasedAgo}
+							<p class="text-muted-foreground/70 pt-1">{m.update_center_released_at({ date: releasedAgo })}</p>
+						{/if}
+					</div>
+				{/if}
+
+				<div class="border-border/60 border-t pt-3">
+					<div class="flex items-center justify-between pb-2">
+						<h3 class="text-foreground text-sm font-semibold">{m.update_center_whats_new()}</h3>
+						{#if releaseUrl}
+							<a
+								href={releaseUrl}
+								target="_blank"
+								rel="noopener noreferrer"
+								class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+							>
+								{m.update_center_view_full_release()}
+								<ExternalLinkIcon class="size-3" />
+							</a>
+						{/if}
+					</div>
+					<ScrollArea.Root class="h-[220px]">
+						{#if releaseNotes}
+							<ReleaseNotes markdown={releaseNotes} />
+						{:else}
+							<p class="text-muted-foreground text-sm italic">{m.update_center_release_notes_unavailable()}</p>
+						{/if}
+					</ScrollArea.Root>
+				</div>
+			</div>
+		{/if}
+
 		{#if phase !== 'confirm'}
 			<div class="space-y-3">
 				{#if reconnecting}
@@ -203,7 +319,6 @@
 											(result.status === 'updated' || result.status === 'triggered') &&
 												'border-green-500/40 bg-green-500/10 text-green-600 dark:text-green-400',
 											result.status === 'updating' && 'border-primary/40 bg-primary/10 text-primary',
-											result.status === 'skipped_up_to_date' && 'border-border bg-muted/40 text-muted-foreground',
 											result.status === 'skipped_offline' &&
 												'border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-400',
 											result.status === 'failed' && 'border-destructive/40 bg-destructive/10 text-destructive',
@@ -214,8 +329,6 @@
 											<SuccessIcon class="size-3.5" />
 										{:else if result.status === 'updating'}
 											<Spinner class="size-3.5" />
-										{:else if result.status === 'skipped_up_to_date'}
-											<CheckIcon class="size-3.5" />
 										{:else if result.status === 'skipped_offline'}
 											<AlertIcon class="size-3.5" />
 										{:else if result.status === 'failed'}
@@ -262,7 +375,9 @@
 		<Dialog.Footer>
 			{#if phase === 'confirm'}
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
-				<Button onclick={handleConfirm}>{m.environments_update_all_confirm()}</Button>
+				{#if canConfirm}
+					<Button onclick={handleConfirm}>{m.environments_update_all_confirm()}</Button>
+				{/if}
 			{:else}
 				<Button variant="outline" onclick={handleClose}>{m.common_close()}</Button>
 			{/if}
