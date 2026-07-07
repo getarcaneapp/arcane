@@ -128,7 +128,7 @@
 				fromAddress: z.string(),
 				toAddresses: z.string(),
 				tlsMode: z.enum(['none', 'starttls', 'ssl']),
-				authMode: z.enum(['auto', 'plain', 'login', 'crammd5']),
+				authMode: z.enum(['none', 'auto', 'plain', 'login', 'crammd5']),
 				...eventSubscriptionSchemaFields
 			})
 			.superRefine((d, ctx) => {
@@ -478,6 +478,7 @@
 				description: m.notifications_email_auth_mode_description(),
 				options: [
 					{ value: 'auto', label: m.notifications_email_auth_mode_option_auto() },
+					{ value: 'none', label: m.notifications_email_auth_mode_option_none() },
 					{ value: 'plain', label: 'PLAIN' },
 					{ value: 'login', label: 'LOGIN' },
 					{ value: 'crammd5', label: 'CRAM-MD5' }

@@ -3,7 +3,7 @@
 export type NotificationProvider =
 	'discord' | 'email' | 'telegram' | 'signal' | 'slack' | 'ntfy' | 'pushover' | 'gotify' | 'matrix' | 'generic';
 export type EmailTLSMode = 'none' | 'starttls' | 'ssl';
-export type EmailAuthMode = 'auto' | 'plain' | 'login' | 'crammd5';
+export type EmailAuthMode = 'none' | 'auto' | 'plain' | 'login' | 'crammd5';
 
 export interface NotificationSettings {
 	provider: NotificationProvider;

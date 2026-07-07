@@ -58,6 +58,7 @@ const (
 type EmailAuthMode string
 
 const (
+	EmailAuthModeNone    EmailAuthMode = "none"
 	EmailAuthModeAuto    EmailAuthMode = "auto"
 	EmailAuthModePlain   EmailAuthMode = "plain"
 	EmailAuthModeLogin   EmailAuthMode = "login"
