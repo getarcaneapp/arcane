@@ -5,7 +5,7 @@
 	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import { m } from '$lib/paraglide/messages';
-	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
+	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
 	import { DownloadIcon } from '$lib/icons';
 	import { useUpgradeCheck } from '$lib/hooks/use-upgrade-check.svelte';
 	import UpdateAvailableBanner from './update-available-banner.svelte';
@@ -34,14 +34,7 @@
 	);
 </script>
 
-<UpdateCenterDialog
-	bind:open={upgradeCheck.showConfirmDialog}
-	bind:upgrading={upgradeCheck.upgrading}
-	{versionInformation}
-	canInstall={upgradeCheck.shouldShowUpgrade}
-	{debug}
-	onConfirm={upgradeCheck.confirmUpgrade}
-/>
+<UpdateAllDialog bind:open={upgradeCheck.showConfirmDialog} {versionInformation} canConfirm={upgradeCheck.shouldShowUpgrade} />
 
 {#if upgradeCheck.shouldShowBanner}
 	<div class={cn('pb-2', isCollapsed ? 'px-1' : 'px-3')}>
@@ -52,7 +45,7 @@
 				class="rounded-lg px-2.5 py-2"
 				label={m.sidebar_update_available()}
 				versionChip={upgradeCheck.versionChip}
-				disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
+				disabled={upgradeCheck.checkingUpgrade}
 				onclick={upgradeCheck.openDialog}
 			/>
 		{:else}
@@ -61,7 +54,7 @@
 					{#snippet child({ props })}
 						<button
 							onclick={upgradeCheck.openDialog}
-							disabled={upgradeCheck.upgrading || upgradeCheck.checkingUpgrade}
+							disabled={upgradeCheck.checkingUpgrade}
 							class="hover:bg-muted/60 focus-visible:ring-primary/40 relative mx-auto flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 							{...props}
 						>

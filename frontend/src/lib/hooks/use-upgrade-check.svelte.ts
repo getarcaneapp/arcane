@@ -1,11 +1,8 @@
-import { m } from '$lib/paraglide/messages';
 import { queryKeys } from '$lib/query/query-keys';
 import systemUpgradeService from '$lib/services/api/system-upgrade-service';
 import type { AppVersionInformation } from '$lib/types/settings';
-import { extractApiErrorMessage } from '$lib/utils/api';
 import { hasPermission } from '$lib/utils/auth';
-import { createMutation, createQuery } from '@tanstack/svelte-query';
-import { toast } from 'svelte-sonner';
+import { createQuery } from '@tanstack/svelte-query';
 
 type UseUpgradeCheckOptions = {
 	queryScope: 'mobile-nav' | 'sidebar';
@@ -14,10 +11,10 @@ type UseUpgradeCheckOptions = {
 };
 
 export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = () => false }: UseUpgradeCheckOptions) {
-	let upgrading = $state(false);
 	let showConfirmDialog = $state(false);
 
-	const canInstallUpdates = $derived(hasPermission('environments:update'));
+	// Same permission the update-all endpoint enforces (PermSystemUpgrade).
+	const canInstallUpdates = $derived(hasPermission('system:upgrade'));
 	const shouldCheckUpgrade = $derived(!!(getVersionInformation()?.updateAvailable && canInstallUpdates && !getDebug()));
 	const upgradeAvailabilityQuery = createQuery(() => ({
 		queryKey: queryKeys.system.upgradeAvailable(queryScope),
@@ -53,31 +50,12 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 	});
 
 	const shouldShowBanner = $derived(getVersionInformation()?.updateAvailable || getDebug());
-	const triggerUpgradeMutation = createMutation(() => ({
-		mutationFn: () => systemUpgradeService.triggerUpgrade(),
-		onError: (error: unknown) => {
-			const errorMessage = extractApiErrorMessage(error);
-			const wrappedPrefix = m.upgrade_failed({ error: '' });
-			toast.error(errorMessage.startsWith(wrappedPrefix) ? errorMessage : m.upgrade_failed({ error: errorMessage }));
-			upgrading = false;
-		}
-	}));
 
 	function openDialog() {
 		showConfirmDialog = true;
 	}
 
-	function confirmUpgrade() {
-		triggerUpgradeMutation.mutate();
-	}
-
 	return {
-		get upgrading() {
-			return upgrading;
-		},
-		set upgrading(value: boolean) {
-			upgrading = value;
-		},
 		get showConfirmDialog() {
 			return showConfirmDialog;
 		},
@@ -99,7 +77,6 @@ export function useUpgradeCheck({ queryScope, getVersionInformation, getDebug = 
 		get shouldShowBanner() {
 			return shouldShowBanner;
 		},
-		openDialog,
-		confirmUpgrade
+		openDialog
 	};
 }

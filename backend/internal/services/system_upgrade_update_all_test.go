@@ -7,6 +7,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/types/v2/version"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -60,6 +61,17 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 			currentDigest:  "sha256:a",
 			wantManagerOK:  false,
 		},
+		{
+			name: "unchanged but already on target means force-update succeeded",
+			job: func() *models.EnvironmentUpdateJob {
+				job := newJob(now.Add(-5*time.Minute), "1.0.0", "sha256:a")
+				job.ManagerTargetVersion = "v1.0.0"
+				return job
+			}(),
+			currentVersion: "1.0.0",
+			currentDigest:  "sha256:a",
+			wantManagerOK:  true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -73,6 +85,15 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A force-update with an unknown latest (offline or rate-limited version check)
+// must still record a target — the current identifiers — so the resume check can
+// recognize a same-image recreation as success instead of finalizing it as failed.
+func TestUpdateAllTargetVersionFallsBackToCurrent(t *testing.T) {
+	require.Equal(t, "v2.0.0", updateAllTargetVersionInternal(&version.Info{NewestVersion: "v2.0.0", CurrentVersion: "v1.2.3"}))
+	require.Equal(t, "v1.2.3", updateAllTargetVersionInternal(&version.Info{CurrentVersion: "v1.2.3", CurrentDigest: "sha256:a"}))
+	require.Equal(t, "sha256:a", updateAllTargetVersionInternal(&version.Info{CurrentDigest: "sha256:a"}))
 }
 
 func TestUpsertPendingResult(t *testing.T) {
@@ -123,7 +144,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 		UserID:   "user-1",
 		Username: "arcane",
 		Results: models.EnvironmentUpdateResults{
-			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusSkippedUpToDate},
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdated},
 			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdating},
 			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusPending},
 			{EnvironmentID: "remote-3", EnvironmentName: "parquetide", Status: models.EnvironmentUpdateResultStatusFailed, Error: "already failed"},
@@ -142,7 +163,7 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.NotNil(t, got.CompletedAt)
 	require.Len(t, got.Results, 4)
 
-	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedUpToDate, got.Results[0].Status)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[0].Status)
 	require.Empty(t, got.Results[0].Error)
 
 	require.Equal(t, models.EnvironmentUpdateResultStatusFailed, got.Results[1].Status)
@@ -180,7 +201,7 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 		Results: models.EnvironmentUpdateResults{
 			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating},
 			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpdated},
-			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusSkippedUpToDate},
+			{EnvironmentID: "remote-2", EnvironmentName: "oracle-cloud", Status: models.EnvironmentUpdateResultStatusSkippedOffline},
 		},
 	}
 	require.NoError(t, db.WithContext(ctx).Create(job).Error)
@@ -202,5 +223,5 @@ func TestResumeUpdateAllFinalizesManagerWithoutRerunningAgents(t *testing.T) {
 
 	// Remote rows are untouched — proving the agents phase was NOT re-run on resume.
 	require.Equal(t, models.EnvironmentUpdateResultStatusUpdated, got.Results[1].Status)
-	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedUpToDate, got.Results[2].Status)
+	require.Equal(t, models.EnvironmentUpdateResultStatusSkippedOffline, got.Results[2].Status)
 }
