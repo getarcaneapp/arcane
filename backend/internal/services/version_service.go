@@ -209,13 +209,9 @@ func (s *VersionService) isSemverVersion() bool {
 }
 
 // getDisplayVersion formats the version for display purposes
-// If version contains "next", it returns "next-<short revision>"
-// Otherwise returns the version as-is
+// Semver versions (including prereleases like 2.4.0-next.1) display as v<version>
 func (s *VersionService) getDisplayVersion() string {
 	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
-	if strings.Contains(strings.ToLower(version), "next") && s.revision != "" && s.revision != "unknown" {
-		return "next-" + config.ShortRevision()
-	}
 	if s.isSemverVersion() {
 		return "v" + version
 	}
