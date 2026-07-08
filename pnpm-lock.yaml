@@ -123,11 +123,11 @@ importers:
         specifier: ^6.1.36
         version: 6.1.36(svelte@5.56.4)
       '@tanstack/svelte-table':
-        specifier: ^9.0.0-beta.31
-        version: 9.0.0-beta.31(svelte@5.56.4)
+        specifier: ^9.0.0-beta.33
+        version: 9.0.0-beta.33(svelte@5.56.4)
       '@tanstack/table-core':
-        specifier: 9.0.0-beta.31
-        version: 9.0.0-beta.31
+        specifier: 9.0.0-beta.33
+        version: 9.0.0-beta.33
       '@tanstack/virtual-core':
         specifier: ^3.17.3
         version: 3.17.3
@@ -1366,15 +1366,15 @@ packages:
     peerDependencies:
       svelte: ^5.0.0
 
-  '@tanstack/svelte-table@9.0.0-beta.31':
-    resolution: {integrity: sha512-jP9FawCjPUb+nHgsNfW2jIhuE0Y7oYERsAm1vfjR5ecugXnNAq65omCgN833ys2qkPUNjzwEPizcGDC5xZtxzA==}
-    engines: {node: '>=16'}
+  '@tanstack/svelte-table@9.0.0-beta.33':
+    resolution: {integrity: sha512-ptjBJDJTdsRjALugefRLBCCWjtMVs5t+J6abl5BEHi7r9yeAuwevwlSd4W2evRjA5yNL3qThEOEZ4ACGDtUang==}
+    engines: {node: '>=20'}
     peerDependencies:
       svelte: ^5.0.0
 
-  '@tanstack/table-core@9.0.0-beta.31':
-    resolution: {integrity: sha512-B9XdGcv/8+NdhmIpVWnvQwNFL2UL81W6BvT/YZ8wrM9FpIvLrZjNXRxMUrjvKE8pmKwDFCndWTVSnRsIZYBT+Q==}
-    engines: {node: '>=16'}
+  '@tanstack/table-core@9.0.0-beta.33':
+    resolution: {integrity: sha512-m0puHF6M7BByw5N0bqYl9RJ1KvjGnNqxNh0Wo4Va3D8lt1GUgau9VIzcW1MLxJGQ/OjqbQ6IeMDNo7fOs04ExQ==}
+    engines: {node: '>=20'}
 
   '@tanstack/virtual-core@3.17.3':
     resolution: {integrity: sha512-8Np/TFELpI0ySuJoVmjvOrQYXH/8sTX0Biv9szhFhY39xOdAAY+smrMxjxOum/ux3eM8MUJQsEJ0/R0UpvC8dw==}
@@ -3933,13 +3933,13 @@ snapshots:
       '@tanstack/store': 0.11.0
       svelte: 5.56.4
 
-  '@tanstack/svelte-table@9.0.0-beta.31(svelte@5.56.4)':
+  '@tanstack/svelte-table@9.0.0-beta.33(svelte@5.56.4)':
     dependencies:
       '@tanstack/svelte-store': 0.12.0(svelte@5.56.4)
-      '@tanstack/table-core': 9.0.0-beta.31
+      '@tanstack/table-core': 9.0.0-beta.33
       svelte: 5.56.4
 
-  '@tanstack/table-core@9.0.0-beta.31':
+  '@tanstack/table-core@9.0.0-beta.33':
     dependencies:
       '@tanstack/store': 0.11.0
 
