@@ -25,7 +25,7 @@ require (
 	github.com/docker/go-units v0.5.0
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/getarcaneapp/arcane/cli/v2 v2.3.1
-	github.com/getarcaneapp/arcane/types/v2 v2.3.1
+	github.com/getarcaneapp/arcane/types/v2 v2.3.2
 	github.com/go-git/go-git/v5 v5.19.1
 	github.com/gofrs/flock v0.13.0
 	github.com/golang-jwt/jwt/v5 v5.3.1
@@ -52,7 +52,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/subosito/gotenv v1.6.0
-	github.com/wneessen/go-mail v0.8.0
+	github.com/wneessen/go-mail v0.8.1-0.20260707133953-7c4d4401589c
 	go.getarcane.app/builds v0.1.0
 	go.getarcane.app/docker/convert v0.1.0
 	go.getarcane.app/streams v0.1.0
@@ -66,7 +66,7 @@ require (
 	golang.org/x/net v0.56.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.21.0
-	golang.org/x/text v0.38.0
+	golang.org/x/text v0.39.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.82.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
@@ -224,7 +224,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/sys v0.46.0 // indirect
 	golang.org/x/term v0.44.0 // indirect
-	golang.org/x/tools v0.46.0 // indirect
+	golang.org/x/tools v0.47.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	gopkg.in/ini.v1 v1.67.2 // indirect

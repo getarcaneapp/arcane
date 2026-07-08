@@ -7,10 +7,11 @@
     "dev": "vite dev --port 3000 --host",
     "build": "vite build",
     "preview": "vite preview --port 3000",
-    "check": "svelte-kit sync && svelte-check-rs --tsconfig ./tsconfig.json",
+    "check": "pnpm paraglide:compile && svelte-kit sync && svelte-check-rs --tsconfig ./tsconfig.json",
     "format": "prettier --write ./src",
     "format:check": "prettier --check ./src",
-    "check:watch": "svelte-kit sync && svelte-check-rs --tsconfig ./tsconfig.json --watch",
+    "check:watch": "pnpm paraglide:compile && svelte-kit sync && svelte-check-rs --tsconfig ./tsconfig.json --watch",
+    "paraglide:compile": "paraglide-js compile --project ./project.inlang --outdir ./src/lib/paraglide --strategy cookie preferredLanguage baseLocale --silent",
     "fallow": "fallow"
   },
   "dependencies": {
