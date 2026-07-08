@@ -61,8 +61,8 @@ github.com/frankban/quicktest v1.14.6 h1:7Xjx+VpznH+oBnejlPUj8oUpdxnVs4f8XU8WnHk
 github.com/frankban/quicktest v1.14.6/go.mod h1:4ptaffx2x8+WTWXmUCuVU6aPUX1/Mz7zb5vbUoiM6w0=
 github.com/fsnotify/fsnotify v1.10.1 h1:b0/UzAf9yR5rhf3RPm9gf3ehBPpf0oZKIjtpKrx59Ho=
 github.com/fsnotify/fsnotify v1.10.1/go.mod h1:TLheqan6HD6GBK6PrDWyDPBaEV8LspOxvPSjC+bVfgo=
-github.com/getarcaneapp/arcane/types/v2 v2.3.1 h1:O7oC/NuHatRu7v9BkL7xhLuFB0WCDSFMAKF5OHaa2QE=
-github.com/getarcaneapp/arcane/types/v2 v2.3.1/go.mod h1:Hlaj+u4w+hWK0bgql2TO+bdkFVHwL/x+eYZh9t9v4xs=
+github.com/getarcaneapp/arcane/types/v2 v2.3.2 h1:eunBA2EoZMQsZp7kNdP4MfN+OsfLAe3uV4dgK18fxjY=
+github.com/getarcaneapp/arcane/types/v2 v2.3.2/go.mod h1:KhiLLrldGaFt2aKUu3L44Nr3MPOpCZKkJ5fnIk9g1nM=
 github.com/go-logfmt/logfmt v0.6.1 h1:4hvbpePJKnIzH1B+8OR/JPbTx37NktoI9LE2QZBBkvE=
 github.com/go-logfmt/logfmt v0.6.1/go.mod h1:EV2pOAQoZaT1ZXZbqDl5hrymndi4SY9ED9/z6CO0XAk=
 github.com/go-logr/logr v1.2.2/go.mod h1:jdQByPbusPIv2/zmleS9BjJVeZ6kBagPoEUsqbVz/1A=
