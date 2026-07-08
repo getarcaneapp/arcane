@@ -275,7 +275,7 @@
 		{/snippet}
 	</TabbedPageLayout>
 {:else}
-	<ResourceDetailLayout backUrl="/volumes" backLabel={m.volumes_title()} title="Volume" {actions}>
+	<ResourceDetailLayout backUrl="/volumes" backLabel={m.volumes_title()} title={m.volumes_volume()} {actions}>
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
 			<div class="bg-muted/30 mb-4 rounded-full p-4">
 				<BoxIcon class="text-muted-foreground size-10 opacity-70" />

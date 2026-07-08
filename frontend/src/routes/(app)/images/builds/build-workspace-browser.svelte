@@ -153,10 +153,10 @@
 	async function handleCopyPath() {
 		const status = await clipboard.copy(absoluteCurrentPath);
 		if (status === 'success') {
-			toast.success('Copied current path');
+			toast.success(m.common_copied_path());
 			return;
 		}
-		toast.error('Failed to copy path');
+		toast.error(m.common_copy_path_error());
 	}
 
 	async function openEditor(file: FileEntry) {
@@ -174,7 +174,7 @@
 			const file = new File([editorContent], editorFile.name, { type: 'text/plain' });
 			await uploadMutation.mutateAsync({ path: dirPath, file });
 			await queryClient.invalidateQueries({ queryKey: queryKeys.buildWorkspace.content(envId, editorFile.path) });
-			toast.success('File saved');
+			toast.success(m.common_file_saved());
 			editorOpen = false;
 			await filesQuery.refetch();
 		} catch (e: any) {

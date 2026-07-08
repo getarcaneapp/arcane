@@ -130,7 +130,7 @@
 				// the root layout already pulls public settings as a fallback.
 				console.warn('Skipping post-login settings fetch:', err);
 			}
-			toast.success('Successfully logged in!');
+			toast.success(m.auth_login_success());
 			// Navigate straight to a route the user can actually reach. Computing the
 			// reachable target here (rather than always going to /dashboard) avoids the
 			// (app) layout's auth-redirect superseding this navigation: an interrupted

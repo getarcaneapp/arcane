@@ -218,7 +218,7 @@
 			matrixValid &&
 			genericValid
 		)) {
-			toast.error('Please check the form for errors');
+			toast.error(m.common_form_errors());
 			return;
 		}
 
@@ -363,7 +363,7 @@
 			}
 		} catch (error) {
 			console.error('Error saving notification settings:', error);
-			toast.error('Failed to save notification settings. Please try again.');
+			toast.error(m.settings_notifications_save_error());
 		} finally {
 			isLoading = false;
 		}

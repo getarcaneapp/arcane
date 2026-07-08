@@ -229,12 +229,12 @@
 					</div>
 				{:else}
 					{#each messages as message (message.id)}
-						<div class="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2 rounded px-1 py-0.5 hover:bg-white/[0.04]">
+						<div class="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2 rounded px-1 py-0.5 hover:bg-white/4">
 							<span class="text-zinc-500">{formatDateTimeInternal(message.createdAt)}</span>
 							<span class={cn('font-bold', messageLevelClassInternal(message.level))}>
 								{message.level.toUpperCase()}
 							</span>
-							<span class="break-words whitespace-pre-wrap">{message.message}</span>
+							<span class="wrap-break-word whitespace-pre-wrap">{message.message}</span>
 						</div>
 					{/each}
 				{/if}

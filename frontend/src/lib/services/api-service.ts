@@ -1,3 +1,4 @@
+import { m } from '$lib/paraglide/messages';
 import ky, { HTTPError as KyHTTPError, NetworkError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 
@@ -319,7 +320,7 @@ class APIClient {
 
 				if (errorResponse.status === 403 && typeof window !== 'undefined' && !config.suppressAccessDeniedToast) {
 					const reason = extractServerMessage(parsed) ?? 'You do not have permission to perform this action.';
-					toast.error('Access denied', { description: reason });
+					toast.error(m.common_access_denied(), { description: reason });
 				}
 
 				throw new APIError(extractServerMessage(parsed, true) ?? error.message, {

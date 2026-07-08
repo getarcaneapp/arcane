@@ -14,6 +14,7 @@
 	import ContainerOverview from '../components/ContainerOverview.svelte';
 	import ContainerStats from '../components/ContainerStats.svelte';
 	import ContainerConfiguration from '../components/ContainerConfiguration.svelte';
+	import { getContainerStatusLabel } from '../container-table.helpers';
 	import ContainerNetwork from '../components/ContainerNetwork.svelte';
 	import ContainerStorage from '../components/ContainerStorage.svelte';
 	import ContainerLogsPanel from '../components/ContainerLogsPanel.svelte';
@@ -315,13 +316,13 @@
 					class="size-5"
 					containerClass="size-9"
 				/>
-				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={containerDisplayName}>
+				<h1 class="max-w-75 truncate text-lg font-semibold" title={containerDisplayName}>
 					{containerDisplayName}
 				</h1>
 				{#if container?.state}
 					<StatusBadge
 						variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-						text={container.state.status}
+						text={getContainerStatusLabel(container.state.status)}
 					/>
 				{/if}
 			</div>

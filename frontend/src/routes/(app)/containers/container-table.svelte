@@ -9,7 +9,7 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { format } from 'date-fns';
-	import { capitalizeFirstLetter, truncateImageDigest } from '$lib/utils/formatting';
+	import { truncateImageDigest } from '$lib/utils/formatting';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -40,6 +40,7 @@
 		getProjectName,
 		getStateBadgeVariant,
 		parseImageRef,
+		getContainerStatusLabel,
 		type ActionStatus
 	} from './container-table.helpers';
 	import {
@@ -412,7 +413,7 @@
 				</span>
 			</div>
 		{:else}
-			<StatusBadge variant={getStateBadgeVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+			<StatusBadge variant={getStateBadgeVariant(item.state)} text={getContainerStatusLabel(item.state)} />
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
@@ -515,7 +516,7 @@
 				(mobileFieldVisibility['state'] ?? true)
 					? {
 							variant: getStateBadgeVariant(item.state),
-							text: capitalizeFirstLetter(item.state)
+							text: getContainerStatusLabel(item.state)
 						}
 					: null
 		]}
