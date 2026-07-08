@@ -12,8 +12,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
+	"github.com/go-git/go-git/v5/plumbing/transport"
 	gossh "golang.org/x/crypto/ssh"
 )
+
+// Azure DevOps requires multi_ack/multi_ack_detailed in pack negotiation;
+// go-git's default UnsupportedCapabilities strips them and clones fail with
+// "invalid reset option: object not found" (#3168).
+func TestInitAllowsMultiAckCapabilities(t *testing.T) {
+	if len(transport.UnsupportedCapabilities) != 1 || transport.UnsupportedCapabilities[0] != capability.ThinPack {
+		t.Errorf("expected UnsupportedCapabilities to contain only thin-pack, got %v", transport.UnsupportedCapabilities)
+	}
+}
 
 func TestGetKnownHostsPath(t *testing.T) {
 	t.Run("returns SSH_KNOWN_HOSTS env var when set", func(t *testing.T) {

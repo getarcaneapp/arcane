@@ -20,6 +20,7 @@ import (
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
 	"github.com/go-git/go-git/v5/plumbing"
+	"github.com/go-git/go-git/v5/plumbing/protocol/packp/capability"
 	"github.com/go-git/go-git/v5/plumbing/transport"
 	"github.com/go-git/go-git/v5/plumbing/transport/client"
 	githttp "github.com/go-git/go-git/v5/plumbing/transport/http"
@@ -33,6 +34,15 @@ import (
 // distroless image. Unregister it so a repository URL can never reach it.
 func init() {
 	client.InstallProtocol("file", nil)
+
+	// go-git strips multi_ack/multi_ack_detailed from pack negotiation by
+	// default, which Azure DevOps rejects by sending an incomplete pack
+	// ("invalid reset option: object not found" on clone). Advertise them and
+	// keep only thin-pack disabled, matching Flux/ArgoCD; other hosts are
+	// unaffected.
+	transport.UnsupportedCapabilities = []capability.Capability{
+		capability.ThinPack,
+	}
 }
 
 // Client handles git operations
