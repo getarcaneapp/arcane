@@ -140,7 +140,11 @@ func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteRe
 	return s.deps.RegistryDigestResolver
 }
 
-// ApplyPending executes pending image updates.
+// ApplyPending executes pending image updates. When the options carry
+// resource IDs the run is scoped: the engine's ApplyPending has no resource
+// filtering (it would apply every pending update), so scoped requests resolve
+// to concrete containers and go through the engine's single-container path
+// instead — same activity, events, and cleanup either way.
 func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Options) (out *updater.Result, err error) {
 	start := time.Now()
 	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
@@ -163,19 +167,27 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		"phase":       "start",
 		"dryRun":      options.DryRun,
 		"forceUpdate": options.ForceUpdate,
+		"scopedType":  options.Type,
+		"scopedCount": len(options.ResourceIds),
 		"time":        time.Now().UTC().Format(time.RFC3339),
 	})
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Planning pending updates", "Planning updates", 5)
 
-	moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
-	if moduleResult != nil {
-		out = resultFromModuleInternal(moduleResult)
-		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
-		s.logResultItemsInternal(ctx, out)
-	}
-	if engineErr != nil {
-		err = engineErr
-		return out, err
+	if len(options.ResourceIds) > 0 {
+		if err = s.applyScopedUpdatesInternal(ctx, options, out); err != nil {
+			return out, err
+		}
+	} else {
+		moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
+		if moduleResult != nil {
+			out = resultFromModuleInternal(moduleResult)
+			out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+			s.logResultItemsInternal(ctx, out)
+		}
+		if engineErr != nil {
+			err = engineErr
+			return out, err
+		}
 	}
 
 	if !options.DryRun && s.deps.ImageUpdates != nil {
@@ -196,6 +208,154 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		"time":      time.Now().UTC().Format(time.RFC3339),
 	})
 	return out, nil
+}
+
+// applyScopedUpdatesInternal runs a scoped update into the caller's result:
+// resolves the requested resources to container IDs and updates each through
+// the engine's single-container path.
+func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options updater.Options, out *updater.Result) error {
+	containerIDs, err := s.resolveScopedContainerIDsInternal(ctx, options)
+	if err != nil {
+		return err
+	}
+	if len(containerIDs) == 0 {
+		return fmt.Errorf("no containers matched the requested %s resources", strings.TrimSpace(options.Type))
+	}
+
+	engineOpts := moduletypes.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
+	var engineErrs []error
+	for _, containerID := range containerIDs {
+		moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, engineOpts)
+		if moduleResult != nil {
+			partial := resultFromModuleInternal(moduleResult)
+			out.Checked += partial.Checked
+			out.Updated += partial.Updated
+			out.Restarted += partial.Restarted
+			out.Skipped += partial.Skipped
+			out.Failed += partial.Failed
+			out.Items = append(out.Items, partial.Items...)
+		}
+		if engineErr != nil {
+			out.Failed++
+			out.Items = append(out.Items, updater.ResourceResult{
+				ResourceID:   containerID,
+				ResourceType: "container",
+				Status:       updater.StatusFailed,
+				Error:        engineErr.Error(),
+			})
+			engineErrs = append(engineErrs, fmt.Errorf("%s: %w", containerID, engineErr))
+		}
+	}
+	s.logResultItemsInternal(ctx, out)
+	out.Success = out.Failed == 0
+	// Engine errors propagate like the unscoped path's engine error does —
+	// the remaining containers were still attempted and recorded above.
+	return errors.Join(engineErrs...)
+}
+
+// resolveScopedContainerIDsInternal maps a scoped options payload to the
+// container IDs it covers.
+func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, options updater.Options) ([]string, error) {
+	requested := make([]string, 0, len(options.ResourceIds))
+	for _, id := range options.ResourceIds {
+		if trimmed := strings.TrimSpace(id); trimmed != "" {
+			requested = append(requested, trimmed)
+		}
+	}
+	if len(requested) == 0 {
+		return nil, nil
+	}
+
+	switch strings.ToLower(strings.TrimSpace(options.Type)) {
+	case "", "container":
+		return requested, nil
+	case "project":
+		return s.containerIDsForProjectsInternal(ctx, requested)
+	case "image":
+		return s.containerIDsForImagesInternal(ctx, requested)
+	default:
+		return nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
+	}
+}
+
+// containerIDsForProjectsInternal resolves project IDs or compose names to
+// the IDs of the containers that belong to those projects.
+func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, projectRefs []string) ([]string, error) {
+	if s.deps.Docker == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+
+	names := make(map[string]struct{}, len(projectRefs))
+	for _, ref := range projectRefs {
+		name := ref
+		if s.deps.Projects != nil {
+			if project, lookupErr := s.deps.Projects.GetProjectFromDatabaseByID(ctx, ref); lookupErr == nil && project != nil {
+				switch {
+				case project.ComposeProjectName != nil && strings.TrimSpace(*project.ComposeProjectName) != "":
+					name = *project.ComposeProjectName
+				case strings.TrimSpace(project.Name) != "":
+					name = project.Name
+				}
+			}
+		}
+		names[strings.ToLower(strings.TrimSpace(name))] = struct{}{}
+	}
+
+	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	var ids []string
+	for _, summary := range containers {
+		project := strings.ToLower(strings.TrimSpace(dockerutil.ComposeProjectLabel(summary.Labels)))
+		if project == "" {
+			continue
+		}
+		if _, ok := names[project]; ok {
+			ids = append(ids, summary.ID)
+		}
+	}
+	return ids, nil
+}
+
+// containerIDsForImagesInternal resolves image IDs or references to the IDs
+// of the containers currently running those images.
+func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imageRefs []string) ([]string, error) {
+	if s.deps.Docker == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+
+	wanted := make(map[string]struct{}, len(imageRefs)*2)
+	for _, ref := range imageRefs {
+		trimmed := strings.TrimSpace(ref)
+		if trimmed == "" {
+			continue
+		}
+		wanted[trimmed] = struct{}{}
+		if normalized := refs.NormalizeImageUpdateRef(trimmed); normalized != "" {
+			wanted[normalized] = struct{}{}
+		}
+	}
+
+	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list containers: %w", err)
+	}
+
+	var ids []string
+	for _, summary := range containers {
+		if _, ok := wanted[summary.ImageID]; ok {
+			ids = append(ids, summary.ID)
+			continue
+		}
+		if normalized := refs.NormalizeImageUpdateRef(summary.Image); normalized != "" {
+			if _, ok := wanted[normalized]; ok {
+				ids = append(ids, summary.ID)
+			}
+		}
+	}
+	return ids, nil
 }
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
