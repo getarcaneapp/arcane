@@ -219,7 +219,7 @@ checksum:
       name_template: arcane-cli_darwin_arm64
 
 nightly:
-  version_template: '0.0.0-next.{{ .ShortCommit }}'
+  version_template: '{{ .Env.NEXT_IMAGE_VERSION }}'
 
 nfpms:
   - id: arcane-cli
@@ -310,8 +310,9 @@ dockers_v2:
       - 'ghcr.io/getarcaneapp/arcane'
       - 'ghcr.io/getarcaneapp/manager'
     tags:
+      - 'next'
       - 'next-static'
-      - '{{ .Version }}'
+      - 'v{{ .Version }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -322,7 +323,7 @@ dockers_v2:
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
       'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
       'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
+      'org.opencontainers.image.version': 'v{{.Version}}'
       'org.opencontainers.image.revision': '{{.FullCommit}}'
       'org.opencontainers.image.licenses': 'BSD-3-Clause'
       'org.opencontainers.image.title': 'Arcane'
@@ -339,8 +340,9 @@ dockers_v2:
       - 'ghcr.io/getarcaneapp/arcane-headless'
       - 'ghcr.io/getarcaneapp/agent'
     tags:
+      - 'next'
       - 'next-static'
-      - '{{ .Version }}'
+      - 'v{{ .Version }}'
     platforms:
       - linux/amd64
       - linux/arm64
@@ -351,7 +353,7 @@ dockers_v2:
       'org.opencontainers.image.url': 'https://github.com/getarcaneapp/arcane'
       'org.opencontainers.image.documentation': 'https://github.com/getarcaneapp/arcane/blob/main/README.md'
       'org.opencontainers.image.source': 'https://github.com/getarcaneapp/arcane'
-      'org.opencontainers.image.version': '{{.Version}}'
+      'org.opencontainers.image.version': 'v{{.Version}}'
       'org.opencontainers.image.revision': '{{.FullCommit}}'
       'org.opencontainers.image.licenses': 'BSD-3-Clause'
       'org.opencontainers.image.title': 'Arcane Agent'
