@@ -24,7 +24,7 @@
 
 	onMount(() => {
 		if (!dev && browser && 'serviceWorker' in navigator) {
-			navigator.serviceWorker.register('/service-worker.js', { type: dev ? 'module' : 'classic' });
+			navigator.serviceWorker.register('/service-worker.js', { type: 'module' });
 		}
 	});
 
