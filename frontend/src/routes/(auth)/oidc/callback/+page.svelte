@@ -28,6 +28,11 @@
 		return `/login?${params.toString()}`;
 	};
 
+	const getStoredRedirect = () => {
+		const storedRedirect = localStorage.getItem('oidc_redirect');
+		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '/dashboard';
+	};
+
 	type CallbackFailure = {
 		code: string;
 		userMessage: string;
@@ -44,7 +49,7 @@
 			const errorParam = page.url.searchParams.get('error');
 			const errorDescription = page.url.searchParams.get('error_description');
 
-			const redirectTo = localStorage.getItem('oidc_redirect') || '/dashboard';
+			const redirectTo = getStoredRedirect();
 			localStorage.removeItem('oidc_redirect');
 
 			if (errorParam) {

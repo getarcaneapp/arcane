@@ -866,7 +866,20 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 
 	// Check if there's an existing record to compare state changes
 	var existingRecord models.ImageUpdateRecord
-	if err := tx.Where("id = ?", imageID).First(&existingRecord).Error; err == nil {
+	hasExisting := tx.Where("id = ?", imageID).First(&existingRecord).Error == nil
+
+	// A registry rate limit (429) is transient: keep the previous good result
+	// instead of clobbering it with an error record
+	if hasExisting &&
+		strings.TrimSpace(result.Error) != "" &&
+		isRateLimitErrorStringInternal(result.Error) &&
+		strings.TrimSpace(stringPtrToString(existingRecord.LastError)) == "" {
+		slog.Debug("Preserving previous image update result; check hit a registry rate limit",
+			"imageID", imageID, "repository", repo, "tag", tag, "error", result.Error)
+		return nil
+	}
+
+	if hasExisting {
 		// Existing record found - check if we need to reset notification_sent
 		stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
 		digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)

@@ -577,6 +577,30 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 	require.Equal(t, "initial-gotify-token", decrypted)
 }
 
+func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNoneInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderEmail, true, models.JSON{
+		"smtpHost":     "smtp.example",
+		"smtpPassword": "stale-password",
+		"authMode":     "auto",
+	})
+	require.NoError(t, err)
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderEmail, true, models.JSON{
+		"smtpHost":     "smtp.example",
+		"smtpPassword": "",
+		"authMode":     string(models.EmailAuthModeNone),
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderEmail).First(&stored).Error)
+	require.Empty(t, stored.Config["smtpPassword"])
+}
+
 func TestNotificationService_CreateOrUpdateSettingsPreservesCredentialAcrossDisableInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)

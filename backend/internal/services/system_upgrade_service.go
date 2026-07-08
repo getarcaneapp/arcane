@@ -412,9 +412,10 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 //
 // Remote agents upgrade first, while the manager is still up and can orchestrate
 // and report live progress. The manager upgrades itself LAST, which recreates its
-// own container. Because the browser loses the backend across that final restart,
-// the orchestration is a persisted EnvironmentUpdateJob: StartUpdateAll runs the
-// agents phase and, when the manager itself has an update, triggers the manager
+// own container. Updates are unconditional: every environment pulls the latest
+// image whether or not it reports an update available. Because the browser loses
+// the backend across that final restart, the orchestration is a persisted
+// EnvironmentUpdateJob: StartUpdateAll runs the agents phase, triggers the manager
 // self-upgrade as the last step and leaves the job in pending_restart; on the next
 // boot ResumeUpdateAllOnStartup finalizes the manager result and closes the job.
 
@@ -430,9 +431,10 @@ const (
 )
 
 // StartUpdateAll begins a fleet-wide update. The agents phase runs first in the
-// background (while the manager is up); when the manager itself has an update, the
-// agents goroutine triggers the manager self-upgrade as its final step (job left
-// pending_restart, finalized at next boot).
+// background (while the manager is up); the agents goroutine triggers the manager
+// self-upgrade as its final step (job left pending_restart, finalized at next
+// boot). Every environment pulls the latest image, whether or not it reports an
+// update available.
 func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.User, env *EnvironmentService) (*models.EnvironmentUpdateJob, error) {
 	// Guard the check-then-create against concurrent callers (e.g. a double-click).
 	// A dedicated flag rather than s.upgrading, because the manager branch below
@@ -473,19 +475,14 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		ManagerTargetVersion:  updateAllTargetVersionInternal(info),
 	}
 
-	managerHasUpdate := info.UpdateAvailable
-	if managerHasUpdate {
-		// Manager upgrades LAST. Seed its row pending; the agents-phase goroutine
-		// flips it to updating right before triggering the self-upgrade.
-		managerResult.Status = models.EnvironmentUpdateResultStatusPending
-		managerResult.ToVersion = job.ManagerTargetVersion
-	} else {
-		managerResult.Status = models.EnvironmentUpdateResultStatusSkippedUpToDate
-	}
+	// Manager upgrades LAST. Seed its row pending; the agents-phase goroutine
+	// flips it to updating right before triggering the self-upgrade.
+	managerResult.Status = models.EnvironmentUpdateResultStatusPending
+	managerResult.ToVersion = job.ManagerTargetVersion
 
-	// Running from the start in both cases: the agents phase happens first, while the
-	// backend is up and can report progress. The manager self-upgrade (if any) fires
-	// at the very end of the agents goroutine.
+	// Running from the start: the agents phase happens first, while the backend is
+	// up and can report progress. The manager self-upgrade fires at the very end of
+	// the agents goroutine.
 	job.Status = models.EnvironmentUpdateJobStatusRunning
 	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
@@ -493,8 +490,8 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 		return nil, fmt.Errorf("create update-all job: %w", err)
 	}
 
-	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "managerHasUpdate", managerHasUpdate, "user", user.Username)
-	go s.runAgentsPhaseInternal(context.WithoutCancel(ctx), job.ID, env, user, managerHasUpdate)
+	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "user", user.Username)
+	go s.runAgentsPhaseInternal(context.WithoutCancel(ctx), job.ID, env, user)
 
 	return job, nil
 }
@@ -551,7 +548,9 @@ type resumeActionInternal struct {
 // resolveResumeActionInternal is the pure decision for a resumed pending_restart
 // job: stale if it has waited too long, otherwise the manager upgrade is considered
 // successful when either the version or the digest changed from the at-start values
-// (digest covers non-semver, digest-pinned installs).
+// (digest covers non-semver, digest-pinned installs), or when the manager is already
+// on the recorded target — a force-update of an up-to-date manager recreates the
+// container without changing either.
 func resolveResumeActionInternal(job *models.EnvironmentUpdateJob, currentVersion, currentDigest string, now time.Time) resumeActionInternal {
 	if now.Sub(job.CreatedAt) > updateAllStaleThresholdInternal {
 		return resumeActionInternal{markStale: true}
@@ -559,16 +558,20 @@ func resolveResumeActionInternal(job *models.EnvironmentUpdateJob, currentVersio
 
 	versionChanged := job.ManagerVersionAtStart != "" && currentVersion != job.ManagerVersionAtStart
 	digestChanged := job.ManagerDigestAtStart != "" && currentDigest != job.ManagerDigestAtStart
+	// ManagerTargetVersion holds the newest version tag when known, otherwise the
+	// newest digest — compare against both current identifiers.
+	onTarget := job.ManagerTargetVersion != "" &&
+		(strings.TrimPrefix(currentVersion, "v") == strings.TrimPrefix(job.ManagerTargetVersion, "v") ||
+			currentDigest == job.ManagerTargetVersion)
 
-	return resumeActionInternal{managerSucceeded: versionChanged || digestChanged}
+	return resumeActionInternal{managerSucceeded: versionChanged || digestChanged || onTarget}
 }
 
-// runAgentsPhaseInternal upgrades every online remote environment that has an update
-// available, sequentially, persisting progress after each one so the status endpoint
-// can report live progress. When managerHasUpdate is set, it triggers the manager's
-// own self-upgrade as the final step (leaving the job pending_restart for the next
-// boot to finalize); otherwise it marks the job completed in-process.
-func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *EnvironmentService, user models.User, managerHasUpdate bool) {
+// runAgentsPhaseInternal upgrades every online remote environment sequentially,
+// persisting progress after each one so the status endpoint can report live
+// progress, then triggers the manager's own self-upgrade as the final step
+// (leaving the job pending_restart for the next boot to finalize).
+func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID string, env *EnvironmentService, user models.User) {
 	job, err := s.getUpdateAllJobByIDInternal(ctx, jobID)
 	if err != nil || job == nil {
 		slog.WarnContext(ctx, "update-all: failed to reload job for agents phase", "jobId", jobID, "error", err)
@@ -600,41 +603,29 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 		}
 	}
 
-	// All remote agents processed. Handle the manager LAST.
-	if managerHasUpdate {
-		// Flip the manager row pending -> updating and move the job to pending_restart,
-		// persisting BEFORE the trigger so that if the manager dies the instant the
-		// upgrader starts, the next boot sees pending_restart and finalizes it.
-		for i := range job.Results {
-			if job.Results[i].EnvironmentID == localEnvironmentIDInternal {
-				job.Results[i].Status = models.EnvironmentUpdateResultStatusUpdating
-				break
-			}
+	// All remote agents processed. Handle the manager LAST: flip its row pending ->
+	// updating and move the job to pending_restart, persisting BEFORE the trigger so
+	// that if the manager dies the instant the upgrader starts, the next boot sees
+	// pending_restart and finalizes it.
+	for i := range job.Results {
+		if job.Results[i].EnvironmentID == localEnvironmentIDInternal {
+			job.Results[i].Status = models.EnvironmentUpdateResultStatusUpdating
+			break
 		}
-		job.Status = models.EnvironmentUpdateJobStatusPendingRestart
-		if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
-			slog.WarnContext(ctx, "update-all: failed to persist pending_restart before manager upgrade", "jobId", job.ID, "error", err)
-		}
+	}
+	job.Status = models.EnvironmentUpdateJobStatusPendingRestart
+	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
+		slog.WarnContext(ctx, "update-all: failed to persist pending_restart before manager upgrade", "jobId", job.ID, "error", err)
+	}
 
-		if err := s.TriggerUpgradeViaCLI(ctx, user, updatertypes.SelfUpdateTarget{}); err != nil {
-			// Agents already ran and no restart is coming, so finalize now. This flips
-			// the manager's updating row to failed with the reason.
-			s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
-			return
-		}
-
-		slog.InfoContext(ctx, "Update-all: agents done, manager self-upgrade triggered; finalizing on next boot", "jobId", job.ID)
+	if err := s.TriggerUpgradeViaCLI(ctx, user, updatertypes.SelfUpdateTarget{}); err != nil {
+		// Agents already ran and no restart is coming, so finalize now. This flips
+		// the manager's updating row to failed with the reason.
+		s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
 		return
 	}
 
-	job.Status = models.EnvironmentUpdateJobStatusCompleted
-	job.CompletedAt = new(time.Now())
-	if err := s.persistUpdateAllJobInternal(ctx, job); err != nil {
-		slog.WarnContext(ctx, "update-all: failed to mark job completed", "jobId", job.ID, "error", err)
-	}
-
-	s.logUpdateAllEventInternal(ctx, job)
-	slog.InfoContext(ctx, "Update-all job completed", "jobId", job.ID, "environments", len(job.Results))
+	slog.InfoContext(ctx, "Update-all: agents done, manager self-upgrade triggered; finalizing on next boot", "jobId", job.ID)
 }
 
 // seedRemoteResultsInternal builds a pending result row for every remote environment
@@ -674,8 +665,9 @@ func upsertPendingResultInternal(job *models.EnvironmentUpdateJob, envID, envNam
 	return len(job.Results) - 1
 }
 
-// upgradeAgentInternal checks, triggers, and confirms a single remote environment's
-// self-upgrade, recording the outcome on result.
+// upgradeAgentInternal triggers and confirms a single remote environment's
+// self-upgrade, recording the outcome on result. The upgrade always runs — the
+// agent pulls the latest image even when it reports no update available.
 func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *EnvironmentService, envID string, result *models.EnvironmentUpdateResult) {
 	versionCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
 	var info version.Info
@@ -687,11 +679,6 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *En
 		return
 	}
 	result.FromVersion = info.CurrentVersion
-
-	if !info.UpdateAvailable {
-		result.Status = models.EnvironmentUpdateResultStatusSkippedUpToDate
-		return
-	}
 	result.ToVersion = updateAllTargetVersionInternal(&info)
 
 	triggerCtx, cancel := context.WithTimeout(ctx, updateAllAgentRequestTimeoutInternal)
@@ -708,7 +695,7 @@ func (s *SystemUpgradeService) upgradeAgentInternal(ctx context.Context, env *En
 		return
 	}
 
-	if s.confirmAgentUpgradedInternal(ctx, env, envID, info.CurrentVersion, info.CurrentDigest) {
+	if s.confirmAgentUpgradedInternal(ctx, env, envID, info) {
 		result.Status = models.EnvironmentUpdateResultStatusUpdated
 	} else {
 		// Upgrade fired but the new version was not confirmed within the wait window.
@@ -735,9 +722,14 @@ func updateAllAgentFailureStatusInternal(err error) models.EnvironmentUpdateResu
 	return models.EnvironmentUpdateResultStatusSkippedOffline
 }
 
-// confirmAgentUpgradedInternal polls the agent's version until it changes from the
-// pre-upgrade baseline or the wait window elapses.
-func (s *SystemUpgradeService) confirmAgentUpgradedInternal(ctx context.Context, env *EnvironmentService, envID, baselineVersion, baselineDigest string) bool {
+// confirmAgentUpgradedInternal polls the agent's version until it moves off the
+// pre-upgrade baseline or reports the upgrade target, or the wait window elapses.
+// The target is the same fallback-resolved identifier recorded in ToVersion, so a
+// force-update of an already-latest agent — including one whose version check
+// could not determine the latest release — confirms on a same-image recreation
+// instead of timing out to triggered.
+func (s *SystemUpgradeService) confirmAgentUpgradedInternal(ctx context.Context, env *EnvironmentService, envID string, baseline version.Info) bool {
+	target := updateAllTargetVersionInternal(&baseline)
 	deadline := time.Now().Add(updateAllConfirmTimeoutInternal)
 	ticker := time.NewTicker(updateAllConfirmPollIntervalInternal)
 	defer ticker.Stop()
@@ -752,9 +744,12 @@ func (s *SystemUpgradeService) confirmAgentUpgradedInternal(ctx context.Context,
 			err := env.ProxyJSONRequest(reqCtx, envID, http.MethodGet, "/api/app-version", nil, &info)
 			cancel()
 			if err == nil {
-				versionChanged := baselineVersion != "" && info.CurrentVersion != baselineVersion
-				digestChanged := baselineDigest != "" && info.CurrentDigest != baselineDigest
-				if versionChanged || digestChanged {
+				versionChanged := baseline.CurrentVersion != "" && info.CurrentVersion != baseline.CurrentVersion
+				digestChanged := baseline.CurrentDigest != "" && info.CurrentDigest != baseline.CurrentDigest
+				onTarget := target != "" &&
+					(strings.TrimPrefix(info.CurrentVersion, "v") == strings.TrimPrefix(target, "v") ||
+						info.CurrentDigest == target)
+				if versionChanged || digestChanged || onTarget {
 					return true
 				}
 			}
@@ -909,7 +904,12 @@ func (s *SystemUpgradeService) logUpdateAllEventInternal(ctx context.Context, jo
 }
 
 // updateAllTargetVersionInternal picks the best human-readable target identifier:
-// the newest version tag if known, otherwise the newest digest.
+// the newest version tag if known, otherwise the newest digest. When the version
+// check could not determine the latest release (offline, rate-limited) it falls
+// back to the current identifiers: updates run unconditionally, so the target of a
+// force-update with an unknown latest is wherever the pull lands — recording the
+// current version keeps the resume check able to recognize a same-image recreation
+// as success instead of finalizing it as failed.
 func updateAllTargetVersionInternal(info *version.Info) string {
 	if info == nil {
 		return ""
@@ -917,7 +917,13 @@ func updateAllTargetVersionInternal(info *version.Info) string {
 	if info.NewestVersion != "" {
 		return info.NewestVersion
 	}
-	return info.NewestDigest
+	if info.NewestDigest != "" {
+		return info.NewestDigest
+	}
+	if info.CurrentVersion != "" {
+		return info.CurrentVersion
+	}
+	return info.CurrentDigest
 }
 
 func truncateUpdateAllErrorInternal(err error) string {

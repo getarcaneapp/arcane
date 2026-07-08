@@ -26,7 +26,7 @@ overrides:
   uuid: ">=11.1.1"
   fast-uri: ">=3.1.2"
   ws: ">=8.20.1"
-  "@sveltejs/kit": "^3.0.0-next.4"
+  "@sveltejs/kit": "^3.0.0-next.7"
   "@sveltejs/adapter-static": ">=4.0.0-next.0"
   dompurify: ">=3.4.11"
   ts-deepmerge: ">=8.0.0"
@@ -47,7 +47,7 @@ minimumReleaseAgeExclude:
   - "@fallow-cli/win32-arm64-msvc@2.89.0"
   - "@fallow-cli/win32-x64-msvc@2.89.0"
   - fallow@2.89.0
-  - "@sveltejs/kit@3.0.0-next.4"
+  - "@sveltejs/kit@3.0.0-next.7"
   - "@sveltejs/adapter-static@4.0.0-next.0"
   - "@tanstack/svelte-table@9.0.0-beta.17"
   - "@tanstack/table-core@9.0.0-beta.17"

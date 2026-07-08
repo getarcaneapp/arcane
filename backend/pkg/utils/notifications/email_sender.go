@@ -47,6 +47,8 @@ func smtpBuildOptionsFromContextInternal(ctx context.Context) smtpBuildOptions {
 
 func smtpAuthTypeFromModeInternal(mode models.EmailAuthMode) mail.SMTPAuthType {
 	switch mode {
+	case models.EmailAuthModeNone:
+		return mail.SMTPAuthNoAuth
 	case models.EmailAuthModeAuto:
 		return mail.SMTPAuthAutoDiscover
 	case models.EmailAuthModePlain:
@@ -89,7 +91,7 @@ func buildMailClientInternal(config models.EmailConfig, options smtpBuildOptions
 		opts = append(opts, mail.WithTLSConfig(options.tlsConfig))
 	}
 
-	if config.SMTPUsername != "" || config.SMTPPassword != "" {
+	if config.AuthMode != models.EmailAuthModeNone && config.SMTPUsername != "" && config.SMTPPassword != "" {
 		opts = append(opts,
 			mail.WithSMTPAuth(smtpAuthTypeFromModeInternal(config.AuthMode)),
 			mail.WithUsername(config.SMTPUsername),

@@ -308,6 +308,36 @@ func TestLoadComposeProjectLenient_ToleratesUndefinedTypedFieldVariables(t *test
 	assert.Len(t, project.Services, 1)
 }
 
+func TestLoadComposeProjectLenient_AppliesVariableDefaults(t *testing.T) {
+	t.Parallel()
+
+	// The lenient loader used to report the placeholder as every undefined
+	// variable's value, which suppressed
+	// ${VAR:-default} resolution and fed "/placeholder-undefined" into the
+	// ports host entry ("invalid hostPort"). Defaults must resolve normally;
+	// only variables with no default fall back to the placeholder.
+	dir := t.TempDir()
+	composePath := filepath.Join(dir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  app:
+    image: nginx:alpine
+    ports:
+      - "${ARCANE_TEST_UNSET_PORT:-3169}:3000"
+    environment:
+      - MAX_FILE_SIZE=${ARCANE_TEST_UNSET_SIZE:-104857600}
+`), 0o600))
+
+	project, err := LoadComposeProjectLenient(context.Background(), composePath, "demo", dir, false, nil)
+	require.NoError(t, err)
+	require.NotNil(t, project)
+	require.Len(t, project.Services, 1)
+	svc := project.Services["app"]
+	require.Len(t, svc.Ports, 1)
+	assert.Equal(t, "3169", svc.Ports[0].Published)
+	require.NotNil(t, svc.Environment["MAX_FILE_SIZE"])
+	assert.Equal(t, "104857600", *svc.Environment["MAX_FILE_SIZE"])
+}
+
 func TestLoadComposeProject_UsesProjectLevelComposeLabelsForIncludedServices(t *testing.T) {
 	t.Parallel()
 

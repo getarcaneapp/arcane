@@ -129,6 +129,27 @@ func TestSendEmailAuthLoginAgainstExchangeStyleServer(t *testing.T) {
 	assertCommandOrderInternal(t, server.Commands(), "EHLO", "STARTTLS", "EHLO", "AUTH", "MAIL", "RCPT", "DATA", "QUIT")
 }
 
+func TestSendEmailStalePasswordWithoutUsernameSkipsAuth(t *testing.T) {
+	server := newSMTPTestServerInternal(t, false, nil)
+	defer server.Close()
+
+	config := models.EmailConfig{
+		SMTPHost:     smtpTestHost,
+		SMTPPort:     server.Port(),
+		SMTPPassword: "stale-password",
+		FromAddress:  "from@example.com",
+		ToAddresses:  []string{"to@example.com"},
+		TLSMode:      models.EmailTLSModeNone,
+		AuthMode:     models.EmailAuthModeAuto,
+	}
+
+	err := sendEmailInternal(context.Background(), config, "Arcane No-Auth Test", "<p>Test</p>", smtpBuildOptions{})
+	require.NoError(t, err)
+	require.NoError(t, server.Wait())
+
+	assert.NotContains(t, server.Commands(), "AUTH", "expected no AUTH attempt without complete credentials")
+}
+
 func newSMTPTestServerInternal(t *testing.T, supportStartTLS bool, authMechanisms []string) *smtpTestServer {
 	t.Helper()
 

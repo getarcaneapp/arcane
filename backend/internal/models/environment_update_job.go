@@ -41,8 +41,6 @@ const (
 	// EnvironmentUpdateResultStatusTriggered means the upgrade was triggered but not
 	// confirmed within the wait window (still likely succeeding in the background).
 	EnvironmentUpdateResultStatusTriggered EnvironmentUpdateResultStatus = "triggered"
-	// EnvironmentUpdateResultStatusSkippedUpToDate means no update was available.
-	EnvironmentUpdateResultStatusSkippedUpToDate EnvironmentUpdateResultStatus = "skipped_up_to_date"
 	// EnvironmentUpdateResultStatusSkippedOffline means the environment was unreachable.
 	EnvironmentUpdateResultStatusSkippedOffline EnvironmentUpdateResultStatus = "skipped_offline"
 	// EnvironmentUpdateResultStatusFailed means the upgrade trigger failed.

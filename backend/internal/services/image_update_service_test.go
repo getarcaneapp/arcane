@@ -1188,6 +1188,68 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 	}
 }
 
+func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+
+	imageID := "sha256:ratelimit1"
+	repo := "docker.io/library/nginx"
+	tag := "latest"
+	checkTime := time.Now().Add(-1 * time.Hour).UTC().Truncate(time.Second)
+
+	tests := []struct {
+		name            string
+		resultError     string
+		expectPreserved bool
+	}{
+		{
+			name:            "rate limit error preserves previous good record",
+			resultError:     "registry manifest inspect failed for docker.io/library/nginx:latest: manifest request failed with status: 429",
+			expectPreserved: true,
+		},
+		{
+			name:            "non-rate-limit error overwrites previous good record",
+			resultError:     "registry manifest inspect failed for docker.io/library/nginx:latest: manifest unknown",
+			expectPreserved: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db.Exec("DELETE FROM image_updates WHERE id = ?", imageID)
+
+			existing := &models.ImageUpdateRecord{
+				ID:             imageID,
+				Repository:     repo,
+				Tag:            tag,
+				HasUpdate:      false,
+				CurrentVersion: tag,
+				CurrentDigest:  stringToPtr("sha256:current"),
+				LatestDigest:   stringToPtr("sha256:current"),
+				CheckTime:      checkTime,
+			}
+			require.NoError(t, db.Create(existing).Error)
+
+			result := &imageupdate.Response{
+				Error:     tt.resultError,
+				CheckTime: time.Now(),
+			}
+			require.NoError(t, savePreparedUpdateResultWithTxInternal(db.DB, imageID, repo, tag, result))
+
+			var saved models.ImageUpdateRecord
+			require.NoError(t, db.First(&saved, "id = ?", imageID).Error)
+
+			if tt.expectPreserved {
+				assert.Nil(t, saved.LastError, "previous good record should be preserved")
+				assert.Equal(t, "sha256:current", stringPtrToString(saved.LatestDigest))
+				assert.Equal(t, checkTime, saved.CheckTime.UTC())
+			} else {
+				assert.Equal(t, tt.resultError, stringPtrToString(saved.LastError))
+				assert.Nil(t, saved.LatestDigest)
+			}
+		})
+	}
+}
+
 // TestGetUnnotifiedUpdates tests retrieving updates that haven't been notified
 func TestImageUpdateService_GetUnnotifiedUpdates(t *testing.T) {
 	ctx := context.Background()

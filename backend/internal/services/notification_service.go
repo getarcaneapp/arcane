@@ -312,6 +312,9 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 	if provider == models.NotificationProviderSignal {
 		preserveConfig = signalCredentialPreservationConfigInternal(config, existingConfig)
 	}
+	if provider == models.NotificationProviderEmail {
+		preserveConfig = emailCredentialPreservationConfigInternal(config, existingConfig)
+	}
 	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
 		value, _ := encryptedConfig[field].(string)
 		if value == "" {
@@ -343,6 +346,14 @@ func signalCredentialPreservationConfigInternal(config models.JSON, existingConf
 		delete(preserveConfig, "token")
 	}
 
+	return preserveConfig
+}
+
+func emailCredentialPreservationConfigInternal(config models.JSON, existingConfig models.JSON) models.JSON {
+	preserveConfig := cloneNotificationConfigInternal(existingConfig)
+	if authMode, _ := config["authMode"].(string); authMode == string(models.EmailAuthModeNone) {
+		delete(preserveConfig, "smtpPassword")
+	}
 	return preserveConfig
 }
 

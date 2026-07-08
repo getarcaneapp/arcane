@@ -42,6 +42,36 @@ function normalizeModuleID(id: string): string {
 	return id.replaceAll('\\', '/');
 }
 
+function isEditorModule(moduleID: string): boolean {
+	return (
+		moduleID.includes('/node_modules/@codemirror/') ||
+		moduleID.includes('/node_modules/@lezer/') ||
+		moduleID.includes('/node_modules/codemirror/') ||
+		moduleID.includes('/node_modules/svelte-codemirror-editor/')
+	);
+}
+
+function isUIPrimitiveModule(moduleID: string): boolean {
+	return (
+		moduleID.includes('/node_modules/bits-ui/') ||
+		moduleID.includes('/node_modules/formsnap/') ||
+		moduleID.includes('/node_modules/paneforge/') ||
+		moduleID.includes('/node_modules/vaul-svelte/')
+	);
+}
+
+function isNetworkDiagramModule(moduleID: string): boolean {
+	return moduleID.includes('/node_modules/@xyflow/');
+}
+
+function isTerminalModule(moduleID: string): boolean {
+	return moduleID.includes('/node_modules/@xterm/');
+}
+
+function isQueryTableModule(moduleID: string): boolean {
+	return moduleID.includes('/node_modules/@tanstack/');
+}
+
 function splitVendorChunk(id: string): string | null {
 	const moduleID = normalizeModuleID(id);
 
@@ -53,28 +83,23 @@ function splitVendorChunk(id: string): string | null {
 		return 'paraglide-runtime';
 	}
 
-	if (moduleID.includes('/node_modules/@codemirror/') || moduleID.includes('/node_modules/svelte-codemirror-editor/')) {
+	if (isEditorModule(moduleID)) {
 		return 'editor';
 	}
 
-	if (moduleID.includes('/node_modules/@xyflow/')) {
+	if (isNetworkDiagramModule(moduleID)) {
 		return 'network-diagram';
 	}
 
-	if (moduleID.includes('/node_modules/@xterm/')) {
+	if (isTerminalModule(moduleID)) {
 		return 'terminal';
 	}
 
-	if (moduleID.includes('/node_modules/@tanstack/')) {
+	if (isQueryTableModule(moduleID)) {
 		return 'query-table';
 	}
 
-	if (
-		moduleID.includes('/node_modules/bits-ui/') ||
-		moduleID.includes('/node_modules/formsnap/') ||
-		moduleID.includes('/node_modules/paneforge/') ||
-		moduleID.includes('/node_modules/vaul-svelte/')
-	) {
+	if (isUIPrimitiveModule(moduleID)) {
 		return 'ui-primitives';
 	}
 
@@ -118,6 +143,36 @@ export default defineConfig({
 			output: {
 				codeSplitting: {
 					groups: [
+						{
+							name: 'editor',
+							test: (id) => isEditorModule(normalizeModuleID(id)),
+							priority: 10,
+							includeDependenciesRecursively: true
+						},
+						{
+							name: 'ui-primitives',
+							test: (id) => isUIPrimitiveModule(normalizeModuleID(id)),
+							priority: 10,
+							includeDependenciesRecursively: true
+						},
+						{
+							name: 'network-diagram',
+							test: (id) => isNetworkDiagramModule(normalizeModuleID(id)),
+							priority: 10,
+							includeDependenciesRecursively: true
+						},
+						{
+							name: 'terminal',
+							test: (id) => isTerminalModule(normalizeModuleID(id)),
+							priority: 10,
+							includeDependenciesRecursively: true
+						},
+						{
+							name: 'query-table',
+							test: (id) => isQueryTableModule(normalizeModuleID(id)),
+							priority: 10,
+							includeDependenciesRecursively: true
+						},
 						{
 							name: splitVendorChunk,
 							minSize: 20 * 1024,

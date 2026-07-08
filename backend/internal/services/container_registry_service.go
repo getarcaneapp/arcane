@@ -1328,7 +1328,11 @@ func isRateLimitErrorInternal(err error) bool {
 	if err == nil {
 		return false
 	}
-	errLower := strings.ToLower(err.Error())
+	return isRateLimitErrorStringInternal(err.Error())
+}
+
+func isRateLimitErrorStringInternal(msg string) bool {
+	msgLower := strings.ToLower(msg)
 	indicators := []string{
 		"toomanyrequests",
 		"rate limit",
@@ -1338,7 +1342,7 @@ func isRateLimitErrorInternal(err error) bool {
 		"retry-after",
 	}
 	for _, indicator := range indicators {
-		if strings.Contains(errLower, indicator) {
+		if strings.Contains(msgLower, indicator) {
 			return true
 		}
 	}
