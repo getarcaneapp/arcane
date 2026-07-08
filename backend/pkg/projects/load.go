@@ -2,6 +2,7 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -208,12 +209,20 @@ func lenientCastSizeInternal(value string) (any, error) {
 	return int(n), nil
 }
 
+const lenientUndefinedPlaceholder = "/placeholder-undefined"
+
 // ApplyLenientLoaderOptions configures a compose loader.Options for tolerant
 // loading: structural validation and consistency checks are skipped, and
-// undefined ${VAR} references are substituted with a placeholder instead of
+// unresolvable ${VAR} references are substituted with a placeholder instead of
 // an empty string (which would otherwise produce invalid volume/bind specs
 // like ":/path"). Callers use this when a .env file may not yet exist or may
 // not define every variable the compose file references.
+//
+// The placeholder is applied at the substitution level, not the lookup level:
+// the lookup must keep reporting undefined variables as missing so compose-go
+// resolves default operators (${VAR:-default}, ${VAR-default}) normally.
+// Reporting the placeholder as the variable's value would suppress those
+// defaults and feed the placeholder into fields like ports host entries.
 func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, composeFile string) {
 	opts.SkipValidation = true
 	opts.SkipConsistencyCheck = true
@@ -222,16 +231,28 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 		return
 	}
 
-	realLookup := opts.Interpolate.LookupValue
 	opts.Interpolate = &interp.Options{
-		Substitute:      template.Substitute,
+		LookupValue:     opts.Interpolate.LookupValue,
 		TypeCastMapping: wrapTypeCastMappingLenientInternal(opts.Interpolate.TypeCastMapping),
-		LookupValue: func(key string) (string, bool) {
-			if val, ok := realLookup(key); ok {
-				return val, true
-			}
-			slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "variable", key, "compose_file", composeFile)
-			return "/placeholder-undefined", true
+		Substitute: func(tmpl string, mapping template.Mapping) (string, error) {
+			return template.SubstituteWithOptions(tmpl, mapping,
+				template.WithoutLogging,
+				template.WithReplacementFunction(func(substring string, mapping template.Mapping, cfg *template.Config) (string, error) {
+					value, applied, err := template.DefaultReplacementAppliedFunc(substring, mapping, cfg)
+					var missingErr *template.MissingRequiredError
+					switch {
+					case err == nil && applied:
+						return value, nil
+					case err != nil && !errors.As(err, &missingErr):
+						return "", err
+					default:
+						// Variable is unset with no default (or a ${VAR:?msg}
+						// required variable, which lenient loading tolerates).
+						slog.DebugContext(ctx, "compose variable undefined during lenient load, using placeholder", "expression", substring, "compose_file", composeFile)
+						return lenientUndefinedPlaceholder, nil
+					}
+				}),
+			)
 		},
 	}
 }
