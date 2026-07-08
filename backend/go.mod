@@ -52,7 +52,7 @@ require (
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
 	github.com/subosito/gotenv v1.6.0
-	github.com/wneessen/go-mail v0.7.3
+	github.com/wneessen/go-mail v0.8.0
 	go.getarcane.app/builds v0.1.0
 	go.getarcane.app/docker/convert v0.1.0
 	go.getarcane.app/streams v0.1.0
