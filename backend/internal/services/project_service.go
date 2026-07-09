@@ -3828,6 +3828,13 @@ func (s *ProjectService) persistEffectiveEnvContentInternal(projectPath, project
 		return fmt.Errorf("read project env state: %w", err)
 	}
 
+	if state.HasGitSource && state.HasEffective && envContent == state.EffectiveContent {
+		storedEffectiveContent, buildErr := projects.BuildEffectiveEnvContent(state.GitContent, state.OverrideContent)
+		if buildErr == nil && envContent == storedEffectiveContent {
+			return nil
+		}
+	}
+
 	if !state.HasGitSource {
 		if state.HasOverride {
 			if err := projects.RemoveProjectFile(projectsDirectory, projectPath, projects.OverrideEnvFileName); err != nil {

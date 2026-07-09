@@ -400,6 +400,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_CreatesProjectPreservingRepoLayo
 	}
 	require.NoError(t, db.Create(sync).Error)
 
+	gitEnvContent := "# keep git formatting\r\nZ_LAST=last\r\nCLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\r\nQUOTED_SECRET='$pbkdf2-sha512$310000$XXX'\r\nA_FIRST=first"
 	syncFiles := []projects.SyncFile{
 		{
 			RelativePath: "docker-compose.yaml",
@@ -421,7 +422,7 @@ services:
 		},
 		{
 			RelativePath: ".env",
-			Content:      []byte("APP_MODE=production\n"),
+			Content:      []byte(gitEnvContent),
 		},
 	}
 
@@ -448,7 +449,16 @@ services:
 
 	envBytes, err := os.ReadFile(filepath.Join(project.Path, ".env"))
 	require.NoError(t, err)
-	assert.Equal(t, "APP_MODE=production\n", string(envBytes))
+	assert.Equal(t, gitEnvContent, string(envBytes))
+
+	gitEnvBytes, err := os.ReadFile(filepath.Join(project.Path, ".env.git"))
+	require.NoError(t, err)
+	assert.Equal(t, gitEnvContent, string(gitEnvBytes))
+
+	parsedEnv, err := projects.ParseProjectEnvFile(filepath.Join(project.Path, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", parsedEnv["CLOUDFLARE_CLIENT_SECRET"])
+	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", parsedEnv["QUOTED_SECRET"])
 
 	_, statErr := os.Stat(filepath.Join(project.Path, "compose.yaml"))
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
@@ -589,6 +599,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	}
 	require.NoError(t, db.Create(sync).Error)
 
+	newGitEnvContent := "FOO=gitnew\nBAR=new\n"
 	syncFiles := []projects.SyncFile{
 		{
 			RelativePath: "docker-compose.yaml",
@@ -599,7 +610,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 		},
 		{
 			RelativePath: ".env",
-			Content:      []byte("FOO=gitnew\nBAR=new\n"),
+			Content:      []byte(newGitEnvContent),
 		},
 	}
 
@@ -609,6 +620,18 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesEnvOverrideAndAddsNewGi
 	require.False(t, created)
 	require.True(t, changed)
 	require.ElementsMatch(t, []string{"docker-compose.yaml"}, syncedFiles)
+
+	effectiveBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, ".env"))
+	require.NoError(t, err)
+	assert.Equal(t, newGitEnvContent+"FOO=useredit\n", string(effectiveBytes))
+
+	gitBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, ".env.git"))
+	require.NoError(t, err)
+	assert.Equal(t, newGitEnvContent, string(gitBytes))
+
+	overrideBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "project.env"))
+	require.NoError(t, err)
+	assert.Equal(t, "FOO=useredit\n", string(overrideBytes))
 
 	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(updatedProject.Path, ".env"), nil)
 	require.NoError(t, err)

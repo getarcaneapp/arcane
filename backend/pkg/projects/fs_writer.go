@@ -116,6 +116,14 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	}
 
 	targetPath := filepath.Join(dirPath, fileName)
+	existingContent, readErr := os.ReadFile(targetPath)
+	if readErr == nil && string(existingContent) == content {
+		return nil
+	}
+	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
+		return fmt.Errorf("failed to read project file %s: %w", fileName, readErr)
+	}
+
 	if err := atomic.WriteFile(targetPath, []byte(content), pkgutils.FilePerm); err != nil {
 		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
