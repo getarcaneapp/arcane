@@ -3465,7 +3465,7 @@
 	"file_browser_restore_file": "Restaurer le fichier",
 	"containers_status_created": "Créé",
 	"containers_status_restarting": "Redémarrage",
-	"containers_status_running": "En cours d'exécution",
+	"containers_status_running": "Actif",
 	"containers_status_removing": "Suppression",
 	"containers_status_paused": "En pause",
 	"containers_status_exited": "Arrêté",
