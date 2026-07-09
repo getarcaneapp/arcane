@@ -230,7 +230,7 @@
 	"prune_images_label": "Obrazy",
 	"prune_volumes_label": "Wolumeny",
 	"prune_networks_label": "Sieci",
-	"prune_build_cache_label": "Build Cache",
+	"prune_build_cache_label": "Pamięć podręczna systemu budowy",
 	"scheduled_prune_containers_label": "Wyczyść kontenery",
 	"scheduled_prune_containers_description": "Wybierz czy chcesz pomijać czyszczenie zatrzymanych kontenerów lub czyścić kontenery starsze niż próg",
 	"scheduled_prune_images_label": "Wyczyść obrazy",
