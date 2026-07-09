@@ -150,6 +150,8 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
 	}, authz.PermNotificationsManage, h.TestNotification)
 
+	// Environment tokens are authenticated by ApiKeyAuth and revalidated by the
+	// handler. RBAC middleware cannot scope this route because it has no environment ID.
 	huma.Register(api, huma.Operation{
 		OperationID: "dispatch-notification",
 		Method:      http.MethodPost,
@@ -157,7 +159,6 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Summary:     "Dispatch notification from remote agent to manager",
 		Tags:        []string{"Notifications"},
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
-		Middlewares: humamw.RequirePermission(api, authz.PermNotificationsManage),
 	}, h.DispatchNotification)
 }
 
