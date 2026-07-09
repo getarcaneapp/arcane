@@ -201,21 +201,33 @@ func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.Len(t, js.cron.Entries(), 1)
 	require.NotEqual(t, firstEntry, js.entryIDs[job.Name()])
+
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.True(t, state.Scheduled)
+	require.Equal(t, "*/10 * * * * *", state.Schedule)
+	require.NotNil(t, state.NextRun)
 }
 
-func TestJobScheduler_AddJob_InvalidRescheduleClearsRegisteredState(t *testing.T) {
+func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
 	js := NewJobScheduler(context.Background(), nil)
 
 	job := &testSchedulerJob{name: "dyn-invalid-reschedule", schedule: "*/5 * * * * *"}
 	require.NoError(t, js.AddJob(context.Background(), job))
 	require.True(t, js.HasJob(job.Name()))
 	require.Len(t, js.cron.Entries(), 1)
+	firstEntry := js.entryIDs[job.Name()]
 
 	job.schedule = "not a cron schedule"
 	require.Error(t, js.AddJob(context.Background(), job))
-	require.False(t, js.HasJob(job.Name()))
-	require.NotContains(t, js.entryIDs, job.Name())
-	require.Empty(t, js.cron.Entries())
+	require.True(t, js.HasJob(job.Name()))
+	require.Equal(t, firstEntry, js.entryIDs[job.Name()])
+	require.Len(t, js.cron.Entries(), 1)
+
+	state, ok := js.GetJobRuntimeState(job.Name())
+	require.True(t, ok)
+	require.True(t, state.Scheduled)
+	require.Equal(t, "*/5 * * * * *", state.Schedule)
 }
 
 func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {

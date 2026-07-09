@@ -11,17 +11,19 @@ import (
 )
 
 type JobScheduler struct {
-	// mu guards jobs, jobsByID and entryIDs. It is held across the cron
+	// mu guards jobs, jobsByID, entryIDs and schedules. It is held across the cron
 	// add/remove calls (which are themselves quick and never block on job
 	// execution) but never across job.Run — Run executes on cron's own
 	// goroutine, so a running job must not call back into a locking method here.
-	mu       sync.Mutex
-	cron     *cron.Cron
-	jobs     []schedulertypes.Job
-	jobsByID map[string]schedulertypes.Job
-	entryIDs map[string]cron.EntryID
-	context  context.Context
-	location *time.Location
+	mu        sync.Mutex
+	cron      *cron.Cron
+	jobs      []schedulertypes.Job
+	jobsByID  map[string]schedulertypes.Job
+	entryIDs  map[string]cron.EntryID
+	schedules map[string]string
+	parser    cron.Parser
+	context   context.Context
+	location  *time.Location
 }
 
 // NewJobScheduler creates a new job scheduler with the specified timezone location.
@@ -31,14 +33,17 @@ func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler
 	if location == nil {
 		location = time.UTC
 	}
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
 	return &JobScheduler{
-		cron:     cron.New(cron.WithSeconds(), cron.WithLocation(location)),
-		jobs:     []schedulertypes.Job{},
-		jobsByID: make(map[string]schedulertypes.Job),
-		entryIDs: make(map[string]cron.EntryID),
-		context:  ctx,
-		location: location,
+		cron:      cron.New(cron.WithParser(parser), cron.WithLocation(location)),
+		jobs:      []schedulertypes.Job{},
+		jobsByID:  make(map[string]schedulertypes.Job),
+		entryIDs:  make(map[string]cron.EntryID),
+		schedules: make(map[string]string),
+		parser:    parser,
+		context:   ctx,
+		location:  location,
 	}
 }
 
@@ -58,6 +63,38 @@ func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
 	return job, ok
 }
 
+// GetJobRuntimeState returns the schedule currently installed for a registered job.
+func (js *JobScheduler) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
+	js.mu.Lock()
+	defer js.mu.Unlock()
+
+	if _, ok := js.jobsByID[jobID]; !ok {
+		return schedulertypes.JobRuntimeState{}, false
+	}
+
+	state := schedulertypes.JobRuntimeState{Schedule: js.schedules[jobID]}
+	entryID, ok := js.entryIDs[jobID]
+	if !ok {
+		return state, true
+	}
+
+	entry := js.cron.Entry(entryID)
+	if entry.ID == 0 {
+		return state, true
+	}
+
+	state.Scheduled = true
+	nextRun := entry.Next
+	if nextRun.IsZero() && entry.Schedule != nil {
+		nextRun = entry.Schedule.Next(time.Now().In(js.location))
+	}
+	if !nextRun.IsZero() {
+		state.NextRun = new(nextRun)
+	}
+
+	return state, true
+}
+
 // HasJob reports whether a job with the given name is currently registered.
 func (js *JobScheduler) HasJob(jobID string) bool {
 	js.mu.Lock()
@@ -69,7 +106,7 @@ func (js *JobScheduler) HasJob(jobID string) bool {
 func (js *JobScheduler) StartScheduler() {
 	js.mu.Lock()
 	for _, job := range js.jobs {
-		if err := js.scheduleJobInternal(js.context, job); err != nil {
+		if err := js.upsertJobInternal(js.context, job); err != nil {
 			slog.ErrorContext(js.context, "Failed to schedule job", "name", job.Name(), "error", err)
 		}
 	}
@@ -77,10 +114,10 @@ func (js *JobScheduler) StartScheduler() {
 	js.cron.Start()
 }
 
-// AddJob registers and schedules a job at runtime. It is an idempotent upsert: if
-// a job with the same name is already scheduled, its existing cron entry is
-// removed first (preventing a leaked, forever-firing entry when the schedule
-// changes). Safe to call before or after StartScheduler.
+// AddJob registers and schedules a job at runtime. It is an idempotent upsert: a
+// replacement expression is validated before the existing entry is removed, then
+// the replacement is installed without leaking a second live entry.
+// Safe to call before or after StartScheduler.
 func (js *JobScheduler) AddJob(ctx context.Context, job schedulertypes.Job) error {
 	js.mu.Lock()
 	defer js.mu.Unlock()
@@ -98,6 +135,7 @@ func (js *JobScheduler) RemoveJob(ctx context.Context, jobName string) {
 		delete(js.entryIDs, jobName)
 	}
 	delete(js.jobsByID, jobName)
+	delete(js.schedules, jobName)
 	for i, j := range js.jobs {
 		if j.Name() == jobName {
 			js.jobs = append(js.jobs[:i], js.jobs[i+1:]...)
@@ -125,52 +163,74 @@ func (js *JobScheduler) Run(ctx context.Context) error {
 	return nil
 }
 
-// upsertJobInternal records the job and (re)schedules it. Callers must hold js.mu.
+// upsertJobInternal records the job and (re)schedules it. A replacement expression
+// is parsed before the previous entry is removed so invalid input leaves the last
+// valid entry untouched. Callers must hold js.mu.
 func (js *JobScheduler) upsertJobInternal(ctx context.Context, job schedulertypes.Job) error {
 	jobName := job.Name()
-	if entryID, ok := js.entryIDs[jobName]; ok {
-		js.cron.Remove(entryID)
+	previousSchedule := js.schedules[jobName]
+	previousEntryID, hadPreviousEntry := js.entryIDs[jobName]
+	schedule := job.Schedule(ctx)
+
+	shouldSchedule := true
+	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok {
+		shouldSchedule = conditionalJob.ShouldSchedule(ctx)
+	}
+
+	var (
+		parsedSchedule cron.Schedule
+		entryID        cron.EntryID
+		nextRun        *time.Time
+	)
+	if shouldSchedule {
+		var err error
+		parsedSchedule, err = js.parser.Parse(schedule)
+		if err != nil {
+			return err
+		}
+	} else {
+		slog.DebugContext(ctx, "Job disabled; not scheduling", "name", jobName)
+	}
+
+	if hadPreviousEntry {
+		js.cron.Remove(previousEntryID)
 		delete(js.entryIDs, jobName)
 	}
-	delete(js.jobsByID, jobName)
-
-	if err := js.scheduleJobInternal(ctx, job); err != nil {
-		return err
+	if shouldSchedule {
+		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule)
+		js.entryIDs[jobName] = entryID
 	}
 
 	js.jobsByID[jobName] = job
+	js.schedules[jobName] = schedule
 
-	slog.DebugContext(ctx, "Job scheduled", "name", jobName, "scheduled", js.isJobScheduledInternal(jobName), "contextCanceled", ctx.Err() != nil)
+	if previousSchedule == "" && shouldSchedule {
+		slog.InfoContext(ctx, "Starting Job", "name", jobName, "schedule", schedule)
+	} else if previousSchedule != schedule || hadPreviousEntry != shouldSchedule {
+		slog.InfoContext(ctx, "Job rescheduled", "name", jobName, "previousSchedule", previousSchedule, "newSchedule", schedule, "nextRun", nextRun)
+	}
+
+	slog.DebugContext(ctx, "Job scheduled", "name", jobName, "scheduled", shouldSchedule, "contextCanceled", ctx.Err() != nil)
 	return nil
 }
 
-// scheduleJobInternal adds the job to cron. Callers must hold js.mu. The cron
-// closure runs the job with the scheduler's lifecycle context (js.context), never
-// the per-call ctx — the per-call ctx may be a request context that is canceled
-// once the originating handler returns, which would silently kill future fires.
-func (js *JobScheduler) scheduleJobInternal(ctx context.Context, job schedulertypes.Job) error {
-	if conditionalJob, ok := job.(schedulertypes.ConditionalJob); ok && !conditionalJob.ShouldSchedule(ctx) {
-		slog.DebugContext(ctx, "Job disabled; not scheduling", "name", job.Name())
-		return nil
-	}
-
-	schedule := job.Schedule(ctx)
-	slog.InfoContext(ctx, "Starting Job", "name", job.Name(), "schedule", schedule)
-
-	entryID, err := js.cron.AddFunc(schedule, func() {
+// addCronEntryInternal adds a job closure that always runs with the scheduler's
+// lifecycle context. Callers must hold js.mu.
+func (js *JobScheduler) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
+	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
 		slog.InfoContext(js.context, "Job starting", "name", job.Name(), "schedule", schedule)
 		job.Run(js.context)
 		slog.InfoContext(js.context, "Job finished", "name", job.Name())
-	})
-	if err != nil {
-		return err
+	}))
+
+	entry := js.cron.Entry(entryID)
+	nextRun := entry.Next
+	if nextRun.IsZero() && entry.Schedule != nil {
+		nextRun = entry.Schedule.Next(time.Now().In(js.location))
+	}
+	if nextRun.IsZero() {
+		return entryID, nil
 	}
 
-	js.entryIDs[job.Name()] = entryID
-	return nil
-}
-
-func (js *JobScheduler) isJobScheduledInternal(jobName string) bool {
-	_, ok := js.entryIDs[jobName]
-	return ok
+	return entryID, new(nextRun)
 }

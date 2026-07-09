@@ -1,6 +1,17 @@
 package scheduler
 
-import "context"
+import (
+	"context"
+	"time"
+)
+
+// JobRuntimeState describes the schedule currently installed in a scheduler.
+// It intentionally exposes only read-only state needed by job-management APIs.
+type JobRuntimeState struct {
+	Schedule  string
+	NextRun   *time.Time
+	Scheduled bool
+}
 
 type Job interface {
 	Name() string

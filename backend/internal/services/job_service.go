@@ -20,6 +20,7 @@ import (
 
 type JobRunner interface {
 	GetJob(jobID string) (schedulertypes.Job, bool)
+	GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool)
 	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
 }
 
@@ -65,17 +66,19 @@ func (s *JobService) SetScheduler(ctx context.Context, scheduler JobRunner) { //
 }
 
 func (s *JobService) GetJobSchedules(ctx context.Context) jobschedule.Config {
+	defaults := DefaultSettingsConfig()
+
 	// Use SettingsService cache for fast reads.
 	return jobschedule.Config{
-		EnvironmentHealthInterval:      s.settings.GetStringSetting(ctx, "environmentHealthInterval", "0 */2 * * * *"),
-		EventCleanupInterval:           s.settings.GetStringSetting(ctx, "eventCleanupInterval", "0 0 */6 * * *"),
-		ExpiredSessionsCleanupInterval: s.settings.GetStringSetting(ctx, "expiredSessionsCleanupInterval", "0 0 0 * * *"),
-		AutoUpdateInterval:             s.settings.GetStringSetting(ctx, "autoUpdateInterval", "0 0 0 * * *"),
-		DockerClientRefreshInterval:    s.settings.GetStringSetting(ctx, "dockerClientRefreshInterval", "*/30 * * * * *"),
-		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval", "0 */15 * * * *"),
-		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval", "0 0 0 * * *"),
-		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", "0 0 0 * * *"),
-		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval", "*/30 * * * * *"),
+		EnvironmentHealthInterval:      s.settings.GetStringSetting(ctx, "environmentHealthInterval", defaults.EnvironmentHealthInterval.Value),
+		EventCleanupInterval:           s.settings.GetStringSetting(ctx, "eventCleanupInterval", defaults.EventCleanupInterval.Value),
+		ExpiredSessionsCleanupInterval: s.settings.GetStringSetting(ctx, "expiredSessionsCleanupInterval", defaults.ExpiredSessionsCleanupInterval.Value),
+		AutoUpdateInterval:             s.settings.GetStringSetting(ctx, "autoUpdateInterval", defaults.AutoUpdateInterval.Value),
+		DockerClientRefreshInterval:    s.settings.GetStringSetting(ctx, "dockerClientRefreshInterval", defaults.DockerClientRefreshInterval.Value),
+		PollingInterval:                s.settings.GetStringSetting(ctx, "pollingInterval", defaults.PollingInterval.Value),
+		ScheduledPruneInterval:         s.settings.GetStringSetting(ctx, "scheduledPruneInterval", defaults.ScheduledPruneInterval.Value),
+		VulnerabilityScanInterval:      s.settings.GetStringSetting(ctx, "vulnerabilityScanInterval", defaults.VulnerabilityScanInterval.Value),
+		AutoHealInterval:               s.settings.GetStringSetting(ctx, "autoHealInterval", defaults.AutoHealInterval.Value),
 	}
 }
 
@@ -118,6 +121,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 
 	changed := false
 	changedKeys := make([]string, 0, len(fields))
+	previousValues := make(map[string]string, len(fields))
 	upsert := func(tx *gorm.DB, key string, v *string, currentVal string) error {
 		if v == nil {
 			return nil
@@ -127,6 +131,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		}
 		changed = true
 		changedKeys = append(changedKeys, key)
+		previousValues[key] = currentVal
 		return tx.Save(&models.SettingVariable{Key: key, Value: *v}).Error
 	}
 
@@ -145,18 +150,31 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 	// Refresh settings cache so jobs reading from SettingsService see new values.
 	if changed {
 		if err := s.settings.LoadDatabaseSettings(ctx); err != nil {
-			return jobschedule.Config{}, fmt.Errorf("failed to reload settings after job schedule update: %w", err)
+			restoreErr := s.restoreJobSchedulesInternal(ctx, previousValues, changedKeys)
+			return jobschedule.Config{}, errors.Join(
+				fmt.Errorf("failed to reload settings after job schedule update: %w", err),
+				restoreErr,
+			)
 		}
 
-		s.RescheduleJobsForSettingKeys(ctx, changedKeys)
+		if err := s.RescheduleJobsForSettingKeys(ctx, changedKeys); err != nil {
+			restoreErr := s.restoreJobSchedulesInternal(ctx, previousValues, changedKeys)
+			return jobschedule.Config{}, errors.Join(
+				fmt.Errorf("failed to apply job schedule update: %w", err),
+				restoreErr,
+			)
+		}
 	}
 
 	return s.GetJobSchedules(ctx), nil
 }
 
-func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKeys []string) {
-	if s == nil || s.scheduler == nil || len(changedKeys) == 0 {
-		return
+func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKeys []string) error {
+	if len(changedKeys) == 0 {
+		return nil
+	}
+	if s == nil || s.scheduler == nil {
+		return errors.New("job scheduler not initialized")
 	}
 
 	changed := make(map[string]struct{}, len(changedKeys))
@@ -164,6 +182,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 		changed[key] = struct{}{}
 	}
 
+	var rescheduleErrors []error
 	for jobID, jobMeta := range meta.GetAllJobMetadata() {
 		if !jobMetadataAffectedBySettingInternal(jobMeta, changed) {
 			continue
@@ -182,13 +201,15 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 					reschedCtx = s.lifecycleCtx
 				}
 				s.OnEnvironmentHealthReschedule(reschedCtx)
+			} else {
+				rescheduleErrors = append(rescheduleErrors, errors.New("environment-health rescheduler not initialized"))
 			}
 			continue
 		}
 
 		job, ok := s.scheduler.GetJob(jobID)
 		if !ok {
-			slog.DebugContext(ctx, "Skipping reschedule for unregistered job", "job", jobID)
+			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s not found in scheduler", jobID))
 			continue
 		}
 
@@ -198,9 +219,50 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 			rescheduleCtx = s.lifecycleCtx
 		}
 		if err := s.scheduler.RescheduleJob(rescheduleCtx, job); err != nil {
-			slog.WarnContext(ctx, "Failed to reschedule job", "job", jobID, "error", err)
+			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("reschedule job %s: %w", jobID, err))
+			continue
+		}
+
+		runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID)
+		if !ok {
+			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s has no runtime scheduler state", jobID))
+			continue
+		}
+
+		expectedSchedule := job.Schedule(rescheduleCtx)
+		if runtimeState.Schedule != expectedSchedule {
+			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule))
 		}
 	}
+
+	return errors.Join(rescheduleErrors...)
+}
+
+func (s *JobService) restoreJobSchedulesInternal(ctx context.Context, previousValues map[string]string, changedKeys []string) error {
+	if len(previousValues) == 0 {
+		return nil
+	}
+
+	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for key, value := range previousValues {
+			if err := tx.Save(&models.SettingVariable{Key: key, Value: value}).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	}); err != nil {
+		return fmt.Errorf("failed to restore previous job schedules: %w", err)
+	}
+
+	if err := s.settings.LoadDatabaseSettings(ctx); err != nil {
+		return fmt.Errorf("failed to reload restored job schedules: %w", err)
+	}
+
+	if err := s.RescheduleJobsForSettingKeys(ctx, changedKeys); err != nil {
+		return fmt.Errorf("failed to restore runtime job schedules: %w", err)
+	}
+
+	return nil
 }
 
 func jobMetadataAffectedBySettingInternal(jobMeta meta.JobMetadata, changed map[string]struct{}) bool {
@@ -225,13 +287,20 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 	allMetadata := meta.GetAllJobMetadata()
 	jobs := make([]jobschedule.JobStatus, 0, len(allMetadata))
 
-	for _, meta := range allMetadata {
-		schedule := s.getJobScheduleInternal(ctx, meta)
+	for _, jobMeta := range allMetadata {
+		schedule := s.getJobScheduleInternal(ctx, jobMeta)
 		nextRun := s.calculateNextRunInternal(schedule)
-		enabled := s.isJobEnabledInternal(ctx, meta)
-		prerequisites := s.evaluatePrerequisitesInternal(ctx, meta)
+		enabled := s.isJobEnabledInternal(ctx, jobMeta)
+		prerequisites := s.evaluatePrerequisitesInternal(ctx, jobMeta)
 
-		jobStatus := meta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
+		if s.scheduler != nil && jobMeta.SettingsKey != "" && jobMeta.ID != "environment-health" {
+			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok && runtimeState.Schedule != "" {
+				schedule = runtimeState.Schedule
+				nextRun = runtimeState.NextRun
+			}
+		}
+
+		jobStatus := jobMeta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
 	}
 
@@ -305,20 +374,8 @@ func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMe
 		return ""
 	}
 
-	defaultSchedules := map[string]string{
-		"environmentHealthInterval":      "0 */2 * * * *",
-		"eventCleanupInterval":           "0 0 */6 * * *",
-		"expiredSessionsCleanupInterval": "0 0 0 * * *",
-		"autoUpdateInterval":             "0 0 0 * * *",
-		"dockerClientRefreshInterval":    "*/30 * * * * *",
-		"pollingInterval":                "0 */15 * * * *",
-		"scheduledPruneInterval":         "0 0 0 * * *",
-		"vulnerabilityScanInterval":      "0 0 0 * * *",
-		"autoHealInterval":               "*/30 * * * * *",
-	}
-
-	defaultSchedule := defaultSchedules[meta.SettingsKey]
-	if defaultSchedule == "" {
+	defaultSchedule, _, _, err := DefaultSettingsConfig().FieldByKey(meta.SettingsKey)
+	if err != nil || defaultSchedule == "" {
 		defaultSchedule = "0 0 0 * * *"
 	}
 
