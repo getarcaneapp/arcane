@@ -1488,12 +1488,29 @@ func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate
 	}
 	dockerImages := dockerImagesResult.Items
 
+	// Only tagged images count: a replaced image lingers untagged
+	// ("<none>:<none>") until pruned, and its stale update record would
+	// otherwise keep inflating the summary with updates nothing can act on.
 	liveImageIDs := make([]string, 0, len(dockerImages))
 	for _, img := range dockerImages {
+		if !hasUsableTagInternal(img.RepoTags) {
+			continue
+		}
 		liveImageIDs = append(liveImageIDs, img.ID)
 	}
 
 	return s.getUpdateSummaryForImageIDsInternal(ctx, liveImageIDs)
+}
+
+// hasUsableTagInternal reports whether an image still carries a pullable
+// repo:tag.
+func hasUsableTagInternal(repoTags []string) bool {
+	for _, tag := range repoTags {
+		if tag != "" && tag != "<none>:<none>" {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *ImageUpdateService) getUpdateSummaryForImageIDsInternal(ctx context.Context, imageIDs []string) (*imageupdate.Summary, error) {

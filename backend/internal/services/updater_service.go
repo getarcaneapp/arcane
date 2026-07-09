@@ -247,6 +247,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 		}
 	}
 	s.logResultItemsInternal(ctx, out)
+	s.clearAppliedUpdateRecordsInternal(ctx, out)
 	out.Success = out.Failed == 0
 	// Engine errors propagate like the unscoped path's engine error does —
 	// the remaining containers were still attempted and recorded above.
@@ -382,6 +383,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		out = resultFromModuleInternal(moduleResult)
 		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 		s.logResultItemsInternal(ctx, out)
+		s.clearAppliedUpdateRecordsInternal(ctx, out)
 	}
 	if engineErr != nil {
 		err = engineErr
@@ -954,6 +956,37 @@ func (s *UpdaterService) clearImageUpdateRecordForModuleInternal(ctx context.Con
 		return query.Where("id = ?", record.ID).Update("has_update", false).Error
 	}
 	return query.Where("repository = ? AND tag = ?", record.Repository, record.Tag).Update("has_update", false).Error
+}
+
+// clearAppliedUpdateRecordsInternal flips has_update off for records the
+// engine just applied through the single-container path. The engine's
+// ApplyPending clears its own records, but UpdateContainer does not — without
+// this, an applied update keeps counting toward the pending-updates summary
+// for as long as the replaced (now dangling) image remains on disk.
+func (s *UpdaterService) clearAppliedUpdateRecordsInternal(ctx context.Context, result *updater.Result) {
+	if result == nil || s.deps.DB == nil {
+		return
+	}
+	for _, item := range result.Items {
+		if !item.UpdateApplied && item.Status != updater.StatusUpdated {
+			continue
+		}
+		// The record row is keyed by the replaced image's ID; the repo:tag
+		// pair is the stable fallback key when the old ref isn't ID-like.
+		if oldID := strings.TrimSpace(item.OldImages["main"]); refs.IsImageIDLikeReference(oldID) {
+			if err := s.clearImageUpdateRecordForModuleInternal(ctx, moduletypes.ImageUpdateRecord{ID: oldID}); err != nil {
+				s.loggerInternal().WarnContext(ctx, "clear applied update record by id failed", "id", oldID, "error", err)
+			}
+		}
+		if newRef := strings.TrimSpace(item.NewImages["main"]); newRef != "" {
+			if parsed, err := refs.NormalizeReference(newRef); err == nil {
+				record := moduletypes.ImageUpdateRecord{Repository: parsed.Repository, Tag: parsed.Tag}
+				if err := s.clearImageUpdateRecordForModuleInternal(ctx, record); err != nil {
+					s.loggerInternal().WarnContext(ctx, "clear applied update record by ref failed", "ref", newRef, "error", err)
+				}
+			}
+		}
+	}
 }
 
 func mapToJSONInternal(values map[string]string) models.JSON {
