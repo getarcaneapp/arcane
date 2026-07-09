@@ -30,10 +30,14 @@ jobs:
           run_install: true
 
       - name: Setup Just
-        uses: taiki-e/install-action@just
+        uses: taiki-e/install-action@v2
+        with:
+          tool: just
 
       - name: Setup git-cliff
-        uses: taiki-e/install-action@git-cliff
+        uses: taiki-e/install-action@v2
+        with:
+          tool: git-cliff
 
       - name: Setup Node.js
         uses: actions/setup-node@v6
@@ -84,7 +88,7 @@ jobs:
           echo "sveltekit_version=$(pnpm -C frontend exec node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@ec59f474b9834571250b370d4735c50f8e2d1e29 #v7.0.0
+        uses: goreleaser/goreleaser-action@v7
         with:
           distribution: goreleaser-pro
           version: "~> 2"
