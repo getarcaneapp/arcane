@@ -190,8 +190,8 @@ func (s *AuthService) GetSessionTimeout(ctx context.Context) (int, error) {
 
 	if minutes < 15 {
 		minutes = 15
-	} else if minutes > 1440 {
-		minutes = 1440
+	} else if minutes > 525600 {
+		minutes = 525600
 	}
 
 	return minutes, nil

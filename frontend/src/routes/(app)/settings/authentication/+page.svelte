@@ -122,7 +122,7 @@
 				.number()
 				.int(m.security_session_timeout_integer())
 				.min(15, m.security_session_timeout_min())
-				.max(1440, m.security_session_timeout_max()),
+				.max(525600, m.security_session_timeout_max()),
 			authPasswordPolicy: z.enum(['basic', 'standard', 'strong']),
 			oidcEnabled: z.boolean(),
 			oidcMergeAccounts: z.boolean(),
