@@ -106,8 +106,8 @@ github.com/containerd/ttrpc v1.2.8 h1:xbVu6D4qF2jihdh9rDVOKqUMiFBQk6YctTdo1zk087
 github.com/containerd/ttrpc v1.2.8/go.mod h1:wyZW2K79t4Hfcxl+GUvkZqRBzJlqFFvgEeeWXa42tyE=
 github.com/containerd/typeurl/v2 v2.3.0 h1:HZHPhRWo5XMy3QGQoPrUzbW/2ckwjfweHmOwlkIrPAQ=
 github.com/containerd/typeurl/v2 v2.3.0/go.mod h1:Qk+PAdUYArVj41TnGi6rJ+48RF0PkcTc4i/taoBcK0w=
-github.com/coreos/go-oidc/v3 v3.19.0 h1:F/xyOi3x1UnG1U27YVnM1N6bHiL1K2upi6U/0qr8r+I=
-github.com/coreos/go-oidc/v3 v3.19.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
+github.com/coreos/go-oidc/v3 v3.20.0 h1:EtE0WIBHk03N+DqGkY4+UONzzZHk7amKt6IyNd7OsZE=
+github.com/coreos/go-oidc/v3 v3.20.0/go.mod h1:DYCf24+ncYi+XkIH97GY1+dqoRlbaSI26KVTCI9SrY4=
 github.com/cpuguy83/go-md2man/v2 v2.0.6/go.mod h1:oOW0eioCTA6cOiMLiUPZOpcVxMig6NIQQ7OS05n1F4g=
 github.com/creack/pty v1.1.24 h1:bJrF4RRfyJnbTJqzRLHzcGaZK1NeM5kTC9jGgovnR1s=
 github.com/creack/pty v1.1.24/go.mod h1:08sCNb52WyoAwi2QDyzUCTgcvVFhUzewun7wtTfvcwE=
@@ -545,8 +545,8 @@ go.getarcane.app/sys/cgroup v0.1.0 h1:SCAbuU+rZ/EjMU8kkVxmXZsMchiZp9eFdMQFnbU+as
 go.getarcane.app/sys/cgroup v0.1.0/go.mod h1:Paj4QOazrTXO/Ivhmvt1E/RjPJFTdKkxRgRDk4qBCUI=
 go.getarcane.app/sys/crypto v0.1.0 h1:HDQ2CKHkm+wZe5xb/qR7MzW5fKi0Wq8Jcyr7qDVgRWg=
 go.getarcane.app/sys/crypto v0.1.0/go.mod h1:YtoRB0TENwfdNl0ZUTWkeas/8rT7NhCbI8ENsZzCCdU=
-go.getarcane.app/updater v0.5.0 h1:H7CtjrFWb7CbOBHq0sqRsmGlGr+MMh4Lt5/pIpgQWec=
-go.getarcane.app/updater v0.5.0/go.mod h1:8f0/0pi7J0yFqgwFTywiwk/NoUN/g6AfmprOuAUrI20=
+go.getarcane.app/updater v0.5.3 h1:nhdpT2JFVC12EHZEy2HFyt1A5NS0t46Go+Ns3VlWN8Y=
+go.getarcane.app/updater v0.5.3/go.mod h1:8f0/0pi7J0yFqgwFTywiwk/NoUN/g6AfmprOuAUrI20=
 go.opencensus.io v0.24.0 h1:y73uSU6J157QMP2kn2r30vwW1A2W2WFwSCGnAVxeaD0=
 go.opencensus.io v0.24.0/go.mod h1:vNK8G9p7aAivkbmorf4v+7Hgx+Zs0yY+0fOtgBfjQKo=
 go.opentelemetry.io/auto/sdk v1.2.1 h1:jXsnJ4Lmnqd11kwkBV2LgLoFMZKizbCi5fNZ/ipaZ64=
