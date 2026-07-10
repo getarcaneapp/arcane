@@ -26,6 +26,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
+		envId,
 		networks,
 		networkRequestOptions,
 		// Use counts from the networks response

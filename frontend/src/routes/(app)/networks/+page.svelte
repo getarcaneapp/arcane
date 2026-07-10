@@ -12,34 +12,44 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
+	const queryClient = useQueryClient();
 
 	const pageState = new ResourceListPageState(
 		untrack(() => data.networks),
 		untrack(() => data.networkRequestOptions)
 	);
+	let previousEnvId = untrack(() => pageState.envId);
 	const countsFallback: NetworkUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	const networksQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.list(pageState.envId, pageState.requestOptions),
-		queryFn: () => networkService.getNetworksForEnvironment(pageState.envId, pageState.requestOptions),
-		initialData: data.networks
-	}));
+	const networksQuery = createQuery(() => {
+		const queryEnvId = pageState.envId;
+		return {
+			queryKey: queryKeys.networks.list(queryEnvId, pageState.requestOptions),
+			queryFn: () => networkService.getNetworksForEnvironment(queryEnvId, pageState.requestOptions),
+			initialData: data.envId === queryEnvId ? data.networks : undefined,
+			select: (value) => ({ envId: queryEnvId, value })
+		};
+	});
+	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === pageState.envId ? data.envId : null)));
+	const resourcesReady = $derived(displayedEnvId === pageState.envId);
 
 	const createNetworkMutation = createMutation(() => ({
 		mutationKey: ['networks', 'create', pageState.envId],
-		mutationFn: ({ name, options }: { name: string; options: NetworkCreateOptions }) =>
-			networkService.createNetwork(name, options),
+		mutationFn: ({ name, options, requestedEnvId }: { name: string; options: NetworkCreateOptions; requestedEnvId: string }) =>
+			networkService.createNetwork(name, options, requestedEnvId),
 		onSuccess: async (data, variables) => {
 			toast.success(
 				m.common_create_success({ resource: `${m.resource_network()} "${variables.name}"` }),
 				activityToastOptions(extractActivityId(data))
 			);
-			await networksQuery.refetch();
-			pageState.isCreateDialogOpen = false;
+			if (variables.requestedEnvId === pageState.envId) {
+				await loadNetworks(pageState.requestOptions, variables.requestedEnvId);
+				pageState.isCreateDialogOpen = false;
+			}
 		},
 		onError: (_error, variables) => {
 			toast.error(m.common_create_failed({ resource: `${m.resource_network()} "${variables.name}"` }));
@@ -47,21 +57,43 @@
 	}));
 
 	$effect(() => {
-		if (networksQuery.data) {
-			pageState.items = networksQuery.data;
+		if (networksQuery.data?.envId === pageState.envId) {
+			pageState.items = networksQuery.data.value;
+			displayedEnvId = pageState.envId;
 		}
 	});
 
+	$effect(() => {
+		if (pageState.envId === previousEnvId) return;
+		previousEnvId = pageState.envId;
+		displayedEnvId = null;
+		pageState.selectedIds = [];
+		pageState.isCreateDialogOpen = false;
+	});
+
 	async function handleCreate(name: string, options: NetworkCreateOptions) {
-		await createNetworkMutation.mutateAsync({ name, options });
+		await createNetworkMutation.mutateAsync({ name, options, requestedEnvId: pageState.envId });
+	}
+
+	async function loadNetworks(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
+		pageState.requestOptions = options;
+		const next = await queryClient.fetchQuery({
+			queryKey: queryKeys.networks.list(requestedEnvId, options),
+			queryFn: () => networkService.getNetworksForEnvironment(requestedEnvId, options)
+		});
+		if (requestedEnvId !== pageState.envId) {
+			return;
+		}
+		pageState.items = next;
+		displayedEnvId = requestedEnvId;
 	}
 
 	async function refresh() {
-		await networksQuery.refetch();
+		await loadNetworks();
 	}
 
 	const isRefreshing = $derived(networksQuery.isFetching && !networksQuery.isPending);
-	const networkUsageCounts = $derived(pageState.items.counts ?? countsFallback);
+	const networkUsageCounts = $derived(resourcesReady ? (pageState.items.counts ?? countsFallback) : countsFallback);
 
 	const actionButtons: ActionButton[] = $derived([
 		{
@@ -70,7 +102,7 @@
 			label: m.common_create_button({ resource: m.resource_network_cap() }),
 			onclick: () => (pageState.isCreateDialogOpen = true),
 			loading: createNetworkMutation.isPending,
-			disabled: createNetworkMutation.isPending
+			disabled: !resourcesReady || createNetworkMutation.isPending
 		},
 		{
 			id: 'refresh',
@@ -78,14 +110,15 @@
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
-			disabled: isRefreshing
+			disabled: networksQuery.isFetching
 		},
 		{
 			id: 'topology',
 			action: 'inspect',
 			label: m.networks_topology_button(),
 			icon: GitBranchIcon,
-			onclick: () => void goto('/networks/topology')
+			onclick: () => void goto('/networks/topology'),
+			disabled: !resourcesReady
 		}
 	]);
 
@@ -107,15 +140,14 @@
 
 <ResourcePageLayout title={m.networks_title()} subtitle={m.networks_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<NetworkTable
-			bind:networks={pageState.items}
-			bind:selectedIds={pageState.selectedIds}
-			bind:requestOptions={pageState.requestOptions}
-			onRefreshData={async (options) => {
-				pageState.requestOptions = options;
-				await networksQuery.refetch();
-			}}
-		/>
+		{#if resourcesReady}
+			<NetworkTable
+				bind:networks={pageState.items}
+				bind:selectedIds={pageState.selectedIds}
+				bind:requestOptions={pageState.requestOptions}
+				onRefreshData={loadNetworks}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet additionalContent()}

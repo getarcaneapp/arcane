@@ -11,12 +11,16 @@
 
 	const envId = $derived(environmentStore.selected?.id || '0');
 
-	const topologyQuery = createQuery(() => ({
-		queryKey: queryKeys.networks.topology(envId),
-		queryFn: () => networkService.getNetworkTopology(envId),
-		initialData: data.topology
-	}));
-	const topology = $derived(topologyQuery.data!);
+	const topologyQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.networks.topology(queryEnvId),
+			queryFn: () => networkService.getNetworkTopology(queryEnvId),
+			initialData: data.envId === queryEnvId ? data.topology : undefined,
+			select: (value) => ({ envId: queryEnvId, value })
+		};
+	});
+	const topology = $derived(topologyQuery.data?.envId === envId ? topologyQuery.data.value : null);
 
 	async function refresh() {
 		await topologyQuery.refetch();
@@ -31,13 +35,15 @@
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
-			disabled: isRefreshing
+			disabled: topologyQuery.isFetching
 		}
 	]);
 </script>
 
 <ResourcePageLayout title={m.networks_topology_title()} subtitle={m.networks_topology_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<NetworkDiagram {topology} />
+		{#if topology}
+			<NetworkDiagram {topology} />
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

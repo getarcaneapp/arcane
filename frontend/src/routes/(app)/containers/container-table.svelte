@@ -65,6 +65,7 @@
 	type FieldVisibility = Record<string, boolean>;
 
 	let {
+		environmentId,
 		containers = $bindable(),
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
@@ -72,6 +73,7 @@
 		withoutFilters = false,
 		onRefreshData
 	}: {
+		environmentId: string;
 		containers: ContainersPaginatedResponse;
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
@@ -172,6 +174,9 @@
 	);
 
 	const shouldConnect = $derived.by(() => {
+		if (!resourcesCurrent) {
+			return new Set<string>();
+		}
 		const cpuVisible = columnVisibility['cpuUsage'] !== false;
 		const memoryVisible = columnVisibility['memoryUsage'] !== false;
 		const statsVisible = cpuVisible || memoryVisible;
@@ -185,6 +190,7 @@
 	});
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
+	const resourcesCurrent = $derived(environmentId === currentEnvId);
 	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
@@ -302,7 +308,7 @@
 			action: 'start',
 			onClick: handleBulkStart,
 			loading: isBulkLoading.start,
-			disabled: isAnyLoading,
+			disabled: !resourcesCurrent || isAnyLoading,
 			icon: StartIcon
 		},
 		{
@@ -311,7 +317,7 @@
 			action: 'stop',
 			onClick: handleBulkStop,
 			loading: isBulkLoading.stop,
-			disabled: isAnyLoading,
+			disabled: !resourcesCurrent || isAnyLoading,
 			icon: StopIcon
 		},
 		{
@@ -320,7 +326,7 @@
 			action: 'restart',
 			onClick: handleBulkRestart,
 			loading: isBulkLoading.restart,
-			disabled: isAnyLoading,
+			disabled: !resourcesCurrent || isAnyLoading,
 			icon: RefreshIcon
 		},
 		{
@@ -329,7 +335,7 @@
 			action: 'remove',
 			onClick: handleBulkRemove,
 			loading: isBulkLoading.remove,
-			disabled: isAnyLoading,
+			disabled: !resourcesCurrent || isAnyLoading,
 			icon: TrashIcon
 		}
 	]);
@@ -344,7 +350,9 @@
 	}
 </script>
 
-<ContainerStatsSync {statsManager} envId={currentEnvId} targetIds={shouldConnect} />
+{#if resourcesCurrent}
+	<ContainerStatsSync {statsManager} envId={environmentId} targetIds={shouldConnect} />
+{/if}
 
 {#snippet IPAddressCell({ item }: { item: ContainerSummaryDto })}
 	{@const ipAddresses = getContainerIpAddresses(item)}
@@ -423,7 +431,7 @@
 					size="sm"
 					class="size-7 border-transparent bg-transparent p-0 text-green-600 shadow-none hover:bg-green-600/10 hover:text-green-500"
 					onclick={() => performContainerAction('start', item.id)}
-					disabled={isAnyLoading}
+					disabled={!resourcesCurrent || isAnyLoading}
 					icon={StartIcon}
 					title={m.common_start()}
 				/>
@@ -434,7 +442,7 @@
 					size="sm"
 					class="size-7 border-transparent bg-transparent p-0 text-red-600 shadow-none hover:bg-red-600/10 hover:text-red-500"
 					onclick={() => performContainerAction('stop', item.id)}
-					disabled={isAnyLoading}
+					disabled={!resourcesCurrent || isAnyLoading}
 					title={m.common_stop()}
 					icon={StopIcon}
 				/>
@@ -446,7 +454,7 @@
 					size="sm"
 					class="size-7 p-0"
 					onclick={() => handleUpdateContainer(item)}
-					disabled={isAnyLoading}
+					disabled={!resourcesCurrent || isAnyLoading}
 					title={m.containers_update_container()}
 					icon={UpdateIcon}
 				/>
@@ -614,117 +622,119 @@
 {/snippet}
 
 {#snippet RowActions({ item }: { item: ContainerSummaryDto })}
-	{@const status = actionStatus[item.id]}
-	<RowActionsMenu>
-		<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
-			<InspectIcon class="size-4" />
-			{m.common_inspect()}
-		</DropdownMenu.Item>
-
-		<DropdownMenu.Separator />
-
-		{#if item.updateInfo?.hasUpdate && canUpdateContainers}
-			<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
-				{#if status === 'updating'}
-					<Spinner class="size-4" />
-				{:else}
-					<UpdateIcon class="size-4" />
-					{m.common_update()}
-				{/if}
+	{#if resourcesCurrent}
+		{@const status = actionStatus[item.id]}
+		<RowActionsMenu>
+			<DropdownMenu.Item onclick={() => goto(`/containers/${item.id}`)} disabled={isAnyLoading}>
+				<InspectIcon class="size-4" />
+				{m.common_inspect()}
 			</DropdownMenu.Item>
-		{/if}
-		{#if item.state === 'paused'}
-			{#if canPauseContainers}
-				<DropdownMenu.Item
-					onclick={() => performContainerAction('unpause', item.id)}
-					disabled={status === 'unpausing' || isAnyLoading}
-				>
-					{#if status === 'unpausing'}
+
+			<DropdownMenu.Separator />
+
+			{#if item.updateInfo?.hasUpdate && canUpdateContainers}
+				<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
+					{#if status === 'updating'}
 						<Spinner class="size-4" />
 					{:else}
-						<PlayIcon class="size-4" />
+						<UpdateIcon class="size-4" />
+						{m.common_update()}
 					{/if}
-					{m.common_unpause()}
 				</DropdownMenu.Item>
 			{/if}
-		{:else if item.state !== 'running'}
-			<DropdownMenu.Item
-				onclick={() => performContainerAction('start', item.id)}
-				disabled={status === 'starting' || isAnyLoading}
-			>
-				{#if status === 'starting'}
-					<Spinner class="size-4" />
-				{:else}
-					<StartIcon class="size-4" />
+			{#if item.state === 'paused'}
+				{#if canPauseContainers}
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('unpause', item.id)}
+						disabled={status === 'unpausing' || isAnyLoading}
+					>
+						{#if status === 'unpausing'}
+							<Spinner class="size-4" />
+						{:else}
+							<PlayIcon class="size-4" />
+						{/if}
+						{m.common_unpause()}
+					</DropdownMenu.Item>
 				{/if}
-				{m.common_start()}
-			</DropdownMenu.Item>
-		{:else}
-			<ContainerActionMenuItem
-				icon={StopIcon}
-				label={m.common_stop()}
-				onclick={() => performContainerAction('stop', item.id)}
-				loading={status === 'stopping'}
-				disabled={status === 'stopping' || isAnyLoading}
-			/>
-
-			<ContainerActionMenuItem
-				icon={RefreshIcon}
-				label={m.common_restart()}
-				onclick={() => performContainerAction('restart', item.id)}
-				loading={status === 'restarting'}
-				disabled={status === 'restarting' || isAnyLoading}
-			/>
-
-			{#if canPauseContainers}
+			{:else if item.state !== 'running'}
 				<DropdownMenu.Item
-					onclick={() => performContainerAction('pause', item.id)}
-					disabled={status === 'pausing' || isAnyLoading}
+					onclick={() => performContainerAction('start', item.id)}
+					disabled={status === 'starting' || isAnyLoading}
 				>
-					{#if status === 'pausing'}
+					{#if status === 'starting'}
 						<Spinner class="size-4" />
 					{:else}
-						<PauseIcon class="size-4" />
+						<StartIcon class="size-4" />
 					{/if}
-					{m.common_pause()}
+					{m.common_start()}
+				</DropdownMenu.Item>
+			{:else}
+				<ContainerActionMenuItem
+					icon={StopIcon}
+					label={m.common_stop()}
+					onclick={() => performContainerAction('stop', item.id)}
+					loading={status === 'stopping'}
+					disabled={status === 'stopping' || isAnyLoading}
+				/>
+
+				<ContainerActionMenuItem
+					icon={RefreshIcon}
+					label={m.common_restart()}
+					onclick={() => performContainerAction('restart', item.id)}
+					loading={status === 'restarting'}
+					disabled={status === 'restarting' || isAnyLoading}
+				/>
+
+				{#if canPauseContainers}
+					<DropdownMenu.Item
+						onclick={() => performContainerAction('pause', item.id)}
+						disabled={status === 'pausing' || isAnyLoading}
+					>
+						{#if status === 'pausing'}
+							<Spinner class="size-4" />
+						{:else}
+							<PauseIcon class="size-4" />
+						{/if}
+						{m.common_pause()}
+					</DropdownMenu.Item>
+				{/if}
+			{/if}
+
+			{#if (item.state === 'running' || item.state === 'paused') && canKillContainers}
+				<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
+					<ZapIcon class="size-4" />
+					{m.common_kill()}
 				</DropdownMenu.Item>
 			{/if}
-		{/if}
 
-		{#if (item.state === 'running' || item.state === 'paused') && canKillContainers}
-			<DropdownMenu.Item onclick={() => openKillDialog(item)} disabled={isAnyLoading}>
-				<ZapIcon class="size-4" />
-				{m.common_kill()}
-			</DropdownMenu.Item>
-		{/if}
+			{#if item.redeployDisabled}
+				<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
+					<RedeployIcon class="size-4 opacity-50" />
+					{m.common_redeploy()}
+				</DropdownMenu.Item>
+			{:else}
+				<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
+					{#if status === 'redeploying'}
+						<Spinner class="size-4" />
+					{:else}
+						<RedeployIcon class="size-4" />
+					{/if}
+					{m.common_redeploy()}
+				</DropdownMenu.Item>
+			{/if}
 
-		{#if item.redeployDisabled}
-			<DropdownMenu.Item disabled title={m.common_redeploy_disabled_arcane_self()}>
-				<RedeployIcon class="size-4 opacity-50" />
-				{m.common_redeploy()}
-			</DropdownMenu.Item>
-		{:else}
-			<DropdownMenu.Item onclick={() => handleRedeployContainer(item)} disabled={status === 'redeploying' || isAnyLoading}>
-				{#if status === 'redeploying'}
-					<Spinner class="size-4" />
-				{:else}
-					<RedeployIcon class="size-4" />
-				{/if}
-				{m.common_redeploy()}
-			</DropdownMenu.Item>
-		{/if}
+			<DropdownMenu.Separator />
 
-		<DropdownMenu.Separator />
-
-		<ContainerActionMenuItem
-			icon={TrashIcon}
-			label={m.common_remove()}
-			onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
-			loading={status === 'removing'}
-			disabled={status === 'removing' || isAnyLoading}
-			destructive
-		/>
-	</RowActionsMenu>
+			<ContainerActionMenuItem
+				icon={TrashIcon}
+				label={m.common_remove()}
+				onclick={() => handleRemoveContainer(item.id, getContainerDisplayName(item))}
+				loading={status === 'removing'}
+				disabled={status === 'removing' || isAnyLoading}
+				destructive
+			/>
+		</RowActionsMenu>
+	{/if}
 {/snippet}
 
 <ArcaneTable

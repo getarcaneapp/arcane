@@ -30,10 +30,12 @@
 	let isRegistrySearchDialogOpen = $state(false);
 	let isUploadDialogOpen = $state(false);
 	let isConfirmPruneDialogOpen = $state(false);
+	let isRefreshing = $state(false);
 	let uploadedFiles = $state<File[]>([]);
 	let imagePruneMode = $state<'dangling' | 'all' | 'olderThan'>('dangling');
 	let imagePruneUntil = $state('');
 	const envId = $derived(environmentStore.selected?.id || '0');
+	let previousEnvId = untrack(() => envId);
 	const imageUsageFallback: ImageUsageCounts = {
 		imagesInuse: 0,
 		imagesUnused: 0,
@@ -41,31 +43,47 @@
 		totalImageSize: 0
 	};
 
-	const maxUploadSizeMB = $derived(parseInt(String(data.settings?.maxImageUploadSize || '500'), 10));
+	const maxUploadSizeMB = $derived(
+		parseInt(String((data.envId === envId ? data.settings?.maxImageUploadSize : undefined) || '500'), 10)
+	);
 
-	const imagesQuery = createQuery(() => ({
-		queryKey: queryKeys.images.list(envId, requestOptions),
-		queryFn: () => imageService.getImagesForEnvironment(envId, requestOptions),
-		initialData: data.images
-	}));
+	const imagesQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.images.list(queryEnvId, requestOptions),
+			queryFn: () => imageService.getImagesForEnvironment(queryEnvId, requestOptions),
+			initialData: data.envId === queryEnvId ? data.images : undefined,
+			select: (value) => ({ envId: queryEnvId, value })
+		};
+	});
 
-	const imageUsageCountsQuery = createQuery(() => ({
-		queryKey: queryKeys.images.usageCounts(envId),
-		queryFn: () => imageService.getImageUsageCountsForEnvironment(envId),
-		initialData: data.imageUsageCounts
-	}));
+	const imageUsageCountsQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.images.usageCounts(queryEnvId),
+			queryFn: () => imageService.getImageUsageCountsForEnvironment(queryEnvId),
+			initialData: data.envId === queryEnvId ? data.imageUsageCounts : undefined,
+			select: (value) => ({ envId: queryEnvId, value })
+		};
+	});
+	const resourcesReady = $derived(imagesQuery.data?.envId === envId);
 
 	const pruneImagesMutation = createMutation(() => ({
 		mutationKey: ['images', 'prune', envId],
-		mutationFn: () =>
-			imageService.pruneImages({
-				mode: imagePruneMode,
-				...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
-			}),
-		onSuccess: async (data) => {
+		mutationFn: (requestedEnvId: string) =>
+			imageService.pruneImages(
+				{
+					mode: imagePruneMode,
+					...(imagePruneMode === 'olderThan' ? { until: imagePruneUntil } : {})
+				},
+				requestedEnvId
+			),
+		onSuccess: async (data, requestedEnvId) => {
 			toast.success(m.images_pruned_success(), activityToastOptions(extractActivityId(data)));
-			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
-			isConfirmPruneDialogOpen = false;
+			if (requestedEnvId === envId) {
+				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+				isConfirmPruneDialogOpen = false;
+			}
 		},
 		onError: () => {
 			toast.error(m.images_prune_failed());
@@ -74,10 +92,12 @@
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['images', 'check-updates', envId],
-		mutationFn: () => imageService.checkAllImages(),
-		onSuccess: async (data) => {
+		mutationFn: (requestedEnvId: string) => imageService.checkAllImages(requestedEnvId),
+		onSuccess: async (data, requestedEnvId) => {
 			toast.success(m.images_update_check_completed(), activityToastOptions(extractActivityId(data)));
-			await imagesQuery.refetch();
+			if (requestedEnvId === envId) {
+				await imagesQuery.refetch();
+			}
 		},
 		onError: () => {
 			toast.error(m.images_update_check_failed());
@@ -86,36 +106,51 @@
 
 	const uploadImagesMutation = createMutation(() => ({
 		mutationKey: ['images', 'upload', envId],
-		mutationFn: async (files: File[]) => {
+		mutationFn: async ({ files, requestedEnvId }: { files: File[]; requestedEnvId: string }) => {
 			for (const file of files) {
 				try {
-					await imageService.uploadImage(file);
+					await imageService.uploadImage(file, requestedEnvId);
 					toast.success(m.images_upload_success());
 				} catch {
 					toast.error(m.images_upload_failed());
 				}
 			}
 		},
-		onSuccess: async () => {
-			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
-			uploadedFiles = [];
-			isUploadDialogOpen = false;
+		onSuccess: async (_data, { requestedEnvId }) => {
+			if (requestedEnvId === envId) {
+				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
+				uploadedFiles = [];
+				isUploadDialogOpen = false;
+			}
 		}
 	}));
 
 	$effect(() => {
-		if (imagesQuery.data) {
-			images = imagesQuery.data;
+		if (imagesQuery.data?.envId === envId) {
+			images = imagesQuery.data.value;
 		}
 	});
 
-	const imageUsageCounts = $derived(imageUsageCountsQuery.data ?? imageUsageFallback);
+	$effect(() => {
+		if (envId === previousEnvId) return;
+		previousEnvId = envId;
+		selectedIds = [];
+		isPullDialogOpen = false;
+		isRegistrySearchDialogOpen = false;
+		isUploadDialogOpen = false;
+		isConfirmPruneDialogOpen = false;
+		uploadedFiles = [];
+		isRefreshing = false;
+	});
+
+	const imageUsageCounts = $derived(
+		imageUsageCountsQuery.data?.envId === envId ? imageUsageCountsQuery.data.value : imageUsageFallback
+	);
 
 	// Intentionally a manual flag, not $derived(query.isFetching): these queries use
 	// aggressive background refetching (staleTime: 0 + refetchOnMount/WindowFocus:
 	// 'always'), so deriving from isFetching leaves the manual refresh button spinning
 	// constantly. Mirrors the containers page — reflects only user-initiated refreshes.
-	let isRefreshing = $state(false);
 	const isUploading = $derived(uploadImagesMutation.isPending);
 	const isPruning = $derived(pruneImagesMutation.isPending);
 	const isChecking = $derived(checkUpdatesMutation.isPending);
@@ -133,15 +168,15 @@
 			toast.error(m.images_upload_file_required());
 			return;
 		}
-		await uploadImagesMutation.mutateAsync(uploadedFiles);
+		await uploadImagesMutation.mutateAsync({ files: uploadedFiles, requestedEnvId: envId });
 	}
 
 	async function handleTriggerBulkUpdateCheck() {
-		await checkUpdatesMutation.mutateAsync();
+		await checkUpdatesMutation.mutateAsync(envId);
 	}
 
 	async function handlePruneImages() {
-		await pruneImagesMutation.mutateAsync();
+		await pruneImagesMutation.mutateAsync(envId);
 	}
 
 	const imagePruneModes = [
@@ -151,11 +186,14 @@
 	];
 
 	async function refresh() {
+		const requestedEnvId = envId;
 		isRefreshing = true;
 		try {
 			await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
 		} finally {
-			isRefreshing = false;
+			if (requestedEnvId === envId) {
+				isRefreshing = false;
+			}
 		}
 	}
 
@@ -166,13 +204,20 @@
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
 		if (canPullImage) {
-			buttons.push({ id: 'pull', action: 'pull', label: m.images_pull_image(), onclick: () => (isPullDialogOpen = true) });
+			buttons.push({
+				id: 'pull',
+				action: 'pull',
+				label: m.images_pull_image(),
+				onclick: () => (isPullDialogOpen = true),
+				disabled: !resourcesReady
+			});
 			buttons.push({
 				id: 'registry-search',
 				action: 'inspect',
 				label: m.images_search_registry(),
 				icon: SearchIcon,
-				onclick: () => (isRegistrySearchDialogOpen = true)
+				onclick: () => (isRegistrySearchDialogOpen = true),
+				disabled: !resourcesReady
 			});
 		}
 		if (canUploadImage) {
@@ -180,7 +225,8 @@
 				id: 'upload',
 				action: 'create',
 				label: m.images_upload_image(),
-				onclick: () => (isUploadDialogOpen = true)
+				onclick: () => (isUploadDialogOpen = true),
+				disabled: !resourcesReady
 			});
 		}
 		if (canPullImage) {
@@ -191,7 +237,7 @@
 				loadingLabel: m.common_action_checking(),
 				onclick: handleTriggerBulkUpdateCheck,
 				loading: isChecking,
-				disabled: isChecking
+				disabled: !resourcesReady || isChecking
 			});
 		}
 		buttons.push({
@@ -210,7 +256,7 @@
 				loadingLabel: m.common_action_pruning(),
 				onclick: () => (isConfirmPruneDialogOpen = true),
 				loading: isPruning,
-				disabled: isPruning
+				disabled: !resourcesReady || isPruning
 			});
 		}
 		return buttons;
@@ -234,19 +280,25 @@
 
 <ResourcePageLayout title={m.images_title()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<ImageTable
-			bind:images
-			bind:selectedIds
-			bind:requestOptions
-			loading={imagesQuery.isLoading}
-			onRefreshData={async (options) => {
-				requestOptions = options;
-				await Promise.all([imagesQuery.refetch(), imageUsageCountsQuery.refetch()]);
-			}}
-			onImageUpdated={async () => {
-				await imagesQuery.refetch();
-			}}
-		/>
+		{#if resourcesReady}
+			<ImageTable
+				bind:images
+				bind:selectedIds
+				bind:requestOptions
+				loading={imagesQuery.isLoading}
+				onRefreshData={async (options) => {
+					const requestedEnvId = envId;
+					requestOptions = options;
+					await imageUsageCountsQuery.refetch();
+					if (requestedEnvId !== envId) {
+						selectedIds = [];
+					}
+				}}
+				onImageUpdated={async () => {
+					await imagesQuery.refetch();
+				}}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet additionalContent()}

@@ -19,6 +19,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
+		envId,
 		topology
 	};
 };

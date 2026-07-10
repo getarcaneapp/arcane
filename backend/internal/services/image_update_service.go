@@ -1474,19 +1474,14 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 }
 
 func (s *ImageUpdateService) GetUpdateSummary(ctx context.Context) (*imageupdate.Summary, error) {
-	dockerClient, err := s.dockerClientInternal(ctx)
+	if s == nil || s.dockerService == nil {
+		return nil, errors.New("docker service unavailable")
+	}
+
+	dockerImages, err := s.dockerService.listImagesInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
-
-	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
-	defer cancel()
-
-	dockerImagesResult, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker images: %w", err)
-	}
-	dockerImages := dockerImagesResult.Items
 
 	liveImageIDs := make([]string, 0, len(dockerImages))
 	for _, img := range dockerImages {

@@ -147,8 +147,8 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${envId}/images/${imageId}`, { params: options }));
 	}
 
-	async pruneImages(options: PruneImagesOptions): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async pruneImages(options: PruneImagesOptions, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/images/prune`, options));
 	}
 
@@ -157,8 +157,8 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check/${imageId}`, {}));
 	}
 
-	async checkAllImages(): Promise<Record<string, ImageUpdateInfoDto>> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async checkAllImages(environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-all`, {}));
 	}
 
@@ -180,13 +180,13 @@ class ImageService extends BaseAPIService {
 		);
 	}
 
-	async runAutoUpdate(options?: AutoUpdateCheck): Promise<AutoUpdateResult> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async runAutoUpdate(options?: AutoUpdateCheck, environmentId?: string): Promise<AutoUpdateResult> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/updater/run`, options));
 	}
 
-	async uploadImage(file: File): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async uploadImage(file: File, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const formData = new FormData();
 		formData.append('file', file);
 		return this.handleResponse(this.api.post(`/environments/${envId}/images/upload`, formData));

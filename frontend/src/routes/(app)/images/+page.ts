@@ -36,5 +36,5 @@ export const load: PageLoad = async ({ parent }) => {
 		throwPageLoadError(err, 'Failed to load images');
 	}
 
-	return { images, imageRequestOptions, settings, imageUsageCounts };
+	return { envId, images, imageRequestOptions, settings, imageUsageCounts };
 };

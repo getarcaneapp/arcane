@@ -27,6 +27,7 @@ export const load: PageLoad = async ({ parent }) => {
 	});
 
 	return {
+		envId,
 		volumes,
 		volumeRequestOptions,
 		// Use counts from the volumes response

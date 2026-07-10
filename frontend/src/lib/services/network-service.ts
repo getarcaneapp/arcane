@@ -57,8 +57,8 @@ class NetworkService extends BaseAPIService {
 		return this.handleResponse(this.api.get(`/environments/${envId}/networks/topology`));
 	}
 
-	async createNetwork(name: string, options: NetworkCreateOptions): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createNetwork(name: string, options: NetworkCreateOptions, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		const request: NetworkCreateRequest = {
 			name,
 			options

@@ -19,11 +19,6 @@ export type ContainerListRequestOptions = SearchPaginationSortRequest & {
 	groupByProject?: boolean;
 };
 
-export interface ContainerDetailsResponse {
-	success: boolean;
-	data: ContainerDetailsDto;
-}
-
 class ContainerService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {
 		return environmentId ?? (await environmentStore.getCurrentEnvironmentId());
@@ -70,8 +65,8 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/start`));
 	}
 
-	async createContainer(options: ContainerCreateRequest): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createContainer(options: ContainerCreateRequest, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers`, options));
 	}
 
@@ -121,7 +116,7 @@ class ContainerService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/update`));
 	}
 
-	async redeployContainer(containerId: string): Promise<ContainerDetailsResponse> {
+	async redeployContainer(containerId: string): Promise<ContainerDetailsDto> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/containers/${containerId}/redeploy`));
 	}

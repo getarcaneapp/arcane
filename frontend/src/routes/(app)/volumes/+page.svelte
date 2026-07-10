@@ -21,48 +21,72 @@
 		untrack(() => data.volumes),
 		untrack(() => data.volumeRequestOptions)
 	);
+	let previousEnvId = untrack(() => pageState.envId);
+	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === pageState.envId ? data.envId : null)));
+	const resourcesReady = $derived(displayedEnvId === pageState.envId);
 	const countsFallback: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
 
-	const volumesQuery = createQuery(() => ({
-		queryKey: queryKeys.volumes.table(pageState.envId, pageState.requestOptions),
-		queryFn: () => volumeService.getVolumesForEnvironment(pageState.envId, pageState.requestOptions),
-		initialData: data.volumes
-	}));
+	const volumesQuery = createQuery(() => {
+		const queryEnvId = pageState.envId;
+		return {
+			queryKey: queryKeys.volumes.table(queryEnvId, pageState.requestOptions),
+			queryFn: () => volumeService.getVolumesForEnvironment(queryEnvId, pageState.requestOptions),
+			initialData: data.envId === queryEnvId ? data.volumes : undefined,
+			select: (value) => ({ envId: queryEnvId, value })
+		};
+	});
 
 	const createVolumeMutation = createMutation(() => ({
 		mutationKey: ['volumes', 'create', pageState.envId],
-		mutationFn: (options: VolumeCreateRequest) => volumeService.createVolume(options),
+		mutationFn: ({ options, requestedEnvId }: { options: VolumeCreateRequest; requestedEnvId: string }) =>
+			volumeService.createVolume(options, requestedEnvId),
 		onSuccess: async (data, options) => {
-			const name = options.name?.trim() || m.common_unknown();
+			const name = options.options.name?.trim() || m.common_unknown();
 			toast.success(
 				m.common_create_success({ resource: `${m.resource_volume()} "${name}"` }),
 				activityToastOptions(extractActivityId(data))
 			);
-			await loadVolumes();
-			pageState.isCreateDialogOpen = false;
+			if (options.requestedEnvId === pageState.envId) {
+				await loadVolumes(pageState.requestOptions, options.requestedEnvId);
+				pageState.isCreateDialogOpen = false;
+			}
 		},
 		onError: (_error, options) => {
-			const name = options.name?.trim() || m.common_unknown();
+			const name = options.options.name?.trim() || m.common_unknown();
 			toast.error(m.common_create_failed({ resource: `${m.resource_volume()} "${name}"` }));
 		}
 	}));
 
 	$effect(() => {
-		if (volumesQuery.data) {
-			pageState.items = volumesQuery.data;
+		if (volumesQuery.data?.envId === pageState.envId) {
+			pageState.items = volumesQuery.data.value;
+			displayedEnvId = pageState.envId;
 		}
 	});
 
+	$effect(() => {
+		if (pageState.envId === previousEnvId) return;
+		previousEnvId = pageState.envId;
+		displayedEnvId = null;
+		pageState.selectedIds = [];
+		pageState.isCreateDialogOpen = false;
+	});
+
 	async function handleCreate(options: VolumeCreateRequest) {
-		await createVolumeMutation.mutateAsync(options);
+		await createVolumeMutation.mutateAsync({ options, requestedEnvId: pageState.envId });
 	}
 
-	async function loadVolumes(options = pageState.requestOptions) {
+	async function loadVolumes(options = pageState.requestOptions, requestedEnvId = pageState.envId) {
 		pageState.requestOptions = options;
-		pageState.items = await queryClient.fetchQuery({
-			queryKey: queryKeys.volumes.table(pageState.envId, options),
-			queryFn: () => volumeService.getVolumesForEnvironment(pageState.envId, options)
+		const next = await queryClient.fetchQuery({
+			queryKey: queryKeys.volumes.table(requestedEnvId, options),
+			queryFn: () => volumeService.getVolumesForEnvironment(requestedEnvId, options)
 		});
+		if (requestedEnvId !== pageState.envId) {
+			return;
+		}
+		pageState.items = next;
+		displayedEnvId = requestedEnvId;
 	}
 
 	async function refresh() {
@@ -70,7 +94,7 @@
 	}
 
 	const isRefreshing = $derived(volumesQuery.isFetching && !volumesQuery.isPending);
-	const volumeUsageCounts = $derived(pageState.items.counts ?? countsFallback);
+	const volumeUsageCounts = $derived(resourcesReady ? (pageState.items.counts ?? countsFallback) : countsFallback);
 
 	const canCreateVolume = $derived(hasPermission('volumes:create', pageState.envId));
 
@@ -83,7 +107,7 @@
 				label: m.common_create_button({ resource: m.resource_volume_cap() }),
 				onclick: () => (pageState.isCreateDialogOpen = true),
 				loading: createVolumeMutation.isPending,
-				disabled: createVolumeMutation.isPending
+				disabled: !resourcesReady || createVolumeMutation.isPending
 			});
 		}
 		buttons.push({
@@ -92,7 +116,7 @@
 			label: m.common_refresh(),
 			onclick: refresh,
 			loading: isRefreshing,
-			disabled: isRefreshing
+			disabled: volumesQuery.isFetching
 		});
 		return buttons;
 	});
@@ -115,12 +139,14 @@
 
 <ResourcePageLayout title={m.volumes_title()} subtitle={m.volumes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<VolumeTable
-			bind:volumes={pageState.items}
-			bind:selectedIds={pageState.selectedIds}
-			bind:requestOptions={pageState.requestOptions}
-			onRefreshData={loadVolumes}
-		/>
+		{#if resourcesReady}
+			<VolumeTable
+				bind:volumes={pageState.items}
+				bind:selectedIds={pageState.selectedIds}
+				bind:requestOptions={pageState.requestOptions}
+				onRefreshData={loadVolumes}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet additionalContent()}

@@ -725,15 +725,7 @@ test.describe('New Compose Project Page', () => {
 		});
 
 		expect(projectPullRequestCount).toBe(0);
-		const projectReloadResponse = page.waitForResponse(
-			(response) =>
-				response.request().method() === 'GET' &&
-				getPathname(response.url()) === `/api/environments/0/projects/${projectId}` &&
-				response.ok(),
-			{ timeout: 30000 }
-		);
 		await page.reload();
-		await projectReloadResponse;
 		await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
 		await expect
 			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {

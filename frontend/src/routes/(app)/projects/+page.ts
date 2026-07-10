@@ -46,5 +46,5 @@ export const load: PageLoad = async ({ parent, url }) => {
 		throwPageLoadError(err, 'Failed to load projects');
 	}
 
-	return { projects, projectRequestOptions, projectStatusCounts, showArchived };
+	return { envId, projects, projectRequestOptions, projectStatusCounts, showArchived };
 };

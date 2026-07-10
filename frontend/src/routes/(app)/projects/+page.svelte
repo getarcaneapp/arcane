@@ -35,7 +35,9 @@
 
 	let baseProjectRequestOptions = $state(untrack(() => withArchivedFilter(data.projectRequestOptions, data.showArchived)));
 	let selectedIds = $state<string[]>([]);
+	let isManualRefreshing = $state(false);
 	const envId = $derived(environmentStore.selected?.id || '0');
+	let previousEnvId = untrack(() => envId);
 	const showArchived = $derived(page.url.searchParams.get('archived') === 'true');
 	const projectRequestOptions = $derived(withArchivedFilter(baseProjectRequestOptions, showArchived));
 	const countsFallback: ProjectStatusCounts = {
@@ -45,31 +47,49 @@
 		archivedProjects: 0
 	};
 
-	const projectsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.list(envId, projectRequestOptions),
-		queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions),
-		initialData: data.projects,
-		refetchOnMount: false
-	}));
-	let projects = $derived(projectsQuery.data ?? untrack(() => data.projects));
+	const projectsQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.projects.list(queryEnvId, projectRequestOptions),
+			queryFn: () => projectService.getProjectsForEnvironment(queryEnvId, projectRequestOptions),
+			initialData: data.envId === queryEnvId ? data.projects : undefined,
+			select: (value) => ({ envId: queryEnvId, value }),
+			refetchOnMount: false
+		};
+	});
+	let projects = $derived(projectsQuery.data?.envId === envId ? projectsQuery.data.value : null);
 
-	const projectStatusCountsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.statusCounts(envId),
-		queryFn: () => projectService.getProjectStatusCountsForEnvironment(envId),
-		initialData: data.projectStatusCounts,
-		refetchOnMount: false
-	}));
+	const projectStatusCountsQuery = createQuery(() => {
+		const queryEnvId = envId;
+		return {
+			queryKey: queryKeys.projects.statusCounts(queryEnvId),
+			queryFn: () => projectService.getProjectStatusCountsForEnvironment(queryEnvId),
+			initialData: data.envId === queryEnvId ? data.projectStatusCounts : undefined,
+			select: (value) => ({ envId: queryEnvId, value }),
+			refetchOnMount: false
+		};
+	});
+	const resourcesReady = $derived(projects !== null);
+
+	$effect(() => {
+		if (envId === previousEnvId) return;
+		previousEnvId = envId;
+		selectedIds = [];
+		isManualRefreshing = false;
+	});
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.projects.checkUpdates(envId),
-		mutationFn: async () => {
+		mutationFn: async (requestedEnvId: string) => {
 			// Refresh update info for all images, then use the image->project usage
 			// map to narrow the redeploy to projects that actually have updates.
 			// This avoids hitting every project (and its registry) when nothing has
 			// changed, which is especially expensive on instances with many projects.
-			const imageCheckResults = await imageService.checkAllImages();
+			const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
 
-			const images = await imageService.getImagesForEnvironment(envId, { pagination: { page: 1, limit: 10000 } });
+			const images = await imageService.getImagesForEnvironment(requestedEnvId, {
+				pagination: { page: 1, limit: 10000 }
+			});
 			const projectIdsWithUpdates = new Set<string>();
 			for (const img of images.data) {
 				if (!img.updateInfo?.hasUpdate) continue;
@@ -84,7 +104,9 @@
 				return { updated: 0, activityId: extractActivityId(imageCheckResults) };
 			}
 
-			const allProjects = await projectService.getProjectsForEnvironment(envId, { pagination: { page: 1, limit: 1000 } });
+			const allProjects = await projectService.getProjectsForEnvironment(requestedEnvId, {
+				pagination: { page: 1, limit: 1000 }
+			});
 			const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
 
 			const results = await Promise.allSettled(
@@ -103,43 +125,48 @@
 
 			return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
 		},
-		onSuccess: async (result) => {
+		onSuccess: async (result, requestedEnvId) => {
 			const toastOptions = activityToastOptions(result.activityId);
 			if (result && result.updated === 0) {
 				toast.success(m.image_update_up_to_date_title(), toastOptions);
 			} else {
 				toast.success(m.compose_update_success(), toastOptions);
 			}
-			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			if (requestedEnvId === envId) {
+				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			}
 		},
-		onError: (error) => {
+		onError: (error, requestedEnvId) => {
 			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
-			void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			if (requestedEnvId === envId) {
+				void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+			}
 		}
 	}));
 
-	const projectStatusCounts = $derived(projectStatusCountsQuery.data ?? countsFallback);
+	const projectStatusCounts = $derived(
+		projectStatusCountsQuery.data?.envId === envId ? projectStatusCountsQuery.data.value : countsFallback
+	);
 	const totalCompose = $derived(projectStatusCounts.totalProjects);
 	const runningCompose = $derived(projectStatusCounts.runningProjects);
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
 	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
-	let isManualRefreshing = $state(false);
-	const isProjectsQueryRefreshing = $derived(projectsQuery.isFetching && !projectsQuery.isPending);
-	const isStatusCountsQueryRefreshing = $derived(projectStatusCountsQuery.isFetching && !projectStatusCountsQuery.isPending);
-	const isQueryRefreshing = $derived(isProjectsQueryRefreshing || isStatusCountsQueryRefreshing);
-	const isRefreshBlocked = $derived(isManualRefreshing || isQueryRefreshing);
+	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || projectStatusCountsQuery.isFetching);
 
 	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync();
+		await checkUpdatesMutation.mutateAsync(envId);
 	}
 
 	async function refreshCompose() {
 		if (isRefreshBlocked) return;
+		const requestedEnvId = envId;
 		isManualRefreshing = true;
 		try {
 			await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
 		} finally {
-			isManualRefreshing = false;
+			if (requestedEnvId === envId) {
+				isManualRefreshing = false;
+			}
 		}
 	}
 
@@ -173,7 +200,7 @@
 				label: m.compose_update_projects(),
 				onclick: handleCheckForUpdates,
 				loading: checkUpdatesMutation.isPending,
-				disabled: checkUpdatesMutation.isPending
+				disabled: !resourcesReady || checkUpdatesMutation.isPending
 			});
 		}
 		buttons.push({
@@ -217,16 +244,22 @@
 
 <ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<ProjectsTable
-			{projects}
-			bind:selectedIds
-			requestOptions={projectRequestOptions}
-			{showArchived}
-			onToggleArchived={toggleArchived}
-			onRefreshData={async (options) => {
-				baseProjectRequestOptions = withArchivedFilter(options, showArchived);
-				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-			}}
-		/>
+		{#if projects}
+			<ProjectsTable
+				{projects}
+				bind:selectedIds
+				requestOptions={projectRequestOptions}
+				{showArchived}
+				onToggleArchived={toggleArchived}
+				onRefreshData={async (options) => {
+					const requestedEnvId = envId;
+					baseProjectRequestOptions = withArchivedFilter(options, showArchived);
+					await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
+					if (requestedEnvId !== envId) {
+						selectedIds = [];
+					}
+				}}
+			/>
+		{/if}
 	{/snippet}
 </ResourcePageLayout>

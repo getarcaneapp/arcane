@@ -58,8 +58,8 @@ class VolumeService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async createVolume(options: VolumeCreateRequest): Promise<any> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async createVolume(options: VolumeCreateRequest, environmentId?: string): Promise<any> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		return this.handleResponse(this.api.post(`/environments/${envId}/volumes`, options));
 	}
 

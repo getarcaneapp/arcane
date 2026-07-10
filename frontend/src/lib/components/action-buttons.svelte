@@ -12,9 +12,10 @@
 	import { m } from '$lib/paraglide/messages';
 	import settingsStore from '$lib/stores/config-store';
 	import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
-	import { containerService, type ContainerDetailsResponse } from '$lib/services/container-service';
+	import { containerService } from '$lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '$lib/services/project-service';
 	import type { Project } from '$lib/types/swarm';
+	import type { ContainerDetailsDto } from '$lib/types/docker';
 	import { EllipsisIcon } from '$lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '$lib/utils/auth';
@@ -150,7 +151,7 @@
 		mutationFn: () =>
 			tryCatch(
 				(type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<
-					ContainerDetailsResponse | Project
+					ContainerDetailsDto | Project
 				>
 			),
 		onMutate: () => setLoading('redeploy', true),
@@ -289,9 +290,9 @@
 							result,
 							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
 							onSuccess: async (data) => {
-								const containerData = data as ContainerDetailsResponse;
-								if (type === 'container' && containerData?.data?.id) {
-									goto(`/containers/${containerData.data.id}`);
+								const containerData = data as ContainerDetailsDto;
+								if (type === 'container' && containerData?.id) {
+									goto(`/containers/${containerData.id}`);
 								} else if (type === 'container') {
 									goto('/containers');
 								} else {

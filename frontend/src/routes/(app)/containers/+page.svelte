@@ -24,10 +24,13 @@
 	let selectedIds = $state<string[]>([]);
 	let isCreateDialogOpen = $state(false);
 	let containers = $state(untrack(() => data.containers));
-	let isRefreshing = $state(false);
 	const envId = $derived(environmentStore.selected?.id || '0');
+	let displayedEnvId = $state<string | null>(untrack(() => (data.envId === envId ? data.envId : null)));
+	let isRefreshing = $state(false);
+	let refreshGeneration = 0;
 	let groupByProject = $state(false);
 	let hasSeenEnvironmentSync = $state(false);
+	const resourcesReady = $derived(displayedEnvId === envId);
 
 	const countsFallback: ContainerStatusCounts = {
 		runningContainers: 0,
@@ -42,23 +45,38 @@
 		};
 	}
 
-	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions()) {
-		isRefreshing = true;
+	async function refreshContainers(options: ContainerListRequestOptions = buildRequestOptions(), requestedEnvId = envId) {
+		const generation = ++refreshGeneration;
+		if (requestedEnvId === envId) {
+			isRefreshing = true;
+		}
 		try {
-			const next = await containerService.getContainersForEnvironment(envId, options);
+			const next = await containerService.getContainersForEnvironment(requestedEnvId, options);
+			if (requestedEnvId !== envId || generation !== refreshGeneration) {
+				return containers;
+			}
 			containers = next;
+			displayedEnvId = requestedEnvId;
 			return next;
 		} finally {
-			isRefreshing = false;
+			if (requestedEnvId === envId && generation === refreshGeneration) {
+				isRefreshing = false;
+			}
 		}
 	}
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.checkUpdates(envId),
-		mutationFn: () => imageService.runAutoUpdate(),
-		onSuccess: async (data) => {
-			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(data)));
-			await refreshContainers();
+		mutationFn: async () => {
+			const requestedEnvId = envId;
+			const result = await imageService.runAutoUpdate(undefined, requestedEnvId);
+			return { requestedEnvId, result };
+		},
+		onSuccess: async ({ requestedEnvId, result }) => {
+			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(result)));
+			if (requestedEnvId === envId) {
+				await refreshContainers(buildRequestOptions(), requestedEnvId);
+			}
 		},
 		onError: () => {
 			toast.error(m.containers_check_updates_failed());
@@ -67,11 +85,17 @@
 
 	const createContainerMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.create(envId),
-		mutationFn: (options: ContainerCreateRequest) => containerService.createContainer(options),
-		onSuccess: async () => {
+		mutationFn: async (options: ContainerCreateRequest) => {
+			const requestedEnvId = envId;
+			const result = await containerService.createContainer(options, requestedEnvId);
+			return { requestedEnvId, result };
+		},
+		onSuccess: async ({ requestedEnvId }) => {
 			toast.success(m.common_create_success({ resource: m.resource_container() }));
-			await refreshContainers();
-			isCreateDialogOpen = false;
+			if (requestedEnvId === envId) {
+				await refreshContainers(buildRequestOptions(), requestedEnvId);
+				isCreateDialogOpen = false;
+			}
 		},
 		onError: () => {
 			toast.error(m.containers_create_failed());
@@ -81,8 +105,16 @@
 	function handleEnvironmentChange() {
 		if (!hasSeenEnvironmentSync) {
 			hasSeenEnvironmentSync = true;
-			return;
+			if (data.envId === envId) {
+				return;
+			}
 		}
+
+		refreshGeneration += 1;
+		isRefreshing = false;
+		displayedEnvId = null;
+		selectedIds = [];
+		isCreateDialogOpen = false;
 
 		const nextOptions: SearchPaginationSortRequest = {
 			...requestOptions,
@@ -92,7 +124,7 @@
 			}
 		};
 		requestOptions = nextOptions;
-		return refreshContainers(buildRequestOptions(nextOptions));
+		return refreshContainers(buildRequestOptions(nextOptions), envId);
 	}
 
 	async function handleCheckForUpdates() {
@@ -103,7 +135,7 @@
 		await refreshContainers();
 	}
 
-	const containerStatusCounts = $derived(containers.counts ?? countsFallback);
+	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
 	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
 
@@ -115,7 +147,7 @@
 				label: m.common_create_button({ resource: m.resource_container_cap() }),
 				onclick: () => (isCreateDialogOpen = true),
 				loading: createContainerMutation.isPending,
-				disabled: createContainerMutation.isPending
+				disabled: !resourcesReady || createContainerMutation.isPending
 			},
 			canAutoUpdate
 				? {
@@ -124,7 +156,7 @@
 						label: m.containers_check_updates(),
 						onclick: handleCheckForUpdates,
 						loading: checkUpdatesMutation.isPending,
-						disabled: checkUpdatesMutation.isPending
+						disabled: !resourcesReady || checkUpdatesMutation.isPending
 					}
 				: null,
 			{
@@ -166,22 +198,26 @@
 
 <ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
-		<ContainerTable
-			bind:containers
-			bind:selectedIds
-			bind:requestOptions
-			bind:groupByProject
-			onRefreshData={async (options) => {
-				requestOptions = {
-					search: options.search,
-					pagination: options.pagination,
-					sort: options.sort,
-					filters: options.filters,
-					includeInternal: options.includeInternal
-				};
-				return refreshContainers(options);
-			}}
-		/>
+		{#if resourcesReady}
+			<ContainerTable
+				environmentId={displayedEnvId!}
+				bind:containers
+				bind:selectedIds
+				bind:requestOptions
+				bind:groupByProject
+				onRefreshData={async (options) => {
+					const requestedEnvId = envId;
+					requestOptions = {
+						search: options.search,
+						pagination: options.pagination,
+						sort: options.sort,
+						filters: options.filters,
+						includeInternal: options.includeInternal
+					};
+					return refreshContainers(options, requestedEnvId);
+				}}
+			/>
+		{/if}
 	{/snippet}
 
 	{#snippet additionalContent()}

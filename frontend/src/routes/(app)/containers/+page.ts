@@ -35,6 +35,7 @@ export const load: PageLoad = async ({ parent }) => {
 	}
 
 	return {
+		envId,
 		containers,
 		containerRequestOptions,
 		settings,
