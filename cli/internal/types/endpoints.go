@@ -1,6 +1,9 @@
 package types
 
-import "fmt"
+import (
+	"fmt"
+	"net/url"
+)
 
 // ArcaneApiEndpoints holds the API endpoint path templates for the Arcane API.
 // Endpoint paths may contain format specifiers (e.g., %s) for environment IDs or resource IDs.
@@ -461,8 +464,10 @@ func (e ArcaneApiEndpoints) ImagesUpload(envID string) string {
 
 // Image Update endpoints
 
-func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID string) string {
-	return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID)
+func (e ArcaneApiEndpoints) ImageUpdatesCheck(envID, imageRef string) string {
+	query := url.Values{}
+	query.Set("imageRef", imageRef)
+	return fmt.Sprintf(e.ImageUpdatesCheckEndpoint, envID) + "?" + query.Encode()
 }
 
 func (e ArcaneApiEndpoints) ImageUpdatesCheckAll(envID string) string {
