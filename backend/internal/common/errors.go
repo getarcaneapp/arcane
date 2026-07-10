@@ -1937,6 +1937,18 @@ func (e *DefaultTransportTypeError) Error() string {
 	return "http.DefaultTransport is not *http.Transport"
 }
 
+// CacheInvalidatedDuringFetchError restarts a cache lookup when invalidation
+// makes an in-flight fetch ineligible to publish its result.
+type CacheInvalidatedDuringFetchError struct{}
+
+func (e *CacheInvalidatedDuringFetchError) Error() string {
+	return "cache invalidated during fetch"
+}
+
+func IsCacheInvalidatedDuringFetchError(err error) bool {
+	return isErrorTypeInternal[*CacheInvalidatedDuringFetchError](err)
+}
+
 // ManagerCALockTypeError is returned when a cached manager CA lock value is not
 // the expected *sync.Mutex.
 type ManagerCALockTypeError struct{}
