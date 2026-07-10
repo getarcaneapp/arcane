@@ -13,6 +13,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
+	import TimeFormatPicker from '$lib/components/time-format-picker.svelte';
 	import FontSizePicker from '$lib/components/font-size-picker.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { userService } from '$lib/services/user-service';
@@ -609,6 +610,13 @@
 								<div class="text-muted-foreground text-xs">{m.account_language_desc()}</div>
 							</div>
 							<LocalePicker inline />
+						</div>
+						<div class="flex items-center justify-between gap-4 p-3">
+							<div class="min-w-0">
+								<div class="text-sm font-medium">{m.time_format()}</div>
+								<div class="text-muted-foreground text-xs">{m.account_time_format_desc()}</div>
+							</div>
+							<TimeFormatPicker id="accountTimeFormatPicker" />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">

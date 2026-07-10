@@ -8,8 +8,7 @@
 	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { format } from 'date-fns';
-	import { truncateImageDigest } from '$lib/utils/formatting';
+	import { formatDateTimeShort, truncateImageDigest } from '$lib/utils/formatting';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -494,7 +493,7 @@
 
 {#snippet CreatedCell({ item }: { item: ContainerSummaryDto })}
 	<span class="text-sm">
-		{item.created ? format(new Date(item.created * 1000), 'PP p') : m.common_na()}
+		{item.created ? formatDateTimeShort(new Date(item.created * 1000)) : m.common_na()}
 	</span>
 {/snippet}
 
@@ -580,7 +579,7 @@
 		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => format(new Date(item.created * 1000), 'PP p'),
+					getValue: (item) => formatDateTimeShort(new Date(item.created * 1000)),
 					icon: ClockIcon
 				}
 			: undefined}

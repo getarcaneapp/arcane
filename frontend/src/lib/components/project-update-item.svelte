@@ -7,7 +7,7 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { AlertIcon, CircleArrowUpIcon, ClockIcon, ImagesIcon, RefreshIcon, VerifiedCheckIcon } from '$lib/icons';
 	import type { Component } from 'svelte';
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
 	import { mergeProps } from 'bits-ui';
 
@@ -42,7 +42,7 @@
 		if (!updateInfo?.lastCheckedAt) return null;
 		const parsed = new Date(updateInfo.lastCheckedAt);
 		if (Number.isNaN(parsed.getTime())) return null;
-		return format(parsed, 'PP p');
+		return formatDateTimeShort(parsed);
 	});
 
 	const stateMeta = $derived.by(

@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { bytes } from '$lib/utils/formatting';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import { inUseBadge } from '$lib/utils/mobile-card-badges';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { Badge } from '$lib/components/ui/badge/index.js';
@@ -20,7 +20,6 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/docker';
 	import type { VulnerabilityScanSummary } from '$lib/types/environment';
-	import { format } from 'date-fns';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
 	import { imageService } from '$lib/services/image-service';
@@ -621,7 +620,7 @@
 		footer={(mobileFieldVisibility['created'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => format(new Date(Number(item.created || 0) * 1000), 'PP p'),
+					getValue: (item) => formatDateTimeShort(new Date(Number(item.created || 0) * 1000)),
 					icon: ClockIcon
 				}
 			: undefined}

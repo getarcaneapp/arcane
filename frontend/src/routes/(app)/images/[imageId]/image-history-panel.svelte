@@ -2,11 +2,10 @@
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import { bytes } from '$lib/utils/formatting';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import { imageService } from '$lib/services/image-service';
 	import type { ImageHistoryItemDto } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
-	import { format } from 'date-fns';
 
 	let { imageId }: { imageId: string } = $props();
 
@@ -34,7 +33,7 @@
 
 	function formatCreated(created: number) {
 		if (!created) return m.common_na();
-		return format(new Date(created * 1000), 'PP p');
+		return formatDateTimeShort(new Date(created * 1000));
 	}
 </script>
 

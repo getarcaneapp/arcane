@@ -3,6 +3,7 @@ import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
 import { writable, get } from 'svelte/store';
 import { setLocale } from '$lib/utils/formatting';
 import { applyFontSize, FONT_SIZE_DEFAULT } from '$lib/utils/theme';
+import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
 
 const userStore = writable<User | null>(null);
 
@@ -18,11 +19,13 @@ const setUser = async (user: User) => {
 		await setLocale(user.locale, false);
 	}
 	applyFontSize(user.fontSize ?? FONT_SIZE_DEFAULT);
+	timeFormatStore.set(user.timeFormat ?? 'auto');
 	userStore.set(user);
 };
 
 const clearUser = () => {
 	applyFontSize(FONT_SIZE_DEFAULT);
+	timeFormatStore.reset();
 	userStore.set(null);
 };
 

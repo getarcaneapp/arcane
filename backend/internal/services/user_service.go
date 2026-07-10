@@ -442,6 +442,7 @@ func (s *UserService) toUserResponseDtoInternal(ctx context.Context, u models.Us
 		CanDelete:              true,
 		OidcSubjectId:          u.OidcSubjectId,
 		Locale:                 u.Locale,
+		TimeFormat:             u.TimeFormat,
 		FontSize:               u.FontSize,
 		RequiresPasswordChange: u.RequiresPasswordChange,
 		CreatedAt:              u.CreatedAt.Format("2006-01-02T15:04:05.999999Z"),

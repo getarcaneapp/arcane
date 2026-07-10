@@ -53,7 +53,7 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 
 	let {}: PageProps = $props();
 
@@ -552,11 +552,7 @@
 
 	function formatTimestamp(value?: string) {
 		if (!value) return '-';
-		try {
-			return format(new Date(value), 'PP p');
-		} catch {
-			return value;
-		}
+		return formatDateTimeShort(value) || value;
 	}
 
 	function formatDuration(ms?: number) {

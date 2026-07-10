@@ -1,5 +1,5 @@
 import type { ImageUpdateInfoDto } from '$lib/types/docker';
-import { format } from 'date-fns';
+import { formatDateTimeShort } from '$lib/utils/formatting';
 
 export function formatImageUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
 	if (!updateInfo) return '-';
@@ -17,5 +17,5 @@ export function formatImageUpdateCheckedAt(value: string) {
 	if (!value) return '-';
 	const parsed = new Date(value);
 	if (Number.isNaN(parsed.getTime())) return '-';
-	return format(parsed, 'PP p');
+	return formatDateTimeShort(parsed);
 }

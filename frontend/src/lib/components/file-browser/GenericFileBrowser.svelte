@@ -39,8 +39,7 @@
 	import * as Alert from '$lib/components/ui/alert';
 	import { Label } from '$lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import { bytes } from '$lib/utils/formatting';
-	import { format } from 'date-fns';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
@@ -157,7 +156,7 @@
 
 	function formatBackupLabel(backup: BackupEntry): string {
 		const sizeLabel = bytes.format(backup.size, { unitSeparator: ' ' }) ?? '-';
-		const createdLabel = backup.createdAt ? format(new Date(backup.createdAt), 'PP p') : '-';
+		const createdLabel = backup.createdAt ? formatDateTimeShort(backup.createdAt) : '-';
 		return `${backup.id} • ${createdLabel} • ${sizeLabel}`;
 	}
 

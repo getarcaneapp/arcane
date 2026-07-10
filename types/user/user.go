@@ -1,23 +1,34 @@
 package user
 
+// TimeFormat controls how absolute times are displayed for a user.
+type TimeFormat string
+
+const (
+	TimeFormatAuto   TimeFormat = "auto"
+	TimeFormat12Hour TimeFormat = "12h"
+	TimeFormat24Hour TimeFormat = "24h"
+)
+
 // CreateUser represents the request body for creating a new user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type CreateUser struct {
-	Username    string  `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"johndoe"`
-	Password    string  `json:"password" minLength:"8" doc:"Password of the user"`
-	DisplayName *string `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe"`
-	Email       *string `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
-	Locale      *string `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	Username    string      `json:"username" minLength:"1" maxLength:"255" doc:"Username of the user" example:"johndoe"`
+	Password    string      `json:"password" minLength:"8" doc:"Password of the user"`
+	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user" example:"John Doe"`
+	Email       *string     `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
+	Locale      *string     `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	TimeFormat  *TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
 }
 
 // UpdateUser represents the request body for updating a user.
 // Role assignments are managed separately via PUT /users/{userId}/role-assignments.
 type UpdateUser struct {
-	Username    *string `json:"username,omitempty" minLength:"1" maxLength:"255" doc:"Username of the user"`
-	DisplayName *string `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
-	Email       *string `json:"email,omitempty" doc:"Email address of the user"`
-	Locale      *string `json:"locale,omitempty" doc:"Locale preference of the user"`
-	Password    *string `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
+	Username    *string     `json:"username,omitempty" minLength:"1" maxLength:"255" doc:"Username of the user"`
+	DisplayName *string     `json:"displayName,omitempty" maxLength:"255" doc:"Display name of the user"`
+	Email       *string     `json:"email,omitempty" doc:"Email address of the user"`
+	Locale      *string     `json:"locale,omitempty" doc:"Locale preference of the user"`
+	TimeFormat  *TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h" doc:"Preferred time display format"`
+	Password    *string     `json:"password,omitempty" minLength:"8" doc:"New password for the user"`
 }
 
 // RoleAssignmentSummary is a compact form of a user's role assignment used
@@ -42,6 +53,7 @@ type User struct {
 	CanDelete              bool                    `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	TimeFormat             TimeFormat              `json:"timeFormat" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
 	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 	CreatedAt              string                  `json:"createdAt,omitempty" doc:"Date and time when the user was created"`
 	UpdatedAt              string                  `json:"updatedAt,omitempty" doc:"Date and time when the user was last updated"`

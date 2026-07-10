@@ -1,11 +1,11 @@
 <script lang="ts">
 	import type { ComponentProps } from 'svelte';
-	import { format } from 'date-fns';
 	import * as Card from '$lib/components/ui/card/index.js';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
 	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 
 	type BadgeVariant = ComponentProps<typeof StatusBadge>['variant'];
 
@@ -82,7 +82,7 @@
 			return m.common_unknown();
 		}
 
-		return format(date, 'PP p');
+		return formatDateTimeShort(date);
 	}
 </script>
 

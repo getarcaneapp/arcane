@@ -7,6 +7,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/types/v2/user"
 	"github.com/stretchr/testify/require"
 )
 
@@ -155,4 +156,32 @@ func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, dto.FontSize)
 	require.Equal(t, 16, *dto.FontSize)
+}
+
+func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	u := createTestUser(t, userSvc, "user-1", "time-format-user")
+	require.Equal(t, user.TimeFormatAuto, u.TimeFormat)
+
+	for _, timeFormat := range []user.TimeFormat{
+		user.TimeFormatAuto,
+		user.TimeFormat12Hour,
+		user.TimeFormat24Hour,
+	} {
+		t.Run(string(timeFormat), func(t *testing.T) {
+			u.TimeFormat = timeFormat
+			_, err := userSvc.UpdateUser(ctx, u)
+			require.NoError(t, err)
+
+			reloaded, err := userSvc.GetUserByID(ctx, u.ID)
+			require.NoError(t, err)
+			require.Equal(t, timeFormat, reloaded.TimeFormat)
+
+			dto, err := userSvc.ToUserResponseDto(ctx, *reloaded)
+			require.NoError(t, err)
+			require.Equal(t, timeFormat, dto.TimeFormat)
+		})
+	}
 }

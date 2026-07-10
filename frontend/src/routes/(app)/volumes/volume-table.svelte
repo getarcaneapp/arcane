@@ -8,8 +8,7 @@
 	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
-	import { format } from 'date-fns';
-	import { truncateString } from '$lib/utils/formatting';
+	import { formatDateTimeShort, truncateString } from '$lib/utils/formatting';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/docker';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
@@ -233,7 +232,7 @@
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: unknown })}
-	{format(new Date(String(value)), 'PP p')}
+	{formatDateTimeShort(String(value))}
 {/snippet}
 
 {#snippet VolumeMobileCardSnippet({
@@ -264,7 +263,7 @@
 		footer={(mobileFieldVisibility['createdAt'] ?? true)
 			? {
 					label: m.common_created(),
-					getValue: (item) => format(new Date(String(item.createdAt)), 'PP p'),
+					getValue: (item) => formatDateTimeShort(String(item.createdAt)),
 					icon: CalendarIcon
 				}
 			: undefined}

@@ -11,8 +11,7 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import { format } from 'date-fns';
+	import { capitalizeFirstLetter, formatDateTimeShort } from '$lib/utils/formatting';
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
@@ -288,7 +287,7 @@
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: unknown })}
-	{#if value}{format(new Date(String(value)), 'PP p')}{/if}
+	{#if value}{formatDateTimeShort(String(value))}{/if}
 {/snippet}
 
 {#snippet ProjectMobileCardSnippet({
@@ -365,7 +364,7 @@
 		footer={(mobileFieldVisibility['createdAt'] ?? true) && item.createdAt
 			? {
 					label: m.common_created(),
-					getValue: (item: Project) => format(new Date(item.createdAt), 'PP p'),
+					getValue: (item: Project) => formatDateTimeShort(item.createdAt),
 					icon: CalendarIcon
 				}
 			: undefined}

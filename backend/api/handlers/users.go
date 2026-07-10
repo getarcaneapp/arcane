@@ -230,9 +230,13 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 		DisplayName:  input.Body.DisplayName,
 		Email:        input.Body.Email,
 		Locale:       input.Body.Locale,
+		TimeFormat:   user.TimeFormatAuto,
 		BaseModel: models.BaseModel{
 			CreatedAt: time.Now(),
 		},
+	}
+	if input.Body.TimeFormat != nil {
+		userModel.TimeFormat = *input.Body.TimeFormat
 	}
 
 	createdUser, err := h.userService.CreateUser(ctx, userModel)
@@ -305,6 +309,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	}
 	if input.Body.Locale != nil {
 		userModel.Locale = input.Body.Locale
+	}
+	if input.Body.TimeFormat != nil {
+		userModel.TimeFormat = *input.Body.TimeFormat
 	}
 
 	if input.Body.Password != nil && *input.Body.Password != "" {

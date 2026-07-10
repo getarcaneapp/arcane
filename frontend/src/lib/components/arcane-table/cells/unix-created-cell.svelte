@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 
 	let { value }: { value: unknown } = $props();
 </script>
 
-{format(new Date(Number(value || 0) * 1000), 'PP p')}
+{formatDateTimeShort(new Date(Number(value || 0) * 1000))}

@@ -17,7 +17,7 @@
 	} from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { ArcaneButton } from '$lib/components/arcane-button';
@@ -40,7 +40,7 @@
 
 	let network = $derived(data.network);
 	const shortId = $derived(network?.id?.substring(0, 12) ?? m.common_unknown());
-	const createdDate = $derived(network?.created ? format(new Date(network.created), 'PP p') : m.common_unknown());
+	const createdDate = $derived(network?.created ? formatDateTimeShort(network.created) : m.common_unknown());
 
 	const connectedContainers = $derived(
 		network?.containersList ??

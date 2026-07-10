@@ -19,6 +19,7 @@
 	} from '$lib/icons';
 	import DiagnosticStat from './diagnostic-stat.svelte';
 	import DiagnosticLogPanel from './diagnostic-log-panel.svelte';
+	import { formatTime } from '$lib/utils/formatting';
 
 	let {}: PageProps = $props();
 
@@ -358,7 +359,7 @@
 					{@render row(m.diagnostics_gc_total_cycles(), fmtNum(diag.gc.numGc))}
 					{@render row(m.diagnostics_gc_forced_cycles(), fmtNum(diag.memory.numForcedGc))}
 					{@render row(m.diagnostics_gc_total_pause(), fmtMs(diag.gc.pauseTotalNs))}
-					{@render row(m.diagnostics_gc_last(), diag.gc.lastGc ? new Date(diag.gc.lastGc).toLocaleTimeString() : '—')}
+					{@render row(m.diagnostics_gc_last(), diag.gc.lastGc ? formatTime(diag.gc.lastGc) : '—')}
 				</div>
 				{#if diag.gc.recentPausesNs?.length}
 					<div class="mt-3">
@@ -413,7 +414,7 @@
 									<td class="text-muted-foreground px-3 py-2 font-mono text-xs">{c.clientIp || '—'}</td>
 									<td class="text-muted-foreground px-3 py-2 text-xs">{c.userId || '—'}</td>
 									<td class="text-muted-foreground px-3 py-2 text-xs tabular-nums">
-										{c.startedAt ? new Date(c.startedAt).toLocaleTimeString() : '—'}
+										{c.startedAt ? formatTime(c.startedAt) : '—'}
 									</td>
 								</tr>
 							{/each}

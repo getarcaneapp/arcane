@@ -8,7 +8,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { ReconnectingWebSocket } from '$lib/utils/ws';
 	import { cn } from '$lib/utils';
-	import { ansiToHtml } from '$lib/utils/formatting';
+	import { ansiToHtml, formatDateTime } from '$lib/utils/formatting';
 	import { onDestroy } from 'svelte';
 	import {
 		buildLogDisplayEntries,
@@ -444,23 +444,14 @@
 		return displayEntry.entries[0]?.timestamp;
 	}
 
-	const logTimestampFormatter = new Intl.DateTimeFormat('en-US', {
-		month: '2-digit',
-		day: '2-digit',
-		year: 'numeric',
-		hour: '2-digit',
-		minute: '2-digit',
-		second: '2-digit',
-		hour12: true
-	});
-
 	function formatLogTimestamp(timestamp: string | undefined): string {
 		if (!timestamp) return '';
-		const parsedTimestamp = new Date(timestamp);
-		if (Number.isNaN(parsedTimestamp.getTime())) {
-			return timestamp;
-		}
-		return logTimestampFormatter.format(parsedTimestamp);
+		return (
+			formatDateTime(timestamp, {
+				datePattern: 'P',
+				includeSeconds: true
+			}) || timestamp
+		);
 	}
 
 	function isGroupExpanded(displayEntry: LogViewerDisplayEntry): boolean {
