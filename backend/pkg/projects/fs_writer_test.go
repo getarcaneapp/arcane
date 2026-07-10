@@ -81,6 +81,111 @@ func TestWriteProjectFile_DoesNotReplaceIdenticalContent(t *testing.T) {
 	assert.True(t, info.ModTime().Equal(fixedTime), "identical content should not replace the file")
 }
 
+func TestWriteEnvFile_WritesThroughExternalSymlink(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "test-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	externalDir := t.TempDir()
+	targetPath := filepath.Join(externalDir, "project.env")
+	targetPerm := os.FileMode(0o640)
+	require.NoError(t, os.WriteFile(targetPath, []byte("VALUE=old\n"), targetPerm))
+	require.NoError(t, os.Chmod(targetPath, targetPerm))
+
+	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
+	if err := os.Symlink(targetPath, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	originalLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+
+	require.NoError(t, WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n"))
+
+	linkInfo, err := os.Lstat(envPath)
+	require.NoError(t, err)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+	currentLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalLinkTarget, currentLinkTarget)
+
+	targetContent, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, "VALUE=new\n", string(targetContent))
+	if runtime.GOOS != "windows" {
+		targetInfo, statErr := os.Stat(targetPath)
+		require.NoError(t, statErr)
+		assert.Equal(t, targetPerm, targetInfo.Mode().Perm())
+	}
+}
+
+func TestWriteEnvFile_DanglingSymlinkRemainsUntouched(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "test-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	missingTarget := filepath.Join(t.TempDir(), "missing.env")
+	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
+	if err := os.Symlink(missingTarget, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	for range 2 {
+		err := WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "resolve env file symlink")
+
+		linkInfo, statErr := os.Lstat(envPath)
+		require.NoError(t, statErr)
+		require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+		linkTarget, readlinkErr := os.Readlink(envPath)
+		require.NoError(t, readlinkErr)
+		assert.Equal(t, missingTarget, linkTarget)
+		require.NoFileExists(t, missingTarget)
+	}
+}
+
+func TestWriteEnvFile_RejectsNonRegularSymlinkTarget(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "test-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	targetDir := t.TempDir()
+	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
+	if err := os.Symlink(targetDir, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	err := WriteEnvFile(projectsRoot, projectDir, "VALUE=new\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "not a regular file")
+	linkInfo, statErr := os.Lstat(envPath)
+	require.NoError(t, statErr)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+}
+
+func TestWriteProjectFile_StillRejectsNonEnvSymlink(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "test-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	targetPath := filepath.Join(t.TempDir(), "project.env")
+	require.NoError(t, os.WriteFile(targetPath, []byte("VALUE=old\n"), 0o600))
+	linkPath := filepath.Join(projectDir, OverrideEnvFileName)
+	if err := os.Symlink(targetPath, linkPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	err := WriteProjectFile(projectsRoot, projectDir, OverrideEnvFileName, "VALUE=new\n")
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "destination is a symlink")
+	targetContent, readErr := os.ReadFile(targetPath)
+	require.NoError(t, readErr)
+	assert.Equal(t, "VALUE=old\n", string(targetContent))
+	linkInfo, statErr := os.Lstat(linkPath)
+	require.NoError(t, statErr)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+}
+
 func TestWriteProjectFiles(t *testing.T) {
 	tmpDir := t.TempDir()
 	projectsRoot := tmpDir

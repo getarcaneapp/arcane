@@ -2,8 +2,10 @@ package projects
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -88,6 +90,48 @@ func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, GlobalEnvFileName))
 	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestWithTransientValidationEnvFile_PreservesExternalSymlink(t *testing.T) {
+	projectDir := t.TempDir()
+	targetPath := filepath.Join(t.TempDir(), "project.env")
+	originalContent := "VALUE=original\n"
+	targetPerm := os.FileMode(0o640)
+	require.NoError(t, os.WriteFile(targetPath, []byte(originalContent), targetPerm))
+	require.NoError(t, os.Chmod(targetPath, targetPerm))
+
+	envPath := filepath.Join(projectDir, EffectiveEnvFileName)
+	if err := os.Symlink(targetPath, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	originalLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+
+	validationErr := errors.New("validation failed")
+	updatedContent := "VALUE=validation\n"
+	err = WithTransientValidationEnvFile(projectDir, &updatedContent, func() error {
+		content, readErr := os.ReadFile(targetPath)
+		require.NoError(t, readErr)
+		assert.Equal(t, updatedContent, string(content))
+
+		linkInfo, statErr := os.Lstat(envPath)
+		require.NoError(t, statErr)
+		require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+		return validationErr
+	})
+	require.ErrorIs(t, err, validationErr)
+
+	restoredContent, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, string(restoredContent))
+	currentLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalLinkTarget, currentLinkTarget)
+	if runtime.GOOS != "windows" {
+		targetInfo, statErr := os.Stat(targetPath)
+		require.NoError(t, statErr)
+		assert.Equal(t, targetPerm, targetInfo.Mode().Perm())
+	}
 }
 
 func TestBuildEffectiveEnvContent(t *testing.T) {
