@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"testing"
+	"time"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/stretchr/testify/assert"
@@ -59,6 +60,25 @@ func TestWriteFilesPermissions(t *testing.T) {
 			assert.Equal(t, os.FileMode(0o600), info.Mode().Perm())
 		}
 	})
+}
+
+func TestWriteProjectFile_DoesNotReplaceIdenticalContent(t *testing.T) {
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "test-project")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	filePath := filepath.Join(projectDir, EffectiveEnvFileName)
+	content := "VALUE=unchanged\n"
+	require.NoError(t, os.WriteFile(filePath, []byte(content), 0o600))
+
+	fixedTime := time.Unix(1_700_000_000, 0)
+	require.NoError(t, os.Chtimes(filePath, fixedTime, fixedTime))
+
+	require.NoError(t, WriteProjectFile(projectsRoot, projectDir, EffectiveEnvFileName, content))
+
+	info, err := os.Stat(filePath)
+	require.NoError(t, err)
+	assert.True(t, info.ModTime().Equal(fixedTime), "identical content should not replace the file")
 }
 
 func TestWriteProjectFiles(t *testing.T) {

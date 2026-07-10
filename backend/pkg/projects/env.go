@@ -274,7 +274,8 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 		return run()
 	}
 
-	shouldWrite := effectiveEnvContent != nil || !originalExists
+	contentMatches := effectiveEnvContent != nil && originalExists && string(originalContent) == *effectiveEnvContent
+	shouldWrite := !contentMatches && (effectiveEnvContent != nil || !originalExists)
 	if shouldWrite {
 		content := ""
 		if effectiveEnvContent != nil {
@@ -311,8 +312,9 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 }
 
 // BuildEffectiveEnvContent merges git and override env sources into the effective
-// .env content written to disk. The output is normalized: comments are dropped,
-// keys are sorted, and values are rewritten with Arcane's formatter.
+// .env content written to disk. Each source is preserved verbatim, with the
+// override appended after the Git content so duplicate keys resolve to the
+// override value when Compose parses the effective file.
 func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
@@ -322,21 +324,26 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	}
 	maps.Copy(contextEnv, gitEnv)
 
-	overrideEnv, err := ParseProjectEnvContent(overrideContent, contextEnv)
+	_, err = ParseProjectEnvContent(overrideContent, contextEnv)
 	if err != nil {
 		return "", fmt.Errorf("parse override env content: %w", err)
 	}
 
-	merged := make(EnvMap, len(gitEnv)+len(overrideEnv))
-	maps.Copy(merged, gitEnv)
-	maps.Copy(merged, overrideEnv)
-
-	return formatEnvMapInternal(merged), nil
+	switch {
+	case gitContent == "":
+		return overrideContent, nil
+	case overrideContent == "":
+		return gitContent, nil
+	case strings.HasSuffix(gitContent, "\n"), strings.HasPrefix(overrideContent, "\n"):
+		return gitContent + overrideContent, nil
+	default:
+		return gitContent + "\n" + overrideContent, nil
+	}
 }
 
 // BuildOverrideEnvContent derives the editable override file from git-backed and
-// effective env content. The generated output is normalized and does not retain
-// comments or original key ordering.
+// effective env content. Content that already contains only real overrides is
+// returned verbatim; derived or cleaned output uses Arcane's canonical format.
 func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error) {
 	return buildOverrideEnvContentInternal(gitContent, effectiveContent)
 }
@@ -395,6 +402,10 @@ func buildOverrideEnvContentInternal(gitContent, effectiveContent string) (strin
 		case gitValue != value:
 			override[key] = value
 		}
+	}
+
+	if maps.Equal(effectiveEnv, override) {
+		return effectiveContent, nil
 	}
 
 	return formatEnvMapInternal(override), nil
@@ -559,6 +570,7 @@ func formatEnvValueInternal(value string) string {
 		return value
 	}
 
+	value = strings.ReplaceAll(value, "$", "$$")
 	needsQuotes := strings.ContainsAny(value, " \t\r\n#\"'") || strings.TrimSpace(value) != value
 	if !needsQuotes {
 		return value

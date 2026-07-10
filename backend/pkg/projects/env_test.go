@@ -91,15 +91,55 @@ func TestLoadEnvironment_DoesNotCreateMissingGlobalEnvFile(t *testing.T) {
 }
 
 func TestBuildEffectiveEnvContent(t *testing.T) {
-	gitContent := "BASE_URL=https://example.com\nSHARED=git\n"
-	overrideContent := "API_TOKEN=secret\nSHARED=override\n"
+	tests := []struct {
+		name            string
+		gitContent      string
+		overrideContent string
+		want            string
+		wantEnv         EnvMap
+	}{
+		{
+			name:       "preserves escaped dollar secret exactly",
+			gitContent: "CLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\n",
+			want:       "CLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\n",
+			wantEnv:    EnvMap{"CLOUDFLARE_CLIENT_SECRET": "$pbkdf2-sha512$310000$XXX"},
+		},
+		{
+			name:       "preserves single quoted dollar secret exactly",
+			gitContent: "CLOUDFLARE_CLIENT_SECRET='$pbkdf2-sha512$310000$XXX'",
+			want:       "CLOUDFLARE_CLIENT_SECRET='$pbkdf2-sha512$310000$XXX'",
+			wantEnv:    EnvMap{"CLOUDFLARE_CLIENT_SECRET": "$pbkdf2-sha512$310000$XXX"},
+		},
+		{
+			name:       "preserves comments ordering blank lines bom and crlf",
+			gitContent: "\ufeff# keep this comment\r\nZ_LAST=last\r\n\r\nA_FIRST=first",
+			want:       "\ufeff# keep this comment\r\nZ_LAST=last\r\n\r\nA_FIRST=first",
+			wantEnv:    EnvMap{"Z_LAST": "last", "A_FIRST": "first"},
+		},
+		{
+			name:            "adds a separator without changing either layer",
+			gitContent:      "BASE_URL=https://example.com\nSHARED=git",
+			overrideContent: "# local values\nAPI_TOKEN=secret\nSHARED=override\n",
+			want:            "BASE_URL=https://example.com\nSHARED=git\n# local values\nAPI_TOKEN=secret\nSHARED=override\n",
+			wantEnv: EnvMap{
+				"BASE_URL":  "https://example.com",
+				"API_TOKEN": "secret",
+				"SHARED":    "override",
+			},
+		},
+	}
 
-	effective, err := BuildEffectiveEnvContent(gitContent, overrideContent)
-	require.NoError(t, err)
-	assert.Contains(t, effective, "BASE_URL=https://example.com\n")
-	assert.Contains(t, effective, "API_TOKEN=secret\n")
-	assert.Contains(t, effective, "SHARED=override\n")
-	assert.NotContains(t, effective, "SHARED=git\n")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			effective, err := BuildEffectiveEnvContent(tt.gitContent, tt.overrideContent)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, effective)
+
+			parsed, err := ParseProjectEnvContent(effective, nil)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantEnv, parsed)
+		})
+	}
 }
 
 func TestBuildOverrideEnvContent(t *testing.T) {
@@ -156,6 +196,48 @@ func TestBuildOverrideEnvContent(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, "LOCAL_ONLY=1\n", override)
 	})
+
+	t.Run("preserves an existing valid override verbatim", func(t *testing.T) {
+		gitContent := "BASE_URL=https://example.com\n"
+		overrideContent := "# keep local formatting\nTOKEN='$pbkdf2-sha512$310000$XXX'\n"
+
+		override, err := BuildOverrideEnvContent(gitContent, overrideContent)
+		require.NoError(t, err)
+		assert.Equal(t, overrideContent, override)
+	})
+
+	t.Run("generated overrides escape literal dollars", func(t *testing.T) {
+		gitContent := "BASE_URL=https://example.com\n"
+		effectiveContent := "BASE_URL=https://example.com\nTOKEN='$pbkdf2-sha512$310000$XXX'\n"
+
+		override, err := BuildOverrideEnvContent(gitContent, effectiveContent)
+		require.NoError(t, err)
+		assert.Equal(t, "TOKEN=$$pbkdf2-sha512$$310000$$XXX\n", override)
+
+		parsed, err := ParseProjectEnvContent(override, nil)
+		require.NoError(t, err)
+		assert.Equal(t, "$pbkdf2-sha512$310000$XXX", parsed["TOKEN"])
+	})
+}
+
+func TestFormatEnvMapInternal_RoundTripsValues(t *testing.T) {
+	values := []string{
+		"$pbkdf2-sha512$310000$XXX",
+		"prefix $VALUE with spaces",
+		`quote " and apostrophe '`,
+		`backslash\$VALUE`,
+		"line one\nline two",
+		"$$literal-dollars",
+	}
+
+	for _, value := range values {
+		t.Run(value, func(t *testing.T) {
+			content := formatEnvMapInternal(EnvMap{"VALUE": value})
+			parsed, err := ParseProjectEnvContent(content, nil)
+			require.NoError(t, err)
+			assert.Equal(t, value, parsed["VALUE"])
+		})
+	}
 }
 
 func TestReadProjectEnvState(t *testing.T) {

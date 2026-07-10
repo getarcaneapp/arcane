@@ -745,6 +745,7 @@
 		const { composeContent, envContent, overrideContent } = validated;
 		const namePayload = isGitOpsManaged ? undefined : effectiveName;
 		const composePayload = isGitOpsManaged ? undefined : composeContent;
+		const envPayload = envContent !== serverEnvContent ? envContent : undefined;
 		// Blank override => delete, which the backend treats as a no-op when none
 		// exists, so we can always send it (except for read-only GitOps projects).
 		const overridePayload = isGitOpsManaged ? undefined : overrideContent;
@@ -759,7 +760,7 @@
 						projectId,
 						namePayload,
 						composePayload,
-						envContent,
+						envPayload,
 						overridePayload,
 						fileTreeRevision,
 						fileChangesPayload

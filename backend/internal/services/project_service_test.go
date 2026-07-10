@@ -2899,6 +2899,105 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	assert.Contains(t, string(effectiveBytes), "LOCAL_ONLY=example\n")
 }
 
+func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+
+	dirName := "unchanged-git-env"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	gitContent := "# git formatting\nBASE=git\n"
+	overrideContent := "# local formatting\nTOKEN='$pbkdf2-sha512$310000$XXX'\n"
+	effectiveContent := gitContent + overrideContent
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte(effectiveContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte(gitContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte(overrideContent), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-unchanged-git-env"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &effectiveContent, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, effectiveContent, string(effectiveBytes))
+
+	gitBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env.git"))
+	require.NoError(t, readErr)
+	assert.Equal(t, gitContent, string(gitBytes))
+
+	overrideBytes, readErr := os.ReadFile(filepath.Join(projectPath, "project.env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, overrideContent, string(overrideBytes))
+}
+
+func TestProjectService_PersistEffectiveEnvContent_RemovesStaleOverrideWithoutGitSource(t *testing.T) {
+	projectsDir := t.TempDir()
+	projectPath := filepath.Join(projectsDir, "direct-env")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	effectiveContent := "TOKEN=current\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte(effectiveContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=stale\n"), 0o600))
+
+	svc := &ProjectService{}
+	require.NoError(t, svc.persistEffectiveEnvContentInternal(projectPath, projectsDir, effectiveContent))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, effectiveContent, string(effectiveBytes))
+
+	_, statErr := os.Stat(filepath.Join(projectPath, "project.env"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
+func TestProjectService_PersistEffectiveEnvContent_RemovesStaleGitOverride(t *testing.T) {
+	projectsDir := t.TempDir()
+	projectPath := filepath.Join(projectsDir, "git-env")
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+
+	effectiveContent := "BASE=git\nTOKEN=git\n"
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env"), []byte(effectiveContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, ".env.git"), []byte(effectiveContent), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "project.env"), []byte("TOKEN=stale\n"), 0o600))
+
+	svc := &ProjectService{}
+	require.NoError(t, svc.persistEffectiveEnvContentInternal(projectPath, projectsDir, effectiveContent))
+
+	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+	require.NoError(t, readErr)
+	assert.Equal(t, effectiveContent, string(effectiveBytes))
+
+	gitBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env.git"))
+	require.NoError(t, readErr)
+	assert.Equal(t, effectiveContent, string(gitBytes))
+
+	_, statErr := os.Stat(filepath.Join(projectPath, "project.env"))
+	assert.ErrorIs(t, statErr, os.ErrNotExist)
+}
+
 func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
@@ -2998,6 +3097,67 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	assert.Contains(t, string(effectiveBytes), "TOKEN=git\n")
 	assert.Contains(t, string(effectiveBytes), "LOCAL_ONLY=1\n")
 	assert.Contains(t, string(effectiveBytes), "REMOTE_ONLY=1\n")
+}
+
+func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	projectsDir := t.TempDir()
+	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+
+	dirName := "git-sync-env-syntax"
+	projectPath := filepath.Join(projectsDir, dirName)
+	require.NoError(t, os.MkdirAll(projectPath, 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte("services:\n  app:\n    image: nginx:alpine\n"), 0o600))
+
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-git-sync-env-syntax"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	compose := `services:
+  app:
+    image: nginx:alpine
+    environment:
+      CLOUDFLARE_CLIENT_SECRET: ${CLOUDFLARE_CLIENT_SECRET:?set in env}
+`
+	gitEnv := "# keep git formatting\nZ_LAST=last\nCLOUDFLARE_CLIENT_SECRET=$$pbkdf2-sha512$$310000$$XXX\nQUOTED_SECRET='$pbkdf2-sha512$310000$XXX'\nA_FIRST=first"
+
+	for range 2 {
+		updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, &gitEnv, nil, "", models.User{
+			BaseModel: models.BaseModel{ID: "u1"},
+			Username:  "tester",
+		})
+		require.NoError(t, err)
+		require.NotNil(t, updated)
+
+		effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
+		require.NoError(t, readErr)
+		assert.Equal(t, gitEnv, string(effectiveBytes))
+
+		gitBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env.git"))
+		require.NoError(t, readErr)
+		assert.Equal(t, gitEnv, string(gitBytes))
+
+		_, statErr := os.Stat(filepath.Join(projectPath, "project.env"))
+		assert.ErrorIs(t, statErr, os.ErrNotExist)
+	}
+
+	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(projectPath, ".env"), nil)
+	require.NoError(t, err)
+	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", effectiveEnv["CLOUDFLARE_CLIENT_SECRET"])
+	assert.Equal(t, "$pbkdf2-sha512$310000$XXX", effectiveEnv["QUOTED_SECRET"])
 }
 
 func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrides(t *testing.T) {
@@ -3326,7 +3486,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 
 	effectiveBytes, readErr := os.ReadFile(filepath.Join(projectPath, ".env"))
 	require.NoError(t, readErr)
-	assert.Equal(t, "BASE=git-updated\nREMOTE=1\nTOKEN=local\n", string(effectiveBytes))
+	assert.Equal(t, "BASE=git-updated\nTOKEN=git\nREMOTE=1\nTOKEN=local\n", string(effectiveBytes))
 }
 
 func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.T) {
