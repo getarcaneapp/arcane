@@ -25,6 +25,15 @@ type MockActivity = {
 	updatedAt?: string;
 };
 
+type MockUser = {
+	id: string;
+	username: string;
+	roleAssignments: never[];
+	permissionsByEnv: Record<string, string[]>;
+	isGlobalAdmin: boolean;
+	createdAt: string;
+};
+
 const localEnvironment: MockEnvironment = {
 	id: '0',
 	name: 'Local',
@@ -103,6 +112,27 @@ async function mockEnvironmentList(page: Page, environments: MockEnvironment[]) 
 	});
 }
 
+async function mockCurrentUser(page: Page, resolveUser: () => MockUser) {
+	await page.context().route(/\/api\/auth\/me$/, async (route) => {
+		await route.fulfill({
+			status: 200,
+			contentType: 'application/json',
+			body: JSON.stringify({ success: true, data: resolveUser() })
+		});
+	});
+}
+
+function user(id: string, permissionsByEnv: Record<string, string[]>): MockUser {
+	return {
+		id,
+		username: id,
+		roleAssignments: [],
+		permissionsByEnv,
+		isGlobalAdmin: false,
+		createdAt: new Date().toISOString()
+	};
+}
+
 function aggregatedActivityStreamBody(
 	activitiesByEnvironment: Record<string, MockActivity[]>,
 	failedEnvironmentIds: Set<string>
@@ -124,7 +154,8 @@ async function mockActivityReads(
 	page: Page,
 	activitiesByEnvironment: Record<string, MockActivity[]>,
 	failedEnvironmentIds = new Set<string>(),
-	failedActivityStatus = 503
+	failedActivityStatus = 503,
+	readEnvironmentIds?: string[]
 ) {
 	await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route: Route) => {
 		await route.fulfill({
@@ -143,6 +174,7 @@ async function mockActivityReads(
 				await route.continue();
 				return;
 			}
+			readEnvironmentIds?.push(environmentId);
 
 			if (failedEnvironmentIds.has(environmentId)) {
 				await route.fulfill({
@@ -266,6 +298,137 @@ function waitForActivityStream(page: Page) {
 }
 
 test.describe('Activity Center', () => {
+	test('scopes aggregate activity and dashboard work to permitted environments', async ({
+		page
+	}) => {
+		const onlineRemoteEnvironment = { ...remoteEnvironment, status: 'online' as const };
+		const scopedUser = user('scoped-stream-user', {
+			global: [],
+			'0': ['dashboard:read'],
+			'remote-activity-test': ['activities:read']
+		});
+		const activityReads: string[] = [];
+		const dashboardRequests: string[] = [];
+		const statsSockets: string[] = [];
+
+		await preserveLocalEnvironmentSelection(page);
+		await mockCurrentUser(page, () => scopedUser);
+		await mockEnvironmentList(page, [localEnvironment, onlineRemoteEnvironment]);
+		await mockActivityReads(
+			page,
+			{
+				'0': [activity('local-activity', '0', 'Local', 'local-network', 5)],
+				'remote-activity-test': [
+					activity('remote-activity', 'remote-activity-test', 'Remote Lab', 'remote-network', 1)
+				]
+			},
+			new Set(),
+			503,
+			activityReads
+		);
+		page.on('request', (request) => {
+			const pathname = new URL(request.url()).pathname;
+			if (/^\/api\/environments\/[^/]+\/dashboard$/.test(pathname)) {
+				dashboardRequests.push(pathname);
+			}
+		});
+		page.on('websocket', (socket) => statsSockets.push(new URL(socket.url()).pathname));
+
+		const activityStream = waitForActivityStream(page);
+		await page.goto('/dashboard');
+		await activityStream;
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+
+		const activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Completed' }).click();
+		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
+		await expect(activityRow(activityCenter, 'local-network')).toHaveCount(0);
+		await expect.poll(() => activityReads).toContain('remote-activity-test');
+		expect(activityReads).not.toContain('0');
+		await expect.poll(() => dashboardRequests).toContain('/api/environments/0/dashboard');
+		expect(dashboardRequests).not.toContain('/api/environments/remote-activity-test/dashboard');
+		expect(statsSockets).not.toContain('/api/environments/remote-activity-test/ws/system/stats');
+	});
+
+	test('does not mount the activity center without an effective read scope', async ({ page }) => {
+		const streamRequests: string[] = [];
+
+		await preserveLocalEnvironmentSelection(page);
+		await mockCurrentUser(page, () =>
+			user('dashboard-only-user', {
+				global: [],
+				'0': ['dashboard:read']
+			})
+		);
+		await mockEnvironmentList(page, [localEnvironment]);
+		page.on('request', (request) => {
+			if (new URL(request.url()).pathname === '/api/activities/stream') {
+				streamRequests.push(request.url());
+			}
+		});
+
+		await page.goto('/dashboard');
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Open activity center' })).toHaveCount(0);
+		await page.waitForTimeout(250);
+		expect(streamRequests).toHaveLength(0);
+	});
+
+	test('clears activity state when the authenticated user changes', async ({ page }) => {
+		let activeUserId = 'user-a';
+		const streamedUsers: string[] = [];
+		const permissions = { global: ['*'] };
+
+		await preserveLocalEnvironmentSelection(page);
+		await mockCurrentUser(page, () => user(activeUserId, permissions));
+		await mockEnvironmentList(page, [localEnvironment]);
+		await page.context().route(/\/api\/activities\/stream(?:\?.*)?$/, async (route) => {
+			const requestedBy = activeUserId;
+			streamedUsers.push(requestedBy);
+			const resourceName = requestedBy === 'user-a' ? 'user-a-private-activity' : 'user-b-activity';
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/x-json-stream',
+				body: aggregatedActivityStreamBody(
+					{ '0': [activity(`${requestedBy}-activity`, '0', 'Local', resourceName, 1)] },
+					new Set()
+				)
+			});
+		});
+		await page.context().route(/\/api\/environments\/0\/activities(?:\?.*)?$/, async (route) => {
+			const requestedBy = activeUserId;
+			const resourceName = requestedBy === 'user-a' ? 'user-a-private-activity' : 'user-b-activity';
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify(
+					paginated([activity(`${requestedBy}-activity`, '0', 'Local', resourceName, 1)])
+				)
+			});
+		});
+		await page.context().route(/\/api\/auth\/logout$/, async (route) => {
+			activeUserId = 'user-b';
+			await route.fulfill({
+				status: 200,
+				contentType: 'application/json',
+				body: JSON.stringify({ success: true })
+			});
+		});
+
+		await page.goto('/dashboard');
+		let activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Completed' }).click();
+		await expect(activityRow(activityCenter, 'user-a-private-activity')).toBeVisible();
+
+		await page.goto('/logout');
+		await page.waitForURL('/dashboard');
+		await expect.poll(() => streamedUsers).toContain('user-b');
+		activityCenter = await openActivityCenter(page);
+		await activityCenter.getByRole('button', { name: 'Completed' }).click();
+		await expect(activityRow(activityCenter, 'user-b-activity')).toBeVisible();
+		await expect(activityRow(activityCenter, 'user-a-private-activity')).toHaveCount(0);
+	});
+
 	test('shows activity from every configured environment', async ({ page }) => {
 		await preserveLocalEnvironmentSelection(page);
 		await mockEnvironmentList(page, [localEnvironment, remoteEnvironment]);

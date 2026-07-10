@@ -14,6 +14,7 @@
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '$lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '$lib/utils/navigation';
 	import { cn } from '$lib/utils';
+	import { userHasPermissionInAnyEnvironment } from '$lib/stores/user-store';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
@@ -22,6 +23,7 @@
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
+	const canReadActivities = $derived(userHasPermissionInAnyEnvironment(user, 'activities:read'));
 
 	const isMobile = new IsMobile();
 	const isTablet = new IsTablet();
@@ -119,7 +121,9 @@
 					)
 				: 'h-full p-3 sm:p-5'}
 		>
-			{@render children()}
+			{#key page.url.pathname}
+				{@render children()}
+			{/key}
 		</section>
 	</main>
 
@@ -128,4 +132,6 @@
 	{/if}
 </Sidebar.Provider>
 
-<ActivityCenter />
+{#if canReadActivities}
+	<ActivityCenter />
+{/if}

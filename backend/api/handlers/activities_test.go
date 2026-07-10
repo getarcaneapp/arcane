@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
 )
 
@@ -113,16 +114,16 @@ func limitStreamTestDBToSingleConnInternal(t *testing.T, db *database.DB) {
 	sqlDB.SetMaxOpenConns(1)
 }
 
-func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, apiURL, token string) {
+func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, environmentID, name, apiURL, token string) {
 	t.Helper()
 	now := time.Now()
 	require.NoError(t, db.Create(&models.Environment{
 		BaseModel: models.BaseModel{
-			ID:        "remote-1",
+			ID:        environmentID,
 			CreatedAt: now,
 			UpdatedAt: &now,
 		},
-		Name:        "Remote",
+		Name:        name,
 		ApiUrl:      apiURL,
 		Status:      string(models.EnvironmentStatusOnline),
 		Enabled:     true,
@@ -133,7 +134,7 @@ func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, ap
 // runStreamAllInternal drives streamAllActivitiesInternal through a pipe and
 // returns each decoded event to onEvent until it reports done or the stream
 // ends; remaining output is drained so a blocked encoder can always finish.
-func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, onEvent func(activity.StreamEvent) bool) {
+func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -141,7 +142,7 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllActivitiesInternal(ctx, 50, json.NewEncoder(pw), func() {})
+		handler.streamAllActivitiesInternal(ctx, ps, 50, json.NewEncoder(pw), func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
@@ -183,7 +184,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &ActivityHandler{
 		activityService:    activityService,
@@ -191,7 +192,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 	}
 
 	var localSnapshot, remoteSnapshot bool
-	runStreamAllInternal(t, ctx, cancel, handler, func(event activity.StreamEvent) bool {
+	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" && len(event.Activities) == 1 {
 			require.Equal(t, local.ID, event.Activities[0].ID)
 			require.Equal(t, "0", event.Activities[0].SourceEnvironmentID)
@@ -234,7 +235,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &ActivityHandler{
 		activityService:    activityService,
@@ -242,7 +243,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	}
 
 	remoteSnapshotCount := 0
-	runStreamAllInternal(t, ctx, cancel, handler, func(event activity.StreamEvent) bool {
+	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type != "snapshot" || event.EnvironmentID != "remote-1" {
 			return false
 		}
@@ -287,7 +288,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 		http.Error(w, "boom", http.StatusInternalServerError)
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &ActivityHandler{
 		activityService:    activityService,
@@ -295,7 +296,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 	}
 
 	var localSnapshot, remoteError bool
-	runStreamAllInternal(t, ctx, cancel, handler, func(event activity.StreamEvent) bool {
+	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" {
 			localSnapshot = true
 		}
@@ -307,4 +308,54 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 
 	require.True(t, localSnapshot)
 	require.True(t, remoteError)
+}
+
+func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	activityService := services.NewActivityService(db)
+	_, err = activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
+	require.NoError(t, err)
+
+	allowedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"allowed-activity"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
+	}))
+	defer allowedServer.Close()
+
+	var deniedRequests atomic.Int64
+	deniedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		deniedRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":[],"pagination":{"totalPages":1,"totalItems":0,"currentPage":1,"itemsPerPage":50}}`))
+	}))
+	defer deniedServer.Close()
+
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-allowed", "Allowed", allowedServer.URL, "allowed-token")
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-denied", "Denied", deniedServer.URL, "denied-token")
+
+	handler := &ActivityHandler{
+		activityService:    activityService,
+		environmentService: services.NewEnvironmentService(db, allowedServer.Client(), nil, nil, settingsService, nil),
+	}
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("remote-allowed", authz.PermActivitiesRead)
+
+	seenEnvironments := make(map[string]struct{})
+	runStreamAllInternal(t, ctx, cancel, handler, ps, func(event activity.StreamEvent) bool {
+		if event.EnvironmentID != "" {
+			seenEnvironments[event.EnvironmentID] = struct{}{}
+		}
+		return event.Type == "snapshot" && event.EnvironmentID == "remote-allowed"
+	})
+
+	require.Contains(t, seenEnvironments, "remote-allowed")
+	require.NotContains(t, seenEnvironments, "0")
+	require.NotContains(t, seenEnvironments, "remote-denied")
+	require.Zero(t, deniedRequests.Load())
 }

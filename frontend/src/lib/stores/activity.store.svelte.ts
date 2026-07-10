@@ -17,6 +17,7 @@ import type {
 	ActivityStreamEvent
 } from '$lib/types/activity.type';
 import type { Environment } from '$lib/types/environment';
+import userStore from '$lib/stores/user-store';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;
@@ -69,9 +70,12 @@ function createActivityStore() {
 	let _filter = $state<ActivityFilter>('running');
 	let _open = $state(false);
 	let _currentEnvironmentId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
+	let sessionGeneration = 0;
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
+		includeEnvironment: (environment) => userStore.hasPermission('activities:read', environment.id),
+		subscribeEnvironmentFilter: (reconcile) => userStore.subscribe(reconcile),
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): ActivityEnvironmentState {
 			return {
 				id: environment.id || LOCAL_DOCKER_ENVIRONMENT_ID,
@@ -267,6 +271,7 @@ function createActivityStore() {
 			return;
 		}
 
+		const generation = sessionGeneration;
 		_detailLoadingIds = { ..._detailLoadingIds, [activityId]: true };
 		try {
 			const detail = await activityService.getActivity(
@@ -274,6 +279,9 @@ function createActivityStore() {
 				activityEnvironmentIdInternal(activityId),
 				ACTIVITY_DETAIL_LIMIT
 			);
+			if (generation !== sessionGeneration) {
+				return;
+			}
 			const environmentId = sourceEnvironmentIdInternal(detail.activity);
 			const normalized = {
 				...detail,
@@ -284,12 +292,17 @@ function createActivityStore() {
 			delete nextErrors[activityId];
 			_detailErrorIds = nextErrors;
 		} catch (error) {
+			if (generation !== sessionGeneration) {
+				return;
+			}
 			console.warn('Failed to load activity detail:', error);
 			_detailErrorIds = { ..._detailErrorIds, [activityId]: true };
 		} finally {
-			const next = { ..._detailLoadingIds };
-			delete next[activityId];
-			_detailLoadingIds = next;
+			if (generation === sessionGeneration) {
+				const next = { ..._detailLoadingIds };
+				delete next[activityId];
+				_detailLoadingIds = next;
+			}
 		}
 	}
 
@@ -382,7 +395,23 @@ function createActivityStore() {
 			return _details[activityId]?.activity ?? _activities.find((item) => item.id === activityId) ?? null;
 		},
 		start: () => core.start(),
-		stop: () => core.stop(),
+		stop: (options?: { resetState?: boolean }) => {
+			const wasStarted = core.stop(options);
+			if (options?.resetState) {
+				sessionGeneration += 1;
+				_activities = [];
+				_environmentActivities = {};
+				_details = {};
+				_expandedActivityIds = {};
+				_detailLoadingIds = {};
+				_detailErrorIds = {};
+				_cancellingIds = {};
+				_filter = 'running';
+				_open = false;
+				_currentEnvironmentId = LOCAL_DOCKER_ENVIRONMENT_ID;
+			}
+			return wasStarted;
+		},
 		refresh: () => core.refresh(),
 		cancelActivity: async (activityId: string) => {
 			if (!activityId || _cancellingIds[activityId]) {
@@ -400,6 +429,7 @@ function createActivityStore() {
 			}
 		},
 		clearHistory: async (): Promise<ActivityClearHistorySummary> => {
+			const generation = sessionGeneration;
 			core.reconcileEnvironments();
 
 			let deleted = 0;
@@ -421,6 +451,10 @@ function createActivityStore() {
 					}
 				})
 			);
+
+			if (generation !== sessionGeneration) {
+				return { deleted, succeeded, failed };
+			}
 
 			_details = {};
 			_expandedActivityIds = {};

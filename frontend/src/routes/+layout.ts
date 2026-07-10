@@ -18,21 +18,22 @@ import { queryKeys } from '$lib/query/query-keys';
 
 export const ssr = false;
 
-export const load = async () => {
-	// Tanstack Query Client
-	const queryClient = new QueryClient({
-		defaultOptions: {
-			queries: {
-				enabled: browser,
-				staleTime: 0,
-				gcTime: 60 * 1000,
-				refetchOnMount: 'always',
-				refetchOnWindowFocus: 'always',
-				refetchOnReconnect: 'always'
-			}
+const queryClient = new QueryClient({
+	defaultOptions: {
+		queries: {
+			enabled: browser,
+			staleTime: 0,
+			gcTime: 60 * 1000,
+			refetchOnMount: 'always',
+			refetchOnWindowFocus: 'always',
+			refetchOnReconnect: 'always'
 		}
-	});
+	}
+});
 
+let authenticatedUserId: string | null | undefined;
+
+export const load = async () => {
 	// Step 1: Check authentication first
 	let user = await userService.getCurrentUser().catch(() => null);
 
@@ -61,6 +62,12 @@ export const load = async () => {
 			}
 		}
 	}
+
+	const nextAuthenticatedUserId = user?.id ?? null;
+	if (authenticatedUserId !== undefined && authenticatedUserId !== nextAuthenticatedUserId) {
+		authService.resetAuthenticatedState(queryClient, { restartMountedStores: user !== null });
+	}
+	authenticatedUserId = nextAuthenticatedUserId;
 
 	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
@@ -105,6 +112,8 @@ export const load = async () => {
 	// Step 3: Update stores with fetched data (always, even if null)
 	if (user) {
 		await userStore.setUser(user);
+	} else {
+		userStore.clearUser();
 	}
 
 	if (settings) {

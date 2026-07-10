@@ -6,6 +6,13 @@ import { applyFontSize, FONT_SIZE_DEFAULT } from '$lib/utils/theme';
 
 const userStore = writable<User | null>(null);
 
+export const userHasPermissionInAnyEnvironment = (user: User | null | undefined, perm: string): boolean => {
+	if (!user?.permissionsByEnv) return false;
+	const global = user.permissionsByEnv[GLOBAL_SCOPE] ?? [];
+	if (global.includes(SUDO_PERMISSION) || global.includes(perm)) return true;
+	return Object.values(user.permissionsByEnv).some((permissions) => permissions.includes(perm));
+};
+
 const setUser = async (user: User) => {
 	if (user.locale) {
 		await setLocale(user.locale, false);
@@ -54,6 +61,11 @@ const hasAnyPermission = (perms: string[], envId?: string): boolean => {
 	return perms.some((p) => set.has(p));
 };
 
+/** Returns true if the caller may perform `perm` in at least one effective environment scope. */
+const hasPermissionInAnyEnvironment = (perm: string): boolean => {
+	return userHasPermissionInAnyEnvironment(get(userStore), perm);
+};
+
 /** Returns true if the caller effectively holds global administrator access. */
 const isGlobalAdmin = (): boolean => {
 	const user = get(userStore);
@@ -71,5 +83,6 @@ export default {
 	permissions,
 	hasPermission,
 	hasAnyPermission,
+	hasPermissionInAnyEnvironment,
 	isGlobalAdmin
 };

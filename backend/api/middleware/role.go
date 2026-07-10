@@ -60,6 +60,23 @@ func RequirePermission(api huma.API, perm string) huma.Middlewares {
 	}}
 }
 
+// RequireAnyEnvironmentPermission protects aggregate operations that span
+// environments but do not carry an environment ID in their path. The caller
+// must hold perm globally or for at least one environment; handlers remain
+// responsible for filtering aggregate output to the exact allowed scopes.
+func RequireAnyEnvironmentPermission(api huma.API, perm string) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		ps, _ := PermissionsFromContext(ctx.Context())
+		if !ps.AllowsAny(perm) {
+			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: "+perm); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+			}
+			return
+		}
+		next(ctx)
+	}}
+}
+
 // RequireGlobalAdmin returns a per-operation Huma middleware that rejects any
 // caller who is not a global admin (or sudo). Used for operations that are
 // intentionally not exposed as delegated permissions — role creation/edits,

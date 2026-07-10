@@ -4,6 +4,9 @@ import userStore from '$lib/stores/user-store';
 import type { User } from '$lib/types/auth';
 import type { OidcStatusInfo } from '$lib/types/settings';
 import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '$lib/types/auth';
+import type { QueryClient } from '@tanstack/svelte-query';
+import { activityStore } from '$lib/stores/activity.store.svelte';
+import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -200,9 +203,21 @@ class AuthService extends BaseAPIService {
 		);
 	}
 
-	logout(): void {
-		this.clearTokenData();
+	resetAuthenticatedState(queryClient: QueryClient, options?: { restartMountedStores?: boolean }): void {
+		queryClient.clear();
+		const restartActivityStore = activityStore.stop({ resetState: true });
+		const restartDashboardStore = dashboardStore.stop({ resetState: true });
 		userStore.clearUser();
+
+		if (options?.restartMountedStores) {
+			if (restartActivityStore) void activityStore.start();
+			if (restartDashboardStore) void dashboardStore.start();
+		}
+	}
+
+	logout(queryClient: QueryClient): void {
+		this.clearTokenData();
+		this.resetAuthenticatedState(queryClient);
 	}
 
 	/**

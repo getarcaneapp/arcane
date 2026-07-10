@@ -38,6 +38,24 @@ func (ps *PermissionSet) Allows(perm, envID string) bool {
 	return false
 }
 
+// AllowsAny reports whether the caller may perform perm in at least one
+// effective scope. Global and sudo permissions satisfy the check immediately;
+// otherwise every explicitly granted environment is considered.
+func (ps *PermissionSet) AllowsAny(perm string) bool {
+	if ps == nil {
+		return false
+	}
+	if ps.Allows(perm, "") {
+		return true
+	}
+	for envID := range ps.PerEnv {
+		if ps.Allows(perm, envID) {
+			return true
+		}
+	}
+	return false
+}
+
 // IsGlobalAdmin reports whether the caller holds enough global permissions to
 // be considered an administrator. True for sudo callers and for callers whose
 // Global set contains every defined permission. Used by the backward-compat

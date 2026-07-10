@@ -127,6 +127,58 @@ func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {
 	require.Equal(t, expected, output.Body)
 }
 
+func TestSettingsHandler_GetSettings_RemoteFiltersNonAdminVisibility(t *testing.T) {
+	remoteSettings := []settingstypes.PublicSetting{
+		{Key: "dockerHost", Type: "string", Value: "unix:///var/run/docker.sock"},
+		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
+		{Key: "defaultShell", Type: "string", Value: "/bin/bash"},
+		{Key: "futureAdminSetting", Type: "string", Value: "hidden"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, "/api/environments/0/settings", r.URL.Path)
+		require.NoError(t, json.NewEncoder(w).Encode(remoteSettings))
+	}))
+	defer server.Close()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	settingsService, err := services.NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	handler := &SettingsHandler{
+		settingsService:    settingsService,
+		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
+	}
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("env-remote", authz.PermSettingsRead)
+	ctx := context.WithValue(context.Background(), humamiddleware.ContextKeyUserPermissions, ps)
+
+	output, err := handler.GetSettings(ctx, &GetSettingsInput{EnvironmentID: "env-remote"})
+	require.NoError(t, err)
+	require.Equal(t, []settingstypes.PublicSetting{remoteSettings[0]}, output.Body)
+}
+
+func TestSettingsHandler_GetSettings_RemotePreservesAdminResponse(t *testing.T) {
+	remoteSettings := []settingstypes.PublicSetting{
+		{Key: "baseServerUrl", Type: "string", Value: "https://manager.example"},
+		{Key: "futureAdminSetting", Type: "string", Value: "visible-to-admin"},
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		require.NoError(t, json.NewEncoder(w).Encode(remoteSettings))
+	}))
+	defer server.Close()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	settingsService, err := services.NewSettingsService(context.Background(), db)
+	require.NoError(t, err)
+	handler := &SettingsHandler{
+		settingsService:    settingsService,
+		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
+	}
+
+	output, err := handler.GetSettings(adminTestContextInternal(), &GetSettingsInput{EnvironmentID: "env-remote"})
+	require.NoError(t, err)
+	require.Equal(t, remoteSettings, output.Body)
+}
+
 func TestTemplateHandler_GetGlobalVariables_RemoteSuccess(t *testing.T) {
 	expected := base.ApiResponse[[]env.Variable]{
 		Success: true,

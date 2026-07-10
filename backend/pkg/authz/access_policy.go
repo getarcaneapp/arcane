@@ -203,15 +203,7 @@ func allowsPermissionForScopeModeInternal(ps *PermissionSet, perm, scopeMode, se
 	case AccessScopeModeSelectedEnvPlusGlobal:
 		return ps.Allows(perm, selectedEnvID)
 	case AccessScopeModeAnyEffectiveScope:
-		if ps.Allows(perm, "") {
-			return true
-		}
-		for envID := range ps.PerEnv {
-			if ps.Allows(perm, envID) {
-				return true
-			}
-		}
-		return false
+		return ps.AllowsAny(perm)
 	default:
 		return false
 	}

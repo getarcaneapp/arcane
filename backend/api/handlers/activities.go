@@ -128,7 +128,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 			{"BearerAuth": {}},
 			{"ApiKeyAuth": {}},
 		},
-		Middlewares: humamw.RequirePermission(api, authz.PermActivitiesRead),
+		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermActivitiesRead),
 	}, h.StreamAllActivities)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -322,7 +322,8 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 				}
 			}
 
-			h.streamAllActivitiesInternal(humaCtx.Context(), input.Limit, encoder, flush)
+			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
+			h.streamAllActivitiesInternal(humaCtx.Context(), ps, input.Limit, encoder, flush)
 		},
 	}, nil
 }
@@ -330,8 +331,8 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 // streamAllActivitiesInternal multiplexes activity events for the local
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
-func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, limit int, encoder *json.Encoder, flush func()) {
-	_ = agg.Run(ctx, agg.Config[activity.StreamEvent]{
+func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *authz.PermissionSet, limit int, encoder *json.Encoder, flush func()) {
+	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermActivitiesRead, agg.Config[activity.StreamEvent]{
 		Encoder:           encoder,
 		Flush:             flush,
 		Buffer:            activityStreamEventBuffer,
@@ -339,15 +340,13 @@ func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, limit
 		MakeHeartbeat: func() activity.StreamEvent {
 			return activity.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
 		},
-		Producers: []agg.Producer[activity.StreamEvent]{
-			func(ctx context.Context, events chan<- activity.StreamEvent) {
-				h.runLocalActivityStreamProducerInternal(ctx, limit, events)
-			},
-			func(ctx context.Context, events chan<- activity.StreamEvent) {
-				h.runRemoteActivityStreamPollersInternal(ctx, limit, events)
-			},
+	},
+		func(ctx context.Context, events chan<- activity.StreamEvent) {
+			h.runLocalActivityStreamProducerInternal(ctx, limit, events)
 		},
-	})
+		func(ctx context.Context, events chan<- activity.StreamEvent) {
+			h.runRemoteActivityStreamPollersInternal(ctx, ps, limit, events)
+		})
 }
 
 func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
@@ -407,9 +406,21 @@ func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Con
 // runRemoteActivityStreamPollersInternal keeps one poller goroutine per
 // enabled remote environment, re-listing periodically so environments added
 // or removed while the stream is open are picked up without a reconnect.
-func (h *ActivityHandler) runRemoteActivityStreamPollersInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {
+func (h *ActivityHandler) runRemoteActivityStreamPollersInternal(ctx context.Context, ps *authz.PermissionSet, limit int, events chan<- activity.StreamEvent) {
 	agg.ReconcilePollersByKey(ctx,
-		h.environmentService.ListRemoteEnvironments,
+		func(ctx context.Context) ([]models.Environment, error) {
+			environments, err := h.environmentService.ListRemoteEnvironments(ctx)
+			if err != nil {
+				return nil, err
+			}
+			allowed := environments[:0]
+			for _, environment := range environments {
+				if ps.Allows(authz.PermActivitiesRead, environment.ID) {
+					allowed = append(allowed, environment)
+				}
+			}
+			return allowed, nil
+		},
 		func(environment models.Environment) string {
 			return environment.ID
 		},

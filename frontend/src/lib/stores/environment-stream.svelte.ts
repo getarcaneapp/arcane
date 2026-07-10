@@ -42,6 +42,10 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	/** Fully owns a per-environment REST refresh, including generation/removal guards via core helpers. */
 	fetchSnapshot(environmentId: string, generation: number): Promise<void>;
 	refreshOnStart?: boolean;
+	/** Limits aggregate stream state and REST snapshots to caller-authorized environments. */
+	includeEnvironment?(environment: Pick<Environment, 'id' | 'name'>): boolean;
+	/** Reconciles when state used by includeEnvironment changes (for example, user permissions). */
+	subscribeEnvironmentFilter?(reconcile: () => void): () => void;
 	/** Extra cleanup when an environment disappears (core already dropped its state). */
 	onEnvironmentRemoved?(environmentId: string): void;
 	/** Replaces the default rename handling (which just updates state.name). */
@@ -58,6 +62,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 
 	let started = false;
 	let unsubscribeEnvironment: (() => void) | null = null;
+	let unsubscribeEnvironmentFilter: (() => void) | null = null;
 	// A single aggregated stream carries every environment's events; per-env
 	// connections would multiply requests and exhaust the browser's
 	// 6-per-origin HTTP/1.1 limit.
@@ -263,16 +268,13 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 
 		// Track only enabled environments — they are the ones the aggregated
 		// stream serves; a disabled environment would never leave "loading".
-		const available = environmentStore.available.filter((environment) => environment.enabled);
-		const environments =
-			available.length > 0
-				? available
-				: [
-						{
-							id: environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID,
-							name: environmentStore.selected?.name ?? 'Local'
-						}
-					];
+		const included = (environment: Pick<Environment, 'id' | 'name'>) => config.includeEnvironment?.(environment) ?? true;
+		const available = environmentStore.available.filter((environment) => environment.enabled && included(environment));
+		const selectedFallback = {
+			id: environmentStore.selected?.id ?? LOCAL_DOCKER_ENVIRONMENT_ID,
+			name: environmentStore.selected?.name ?? 'Local'
+		};
+		const environments = available.length > 0 ? available : included(selectedFallback) ? [selectedFallback] : [];
 		const targetIds = new Set(environments.map((environment) => environment.id || LOCAL_DOCKER_ENVIRONMENT_ID));
 
 		for (const environmentId of Object.keys(_environmentStates)) {
@@ -347,6 +349,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 
 			started = true;
 			await environmentStore.ready;
+			if (!started) {
+				return;
+			}
 			config.onSelectedEnvironment?.(environmentStore.selected);
 			reconcileEnvironments();
 			const generation = nextGeneration();
@@ -358,17 +363,25 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				config.onSelectedEnvironment?.(environment);
 				reconcileEnvironments();
 			});
+			unsubscribeEnvironmentFilter = config.subscribeEnvironmentFilter?.(reconcileEnvironments) ?? null;
 		},
-		stop(options?: { resetStreamFailed?: boolean }) {
+		stop(options?: { resetState?: boolean; resetStreamFailed?: boolean }) {
+			const wasStarted = started;
 			started = false;
 			unsubscribeEnvironment?.();
 			unsubscribeEnvironment = null;
+			unsubscribeEnvironmentFilter?.();
+			unsubscribeEnvironmentFilter = null;
 			nextGeneration();
 			abortStream();
 			reconnectAttempt = 0;
-			if (options?.resetStreamFailed) {
+			if (options?.resetState) {
+				_environmentStates = {};
+			}
+			if (options?.resetState || options?.resetStreamFailed) {
 				_streamFailed = false;
 			}
+			return wasStarted;
 		},
 		retryStream() {
 			_streamFailed = false;

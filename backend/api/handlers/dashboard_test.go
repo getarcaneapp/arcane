@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	sqlite "github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -138,7 +140,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 // runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
 // pipe and returns each decoded event to onEvent until it reports done or the
 // stream ends; remaining output is drained so a blocked encoder can finish.
-func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, onEvent func(dashboardtypes.StreamEvent) bool) {
+func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, ps *authz.PermissionSet, onEvent func(dashboardtypes.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -146,7 +148,7 @@ func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel con
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllDashboardsInternal(ctx, false, json.NewEncoder(pw), func() {})
+		handler.streamAllDashboardsInternal(ctx, ps, false, json.NewEncoder(pw), func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
@@ -191,7 +193,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 		}}`))
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
@@ -199,7 +201,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 	}
 
 	var remoteSnapshot bool
-	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event dashboardtypes.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "remote-1" && event.Snapshot != nil {
 			require.Equal(t, 2, event.Snapshot.Containers.Counts.RunningContainers)
 			require.Equal(t, 3, event.Snapshot.Containers.Counts.TotalContainers)
@@ -240,7 +242,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 		}
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
@@ -248,7 +250,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 	}
 
 	var composedSnapshot bool
-	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event dashboardtypes.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "remote-1" && event.Snapshot != nil {
 			require.Equal(t, 4, event.Snapshot.Containers.Counts.RunningContainers)
 			require.Equal(t, 2, event.Snapshot.Containers.Counts.StoppedContainers)
@@ -282,7 +284,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 		_, _ = w.Write([]byte(`{"success":false,"error":"API endpoint not found: ` + r.URL.Path + `"}`))
 	}))
 	defer server.Close()
-	createStreamTestRemoteEnvironmentInternal(t, db, server.URL, token)
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
 		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
@@ -290,7 +292,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 	}
 
 	var incompatibleError, localEvent bool
-	runDashboardStreamAllInternal(t, ctx, cancel, handler, func(event dashboardtypes.StreamEvent) bool {
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event dashboardtypes.StreamEvent) bool {
 		if event.Type == "error" && event.EnvironmentID == "remote-1" {
 			require.Equal(t, dashboardtypes.StreamErrorCodeAgentIncompatible, event.ErrorCode)
 			require.NotEmpty(t, event.Error)
@@ -306,4 +308,84 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 
 	require.True(t, incompatibleError)
 	require.True(t, localEvent)
+}
+
+func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	db := setupActivityHandlerTestDBInternal(t)
+	limitStreamTestDBToSingleConnInternal(t, db)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	allowedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"containers":{"counts":{"runningContainers":1,"totalContainers":1}},"images":{},"imageUsageCounts":{"totalImages":1},"actionItems":{"items":[]},"settings":{}}}`))
+	}))
+	defer allowedServer.Close()
+
+	var deniedRequests atomic.Int64
+	deniedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		deniedRequests.Add(1)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{}}`))
+	}))
+	defer deniedServer.Close()
+
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-allowed", "Allowed", allowedServer.URL, "allowed-token")
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-denied", "Denied", deniedServer.URL, "denied-token")
+
+	handler := &DashboardHandler{
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		environmentService: services.NewEnvironmentService(db, allowedServer.Client(), nil, nil, settingsService, nil),
+	}
+	ps := authz.NewPermissionSet()
+	ps.AddEnv("remote-allowed", authz.PermDashboardRead)
+
+	seenEnvironments := make(map[string]struct{})
+	runDashboardStreamAllInternal(t, ctx, cancel, handler, ps, func(event dashboardtypes.StreamEvent) bool {
+		if event.EnvironmentID != "" {
+			seenEnvironments[event.EnvironmentID] = struct{}{}
+		}
+		return event.Type == "snapshot" && event.EnvironmentID == "remote-allowed"
+	})
+
+	require.Contains(t, seenEnvironments, "remote-allowed")
+	require.NotContains(t, seenEnvironments, "0")
+	require.NotContains(t, seenEnvironments, "remote-denied")
+	require.Zero(t, deniedRequests.Load())
+}
+
+func TestDashboardHandlerRemoteFetchReusesLoadedEnvironmentInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityHandlerTestDBInternal(t)
+	settingsService, err := services.NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"success":true,"data":{"containers":{},"images":{},"imageUsageCounts":{},"actionItems":{"items":[]},"settings":{}}}`))
+	}))
+	defer server.Close()
+	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, "remote-token")
+
+	environmentService := services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil)
+	environments, err := environmentService.ListRemoteEnvironments(ctx)
+	require.NoError(t, err)
+	require.Len(t, environments, 1)
+
+	var environmentQueryCount atomic.Int64
+	require.NoError(t, db.Callback().Query().After("gorm:query").Register("arcane_test_count_dashboard_environment_queries", func(tx *gorm.DB) {
+		if activityTestQueryLoadsEnvironmentIDInternal(tx, "remote-1") {
+			environmentQueryCount.Add(1)
+		}
+	}))
+
+	handler := &DashboardHandler{environmentService: environmentService}
+	for range 2 {
+		_, err := handler.fetchRemoteDashboardSnapshotInternal(ctx, environments[0], false)
+		require.NoError(t, err)
+	}
+	require.Zero(t, environmentQueryCount.Load())
 }

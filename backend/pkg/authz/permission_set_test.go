@@ -32,6 +32,41 @@ func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
 	}
 }
 
+func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
+	tests := []struct {
+		name string
+		ps   *PermissionSet
+		want bool
+	}{
+		{name: "nil", ps: nil, want: false},
+		{name: "empty", ps: NewPermissionSet(), want: false},
+		{name: "unrelated environment permission", ps: func() *PermissionSet {
+			ps := NewPermissionSet()
+			ps.AddEnv("env-1", PermContainersList)
+			return ps
+		}(), want: false},
+		{name: "matching environment permission", ps: func() *PermissionSet {
+			ps := NewPermissionSet()
+			ps.AddEnv("env-1", PermActivitiesRead)
+			return ps
+		}(), want: true},
+		{name: "matching global permission", ps: func() *PermissionSet {
+			ps := NewPermissionSet()
+			ps.AddGlobal(PermActivitiesRead)
+			return ps
+		}(), want: true},
+		{name: "sudo", ps: SudoPermissionSet(), want: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.ps.AllowsAny(PermActivitiesRead); got != tt.want {
+				t.Fatalf("AllowsAny() = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
 func TestPermissionSetIsGlobalAdminRejectsUnknownPermissions(t *testing.T) {
 	ps := NewPermissionSet()
 	perms := AllPermissions()

@@ -144,3 +144,58 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 	require.Equal(t, http.StatusNoContent, rec.Code)
 	require.True(t, handlerRan)
 }
+
+func TestRequireAnyEnvironmentPermission(t *testing.T) {
+	tests := []struct {
+		name       string
+		permission *authz.PermissionSet
+		wantStatus int
+		wantRan    bool
+	}{
+		{name: "missing", permission: authz.NewPermissionSet(), wantStatus: http.StatusForbidden},
+		{name: "other permission", permission: func() *authz.PermissionSet {
+			ps := authz.NewPermissionSet()
+			ps.AddEnv("env-1", authz.PermContainersList)
+			return ps
+		}(), wantStatus: http.StatusForbidden},
+		{name: "environment permission", permission: func() *authz.PermissionSet {
+			ps := authz.NewPermissionSet()
+			ps.AddEnv("env-1", authz.PermActivitiesRead)
+			return ps
+		}(), wantStatus: http.StatusNoContent, wantRan: true},
+		{name: "global permission", permission: func() *authz.PermissionSet {
+			ps := authz.NewPermissionSet()
+			ps.AddGlobal(authz.PermActivitiesRead)
+			return ps
+		}(), wantStatus: http.StatusNoContent, wantRan: true},
+		{name: "sudo", permission: authz.SudoPermissionSet(), wantStatus: http.StatusNoContent, wantRan: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := echo.New()
+			api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+				next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, tt.permission)))
+			})
+
+			handlerRan := false
+			huma.Register(api, huma.Operation{
+				OperationID: "aggregate-permission-" + tt.name,
+				Method:      http.MethodGet,
+				Path:        "/activities/stream",
+				Middlewares: RequireAnyEnvironmentPermission(api, authz.PermActivitiesRead),
+			}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
+				handlerRan = true
+				return &struct{}{}, nil
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/activities/stream", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			require.Equal(t, tt.wantRan, handlerRan)
+		})
+	}
+}

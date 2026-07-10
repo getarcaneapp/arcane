@@ -292,6 +292,10 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	ps, _ := humamw.PermissionsFromContext(ctx)
 	isAdmin := ps.IsGlobalAdmin()
+	visibility := models.SettingVisibilityNonAdmin
+	if isAdmin {
+		visibility = models.SettingVisibilityAll
+	}
 
 	if input.EnvironmentID != "0" {
 		if h.environmentService == nil {
@@ -301,13 +305,22 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 		if err != nil {
 			return nil, err
 		}
+		if !isAdmin {
+			allowedKeys := make(map[string]struct{})
+			for _, setting := range h.settingsService.ListSettings(visibility) {
+				allowedKeys[setting.Key] = struct{}{}
+			}
+			filtered := make([]settings.PublicSetting, 0, len(*settingsDto))
+			for _, setting := range *settingsDto {
+				if _, ok := allowedKeys[setting.Key]; ok {
+					filtered = append(filtered, setting)
+				}
+			}
+			settingsDto = &filtered
+		}
 		return &GetSettingsOutput{Body: *settingsDto}, nil
 	}
 
-	visibility := models.SettingVisibilityNonAdmin
-	if isAdmin {
-		visibility = models.SettingVisibilityAll
-	}
 	settingsList := h.settingsService.ListSettings(visibility)
 
 	var settingsDto []settings.PublicSetting

@@ -1,7 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
 import { authService } from '$lib/services/auth-service';
-import { queryKeys } from '$lib/query/query-keys';
 
 export const load: PageLoad = async ({ fetch, parent }) => {
 	const { queryClient } = await parent();
@@ -15,8 +14,7 @@ export const load: PageLoad = async ({ fetch, parent }) => {
 		console.error('Logout error:', error);
 	}
 
-	authService.logout();
-	queryClient.removeQueries({ queryKey: queryKeys.auth.all });
+	authService.logout(queryClient);
 
 	throw redirect(302, '/login');
 };

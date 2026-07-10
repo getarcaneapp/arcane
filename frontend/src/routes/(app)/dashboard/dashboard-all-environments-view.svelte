@@ -18,6 +18,7 @@
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import userStore from '$lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import type {
 		DashboardActionItem,
@@ -93,7 +94,13 @@
 	let dockerInfoByEnvironmentId = $state<Record<string, DockerInfo | undefined>>({});
 	let dockerInfoPromiseByEnvironmentId = $state<Record<string, Promise<DockerInfo> | undefined>>({});
 
-	const availableEnvironments = $derived(environmentStore.available);
+	const availableEnvironments = $derived.by(() => {
+		if (!$userStore) {
+			return [];
+		}
+
+		return environmentStore.available.filter((environment) => hasPermission('dashboard:read', environment.id));
+	});
 	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
 
 	function canPruneInEnvironment(envId: string): boolean {

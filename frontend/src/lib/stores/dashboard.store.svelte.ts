@@ -8,6 +8,7 @@ import {
 } from '$lib/stores/environment-stream.svelte';
 import type { DashboardSnapshot, DashboardStreamErrorCode, DashboardStreamEvent } from '$lib/types/shared';
 import type { Environment } from '$lib/types/environment';
+import userStore from '$lib/stores/user-store';
 
 type DashboardEnvironmentState = StreamEnvStateBase & {
 	snapshot: DashboardSnapshot | null;
@@ -23,6 +24,8 @@ function createDashboardStore() {
 
 	const core = createEnvironmentStreamStore<DashboardEnvironmentState, DashboardStreamEvent>({
 		label: 'Dashboard',
+		includeEnvironment: (environment) => userStore.hasPermission('dashboard:read', environment.id),
+		subscribeEnvironmentFilter: (reconcile) => userStore.subscribe(reconcile),
 		refreshOnStart: true,
 		clearErrorExtra: { errorCode: undefined },
 		createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): DashboardEnvironmentState {
@@ -103,7 +106,7 @@ function createDashboardStore() {
 			return Boolean(state && state.loading && !state.hasLoaded);
 		},
 		start: async (options?: { debugAllGood?: boolean }) => {
-			const nextDebugAllGood = options?.debugAllGood ?? false;
+			const nextDebugAllGood = options?.debugAllGood ?? debugAllGood;
 			if (!browser) {
 				return;
 			}
@@ -121,9 +124,11 @@ function createDashboardStore() {
 			debugAllGood = nextDebugAllGood;
 			await core.start();
 		},
-		stop: () => {
+		stop: (options?: { resetState?: boolean }) => {
+			const wasStarted = started;
 			started = false;
-			core.stop({ resetStreamFailed: true });
+			core.stop({ resetState: options?.resetState, resetStreamFailed: true });
+			return wasStarted;
 		},
 		refresh: () => core.refresh(),
 		retryStream: () => core.retryStream()
