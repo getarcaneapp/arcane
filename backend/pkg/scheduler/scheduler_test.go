@@ -260,3 +260,69 @@ func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T)
 	require.True(t, js.HasJob(job.Name()))
 	require.Len(t, js.cron.Entries(), 1)
 }
+
+func TestJobScheduler_RunWaitsForCanceledJobToFinish(t *testing.T) {
+	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
+	jobStarted := make(chan struct{}, 1)
+	cancellationObserved := make(chan struct{}, 1)
+	releaseJob := make(chan struct{}, 1)
+	jobFinished := make(chan struct{}, 1)
+	var runOnce sync.Once
+
+	js := NewJobScheduler(lifecycleCtx, nil)
+	js.RegisterJob(&testSchedulerJob{
+		name:     "test-shutdown-waits",
+		schedule: "*/1 * * * * *",
+		run: func(ctx context.Context) {
+			runOnce.Do(func() {
+				jobStarted <- struct{}{}
+				<-ctx.Done()
+				cancellationObserved <- struct{}{}
+				<-releaseJob
+				jobFinished <- struct{}{}
+			})
+		},
+	})
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- js.Run(lifecycleCtx) }()
+	t.Cleanup(func() {
+		cancelLifecycle()
+		select {
+		case releaseJob <- struct{}{}:
+		default:
+		}
+	})
+
+	select {
+	case <-jobStarted:
+	case <-time.After(2500 * time.Millisecond):
+		t.Fatal("timed out waiting for scheduled job to start")
+	}
+
+	cancelLifecycle()
+	select {
+	case <-cancellationObserved:
+	case <-time.After(time.Second):
+		t.Fatal("scheduled job did not observe lifecycle cancellation")
+	}
+
+	select {
+	case err := <-runDone:
+		t.Fatalf("scheduler returned before the running job finished: %v", err)
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseJob <- struct{}{}
+	select {
+	case <-jobFinished:
+	case <-time.After(time.Second):
+		t.Fatal("scheduled job did not finish after release")
+	}
+	select {
+	case err := <-runDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not return after the running job finished")
+	}
+}

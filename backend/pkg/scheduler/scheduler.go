@@ -159,7 +159,10 @@ func (js *JobScheduler) GetLocation() *time.Location {
 func (js *JobScheduler) Run(ctx context.Context) error {
 	js.StartScheduler()
 	<-ctx.Done()
-	js.cron.Stop()
+	// Running jobs may still own Docker or database resources. Wait for them here
+	// so Bootstrap cannot close shared services underneath them; the process-level
+	// signal handler owns the hard shutdown deadline for non-cooperative jobs.
+	<-js.cron.Stop().Done()
 	return nil
 }
 
