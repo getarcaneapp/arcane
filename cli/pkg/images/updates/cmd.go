@@ -8,7 +8,6 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
-	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/spf13/cobra"
 )
@@ -22,8 +21,9 @@ var UpdatesCmd = &cobra.Command{
 }
 
 var checkCmd = &cobra.Command{
-	Use:          "check",
-	Short:        "Check for image updates",
+	Use:          "check <image-ref>",
+	Short:        "Check an image reference for updates",
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -31,15 +31,14 @@ var checkCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID()))
+		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID(), args[0]))
 		if err != nil {
 			return fmt.Errorf("failed to check updates: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[imageupdate.BatchResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
+		if err != nil {
+			return fmt.Errorf("failed to check updates: %w", err)
 		}
 
 		if jsonOutput {
@@ -51,16 +50,16 @@ var checkCmd = &cobra.Command{
 			return nil
 		}
 
-		output.Header("Image Update Check Results")
-		updatesAvailable := 0
-		for imageRef, update := range result.Data {
-			if update != nil && update.HasUpdate {
-				output.KeyValue(imageRef, fmt.Sprintf("%s → %s (%s)", update.CurrentVersion, update.LatestVersion, update.UpdateType))
-				updatesAvailable++
-			}
+		output.Header("Image Update Status")
+		output.KeyValue("Image", args[0])
+		output.KeyValue("Has Update", strconv.FormatBool(result.Data.HasUpdate))
+		if result.Data.HasUpdate {
+			output.KeyValue("Update Type", result.Data.UpdateType)
+			output.KeyValue("Current Version", result.Data.CurrentVersion)
+			output.KeyValue("Latest Version", result.Data.LatestVersion)
 		}
-
-		fmt.Printf("\nTotal: %d images checked, %d updates available\n", len(result.Data), updatesAvailable)
+		output.KeyValue("Check Time", result.Data.CheckTime.String())
+		output.KeyValue("Response Time", fmt.Sprintf("%dms", result.Data.ResponseTimeMs))
 		return nil
 	},
 }
@@ -79,11 +78,10 @@ var checkAllCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to check all updates: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[imageupdate.BatchResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		result, err := client.DecodeResponseStrict[imageupdate.BatchResponse](resp)
+		if err != nil {
+			return fmt.Errorf("failed to check all updates: %w", err)
 		}
 
 		if jsonOutput {
@@ -124,11 +122,10 @@ var checkImageCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to check image update: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[imageupdate.Response]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
+		if err != nil {
+			return fmt.Errorf("failed to check image update: %w", err)
 		}
 
 		if jsonOutput {
@@ -167,11 +164,10 @@ var summaryCmd = &cobra.Command{
 		if err != nil {
 			return fmt.Errorf("failed to get summary: %w", err)
 		}
-		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[imageupdate.Summary]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+		result, err := client.DecodeResponseStrict[imageupdate.Summary](resp)
+		if err != nil {
+			return fmt.Errorf("failed to get summary: %w", err)
 		}
 
 		if jsonOutput {
