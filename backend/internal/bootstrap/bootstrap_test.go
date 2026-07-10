@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,6 +21,28 @@ import (
 	libcrypto "go.getarcane.app/sys/crypto"
 	"golang.org/x/net/http2"
 )
+
+type blockingServiceSchedulerInternal struct {
+	runCalls             atomic.Int32
+	started              chan struct{}
+	cancellationObserved chan struct{}
+	release              <-chan struct{}
+}
+
+func (s *blockingServiceSchedulerInternal) Run(ctx context.Context) error {
+	s.runCalls.Add(1)
+	if s.started != nil {
+		s.started <- struct{}{}
+	}
+	<-ctx.Done()
+	if s.cancellationObserved != nil {
+		s.cancellationObserved <- struct{}{}
+	}
+	if s.release != nil {
+		<-s.release
+	}
+	return nil
+}
 
 func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
@@ -251,6 +274,84 @@ func TestShutdownCancelsStreamingRequestContextsInternal(t *testing.T) {
 	require.NoError(t, srv.Shutdown(shutdownCtx))
 	require.Less(t, time.Since(start), time.Second)
 	require.ErrorIs(t, <-errCh, http.ErrServerClosed)
+}
+
+func TestRunServicesInternalDoesNotStartSchedulersBeforeServerInitialization(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	scheduler := &blockingServiceSchedulerInternal{}
+	cfg := &config.Config{
+		AgentMode:  true,
+		TLSEnabled: true,
+	}
+
+	err := runServicesInternal(appCtx, cancelApp, cfg, http.NewServeMux(), nil, scheduler)
+	require.ErrorContains(t, err, "TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
+	require.Zero(t, scheduler.runCalls.Load())
+	require.ErrorIs(t, appCtx.Err(), context.Canceled)
+}
+
+func TestRunServicesInternalWaitsForSchedulersBeforeReleasingDependencies(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	started := make(chan struct{}, 1)
+	cancellationObserved := make(chan struct{}, 1)
+	releaseScheduler := make(chan struct{}, 1)
+	scheduler := &blockingServiceSchedulerInternal{
+		started:              started,
+		cancellationObserved: cancellationObserved,
+		release:              releaseScheduler,
+	}
+	cfg := &config.Config{
+		AgentMode:   true,
+		Environment: config.AppEnvironmentTest,
+		Listen:      "127.0.0.1",
+		Port:        "0",
+	}
+
+	runDone := make(chan error, 1)
+	dependenciesReleased := make(chan struct{})
+	go func() {
+		err := runServicesInternal(appCtx, cancelApp, cfg, http.NewServeMux(), nil, scheduler)
+		close(dependenciesReleased)
+		runDone <- err
+	}()
+	t.Cleanup(func() {
+		cancelApp()
+		select {
+		case releaseScheduler <- struct{}{}:
+		default:
+		}
+	})
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not start")
+	}
+	cancelApp()
+	select {
+	case <-cancellationObserved:
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not observe lifecycle cancellation")
+	}
+
+	select {
+	case <-dependenciesReleased:
+		t.Fatal("service runner released dependencies before the scheduler stopped")
+	case <-time.After(100 * time.Millisecond):
+	}
+
+	releaseScheduler <- struct{}{}
+	select {
+	case <-dependenciesReleased:
+	case <-time.After(time.Second):
+		t.Fatal("service runner did not release dependencies after the scheduler stopped")
+	}
+	select {
+	case err := <-runDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("service runner did not return")
+	}
 }
 
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {

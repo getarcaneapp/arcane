@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/signal"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -60,18 +61,28 @@ func Bootstrap(ctx context.Context) error {
 
 	appCtx, cancelApp := context.WithCancel(ctx)
 	appCtx = utils.WithAppLifecycleContext(appCtx)
-	defer cancelApp()
 
 	db, err := initializeDBAndMigrate(appCtx, cfg)
 	if err != nil {
+		cancelApp()
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
+	var appServices *di.Services
 	defer func(ctx context.Context) {
+		cancelApp()
 		// appCtx is already canceled here, so derive the shutdown deadline from a
 		// non-canceled copy of it.
 		baseCtx := context.WithoutCancel(ctx)
 		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
 		defer shutdownCancel()
+		if appServices != nil {
+			if appServices.Volume != nil {
+				appServices.Volume.CleanupHelperContainers(shutdownCtx)
+			}
+			if appServices.Docker != nil {
+				appServices.Docker.Close()
+			}
+		}
 		if err := db.Close(); err != nil {
 			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err)
 		}
@@ -79,20 +90,11 @@ func Bootstrap(ctx context.Context) error {
 
 	httpClient := newConfiguredHTTPClient(cfg)
 
-	appServices, err := di.InitializeServices(appCtx, db, cfg, httpClient)
+	appServices, err = di.InitializeServices(appCtx, db, cfg, httpClient)
 	if err != nil {
 		return fmt.Errorf("failed to initialize services: %w", err)
 	}
 	dockerClientService := appServices.Docker
-	defer dockerClientService.Close()
-	defer func(ctx context.Context) {
-		baseCtx := context.WithoutCancel(ctx)
-		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
-		defer shutdownCancel()
-		if appServices.Volume != nil {
-			appServices.Volume.CleanupHelperContainers(shutdownCtx)
-		}
-	}(appCtx)
 
 	initializeStartupState(appCtx, cfg, appServices, dockerClientService, httpClient)
 
@@ -105,7 +107,7 @@ func Bootstrap(ctx context.Context) error {
 
 	startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
 
-	err = runServicesInternal(appCtx, cfg, router, tunnelServer, scheduler)
+	err = runServicesInternal(appCtx, cancelApp, cfg, router, tunnelServer, scheduler)
 	if err != nil {
 		return fmt.Errorf("failed to run services: %w", err)
 	}
@@ -388,21 +390,14 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	}
 }
 
-func runServicesInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface {
+func runServicesInternal(appCtx context.Context, cancelApp context.CancelFunc, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface {
 	Run(ctx context.Context) error
 }) error {
-	for _, s := range schedulers {
-		scheduler := s
-		go func() {
-			slog.InfoContext(appCtx, "Starting scheduler")
-			if err := scheduler.Run(appCtx); err != nil {
-				if !errors.Is(err, context.Canceled) {
-					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
-				}
-			}
-			slog.InfoContext(appCtx, "Scheduler stopped")
-		}()
-	}
+	var schedulerWaitGroup sync.WaitGroup
+	defer func() {
+		cancelApp()
+		schedulerWaitGroup.Wait()
+	}()
 
 	listenAddr := cfg.ListenAddr()
 	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(appCtx, cfg)
@@ -427,6 +422,18 @@ func runServicesInternal(appCtx context.Context, cfg *config.Config, router http
 	if err != nil {
 		return err
 	}
+	for _, serviceScheduler := range schedulers {
+		scheduler := serviceScheduler
+		schedulerWaitGroup.Go(func() {
+			slog.InfoContext(appCtx, "Starting scheduler")
+			if err := scheduler.Run(appCtx); err != nil {
+				if !errors.Is(err, context.Canceled) {
+					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
+				}
+			}
+			slog.InfoContext(appCtx, "Scheduler stopped")
+		})
+	}
 
 	go func() {
 		slog.InfoContext(appCtx, "Starting HTTP server", "addr", listenAddr, "listen", cfg.Listen, "port", cfg.Port, "tls_enabled", useTLS)
@@ -445,10 +452,12 @@ func runServicesInternal(appCtx context.Context, cfg *config.Config, router http
 
 	quit := make(chan os.Signal, 1)
 	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(quit)
 
 	select {
 	case <-quit:
 		slog.InfoContext(appCtx, "Received shutdown signal")
+		cancelApp()
 	case <-appCtx.Done():
 		slog.InfoContext(appCtx, "Context canceled")
 	}

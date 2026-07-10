@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 )
 
 /*
@@ -19,8 +20,10 @@ Also referenced from pocket-id/pocket-id
 
 var onlyOneSignalHandler = make(chan struct{})
 
+const forcedShutdownTimeout = 30 * time.Second
+
 // SignalContext returns a context that is canceled when the application receives an interrupt signal.
-// A second signal forces an immediate shutdown.
+// A second signal or an expired graceful-shutdown deadline forces the process to exit.
 func SignalContext(parentCtx context.Context) context.Context {
 	close(onlyOneSignalHandler) // Panics when called twice
 
@@ -33,8 +36,17 @@ func SignalContext(parentCtx context.Context) context.Context {
 		slog.Info("Received interrupt signal. Shutting down…")
 		cancel()
 
-		<-sigCh
-		slog.Warn("Received a second interrupt signal. Forcing an immediate shutdown.")
+		shutdownTimer := time.NewTimer(forcedShutdownTimeout)
+		defer shutdownTimer.Stop()
+
+		select {
+		case <-sigCh:
+			slog.Warn("Received a second interrupt signal. Forcing an immediate shutdown.")
+		case <-shutdownTimer.C:
+			slog.Error("Graceful shutdown timed out. Forcing process exit.", "timeout", forcedShutdownTimeout)
+		}
+		// Go cannot safely terminate a hung goroutine. Exit the process instead of
+		// allowing Bootstrap to close dependencies that goroutine may still use.
 		os.Exit(1)
 	}()
 
