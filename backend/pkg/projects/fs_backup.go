@@ -28,6 +28,12 @@ type ProjectUpdateBackupScope struct {
 	RenamedDirs [][2]string
 }
 
+type projectUpdateEnvSymlinkBackup struct {
+	relativePath string
+	linkTarget   string
+	resolvedPath string
+}
+
 func (s ProjectUpdateBackupScope) IsEmpty() bool {
 	return !s.TopLevelFiles && len(s.Paths) == 0 && len(s.RenamedDirs) == 0
 }
@@ -38,11 +44,12 @@ func (s ProjectUpdateBackupScope) IsEmpty() bool {
 type ProjectUpdateBackup struct {
 	BackupDir     string
 	TopLevelFiles bool
-	FileEntries   []string    // regular files copied into BackupDir
+	FileEntries   []string    // regular file contents copied into BackupDir
 	DirEntries    []string    // directories copied recursively
 	AbsentEntries []string    // did not exist at backup time -> removed on restore
 	RenamedDirs   [][2]string // undone via inverse rename on restore
 	Skipped       []string    // unreadable, skipped; preserved on restore
+	envSymlink    *projectUpdateEnvSymlinkBackup
 }
 
 // BackupProjectUpdateScope copies the parts of projectDir named by scope into
@@ -104,12 +111,16 @@ func backupTopLevelFilesInternal(projRoot, backupRoot *os.Root, backup *ProjectU
 		return fmt.Errorf("read project directory: %w", err)
 	}
 	for _, entry := range entries {
-		if !entry.Type().IsRegular() {
-			continue
-		}
 		name := entry.Name()
-		if err := copyBackupFileInternal(projRoot, backupRoot, name, backup); err != nil {
-			return err
+		switch {
+		case entry.Type().IsRegular():
+			if err := copyBackupFileInternal(projRoot, backupRoot, name, backup); err != nil {
+				return err
+			}
+		case name == EffectiveEnvFileName && entry.Type()&os.ModeSymlink != 0:
+			if err := copyBackupEnvSymlinkInternal(projRoot, backupRoot, name, backup); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -195,6 +206,50 @@ func copyBackupFileInternal(projRoot, backupRoot *os.Root, rel string, backup *P
 	return nil
 }
 
+func copyBackupEnvSymlinkInternal(projRoot, backupRoot *os.Root, rel string, backup *ProjectUpdateBackup) error {
+	envPath := filepath.Join(projRoot.Name(), filepath.FromSlash(rel))
+	linkTarget, err := os.Readlink(envPath)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			backup.Skipped = append(backup.Skipped, rel)
+			return nil
+		}
+		return fmt.Errorf("read project env symlink %s: %w", rel, err)
+	}
+
+	resolvedPath, perm, isSymlink, err := resolveEnvFileWriteTargetInternal(envPath)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			backup.Skipped = append(backup.Skipped, rel)
+			return nil
+		}
+		return fmt.Errorf("resolve project env symlink %s: %w", rel, err)
+	}
+	if !isSymlink {
+		return fmt.Errorf("project env file %s is no longer a symlink", rel)
+	}
+
+	content, err := os.ReadFile(resolvedPath)
+	if err != nil {
+		if errors.Is(err, os.ErrPermission) {
+			backup.Skipped = append(backup.Skipped, rel)
+			return nil
+		}
+		return fmt.Errorf("read project env symlink target %s: %w", rel, err)
+	}
+	if err := atomic.WriteFile(filepath.Join(backupRoot.Name(), filepath.FromSlash(rel)), content, perm); err != nil {
+		return fmt.Errorf("write backup file %s: %w", rel, err)
+	}
+
+	backup.FileEntries = append(backup.FileEntries, rel)
+	backup.envSymlink = &projectUpdateEnvSymlinkBackup{
+		relativePath: rel,
+		linkTarget:   linkTarget,
+		resolvedPath: filepath.Clean(resolvedPath),
+	}
+	return nil
+}
+
 // dedupeCoveredBackupEntriesInternal drops entries that live under a directory
 // already covered by DirEntries or AbsentEntries (e.g. a file change inside a
 // folder that is also being deleted recursively).
@@ -250,7 +305,7 @@ func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) 
 
 	// 4. Restore individual files in place.
 	for _, rel := range backup.FileEntries {
-		if err := restoreBackupFileInternal(backupRoot, projRoot, rel); err != nil {
+		if err := restoreBackupFileInternal(backupRoot, projRoot, backup, rel); err != nil {
 			return err
 		}
 	}
@@ -260,7 +315,7 @@ func RestoreProjectUpdateBackup(projectDir string, backup *ProjectUpdateBackup) 
 	// then copy every top-level backup file back. Top-level directories and
 	// symlinks are never touched.
 	if backup.TopLevelFiles {
-		if err := restoreTopLevelFilesInternal(backupRoot, projRoot, backup.Skipped); err != nil {
+		if err := restoreTopLevelFilesInternal(backupRoot, projRoot, backup); err != nil {
 			return err
 		}
 	}
@@ -321,7 +376,7 @@ func skippedUnderInternal(skipped []string, rel string) []string {
 	return under
 }
 
-func restoreBackupFileInternal(backupRoot, projRoot *os.Root, rel string) error {
+func restoreBackupFileInternal(backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup, rel string) error {
 	info, err := backupRoot.Lstat(rel)
 	if err != nil {
 		return fmt.Errorf("inspect backup file %s: %w", rel, err)
@@ -329,6 +384,9 @@ func restoreBackupFileInternal(backupRoot, projRoot *os.Root, rel string) error 
 	content, err := backupRoot.ReadFile(rel)
 	if err != nil {
 		return fmt.Errorf("read backup file %s: %w", rel, err)
+	}
+	if backup.envSymlink != nil && backup.envSymlink.relativePath == rel {
+		return restoreBackupEnvSymlinkInternal(projRoot, backup.envSymlink, content, info.Mode().Perm())
 	}
 	if live, err := projRoot.Lstat(rel); err == nil && live.IsDir() {
 		if err := projRoot.RemoveAll(rel); err != nil {
@@ -348,7 +406,39 @@ func restoreBackupFileInternal(backupRoot, projRoot *os.Root, rel string) error 
 	return nil
 }
 
-func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, skipped []string) error {
+func restoreBackupEnvSymlinkInternal(projRoot *os.Root, envBackup *projectUpdateEnvSymlinkBackup, content []byte, perm os.FileMode) error {
+	envPath := filepath.Join(projRoot.Name(), filepath.FromSlash(envBackup.relativePath))
+	info, err := os.Lstat(envPath)
+	if err != nil {
+		return fmt.Errorf("inspect project env symlink during restore: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("refusing to restore project env file %s: destination is no longer a symlink", envBackup.relativePath)
+	}
+
+	linkTarget, err := os.Readlink(envPath)
+	if err != nil {
+		return fmt.Errorf("read project env symlink during restore: %w", err)
+	}
+	if linkTarget != envBackup.linkTarget {
+		return fmt.Errorf("refusing to restore project env file %s: symlink target changed", envBackup.relativePath)
+	}
+
+	resolvedPath, _, isSymlink, err := resolveEnvFileWriteTargetInternal(envPath)
+	if err != nil {
+		return fmt.Errorf("resolve project env symlink during restore: %w", err)
+	}
+	if !isSymlink || filepath.Clean(resolvedPath) != envBackup.resolvedPath {
+		return fmt.Errorf("refusing to restore project env file %s: resolved symlink target changed", envBackup.relativePath)
+	}
+
+	if err := atomic.WriteFile(resolvedPath, content, perm); err != nil {
+		return fmt.Errorf("restore project env symlink target %s: %w", envBackup.relativePath, err)
+	}
+	return nil
+}
+
+func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, backup *ProjectUpdateBackup) error {
 	backupEntries, err := os.ReadDir(backupRoot.Name())
 	if err != nil {
 		return fmt.Errorf("read backup directory: %w", err)
@@ -360,7 +450,7 @@ func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, skipped []strin
 		}
 	}
 	skippedTopLevel := make(map[string]bool)
-	for _, s := range skipped {
+	for _, s := range backup.Skipped {
 		if !strings.Contains(s, "/") {
 			skippedTopLevel[s] = true
 		}
@@ -386,7 +476,7 @@ func restoreTopLevelFilesInternal(backupRoot, projRoot *os.Root, skipped []strin
 		if !entry.Type().IsRegular() {
 			continue
 		}
-		if err := restoreBackupFileInternal(backupRoot, projRoot, entry.Name()); err != nil {
+		if err := restoreBackupFileInternal(backupRoot, projRoot, backup, entry.Name()); err != nil {
 			return err
 		}
 	}

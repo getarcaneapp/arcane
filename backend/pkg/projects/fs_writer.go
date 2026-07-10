@@ -116,7 +116,20 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	}
 
 	targetPath := filepath.Join(dirPath, fileName)
-	existingContent, readErr := os.ReadFile(targetPath)
+	writePath := targetPath
+	writePerm := pkgutils.FilePerm
+	if fileName == EffectiveEnvFileName {
+		resolvedPath, resolvedPerm, isSymlink, resolveErr := resolveEnvFileWriteTargetInternal(targetPath)
+		if resolveErr != nil {
+			return fmt.Errorf("failed to resolve project file %s write target: %w", fileName, resolveErr)
+		}
+		if isSymlink {
+			writePath = resolvedPath
+			writePerm = resolvedPerm
+		}
+	}
+
+	existingContent, readErr := os.ReadFile(writePath)
 	if readErr == nil && string(existingContent) == content {
 		return nil
 	}
@@ -124,11 +137,38 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 		return fmt.Errorf("failed to read project file %s: %w", fileName, readErr)
 	}
 
-	if err := atomic.WriteFile(targetPath, []byte(content), pkgutils.FilePerm); err != nil {
+	if err := atomic.WriteFile(writePath, []byte(content), writePerm); err != nil {
 		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
 	}
 
 	return nil
+}
+
+func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm os.FileMode, isSymlink bool, err error) {
+	info, err := os.Lstat(envPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return envPath, pkgutils.FilePerm, false, nil
+		}
+		return "", 0, false, fmt.Errorf("inspect env file: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return envPath, pkgutils.FilePerm, false, nil
+	}
+
+	resolvedPath, err := filepath.EvalSymlinks(envPath)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("resolve env file symlink: %w", err)
+	}
+	targetInfo, err := os.Stat(resolvedPath)
+	if err != nil {
+		return "", 0, false, fmt.Errorf("inspect env file symlink target: %w", err)
+	}
+	if !targetInfo.Mode().IsRegular() {
+		return "", 0, false, fmt.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
+	}
+
+	return resolvedPath, targetInfo.Mode().Perm(), true, nil
 }
 
 func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
