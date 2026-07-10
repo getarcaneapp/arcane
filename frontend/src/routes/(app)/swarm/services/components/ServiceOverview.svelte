@@ -3,9 +3,9 @@
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmServiceInspect } from '$lib/types/swarm';
-	import { format, formatDistanceToNow } from 'date-fns';
+	import { formatDistanceToNow } from 'date-fns';
 	import { InfoIcon, ConnectionIcon } from '$lib/icons';
-	import { truncateImageDigest } from '$lib/utils/formatting';
+	import { formatDateTimeShort, truncateImageDigest } from '$lib/utils/formatting';
 	import { getSwarmServiceModeLabel, getSwarmServiceModeVariant, isSwarmServiceModeScalable } from '$lib/utils/docker';
 	import { KeyValueCard } from '$lib/components/resource-detail';
 
@@ -20,13 +20,9 @@
 
 	let { service, serviceName, serviceImage, serviceMode, desiredReplicas, labels }: Props = $props();
 
-	function formatDate(input: string | undefined | null, fmt = 'PP p'): string {
+	function formatDate(input: string | undefined | null): string {
 		if (!input) return m.common_na();
-		try {
-			return format(new Date(input), fmt);
-		} catch {
-			return m.common_na();
-		}
+		return formatDateTimeShort(input) || m.common_na();
 	}
 
 	function formatRelative(input: string | undefined | null): string {

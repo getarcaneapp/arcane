@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import type { User, CreateUser } from '$lib/types/auth';
+import type { User, CreateUser, TimeFormat } from '$lib/types/auth';
 import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
@@ -38,7 +38,13 @@ class UserAPIService extends BaseAPIService {
 		return this.handleResponse(this.api.post('/auth/sessions/logout-all')) as Promise<void>;
 	}
 
-	async updateMyProfile(data: { displayName?: string; email?: string; locale?: string; fontSize?: number }): Promise<User> {
+	async updateMyProfile(data: {
+		displayName?: string;
+		email?: string;
+		locale?: string;
+		timeFormat?: TimeFormat;
+		fontSize?: number;
+	}): Promise<User> {
 		return this.handleResponse(this.api.put('/auth/me/profile', data)) as Promise<User>;
 	}
 

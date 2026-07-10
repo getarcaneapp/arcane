@@ -20,6 +20,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
+	import { formatDateTime } from '$lib/utils/formatting';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
@@ -516,7 +517,7 @@
 		return {
 			label: labelAndValue.label,
 			value: formatDistanceToNow(parsed, { addSuffix: true }),
-			title: parsed.toLocaleString()
+			title: formatDateTime(parsed)
 		};
 	}
 

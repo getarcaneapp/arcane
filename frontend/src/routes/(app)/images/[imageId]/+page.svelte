@@ -3,8 +3,7 @@
 	import * as Tabs from '$lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
 	import { Badge } from '$lib/components/ui/badge';
-	import { format } from 'date-fns';
-	import { bytes } from '$lib/utils/formatting';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
@@ -192,13 +191,7 @@
 
 	const createdDate = $derived.by(() => {
 		if (!image?.created) return m.common_na();
-		try {
-			const date = new Date(image.created);
-			if (isNaN(date.getTime())) return m.common_na();
-			return format(date, 'PP p');
-		} catch {
-			return m.common_na();
-		}
+		return formatDateTimeShort(image.created) || m.common_na();
 	});
 
 	const imageSize = $derived.by(() => bytes.format(Number(image?.size ?? 0)) || '0 B');

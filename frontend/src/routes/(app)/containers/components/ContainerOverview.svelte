@@ -4,7 +4,8 @@
 	import { Switch } from '$lib/components/ui/switch';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/docker';
-	import { format, formatDistanceToNow } from 'date-fns';
+	import { formatDistanceToNow } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { InfoIcon, StartIcon, StopIcon, NetworksIcon, VolumesIcon, HealthIcon } from '$lib/icons';
 	import { containerService } from '$lib/services/container-service';
 	import { KeyValueCard } from '$lib/components/resource-detail';
@@ -63,9 +64,9 @@
 		return isNaN(d.getTime()) ? null : d;
 	}
 
-	function formatDockerDate(input: string | Date | undefined | null, fmt = 'PP p'): string {
+	function formatDockerDate(input: string | Date | undefined | null): string {
 		const d = parseDockerDate(input);
-		return d ? format(d, fmt) : 'N/A';
+		return d ? formatDateTimeShort(d) : 'N/A';
 	}
 
 	function formatRelativeDate(input: string | Date | undefined | null): string {

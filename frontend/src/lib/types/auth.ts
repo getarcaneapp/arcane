@@ -128,6 +128,8 @@ export const GLOBAL_SCOPE = 'global';
 
 // --- User ---
 
+export type TimeFormat = 'auto' | '12h' | '24h';
+
 export type User = {
 	id: string;
 	username: string;
@@ -144,6 +146,7 @@ export type User = {
 	updatedAt?: string;
 	oidcSubjectId?: string;
 	locale?: Locale;
+	timeFormat: TimeFormat;
 	fontSize?: number;
 	requiresPasswordChange?: boolean;
 };
@@ -160,8 +163,10 @@ export type CreateUser = Omit<
 	| 'requiresPasswordChange'
 	| 'roleAssignments'
 	| 'permissionsByEnv'
+	| 'timeFormat'
 > & {
 	password: string;
+	timeFormat?: TimeFormat;
 };
 
 // --- Auth: login, OIDC ---

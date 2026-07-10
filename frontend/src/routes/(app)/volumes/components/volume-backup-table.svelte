@@ -18,8 +18,7 @@
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
-	import { bytes } from '$lib/utils/formatting';
-	import { format } from 'date-fns';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
@@ -232,7 +231,7 @@
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: any })}
-	{format(new Date(String(value)), 'PP p')}
+	{formatDateTimeShort(String(value))}
 {/snippet}
 
 {#snippet RowActions({ item }: { item: BackupEntry })}
@@ -297,7 +296,7 @@
 		]}
 		footer={{
 			label: m.common_created(),
-			getValue: (item) => format(new Date(item.createdAt), 'PP p'),
+			getValue: (item) => formatDateTimeShort(item.createdAt),
 			icon: ClockIcon
 		}}
 		rowActions={RowActions}

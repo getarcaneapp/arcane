@@ -16,6 +16,7 @@
 	import { TrashIcon, GlobeIcon } from '$lib/icons';
 	import * as m from '$lib/paraglide/messages.js';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { formatDateTime } from '$lib/utils/formatting';
 
 	let {
 		webhooks = $bindable(),
@@ -31,7 +32,7 @@
 
 	function formatDate(dateString?: string): string {
 		if (!dateString) return '-';
-		return new Date(dateString).toLocaleString();
+		return formatDateTime(dateString) || dateString;
 	}
 
 	function targetTypeLabel(type: string): string {

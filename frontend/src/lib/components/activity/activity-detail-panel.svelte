@@ -10,6 +10,7 @@
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
+	import { formatDateTime, formatTime } from '$lib/utils/formatting';
 
 	let { activity }: { activity: Activity } = $props();
 
@@ -49,13 +50,10 @@
 		if (!value) {
 			return m.common_na();
 		}
-		return new Intl.DateTimeFormat(undefined, {
-			month: 'short',
-			day: 'numeric',
-			hour: 'numeric',
-			minute: '2-digit',
-			second: '2-digit'
-		}).format(new Date(value));
+		return formatDateTime(value, {
+			datePattern: 'MMM d,',
+			includeSeconds: true
+		});
 	}
 
 	function formatDurationInternal(value: Activity | null): string {
@@ -78,11 +76,7 @@
 	}
 
 	function formatOutputLineInternal(message: ActivityMessage): string {
-		const timestamp = new Intl.DateTimeFormat(undefined, {
-			hour: 'numeric',
-			minute: '2-digit',
-			second: '2-digit'
-		}).format(new Date(message.createdAt));
+		const timestamp = formatTime(message.createdAt) || message.createdAt;
 		return `[${timestamp}] ${message.level.toUpperCase()} ${message.message}`;
 	}
 

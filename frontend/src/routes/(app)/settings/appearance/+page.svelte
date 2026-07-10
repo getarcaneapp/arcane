@@ -12,6 +12,7 @@
 	import { createSettingsForm } from '$lib/utils/settings-form';
 	import SettingsRow from '$lib/components/settings/settings-row.svelte';
 	import LocalePicker from '$lib/components/locale-picker.svelte';
+	import TimeFormatPicker from '$lib/components/time-format-picker.svelte';
 	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import AccentColorPicker from '$lib/components/accent-color/accent-color-picker.svelte';
 	import ApplicationThemePicker from '$lib/components/application-theme/application-theme-picker.svelte';
@@ -237,6 +238,11 @@
 							id="appearanceLocalePicker"
 							class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
 						/>
+					</SettingsRow>
+
+					<!-- Time Format -->
+					<SettingsRow label={m.time_format()} description={m.time_format_description()} layout="inline">
+						<TimeFormatPicker id="appearanceTimeFormatPicker" />
 					</SettingsRow>
 
 					<!-- Theme -->

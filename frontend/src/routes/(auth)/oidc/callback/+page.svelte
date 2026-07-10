@@ -110,6 +110,7 @@
 				roleAssignments: [],
 				permissionsByEnv: {},
 				isGlobalAdmin: false,
+				timeFormat: 'auto',
 				createdAt: new Date().toISOString()
 			};
 
