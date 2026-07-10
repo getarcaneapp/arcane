@@ -55,6 +55,7 @@
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { mergeProps } from 'bits-ui';
 
 	let {
 		heroGreeting,
@@ -959,10 +960,11 @@
 										{#each getEnvironmentActionButtons(boardState.overviewById.get(environment.id) ?? baseItem, isCurrent) as btn (btn.id)}
 											{@const isActiveEnv = isCurrent && btn.id === `${environment.id}-use`}
 											<ArcaneTooltip.Root>
-												<ArcaneTooltip.Trigger>
+												<ArcaneTooltip.Trigger disabledChild={!!(btn.disabled || btn.loading)}>
 													{#snippet child({ props })}
+														{@const triggerProps = mergeProps(props, { onclick: btn.onclick })}
 														<ArcaneButton
-															{...props}
+															{...triggerProps}
 															action={btn.action}
 															size="icon"
 															tone="ghost"
@@ -970,7 +972,6 @@
 															customLabel={btn.label}
 															loading={btn.loading}
 															disabled={btn.disabled}
-															onclick={btn.onclick}
 															class={cn(
 																'size-8',
 																btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',

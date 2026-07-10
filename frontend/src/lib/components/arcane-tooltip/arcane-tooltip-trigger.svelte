@@ -6,8 +6,14 @@
 	import { cn } from '$lib/utils.js';
 
 	type ChildProps = { props: Record<string, unknown> };
+	type TriggerEventProps = { onclick?: (event: MouseEvent) => void };
 
-	let { children, child, class: className }: TooltipPrimitive.TriggerProps = $props();
+	let {
+		children,
+		child,
+		class: className,
+		disabledChild = false
+	}: TooltipPrimitive.TriggerProps & { disabledChild?: boolean } = $props();
 
 	const ctx = getArcaneTooltipContext();
 
@@ -70,11 +76,23 @@
 		}
 	}
 
-	function handleWrapperClick(event: MouseEvent, props: any) {
+	function getClickHandler(props: Record<string, unknown>) {
+		return (props as TriggerEventProps).onclick;
+	}
+
+	function handleDirectClick(event: MouseEvent) {
+		if (ctx.interactive) {
+			handleClick(event);
+		}
+	}
+
+	function handleWrapperClick(event: MouseEvent, props: Record<string, unknown>) {
+		const onclick = getClickHandler(props);
+
 		if (ctx.interactive) {
 			handleClick(event);
 			if (!event.defaultPrevented) {
-				props.onclick?.(event);
+				onclick?.(event);
 			}
 		} else {
 			// Check if the click originated from an interactive element
@@ -106,44 +124,80 @@
 			}
 
 			if (!isInteractive) {
-				props.onclick?.(event);
+				onclick?.(event);
 			}
 		}
+	}
+
+	function getDirectTouchProps(props: Record<string, unknown>) {
+		const { onclick: _onclick, class: triggerClass, ...restProps } = props;
+
+		return {
+			...restProps,
+			class: cn('pointer-events-auto inline-flex max-w-full min-w-0', triggerClass as string | undefined, className),
+			ontouchstart: ctx.interactive ? handleTouchStart : undefined,
+			ontouchend: ctx.interactive ? handleTouchEnd : undefined,
+			ontouchcancel: ctx.interactive ? handleTouchCancel : undefined,
+			ontouchmove: ctx.interactive ? handleTouchMove : undefined,
+			onclick: handleDirectClick
+		};
+	}
+
+	function getDirectTooltipProps(props: Record<string, unknown>) {
+		return {
+			...props,
+			class: cn('inline-flex max-w-full min-w-0', props['class'] as string | undefined, className)
+		};
 	}
 </script>
 
 {#if ctx.isTouch}
 	<Popover.Trigger>
 		{#snippet child({ props }: ChildProps)}
-			<div
-				{...props}
-				class={cn('pointer-events-auto inline-flex max-w-full min-w-0 cursor-pointer', className)}
-				ontouchstart={ctx.interactive ? handleTouchStart : undefined}
-				ontouchend={ctx.interactive ? handleTouchEnd : undefined}
-				ontouchcancel={ctx.interactive ? handleTouchCancel : undefined}
-				ontouchmove={ctx.interactive ? handleTouchMove : undefined}
-				onclick={(e) => handleWrapperClick(e, props)}
-				role="button"
-				tabindex="0"
-			>
-				{#if child}
-					{@render child({ props })}
-				{:else}
-					{@render children?.()}
-				{/if}
-			</div>
+			{#if child && !disabledChild}
+				{@render child({ props: getDirectTouchProps(props) })}
+			{:else}
+				<div
+					{...props}
+					class={cn('pointer-events-auto inline-flex max-w-full min-w-0 cursor-pointer', className)}
+					ontouchstart={ctx.interactive ? handleTouchStart : undefined}
+					ontouchend={ctx.interactive ? handleTouchEnd : undefined}
+					ontouchcancel={ctx.interactive ? handleTouchCancel : undefined}
+					ontouchmove={ctx.interactive ? handleTouchMove : undefined}
+					onclick={(event) => handleWrapperClick(event, props)}
+					role="button"
+					data-disabled-child={disabledChild ? '' : undefined}
+					tabindex="0"
+				>
+					{#if child}
+						{@render child({ props: {} })}
+					{:else}
+						{@render children?.()}
+					{/if}
+				</div>
+			{/if}
 		{/snippet}
 	</Popover.Trigger>
 {:else}
 	<Tooltip.Trigger>
 		{#snippet child({ props }: ChildProps)}
-			<div {...props} role="button" tabindex="0" class={cn('inline-flex max-w-full min-w-0', className)}>
-				{#if child}
-					{@render child({ props })}
-				{:else}
-					{@render children?.()}
-				{/if}
-			</div>
+			{#if child && !disabledChild}
+				{@render child({ props: getDirectTooltipProps(props) })}
+			{:else}
+				<div
+					{...props}
+					role="button"
+					data-disabled-child={disabledChild ? '' : undefined}
+					tabindex="0"
+					class={cn('inline-flex max-w-full min-w-0 cursor-pointer', className)}
+				>
+					{#if child}
+						{@render child({ props: {} })}
+					{:else}
+						{@render children?.()}
+					{/if}
+				</div>
+			{/if}
 		{/snippet}
 	</Tooltip.Trigger>
 {/if}

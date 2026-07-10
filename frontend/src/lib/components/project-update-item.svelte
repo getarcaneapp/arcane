@@ -9,6 +9,7 @@
 	import type { Component } from 'svelte';
 	import { format } from 'date-fns';
 	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
+	import { mergeProps } from 'bits-ui';
 
 	interface Props {
 		updateInfo?: ProjectUpdateInfo;
@@ -149,10 +150,16 @@
 	{/if}
 {/snippet}
 
-<UpdateStatusPopover bind:open={isOpen} interactive={canCheck} contentClass="max-w-[320px] p-0">
-	{#snippet trigger()}
+<UpdateStatusPopover
+	bind:open={isOpen}
+	interactive={canCheck}
+	directTrigger={directCheckFromTrigger}
+	contentClass="max-w-[320px] p-0"
+>
+	{#snippet trigger({ props })}
 		{#if checking}
 			<span
+				{...props}
 				class="inline-flex size-4 items-center justify-center align-middle {className}"
 				aria-label={indicatorLabel}
 				data-testid="project-update-trigger"
@@ -160,29 +167,28 @@
 				<Spinner class="size-4 text-blue-400" />
 			</span>
 		{:else if directCheckFromTrigger}
-			<span
-				class="inline-flex size-4 items-center justify-center align-middle {className}"
-				aria-label={indicatorLabel}
+			{@const triggerProps = mergeProps(props, {
+				onclick: handleCheckClick,
+				class: `group inline-flex size-4 items-center justify-center align-middle transition-colors disabled:cursor-not-allowed dark:hover:bg-blue-950 ${className}`
+			})}
+			<button
+				{...triggerProps}
+				disabled={checking}
+				aria-label={m.image_update_recheck_button()}
+				title={m.image_update_recheck_button()}
 				data-testid="project-update-trigger"
 			>
-				<button
-					onclick={handleCheckClick}
-					disabled={checking}
-					aria-label={m.image_update_recheck_button()}
-					title={m.image_update_recheck_button()}
-					class="group flex h-4 w-4 items-center justify-center rounded-full transition-colors disabled:cursor-not-allowed dark:hover:bg-blue-950"
-				>
-					{#if status === 'error'}
-						<AlertIcon class="size-4 text-red-500 transition-colors group-hover:text-blue-400" />
-					{:else}
-						<span class="flex size-4 items-center justify-center text-gray-400 transition-colors group-hover:text-blue-400">
-							<UncheckedRingIcon />
-						</span>
-					{/if}
-				</button>
-			</span>
+				{#if status === 'error'}
+					<AlertIcon class="size-4 text-red-500 transition-colors group-hover:text-blue-400" />
+				{:else}
+					<span class="flex size-4 items-center justify-center text-gray-400 transition-colors group-hover:text-blue-400">
+						<UncheckedRingIcon />
+					</span>
+				{/if}
+			</button>
 		{:else}
 			<span
+				{...props}
 				class="inline-flex size-4 items-center justify-center align-middle {className}"
 				aria-label={indicatorLabel}
 				data-testid="project-update-trigger"

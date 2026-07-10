@@ -101,6 +101,36 @@ async function mockDashboardStatsWebSocket(page: Page) {
 	}, mockedStats);
 }
 
+async function mockInputCapabilities(page: Page, hoverNone: boolean, maxTouchPoints: number) {
+	await page.addInitScript(
+		({ hoverNone, maxTouchPoints }) => {
+			Object.defineProperty(navigator, 'maxTouchPoints', {
+				configurable: true,
+				get: () => maxTouchPoints
+			});
+
+			const nativeMatchMedia = window.matchMedia.bind(window);
+			window.matchMedia = (query: string) => {
+				if (query !== '(hover: none)') {
+					return nativeMatchMedia(query);
+				}
+
+				return {
+					matches: hoverNone,
+					media: query,
+					onchange: null,
+					addEventListener: () => undefined,
+					removeEventListener: () => undefined,
+					addListener: () => undefined,
+					removeListener: () => undefined,
+					dispatchEvent: () => true
+				} as MediaQueryList;
+			};
+		},
+		{ hoverNone, maxTouchPoints }
+	);
+}
+
 function collectDashboardRequestPaths(page: Page): string[] {
 	const requestPaths: string[] = [];
 
@@ -183,5 +213,64 @@ test.describe('Dashboard system stats websocket', () => {
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)
 		).toBe(1);
+	});
+});
+
+test.describe('Dashboard environment action tooltips', () => {
+	test('uses hover tooltips on hover-capable devices that expose touch APIs', async ({ page }) => {
+		await mockInputCapabilities(page, false, 5);
+		await mockDashboardStatsWebSocket(page);
+
+		await page.goto(defaultDashboardPath);
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+
+		const detailsButton = page.getByRole('button', { name: 'View Details', exact: true });
+		await expect(detailsButton).toHaveCount(1);
+		await expect(detailsButton).toHaveAttribute('data-tooltip-trigger', '');
+
+		await detailsButton.hover();
+		await expect(page.locator('[data-slot="tooltip-content"]')).toContainText('View Details');
+	});
+
+	test('keeps one keyboard focus target and the Arcane button focus ring', async ({ page }) => {
+		await mockInputCapabilities(page, false, 0);
+		await mockDashboardStatsWebSocket(page);
+
+		await page.goto(defaultDashboardPath);
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+
+		const detailsButton = page.getByRole('button', { name: 'View Details', exact: true });
+		const inspectButton = page.getByRole('button', { name: 'Inspect', exact: true });
+		await expect(detailsButton).toHaveCount(1);
+		await expect(inspectButton).toHaveCount(1);
+
+		await detailsButton.focus();
+		await page.keyboard.press('Tab');
+		await expect(inspectButton).toBeFocused();
+
+		const focusShadow = await inspectButton.evaluate(
+			(element) => getComputedStyle(element).boxShadow
+		);
+		expect(focusShadow).not.toBe('none');
+	});
+
+	test('uses a popover for disabled actions when the primary input cannot hover', async ({
+		page
+	}) => {
+		await mockInputCapabilities(page, true, 5);
+		await mockDashboardStatsWebSocket(page);
+
+		await page.goto(defaultDashboardPath);
+		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
+
+		const useEnvironmentButton = page.getByRole('button', { name: 'Use Environment', exact: true });
+		const disabledTrigger = page
+			.locator('div[data-popover-trigger][data-disabled-child]')
+			.filter({ has: useEnvironmentButton })
+			.first();
+
+		await expect(disabledTrigger).toBeVisible();
+		await disabledTrigger.click();
+		await expect(page.locator('[data-slot="popover-content"]')).toContainText('Current');
 	});
 });

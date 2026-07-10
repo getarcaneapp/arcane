@@ -4,6 +4,7 @@
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import settingsStore from '$lib/stores/config-store';
 	import { toPortHref } from '$lib/utils/navigation';
+	import { mergeProps } from 'bits-ui';
 
 	let {
 		ports = [] as ContainerPorts[],
@@ -93,17 +94,21 @@
 		{#each published as p, i (i)}
 			<ArcaneTooltip.Root interactive>
 				<ArcaneTooltip.Trigger>
-					<a
-						class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-md border border-sky-700/20 px-2 py-1 text-[11px] transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
-						href={toPortHref(p.hostPort!, baseServerUrl)}
-						target="_blank"
-						rel="noopener noreferrer"
-					>
-						<span class="font-medium tabular-nums">{p.hostPort}:{p.containerPort}</span>
-						{#if p.proto}
-							<span class="text-muted-foreground uppercase">{p.proto}</span>
-						{/if}
-					</a>
+					{#snippet child({ props })}
+						{@const triggerProps = mergeProps(props, {
+							class:
+								'ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-md border border-sky-700/20 px-2 py-1 text-[11px] transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-slate-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30',
+							href: toPortHref(p.hostPort!, baseServerUrl),
+							target: '_blank',
+							rel: 'noopener noreferrer'
+						})}
+						<a {...triggerProps}>
+							<span class="font-medium tabular-nums">{p.hostPort}:{p.containerPort}</span>
+							{#if p.proto}
+								<span class="text-muted-foreground uppercase">{p.proto}</span>
+							{/if}
+						</a>
+					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
@@ -134,12 +139,14 @@
 		{#if collapsible && allPorts.length > maxVisible}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<button
-						onclick={() => (expanded = !expanded)}
-						class="bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors"
-					>
-						{expanded ? '−' : `+${hiddenCount}`}
-					</button>
+					{#snippet child({ props })}
+						{@const triggerProps = mergeProps(props, {
+							onclick: () => (expanded = !expanded),
+							class:
+								'bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors'
+						})}
+						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
+					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">

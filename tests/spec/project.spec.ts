@@ -199,9 +199,9 @@ async function createProjectViaUI(page: Page, projectName: string) {
 		})
 		.toBe(TEST_COMPOSE_YAML.trimEnd());
 
-	const createButton = page
-		.getByRole('button', { name: 'Create Project' })
-		.locator('[data-slot="arcane-button"]');
+	const createButton = page.locator('button[data-slot="arcane-button"]', {
+		hasText: 'Create Project'
+	});
 	await expect(createButton).toBeEnabled();
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
@@ -510,9 +510,9 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should validate required fields', async ({ page }) => {
-		const createButton = page
-			.getByRole('button', { name: 'Create Project' })
-			.locator('[data-slot="arcane-button"]');
+		const createButton = page.locator('button[data-slot="arcane-button"]', {
+			hasText: 'Create Project'
+		});
 		await expect(createButton).toBeDisabled();
 
 		await page.getByRole('button', { name: 'My New Project' }).click();
@@ -531,9 +531,9 @@ test.describe('New Compose Project Page', () => {
 			if (msg.type() === 'error') observedErrors.push(msg.text());
 		});
 
-		const createButton = page
-			.getByRole('button', { name: 'Create Project' })
-			.locator('[data-slot="arcane-button"]');
+		const createButton = page.locator('button[data-slot="arcane-button"]', {
+			hasText: 'Create Project'
+		});
 
 		await expect(createButton).toBeVisible();
 
@@ -652,9 +652,9 @@ test.describe('New Compose Project Page', () => {
 			}
 		});
 
-		const createButton = page
-			.getByRole('button', { name: 'Create Project' })
-			.locator('[data-slot="arcane-button"]');
+		const createButton = page.locator('button[data-slot="arcane-button"]', {
+			hasText: 'Create Project'
+		});
 		const createResponsePromise = page.waitForResponse(
 			(response) =>
 				response.request().method() === 'POST' &&
