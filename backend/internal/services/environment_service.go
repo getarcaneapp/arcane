@@ -1871,14 +1871,15 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		}
 
 		syncItem := containerregistry.Sync{
-			ID:           reg.ID,
-			URL:          reg.URL,
-			Description:  reg.Description,
-			Insecure:     reg.Insecure,
-			Enabled:      reg.Enabled,
-			RegistryType: registryType,
-			CreatedAt:    reg.CreatedAt,
-			UpdatedAt:    reg.UpdatedAt,
+			ID:              reg.ID,
+			URL:             reg.URL,
+			Description:     reg.Description,
+			Insecure:        reg.Insecure,
+			Enabled:         reg.Enabled,
+			RegistryType:    registryType,
+			RepositoryNames: reg.RepositoryNames,
+			CreatedAt:       reg.CreatedAt,
+			UpdatedAt:       reg.UpdatedAt,
 		}
 
 		if registryType == registryTypeECR {

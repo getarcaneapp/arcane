@@ -2,19 +2,32 @@
 	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
 	import { ArrowDownIcon } from '$lib/icons';
 	import FormInput from '$lib/components/form/form-input.svelte';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 	import { preventDefault } from '$lib/utils/settings';
 	import { m } from '$lib/paraglide/messages';
 	import type { BuildFormInputsStore } from './build-form.types';
+
+	type RegistryOption = { label: string; value: string; description?: string };
 
 	let {
 		inputs,
 		provider,
 		showAdvanced = $bindable(false),
+		isPushMode = false,
+		registryOptions = [],
+		repositoryOptions = [],
+		fullImageReference = '',
+		registryLoadError = null,
 		onSubmit
 	}: {
 		inputs: BuildFormInputsStore;
 		provider: 'local' | 'depot';
 		showAdvanced?: boolean;
+		isPushMode?: boolean;
+		registryOptions?: RegistryOption[];
+		repositoryOptions?: RegistryOption[];
+		fullImageReference?: string;
+		registryLoadError?: { message?: string } | null;
 		onSubmit?: () => void;
 	} = $props();
 
@@ -25,13 +38,59 @@
 <div class="space-y-7 p-8">
 	<form onsubmit={preventDefault(() => onSubmit?.())} class="space-y-7">
 		<div class="space-y-4">
-			<FormInput
-				label={m.image_tags()}
-				type="text"
-				placeholder={m.image_tags_placeholder()}
-				description={m.image_tags_description()}
-				bind:input={$inputs.tags}
-			/>
+			{#if isPushMode}
+				<SelectWithLabel
+					id="build-push-registry"
+					label={m.build_push_registry_label()}
+					placeholder={m.build_push_registry_placeholder()}
+					options={registryOptions}
+					bind:value={$inputs.registryId.value}
+					triggerClass="w-full"
+				/>
+				{#if registryLoadError}
+					<p class="text-destructive text-xs">{m.build_push_registry_permission()}</p>
+				{:else if registryOptions.length === 0}
+					<p class="text-muted-foreground text-xs">{m.build_push_registry_none()}</p>
+				{/if}
+
+				<SelectWithLabel
+					id="build-push-repository"
+					label={m.build_push_repository_label()}
+					placeholder={m.build_push_repository_placeholder()}
+					options={repositoryOptions}
+					bind:value={$inputs.repositoryName.value}
+					triggerClass="w-full"
+				/>
+				{#if $inputs.registryId.value && repositoryOptions.length === 0 && !registryLoadError}
+					<p class="text-muted-foreground text-xs">{m.build_push_repository_empty()}</p>
+				{/if}
+
+				<FormInput
+					label={m.build_push_tag_label()}
+					type="text"
+					placeholder={m.build_push_tag_placeholder()}
+					bind:input={$inputs.pushTag}
+				/>
+
+				{#if fullImageReference}
+					<div class="space-y-1">
+						<span class="text-muted-foreground text-xs font-medium">
+							{m.build_push_reference_label()}
+						</span>
+						<div class="bg-muted/50 rounded-md px-3 py-2">
+							<code class="text-xs break-all">{fullImageReference}</code>
+						</div>
+					</div>
+				{/if}
+			{:else}
+				<FormInput
+					label={m.image_tags()}
+					type="text"
+					placeholder={m.image_tags_placeholder()}
+					description={m.image_tags_description()}
+					bind:input={$inputs.tags}
+				/>
+			{/if}
 
 			<Collapsible.Root bind:open={showAdvanced}>
 				<Collapsible.Trigger

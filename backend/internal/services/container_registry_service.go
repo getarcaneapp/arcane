@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	ref "github.com/distribution/reference"
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -132,15 +133,20 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 	if err != nil {
 		return nil, err
 	}
+	repositoryNames, err := normalizeRepositoryNames(req.RepositoryNames)
+	if err != nil {
+		return nil, err
+	}
 
 	registry := &models.ContainerRegistry{
-		URL:          req.URL,
-		Description:  req.Description,
-		Insecure:     req.Insecure != nil && *req.Insecure,
-		Enabled:      req.Enabled == nil || *req.Enabled,
-		RegistryType: registryType,
-		CreatedAt:    time.Now(),
-		UpdatedAt:    time.Now(),
+		URL:             req.URL,
+		Description:     req.Description,
+		Insecure:        req.Insecure != nil && *req.Insecure,
+		Enabled:         req.Enabled == nil || *req.Enabled,
+		RegistryType:    registryType,
+		RepositoryNames: repositoryNames,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if registryType == registryTypeECR {
@@ -193,6 +199,15 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 	utils.UpdateIfChanged(&registry.Description, req.Description)
 	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
 	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
+
+	// RepositoryNames: nil pointer means "don't touch"; empty slice means "clear".
+	if req.RepositoryNames != nil {
+		repositoryNames, err := normalizeRepositoryNames(*req.RepositoryNames)
+		if err != nil {
+			return nil, err
+		}
+		registry.RepositoryNames = repositoryNames
+	}
 
 	if err := s.applyRegistryTypeUpdateInternal(registry, req.RegistryType); err != nil {
 		return nil, err
@@ -1142,6 +1157,17 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	needsUpdate = utils.UpdateIfChanged(&existing.Insecure, item.Insecure) || needsUpdate
 	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
 
+	// Sync repository names from the manager. normalizeRepositoryNames ensures
+	// a deterministic representation so the comparison below is meaningful.
+	normalizedRepoNames, err := normalizeRepositoryNames(item.RepositoryNames)
+	if err != nil {
+		return false, err
+	}
+	if !stringSlicesEqualInternal(existing.RepositoryNames, normalizedRepoNames) {
+		existing.RepositoryNames = normalizedRepoNames
+		needsUpdate = true
+	}
+
 	// Clear stale credentials when registry type changes during sync
 	if newType != existing.RegistryType {
 		if newType == registryTypeECR {
@@ -1200,20 +1226,25 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 	if err != nil {
 		return err
 	}
+	repositoryNames, err := normalizeRepositoryNames(item.RepositoryNames)
+	if err != nil {
+		return err
+	}
 
 	newRegistry := &models.ContainerRegistry{
 		BaseModel: models.BaseModel{
 			ID: item.ID,
 		},
-		URL:            item.URL,
-		Description:    item.Description,
-		Insecure:       item.Insecure,
-		Enabled:        item.Enabled,
-		RegistryType:   registryType,
-		AWSAccessKeyID: item.AWSAccessKeyID,
-		AWSRegion:      item.AWSRegion,
-		CreatedAt:      time.Now(),
-		UpdatedAt:      time.Now(),
+		URL:             item.URL,
+		Description:     item.Description,
+		Insecure:        item.Insecure,
+		Enabled:         item.Enabled,
+		RegistryType:    registryType,
+		RepositoryNames: repositoryNames,
+		AWSAccessKeyID:  item.AWSAccessKeyID,
+		AWSRegion:       item.AWSRegion,
+		CreatedAt:       time.Now(),
+		UpdatedAt:       time.Now(),
 	}
 
 	if registryType == registryTypeGeneric {
@@ -1254,6 +1285,56 @@ func normalizeRegistryTypeInternal(value string) (string, error) {
 			Message: "Registry type must be one of: generic, ecr",
 		}
 	}
+}
+
+// normalizeRepositoryNames trims each entry, filters out empty strings, and
+// deduplicates while preserving first-occurrence order. Every non-empty entry
+// must be a valid Docker repository path prefix. It returns a non-nil slice
+// (possibly empty) so that GORM always serializes to a JSON array.
+func normalizeRepositoryNames(raw []string) (models.StringSlice, error) {
+	if len(raw) == 0 {
+		return models.StringSlice{}, nil
+	}
+
+	seen := make(map[string]bool, len(raw))
+	result := make(models.StringSlice, 0, len(raw))
+	for _, entry := range raw {
+		trimmed := strings.TrimSpace(entry)
+		if trimmed == "" {
+			continue
+		}
+		if _, err := ref.ParseNormalizedNamed("registry.invalid/" + trimmed + "/placeholder:latest"); err != nil {
+			return nil, &models.ValidationError{
+				Field:   "repositoryNames",
+				Message: fmt.Sprintf("invalid repository namespace %q", trimmed),
+			}
+		}
+		if seen[trimmed] {
+			continue
+		}
+		seen[trimmed] = true
+		result = append(result, trimmed)
+	}
+	return result, nil
+}
+
+// stringSlicesEqualInternal reports whether two string slices contain the
+// same elements in the same order. Nil and empty slices are treated as equal
+// to simplify the sync comparison where a missing field is equivalent to an
+// empty list.
+func stringSlicesEqualInternal(a, b []string) bool {
+	if len(a) == 0 && len(b) == 0 {
+		return true
+	}
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, existingMap map[string]*models.ContainerRegistry, syncedIDs map[string]bool) error {
