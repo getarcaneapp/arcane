@@ -647,6 +647,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	}
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
+	tag = tagWithFallbackInternal(tag, s.parseImageReference(imageRef))
 
 	return &localImageSnapshot{
 		ImageID:       inspectResponse.ID,
@@ -915,10 +916,15 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 	}
 
 	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
-	if tag == "<none>" && fallback != nil && strings.TrimSpace(fallback.Tag) != "" {
-		tag = fallback.Tag
-	}
+	tag = tagWithFallbackInternal(tag, fallback)
 	return s.savePreparedUpdateResultInternal(ctx, imageID, repo, tag, result)
+}
+
+func tagWithFallbackInternal(tag string, fallback *ImageParts) string {
+	if tag == "<none>" && fallback != nil && strings.TrimSpace(fallback.Tag) != "" {
+		return fallback.Tag
+	}
+	return tag
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
