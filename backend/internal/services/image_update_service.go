@@ -682,7 +682,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	if err != nil {
 		return nil, err
 	}
-	if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result); saveErr != nil {
+	if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result, s.parseImageReference(imageRef)); saveErr != nil {
 		slog.WarnContext(ctx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
 	}
 	return result, nil
@@ -712,7 +712,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshotInternal(ctx context.Co
 		return s.savePreparedUpdateResultInternal(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
-	return s.saveUpdateResultByIDInternal(ctx, imageID, result)
+	return s.saveUpdateResultByIDInternal(ctx, imageID, result, parts)
 }
 
 func buildImageUpdateRepositoryInternal(parts *ImageParts) string {
@@ -900,7 +900,7 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	return tx.Save(updateRecord).Error
 }
 
-func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response) error {
+func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response, fallback *ImageParts) error {
 	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
 		return err
@@ -915,6 +915,9 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 	}
 
 	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
+	if tag == "<none>" && fallback != nil && strings.TrimSpace(fallback.Tag) != "" {
+		tag = fallback.Tag
+	}
 	return s.savePreparedUpdateResultInternal(ctx, imageID, repo, tag, result)
 }
 
