@@ -1,14 +1,12 @@
 package middleware
 
 import (
-	"bytes"
 	"context"
 	"errors"
-	"fmt"
-	"io"
 	"log/slog"
 	"net/http"
 	"path"
+	"slices"
 	"strings"
 	"time"
 
@@ -449,34 +447,23 @@ func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string
 		return nil, &common.EnvironmentInvalidProxyTargetError{Err: err}
 	}
 
-	var bodyBytes []byte
-	if srcReq.Body != nil {
-		var err error
-		bodyBytes, err = io.ReadAll(srcReq.Body)
-		_ = srcReq.Body.Close()
-		if err != nil {
-			return nil, fmt.Errorf("failed to read request body: %w", err)
-		}
-	}
+	slog.DebugContext(srcReq.Context(), "Creating proxy request",
+		"method", srcReq.Method,
+		"target", target,
+		"contentLength", srcReq.ContentLength,
+		"contentType", srcReq.Header.Get("Content-Type"),
+		"transferEncoding", srcReq.TransferEncoding)
 
-	slog.DebugContext(srcReq.Context(), "Creating proxy request", "method", srcReq.Method, "target", target, "contentLength", srcReq.ContentLength, "contentType", srcReq.Header.Get("Content-Type"), "bodyLength", len(bodyBytes), "body", string(bodyBytes))
-
-	var requestBody io.ReadCloser
-	var getBody func() (io.ReadCloser, error)
-	if len(bodyBytes) > 0 {
-		requestBody = io.NopCloser(bytes.NewReader(bodyBytes))
-		getBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-		}
-	}
 	requestURL := *validatedTarget
 	req := (&http.Request{
-		Method:  srcReq.Method,
-		URL:     &requestURL,
-		Host:    requestURL.Host,
-		Header:  make(http.Header),
-		Body:    requestBody,
-		GetBody: getBody,
+		Method:           srcReq.Method,
+		URL:              &requestURL,
+		Host:             requestURL.Host,
+		Header:           make(http.Header),
+		Body:             srcReq.Body,
+		GetBody:          srcReq.GetBody,
+		ContentLength:    srcReq.ContentLength,
+		TransferEncoding: slices.Clone(srcReq.TransferEncoding),
 	}).WithContext(srcReq.Context())
 
 	skip := edge.GetSkipHeaders()
@@ -484,10 +471,6 @@ func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string
 	edge.SetAuthHeader(req, c)
 	edge.SetAgentToken(req, accessToken)
 	edge.SetForwardedHeaders(req, c.RealIP(), srcReq.Host)
-
-	if len(bodyBytes) > 0 {
-		req.ContentLength = int64(len(bodyBytes))
-	}
 
 	return req, nil
 }

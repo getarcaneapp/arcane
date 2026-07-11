@@ -1,16 +1,37 @@
 package middleware
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
+
+type trackingReadCloser struct {
+	reader io.Reader
+	reads  int
+	closed bool
+}
+
+func (r *trackingReadCloser) Read(p []byte) (int, error) {
+	r.reads++
+	return r.reader.Read(p)
+}
+
+func (r *trackingReadCloser) Close() error {
+	r.closed = true
+	return nil
+}
 
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 	return &EnvironmentMiddleware{
@@ -366,4 +387,103 @@ func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *t
 	_, err := middleware.createProxyRequest(c, "ftp://example.com/containers", nil)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Invalid proxy target URL")
+}
+
+func TestEnvironmentMiddleware_CreateProxyRequest_DoesNotReadBody(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	body := &trackingReadCloser{reader: strings.NewReader("streamed request body")}
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-direct/projects", body)
+	req.ContentLength = 21
+	req.TransferEncoding = []string{"chunked"}
+	req.GetBody = func() (io.ReadCloser, error) {
+		return io.NopCloser(strings.NewReader("streamed request body")), nil
+	}
+	c := e.NewContext(req, recorder)
+
+	proxyReq, err := middleware.createProxyRequest(c, "http://remote.example/projects", nil)
+	require.NoError(t, err)
+
+	assert.Same(t, body, proxyReq.Body)
+	assert.Zero(t, body.reads)
+	assert.False(t, body.closed)
+	assert.Equal(t, req.ContentLength, proxyReq.ContentLength)
+	assert.Equal(t, req.TransferEncoding, proxyReq.TransferEncoding)
+	require.NotNil(t, proxyReq.GetBody)
+	replay, err := proxyReq.GetBody()
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = replay.Close() })
+	replayedBody, err := io.ReadAll(replay)
+	require.NoError(t, err)
+	assert.Equal(t, "streamed request body", string(replayedBody))
+	assert.Zero(t, body.reads)
+}
+
+func TestEnvironmentMiddleware_ProxyHTTP_StreamsLargeChunkedBody(t *testing.T) {
+	const chunkCount = 256
+	chunk := bytes.Repeat([]byte("arcane-stream-"), 2560)
+	expectedHash := sha256.New()
+	for range chunkCount {
+		_, err := expectedHash.Write(chunk)
+		require.NoError(t, err)
+	}
+
+	type uploadResult struct {
+		bytesRead        int64
+		hash             [sha256.Size]byte
+		contentLength    int64
+		transferEncoding []string
+		contentType      string
+		err              error
+	}
+	resultCh := make(chan uploadResult, 1)
+	remote := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hash := sha256.New()
+		bytesRead, err := io.Copy(hash, r.Body)
+		resultCh <- uploadResult{
+			bytesRead:        bytesRead,
+			hash:             [sha256.Size]byte(hash.Sum(nil)),
+			contentLength:    r.ContentLength,
+			transferEncoding: r.TransferEncoding,
+			contentType:      r.Header.Get("Content-Type"),
+			err:              err,
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(remote.Close)
+
+	pipeReader, pipeWriter := io.Pipe()
+	writeErrCh := make(chan error, 1)
+	go func() {
+		var writeErr error
+		for range chunkCount {
+			if _, writeErr = pipeWriter.Write(chunk); writeErr != nil {
+				break
+			}
+		}
+		closeErr := pipeWriter.CloseWithError(writeErr)
+		writeErrCh <- closeErr
+	}()
+
+	middleware := newTestEnvironmentMiddleware()
+	middleware.httpClient = remote.Client()
+	e := echo.New()
+	recorder := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-direct/upload", pipeReader)
+	req.ContentLength = -1
+	req.TransferEncoding = []string{"chunked"}
+	req.Header.Set("Content-Type", "application/octet-stream")
+	c := e.NewContext(req, recorder)
+
+	require.NoError(t, middleware.proxyHTTP(c, remote.URL+"/upload", nil))
+	require.NoError(t, <-writeErrCh)
+	result := <-resultCh
+	require.NoError(t, result.err)
+	assert.Equal(t, http.StatusNoContent, recorder.Code)
+	assert.Equal(t, int64(len(chunk)*chunkCount), result.bytesRead)
+	assert.Equal(t, [sha256.Size]byte(expectedHash.Sum(nil)), result.hash)
+	assert.Equal(t, int64(-1), result.contentLength)
+	assert.Equal(t, []string{"chunked"}, result.transferEncoding)
+	assert.Equal(t, "application/octet-stream", result.contentType)
 }
