@@ -647,6 +647,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	}
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
+	tag = tagWithFallbackInternal(tag, s.parseImageReference(imageRef))
 
 	return &localImageSnapshot{
 		ImageID:       inspectResponse.ID,
@@ -682,7 +683,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 	if err != nil {
 		return nil, err
 	}
-	if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result); saveErr != nil {
+	if saveErr := s.saveUpdateResultByIDInternal(ctx, imageID, result, s.parseImageReference(imageRef)); saveErr != nil {
 		slog.WarnContext(ctx, "Failed to save update result by ID", "imageID", imageID, "error", saveErr.Error())
 	}
 	return result, nil
@@ -712,7 +713,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshotInternal(ctx context.Co
 		return s.savePreparedUpdateResultInternal(ctx, syntheticID, repository, parts.Tag, result)
 	}
 
-	return s.saveUpdateResultByIDInternal(ctx, imageID, result)
+	return s.saveUpdateResultByIDInternal(ctx, imageID, result, parts)
 }
 
 func buildImageUpdateRepositoryInternal(parts *ImageParts) string {
@@ -900,7 +901,7 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	return tx.Save(updateRecord).Error
 }
 
-func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response) error {
+func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, imageID string, result *imageupdate.Response, fallback *ImageParts) error {
 	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
 		return err
@@ -915,7 +916,15 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 	}
 
 	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
+	tag = tagWithFallbackInternal(tag, fallback)
 	return s.savePreparedUpdateResultInternal(ctx, imageID, repo, tag, result)
+}
+
+func tagWithFallbackInternal(tag string, fallback *ImageParts) string {
+	if tag == "<none>" && fallback != nil && strings.TrimSpace(fallback.Tag) != "" {
+		return fallback.Tag
+	}
+	return tag
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
