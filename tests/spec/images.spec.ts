@@ -60,6 +60,23 @@ test.beforeEach(async ({ page }) => {
 });
 
 test.describe('Images Page', () => {
+	test('loads ignored vulnerabilities from a direct tab URL', async ({ page }) => {
+		const ignoredResponse = page.waitForResponse((response) => {
+			const request = response.request();
+			return (
+				request.method() === 'GET' &&
+				new URL(response.url()).pathname.endsWith('/vulnerabilities/ignored')
+			);
+		});
+
+		await page.goto('/images/vulnerabilities?tab=ignored');
+		const response = await ignoredResponse;
+		expect(response.ok()).toBeTruthy();
+		await expect(
+			page.getByRole('tab', { name: 'Ignored Vulnerabilities', exact: true })
+		).toHaveAttribute('data-state', 'active');
+	});
+
 	test('should display the images page title and description', async ({ page }) => {
 		await navigateToImages(page);
 

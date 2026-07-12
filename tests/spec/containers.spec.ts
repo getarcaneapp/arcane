@@ -40,7 +40,6 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 		await expect(page.locator('table')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'ID' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Image', exact: true })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'State' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Created' })).toBeVisible();

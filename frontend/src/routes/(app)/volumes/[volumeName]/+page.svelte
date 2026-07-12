@@ -22,6 +22,7 @@
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import PropertyItem from '$lib/components/property-item.svelte';
 	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 	let volume = $state(untrack(() => data.volume));
@@ -36,13 +37,16 @@
 	let isLoading = $state({ remove: false });
 	const createdDate = $derived(volume.createdAt ? formatDateTimeShort(volume.createdAt) : m.common_unknown());
 
-	let selectedTab = $state('overview');
-
 	const tabItems = $derived([
 		{ value: 'overview', label: m.common_overview() },
 		{ value: 'browser', label: m.volumes_nav_browser() },
 		{ value: 'backups', label: m.volumes_nav_backups() }
 	]);
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'overview'
+	});
+	const selectedTab = $derived(urlTab.value);
 
 	async function handleRemoveVolumeConfirm(volumeName: string) {
 		const safeName = volumeName?.trim() || m.common_unknown();
@@ -88,7 +92,7 @@
 	);
 
 	function onTabChange(value: string) {
-		selectedTab = value;
+		urlTab.select(value);
 	}
 </script>
 

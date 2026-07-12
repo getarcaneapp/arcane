@@ -79,6 +79,48 @@ async function selectSettingOption(page: Page, trigger: Locator, optionText: str
 test.describe('Environment Settings UI', () => {
 	test.describe.configure({ mode: 'serial' });
 
+	test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
+		await page.goto('/settings');
+		await page.waitForLoadState('load');
+
+		const jobScheduleCategory = page
+			.getByRole('button')
+			.filter({ hasText: 'Job Schedule' })
+			.first();
+		await expect(jobScheduleCategory).toBeVisible();
+		await jobScheduleCategory.click();
+
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('jobs');
+		await expect(page.getByRole('tab', { name: 'Job Schedules', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+
+		const generalTab = page.getByRole('tab', { name: 'General', exact: true });
+		await generalTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
+		await expect(generalTab).toHaveAttribute('data-state', 'active');
+
+		const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
+		await dockerTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('docker');
+		await page.reload();
+		await expect(dockerTab).toHaveAttribute('data-state', 'active');
+
+		await page.goBack();
+		await expect(page).toHaveURL(/\/settings$/);
+
+		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
+		const canonicalUrl = new URL(page.url());
+		expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
+		expect(canonicalUrl.hash).toBe('#tab-state');
+		await expect(page.getByRole('tab', { name: 'General', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+	});
+
 	test('should update and save environment details', async ({ page }) => {
 		test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
 		const envName = `settings-ui-${Date.now().toString().slice(-5)}`;
@@ -87,7 +129,7 @@ test.describe('Environment Settings UI', () => {
 		try {
 			await createDirectEnvironmentViaUI(page, envName);
 			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(/\/environments\/[^/]+$/);
+			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=general$/);
 
 			const environmentId = new URL(page.url()).pathname.split('/').pop()!;
 			const nameInput = page.locator('#env-name');

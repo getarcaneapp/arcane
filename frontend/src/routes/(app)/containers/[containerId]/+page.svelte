@@ -49,11 +49,11 @@
 	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
 	import { runContainerLifecycleAction } from '$lib/utils/container-actions';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);
 
-	let selectedTab = $state<string>('overview');
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
 
@@ -263,22 +263,20 @@
 		{ value: 'inspect', label: m.tabs_inspect(), icon: InspectIcon }
 	]);
 
-	const activeTab = $derived.by(() => {
-		if (tabItems.some((t) => t.value === selectedTab)) {
-			return selectedTab;
-		}
-
-		return tabItems[0]?.value ?? 'overview';
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'overview'
 	});
+	const activeTab = $derived(urlTab.value);
 
 	function onTabChange(value: string) {
-		selectedTab = value;
+		urlTab.select(value);
 	}
 
 	async function navigateToNetworkPortMappings() {
 		if (!showNetworkTab) return;
 
-		selectedTab = 'network';
+		urlTab.select('network');
 		await tick();
 
 		requestAnimationFrame(() => {

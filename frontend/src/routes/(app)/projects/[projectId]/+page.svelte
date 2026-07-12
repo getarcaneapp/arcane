@@ -38,6 +38,7 @@
 	import { toGitCommitUrl } from '$lib/utils/navigation';
 	import { toSafeHref } from '$lib/utils/navigation';
 	import { PersistedState } from 'runed';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
@@ -268,7 +269,8 @@
 
 	let autoScrollStackLogs = $state(true);
 
-	let selectedTab = $state<'services' | 'compose' | 'logs'>('compose');
+	type ProjectTab = 'services' | 'compose' | 'logs';
+	let selectedTab = $state<ProjectTab>('compose');
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let overrideOpen = $state(false);
@@ -439,6 +441,12 @@
 
 	let prefs: PersistedState<ComposeUIPrefs> | null = null;
 	let lastPrefsProjectId = $state<string | null>(null);
+	const urlTab = useUrlTab<ProjectTab>({
+		validTabs: () => tabItems.map((tab) => tab.value as ProjectTab),
+		defaultTab: () => selectedTab,
+		ready: () => lastPrefsProjectId === project?.id
+	});
+	const activeTab = $derived(urlTab.value);
 
 	function ensureIncludeFileUiState(relativePath: string) {
 		if (includeFilesPanelStates[relativePath] === undefined) {
@@ -1307,9 +1315,10 @@
 		{backUrl}
 		backLabel={m.common_back()}
 		{tabItems}
-		{selectedTab}
+		selectedTab={activeTab}
 		onTabChange={(value: string) => {
-			selectedTab = value as 'services' | 'compose' | 'logs';
+			selectedTab = value as ProjectTab;
+			urlTab.select(value);
 			persistPrefs();
 		}}
 	>

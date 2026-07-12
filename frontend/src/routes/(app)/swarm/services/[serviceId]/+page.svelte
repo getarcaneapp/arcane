@@ -52,11 +52,11 @@
 	} from '$lib/utils/docker';
 	import { hasPermission } from '$lib/utils/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);
 
-	let userSelectedTab = $state<string>('overview');
 	let userScaleReplicas = $state<number | null>(null);
 	let userScaleReplicasServiceId = $state<string | null>(null);
 	let isLoading = $state({ update: false, rollback: false, remove: false, scale: false });
@@ -182,13 +182,14 @@
 		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
 	]);
 
-	const selectedTab = $derived.by(() => {
-		if (tabItems.some((tab) => tab.value === userSelectedTab)) return userSelectedTab;
-		return tabItems[0]?.value ?? 'overview';
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'overview'
 	});
+	const selectedTab = $derived(urlTab.value);
 
 	function onTabChange(value: string) {
-		userSelectedTab = value;
+		urlTab.select(value);
 	}
 
 	function onScaleReplicasInput(event: Event) {

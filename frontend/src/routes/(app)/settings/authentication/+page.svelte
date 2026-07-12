@@ -30,10 +30,10 @@
 	import { untrack } from 'svelte';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { mergeProps } from 'bits-ui';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data }: PageProps = $props();
 	type AuthenticationTab = 'settings' | 'federated';
-	let activeTab: AuthenticationTab = $state(untrack(() => (data.activeAuthTab === 'federated' ? 'federated' : 'settings')));
 	const formState = getContext('settingsFormState') as
 		| {
 				hasChanges: boolean;
@@ -56,10 +56,11 @@
 				}
 			] satisfies TabItem[]
 	);
-
-	function handleAuthenticationTabChange(value: string) {
-		activeTab = value === 'federated' ? 'federated' : 'settings';
-	}
+	const urlTab = useUrlTab<AuthenticationTab>({
+		validTabs: () => authenticationTabItems.map((tab) => tab.value as AuthenticationTab),
+		defaultTab: () => 'settings'
+	});
+	const activeTab = $derived(urlTab.value);
 
 	// OIDC role mappings — co-located with the OIDC settings so admins
 	// configure the groups claim and the mappings that read it in one place.
@@ -319,7 +320,7 @@
 >
 	{#snippet mainContent()}
 		<Tabs.Root value={activeTab}>
-			<TabBar items={authenticationTabItems} value={activeTab} onValueChange={handleAuthenticationTabChange} />
+			<TabBar items={authenticationTabItems} value={activeTab} onValueChange={urlTab.select} />
 
 			<Tabs.Content value="settings" class="mt-6">
 				<fieldset disabled={isReadOnly} class="relative space-y-8">

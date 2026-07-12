@@ -10,7 +10,6 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { cn } from '$lib/utils';
 	import { goto, invalidateAll } from '$app/navigation';
-	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
@@ -22,6 +21,7 @@
 	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
 	import { createSettingsForm } from '$lib/utils/settings-form';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
@@ -52,7 +52,6 @@
 
 	let currentEnvironment = $derived(environmentStore.selected);
 
-	let activeTab = $state('general');
 	let activeSecurityTab = $state('trivy');
 
 	let isRefreshing = $state(false);
@@ -174,7 +173,11 @@
 		return items;
 	});
 
-	const tabValues = $derived(new Set(tabItems.map((tab) => tab.value)));
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'general'
+	});
+	const activeTab = $derived(urlTab.value);
 	const securityTabItems = $derived.by((): TabItem[] => [
 		{
 			value: 'trivy',
@@ -189,21 +192,7 @@
 	]);
 
 	$effect(() => {
-		if (!tabValues.has(activeTab)) {
-			activeTab = 'general';
-		}
-	});
-
-	$effect(() => {
-		const tabFromUrl = page.url.searchParams.get('tab');
-		if (!tabFromUrl || !tabValues.has(tabFromUrl) || tabFromUrl === activeTab) {
-			return;
-		}
-		if (tabFromUrl === 'gitops') {
-			goto(`/environments/${environment.id}/gitops`);
-			return;
-		}
-		activeTab = tabFromUrl;
+		if (activeTab === 'gitops') void goto(`/environments/${environment.id}/gitops`);
 	});
 
 	function handleTabChange(value: string) {
@@ -211,7 +200,7 @@
 			goto(`/environments/${environment.id}/gitops`);
 			return;
 		}
-		activeTab = value;
+		urlTab.select(value);
 	}
 
 	const formSchema = environmentFormSchema;
@@ -650,7 +639,7 @@
 		</div>
 	{/if}
 
-	<Tabs.Root bind:value={activeTab} class="w-full">
+	<Tabs.Root value={activeTab} class="w-full">
 		<div class="my-4">
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>

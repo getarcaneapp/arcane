@@ -7,7 +7,7 @@
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '$lib/types/environment';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { untrack } from 'svelte';
+	import { onMount, untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
 	import { toast } from 'svelte-sonner';
@@ -16,6 +16,7 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '$lib/utils/vulnerability';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 
@@ -26,7 +27,11 @@
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.vulnerabilityRequestOptions));
 	let isLoading = $state({ refreshing: false, scanningAll: false });
 	let scanProgress = $state({ current: 0, total: 0 });
-	let activeTab = $state('vulnerabilities');
+	const urlTab = useUrlTab({
+		validTabs: () => ['vulnerabilities', 'ignored'],
+		defaultTab: () => 'vulnerabilities'
+	});
+	const activeTab = $derived(urlTab.value);
 	let scanPollTimeout: ReturnType<typeof setTimeout> | null = null;
 	// Set once on destroy so an in-flight poll tick can't re-arm a timer on a dead component.
 	let destroyed = false;
@@ -177,11 +182,17 @@
 	}
 
 	function handleTabChange(value: string) {
-		activeTab = value;
+		urlTab.select(value);
 		if (value === 'ignored' && ignoredVulnerabilities.data.length === 0) {
-			loadIgnoredVulnerabilities();
+			void loadIgnoredVulnerabilities();
 		}
 	}
+
+	onMount(() => {
+		if (activeTab === 'ignored' && ignoredVulnerabilities.data.length === 0) {
+			void loadIgnoredVulnerabilities();
+		}
+	});
 
 	useEnvironmentRefresh(refreshAll);
 

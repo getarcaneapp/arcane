@@ -148,6 +148,22 @@ async function mockDepotConfiguredSettings(page: Page) {
 }
 
 test.describe('Build workspace provider flows', () => {
+	test('persists the selected primary tab in the URL', async ({ page }) => {
+		await navigateToBuildWorkspace(page);
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('build');
+
+		const historyTab = page.getByRole('tab', { name: 'Build History', exact: true });
+		await historyTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('history');
+		await expect(historyTab).toHaveAttribute('data-state', 'active');
+
+		await page.reload();
+		await expect(page.getByRole('tab', { name: 'Build History', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+	});
+
 	test('submits remote git build context from the dedicated context mode', async ({ page }) => {
 		await navigateToBuildWorkspace(page);
 		await switchContextMode(page, 'Remote Git');

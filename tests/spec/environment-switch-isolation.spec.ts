@@ -251,7 +251,7 @@ test.describe('Environment switch isolation', () => {
 			document.body.append(link);
 		});
 		await page.locator('#same-route-navigation').click();
-		await expect(page).toHaveURL('/containers/route-b');
+		await expect(page).toHaveURL('/containers/route-b?tab=overview');
 		await expect(page.getByRole('heading', { name: 'Route B Container' })).toBeVisible();
 		await expect(page.getByRole('tab', { name: 'Overview' })).toHaveAttribute(
 			'aria-selected',
@@ -261,7 +261,7 @@ test.describe('Environment switch isolation', () => {
 		await page.getByRole('button', { name: 'Redeploy', exact: true }).click();
 		const dialog = page.getByRole('dialog');
 		await dialog.getByRole('button', { name: 'Redeploy', exact: true }).click();
-		await expect(page).toHaveURL('/containers/route-redeployed');
+		await expect(page).toHaveURL('/containers/route-redeployed?tab=overview');
 		await expect(page.getByRole('heading', { name: 'Redeployed Container' })).toBeVisible();
 	});
 });
