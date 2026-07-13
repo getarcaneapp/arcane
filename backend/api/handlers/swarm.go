@@ -158,6 +158,43 @@ type GetSwarmNodeAgentDeploymentOutput struct {
 	Body base.ApiResponse[SwarmNodeAgentDeployment]
 }
 
+type ReconcileSwarmNodeAgentsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          swarmtypes.NodeAgentReconcileRequest
+}
+
+type ReconcileSwarmNodeAgentsOutput struct {
+	Body base.ApiResponse[swarmtypes.NodeAgentReconcileResponse]
+}
+
+type PutSwarmNodeAgentBindingInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NodeID        string `path:"nodeId" doc:"Node ID"`
+	Body          swarmtypes.NodeAgentBindingRequest
+}
+
+type PutSwarmNodeAgentBindingOutput struct {
+	Body base.ApiResponse[swarmtypes.NodeSummary]
+}
+
+type DeleteSwarmNodeAgentBindingInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NodeID        string `path:"nodeId" doc:"Node ID"`
+}
+
+type DeleteSwarmNodeAgentBindingOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type DeleteSwarmNodeAgentDeploymentInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	NodeID        string `path:"nodeId" doc:"Node ID"`
+}
+
+type DeleteSwarmNodeAgentDeploymentOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
 type GetSwarmNodeIdentityInput struct{}
 
 type GetSwarmNodeIdentityOutput struct {
@@ -359,6 +396,23 @@ type JoinSwarmOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type GetSwarmJoinCandidatesInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+}
+
+type GetSwarmJoinCandidatesOutput struct {
+	Body base.ApiResponse[[]swarmtypes.SwarmJoinCandidate]
+}
+
+type JoinSwarmEnvironmentsInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	Body          swarmtypes.SwarmJoinEnvironmentsRequest
+}
+
+type JoinSwarmEnvironmentsOutput struct {
+	Body base.ApiResponse[swarmtypes.SwarmJoinEnvironmentsResponse]
+}
+
 type LeaveSwarmInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.SwarmLeaveRequest
@@ -532,6 +586,10 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-nodes", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes", Summary: "List swarm nodes", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListNodes)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Get swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetNode)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node-agent-deployment", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Get swarm node agent deployment snippets", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.GetNodeAgentDeployment)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "reconcile-swarm-node-agents", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/agents/reconcile", Summary: "Reconcile swarm node agent bindings", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.ReconcileNodeAgents)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "put-swarm-node-agent-binding", Method: http.MethodPut, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Attach a visible environment to a swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.PutNodeAgentBinding)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-binding", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Detach a visible environment from a swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNodeAgentBinding)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-deployment", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Remove a dedicated swarm node agent registration", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNodeAgentDeployment)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-node", Method: http.MethodPatch, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Update swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.UpdateNode)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Delete swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNode)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "promote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/promote", Summary: "Promote swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.PromoteNode)
@@ -555,6 +613,8 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-info", Method: http.MethodGet, Path: "/environments/{id}/swarm/info", Summary: "Get swarm info", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetSwarmInfo)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "init-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/init", Summary: "Initialize swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmInit, h.InitSwarm)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/join", Summary: "Join swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmJoin, h.JoinSwarm)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-join-candidates", Method: http.MethodGet, Path: "/environments/{id}/swarm/join-candidates", Summary: "List environments available for Easy Join", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.GetJoinCandidates)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm-environments", Method: http.MethodPost, Path: "/environments/{id}/swarm/join-environments", Summary: "Join environments to a swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.JoinEnvironments)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "leave-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/leave", Summary: "Leave swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmLeave, h.LeaveSwarm)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "unlock-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/unlock", Summary: "Unlock swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.UnlockSwarm)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-unlock-key", Method: http.MethodGet, Path: "/environments/{id}/swarm/unlock-key", Summary: "Get swarm unlock key", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.GetUnlockKey)
@@ -840,12 +900,13 @@ func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*
 	return &GetSwarmNodeOutput{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
 }
 
-// GetNodeAgentDeployment returns deployment snippets for attaching an Arcane agent to a swarm node.
+// GetNodeAgentDeployment returns deployment snippets for attaching an Arcane Remote Environment to a swarm node.
 //
-// It requires admin privileges, ensures a hidden node-agent environment exists
-// for the target node, optionally rotates the environment token, generates edge
-// deployment snippets, and refreshes the node summary so the response includes
-// the latest agent status.
+// It ensures a visible node-bound Remote Environment exists for new
+// deployments, reuses legacy hidden registrations when present, optionally
+// rotates the environment token, generates the appropriate deployment snippets,
+// and refreshes the node summary so the response includes the latest agent
+// status.
 //
 // ctx carries request-scoped cancellation, auth, and audit context.
 // input identifies the environment and node and optionally requests token rotation.
@@ -885,12 +946,17 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
 
-	snippets, err := h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
-		EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
-		EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
-		AppURL:            h.cfg.GetAppURL(),
-	})
+	var snippets *services.DeploymentSnippets
+	if env.IsEdge {
+		snippets, err = h.environmentService.GenerateEdgeDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey, &edge.Config{
+			EdgeMTLSMode:      h.cfg.EdgeMTLSMode,
+			EdgeMTLSCAFile:    h.cfg.EdgeMTLSCAFile,
+			EdgeMTLSAssetsDir: h.cfg.EdgeMTLSAssetsDir,
+			AppURL:            h.cfg.GetAppURL(),
+		})
+	} else {
+		snippets, err = h.environmentService.GenerateDeploymentSnippets(ctx, env.ID, h.cfg.GetAppURL(), apiKey)
+	}
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -913,6 +979,71 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 			},
 		},
 	}, nil
+}
+
+// ReconcileNodeAgents verifies and persists unique visible-environment node bindings.
+func (h *SwarmHandler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*ReconcileSwarmNodeAgentsOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	result, err := h.swarmService.ReconcileNodeAgents(ctx, input.EnvironmentID)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to reconcile swarm node agents")
+	}
+	return &ReconcileSwarmNodeAgentsOutput{Body: base.ApiResponse[swarmtypes.NodeAgentReconcileResponse]{Success: true, Data: *result}}, nil
+}
+
+// PutNodeAgentBinding verifies and attaches an existing visible environment.
+func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*PutSwarmNodeAgentBindingOutput, error) {
+	if h.swarmService == nil || h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	if _, err := h.swarmService.BindNodeAgent(ctx, input.EnvironmentID, input.NodeID, input.Body); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	if input.Body.ReplaceDeployment {
+		user, err := requireUserInternal(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if err := h.environmentService.DeleteSwarmNodeAgentDeployment(ctx, input.EnvironmentID, input.NodeID, &user.ID, &user.Username); err != nil {
+			return nil, huma.Error500InternalServerError(err.Error())
+		}
+	}
+
+	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to refresh swarm node binding")
+	}
+	return &PutSwarmNodeAgentBindingOutput{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
+}
+
+// DeleteNodeAgentBinding detaches the visible environment currently bound to a node.
+func (h *SwarmHandler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*DeleteSwarmNodeAgentBindingOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DeleteSwarmNodeAgentBindingOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm node environment detached"}}}, nil
+}
+
+// DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
+func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*DeleteSwarmNodeAgentDeploymentOutput, error) {
+	if h.environmentService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := h.environmentService.DeleteSwarmNodeAgentDeployment(ctx, input.EnvironmentID, input.NodeID, &user.ID, &user.Username); err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &DeleteSwarmNodeAgentDeploymentOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Dedicated swarm node agent registration removed"}}}, nil
 }
 
 // GetNodeIdentity returns the swarm identity of the node serving the current request.
@@ -1430,6 +1561,102 @@ func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*J
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "lifecycle.join", "swarm", "cluster", "cluster", map[string]any{"remoteAddrs": input.Body.RemoteAddrs})
 
 	return &JoinSwarmOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Joined swarm successfully"}}}, nil
+}
+
+// GetJoinCandidates lists enabled visible environments the caller can join.
+func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*GetSwarmJoinCandidatesOutput, error) {
+	if h.environmentService == nil || h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
+		return nil, err
+	}
+	nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to list Easy Join candidates")
+	}
+	boundEnvironmentIDs := make(map[string]struct{}, len(nodes))
+	for _, node := range nodes {
+		if node.Agent.EnvironmentID != nil {
+			boundEnvironmentIDs[*node.Agent.EnvironmentID] = struct{}{}
+		}
+	}
+
+	permissions, _ := humamw.PermissionsFromContext(ctx)
+	environments, err := h.environmentService.ListSwarmNodeCandidateEnvironments(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	candidates := make([]swarmtypes.SwarmJoinCandidate, 0, len(environments))
+	for _, environment := range environments {
+		if environment.ID == input.EnvironmentID || permissions == nil || !permissions.Allows(authz.PermSwarmJoin, environment.ID) {
+			continue
+		}
+		if _, bound := boundEnvironmentIDs[environment.ID]; bound {
+			continue
+		}
+		environmentType := "direct"
+		if environment.IsEdge {
+			environmentType = "edge"
+		}
+		candidates = append(candidates, swarmtypes.SwarmJoinCandidate{
+			EnvironmentID:   environment.ID,
+			EnvironmentName: environment.Name,
+			EnvironmentType: environmentType,
+			Status:          environment.Status,
+		})
+	}
+
+	return &GetSwarmJoinCandidatesOutput{Body: base.ApiResponse[[]swarmtypes.SwarmJoinCandidate]{Success: true, Data: candidates}}, nil
+}
+
+// JoinEnvironments performs Easy Join without returning manager join tokens.
+func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*JoinSwarmEnvironmentsOutput, error) {
+	if h.swarmService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
+		return nil, err
+	}
+
+	permissions, _ := humamw.PermissionsFromContext(ctx)
+	for _, target := range input.Body.Targets {
+		if target.EnvironmentID == input.EnvironmentID {
+			return nil, huma.Error400BadRequest("selected swarm manager cannot also be a join target")
+		}
+		if target.Role != swarmtypes.SwarmJoinEnvironmentRoleWorker && target.Role != swarmtypes.SwarmJoinEnvironmentRoleManager {
+			return nil, huma.Error400BadRequest("join target role must be worker or manager")
+		}
+		if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, target.EnvironmentID) {
+			return nil, huma.Error403Forbidden("swarm:join permission is required for every target environment")
+		}
+	}
+
+	if len(input.Body.RemoteAddrs) == 0 {
+		nodes, _, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, pagination.QueryParams{Params: pagination.Params{Limit: -1}})
+		if err != nil {
+			return nil, mapSwarmServiceError(err, "Failed to derive swarm manager addresses")
+		}
+		for _, node := range nodes {
+			if node.ManagerAddress != "" {
+				input.Body.RemoteAddrs = append(input.Body.RemoteAddrs, node.ManagerAddress)
+			}
+		}
+	}
+
+	result, err := h.swarmService.JoinEnvironments(ctx, input.EnvironmentID, input.Body)
+	if err != nil {
+		return nil, mapSwarmServiceError(err, "Failed to join swarm environments")
+	}
+	return &JoinSwarmEnvironmentsOutput{Body: base.ApiResponse[swarmtypes.SwarmJoinEnvironmentsResponse]{Success: true, Data: *result}}, nil
+}
+
+func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentID string) error {
+	permissions, _ := humamw.PermissionsFromContext(ctx)
+	if permissions == nil || !permissions.Allows(authz.PermSwarmNodes, environmentID) || !permissions.Allows(authz.PermSwarmUnlock, environmentID) {
+		return huma.Error403Forbidden("swarm:nodes and swarm:unlock permissions are required on the manager environment")
+	}
+	return nil
 }
 
 // LeaveSwarm removes the target engine from its current swarm cluster.

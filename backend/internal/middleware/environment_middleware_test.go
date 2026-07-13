@@ -367,3 +367,13 @@ func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *t
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Invalid proxy target URL")
 }
+
+func TestIsCentralSwarmManagementPathInternal_IsMethodAware(t *testing.T) {
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodGet, "/swarm/nodes"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodGet, "/swarm/nodes/node-1"))
+	assert.False(t, isCentralSwarmManagementPathInternal(http.MethodPatch, "/swarm/nodes/node-1"))
+	assert.False(t, isCentralSwarmManagementPathInternal(http.MethodPost, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
+}

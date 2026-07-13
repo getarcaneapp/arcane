@@ -8,12 +8,17 @@
 	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
 	import { parallelRefresh } from '$lib/utils/api';
 	import SwarmNodesTable from './nodes-table.svelte';
+	import { hasPermission } from '$lib/utils/auth';
+	import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 
 	let nodes = $state(untrack(() => data.nodes));
 	let requestOptions = $state(untrack(() => data.requestOptions));
 	let isLoading = $state({ refresh: false });
+	let reconciledEnvironmentId = $state<string | null>(null);
+	const currentEnvironmentId = $derived(environmentStore.selected?.id ?? null);
+	const canManageNodes = $derived(hasPermission('swarm:nodes', currentEnvironmentId ?? undefined));
 
 	async function refresh() {
 		await parallelRefresh(
@@ -32,8 +37,20 @@
 
 	useEnvironmentRefresh(refresh);
 
+	$effect(() => {
+		const environmentId = currentEnvironmentId;
+		if (!environmentId || !canManageNodes || reconciledEnvironmentId === environmentId) return;
+		reconciledEnvironmentId = environmentId;
+		void swarmService
+			.reconcileNodeAgents()
+			.then(refresh)
+			.catch(() => undefined);
+	});
+
 	const totalNodes = $derived(nodes?.pagination?.totalItems ?? nodes?.data?.length ?? 0);
-	const uncoveredNodes = $derived((nodes?.data ?? []).filter((node) => node.agent?.state !== 'connected'));
+	const uncoveredNodes = $derived(
+		(nodes?.data ?? []).filter((node) => node.agent?.state !== 'connected' || node.agent?.connected === false)
+	);
 	const uncoveredNodeCount = $derived(uncoveredNodes.length);
 
 	const actionButtons: ActionButton[] = $derived([

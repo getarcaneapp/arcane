@@ -24,11 +24,13 @@
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
+	import EasyJoinDialog from './easy-join-dialog.svelte';
 
 	let {}: PageProps = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id);
 	const canManageSwarm = $derived(hasPermission('swarm:nodes', currentEnvId));
+	const canEasyJoin = $derived(hasPermission('swarm:nodes', currentEnvId) && hasPermission('swarm:unlock', currentEnvId));
 
 	let swarmInfo = $state<SwarmInfo | null>(null);
 	let joinTokens = $state<SwarmJoinTokensResponse | null>(null);
@@ -36,6 +38,7 @@
 	let showManagerToken = $state(false);
 	let showWorkerToken = $state(false);
 	let securityDialogOpen = $state(false);
+	let easyJoinDialogOpen = $state(false);
 	const isSwarmInitialized = $derived(!!swarmInfo?.id);
 
 	let initForm = $state({
@@ -251,6 +254,16 @@
 	}
 
 	const actionButtons: ActionButton[] = $derived([
+		...(isSwarmInitialized && canEasyJoin
+			? [
+					{
+						id: 'easy-join',
+						action: 'create' as const,
+						label: m.swarm_easy_join_action(),
+						onclick: () => (easyJoinDialogOpen = true)
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart',
@@ -261,26 +274,30 @@
 		}
 	]);
 
-	const statCards: StatCardConfig[] = $derived([
-		{
-			title: m.swarm_cluster_stat_cluster(),
-			value: swarmInfo?.id ? swarmInfo.id.slice(0, 12) : m.swarm_cluster_not_initialized(),
-			icon: SettingsIcon,
-			iconColor: 'text-blue-500'
-		},
-		{
-			title: m.swarm_cluster_stat_tokens(),
-			value: joinTokens ? 2 : 0,
-			icon: UsersIcon,
-			iconColor: 'text-emerald-500'
-		},
-		{
-			title: m.swarm_cluster_stat_unlock_key(),
-			value: unlockKey ? m.common_available() : m.common_unavailable(),
-			icon: LockIcon,
-			iconColor: 'text-amber-500'
-		}
-	]);
+	const statCards: StatCardConfig[] = $derived(
+		isSwarmInitialized
+			? [
+					{
+						title: m.swarm_cluster_stat_cluster(),
+						value: swarmInfo?.id ? swarmInfo.id.slice(0, 12) : m.swarm_cluster_not_initialized(),
+						icon: SettingsIcon,
+						iconColor: 'text-blue-500'
+					},
+					{
+						title: m.swarm_cluster_stat_tokens(),
+						value: joinTokens ? 2 : 0,
+						icon: UsersIcon,
+						iconColor: 'text-emerald-500'
+					},
+					{
+						title: m.swarm_cluster_stat_unlock_key(),
+						value: unlockKey ? m.common_available() : m.common_unavailable(),
+						icon: LockIcon,
+						iconColor: 'text-amber-500'
+					}
+				]
+			: []
+	);
 </script>
 
 <ResourcePageLayout
@@ -293,231 +310,271 @@
 >
 	{#snippet mainContent()}
 		<div class="space-y-6 pb-6">
-			<div class="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
-				<Card.Root class="pt-0">
-					<Card.Header>
-						<Card.Title>{m.swarm_cluster_status_title()}</Card.Title>
-						<Card.Description>{m.swarm_cluster_status_subtitle()}</Card.Description>
-						<Card.Action>
-							<ArcaneButton
-								action="inspect"
-								size="sm"
-								customLabel={m.common_actions()}
-								onclick={() => (securityDialogOpen = true)}
-								disabled={!canManageSwarm}
-							/>
-						</Card.Action>
-					</Card.Header>
-					<Card.Content class="pb-6">
-						<div class="divide-border/60 divide-y text-sm">
-							<div class="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
-								<span class="text-muted-foreground">{m.swarm_cluster_id_label()}</span>
-								<span class="font-mono break-all sm:text-right">{swarmInfo?.id ?? m.swarm_cluster_not_initialized()}</span>
+			{#if isSwarmInitialized}
+				<div class="grid gap-6 xl:grid-cols-[minmax(0,1.05fr)_minmax(0,0.95fr)]">
+					<Card.Root class="pt-0">
+						<Card.Header>
+							<Card.Title>{m.swarm_cluster_status_title()}</Card.Title>
+							<Card.Description>{m.swarm_cluster_status_subtitle()}</Card.Description>
+							<Card.Action>
+								<ArcaneButton
+									action="inspect"
+									size="sm"
+									customLabel={m.common_actions()}
+									onclick={() => (securityDialogOpen = true)}
+									disabled={!canManageSwarm}
+								/>
+							</Card.Action>
+						</Card.Header>
+						<Card.Content class="pb-6">
+							<div class="divide-border/60 divide-y text-sm">
+								<div class="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+									<span class="text-muted-foreground">{m.swarm_cluster_id_label()}</span>
+									<span class="font-mono break-all sm:text-right">{swarmInfo?.id ?? m.swarm_cluster_not_initialized()}</span>
+								</div>
+								<div class="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+									<span class="text-muted-foreground">{m.common_created()}</span>
+									<span class="sm:text-right">{swarmInfo?.createdAt ?? m.common_na()}</span>
+								</div>
+								<div class="grid gap-1 pt-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
+									<span class="text-muted-foreground">{m.common_updated()}</span>
+									<span class="sm:text-right">{swarmInfo?.updatedAt ?? m.common_na()}</span>
+								</div>
 							</div>
-							<div class="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
-								<span class="text-muted-foreground">{m.common_created()}</span>
-								<span class="sm:text-right">{swarmInfo?.createdAt ?? m.common_na()}</span>
+						</Card.Content>
+					</Card.Root>
+
+					<Card.Root class="pt-0">
+						<Card.Header>
+							<Card.Title>{m.swarm_cluster_join_tokens_title()}</Card.Title>
+							<Card.Description>{m.swarm_cluster_join_tokens_subtitle()}</Card.Description>
+							<Card.Action>
+								<ArcaneButton
+									action="restart"
+									size="sm"
+									customLabel={m.swarm_cluster_rotate_tokens()}
+									onclick={handleRotateTokens}
+									disabled={!canManageSwarm || !isSwarmInitialized || isLoading.rotateTokens}
+									loading={isLoading.rotateTokens}
+								/>
+							</Card.Action>
+						</Card.Header>
+						<Card.Content class="space-y-4 pb-6">
+							<div class="space-y-2">
+								<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_manager_token_label()}</div>
+								<div class="flex items-center gap-2">
+									<InputGroup.Root class="flex-1">
+										<InputGroup.Input
+											type={showManagerToken ? 'text' : 'password'}
+											value={joinTokens?.manager ?? ''}
+											readonly
+											class="font-mono text-xs"
+										/>
+										<InputGroup.Addon align="inline-end">
+											<InputGroup.Button
+												type="button"
+												size="icon-xs"
+												onclick={() => (showManagerToken = !showManagerToken)}
+												disabled={!joinTokens?.manager}
+												aria-label={showManagerToken ? m.common_hide() : m.common_show()}
+											>
+												{#if showManagerToken}
+													<EyeOffIcon />
+												{:else}
+													<EyeOnIcon />
+												{/if}
+											</InputGroup.Button>
+										</InputGroup.Addon>
+									</InputGroup.Root>
+									{#if joinTokens?.manager}
+										<CopyButton text={joinTokens.manager} />
+									{/if}
+								</div>
 							</div>
-							<div class="grid gap-1 pt-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
-								<span class="text-muted-foreground">{m.common_updated()}</span>
-								<span class="sm:text-right">{swarmInfo?.updatedAt ?? m.common_na()}</span>
+							<div class="space-y-2">
+								<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_worker_token_label()}</div>
+								<div class="flex items-center gap-2">
+									<InputGroup.Root class="flex-1">
+										<InputGroup.Input
+											type={showWorkerToken ? 'text' : 'password'}
+											value={joinTokens?.worker ?? ''}
+											readonly
+											class="font-mono text-xs"
+										/>
+										<InputGroup.Addon align="inline-end">
+											<InputGroup.Button
+												type="button"
+												size="icon-xs"
+												onclick={() => (showWorkerToken = !showWorkerToken)}
+												disabled={!joinTokens?.worker}
+												aria-label={showWorkerToken ? m.common_hide() : m.common_show()}
+											>
+												{#if showWorkerToken}
+													<EyeOffIcon />
+												{:else}
+													<EyeOnIcon />
+												{/if}
+											</InputGroup.Button>
+										</InputGroup.Addon>
+									</InputGroup.Root>
+									{#if joinTokens?.worker}
+										<CopyButton text={joinTokens.worker} />
+									{/if}
+								</div>
 							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
+						</Card.Content>
+					</Card.Root>
+				</div>
 
 				<Card.Root class="pt-0">
 					<Card.Header>
-						<Card.Title>{m.swarm_cluster_join_tokens_title()}</Card.Title>
-						<Card.Description>{m.swarm_cluster_join_tokens_subtitle()}</Card.Description>
-						<Card.Action>
+						<Card.Title>{m.swarm_cluster_update_spec_title()}</Card.Title>
+						<Card.Description>{m.swarm_cluster_update_spec_subtitle()}</Card.Description>
+						<Card.Action class="flex flex-wrap items-center justify-end gap-4">
+							<label class="flex items-center gap-2 text-sm whitespace-nowrap">
+								<Switch id="rotate-worker-token" bind:checked={updateForm.rotateWorkerToken} />
+								<span>{m.swarm_cluster_rotate_worker_token()}</span>
+							</label>
+							<label class="flex items-center gap-2 text-sm whitespace-nowrap">
+								<Switch id="rotate-manager-token" bind:checked={updateForm.rotateManagerToken} />
+								<span>{m.swarm_cluster_rotate_manager_token()}</span>
+							</label>
+							<label class="flex items-center gap-2 text-sm whitespace-nowrap">
+								<Switch id="rotate-unlock-key" bind:checked={updateForm.rotateManagerUnlockKey} />
+								<span>{m.swarm_cluster_rotate_unlock_key()}</span>
+							</label>
 							<ArcaneButton
-								action="restart"
+								action="inspect"
 								size="sm"
-								customLabel={m.swarm_cluster_rotate_tokens()}
-								onclick={handleRotateTokens}
-								disabled={!canManageSwarm || !isSwarmInitialized || isLoading.rotateTokens}
-								loading={isLoading.rotateTokens}
+								customLabel={m.swarm_cluster_load_current_spec()}
+								onclick={loadCurrentSpec}
 							/>
 						</Card.Action>
 					</Card.Header>
 					<Card.Content class="space-y-4 pb-6">
-						<div class="space-y-2">
-							<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_manager_token_label()}</div>
-							<div class="flex items-center gap-2">
-								<InputGroup.Root class="flex-1">
-									<InputGroup.Input
-										type={showManagerToken ? 'text' : 'password'}
-										value={joinTokens?.manager ?? ''}
-										readonly
-										class="font-mono text-xs"
-									/>
-									<InputGroup.Addon align="inline-end">
-										<InputGroup.Button
-											type="button"
-											size="icon-xs"
-											onclick={() => (showManagerToken = !showManagerToken)}
-											disabled={!joinTokens?.manager}
-											aria-label={showManagerToken ? m.common_hide() : m.common_show()}
-										>
-											{#if showManagerToken}
-												<EyeOffIcon />
-											{:else}
-												<EyeOnIcon />
-											{/if}
-										</InputGroup.Button>
-									</InputGroup.Addon>
-								</InputGroup.Root>
-								{#if joinTokens?.manager}
-									<CopyButton text={joinTokens.manager} />
-								{/if}
-							</div>
-						</div>
-						<div class="space-y-2">
-							<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_worker_token_label()}</div>
-							<div class="flex items-center gap-2">
-								<InputGroup.Root class="flex-1">
-									<InputGroup.Input
-										type={showWorkerToken ? 'text' : 'password'}
-										value={joinTokens?.worker ?? ''}
-										readonly
-										class="font-mono text-xs"
-									/>
-									<InputGroup.Addon align="inline-end">
-										<InputGroup.Button
-											type="button"
-											size="icon-xs"
-											onclick={() => (showWorkerToken = !showWorkerToken)}
-											disabled={!joinTokens?.worker}
-											aria-label={showWorkerToken ? m.common_hide() : m.common_show()}
-										>
-											{#if showWorkerToken}
-												<EyeOffIcon />
-											{:else}
-												<EyeOnIcon />
-											{/if}
-										</InputGroup.Button>
-									</InputGroup.Addon>
-								</InputGroup.Root>
-								{#if joinTokens?.worker}
-									<CopyButton text={joinTokens.worker} />
-								{/if}
-							</div>
+						<Input placeholder={m.swarm_cluster_version_placeholder()} bind:value={updateForm.version} class="max-w-sm" />
+						<Textarea
+							rows={22}
+							placeholder={m.swarm_cluster_spec_placeholder()}
+							bind:value={updateForm.spec}
+							class="min-h-[34rem] font-mono text-xs"
+						/>
+						<div class="flex justify-end border-t pt-4">
+							<ArcaneButton
+								action="save"
+								customLabel={m.swarm_cluster_update_spec_action()}
+								onclick={handleUpdateSpec}
+								disabled={!canManageSwarm || isLoading.updateSpec}
+								loading={isLoading.updateSpec}
+							/>
 						</div>
 					</Card.Content>
 				</Card.Root>
-			</div>
+			{:else}
+				<div class="mx-auto w-full max-w-5xl space-y-5 pt-2">
+					<div class="border-border/60 bg-muted/20 rounded-xl border px-5 py-4 sm:px-6">
+						<p class="font-medium">{m.swarm_cluster_setup_title()}</p>
+						<p class="text-muted-foreground mt-1 max-w-3xl text-sm leading-relaxed">
+							{m.swarm_cluster_setup_description()}
+						</p>
+					</div>
 
-			{#if !isSwarmInitialized}
-				<div class="grid gap-6 xl:grid-cols-2">
-					<Card.Root class="pt-0">
-						<Card.Header>
-							<Card.Title>{m.swarm_cluster_initialize_title()}</Card.Title>
-							<Card.Description>{m.swarm_cluster_initialize_subtitle()}</Card.Description>
-						</Card.Header>
-						<Card.Content class="space-y-4 pb-6">
-							<div class="grid gap-3 sm:grid-cols-2">
-								<Input placeholder={m.swarm_cluster_listen_addr_placeholder()} bind:value={initForm.listenAddr} />
-								<Input placeholder={m.swarm_cluster_advertise_addr_placeholder()} bind:value={initForm.advertiseAddr} />
-							</div>
-							<Textarea
-								rows={8}
-								placeholder={m.swarm_cluster_spec_placeholder()}
-								bind:value={initForm.spec}
-								class="font-mono text-xs"
-							/>
-							<div class="grid gap-2 sm:grid-cols-2">
-								<label class="flex items-center gap-2 text-sm">
-									<input type="checkbox" bind:checked={initForm.autoLockManagers} />
-									{m.swarm_cluster_auto_lock_managers()}
-								</label>
-								<label class="flex items-center gap-2 text-sm">
-									<input type="checkbox" bind:checked={initForm.forceNewCluster} />
-									{m.swarm_cluster_force_new_cluster()}
-								</label>
-							</div>
-							<ArcaneButton
-								action="create"
-								customLabel={m.swarm_cluster_initialize_action()}
-								onclick={handleInit}
-								disabled={!canManageSwarm || isLoading.init}
-								loading={isLoading.init}
-							/>
-						</Card.Content>
-					</Card.Root>
+					<div class="grid items-stretch gap-5 lg:grid-cols-2">
+						<Card.Root class="flex h-full flex-col" variant="outlined">
+							<Card.Header icon={SettingsIcon} iconVariant="primary">
+								<div class="min-w-0">
+									<Card.Title>{m.swarm_cluster_initialize_title()}</Card.Title>
+									<Card.Description class="mt-1">{m.swarm_cluster_initialize_description()}</Card.Description>
+								</div>
+							</Card.Header>
+							<Card.Content class="flex flex-1 flex-col gap-5 pb-6">
+								<p class="text-muted-foreground text-sm leading-relaxed">{m.swarm_cluster_initialize_hint()}</p>
 
-					<Card.Root class="pt-0">
-						<Card.Header>
-							<Card.Title>{m.swarm_cluster_join_title()}</Card.Title>
-							<Card.Description>{m.swarm_cluster_join_subtitle()}</Card.Description>
-						</Card.Header>
-						<Card.Content class="space-y-4 pb-6">
-							<Input placeholder={m.swarm_cluster_join_remote_addrs_placeholder()} bind:value={joinForm.remoteAddrs} />
-							<Input
-								placeholder={m.swarm_cluster_join_token_placeholder()}
-								bind:value={joinForm.joinToken}
-								class="font-mono text-xs"
-							/>
-							<div class="grid gap-3 sm:grid-cols-2">
-								<Input placeholder={m.swarm_cluster_listen_addr_placeholder()} bind:value={joinForm.listenAddr} />
-								<Input placeholder={m.swarm_cluster_advertise_addr_placeholder()} bind:value={joinForm.advertiseAddr} />
-							</div>
-							<ArcaneButton
-								action="create"
-								customLabel={m.swarm_cluster_join_action()}
-								onclick={handleJoin}
-								disabled={!canManageSwarm || isLoading.join}
-								loading={isLoading.join}
-							/>
-						</Card.Content>
-					</Card.Root>
+								<details class="border-border/60 bg-muted/15 rounded-lg border">
+									<summary class="cursor-pointer px-4 py-3 text-sm font-medium select-none">
+										{m.swarm_cluster_advanced_settings()}
+									</summary>
+									<div class="space-y-4 border-t px-4 py-4">
+										<div class="grid gap-3 sm:grid-cols-2">
+											<Input placeholder={m.swarm_cluster_listen_addr_placeholder()} bind:value={initForm.listenAddr} />
+											<Input placeholder={m.swarm_cluster_advertise_addr_placeholder()} bind:value={initForm.advertiseAddr} />
+										</div>
+										<Textarea
+											rows={5}
+											placeholder={m.swarm_cluster_spec_placeholder()}
+											bind:value={initForm.spec}
+											class="font-mono text-xs"
+										/>
+										<div class="grid gap-3 sm:grid-cols-2">
+											<label class="flex items-center gap-2 text-sm">
+												<input type="checkbox" bind:checked={initForm.autoLockManagers} />
+												{m.swarm_cluster_auto_lock_managers()}
+											</label>
+											<label class="flex items-center gap-2 text-sm">
+												<input type="checkbox" bind:checked={initForm.forceNewCluster} />
+												{m.swarm_cluster_force_new_cluster()}
+											</label>
+										</div>
+									</div>
+								</details>
+
+								<div class="mt-auto border-t pt-5">
+									<ArcaneButton
+										action="create"
+										customLabel={m.swarm_cluster_initialize_action()}
+										onclick={handleInit}
+										disabled={!canManageSwarm || isLoading.init}
+										loading={isLoading.init}
+									/>
+								</div>
+							</Card.Content>
+						</Card.Root>
+
+						<Card.Root class="flex h-full flex-col" variant="outlined">
+							<Card.Header icon={UsersIcon} iconVariant="emerald">
+								<div class="min-w-0">
+									<Card.Title>{m.swarm_cluster_join_title()}</Card.Title>
+									<Card.Description class="mt-1">{m.swarm_cluster_join_description()}</Card.Description>
+								</div>
+							</Card.Header>
+							<Card.Content class="flex flex-1 flex-col gap-4 pb-6">
+								<label class="space-y-2">
+									<span class="text-sm font-medium">{m.swarm_cluster_manager_addresses_label()}</span>
+									<Input placeholder={m.swarm_cluster_join_remote_addrs_placeholder()} bind:value={joinForm.remoteAddrs} />
+								</label>
+								<label class="space-y-2">
+									<span class="text-sm font-medium">{m.swarm_cluster_join_token_placeholder()}</span>
+									<Input
+										placeholder={m.swarm_cluster_join_token_placeholder()}
+										bind:value={joinForm.joinToken}
+										class="font-mono text-xs"
+									/>
+								</label>
+
+								<details class="border-border/60 bg-muted/15 rounded-lg border">
+									<summary class="cursor-pointer px-4 py-3 text-sm font-medium select-none">
+										{m.swarm_cluster_advanced_settings()}
+									</summary>
+									<div class="grid gap-3 border-t px-4 py-4 sm:grid-cols-2">
+										<Input placeholder={m.swarm_cluster_listen_addr_placeholder()} bind:value={joinForm.listenAddr} />
+										<Input placeholder={m.swarm_cluster_advertise_addr_placeholder()} bind:value={joinForm.advertiseAddr} />
+									</div>
+								</details>
+
+								<div class="mt-auto border-t pt-5">
+									<ArcaneButton
+										action="create"
+										customLabel={m.swarm_cluster_join_action()}
+										onclick={handleJoin}
+										disabled={!canManageSwarm || isLoading.join}
+										loading={isLoading.join}
+									/>
+								</div>
+							</Card.Content>
+						</Card.Root>
+					</div>
 				</div>
 			{/if}
-
-			<Card.Root class="pt-0">
-				<Card.Header>
-					<Card.Title>{m.swarm_cluster_update_spec_title()}</Card.Title>
-					<Card.Description>{m.swarm_cluster_update_spec_subtitle()}</Card.Description>
-					<Card.Action class="flex flex-wrap items-center justify-end gap-4">
-						<label class="flex items-center gap-2 text-sm whitespace-nowrap">
-							<Switch id="rotate-worker-token" bind:checked={updateForm.rotateWorkerToken} />
-							<span>{m.swarm_cluster_rotate_worker_token()}</span>
-						</label>
-						<label class="flex items-center gap-2 text-sm whitespace-nowrap">
-							<Switch id="rotate-manager-token" bind:checked={updateForm.rotateManagerToken} />
-							<span>{m.swarm_cluster_rotate_manager_token()}</span>
-						</label>
-						<label class="flex items-center gap-2 text-sm whitespace-nowrap">
-							<Switch id="rotate-unlock-key" bind:checked={updateForm.rotateManagerUnlockKey} />
-							<span>{m.swarm_cluster_rotate_unlock_key()}</span>
-						</label>
-						<ArcaneButton
-							action="inspect"
-							size="sm"
-							customLabel={m.swarm_cluster_load_current_spec()}
-							onclick={loadCurrentSpec}
-						/>
-					</Card.Action>
-				</Card.Header>
-				<Card.Content class="space-y-4 pb-6">
-					<Input placeholder={m.swarm_cluster_version_placeholder()} bind:value={updateForm.version} class="max-w-sm" />
-					<Textarea
-						rows={22}
-						placeholder={m.swarm_cluster_spec_placeholder()}
-						bind:value={updateForm.spec}
-						class="min-h-[34rem] font-mono text-xs"
-					/>
-					<div class="flex justify-end border-t pt-4">
-						<ArcaneButton
-							action="save"
-							customLabel={m.swarm_cluster_update_spec_action()}
-							onclick={handleUpdateSpec}
-							disabled={!canManageSwarm || isLoading.updateSpec}
-							loading={isLoading.updateSpec}
-						/>
-					</div>
-				</Card.Content>
-			</Card.Root>
 		</div>
 
 		<ResponsiveDialog
@@ -565,5 +622,7 @@
 				</div>
 			{/snippet}
 		</ResponsiveDialog>
+
+		<EasyJoinDialog bind:open={easyJoinDialogOpen} onComplete={refresh} />
 	{/snippet}
 </ResourcePageLayout>

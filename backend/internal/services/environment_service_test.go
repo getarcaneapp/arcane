@@ -625,7 +625,7 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.NotContains(t, edgeSnippets.DockerRun, "-v arcane-data:/data")
 }
 
-func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAndReusesToken(t *testing.T) {
+func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesVisibleEnvironmentAndReusesToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
 	userService := NewUserService(db)
@@ -645,9 +645,9 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAn
 	require.NoError(t, err)
 	require.NotNil(t, createdEnv)
 	require.NotEmpty(t, createdToken)
-	require.Equal(t, "Swarm Node Agent - worker-1", createdEnv.Name)
+	require.Equal(t, "worker-1", createdEnv.Name)
 	require.Equal(t, "edge://swarm-node-node-1234567", createdEnv.ApiUrl)
-	require.True(t, createdEnv.Hidden)
+	require.False(t, createdEnv.Hidden)
 	require.True(t, createdEnv.IsEdge)
 	require.True(t, createdEnv.Enabled)
 	require.Equal(t, string(models.EnvironmentStatusPending), createdEnv.Status)
@@ -695,6 +695,62 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_CreatesHiddenChildAn
 		Order("created_at asc").
 		Find(&apiKeysAfterReuse).Error)
 	require.Len(t, apiKeysAfterReuse, 1)
+}
+
+func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRegistration(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+	parentEnvironmentID := "manager-env"
+	nodeID := "legacy-node"
+	token := "legacy-agent-token"
+	legacy := &models.Environment{
+		BaseModel:           models.BaseModel{ID: "legacy-agent"},
+		Name:                "Legacy node agent",
+		ApiUrl:              "edge://legacy-node",
+		Status:              string(models.EnvironmentStatusOffline),
+		Enabled:             true,
+		IsEdge:              true,
+		Hidden:              true,
+		AccessToken:         &token,
+		ParentEnvironmentID: &parentEnvironmentID,
+		SwarmNodeID:         &nodeID,
+	}
+	if err := db.WithContext(ctx).Create(legacy).Error; err != nil {
+		t.Fatalf("create legacy environment: %v", err)
+	}
+
+	reused, reusedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
+		ctx,
+		parentEnvironmentID,
+		nodeID,
+		"legacy-host",
+		"user-id",
+		"username",
+		false,
+	)
+	if err != nil {
+		t.Fatalf("EnsureSwarmNodeAgentEnvironment() error = %v", err)
+	}
+	if reused.ID != legacy.ID {
+		t.Fatalf("environment ID = %q, want %q", reused.ID, legacy.ID)
+	}
+	if !reused.Hidden {
+		t.Fatal("legacy environment was unexpectedly converted to visible")
+	}
+	if reusedToken != token {
+		t.Fatalf("token = %q, want existing token", reusedToken)
+	}
+
+	var environments []models.Environment
+	if err := db.WithContext(ctx).
+		Where("parent_environment_id = ? AND swarm_node_id = ?", parentEnvironmentID, nodeID).
+		Find(&environments).Error; err != nil {
+		t.Fatalf("list node environments: %v", err)
+	}
+	if len(environments) != 1 {
+		t.Fatalf("environment count = %d, want 1", len(environments))
+	}
 }
 
 // TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd
@@ -756,6 +812,45 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEn
 	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, createdToken)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestEnvironmentService_BindSwarmNodeEnvironment_PreservesVisibleEnvironmentToken(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	token := "existing-agent-token"
+	createTestEnvironment(t, db, "visible-env", "http://visible.example", &token)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	bound, err := svc.BindSwarmNodeEnvironment(ctx, "manager-env", "node-1", "visible-env", false)
+	require.NoError(t, err)
+	require.False(t, bound.Hidden)
+	require.Equal(t, "manager-env", *bound.ParentEnvironmentID)
+	require.Equal(t, "node-1", *bound.SwarmNodeID)
+	require.Equal(t, token, *bound.AccessToken)
+
+	require.NoError(t, svc.DetachSwarmNodeEnvironment(ctx, "manager-env", "node-1"))
+	detached, err := svc.GetEnvironmentByID(ctx, "visible-env")
+	require.NoError(t, err)
+	require.Nil(t, detached.ParentEnvironmentID)
+	require.Nil(t, detached.SwarmNodeID)
+	require.Equal(t, token, *detached.AccessToken)
+}
+
+func TestEnvironmentService_BindSwarmNodeEnvironment_RequiresExplicitRebind(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	createTestEnvironment(t, db, "visible-env", "http://visible.example", nil)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	_, err := svc.BindSwarmNodeEnvironment(ctx, "manager-a", "node-a", "visible-env", false)
+	require.NoError(t, err)
+	_, err = svc.BindSwarmNodeEnvironment(ctx, "manager-b", "node-b", "visible-env", false)
+	require.ErrorContains(t, err, "explicit rebinding is required")
+
+	rebound, err := svc.BindSwarmNodeEnvironment(ctx, "manager-b", "node-b", "visible-env", true)
+	require.NoError(t, err)
+	require.Equal(t, "manager-b", *rebound.ParentEnvironmentID)
+	require.Equal(t, "node-b", *rebound.SwarmNodeID)
 }
 
 func TestEnvironmentService_ListMethods_ExcludeHiddenEnvironments(t *testing.T) {

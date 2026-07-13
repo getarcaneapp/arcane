@@ -25,7 +25,18 @@
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
-	import { EyeOnIcon, TrashIcon, EnvironmentsIcon, InspectIcon, StatsIcon, EyeOffIcon, TestIcon } from '$lib/icons';
+	import {
+		EyeOnIcon,
+		TrashIcon,
+		EnvironmentsIcon,
+		InspectIcon,
+		StatsIcon,
+		EyeOffIcon,
+		TestIcon,
+		ConnectionIcon
+	} from '$lib/icons';
+	import { useEasyJoinCandidates } from '$lib/hooks/use-easy-join-candidates.svelte';
+	import EasyJoinDialog from '../swarm/cluster/easy-join-dialog.svelte';
 
 	let {
 		environments = $bindable(),
@@ -42,6 +53,9 @@
 	let showUpgradeDialog = $state(false);
 	let selectedEnvironmentForUpgrade = $state<Environment | null>(null);
 	let selectedVersionInfoForUpgrade = $state<AppVersionInformation | null>(null);
+	let easyJoinDialogOpen = $state(false);
+	let easyJoinTarget = $state<Environment | null>(null);
+	const easyJoinCandidates = useEasyJoinCandidates();
 
 	const canInstallUpdates = $derived(hasPermission('environments:update'));
 
@@ -64,6 +78,15 @@
 		if (!transport) return m.environments_edge_label();
 		if (transport === 'websocket') return m.environments_edge_websocket_label();
 		return m.environments_edge_grpc_label();
+	}
+
+	function canEasyJoin(item: Environment): boolean {
+		return item.id !== '0' && item.enabled && isEnvironmentOnline(item) && easyJoinCandidates.isCandidate(item.id);
+	}
+
+	function openEasyJoin(item: Environment) {
+		easyJoinTarget = item;
+		easyJoinDialogOpen = true;
 	}
 
 	async function handleDeleteSelected(ids: string[]) {
@@ -397,6 +420,13 @@
 			{m.common_view_details()}
 		</DropdownMenu.Item>
 
+		{#if canEasyJoin(item)}
+			<DropdownMenu.Item onclick={() => openEasyJoin(item)}>
+				<ConnectionIcon class="size-4" />
+				{m.swarm_easy_join_action()}
+			</DropdownMenu.Item>
+		{/if}
+
 		<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
 			<TestIcon class="size-4" />
 			{m.environments_test_connection()}
@@ -459,4 +489,11 @@
 	environmentName={selectedEnvironmentForUpgrade?.name}
 	environmentId={selectedEnvironmentForUpgrade?.id}
 	bind:upgrading={isLoading.upgrading}
+/>
+
+<EasyJoinDialog
+	bind:open={easyJoinDialogOpen}
+	managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+	targetEnvironmentId={easyJoinTarget?.id}
+	onComplete={easyJoinCandidates.refresh}
 />

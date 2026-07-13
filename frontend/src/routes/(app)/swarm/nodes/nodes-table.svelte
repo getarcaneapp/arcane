@@ -94,7 +94,74 @@
 		agentDeployment = null;
 		agentDeploymentError = '';
 		isAgentDialogOpen = true;
-		void loadAgentDeployment(node).catch(() => undefined);
+	}
+
+	function provisionNodeEnvironment() {
+		if (!selectedNode) return;
+		void loadAgentDeployment(selectedNode).catch(() => undefined);
+	}
+
+	async function attachEnvironment(environmentId: string) {
+		const node = selectedNode;
+		if (!node) return;
+		const replaceDeployment = node.agent.bindingKind === 'dedicated';
+		const attach = async () => {
+			isAgentDeploymentLoading = true;
+			try {
+				await swarmService.bindNodeAgent(node.id, { environmentId, rebind: true, replaceDeployment });
+				toast.success(m.swarm_node_agent_attach_success());
+				await refreshNodes();
+			} catch (error) {
+				agentDeploymentError = extractApiErrorMessage(error);
+			} finally {
+				isAgentDeploymentLoading = false;
+			}
+		};
+
+		if (!replaceDeployment) {
+			await attach();
+			return;
+		}
+		openConfirmDialog({
+			title: m.swarm_node_agent_replace_title(),
+			message: m.swarm_node_agent_replace_description(),
+			confirm: { label: m.swarm_node_agent_replace_action(), destructive: true, action: attach }
+		});
+	}
+
+	function detachEnvironment() {
+		const node = selectedNode;
+		if (!node) return;
+		openConfirmDialog({
+			title: m.swarm_node_agent_detach_title(),
+			message: m.swarm_node_agent_detach_description(),
+			confirm: {
+				label: m.swarm_node_agent_detach_action(),
+				destructive: true,
+				action: async () => {
+					await swarmService.detachNodeAgent(node.id);
+					await refreshNodes();
+				}
+			}
+		});
+	}
+
+	function removeDedicatedDeployment() {
+		const node = selectedNode;
+		if (!node) return;
+		openConfirmDialog({
+			title: m.swarm_node_agent_remove_deployment_title(),
+			message: m.swarm_node_agent_remove_deployment_description(),
+			confirm: {
+				label: m.common_remove(),
+				destructive: true,
+				action: async () => {
+					await swarmService.removeNodeAgentDeployment(node.id);
+					agentDeployment = null;
+					await refreshNodes();
+				}
+			}
+		});
 	}
 
 	function refreshAgentDeployment() {
@@ -418,6 +485,10 @@
 	isLoading={isAgentDeploymentLoading}
 	onRefresh={refreshAgentDeployment}
 	onRegenerate={regenerateAgentDeployment}
+	onProvision={provisionNodeEnvironment}
+	onAttach={attachEnvironment}
+	onDetach={detachEnvironment}
+	onRemoveDeployment={removeDedicatedDeployment}
 />
 
 <SwarmNodeLabelDialog bind:open={isAddLabelDialogOpen} onAdd={addLabel} />

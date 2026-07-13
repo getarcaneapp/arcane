@@ -61,3 +61,70 @@ type SwarmUpdateRequest struct {
 	RotateManagerToken     bool            `json:"rotateManagerToken,omitempty"`
 	RotateManagerUnlockKey bool            `json:"rotateManagerUnlockKey,omitempty"`
 }
+
+type NodeAgentReconcileRequest struct{}
+
+type NodeAgentReconcileResult struct {
+	NodeID        string               `json:"nodeId"`
+	State         NodeAgentState       `json:"state"`
+	EnvironmentID *string              `json:"environmentId,omitempty"`
+	Candidates    []NodeAgentCandidate `json:"candidates,omitempty"`
+}
+
+type NodeAgentReconcileResponse struct {
+	Results []NodeAgentReconcileResult `json:"results"`
+}
+
+type NodeAgentBindingRequest struct {
+	EnvironmentID     string `json:"environmentId"`
+	Rebind            bool   `json:"rebind,omitempty"`
+	ReplaceDeployment bool   `json:"replaceDeployment,omitempty"`
+}
+
+type SwarmJoinEnvironmentRole string
+
+const (
+	SwarmJoinEnvironmentRoleWorker  SwarmJoinEnvironmentRole = "worker"
+	SwarmJoinEnvironmentRoleManager SwarmJoinEnvironmentRole = "manager"
+)
+
+type SwarmJoinEnvironmentResultState string
+
+const (
+	SwarmJoinEnvironmentResultJoined           SwarmJoinEnvironmentResultState = "joined"
+	SwarmJoinEnvironmentResultAlreadyMember    SwarmJoinEnvironmentResultState = "already_member"
+	SwarmJoinEnvironmentResultJoinedUnverified SwarmJoinEnvironmentResultState = "joined_unverified"
+	SwarmJoinEnvironmentResultFailed           SwarmJoinEnvironmentResultState = "failed"
+)
+
+type SwarmJoinCandidate struct {
+	EnvironmentID   string `json:"environmentId"`
+	EnvironmentName string `json:"environmentName"`
+	EnvironmentType string `json:"environmentType"`
+	Status          string `json:"status"`
+}
+
+type SwarmJoinEnvironmentTarget struct {
+	EnvironmentID string                   `json:"environmentId"`
+	Role          SwarmJoinEnvironmentRole `json:"role"`
+	Availability  swarm.NodeAvailability   `json:"availability,omitempty"`
+	ListenAddr    string                   `json:"listenAddr,omitempty"`
+	AdvertiseAddr string                   `json:"advertiseAddr,omitempty"`
+	DataPathAddr  string                   `json:"dataPathAddr,omitempty"`
+}
+
+type SwarmJoinEnvironmentsRequest struct {
+	RemoteAddrs []string                     `json:"remoteAddrs"`
+	Targets     []SwarmJoinEnvironmentTarget `json:"targets"`
+}
+
+type SwarmJoinEnvironmentResult struct {
+	EnvironmentID string                          `json:"environmentId"`
+	State         SwarmJoinEnvironmentResultState `json:"state"`
+	NodeID        *string                         `json:"nodeId,omitempty"`
+	Error         *string                         `json:"error,omitempty"`
+}
+
+type SwarmJoinEnvironmentsResponse struct {
+	Results []SwarmJoinEnvironmentResult `json:"results"`
+}

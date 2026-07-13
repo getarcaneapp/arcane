@@ -9,22 +9,39 @@ import (
 
 type NodeAgentState string
 
+type NodeAgentBindingKind string
+
 const (
 	NodeAgentStateNone       NodeAgentState = "none"
 	NodeAgentStatePending    NodeAgentState = "pending"
 	NodeAgentStateOffline    NodeAgentState = "offline"
 	NodeAgentStateConnected  NodeAgentState = "connected"
 	NodeAgentStateMismatched NodeAgentState = "mismatched"
+	NodeAgentStateAmbiguous  NodeAgentState = "ambiguous"
+
+	NodeAgentBindingKindLocal       NodeAgentBindingKind = "local"
+	NodeAgentBindingKindEnvironment NodeAgentBindingKind = "environment"
+	NodeAgentBindingKindDedicated   NodeAgentBindingKind = "dedicated"
 )
 
+type NodeAgentCandidate struct {
+	EnvironmentID   string `json:"environmentId"`
+	EnvironmentName string `json:"environmentName"`
+	EnvironmentType string `json:"environmentType"`
+}
+
 type NodeAgentStatus struct {
-	State            NodeAgentState `json:"state"`
-	EnvironmentID    *string        `json:"environmentId,omitempty"`
-	Connected        *bool          `json:"connected,omitempty"`
-	LastHeartbeat    *time.Time     `json:"lastHeartbeat,omitempty"`
-	LastPollAt       *time.Time     `json:"lastPollAt,omitempty"`
-	ReportedNodeID   *string        `json:"reportedNodeId,omitempty"`
-	ReportedHostname *string        `json:"reportedHostname,omitempty"`
+	State            NodeAgentState        `json:"state"`
+	BindingKind      *NodeAgentBindingKind `json:"bindingKind,omitempty"`
+	EnvironmentID    *string               `json:"environmentId,omitempty"`
+	EnvironmentName  *string               `json:"environmentName,omitempty"`
+	EnvironmentType  *string               `json:"environmentType,omitempty"`
+	Connected        *bool                 `json:"connected,omitempty"`
+	LastHeartbeat    *time.Time            `json:"lastHeartbeat,omitempty"`
+	LastPollAt       *time.Time            `json:"lastPollAt,omitempty"`
+	ReportedNodeID   *string               `json:"reportedNodeId,omitempty"`
+	ReportedHostname *string               `json:"reportedHostname,omitempty"`
+	Candidates       []NodeAgentCandidate  `json:"candidates,omitempty"`
 }
 
 type NodeSummary struct {
@@ -62,6 +79,11 @@ type NodeSummary struct {
 	//
 	// Required: false
 	ManagerStatus string `json:"managerStatus,omitempty"`
+
+	// ManagerAddress is the manager's reachable swarm control-plane address.
+	//
+	// Required: false
+	ManagerAddress string `json:"managerAddress,omitempty"`
 
 	// Reachability is the manager reachability if applicable.
 	//
@@ -142,6 +164,7 @@ type NodeUpdateRequest struct {
 // Returns a NodeSummary populated from node.
 func NewNodeSummary(node swarm.Node) NodeSummary {
 	managerStatus := ""
+	managerAddress := ""
 	reachability := ""
 	if node.ManagerStatus != nil {
 		if node.ManagerStatus.Leader {
@@ -150,6 +173,7 @@ func NewNodeSummary(node swarm.Node) NodeSummary {
 			managerStatus = "manager"
 		}
 		reachability = string(node.ManagerStatus.Reachability)
+		managerAddress = node.ManagerStatus.Addr
 	}
 
 	platform := ""
@@ -158,20 +182,21 @@ func NewNodeSummary(node swarm.Node) NodeSummary {
 	}
 
 	return NodeSummary{
-		ID:            node.ID,
-		Hostname:      node.Description.Hostname,
-		Role:          string(node.Spec.Role),
-		Availability:  string(node.Spec.Availability),
-		Status:        string(node.Status.State),
-		Address:       node.Status.Addr,
-		ManagerStatus: managerStatus,
-		Reachability:  reachability,
-		Labels:        node.Spec.Labels,
-		SystemLabels:  node.Description.Engine.Labels,
-		EngineVersion: node.Description.Engine.EngineVersion,
-		Platform:      platform,
-		CreatedAt:     node.CreatedAt,
-		UpdatedAt:     node.UpdatedAt,
+		ID:             node.ID,
+		Hostname:       node.Description.Hostname,
+		Role:           string(node.Spec.Role),
+		Availability:   string(node.Spec.Availability),
+		Status:         string(node.Status.State),
+		Address:        node.Status.Addr,
+		ManagerStatus:  managerStatus,
+		ManagerAddress: managerAddress,
+		Reachability:   reachability,
+		Labels:         node.Spec.Labels,
+		SystemLabels:   node.Description.Engine.Labels,
+		EngineVersion:  node.Description.Engine.EngineVersion,
+		Platform:       platform,
+		CreatedAt:      node.CreatedAt,
+		UpdatedAt:      node.UpdatedAt,
 		Agent: NodeAgentStatus{
 			State: NodeAgentStateNone,
 		},

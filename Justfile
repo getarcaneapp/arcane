@@ -153,7 +153,7 @@ _build-image-manager tag="ghcr.io/getarcaneapp/arcane:development" flag='':
 
 # Build agent container image
 [group('build')]
-_build-image-agent tag="ghcr.io/getarcaneapp/arcane-headless:development" flag='':
+_build-image-agent tag="ghcr.io/getarcaneapp/agent:development" flag='':
     docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64,linux/arm/v7 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
 # Build + push both manager and agent multi-arch images for a beta release.
@@ -710,13 +710,16 @@ bench-edge-tunnel-mem profile="edge_tunnel.mem.out" benchtime="5s":
 # Deploy
 # -----------------------------------------------------------------------------
 
-# Deploy a local swarm worker plus a locally built Arcane edge agent into DinD.
+# Deploy a local DinD engine plus a locally built Arcane edge agent.
+# The swarm form joins the engine to the host swarm; the normal agent form leaves
+# it outside the swarm so Arcane Easy Join can perform the join later.
 #
 # Usage:
 
 # just deploy swarm agent [agent_token] [manager_url] [node_name] [agent_name] [dind_image] [local_image]
+# just deploy agent [agent_token] [manager_url] [node_name] [agent_name] [dind_image] [local_image]
 [group('deploy')]
-_deploy-swarm-agent agent_token="" manager_url="http://host.docker.internal:3552" node_name="swarm-worker-1" agent_name="arcane-edge-agent" dind_image="docker:29-dind" local_image="arcane-headless:swarm-local":
+_deploy-agent join_swarm agent_token="" manager_url="http://host.docker.internal:3552" node_name="arcane-agent-1" agent_name="arcane-agent" dind_image="docker:29-dind" local_image="ghcr.io/getarcaneapp/agent:local":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -730,21 +733,23 @@ _deploy-swarm-agent agent_token="" manager_url="http://host.docker.internal:3552
         exit 1
     fi
 
-    swarm_state="$(docker info 2>/dev/null | awk -F': ' '/Swarm:/{print tolower($2); exit}')"
-    swarm_control="$(docker info 2>/dev/null | awk -F': ' '/Is Manager:/{print tolower($2); exit}')"
-    if [ "$swarm_state" != "active" ] || [ "$swarm_control" != "true" ]; then
-        echo "host docker must already be an active swarm manager"
-        exit 1
+    if [ "{{ join_swarm }}" = "true" ]; then
+        swarm_state="$(docker info 2>/dev/null | awk -F': ' '/Swarm:/{print tolower($2); exit}')"
+        swarm_control="$(docker info 2>/dev/null | awk -F': ' '/Is Manager:/{print tolower($2); exit}')"
+        if [ "$swarm_state" != "active" ] || [ "$swarm_control" != "true" ]; then
+            echo "host docker must already be an active swarm manager"
+            exit 1
+        fi
     fi
 
     echo "Building local agent image {{ local_image }}..."
-    docker build -f docker/Dockerfile-agent -t "{{ local_image }}" .
+    docker buildx build --load -f docker/Dockerfile-agent -t "{{ local_image }}" .
 
     if docker inspect "{{ node_name }}" >/dev/null 2>&1; then
-        echo "Reusing existing DinD worker {{ node_name }}..."
+        echo "Reusing existing DinD engine {{ node_name }}..."
         docker start "{{ node_name }}" >/dev/null 2>&1 || true
     else
-        echo "Starting DinD worker {{ node_name }} from {{ dind_image }}..."
+        echo "Starting DinD engine {{ node_name }} from {{ dind_image }}..."
         docker run -d \
             --privileged \
             --name "{{ node_name }}" \
@@ -769,31 +774,51 @@ _deploy-swarm-agent agent_token="" manager_url="http://host.docker.internal:3552
     fi
 
     local_node_state="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}')"
-    if [ "$local_node_state" != "active" ]; then
-        join_token="$(docker swarm join-token -q worker)"
-        echo "Joining {{ node_name }} to host swarm..."
-        docker exec "{{ node_name }}" docker swarm join --token "$join_token" host.docker.internal:2377
+    if [ "{{ join_swarm }}" = "true" ]; then
+        if [ "$local_node_state" != "active" ]; then
+            join_token="$(docker swarm join-token -q worker)"
+            echo "Joining {{ node_name }} to host swarm..."
+            docker exec "{{ node_name }}" docker swarm join --token "$join_token" host.docker.internal:2377
+        else
+            echo "{{ node_name }} is already part of the swarm."
+        fi
     else
-        echo "{{ node_name }} is already part of the swarm."
+        if [ "$local_node_state" = "active" ]; then
+            echo "{{ node_name }} is already part of a swarm. Remove it first with: just remove agent {{ node_name }} {{ agent_name }}"
+            exit 1
+        fi
+        echo "Leaving {{ node_name }} outside the swarm for Arcane Easy Join."
     fi
 
     current_node_id="$(docker exec "{{ node_name }}" docker info --format '{{ "{{.Swarm.NodeID}}" }}')"
-    echo "Current swarm node ID: $current_node_id"
+    if [ -n "$current_node_id" ]; then
+        echo "Current swarm node ID: $current_node_id"
+    fi
 
     if [ -n "{{ agent_token }}" ] && command -v sqlite3 >/dev/null 2>&1 && [ -f backend/data/arcane.db ]; then
         expected_node_id="$(sqlite3 backend/data/arcane.db "SELECT COALESCE(swarm_node_id, '') FROM environments WHERE access_token = '{{ agent_token }}' LIMIT 1;")"
         if [ -n "$expected_node_id" ] && [ "$expected_node_id" != "$current_node_id" ]; then
             echo "agent token belongs to swarm node $expected_node_id, but {{ node_name }} is $current_node_id"
-            echo "Generate a fresh Arcane agent token from the Deploy Agent dialog for node {{ node_name }}, then rerun this command."
+            if [ "{{ join_swarm }}" = "true" ]; then
+                echo "Create a fresh Remote Environment from the Connect Agent dialog for node {{ node_name }}, then rerun this command with its token."
+            else
+                echo "Create a fresh visible Edge Agent under Environments, then rerun this command with its token."
+            fi
             exit 1
         fi
     fi
 
     if [ -z "{{ agent_token }}" ]; then
         echo ""
-        echo "Swarm worker {{ node_name }} is ready, but no Arcane agent token was provided."
-        echo "Open Arcane, click Deploy Agent for node {{ node_name }} (node ID: $current_node_id), copy the generated token, and rerun:"
-        echo "  just deploy swarm agent <arcane_agent_token> {{ manager_url }} {{ node_name }} {{ agent_name }} {{ dind_image }} {{ local_image }}"
+        if [ "{{ join_swarm }}" = "true" ]; then
+            echo "Swarm worker {{ node_name }} is ready, but no Arcane agent token was provided."
+            echo "Open Arcane, click Connect Agent for node {{ node_name }} (node ID: $current_node_id), create its Remote Environment, copy the generated token, and rerun:"
+            echo "  just deploy swarm agent <arcane_agent_token> {{ manager_url }} {{ node_name }} {{ agent_name }} {{ dind_image }} {{ local_image }}"
+        else
+            echo "Docker engine {{ node_name }} is ready, but no Arcane agent token was provided."
+            echo "Create a visible Edge Agent under Environments, copy its token, and rerun:"
+            echo "  just deploy agent <arcane_agent_token> {{ manager_url }} {{ node_name }} {{ agent_name }} {{ dind_image }} {{ local_image }}"
+        fi
         exit 0
     fi
 
@@ -816,20 +841,30 @@ _deploy-swarm-agent agent_token="" manager_url="http://host.docker.internal:3552
     '
 
     echo ""
-    echo "Swarm worker {{ node_name }} and local agent {{ agent_name }} are up."
+    if [ "{{ join_swarm }}" = "true" ]; then
+        echo "Swarm worker {{ node_name }} and local agent {{ agent_name }} are up."
+    else
+        echo "Docker engine {{ node_name }} and local agent {{ agent_name }} are up."
+        echo "The engine is connected to Arcane and remains outside the swarm."
+    fi
     echo "Verify:"
-    echo "  docker node ls"
+    if [ "{{ join_swarm }}" = "true" ]; then
+        echo "  docker node ls"
+    else
+        echo "  docker exec {{ node_name }} docker info --format '{{ "{{.Swarm.LocalNodeState}}" }}'"
+    fi
     echo "  docker exec {{ node_name }} docker ps"
     echo "  docker exec {{ node_name }} docker logs {{ agent_name }}"
 
-# Remove a local swarm worker plus its Arcane edge agent from DinD.
+# Remove a local DinD engine plus its Arcane edge agent.
 #
 # Usage:
 #
 
 # just remove swarm agent [node_name] [agent_name]
+# just remove agent [node_name] [agent_name]
 [group('deploy')]
-_remove-swarm-agent node_name="swarm-worker-1" agent_name="arcane-edge-agent":
+_remove-agent node_name="arcane-agent-1" agent_name="arcane-agent":
     #!/usr/bin/env bash
     set -euo pipefail
 
@@ -866,16 +901,59 @@ _remove-swarm-agent node_name="swarm-worker-1" agent_name="arcane-edge-agent":
         docker node rm -f "$node_id" >/dev/null 2>&1 || true
     fi
 
-    echo "Removing DinD worker container {{ node_name }} from host..."
+    echo "Removing DinD engine container {{ node_name }} from host..."
     docker rm -f "{{ node_name }}" >/dev/null
 
     echo ""
-    echo "Removed swarm worker {{ node_name }} and inner agent {{ agent_name }}."
+    echo "Removed Docker engine {{ node_name }} and inner agent {{ agent_name }}."
 
-# Deploy targets. Example: just deploy swarm agent [agent_token]
+# Deploy targets. Examples: just deploy agent [agent_token], just deploy swarm agent [agent_token]
 [group('deploy')]
-deploy scope kind *args:
-    @just "_deploy-{{ scope }}-{{ kind }}" {{ args }}
+deploy target *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -- {{ args }}
+    case "{{ target }}" in
+        agent)
+            just _deploy-agent false "$@"
+            ;;
+        swarm)
+            if [ "${1:-}" != "agent" ]; then
+                echo "usage: just deploy swarm agent [agent_token] [manager_url] [node_name] [agent_name] [dind_image] [local_image]"
+                exit 1
+            fi
+            shift
+            just _deploy-agent true "$@"
+            ;;
+        *)
+            echo "unknown deploy target: {{ target }}"
+            exit 1
+            ;;
+    esac
+
+# Remove deployed targets. Examples: just remove agent, just remove swarm agent
+[group('deploy')]
+remove target *args:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    set -- {{ args }}
+    case "{{ target }}" in
+        agent)
+            just _remove-agent "$@"
+            ;;
+        swarm)
+            if [ "${1:-}" != "agent" ]; then
+                echo "usage: just remove swarm agent [node_name] [agent_name]"
+                exit 1
+            fi
+            shift
+            just _remove-agent "$@"
+            ;;
+        *)
+            echo "unknown remove target: {{ target }}"
+            exit 1
+            ;;
+    esac
 
 # -----------------------------------------------------------------------------
 # Release
