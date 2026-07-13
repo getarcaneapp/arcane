@@ -325,8 +325,8 @@ github.com/labstack/echo/v4 v4.15.4 h1:DL45vVYa+BWE+XuW+zZNd9H0YEdZ80UAWJGcTVW4E
 github.com/labstack/echo/v4 v4.15.4/go.mod h1:CuMetKIRwsuO/qlAgMq+KTAalwGoB/h4tC+yPdrTj1g=
 github.com/labstack/gommon v0.5.0 h1:6VSQ2NOzsnEJ5W6+84E0RbcaDDmgB6NIAzWCczTEe6c=
 github.com/labstack/gommon v0.5.0/go.mod h1:Rzlg7HHy1maLfzBYGg9NZcVuz1sA68HHhLjhcEllYE0=
-github.com/libtnb/sqlite v1.1.2 h1:3g8nez8MwdEhn+oqt3bfKWnYJxk0ZGTO0kVA1WT+hjQ=
-github.com/libtnb/sqlite v1.1.2/go.mod h1:2PGCWOR6HqqXuoIVMmwfJ655epvRO8sw0b9kHWuKNsQ=
+github.com/libtnb/sqlite v1.2.0 h1:XsA7jsXHH2qmFkTWoy5YCKJybzHzWQ0flqDFP5Y9Yto=
+github.com/libtnb/sqlite v1.2.0/go.mod h1:O6vURH5fa5IgSmXd/qLAL2zSnYFUd7xSIumsmX3BrSI=
 github.com/lmittmann/tint v1.1.3 h1:Hv4EaHWXQr+GTFnOU4VKf8UvAtZgn0VuKT+G0wFlO3I=
 github.com/lmittmann/tint v1.1.3/go.mod h1:HIS3gSy7qNwGCj+5oRjAutErFBl4BzdQP6cJZ0NfMwE=
 github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e h1:Q6MvJtQK/iRcRtzAscm/zF23XxJlbECiGPyRicsX+Ak=
