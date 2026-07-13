@@ -162,14 +162,14 @@ importers:
         specifier: ^18.0.6
         version: 18.0.6
       prettier:
-        specifier: ^3.9.3
-        version: 3.9.4
+        specifier: ^3.9.5
+        version: 3.9.5
       prettier-plugin-svelte:
         specifier: ^4.1.1
-        version: 4.1.1(prettier@3.9.4)(svelte@5.56.4)
+        version: 4.1.1(prettier@3.9.5)(svelte@5.56.4)
       prettier-plugin-tailwindcss:
         specifier: ^0.8.0
-        version: 0.8.0(@prettier/plugin-oxc@0.2.0)(prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4))(prettier@3.9.4)
+        version: 0.8.0(@prettier/plugin-oxc@0.2.0)(prettier-plugin-svelte@4.1.1(prettier@3.9.5)(svelte@5.56.4))(prettier@3.9.5)
       svelte:
         specifier: ^5.56.4
         version: 5.56.4
@@ -2522,11 +2522,6 @@ packages:
         optional: true
       prettier-plugin-svelte:
         optional: true
-
-  prettier@3.9.4:
-    resolution: {integrity: sha512-yWG/o/4oJfo036EKAfK6ACAoDOfHeRHx4tuxkfBZiauURiaSmYwlpOr5LQqKtIkRD2z1PLteme2WoxEnj4tHTg==}
-    engines: {node: '>=14'}
-    hasBin: true
 
   prettier@3.9.5:
     resolution: {integrity: sha512-/FVl766LpUfB5vXgCYOYa0MeV/441Ia99AeICQIQFTY/Nw0roZwULcXpku5i1/m5kt/baz+s4Zogspd839HSMg==}
@@ -4999,19 +4994,17 @@ snapshots:
       picocolors: 1.1.1
       source-map-js: 1.2.1
 
-  prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4):
+  prettier-plugin-svelte@4.1.1(prettier@3.9.5)(svelte@5.56.4):
     dependencies:
-      prettier: 3.9.4
+      prettier: 3.9.5
       svelte: 5.56.4
 
-  prettier-plugin-tailwindcss@0.8.0(@prettier/plugin-oxc@0.2.0)(prettier-plugin-svelte@4.1.1(prettier@3.9.4)(svelte@5.56.4))(prettier@3.9.4):
+  prettier-plugin-tailwindcss@0.8.0(@prettier/plugin-oxc@0.2.0)(prettier-plugin-svelte@4.1.1(prettier@3.9.5)(svelte@5.56.4))(prettier@3.9.5):
     dependencies:
-      prettier: 3.9.4
+      prettier: 3.9.5
     optionalDependencies:
       '@prettier/plugin-oxc': 0.2.0
-      prettier-plugin-svelte: 4.1.1(prettier@3.9.4)(svelte@5.56.4)
-
-  prettier@3.9.4: {}
+      prettier-plugin-svelte: 4.1.1(prettier@3.9.5)(svelte@5.56.4)
 
   prettier@3.9.5: {}
 
