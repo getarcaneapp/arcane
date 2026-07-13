@@ -3,13 +3,13 @@ package services
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	sqlite "github.com/libtnb/sqlite"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -73,33 +73,6 @@ func listAPIKeysForUser(t *testing.T, db *database.DB, userID string) []models.A
 	err := db.WithContext(context.Background()).Where("user_id = ?", userID).Order("created_at asc").Find(&apiKeys).Error
 	require.NoError(t, err)
 	return apiKeys
-}
-
-func requireAPIKeyLastUsedEventually(t *testing.T, db *database.DB, keyID string) models.ApiKey {
-	t.Helper()
-
-	var apiKey models.ApiKey
-	require.Eventually(t, func() bool {
-		err := db.WithContext(context.Background()).Where("id = ?", keyID).First(&apiKey).Error
-		return err == nil && apiKey.LastUsedAt != nil
-	}, time.Second, 10*time.Millisecond)
-
-	return apiKey
-}
-
-func assertAPIKeyLastUsedStable(t *testing.T, db *database.DB, keyID string, expected *time.Time, duration time.Duration) {
-	t.Helper()
-
-	assert.Never(t, func() bool {
-		apiKey := fetchAPIKey(t, db, keyID)
-		if expected == nil {
-			return apiKey.LastUsedAt != nil
-		}
-		if apiKey.LastUsedAt == nil {
-			return true
-		}
-		return apiKey.LastUsedAt.UTC().UnixNano() != expected.UTC().UnixNano()
-	}, duration, 10*time.Millisecond)
 }
 
 func invalidateAPIKey(rawKey string) string {
@@ -517,8 +490,100 @@ func TestValidateAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, user.ID, validatedUser.ID)
 
-	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ID)
+	apiKey := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
+}
+
+func TestValidateAPIKeyLastUsedUpdateIsRequestScoped(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-request-scoped")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "request-scoped-key"})
+	require.NoError(t, err)
+
+	updateStarted := make(chan struct{})
+	releaseUpdate := make(chan struct{})
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("block_api_key_last_used_update", func(*gorm.DB) {
+		close(updateStarted)
+		<-releaseUpdate
+	}))
+
+	validationDone := make(chan error, 1)
+	go func() {
+		_, err := service.ValidateApiKey(ctx, created.Key)
+		validationDone <- err
+	}()
+
+	select {
+	case <-updateStarted:
+	case <-time.After(time.Second):
+		close(releaseUpdate)
+		t.Fatal("last-used update did not start")
+	}
+
+	select {
+	case err := <-validationDone:
+		close(releaseUpdate)
+		require.NoError(t, err)
+		t.Fatal("validation returned before its last-used update completed")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	close(releaseUpdate)
+	require.NoError(t, <-validationDone)
+}
+
+func TestMarkAPIKeyUsedHonorsRequestCancellation(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-canceled-usage")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "canceled-usage-key"})
+	require.NoError(t, err)
+
+	canceledCtx, cancel := context.WithCancel(ctx)
+	cancel()
+	err = service.markApiKeyUsedInternal(canceledCtx, created.ID)
+	require.ErrorIs(t, err, context.Canceled)
+	require.Nil(t, fetchAPIKey(t, db, created.ID).LastUsedAt)
+}
+
+func TestMarkAPIKeyUsedReturnsDatabaseErrors(t *testing.T) {
+	ctx := context.Background()
+	service, db, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-usage-error")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "usage-error-key"})
+	require.NoError(t, err)
+
+	sqlDB, err := db.DB.DB()
+	require.NoError(t, err)
+	require.NoError(t, sqlDB.Close())
+
+	err = service.markApiKeyUsedInternal(ctx, created.ID)
+	require.Error(t, err)
+	require.ErrorContains(t, err, "failed to update API key last-used timestamp")
+}
+
+func TestValidateAPIKeyRepeatedAuthenticationDoesNotGrowGoroutines(t *testing.T) {
+	ctx := context.Background()
+	service, _, userService := setupAPIKeyService(t)
+	user := createTestAPIKeyUser(t, ctx, userService, "user-repeated-auth")
+
+	created, err := service.CreateApiKey(ctx, user.ID, authz.SudoPermissionSet(), apikey.CreateApiKey{Name: "repeated-auth-key"})
+	require.NoError(t, err)
+
+	before := runtime.NumGoroutine()
+	for range 20 {
+		validatedUser, err := service.ValidateApiKey(ctx, created.Key)
+		require.NoError(t, err)
+		require.Equal(t, user.ID, validatedUser.ID)
+	}
+	runtime.Gosched()
+	after := runtime.NumGoroutine()
+	t.Logf("goroutines before repeated authentication: %d; after: %d", before, after)
+	require.LessOrEqual(t, after, before+1)
 }
 
 func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
@@ -535,7 +600,7 @@ func TestGetEnvironmentByAPIKeyUpdatesLastUsedAt(t *testing.T) {
 	require.NotNil(t, environmentID)
 	require.Equal(t, "env-123", *environmentID)
 
-	apiKey := requireAPIKeyLastUsedEventually(t, db, created.ID)
+	apiKey := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, apiKey.LastUsedAt)
 }
 
@@ -550,7 +615,6 @@ func TestValidateAPIKeyInvalidDoesNotUpdateLastUsedAt(t *testing.T) {
 	_, err = service.ValidateApiKey(ctx, invalidateAPIKey(created.Key))
 	require.ErrorIs(t, err, ErrApiKeyInvalid)
 
-	assertAPIKeyLastUsedStable(t, db, created.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ID)
 	require.Nil(t, apiKey.LastUsedAt)
 }
@@ -578,7 +642,6 @@ func TestGetEnvironmentByAPIKeyExpiredDoesNotUpdateLastUsedAt(t *testing.T) {
 	_, err = service.GetEnvironmentByApiKey(ctx, created.Key)
 	require.ErrorIs(t, err, ErrApiKeyExpired)
 
-	assertAPIKeyLastUsedStable(t, db, created.ID, nil, 500*time.Millisecond)
 	apiKey := fetchAPIKey(t, db, created.ID)
 	require.Nil(t, apiKey.LastUsedAt)
 }
@@ -663,7 +726,6 @@ func TestGetEnvironmentByAPIKeyRecentLastUsedAtDoesNotRewriteImmediately(t *test
 	require.NotNil(t, environmentID)
 	require.Equal(t, "env-456", *environmentID)
 
-	assertAPIKeyLastUsedStable(t, db, created.ID, before.LastUsedAt, 2*time.Second)
 	after := fetchAPIKey(t, db, created.ID)
 	require.NotNil(t, after.LastUsedAt)
 	require.Equal(t, before.LastUsedAt.UTC().Unix(), after.LastUsedAt.UTC().Unix())
