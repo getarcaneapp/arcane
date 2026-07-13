@@ -100,16 +100,16 @@ func parseAPIKeyPrefixInternal(rawKey string) (string, error) {
 	return rawKey[:prefixLen], nil
 }
 
-func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
-	go func(keyID string) {
-		bgCtx := context.WithoutCancel(ctx)
-		now := time.Now()
-		cutoff := now.Add(-apiKeyLastUsedWriteWindow)
-		s.db.WithContext(bgCtx).
-			Model(&models.ApiKey{}).
-			Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
-			Update("last_used_at", now)
-	}(keyID)
+func (s *ApiKeyService) markApiKeyUsedInternal(ctx context.Context, keyID string) error {
+	now := time.Now()
+	cutoff := now.Add(-apiKeyLastUsedWriteWindow)
+	if err := s.db.WithContext(ctx).
+		Model(&models.ApiKey{}).
+		Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
+		Update("last_used_at", now).Error; err != nil {
+		return fmt.Errorf("failed to update API key last-used timestamp: %w", err)
+	}
+	return nil
 }
 
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerPerms *authz.PermissionSet, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
@@ -718,7 +718,9 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 				return nil, nil, ErrApiKeyInvalid
 			}
 
-			s.markApiKeyUsedAsync(ctx, apiKey.ID)
+			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
+				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
+			}
 
 			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 			if err != nil {
@@ -750,7 +752,9 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 				return nil, ErrApiKeyExpired
 			}
 
-			s.markApiKeyUsedAsync(ctx, apiKey.ID)
+			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
+				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
+			}
 
 			return apiKey.EnvironmentID, nil
 		}
