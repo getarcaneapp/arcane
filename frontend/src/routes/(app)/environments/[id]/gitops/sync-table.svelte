@@ -12,7 +12,7 @@
 	import type { GitOpsSync } from '$lib/types/automation';
 	import type { ColumnSpec, BulkAction, ArcaneRow } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { m } from '$lib/paraglide/messages';
 	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
 	import { toGitCommitUrl } from '$lib/utils/navigation';
@@ -258,7 +258,7 @@
 {/snippet}
 
 {#snippet LastSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	<span class="text-sm">{value ? format(new Date(value), 'PP p') : m.common_never()}</span>
+	<span class="text-sm">{value ? formatDateTimeShort(value) : m.common_never()}</span>
 {/snippet}
 
 {#snippet SyncMobileCardSnippet({ item, mobileFieldVisibility }: { item: GitOpsSync; mobileFieldVisibility: FieldVisibility })}

@@ -54,7 +54,8 @@
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { queryKeys } from '$lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { format } from 'date-fns';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let {}: PageProps = $props();
 
@@ -159,7 +160,12 @@
 	let hasReachedComplete = $state(false);
 	let logLines = $state<string[]>([]);
 	let autoScroll = $state(true);
-	let mainTab = $state<'build' | 'history'>('build');
+	type MainTab = 'build' | 'history';
+	const mainUrlTab = useUrlTab<MainTab>({
+		validTabs: () => ['build', 'history'],
+		defaultTab: () => 'build'
+	});
+	const mainTab = $derived(mainUrlTab.value);
 	let buildTab = $state('workspace');
 	let rightPanelTab = $state<'config' | 'output'>('config');
 	let showAdvanced = $state(false);
@@ -616,11 +622,7 @@
 
 	function formatTimestamp(value?: string) {
 		if (!value) return '-';
-		try {
-			return format(new Date(value), 'PP p');
-		} catch {
-			return value;
-		}
+		return formatDateTimeShort(value) || value;
 	}
 
 	function formatDuration(ms?: number) {
@@ -822,7 +824,7 @@
 			remoteContextSource = '';
 			selectedContextPath = getContextPathFromBuild(build);
 		}
-		mainTab = 'build';
+		mainUrlTab.select('build');
 		rightPanelTab = 'config';
 		buildTab = 'configuration';
 		buildHistoryDetailsOpen = false;
@@ -953,7 +955,7 @@
 	}
 
 	function onMainTabChange(value: string) {
-		mainTab = value as 'build' | 'history';
+		mainUrlTab.select(value);
 	}
 </script>
 
@@ -1437,7 +1439,7 @@
 
 {#if isDesktop}
 	<ResourceDetailLayout title={m.manual_build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
-		<Tabs.Root bind:value={mainTab} class="flex h-[calc(100vh-12rem)] flex-col">
+		<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-[calc(100vh-12rem)] flex-col">
 			<Tabs.List class="border-border/60 bg-muted/60 mb-3 flex w-fit gap-2 rounded-lg border p-1">
 				<Tabs.Trigger
 					value="build"

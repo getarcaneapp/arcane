@@ -4,7 +4,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
-	import { format, formatDistanceToNow } from 'date-fns';
+	import { formatDistanceToNow } from 'date-fns';
+	import { formatDateTime } from '$lib/utils/formatting';
 
 	interface Props {
 		container: ContainerDetailsDto;
@@ -96,11 +97,7 @@
 
 	function formatProbeDate(d: Date | null): string {
 		if (!d) return '—';
-		try {
-			return format(d, 'PPpp');
-		} catch {
-			return d.toISOString();
-		}
+		return formatDateTime(d) || d.toISOString();
 	}
 
 	const retriesBudget = $derived.by(() => {

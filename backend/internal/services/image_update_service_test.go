@@ -574,6 +574,49 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	assert.Equal(t, pinnedDigest, stringPtrToString(saved.LatestDigest))
 }
 
+func TestImageUpdateService_CheckMultipleImages_DigestPinnedTagPreservedWhenLocalImageHasNoRepoTags(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	pinnedDigest := digest.FromString("valkey-pinned").String()
+
+	server := newImageUpdateNoRepoTagsServer(t, "sha256:pinned-local-id", pinnedDigest)
+	defer server.Close()
+
+	serverURL, err := url.Parse(server.URL)
+	require.NoError(t, err)
+	repository := serverURL.Host + "/valkey/valkey"
+	imageRef := repository + ":9@" + pinnedDigest
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
+	svc := NewImageUpdateService(db, nil, nil, dockerService, nil, nil, nil)
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{imageRef}, nil)
+	require.NoError(t, err)
+	require.Contains(t, results, imageRef)
+	assert.False(t, results[imageRef].HasUpdate)
+	assert.Empty(t, results[imageRef].Error)
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:pinned-local-id").First(&saved).Error)
+	assert.Equal(t, "9", saved.Tag, "tag should come from the original tag@digest reference, not fall back to the RepoDigests-only placeholder")
+}
+
+func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *httptest.Server {
+	t.Helper()
+
+	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:          imageID,
+				RepoTags:    []string{},
+				RepoDigests: []string{r.Host + "/valkey/valkey@" + localDigest},
+			}))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+}
+
 func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	localDigest := digest.FromString("localdigest").String()

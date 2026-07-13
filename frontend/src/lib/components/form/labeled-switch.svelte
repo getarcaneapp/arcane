@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { Label } from '$lib/components/ui/label';
 	import { Switch } from '$lib/components/ui/switch/index.js';
+	import { mergeProps } from 'bits-ui';
 
 	let {
 		id,
@@ -9,7 +10,8 @@
 		description,
 		error,
 		disabled = false,
-		onCheckedChange
+		onCheckedChange,
+		triggerProps
 	}: {
 		id: string;
 		checked: boolean;
@@ -18,12 +20,21 @@
 		error?: string | null;
 		disabled?: boolean;
 		onCheckedChange?: (checked: boolean) => void;
+		triggerProps?: Record<string, unknown>;
 	} = $props();
 	void checked;
+
+	const switchProps = $derived(
+		mergeProps(triggerProps ?? {}, {
+			id,
+			disabled,
+			onCheckedChange: (value: boolean) => onCheckedChange?.(value === true)
+		})
+	);
 </script>
 
 <div class="flex items-center space-x-2">
-	<Switch {id} {disabled} onCheckedChange={(v) => onCheckedChange && onCheckedChange(v == true)} bind:checked />
+	<Switch {...switchProps} bind:checked />
 	<div class="grid gap-1.5 leading-none">
 		<Label for={id} class="mb-0 text-sm leading-none font-medium">
 			{label}

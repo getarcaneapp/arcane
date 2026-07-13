@@ -5,7 +5,7 @@ const LOCAL_ENV_ID = '0';
 async function openEnvironment(page: Page, environmentId: string) {
 	await page.goto(`/environments/${environmentId}`);
 	await page.waitForLoadState('load');
-	await expect(page.locator('#env-name')).toBeVisible();
+	await expect(page.getByLabel('Name', { exact: true })).toBeVisible();
 	await expect(page.getByRole('button', { name: 'Save', exact: true }).first()).toBeVisible();
 }
 
@@ -16,11 +16,14 @@ async function createDirectEnvironmentViaUI(page: Page, environmentName: string)
 	await page.getByRole('button', { name: 'Add Environment', exact: true }).click();
 	await expect(page.getByText('Create New Agent Environment')).toBeVisible();
 
-	await page.locator('input#name:visible').first().fill(environmentName);
-	await page.locator('#new-agent-api-url').fill('localhost:3552');
+	const dialog = page.getByRole('dialog');
+	await dialog.getByLabel('Name', { exact: true }).fill(environmentName);
+	await dialog.getByLabel('Agent Address', { exact: true }).fill('localhost:3552');
 	await page.getByRole('button', { name: 'Generate Agent Configuration', exact: true }).click();
 
-	await expect(page.locator('[data-slot="sheet-title"]')).toContainText(/Environment Created/i);
+	await expect(
+		page.getByRole('heading', { name: 'Environment Created Successfully', exact: true })
+	).toBeVisible();
 	await page.getByRole('button', { name: 'Done', exact: true }).click();
 	await expect(page.getByRole('button', { name: environmentName, exact: true })).toBeVisible();
 }
@@ -29,7 +32,7 @@ async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
 	await page.goto('/environments');
 	await page.waitForLoadState('load');
 
-	const envRow = page.locator('tr').filter({
+	const envRow = page.getByRole('row').filter({
 		has: page.getByRole('button', { name: environmentName, exact: true })
 	});
 
@@ -38,7 +41,7 @@ async function deleteEnvironmentViaUI(page: Page, environmentName: string) {
 	}
 
 	await envRow.hover();
-	await envRow.getByRole('button', { name: /open menu/i }).click();
+	await envRow.getByRole('button', { name: 'Open menu', exact: true }).click();
 	await page.getByRole('menuitem', { name: 'Delete', exact: true }).click();
 	await page.getByRole('button', { name: 'Remove', exact: true }).click();
 	await expect(page.getByRole('button', { name: environmentName, exact: true })).toHaveCount(0);
@@ -68,16 +71,55 @@ async function saveAndWaitForPut(page: Page, expectedPath: string) {
 async function selectSettingOption(page: Page, trigger: Locator, optionText: string) {
 	await expect(trigger).toBeVisible();
 	await trigger.click();
-	const option = page
-		.locator('[data-slot="select-item"], [data-slot="command-item"]')
-		.filter({ hasText: optionText })
-		.first();
+	const option = page.getByRole('option').filter({ hasText: optionText }).first();
 	await expect(option).toBeVisible();
 	await option.click();
 }
 
 test.describe('Environment Settings UI', () => {
 	test.describe.configure({ mode: 'serial' });
+
+	test('should keep primary tabs selectable and restore them from the URL', async ({ page }) => {
+		await page.goto('/settings');
+		await page.waitForLoadState('load');
+
+		const jobScheduleCategory = page
+			.getByRole('button')
+			.filter({ hasText: 'Job Schedule' })
+			.first();
+		await expect(jobScheduleCategory).toBeVisible();
+		await jobScheduleCategory.click();
+
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('jobs');
+		await expect(page.getByRole('tab', { name: 'Job Schedules', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+
+		const generalTab = page.getByRole('tab', { name: 'General', exact: true });
+		await generalTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
+		await expect(generalTab).toHaveAttribute('data-state', 'active');
+
+		const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
+		await dockerTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('docker');
+		await page.reload();
+		await expect(dockerTab).toHaveAttribute('data-state', 'active');
+
+		await page.goBack();
+		await expect(page).toHaveURL(/\/settings$/);
+
+		await page.goto(`/environments/${LOCAL_ENV_ID}?source=e2e&tab=invalid#tab-state`);
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('general');
+		const canonicalUrl = new URL(page.url());
+		expect(canonicalUrl.searchParams.get('source')).toBe('e2e');
+		expect(canonicalUrl.hash).toBe('#tab-state');
+		await expect(page.getByRole('tab', { name: 'General', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+	});
 
 	test('should update and save environment details', async ({ page }) => {
 		test.setTimeout(120_000); // 120 seconds timeout for this lengthy UI workflow
@@ -87,7 +129,7 @@ test.describe('Environment Settings UI', () => {
 		try {
 			await createDirectEnvironmentViaUI(page, envName);
 			await page.getByRole('button', { name: envName, exact: true }).click();
-			await expect(page).toHaveURL(/\/environments\/[^/]+$/);
+			await expect(page).toHaveURL(/\/environments\/[^/?]+\?tab=general$/);
 
 			const environmentId = new URL(page.url()).pathname.split('/').pop()!;
 			const nameInput = page.locator('#env-name');
@@ -212,7 +254,7 @@ test.describe('Environment Settings UI', () => {
 	}) => {
 		await openLocalEnvironment(page);
 
-		const dockerTab = page.getByRole('tab', { name: /Docker/i }).first();
+		const dockerTab = page.getByRole('tab', { name: 'Docker Settings', exact: true });
 		await dockerTab.click();
 		const pullPolicyTrigger = page.locator('#defaultDeployPullPolicy');
 		await expect(pullPolicyTrigger).toBeVisible();
@@ -226,19 +268,13 @@ test.describe('Environment Settings UI', () => {
 			await saveAndWaitForPut(page, `/api/environments/${LOCAL_ENV_ID}/settings`);
 
 			await page.reload();
-			await page
-				.getByRole('tab', { name: /Docker/i })
-				.first()
-				.click();
+			await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 			await expect(page.locator('#defaultDeployPullPolicy')).toContainText(updatedValue, {
 				timeout: 15000
 			});
 		} finally {
 			if (!page.isClosed()) {
-				await page
-					.getByRole('tab', { name: /Docker/i })
-					.first()
-					.click();
+				await page.getByRole('tab', { name: 'Docker Settings', exact: true }).click();
 				const currentValue = (
 					(await page.locator('#defaultDeployPullPolicy').textContent()) || ''
 				).trim();

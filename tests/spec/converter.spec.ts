@@ -13,9 +13,9 @@ const ROUTES = {
 };
 
 const SELECTORS = {
-	convertButton: (name = 'Convert to Compose') => ({ name }),
+	convertButton: (name = 'Convert to Compose') => ({ name, exact: true }),
 	textareaPlaceholder: 'docker run -d --name my-app -p 8080:80 nginx:alpine',
-	exampleButtonName: /docker run -d --name nginx/,
+	exampleButtonName: 'docker run -d --name nginx',
 	successToast: 'Docker run command converted successfully!',
 	exampleCommandExpected:
 		'docker run -d --name nginx -p 8080:80 -v nginx_data:/usr/share/nginx/html nginx:alpine',
@@ -27,15 +27,15 @@ async function openConvertFromDockerRun(page: Page) {
 
 	const createProjectGroup = page
 		.getByRole('group')
-		.filter({ has: page.getByRole('button', { name: 'Create Project' }) })
+		.filter({ has: page.locator('button[data-action="create"]') })
 		.first();
-	const dropdownTrigger = createProjectGroup.locator('button').last();
+	const dropdownTrigger = createProjectGroup.getByRole('button').last();
 	await expect(dropdownTrigger).toBeVisible();
 	await dropdownTrigger.click();
 
-	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
+	const menu = page.getByRole('menu').filter({ visible: true }).last();
 	await expect(menu).toBeVisible();
-	await menu.getByRole('menuitem', { name: /Convert from Docker Run/i }).click();
+	await menu.getByRole('menuitem', { name: 'Convert from Docker Run', exact: true }).click();
 
 	await expect(page.getByRole('button', SELECTORS.convertButton())).toBeVisible();
 }

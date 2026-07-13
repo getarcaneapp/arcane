@@ -1,7 +1,9 @@
 package ws
 
 import (
+	"bytes"
 	"context"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -320,6 +322,44 @@ func TestHub_BroadcastBufferFull(t *testing.T) {
 
 	// Verify no panic or deadlock occurred
 	go h.Run(ctx)
+}
+
+func TestHub_BroadcastOverloadAggregatesDropWarning(t *testing.T) {
+	var logBuffer bytes.Buffer
+	previousLogger := slog.Default()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logBuffer, &slog.HandlerOptions{Level: slog.LevelWarn})))
+	t.Cleanup(func() { slog.SetDefault(previousLogger) })
+
+	h := NewHub(1)
+	h.broadcast <- []byte("fill")
+	h.lastWarned.Store(time.Now().UnixNano())
+
+	const dropCount = 1000
+	var wg sync.WaitGroup
+	for range dropCount {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			h.Broadcast([]byte("overload"))
+		}()
+	}
+	wg.Wait()
+
+	assert.Equal(t, uint64(dropCount), h.dropped.Load())
+	assert.Empty(t, logBuffer.String())
+
+	h.lastWarned.Store(time.Now().Add(-broadcastDropWarningInterval).UnixNano())
+	h.Broadcast([]byte("trigger aggregate warning"))
+
+	logLines := strings.Split(strings.TrimSpace(logBuffer.String()), "\n")
+	require.Len(t, logLines, 1)
+	assert.Contains(t, logLines[0], "websocket hub broadcast buffer full; dropping messages")
+	assert.Contains(t, logLines[0], "dropped_count=1001")
+	assert.Zero(t, h.dropped.Load())
+
+	h.Broadcast([]byte("still overloaded"))
+	assert.Len(t, strings.Split(strings.TrimSpace(logBuffer.String()), "\n"), 1)
+	assert.Equal(t, uint64(1), h.dropped.Load())
 }
 
 func TestHub_ConcurrentOperations(t *testing.T) {

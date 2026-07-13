@@ -27,6 +27,7 @@ export default defineConfig({
 		: [['line'], ['html', { open: 'never', outputFolder: '.report' }]],
 	use: {
 		baseURL,
+		serviceWorkers: 'block',
 		trace: 'on-first-retry',
 		video: 'retain-on-failure'
 	},

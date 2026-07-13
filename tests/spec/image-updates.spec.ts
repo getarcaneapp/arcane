@@ -60,13 +60,9 @@ async function fetchImagesTotal(page: Page, updatesFilter?: string): Promise<num
 }
 
 async function getCheckUpdatesAction(page: Page): Promise<Locator> {
-	const pageHeader = page
-		.locator('main header')
-		.filter({ has: page.getByRole('heading', { name: 'Images', exact: true }) })
-		.first();
-	await expect(pageHeader).toBeVisible();
+	await expect(page.getByRole('heading', { name: 'Images', exact: true })).toBeVisible();
 
-	const directButton = pageHeader
+	const directButton = page
 		.getByRole('button', { name: 'Check Updates', exact: true })
 		.filter({ visible: true })
 		.first();
@@ -82,14 +78,14 @@ async function getCheckUpdatesAction(page: Page): Promise<Locator> {
 		return directButton;
 	}
 
-	const menuTrigger = pageHeader
+	const menuTrigger = page
 		.getByRole('button', { name: 'More actions' })
 		.filter({ visible: true })
 		.first();
 	await expect(menuTrigger).toBeVisible();
 	await menuTrigger.click();
 
-	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
+	const menu = page.getByRole('menu').filter({ visible: true }).last();
 	await expect(menu).toBeVisible();
 	const menuItem = menu.getByRole('menuitem', { name: 'Check Updates', exact: true }).first();
 	await expect(menuItem).toBeVisible();
@@ -135,7 +131,9 @@ test.describe('Image Update UI - Check All Updates Button', () => {
 		expect(checkAllResponse.ok()).toBeTruthy();
 
 		// Eventually a success or completion toast should appear
-		await expect(page.locator('li[data-sonner-toast]')).toBeVisible({ timeout: 60000 });
+		await expect(
+			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
+		).toBeVisible({ timeout: 60000 });
 	});
 });
 
@@ -146,11 +144,11 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 		await navigateToImages(page);
 
 		// Wait for the table to load
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 
 		// Check that image rows exist
-		const rows = page.locator('tbody tr');
-		await expect(rows.first()).toBeVisible();
+		const rows = page.getByRole('table').getByRole('row');
+		await expect(rows.nth(1)).toBeVisible();
 	});
 
 	test('should show hover card tooltip when hovering over update status icon', async ({ page }) => {
@@ -159,14 +157,17 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 		await navigateToImages(page);
 
 		// Wait for images table
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 
 		// Find the first row's update status area (the Updates column)
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByTestId('image-update-trigger') })
+			.first();
 		await expect(firstRow).toBeVisible();
 
 		// Look for the update status icon trigger element (Tooltip.Trigger wraps a span)
-		const updateStatusTrigger = firstRow.locator('[data-testid="image-update-trigger"]').first();
+		const updateStatusTrigger = firstRow.getByTestId('image-update-trigger').first();
 		const hasTrigger = await updateStatusTrigger.isVisible().catch(() => false);
 
 		if (hasTrigger) {
@@ -177,7 +178,7 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 			await page.waitForTimeout(500);
 
 			// Check if tooltip/hover card content appeared
-			const tooltipContent = page.locator('[data-radix-popper-content-wrapper], [role="tooltip"]');
+			const tooltipContent = page.getByRole('tooltip');
 			const tooltipVisible = await tooltipContent.isVisible().catch(() => false);
 
 			// The hover card should be visible after hovering
@@ -199,20 +200,22 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 		test.skip(!testImage, 'No suitable image found for update check');
 
 		await navigateToImages(page);
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 
 		// Find the row for our test image or the first row with a valid image
-		const rows = page.locator('tbody tr');
-		const firstRow = rows.first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByTestId('image-update-trigger') })
+			.first();
 		await expect(firstRow).toBeVisible();
 
 		// Look for the update status trigger (could be a button or icon)
-		const updateTrigger = firstRow.locator('[data-testid="image-update-trigger"]').first();
+		const updateTrigger = firstRow.getByTestId('image-update-trigger').first();
 		const hasUpdateTrigger = await updateTrigger.isVisible().catch(() => false);
 
 		if (hasUpdateTrigger) {
 			// If it's a clickable button (for unchecked images), click it
-			const updateButton = updateTrigger.locator('button').first();
+			const updateButton = updateTrigger.getByRole('button').first();
 			const hasButton = await updateButton.isVisible().catch(() => false);
 
 			if (hasButton) {
@@ -220,7 +223,9 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 
 				// Wait for checking to complete (either a toast or state change)
 				await expect(async () => {
-					const toast = page.locator('li[data-sonner-toast]');
+					const toast = page
+						.getByRole('region', { name: 'Notifications alt+T', exact: true })
+						.getByRole('listitem');
 					const toastVisible = await toast.isVisible().catch(() => false);
 					expect(toastVisible).toBeTruthy();
 				}).toPass({ timeout: 30000 });
@@ -230,9 +235,7 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 				await page.waitForTimeout(500);
 
 				// Look for the recheck button in the tooltip
-				const recheckButton = page
-					.locator('[data-radix-popper-content-wrapper] button, [role="tooltip"] button')
-					.first();
+				const recheckButton = page.getByRole('tooltip').getByRole('button').first();
 				const hasRecheckButton = await recheckButton.isVisible().catch(() => false);
 
 				if (hasRecheckButton) {
@@ -240,7 +243,9 @@ test.describe('Image Update UI - Individual Image Update Check via Hover Card', 
 
 					// Wait for the check to complete
 					await expect(async () => {
-						const toast = page.locator('li[data-sonner-toast]');
+						const toast = page
+							.getByRole('region', { name: 'Notifications alt+T', exact: true })
+							.getByRole('listitem');
 						const toastVisible = await toast.isVisible().catch(() => false);
 						expect(toastVisible).toBeTruthy();
 					}).toPass({ timeout: 30000 });
@@ -310,11 +315,11 @@ test.describe('Image Update UI Integration', () => {
 		await navigateToImages(page);
 
 		// Wait for the table to load
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 
 		// Check that image rows exist
-		const rows = page.locator('tbody tr');
-		await expect(rows.first()).toBeVisible();
+		const rows = page.getByRole('table').getByRole('row');
+		await expect(rows.nth(1)).toBeVisible();
 	});
 
 	test('should display update information in image detail page', async ({ page }) => {
@@ -330,7 +335,7 @@ test.describe('Image Update UI Integration', () => {
 		await page.waitForLoadState('load');
 
 		// The detail page should load
-		await expect(page.locator('h1, h2, [data-testid="image-detail"]').first()).toBeVisible({
+		await expect(page.getByRole('heading').first()).toBeVisible({
 			timeout: 10000
 		});
 	});

@@ -16,6 +16,7 @@
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { TerminalIcon, TemplateIcon, AddIcon, ArrowDownIcon as ChevronDown, GitBranchIcon } from '$lib/icons';
 	import { dropdownContentClass, dropdownItemClass, templateBtnClass } from '$lib/utils/compose-flow';
+	import { mergeProps } from 'bits-ui';
 
 	interface Props {
 		// Tooltip shows when the tooltipOpen prop is truthy-undefined (bits-ui
@@ -94,33 +95,34 @@
 {/snippet}
 
 <ButtonGroup.Root>
-	<ArcaneTooltip.Root open={tooltipOpen}>
-		<ArcaneTooltip.Trigger>
-			<span>
-				{#if showCreateButton}
+	{#if showCreateButton}
+		<ArcaneTooltip.Root open={tooltipOpen}>
+			<ArcaneTooltip.Trigger disabledChild={createDisabled || createLoading}>
+				{#snippet child({ props })}
+					{@const triggerProps = mergeProps(props, { onclick: onCreate })}
 					<ArcaneButton
+						{...triggerProps}
 						action="create"
 						tone="ghost"
 						disabled={createDisabled}
-						onclick={onCreate}
 						class={`${templateBtnClass} gap-2 rounded-r-none`}
 						loading={createLoading}
 						customLabel={createLabel}
 						loadingLabel={createLoadingLabel}
 					/>
+				{/snippet}
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
+				{#if tooltipVisible}
+					<p class="mb-1 text-sm font-medium">{tooltipTitle}</p>
+					<p class="text-muted-foreground text-xs">{tooltipDescription}</p>
+					<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
+						{tooltipExample}
+					</p>
 				{/if}
-			</span>
-		</ArcaneTooltip.Trigger>
-		<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
-			{#if tooltipVisible}
-				<p class="mb-1 text-sm font-medium">{tooltipTitle}</p>
-				<p class="text-muted-foreground text-xs">{tooltipDescription}</p>
-				<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
-					{tooltipExample}
-				</p>
-			{/if}
-		</ArcaneTooltip.Content>
-	</ArcaneTooltip.Root>
+			</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
+	{/if}
 
 	<DropdownMenu.Root>
 		<DropdownMenu.Trigger>

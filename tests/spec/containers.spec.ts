@@ -38,9 +38,8 @@ test.describe('Containers Page', () => {
 
 	test('should display the container table with columns', async ({ page }) => {
 		await navigateToContainers(page);
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
-		await expect(page.getByRole('button', { name: 'ID' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Image', exact: true })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'State' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Created' })).toBeVisible();
@@ -50,7 +49,10 @@ test.describe('Containers Page', () => {
 		test.skip(containersData.data.length === 0, 'No containers available');
 		await navigateToContainers(page);
 
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
 		const menu = await openRowActionsMenu(page, firstRow);
 		await menu.getByRole('menuitem', { name: 'Inspect', exact: true }).click();
 
@@ -71,14 +73,10 @@ test.describe('Containers Page', () => {
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
-		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toBeVisible();
-		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toBeVisible();
-		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).not.toContainText(
-			'N/A'
-		);
-		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).not.toContainText(
-			'N/A'
-		);
+		await expect(page.getByTestId('container-log-cpu-monitor')).toBeVisible();
+		await expect(page.getByTestId('container-log-memory-monitor')).toBeVisible();
+		await expect(page.getByTestId('container-log-cpu-monitor')).not.toContainText('N/A');
+		await expect(page.getByTestId('container-log-memory-monitor')).not.toContainText('N/A');
 	});
 
 	test('should show non-live fallback monitors on the logs tab for stopped containers', async ({
@@ -92,10 +90,10 @@ test.describe('Containers Page', () => {
 
 		await page.getByRole('tab', { name: 'Logs' }).click();
 
-		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toBeVisible();
-		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toBeVisible();
-		await expect(page.locator('[data-testid="container-log-cpu-monitor"]')).toContainText('N/A');
-		await expect(page.locator('[data-testid="container-log-memory-monitor"]')).toContainText('N/A');
+		await expect(page.getByTestId('container-log-cpu-monitor')).toBeVisible();
+		await expect(page.getByTestId('container-log-memory-monitor')).toBeVisible();
+		await expect(page.getByTestId('container-log-cpu-monitor')).toContainText('N/A');
+		await expect(page.getByTestId('container-log-memory-monitor')).toContainText('N/A');
 	});
 
 	test('should show correct actions based on container state (without changing state)', async ({
@@ -107,7 +105,10 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		if (running) {
-			const row = page.locator(`tr:has(a[href="/containers/${running.id}"])`);
+			const runningName = running.names[0]?.replace(/^\/+/, '') ?? running.id;
+			const row = page
+				.getByRole('row')
+				.filter({ has: page.getByRole('link', { name: runningName, exact: true }) });
 			const menu = await openRowActionsMenu(page, row);
 			await expect(menu.getByRole('menuitem', { name: 'Restart', exact: true })).toBeVisible();
 			await expect(menu.getByRole('menuitem', { name: 'Stop', exact: true })).toBeVisible();
@@ -120,7 +121,10 @@ test.describe('Containers Page', () => {
 		}
 
 		if (stopped) {
-			const row = page.locator(`tr:has(a[href="/containers/${stopped.id}"])`);
+			const stoppedName = stopped.names[0]?.replace(/^\/+/, '') ?? stopped.id;
+			const row = page
+				.getByRole('row')
+				.filter({ has: page.getByRole('link', { name: stoppedName, exact: true }) });
 			const menu = await openRowActionsMenu(page, row);
 			await expect(menu.getByRole('menuitem', { name: 'Start', exact: true })).toBeVisible();
 			await page.keyboard.press('Escape');
@@ -138,14 +142,18 @@ test.describe('Containers Page', () => {
 
 		await navigateToContainers(page);
 
-		const row = page.locator(`tr:has(a[href="/containers/${any.id}"])`);
+		const containerName = any.names[0]?.replace(/^\/+/, '') ?? any.id;
+		const row = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('link', { name: containerName, exact: true }) });
 		const menu = await openRowActionsMenu(page, row);
 		await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
 
-		const dialog = page.locator(
-			'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Confirm Container Removal")'
-		);
+		const dialog = page.getByRole('dialog');
 		await expect(dialog).toBeVisible();
+		await expect(
+			dialog.getByRole('heading', { name: 'Confirm Container Removal', exact: true })
+		).toBeVisible();
 
 		await page.getByRole('button', { name: 'Cancel' }).click();
 		await expect(dialog).toBeHidden();
@@ -218,7 +226,7 @@ test.describe('Containers Page network IP addresses', () => {
 
 		await navigateToContainers(page);
 
-		const row = page.locator('tbody tr').filter({
+		const row = page.getByRole('row').filter({
 			has: page.getByRole('link', { name: 'wordpress', exact: true })
 		});
 

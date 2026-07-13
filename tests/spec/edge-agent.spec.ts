@@ -106,7 +106,7 @@ test.describe('Edge Agent Environment', () => {
 			await submitButton.click();
 
 			const sheetTitle = page.locator('[data-slot="sheet-title"]');
-			await expect(sheetTitle).toContainText(/Environment Created/i);
+			await expect(sheetTitle).toContainText('Environment Created');
 			await expect(
 				page.getByText('Edge agent - connects outbound to manager', { exact: true })
 			).toBeVisible();

@@ -7,15 +7,17 @@
 	interface Props {
 		open?: boolean;
 		interactive?: boolean;
+		directTrigger?: boolean;
 		side?: TooltipSide;
 		contentClass?: string;
-		trigger: Snippet;
+		trigger: Snippet<[{ props: Record<string, unknown> }]>;
 		content: Snippet;
 	}
 
 	let {
 		open = $bindable(false),
 		interactive = false,
+		directTrigger = false,
 		side = 'right',
 		contentClass = 'max-w-[280px] p-0',
 		trigger,
@@ -24,9 +26,17 @@
 </script>
 
 <ArcaneTooltip.Root bind:open {interactive}>
-	<ArcaneTooltip.Trigger>
-		{@render trigger()}
-	</ArcaneTooltip.Trigger>
+	{#if directTrigger}
+		<ArcaneTooltip.Trigger>
+			{#snippet child({ props })}
+				{@render trigger({ props })}
+			{/snippet}
+		</ArcaneTooltip.Trigger>
+	{:else}
+		<ArcaneTooltip.Trigger>
+			{@render trigger({ props: {} })}
+		</ArcaneTooltip.Trigger>
+	{/if}
 	<ArcaneTooltip.Content {side} class={contentClass} data-open={open ? 'true' : 'false'}>
 		{@render content()}
 	</ArcaneTooltip.Content>

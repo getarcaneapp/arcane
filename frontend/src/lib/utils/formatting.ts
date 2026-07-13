@@ -2,6 +2,7 @@ import Convert from 'ansi-to-html';
 import { format as formatDate, setDefaultOptions, type Locale as DateFnsLocale } from 'date-fns';
 import { z } from 'zod/v4';
 import { setLocale as setParaglideLocale, type Locale } from '$lib/paraglide/runtime';
+import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
 
 // --- String helpers ---
 
@@ -159,26 +160,53 @@ export const bytes = bytesWithHelpers;
 
 // --- Locale-aware date/time formatting ---
 
-function formatWithPattern(date: Date | string | null | undefined, pattern: string): string {
+type AbsoluteDateTimeFormatOptions = {
+	datePattern?: string;
+	includeSeconds?: boolean;
+};
+
+function getTimePattern(includeSeconds: boolean): string {
+	const timeFormat = timeFormatStore.current;
+	if (timeFormat === '12h') {
+		return includeSeconds ? 'h:mm:ss a' : 'h:mm a';
+	}
+	if (timeFormat === '24h') {
+		return includeSeconds ? 'HH:mm:ss' : 'HH:mm';
+	}
+	return includeSeconds ? 'pp' : 'p';
+}
+
+function formatAbsoluteDateTime(date: Date | string | null | undefined, options: AbsoluteDateTimeFormatOptions): string {
 	if (!date) return '';
 	const d = typeof date === 'string' ? new Date(date) : date;
 	if (isNaN(d.getTime())) return '';
+
+	const includeSeconds = options.includeSeconds ?? true;
+	const timePattern = getTimePattern(includeSeconds);
+	const useLocaleLongFormat = timeFormatStore.current === 'auto' && ['P', 'PP'].includes(options.datePattern ?? '');
+	const pattern = options.datePattern
+		? useLocaleLongFormat
+			? `${options.datePattern}${timePattern}`
+			: `${options.datePattern} ${timePattern}`
+		: timePattern;
+
 	return formatDate(d, pattern);
 }
 
-export function formatDateTime(date: Date | string | null | undefined): string {
-	return formatWithPattern(date, 'PPpp');
+export function formatDateTime(
+	date: Date | string | null | undefined,
+	options: AbsoluteDateTimeFormatOptions = { datePattern: 'PP', includeSeconds: true }
+): string {
+	return formatAbsoluteDateTime(date, options);
 }
 
 export function formatDateTimeShort(date: Date | string | null | undefined): string {
-	return formatWithPattern(date, 'PPp');
+	return formatAbsoluteDateTime(date, { datePattern: 'PP', includeSeconds: false });
 }
 
 export function formatOptionalDateTime(date: Date | string | null | undefined, fallback = '-'): string {
 	if (!date) return fallback;
-	const d = typeof date === 'string' ? new Date(date) : date;
-	if (isNaN(d.getTime())) return fallback;
-	return d.toLocaleString();
+	return formatDateTime(date) || fallback;
 }
 
 export function isPastDate(date: Date | string | null | undefined): boolean {
@@ -188,7 +216,7 @@ export function isPastDate(date: Date | string | null | undefined): boolean {
 }
 
 export function formatTime(date: Date | string | null | undefined): string {
-	return formatWithPattern(date, 'pp');
+	return formatAbsoluteDateTime(date, { includeSeconds: true });
 }
 
 type DateFnsLocaleModule = {

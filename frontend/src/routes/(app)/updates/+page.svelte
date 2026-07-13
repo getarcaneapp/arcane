@@ -19,6 +19,7 @@
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/docker';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 
@@ -58,13 +59,6 @@
 	let projectSnapshot = $state<{ envId: string; value: Paginated<Project> } | null>(null);
 	let containerRequestOptions = $state(untrack(() => data.containerRequestOptions as ContainerListRequestOptions));
 	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions as SearchPaginationSortRequest));
-	let activeTab = $state<'containers' | 'projects'>(
-		untrack(() =>
-			(data.containers.pagination?.totalItems ?? 0) > 0 || (data.projects.pagination?.totalItems ?? 0) === 0
-				? 'containers'
-				: 'projects'
-		)
-	);
 	const envId = $derived(environmentStore.selected?.id || '0');
 
 	const containersQuery = createQuery(() => ({
@@ -146,13 +140,16 @@
 			icon: ProjectsIcon
 		}
 	]);
-	const effectiveTab = $derived(
-		activeTab === 'containers' && containerCount === 0 && projectCount > 0
-			? 'projects'
-			: activeTab === 'projects' && projectCount === 0 && containerCount > 0
-				? 'containers'
-				: activeTab
-	);
+	type UpdateTab = 'containers' | 'projects';
+	const urlTab = useUrlTab<UpdateTab>({
+		validTabs: () => {
+			if (containerCount === 0 && projectCount > 0) return ['projects'];
+			if (projectCount === 0 && containerCount > 0) return ['containers'];
+			return ['containers', 'projects'];
+		},
+		defaultTab: () => (containerCount > 0 || projectCount === 0 ? 'containers' : 'projects')
+	});
+	const effectiveTab = $derived(urlTab.value);
 
 	async function refresh() {
 		containerSnapshot = null;
@@ -164,7 +161,7 @@
 	}
 
 	function handleTabChange(value: string) {
-		activeTab = value === 'projects' ? 'projects' : 'containers';
+		urlTab.select(value);
 	}
 
 	const actionButtons: ActionButton[] = $derived([

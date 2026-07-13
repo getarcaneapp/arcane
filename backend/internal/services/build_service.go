@@ -77,7 +77,7 @@ func (s *BuildService) BuildSettings() buildtypes.BuildSettings {
 	}
 	settings := s.settings.GetSettingsConfig()
 	return buildtypes.BuildSettings{
-		DepotProjectId:   settings.DepotProjectId.Value,
+		DepotProjectID:   settings.DepotProjectId.Value,
 		DepotToken:       settings.DepotToken.Value,
 		BuildProvider:    settings.BuildProvider.Value,
 		BuildTimeoutSecs: settings.BuildTimeout.AsInt(),

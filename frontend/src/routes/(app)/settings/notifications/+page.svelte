@@ -7,6 +7,7 @@
 	import { SettingsPageLayout } from '$lib/layouts';
 	import settingsStore from '$lib/stores/config-store';
 	import { m } from '$lib/paraglide/messages';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 	import { notificationService } from '$lib/services/notification-service';
 	import type { NotificationSettings } from '$lib/types/notifications';
 	import {
@@ -53,7 +54,11 @@
 	let isTesting = $state(false);
 	let showUnsavedDialog = $state(false);
 	let pendingTestAction: (() => Promise<void>) | null = $state(null);
-	let providerTab = $state<NotificationProviderKey>('email');
+	const urlTab = useUrlTab<NotificationProviderKey>({
+		validTabs: () => NOTIFICATION_PROVIDER_KEYS,
+		defaultTab: () => 'email'
+	});
+	const providerTab = $derived(urlTab.value);
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 
@@ -427,7 +432,7 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
-			<Tabs.Root bind:value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
+			<Tabs.Root value={providerTab} onValueChange={urlTab.select} class="flex min-h-0 w-full min-w-0 flex-col">
 				<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
 					{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
 						<Tabs.Trigger value={provider} class="shrink-0">

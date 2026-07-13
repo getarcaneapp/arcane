@@ -14,14 +14,13 @@
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import { RegistryIcon, TemplateIcon, FolderOpenIcon } from '$lib/icons';
 	import { hasPermission } from '$lib/utils/auth';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 
 	let templates = $state(untrack(() => data.templates));
 	let registries = $state<TemplateRegistry[]>(untrack(() => data.registries));
 	let requestOptions = $state<SearchPaginationSortRequest>(untrack(() => data.templateRequestOptions));
-	let activeView = $state<'browse' | 'registries'>('browse');
-
 	const tabItems: TabItem[] = [
 		{
 			value: 'browse',
@@ -34,6 +33,11 @@
 			icon: RegistryIcon
 		}
 	];
+	const urlTab = useUrlTab({
+		validTabs: () => tabItems.map((tab) => tab.value),
+		defaultTab: () => 'browse'
+	});
+	const activeView = $derived(urlTab.value);
 
 	let isLoading = $state({
 		addingRegistry: false,
@@ -188,14 +192,10 @@
 <ResourcePageLayout title={m.templates_title()} subtitle={m.templates_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
-			<Tabs.Root bind:value={activeView}>
+			<Tabs.Root value={activeView}>
 				<div class="pb-6">
 					<div class="w-fit">
-						<TabBar
-							items={tabItems}
-							value={activeView}
-							onValueChange={(value) => (activeView = value as 'browse' | 'registries')}
-						/>
+						<TabBar items={tabItems} value={activeView} onValueChange={urlTab.select} />
 					</div>
 				</div>
 

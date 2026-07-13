@@ -13,6 +13,7 @@
 	import UpdateStatusBanner from '$lib/components/update-status-banner.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import UncheckedRingIcon from '$lib/components/unchecked-ring-icon.svelte';
+	import { mergeProps } from 'bits-ui';
 
 	interface Props {
 		updateInfo?: ImageUpdateData;
@@ -450,8 +451,12 @@
 
 {#if isLocalImage}
 	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
-		{#snippet trigger()}
-			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
+		{#snippet trigger({ props })}
+			<span
+				{...props}
+				class="mr-2 inline-flex size-4 items-center justify-center align-middle"
+				data-testid="image-update-trigger"
+			>
 				<BoxIcon class="size-4 text-slate-500" />
 			</span>
 		{/snippet}
@@ -464,8 +469,12 @@
 	</UpdateStatusPopover>
 {:else if effectiveUpdateInfo}
 	<UpdateStatusPopover bind:open={isOpen} contentClass="max-w-[280px] p-0">
-		{#snippet trigger()}
-			<span class="mr-2 inline-flex size-4 items-center justify-center align-middle" data-testid="image-update-trigger">
+		{#snippet trigger({ props })}
+			<span
+				{...props}
+				class="mr-2 inline-flex size-4 items-center justify-center align-middle"
+				data-testid="image-update-trigger"
+			>
 				{#if hasError}
 					<AlertIcon class="size-4 text-red-500" />
 				{:else if !effectiveUpdateInfo?.hasUpdate}
@@ -494,8 +503,8 @@
 	</UpdateStatusPopover>
 {:else if isLoadingInBackground || isChecking}
 	<UpdateStatusPopover contentClass="max-w-[220px] p-0">
-		{#snippet trigger()}
-			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
+		{#snippet trigger({ props })}
+			<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 				<Spinner class="size-4 text-blue-400" />
 			</span>
 		{/snippet}
@@ -507,27 +516,28 @@
 		{/snippet}
 	</UpdateStatusPopover>
 {:else}
-	<UpdateStatusPopover interactive contentClass="max-w-[240px] p-0">
-		{#snippet trigger()}
-			<span class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
-				{#if canCheckUpdate}
-					<button
-						onclick={checkImageUpdate}
-						disabled={isChecking}
-						class="flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed"
-					>
-						{#if isChecking}
-							<Spinner class="size-3 text-blue-400" />
-						{:else}
-							<UncheckedRingIcon />
-						{/if}
-					</button>
-				{:else}
+	<UpdateStatusPopover interactive directTrigger={canCheckUpdate} contentClass="max-w-[240px] p-0">
+		{#snippet trigger({ props })}
+			{#if canCheckUpdate}
+				{@const triggerProps = mergeProps(props, {
+					onclick: checkImageUpdate,
+					class:
+						'mr-2 inline-flex size-4 items-center justify-center rounded-full text-gray-400 transition-colors hover:text-blue-400 disabled:cursor-not-allowed'
+				})}
+				<button {...triggerProps} disabled={isChecking} data-testid="image-update-trigger">
+					{#if isChecking}
+						<Spinner class="size-3 text-blue-400" />
+					{:else}
+						<UncheckedRingIcon />
+					{/if}
+				</button>
+			{:else}
+				<span {...props} class="mr-2 inline-flex size-4 items-center justify-center" data-testid="image-update-trigger">
 					<div class="flex size-4 items-center justify-center text-gray-400 opacity-30">
 						<UncheckedRingIcon />
 					</div>
-				{/if}
-			</span>
+				</span>
+			{/if}
 		{/snippet}
 
 		{#snippet content()}

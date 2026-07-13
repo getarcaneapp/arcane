@@ -8,6 +8,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { TrashIcon } from '$lib/icons';
 	import { attrsText } from './diagnostic-log-formatting';
+	import { formatTime } from '$lib/utils/formatting';
 
 	interface Props {
 		height?: string;
@@ -55,15 +56,8 @@
 		return 'text-emerald-400';
 	}
 
-	const timeFmt = new Intl.DateTimeFormat('en-US', {
-		hour: '2-digit',
-		minute: '2-digit',
-		second: '2-digit',
-		hour12: false
-	});
 	function fmtTime(t: string): string {
-		const d = new Date(t);
-		return isNaN(d.getTime()) ? t : timeFmt.format(d);
+		return formatTime(t) || t;
 	}
 
 	function logKey(entry: LogEntry): string {

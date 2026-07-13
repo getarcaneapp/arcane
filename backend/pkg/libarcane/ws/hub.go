@@ -4,7 +4,11 @@ import (
 	"context"
 	"log/slog"
 	"sync"
+	"sync/atomic"
+	"time"
 )
+
+const broadcastDropWarningInterval = 5 * time.Second
 
 type Hub struct {
 	mu         sync.RWMutex
@@ -15,6 +19,8 @@ type Hub struct {
 	onFirst    func()
 	onActive   func()
 	onEmpty    func()
+	dropped    atomic.Uint64
+	lastWarned atomic.Int64
 }
 
 func NewHub(buffer int) *Hub {
@@ -99,7 +105,13 @@ func (h *Hub) Broadcast(msg []byte) {
 	default:
 		// prevent global stall if hub buffer fills
 		// This indicates the hub is not processing messages fast enough
-		slog.Warn("websocket hub broadcast buffer full; dropping message")
+		h.dropped.Add(1)
+
+		now := time.Now().UnixNano()
+		lastWarned := h.lastWarned.Load()
+		if now-lastWarned >= broadcastDropWarningInterval.Nanoseconds() && h.lastWarned.CompareAndSwap(lastWarned, now) {
+			slog.Warn("websocket hub broadcast buffer full; dropping messages", "dropped_count", h.dropped.Swap(0))
+		}
 	}
 }
 

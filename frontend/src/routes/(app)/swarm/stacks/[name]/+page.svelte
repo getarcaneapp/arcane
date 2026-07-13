@@ -21,6 +21,7 @@
 	import SwarmServicesTable from '../../services/services-table.svelte';
 	import SwarmTasksTable from '../../tasks/tasks-table.svelte';
 	import type { SwarmStackSource } from '$lib/types/swarm';
+	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 
@@ -65,9 +66,6 @@
 	let servicesRequestOptions = $state(untrack(() => data.servicesRequestOptions));
 	let tasksRequestOptions = $state(untrack(() => data.tasksRequestOptions));
 	type StackTab = 'services' | 'tasks' | 'source';
-	let selectedTab = $state<StackTab>(
-		untrack(() => ((data.stack?.services ?? 0) > 0 ? 'services' : data.sourceState !== 'forbidden' ? 'source' : 'services'))
-	);
 	let isLoading = $state({ refresh: false, remove: false });
 
 	const stackName = $derived(stack?.name ?? data.stackName);
@@ -78,6 +76,11 @@
 		...(hasLiveStack ? [{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon }] : []),
 		...(canViewSource ? [{ value: 'source', label: 'Source', icon: FileTextIcon }] : [])
 	]);
+	const urlTab = useUrlTab<StackTab>({
+		validTabs: () => tabItems.map((tab) => tab.value as StackTab),
+		defaultTab: () => (hasLiveStack ? 'services' : canViewSource ? 'source' : 'services')
+	});
+	const selectedTab = $derived(urlTab.value);
 	const totalServices = $derived(services?.pagination?.totalItems ?? services?.data?.length ?? 0);
 	const totalTasks = $derived(tasks?.pagination?.totalItems ?? tasks?.data?.length ?? 0);
 	const stackSubtitle = $derived(
@@ -154,13 +157,6 @@
 
 	onMount(() => {
 		void refreshSource();
-	});
-
-	$effect(() => {
-		const validTabs = tabItems.map((item) => item.value as StackTab);
-		if (validTabs.length > 0 && !validTabs.includes(selectedTab) && validTabs[0]) {
-			selectedTab = validTabs[0];
-		}
 	});
 
 	function handleDelete() {
@@ -242,7 +238,7 @@
 
 			<Tabs.Root value={selectedTab} class="flex min-h-0 flex-1 flex-col">
 				<div class="w-fit pb-3">
-					<TabBar items={tabItems} value={selectedTab} onValueChange={(value) => (selectedTab = value as StackTab)} />
+					<TabBar items={tabItems} value={selectedTab} onValueChange={urlTab.select} />
 				</div>
 
 				<Tabs.Content value="services" class="min-h-0 flex-1">

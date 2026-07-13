@@ -198,14 +198,17 @@
 		<div class="flex flex-wrap items-center gap-4">
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<SwitchWithLabel
-						id="auto-scroll-toggle"
-						checked={autoScroll}
-						label={m.common_autoscroll()}
-						onCheckedChange={(checked) => {
-							autoScroll = checked;
-						}}
-					/>
+					{#snippet child({ props })}
+						<SwitchWithLabel
+							triggerProps={props}
+							id="auto-scroll-toggle"
+							checked={autoScroll}
+							label={m.common_autoscroll()}
+							onCheckedChange={(checked) => {
+								autoScroll = checked;
+							}}
+						/>
+					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
 					{m.log_auto_scroll_tooltip()}
@@ -214,14 +217,17 @@
 
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<SwitchWithLabel
-						id="auto-start-logs-toggle"
-						checked={autoStartLogs}
-						label={m.auto_start()}
-						onCheckedChange={(checked) => {
-							autoStartLogs = checked;
-						}}
-					/>
+					{#snippet child({ props })}
+						<SwitchWithLabel
+							triggerProps={props}
+							id="auto-start-logs-toggle"
+							checked={autoStartLogs}
+							label={m.auto_start()}
+							onCheckedChange={(checked) => {
+								autoStartLogs = checked;
+							}}
+						/>
+					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
 					{m.log_auto_start_tooltip()}
@@ -230,14 +236,17 @@
 
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<SwitchWithLabel
-						id="parsed-log-mode-toggle"
-						checked={showParsedJson}
-						label={showParsedJson ? m.common_parsed() : m.common_raw()}
-						onCheckedChange={(checked) => {
-							showParsedJson = checked;
-						}}
-					/>
+					{#snippet child({ props })}
+						<SwitchWithLabel
+							triggerProps={props}
+							id="parsed-log-mode-toggle"
+							checked={showParsedJson}
+							label={showParsedJson ? m.common_parsed() : m.common_raw()}
+							onCheckedChange={(checked) => {
+								showParsedJson = checked;
+							}}
+						/>
+					{/snippet}
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content side="bottom" class="max-w-xs">
 					{m.log_parsed_mode_tooltip()}

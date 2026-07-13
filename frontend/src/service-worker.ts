@@ -3,13 +3,13 @@
 /// <reference lib="webworker" />
 /// <reference types="@sveltejs/kit" />
 
-import { build, files, version } from '$service-worker';
+import { files, version } from '$service-worker';
 
 const self = globalThis.self as unknown as ServiceWorkerGlobalScope;
 
 const CACHE = `cache-${version}`;
 
-const ASSETS = [...build, ...files];
+const ASSETS = files;
 
 self.addEventListener('install', (event) => {
 	console.log('[ServiceWorker] Install');

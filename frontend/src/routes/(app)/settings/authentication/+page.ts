@@ -7,10 +7,9 @@ import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ parent, url }) => {
+export const load: PageLoad = async ({ parent }) => {
 	const parentData = await parent();
 	const { queryClient } = parentData;
-	const activeAuthTab = url.searchParams.get('tab') === 'federated' ? 'federated' : 'settings';
 	const federatedCredentialRequestOptions = resolveInitialTableRequest('arcane-federated-credentials-table', {
 		pagination: {
 			page: 1,
@@ -50,7 +49,6 @@ export const load: PageLoad = async ({ parent, url }) => {
 
 	return {
 		...parentData,
-		activeAuthTab,
 		oidcMappings: mappings,
 		federatedCredentials,
 		federatedCredentialRequestOptions,

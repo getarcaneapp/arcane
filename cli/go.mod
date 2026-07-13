@@ -10,7 +10,7 @@ require (
 	charm.land/log/v2 v2.0.0
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.19.0
-	github.com/getarcaneapp/arcane/types/v2 v2.3.2
+	github.com/getarcaneapp/arcane/types/v2 v2.4.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.24
 	github.com/spf13/cobra v1.10.2
@@ -81,7 +81,7 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/exp v0.0.0-20260603202125-055de637280b // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.46.0 // indirect
-	golang.org/x/text v0.39.0 // indirect
+	golang.org/x/sys v0.47.0 // indirect
+	golang.org/x/text v0.40.0 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 )

@@ -92,6 +92,21 @@ test.describe('Notification settings', () => {
 		};
 	};
 
+	test('should persist the selected provider tab in the URL', async ({ page }) => {
+		await setupNotificationTest(page, 'discord');
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('email');
+
+		await openProviderTab(page, 'Discord');
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('discord');
+
+		await page.reload();
+		await expect(page.getByRole('tab', { name: 'Discord' })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+		await expect(page.locator('h3').filter({ hasText: 'Discord' }).first()).toBeVisible();
+	});
+
 	test('should allow testing email notifications without state_unsafe_mutation errors', async ({
 		page
 	}) => {

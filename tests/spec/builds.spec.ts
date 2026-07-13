@@ -21,7 +21,9 @@ const FIELD_LABELS = {
 async function navigateToBuildWorkspace(page: Page) {
 	await page.goto(ROUTES.page);
 	await page.waitForLoadState('load');
-	await expect(page.getByRole('heading', { level: 1, name: /Build Workspace/i })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Build Workspace', exact: true })
+	).toBeVisible();
 }
 
 async function ensureSwitchState(toggle: Locator, desired: boolean) {
@@ -48,10 +50,7 @@ async function openAdvancedBuildOptions(page: Page) {
 		return;
 	}
 
-	await page
-		.getByRole('button', { name: /Advanced/i })
-		.first()
-		.click();
+	await page.getByRole('button', { name: 'Advanced', exact: true }).first().click();
 	await expect(dockerfileInput).toBeVisible();
 }
 
@@ -148,6 +147,22 @@ async function mockDepotConfiguredSettings(page: Page) {
 }
 
 test.describe('Build workspace provider flows', () => {
+	test('persists the selected primary tab in the URL', async ({ page }) => {
+		await navigateToBuildWorkspace(page);
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('build');
+
+		const historyTab = page.getByRole('tab', { name: 'Build History', exact: true });
+		await historyTab.click();
+		await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('history');
+		await expect(historyTab).toHaveAttribute('data-state', 'active');
+
+		await page.reload();
+		await expect(page.getByRole('tab', { name: 'Build History', exact: true })).toHaveAttribute(
+			'data-state',
+			'active'
+		);
+	});
+
 	test('submits remote git build context from the dedicated context mode', async ({ page }) => {
 		await navigateToBuildWorkspace(page);
 		await switchContextMode(page, 'Remote Git');
@@ -384,7 +399,7 @@ test.describe('Build workspace provider flows', () => {
 
 		await getBuildButton(page).click();
 		const localUnsupportedToast = getToastTitle(page).filter({
-			hasText: /Unsupported build options for provider local:/
+			hasText: 'Unsupported build options for provider local:'
 		});
 		await expect(localUnsupportedToast.first()).toBeVisible();
 		const localUnsupportedText = await localUnsupportedToast.first().innerText();

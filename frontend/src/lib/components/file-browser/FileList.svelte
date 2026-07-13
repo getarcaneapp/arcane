@@ -19,8 +19,7 @@
 	import * as Tooltip from '$lib/components/ui/tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import RowActionsMenu from './row-actions-menu.svelte';
-	import { bytes } from '$lib/utils/formatting';
-	import { format } from 'date-fns';
+	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let {
@@ -187,7 +186,7 @@
 
 {#snippet CreatedCell({ value }: { value: any })}
 	<span class="text-muted-foreground text-sm">
-		{format(new Date(String(value)), 'PP p')}
+		{formatDateTimeShort(String(value))}
 	</span>
 {/snippet}
 
@@ -241,7 +240,7 @@
 		]}
 		footer={{
 			label: m.common_created(),
-			getValue: (item) => format(new Date(item.modTime), 'PP p'),
+			getValue: (item) => formatDateTimeShort(item.modTime),
 			icon: ClockIcon || 'div'
 		}}
 		rowActions={RowActions}

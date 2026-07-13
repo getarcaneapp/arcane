@@ -5388,6 +5388,129 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	assert.Equal(t, updatedEnv, string(envBytes))
 }
 
+func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
+	targetPath := filepath.Join(t.TempDir(), "project.env")
+	targetPerm := os.FileMode(0o640)
+	require.NoError(t, os.WriteFile(targetPath, []byte("FOO=original\n"), targetPerm))
+	require.NoError(t, os.Chmod(targetPath, targetPerm))
+
+	envPath := filepath.Join(projectPath, projects.EffectiveEnvFileName)
+	if err := os.Symlink(targetPath, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	originalLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	dirName := "demo"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-env-symlink-update"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	updatedEnv := "FOO=updated\n"
+	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &updatedEnv, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	targetContent, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, updatedEnv, string(targetContent))
+	currentLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalLinkTarget, currentLinkTarget)
+	linkInfo, err := os.Lstat(envPath)
+	require.NoError(t, err)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+	if runtime.GOOS != "windows" {
+		targetInfo, statErr := os.Stat(targetPath)
+		require.NoError(t, statErr)
+		assert.Equal(t, targetPerm, targetInfo.Mode().Perm())
+	}
+}
+
+func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjectSaveFails(t *testing.T) {
+	db := setupProjectTestDB(t)
+	ctx := context.Background()
+
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectsRoot := t.TempDir()
+	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
+	projectPath := createComposeProjectDir(t, projectsRoot, "demo")
+	targetPath := filepath.Join(t.TempDir(), "project.env")
+	originalContent := "FOO=original\n"
+	targetPerm := os.FileMode(0o640)
+	require.NoError(t, os.WriteFile(targetPath, []byte(originalContent), targetPerm))
+	require.NoError(t, os.Chmod(targetPath, targetPerm))
+
+	envPath := filepath.Join(projectPath, projects.EffectiveEnvFileName)
+	if err := os.Symlink(targetPath, envPath); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	originalLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+
+	eventService := NewEventService(db, nil, nil)
+	svc := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
+	dirName := "demo"
+	project := &models.Project{
+		BaseModel: models.BaseModel{ID: "proj-external-env-symlink-rollback"},
+		Name:      dirName,
+		DirName:   &dirName,
+		Path:      projectPath,
+		Status:    models.ProjectStatusStopped,
+	}
+	require.NoError(t, db.Create(project).Error)
+
+	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_external_env_project_save_failure", func(tx *gorm.DB) {
+		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
+			_ = tx.AddError(errors.New("forced project save failure"))
+		}
+	}))
+
+	updatedEnv := "FOO=updated\n"
+	_, err = svc.UpdateProject(ctx, project.ID, nil, nil, &updatedEnv, nil, nil, nil, models.User{
+		BaseModel: models.BaseModel{ID: "u1"},
+		Username:  "tester",
+	})
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "forced project save failure")
+
+	targetContent, err := os.ReadFile(targetPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalContent, string(targetContent))
+	currentLinkTarget, err := os.Readlink(envPath)
+	require.NoError(t, err)
+	assert.Equal(t, originalLinkTarget, currentLinkTarget)
+	linkInfo, err := os.Lstat(envPath)
+	require.NoError(t, err)
+	require.NotZero(t, linkInfo.Mode()&os.ModeSymlink)
+	if runtime.GOOS != "windows" {
+		targetInfo, statErr := os.Stat(targetPath)
+		require.NoError(t, statErr)
+		assert.Equal(t, targetPerm, targetInfo.Mode().Perm())
+	}
+}
+
 func createComposeProjectDir(t *testing.T, root, name string) string {
 	t.Helper()
 
