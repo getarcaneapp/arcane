@@ -38,78 +38,6 @@ const useInsecureLocalTLS =
 	(parsedDevBackendURL.protocol === 'https:' &&
 		(parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
 
-function normalizeModuleID(id: string): string {
-	return id.replaceAll('\\', '/');
-}
-
-function isEditorModule(moduleID: string): boolean {
-	return (
-		moduleID.includes('/node_modules/@codemirror/') ||
-		moduleID.includes('/node_modules/@lezer/') ||
-		moduleID.includes('/node_modules/codemirror/') ||
-		moduleID.includes('/node_modules/svelte-codemirror-editor/')
-	);
-}
-
-function isUIPrimitiveModule(moduleID: string): boolean {
-	return (
-		moduleID.includes('/node_modules/bits-ui/') ||
-		moduleID.includes('/node_modules/formsnap/') ||
-		moduleID.includes('/node_modules/paneforge/') ||
-		moduleID.includes('/node_modules/vaul-svelte/')
-	);
-}
-
-function isNetworkDiagramModule(moduleID: string): boolean {
-	return moduleID.includes('/node_modules/@xyflow/');
-}
-
-function isTerminalModule(moduleID: string): boolean {
-	return moduleID.includes('/node_modules/@xterm/');
-}
-
-function isQueryTableModule(moduleID: string): boolean {
-	return moduleID.includes('/node_modules/@tanstack/');
-}
-
-function splitVendorChunk(id: string): string | null {
-	const moduleID = normalizeModuleID(id);
-
-	if (moduleID.includes('/src/lib/paraglide/messages/')) {
-		return 'paraglide-messages';
-	}
-
-	if (moduleID.includes('/src/lib/paraglide/')) {
-		return 'paraglide-runtime';
-	}
-
-	if (isEditorModule(moduleID)) {
-		return 'editor';
-	}
-
-	if (isNetworkDiagramModule(moduleID)) {
-		return 'network-diagram';
-	}
-
-	if (isTerminalModule(moduleID)) {
-		return 'terminal';
-	}
-
-	if (isQueryTableModule(moduleID)) {
-		return 'query-table';
-	}
-
-	if (isUIPrimitiveModule(moduleID)) {
-		return 'ui-primitives';
-	}
-
-	if (moduleID.includes('/node_modules/')) {
-		return 'vendor';
-	}
-
-	return null;
-}
-
 export default defineConfig({
 	plugins: [
 		tailwindcss(),
@@ -139,47 +67,6 @@ export default defineConfig({
 		rolldownOptions: {
 			checks: {
 				pluginTimings: false
-			},
-			output: {
-				codeSplitting: {
-					groups: [
-						{
-							name: 'editor',
-							test: (id) => isEditorModule(normalizeModuleID(id)),
-							priority: 10,
-							includeDependenciesRecursively: true
-						},
-						{
-							name: 'ui-primitives',
-							test: (id) => isUIPrimitiveModule(normalizeModuleID(id)),
-							priority: 10,
-							includeDependenciesRecursively: true
-						},
-						{
-							name: 'network-diagram',
-							test: (id) => isNetworkDiagramModule(normalizeModuleID(id)),
-							priority: 10,
-							includeDependenciesRecursively: true
-						},
-						{
-							name: 'terminal',
-							test: (id) => isTerminalModule(normalizeModuleID(id)),
-							priority: 10,
-							includeDependenciesRecursively: true
-						},
-						{
-							name: 'query-table',
-							test: (id) => isQueryTableModule(normalizeModuleID(id)),
-							priority: 10,
-							includeDependenciesRecursively: true
-						},
-						{
-							name: splitVendorChunk,
-							minSize: 20 * 1024,
-							maxSize: 450 * 1024
-						}
-					]
-				}
 			}
 		}
 	},
