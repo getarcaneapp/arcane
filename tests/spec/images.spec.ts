@@ -88,7 +88,7 @@ test.describe('Images Page', () => {
 		await navigateToImages(page);
 
 		await expect(page.getByText(`${imageCounts.totalImages} Total Images`)).toBeVisible();
-		await expect(page.getByText(/Total Size/i)).toBeVisible();
+		await expect(page.getByText('Total Size', { exact: true })).toBeVisible();
 	});
 
 	test('should align /images/counts with usage derived from /images list', async ({ page }) => {
@@ -106,16 +106,14 @@ test.describe('Images Page', () => {
 	test('should display the image table when images exist', async ({ page }) => {
 		await navigateToImages(page);
 
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Repository' })).toBeVisible();
 	});
 
 	test('should open the Pull Image dialog', async ({ page }) => {
 		await navigateToImages(page);
 		await page.getByRole('button', { name: 'Pull Image' }).click();
-		await expect(
-			page.locator('div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Pull Image")')
-		).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Pull Image', exact: true })).toBeVisible();
 	});
 
 	test('should open the Prune Unused Images dialog', async ({ page }) => {
@@ -131,16 +129,17 @@ test.describe('Images Page', () => {
 
 		await pruneButton.click();
 		await expect(
-			page.locator(
-				'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'
-			)
+			page.getByRole('heading', { name: 'Prune Unused Images', exact: true })
 		).toBeVisible();
 	});
 
 	test('should navigate to image details on inspect click', async ({ page }) => {
 		await navigateToImages(page);
 
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
 		const menu = await openRowActionsMenu(page, firstRow);
 		await menu.getByRole('menuitem', { name: 'Inspect' }).click();
 	});
@@ -149,14 +148,17 @@ test.describe('Images Page', () => {
 		test.skip(!realImages.length, 'No images available for pull API test');
 		await navigateToImages(page);
 
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
 		const menu = await openRowActionsMenu(page, firstRow);
 		await menu.getByRole('menuitem', { name: 'Pull' }).click();
 
 		await page.waitForLoadState('load');
 
 		await expect(
-			page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]`)
+			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 		).toBeVisible();
 	});
 
@@ -164,25 +166,47 @@ test.describe('Images Page', () => {
 		test.skip(!realImages.length, 'No images available for remove API test');
 		await navigateToImages(page);
 
-		const deleteableImage = realImages.find((img) =>
-			img.repoTags?.[0]?.includes('ghcr.io/linuxserver/radarr')
+		const removableImage = realImages.find((image) => image.repo && image.repo !== '<none>');
+		test.skip(!removableImage, 'No removable images available');
+		const removePath = `/api/environments/0/images/${removableImage.id}`;
+
+		let removeRequestCount = 0;
+		await page.route(
+			(url) => decodeURIComponent(url.pathname) === removePath,
+			async (route) => {
+				if (route.request().method() !== 'DELETE') {
+					await route.continue();
+					return;
+				}
+
+				removeRequestCount += 1;
+				await route.fulfill({
+					status: 200,
+					contentType: 'application/json',
+					body: JSON.stringify({
+						success: true,
+						data: { message: 'Image removed successfully' }
+					})
+				});
+			}
 		);
-		test.skip(!deleteableImage, 'No deletable images available');
 
-		const firstRow = await page.getByRole('row', { name: 'ghcr.io/linuxserver/radarr' });
-		const menu = await openRowActionsMenu(page, firstRow);
-		await menu.getByRole('menuitem', { name: 'Remove' }).click();
+		const imageRow = page
+			.getByRole('row')
+			.filter({
+				has: page.getByRole('link', { name: removableImage.repo, exact: true })
+			})
+			.first();
+		const menu = await openRowActionsMenu(page, imageRow);
+		await menu.getByRole('menuitem', { name: 'Remove', exact: true }).click();
+
+		const dialog = page.getByRole('dialog', { name: 'Remove image', exact: true });
+		await expect(dialog).toBeVisible();
+		await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+		await expect.poll(() => removeRequestCount).toBe(1);
 
 		await expect(
-			page.locator(
-				'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Remove Image")'
-			)
-		).toBeVisible();
-
-		await page.locator('button:has-text("Remove")').click();
-
-		await expect(
-			page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
+			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 		).toBeVisible();
 	});
 
@@ -199,16 +223,17 @@ test.describe('Images Page', () => {
 
 		await pruneButton.click();
 
+		const dialog = page.getByRole('dialog');
 		await expect(
-			page.locator(
-				'div[role="heading"][aria-level="2"][data-dialog-title]:has-text("Prune Unused Images")'
-			)
+			dialog.getByRole('heading', { name: 'Prune Unused Images', exact: true })
 		).toBeVisible();
-
-		await page.locator('button:has-text("Prune Images")').click();
+		await dialog.getByRole('button', { name: 'Prune Images', exact: true }).click();
 
 		await expect(
-			page.locator(`li[data-sonner-toast][data-type="success"] div[data-title]:has-text("pruned")`)
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.filter({ hasText: 'pruned' })
 		).toBeVisible({
 			timeout: 10000
 		});

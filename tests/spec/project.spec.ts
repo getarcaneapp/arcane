@@ -3,6 +3,7 @@ import { fetchProjectCountsWithRetry, fetchProjectsWithRetry } from '../utils/fe
 import type { Activity } from '../types/activity.type';
 import { Project, ProjectStatusCounts } from 'types/project.type';
 import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
+import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const ROUTES = {
 	page: '/projects',
@@ -42,24 +43,10 @@ async function getCodeMirrorValue(editor: Locator) {
 	});
 }
 
-async function openDropdownMenu(page: Page, trigger: Locator) {
-	await expect(trigger).toBeVisible();
-	const row = trigger.locator('xpath=ancestor::tr[1]');
-	if ((await row.count()) > 0) {
-		await row.hover();
-	}
-	await trigger.click();
-
-	const menu = page.locator('[data-slot="dropdown-menu-content"]:visible').last();
-	await expect(menu).toBeVisible();
-
-	return menu;
-}
-
 async function clickProjectsPageUpdateAction(page: Page) {
 	const updateProjectsButton = page
-		.locator('main button:visible')
-		.filter({ hasText: 'Update Projects' })
+		.getByRole('button', { name: 'Update Projects', exact: true })
+		.filter({ visible: true })
 		.first();
 	await expect(updateProjectsButton).toBeVisible();
 	await updateProjectsButton.click();
@@ -185,7 +172,7 @@ async function createProjectViaUI(page: Page, projectName: string) {
 	await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
 	await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-	const visibleEditors = page.locator('.cm-editor:visible');
+	const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
 	const composeEditor = visibleEditors.first();
 	const envEditor = visibleEditors.nth(1);
 	await expect(composeEditor).toBeVisible();
@@ -199,9 +186,7 @@ async function createProjectViaUI(page: Page, projectName: string) {
 		})
 		.toBe(TEST_COMPOSE_YAML.trimEnd());
 
-	const createButton = page.locator('button[data-slot="arcane-button"]', {
-		hasText: 'Create Project'
-	});
+	const createButton = page.locator('button[data-action="create"]');
 	await expect(createButton).toBeEnabled();
 	const createResponsePromise = page.waitForResponse(
 		(response) =>
@@ -249,19 +234,20 @@ async function destroyProjectByNameViaUI(page: Page, projectName: string) {
 		await searchInput.fill(projectName);
 	}
 
-	const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+	const projectLink = page.getByRole('link', { name: projectName, exact: true });
+	const row = page.getByRole('row').filter({ has: projectLink }).first();
 	if (!(await row.isVisible().catch(() => false))) {
 		return;
 	}
 
-	const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
+	const menu = await openRowActionsMenu(page, row);
 	await menu.getByRole('menuitem', { name: 'Destroy', exact: true }).click();
 
 	const dialog = page.getByRole('dialog');
 	await expect(dialog).toBeVisible();
 	await dialog.getByRole('button', { name: 'Destroy', exact: true }).click();
 
-	await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0, {
+	await expect(page.getByRole('row').filter({ has: projectLink })).toHaveCount(0, {
 		timeout: 15000
 	});
 }
@@ -329,7 +315,7 @@ test.describe('Projects Page', () => {
 	});
 
 	test('should display projects list', async ({ page }) => {
-		await expect(page.locator('table')).toBeVisible();
+		await expect(page.getByRole('table')).toBeVisible();
 	});
 
 	test('should display the updates column', async ({ page }) => {
@@ -340,8 +326,11 @@ test.describe('Projects Page', () => {
 		test.skip(!realProjects.length, 'No projects available for actions menu test');
 
 		await page.waitForLoadState('load');
-		const firstRow = page.locator('tbody tr').first();
-		const menu = await openDropdownMenu(page, firstRow.getByRole('button', { name: 'Open menu' }));
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
+		const menu = await openRowActionsMenu(page, firstRow);
 
 		await expect(menu.getByRole('menuitem', { name: 'Edit' })).toBeVisible();
 		// Check for at least one of the state action buttons (Up/Down/Restart)
@@ -375,15 +364,16 @@ test.describe('Projects Page', () => {
 
 			await page.goto(ROUTES.page);
 			await page.waitForLoadState('load');
-			await expect(page.locator('tbody tr').filter({ hasText: projectName })).toHaveCount(0);
+			const projectLink = page.getByRole('link', { name: projectName, exact: true });
+			await expect(page.getByRole('row').filter({ has: projectLink })).toHaveCount(0);
 
 			await page.getByLabel('Show archived').check();
 			await expect(page).toHaveURL(/archived=true/);
-			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			const row = page.getByRole('row').filter({ has: projectLink }).first();
 			await expect(row).toBeVisible();
 			await expect(row.getByText('Archived', { exact: true })).toBeVisible();
 
-			const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
+			const menu = await openRowActionsMenu(page, row);
 			await menu.getByRole('menuitem', { name: 'Unarchive', exact: true }).click();
 			await expect(page.getByText('Project unarchived successfully.')).toBeVisible({
 				timeout: 10000
@@ -405,18 +395,12 @@ test.describe('Projects Page', () => {
 		test.skip(!realProjects.length, 'No projects available for navigation test');
 
 		await page.waitForLoadState('load');
-		// Get the first project link that points to /projects/ (not the "Git" indicator link)
-		const firstProjectLink = page
-			.locator('tbody tr')
-			.first()
-			.getByRole('link')
-			.filter({ hasText: /^(?!Git$)/ })
-			.first();
-		const projectName = await firstProjectLink.textContent();
+		const projectName = realProjects[0].name;
+		const firstProjectLink = page.getByRole('link', { name: projectName, exact: true }).first();
 
 		await firstProjectLink.click();
 		await expect(page).toHaveURL(/\/projects\/.+/);
-		await expect(page.getByRole('button', { name: new RegExp(`${projectName}`) })).toBeVisible();
+		await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible();
 	});
 
 	test('should allow searching/filtering projects', async ({ page }) => {
@@ -470,11 +454,11 @@ test.describe('Projects Page', () => {
 		const stoppedProjects = realProjects.filter((p) => p.status === 'stopped');
 
 		if (runningProjects.length > 0) {
-			await expect(page.locator('text="Running"').first()).toBeVisible();
+			await expect(page.getByText('Running', { exact: true }).first()).toBeVisible();
 		}
 
 		if (stoppedProjects.length > 0) {
-			await expect(page.locator('text="Stopped"').first()).toBeVisible();
+			await expect(page.getByText('Stopped', { exact: true }).first()).toBeVisible();
 		}
 	});
 });
@@ -494,7 +478,7 @@ test.describe('New Compose Project Page', () => {
 	test('should preserve YAML indentation when pressing Enter in compose editor', async ({
 		page
 	}) => {
-		const composeEditor = page.locator('.cm-editor:visible').first();
+		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		const composeContent = composeEditor.locator('.cm-content').first();
 
 		await expect(composeContent).toBeVisible();
@@ -510,9 +494,7 @@ test.describe('New Compose Project Page', () => {
 	});
 
 	test('should validate required fields', async ({ page }) => {
-		const createButton = page.locator('button[data-slot="arcane-button"]', {
-			hasText: 'Create Project'
-		});
+		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeDisabled();
 
 		await page.getByRole('button', { name: 'My New Project' }).click();
@@ -531,9 +513,7 @@ test.describe('New Compose Project Page', () => {
 			if (msg.type() === 'error') observedErrors.push(msg.text());
 		});
 
-		const createButton = page.locator('button[data-slot="arcane-button"]', {
-			hasText: 'Create Project'
-		});
+		const createButton = page.locator('button[data-action="create"]');
 
 		await expect(createButton).toBeVisible();
 
@@ -559,18 +539,14 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('syntax-check-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const composeEditor = page.locator('.cm-editor:visible').first();
+		const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		await expect(composeEditor).toBeVisible();
 
 		await setCodeMirrorValue(page, composeEditor, 'services:\n\tredis:\n\t\timage: redis:latest\n');
-		await expect(
-			page.locator('button[data-slot="arcane-button"]').filter({ hasText: 'Create Project' })
-		).toHaveCount(0);
+		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
 		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		const createButton = page
-			.locator('button[data-slot="arcane-button"]')
-			.filter({ hasText: 'Create Project' });
+		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
 	});
@@ -582,7 +558,7 @@ test.describe('New Compose Project Page', () => {
 		await page.getByRole('textbox', { name: 'My New Project' }).fill('env-check-project');
 		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const visibleEditors = page.locator('.cm-editor:visible');
+		const visibleEditors = page.locator('.cm-editor').filter({ visible: true });
 		const composeEditor = visibleEditors.first();
 		const envEditor = visibleEditors.nth(1);
 		await expect(composeEditor).toBeVisible();
@@ -590,14 +566,10 @@ test.describe('New Compose Project Page', () => {
 
 		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
 		await setCodeMirrorValue(page, envEditor, 'NOT VALID LINE');
-		await expect(
-			page.locator('button[data-slot="arcane-button"]').filter({ hasText: 'Create Project' })
-		).toHaveCount(0);
+		await expect(page.locator('button[data-action="create"]')).toHaveCount(0);
 
 		await setCodeMirrorValue(page, envEditor, TEST_ENV_FILE);
-		const createButton = page
-			.locator('button[data-slot="arcane-button"]')
-			.filter({ hasText: 'Create Project' });
+		const createButton = page.locator('button[data-action="create"]');
 		await expect(createButton).toBeVisible();
 		await expect(createButton).toBeEnabled();
 	});
@@ -611,131 +583,137 @@ test.describe('New Compose Project Page', () => {
 		let createdProjectId: string | null = null;
 		let projectPullRequestCount = 0;
 
-		await page.getByRole('button', { name: 'My New Project' }).click();
-		await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
-		await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
+		try {
+			await page.getByRole('button', { name: 'My New Project' }).click();
+			await page.getByRole('textbox', { name: 'My New Project' }).fill(projectName);
+			await page.getByRole('textbox', { name: 'My New Project' }).press('Enter');
 
-		const composeEditor = page.locator('.cm-editor:visible').first();
-		await expect(composeEditor).toBeVisible();
-		await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
-		await expect(composeEditor).toContainText(/nginx/i);
-		await expect
-			.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
-				message: 'Expected compose editor to contain the exact test compose fixture before creation'
-			})
-			.toBe(TEST_COMPOSE_YAML.trimEnd());
+			const composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
+			await expect(composeEditor).toBeVisible();
+			await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+			await expect(composeEditor).toContainText('nginx');
+			await expect
+				.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
+					message:
+						'Expected compose editor to contain the exact test compose fixture before creation'
+				})
+				.toBe(TEST_COMPOSE_YAML.trimEnd());
 
-		const envEditor = page.locator('.cm-editor:visible').nth(1);
-		await expect(envEditor).toBeVisible();
-		await setCodeMirrorValue(page, envEditor, envFile);
-		await expect(envEditor).toContainText(/nginx/i);
+			const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
+			await expect(envEditor).toBeVisible();
+			await setCodeMirrorValue(page, envEditor, envFile);
+			await expect(envEditor).toContainText('nginx');
 
-		await page.route('/api/environments/*/projects', async (route) => {
-			if (route.request().method() === 'POST') {
-				const response = await route.fetch();
-				const responseBody = await response.text();
+			await page.route('/api/environments/*/projects', async (route) => {
+				if (route.request().method() === 'POST') {
+					const response = await route.fetch();
+					const responseBody = await response.text();
 
-				try {
-					const parsed = JSON.parse(responseBody);
-					createdProjectId = parsed.data?.id ?? parsed.id;
-				} catch {
-					// Keep existing createdProjectId value if parsing fails
+					try {
+						const parsed = JSON.parse(responseBody);
+						createdProjectId = parsed.data?.id ?? parsed.id;
+					} catch {
+						// Keep existing createdProjectId value if parsing fails
+					}
+
+					await route.fulfill({
+						status: response.status(),
+						headers: response.headers(),
+						body: responseBody
+					});
+				} else {
+					await route.continue();
 				}
+			});
 
-				await route.fulfill({
-					status: response.status(),
-					headers: response.headers(),
-					body: responseBody
-				});
+			const createButton = page.locator('button[data-action="create"]');
+			const createResponsePromise = page.waitForResponse(
+				(response) =>
+					response.request().method() === 'POST' &&
+					/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
+			);
+			await createButton.click();
+			await expectProjectCreateResponse(createResponsePromise);
+
+			await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+
+			if (createdProjectId) {
+				await expect(page).toHaveURL(new RegExp(`/projects/${createdProjectId}`));
 			} else {
-				await route.continue();
+				await expect(page).toHaveURL(new RegExp(`/projects/[a-f0-9\\-]{36}`));
 			}
-		});
 
-		const createButton = page.locator('button[data-slot="arcane-button"]', {
-			hasText: 'Create Project'
-		});
-		const createResponsePromise = page.waitForResponse(
-			(response) =>
-				response.request().method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/projects$/.test(getPathname(response.url()))
-		);
-		await createButton.click();
-		await expectProjectCreateResponse(createResponsePromise);
+			await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible();
 
-		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
+			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
+			await page.waitForLoadState('load');
 
-		if (createdProjectId) {
-			await expect(page).toHaveURL(new RegExp(`/projects/${createdProjectId}`));
-		} else {
-			await expect(page).toHaveURL(new RegExp(`/projects/[a-f0-9\\-]{36}`));
-		}
+			const serviceTable = page.getByRole('table');
+			const serviceNameWhenStopped = serviceTable.getByText('nginx', {
+				exact: true
+			});
+			const emptyServicesState = page.getByText('No services found for this project', {
+				exact: true
+			});
 
-		await expect(page.getByRole('button', { name: projectName })).toBeVisible();
+			if ((await serviceNameWhenStopped.count()) > 0) {
+				await expect(serviceNameWhenStopped.first()).toBeVisible();
+			} else {
+				await expect(emptyServicesState).toBeVisible();
+			}
 
-		await page.getByRole('tab', { name: 'Services' }).click();
-		await page.waitForLoadState('load');
+			await page.route('**/api/environments/*/projects/*/pull', async (route) => {
+				projectPullRequestCount += 1;
+				await route.continue();
+			});
 
-		const serviceTable = page.getByRole('table');
-		const serviceNameWhenStopped = serviceTable.getByText('nginx', {
-			exact: true
-		});
-		const emptyServicesState = page.getByText(/No services found for this project/i);
+			const deployButton = page
+				.getByRole('button', { name: 'Up', exact: true })
+				.filter({ visible: true })
+				.first();
+			const deployResponsePromise = page.waitForResponse(
+				(response) =>
+					response.request().method() === 'POST' &&
+					/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
+			);
+			await deployButton.click();
 
-		if ((await serviceNameWhenStopped.count()) > 0) {
-			await expect(serviceNameWhenStopped.first()).toBeVisible();
-		} else {
-			await expect(emptyServicesState).toBeVisible();
-		}
+			const deployResponse = await deployResponsePromise;
+			expect(deployResponse.ok()).toBe(true);
+			// Don't await deployResponse.finished() here: for a chunked NDJSON stream
+			// consumed via fetch().body, Playwright's network-layer finished() doesn't
+			// reliably resolve even after the server closes the response and the UI
+			// updates to "running" — it hangs until the test timeout. Deploy completion
+			// is verified below via the running-status poll and the activity-success check.
 
-		await page.route('**/api/environments/*/projects/*/pull', async (route) => {
-			projectPullRequestCount += 1;
-			await route.continue();
-		});
+			const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
+			await expect
+				.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+					message: 'Expected project to be running after deploy',
+					timeout: 60000
+				})
+				.toBe('running');
+			await expectProjectDeployActivitySucceeded(page, projectId);
 
-		const deployButton = page
-			.getByRole('button', { name: 'Up', exact: true })
-			.filter({ hasText: 'Up' })
-			.last();
-		const deployResponsePromise = page.waitForResponse(
-			(response) =>
-				response.request().method() === 'POST' &&
-				/\/api\/environments\/[^/]+\/projects\/[^/]+\/up$/.test(getPathname(response.url()))
-		);
-		await deployButton.click();
-
-		const deployResponse = await deployResponsePromise;
-		expect(deployResponse.ok()).toBe(true);
-		// Don't await deployResponse.finished() here: for a chunked NDJSON stream
-		// consumed via fetch().body, Playwright's network-layer finished() doesn't
-		// reliably resolve even after the server closes the response and the UI
-		// updates to "running" — it hangs until the test timeout. Deploy completion
-		// is verified below via the running-status poll and the activity-success check.
-
-		const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
-		await expect
-			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
-				message: 'Expected project to be running after deploy',
-				timeout: 60000
-			})
-			.toBe('running');
-		await expectProjectDeployActivitySucceeded(page, projectId);
-		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
-			timeout: 30000
-		});
-
-		expect(projectPullRequestCount).toBe(0);
-		await page.reload();
-		await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
-		await expect
-			.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
-				message: 'Expected project to still be running after reload',
+			expect(projectPullRequestCount).toBe(0);
+			// The activity record is committed before the streamed response reaches EOF in
+			// the browser, so polling the API can beat the detail page's local state update.
+			// Reload from the completed server state before asserting the rendered action.
+			await page.reload();
+			await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+			await expect
+				.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
+					message: 'Expected project to still be running after reload',
+					timeout: 30000
+				})
+				.toBe('running');
+			await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
 				timeout: 30000
-			})
-			.toBe('running');
-		await expect(page.getByRole('button', { name: 'Down', exact: true })).toBeVisible({
-			timeout: 30000
-		});
+			});
+		} finally {
+			const projectId = createdProjectId ?? getProjectIdFromPageUrl(page.url());
+			await destroyProjectByIdViaAPI(page, projectId);
+		}
 	});
 
 	test('should send selected deploy split-button options in the up request', async ({ page }) => {
@@ -760,18 +738,22 @@ test.describe('New Compose Project Page', () => {
 			});
 
 			const deployButtonGroup = page
-				.locator('[data-slot="button-group"]')
+				.getByRole('group')
 				.filter({ has: page.getByRole('button', { name: 'Up', exact: true }) })
 				.first();
 			const deployMenuTrigger = deployButtonGroup.getByRole('button', {
-				name: 'Open menu'
+				name: 'Open menu',
+				exact: true
 			});
 
 			await expect(deployMenuTrigger).toBeVisible();
 
 			// Open dropdown and select "Always" pull policy
 			await deployMenuTrigger.click();
-			const alwaysItem = page.getByRole('menuitemradio', { name: /Always/i });
+			const alwaysItem = page.getByRole('menuitemradio', {
+				name: 'Always Always pull latest',
+				exact: true
+			});
 			await expect(alwaysItem).toBeVisible();
 			await alwaysItem.click();
 			// Wait for the dropdown to fully close before reopening
@@ -780,7 +762,8 @@ test.describe('New Compose Project Page', () => {
 			// Reopen dropdown and toggle "Force recreate containers"
 			await deployMenuTrigger.click();
 			const forceRecreateItem = page.getByRole('menuitemcheckbox', {
-				name: /Force recreate containers/i
+				name: 'Force recreate containers',
+				exact: true
 			});
 			await expect(forceRecreateItem).toBeVisible();
 			await forceRecreateItem.click();
@@ -824,50 +807,58 @@ test.describe('New Compose Project Page', () => {
 
 		const projectName = `test-redeploy-timeout-${Date.now()}`;
 		let redeployRequestStartedAt: number | undefined;
+		const redeployPathPattern = /\/api\/environments\/[^/]+\/projects\/[^/]+\/redeploy$/;
 
 		try {
 			await createProjectViaUI(page, projectName);
 			await page.goto(ROUTES.page);
 			await page.waitForLoadState('load');
 
-			await page.route('**/api/environments/*/projects/*/redeploy', async (route) => {
-				if (route.request().method() !== 'POST') {
-					await route.continue();
-					return;
-				}
+			await page.route(
+				(url) => redeployPathPattern.test(url.pathname),
+				async (route) => {
+					if (route.request().method() !== 'POST') {
+						await route.continue();
+						return;
+					}
 
-				redeployRequestStartedAt = Date.now();
-				await new Promise((resolve) => setTimeout(resolve, 11_000));
-				await route.fulfill({
-					status: 200,
-					contentType: 'application/json',
-					body: JSON.stringify({
-						success: true,
-						data: {
-							message: 'Project redeployed successfully'
-						}
-					})
-				});
-			});
+					redeployRequestStartedAt = Date.now();
+					await new Promise((resolve) => setTimeout(resolve, 11_000));
+					await route.fulfill({
+						status: 200,
+						contentType: 'application/json',
+						body: JSON.stringify({
+							success: true,
+							data: {
+								message: 'Project redeployed successfully'
+							}
+						})
+					});
+				}
+			);
 
 			const searchInput = page.getByPlaceholder('Search…');
 			await expect(searchInput).toBeVisible();
-			const filteredProjectsResponse = page.waitForResponse((response) => {
-				if (response.request().method() !== 'GET') return false;
-				return (
-					/\/api\/environments\/[^/]+\/projects(?:\?|$)/.test(response.url()) &&
-					response.url().includes(`search=${projectName}`)
-				);
-			});
 			await searchInput.fill(projectName);
-			await filteredProjectsResponse;
+			await searchInput.press('Enter');
 
-			const row = page.locator('tbody tr').filter({ hasText: projectName }).first();
+			const row = page
+				.getByRole('row')
+				.filter({ has: page.getByRole('link', { name: projectName, exact: true }) })
+				.first();
 			await expect(row).toBeVisible();
-			const menu = await openDropdownMenu(page, row.getByRole('button', { name: 'Open menu' }));
-			const redeployMenuItem = menu.getByRole('menuitem', { name: 'Pull & Redeploy' });
+			const menu = await openRowActionsMenu(page, row);
+			const redeployMenuItem = menu.getByRole('menuitem', {
+				name: 'Pull & Redeploy',
+				exact: true
+			});
 			await expect(redeployMenuItem).toBeVisible();
+			const redeployRequestPromise = page.waitForRequest(
+				(request) =>
+					request.method() === 'POST' && redeployPathPattern.test(getPathname(request.url()))
+			);
 			await redeployMenuItem.click();
+			await redeployRequestPromise;
 
 			await expect
 				.poll(() => redeployRequestStartedAt, {
@@ -904,16 +895,21 @@ test.describe('New Compose Project Page', () => {
 
 test.describe('GitOps Managed Project', () => {
 	test('should navigate back to gitops when opened from the git syncs page', async ({ page }) => {
+		const gitOpsProject = realProjects.find((project) => project.gitOpsManagedBy);
+		test.skip(!gitOpsProject, 'No GitOps project links found');
+
 		await page.goto('/environments/0/gitops');
 		await page.waitForLoadState('load');
 
-		const projectLink = page.locator('tbody tr').locator('a[href^="/projects/"]').first();
-		test.skip((await projectLink.count()) === 0, 'No GitOps project links found');
+		const projectLink = page.getByRole('link', {
+			name: gitOpsProject!.name,
+			exact: true
+		});
 
 		await projectLink.click();
 		await page.waitForURL(/\/projects\/.+/, { timeout: 10000 });
 
-		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
+		const backLink = page.getByRole('link', { name: 'Back', exact: true }).first();
 		await expect(backLink).toBeVisible();
 		await backLink.click();
 
@@ -929,13 +925,18 @@ test.describe('GitOps Managed Project', () => {
 		await page.waitForLoadState('load');
 
 		// Navigate to Configuration tab
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
 		// Verify the GitOps read-only alert is visible (title contains "Git" and "Read-only")
 		await expect(page.getByText('Git Read-only')).toBeVisible();
-		await expect(page.getByText(/managed by Git/i)).toBeVisible();
+		await expect(
+			page.getByRole('alert').filter({
+				hasText:
+					'This project is managed by Git. The compose file and project name cannot be edited here. Changes must be made in the connected Git repository.'
+			})
+		).toBeVisible();
 	});
 
 	test('should display Sync from Git button when GitOps managed', async ({ page }) => {
@@ -945,7 +946,7 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject!.id}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
@@ -962,7 +963,7 @@ test.describe('GitOps Managed Project', () => {
 
 		// The commit hash should be visible somewhere on the page
 		const commitHash = gitOpsProject!.lastSyncCommit!.substring(0, 7);
-		await expect(page.getByText(new RegExp(commitHash))).toBeVisible();
+		await expect(page.getByText(commitHash)).toBeVisible();
 	});
 
 	test('should disable name editing when GitOps managed', async ({ page }) => {
@@ -984,12 +985,16 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject!.id}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
 		await page.waitForTimeout(800);
-		const composeContent = page.locator('.cm-editor:visible').first().locator('.cm-content');
+		const composeContent = page
+			.locator('.cm-editor')
+			.filter({ visible: true })
+			.first()
+			.locator('.cm-content');
 		await expect(composeContent).toHaveAttribute('aria-readonly', 'true');
 	});
 
@@ -1002,12 +1007,13 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${gitOpsProject!.id}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
 		const layoutSwitch = page.getByRole('switch', {
-			name: /workspace/i
+			name: 'Toggle workspace mode',
+			exact: true
 		});
 		const projectFilesLabel = page.getByText('Project Files', { exact: true });
 		// Projects with extra files default to tree view; start from classic.
@@ -1017,7 +1023,7 @@ test.describe('GitOps Managed Project', () => {
 		}
 
 		await page.waitForTimeout(800);
-		const envEditor = page.locator('.cm-editor:visible').nth(1);
+		const envEditor = page.locator('.cm-editor').filter({ visible: true }).nth(1);
 		const marker = `ARCANE_E2E_${Date.now()}`;
 		const envContent = envEditor.locator('.cm-content');
 		const originalEnv = await getCodeMirrorValue(envEditor);
@@ -1037,7 +1043,7 @@ test.describe('GitOps Managed Project', () => {
 			await expect(envFileButton).toBeVisible();
 			await envFileButton.click();
 
-			const treeEnvEditor = page.locator('.cm-editor:visible').first();
+			const treeEnvEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			const treeEnvContent = treeEnvEditor.locator('.cm-content');
 			await expect(treeEnvContent).not.toHaveAttribute('aria-readonly', 'true');
 			await expect(treeEnvEditor).toContainText(marker);
@@ -1056,7 +1062,7 @@ test.describe('GitOps Managed Project', () => {
 		await expect(nameButton).toBeEnabled();
 
 		// Navigate to Configuration tab
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
@@ -1076,12 +1082,17 @@ test.describe('GitOps Managed Project', () => {
 		await page.goto(`/projects/${regularProject!.id}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
 		// Verify no GitOps-related UI elements
-		await expect(page.getByText(/managed by Git\./i)).not.toBeVisible();
+		await expect(
+			page.getByText(
+				'This project is managed by Git. The compose file and project name cannot be edited here. Changes must be made in the connected Git repository.',
+				{ exact: true }
+			)
+		).not.toBeVisible();
 		await expect(page.getByRole('button', { name: 'Sync from Git' })).not.toBeVisible();
 	});
 });
@@ -1094,7 +1105,7 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
 		await page.waitForLoadState('load');
 
-		const backLink = page.getByRole('link', { name: /^Back$/i }).first();
+		const backLink = page.getByRole('link', { name: 'Back', exact: true }).first();
 		await expect(backLink).toBeVisible();
 		await backLink.click();
 
@@ -1109,11 +1120,16 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
 		await page.waitForLoadState('load');
 
-		await expect(page.getByRole('button', { name: firstProject.name, exact: false })).toBeVisible();
+		await expect(page.getByRole('button', { name: firstProject.name, exact: true })).toBeVisible();
 
-		await expect(page.getByRole('tab', { name: /Services/i })).toBeVisible();
-		await expect(page.getByRole('tab', { name: /Configuration|Config/i })).toBeVisible();
-		await expect(page.getByRole('tab', { name: /Logs/i })).toBeVisible();
+		await expect(
+			page.getByRole('tab', {
+				name: `Services ${firstProject.serviceCount ?? 0}`,
+				exact: true
+			})
+		).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toBeVisible();
 	});
 
 	test('should display tabs navigation', async ({ page }) => {
@@ -1122,9 +1138,14 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
 		await page.waitForLoadState('load');
 
-		await expect(page.getByRole('tab', { name: /Services/i })).toBeVisible();
-		await expect(page.getByRole('tab', { name: /Configuration|Config/i })).toBeVisible();
-		await expect(page.getByRole('tab', { name: /Logs/i })).toBeVisible();
+		await expect(
+			page.getByRole('tab', {
+				name: `Services ${firstProject.serviceCount ?? 0}`,
+				exact: true
+			})
+		).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Configuration', exact: true })).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Logs', exact: true })).toBeVisible();
 	});
 
 	test('should check updates for the current project via the image batch endpoint', async ({
@@ -1179,15 +1200,24 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${projectWithServices.id || projectWithServices.name}`);
 		await page.waitForLoadState('load');
 
-		await page.getByRole('tab', { name: /Services/i }).click();
+		await page
+			.getByRole('tab', {
+				name: `Services ${projectWithServices.serviceCount ?? 0}`,
+				exact: true
+			})
+			.click();
 
-		const nginxService = page.getByRole('heading', { name: /nginx/i });
-		const emptyState = page.getByText(/No services found/i);
+		const nginxService = page.getByRole('heading', { name: 'nginx', exact: true });
+		const emptyState = page.getByText('No services found for this project', { exact: true });
 
 		if ((await nginxService.count()) > 0) {
 			await expect(nginxService.first()).toBeVisible();
 		} else {
-			const anyServiceBadge = page.locator('text=/running|stopped|unknown/i').first();
+			const anyServiceBadge = page
+				.getByText('Running', { exact: true })
+				.or(page.getByText('Stopped', { exact: true }))
+				.or(page.getByText('Unknown', { exact: true }))
+				.first();
 			if ((await anyServiceBadge.count()) > 0) {
 				await expect(anyServiceBadge).toBeVisible();
 			} else {
@@ -1203,7 +1233,7 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${firstProject.id || firstProject.name}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 
 		// The project config editor supports two layouts:
@@ -1234,7 +1264,8 @@ test.describe('Project Detail Page', () => {
 
 			// Also validate that we can switch to tree view and see the file list.
 			const layoutSwitch = page.getByRole('switch', {
-				name: /workspace/i
+				name: 'Toggle workspace mode',
+				exact: true
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
@@ -1261,12 +1292,13 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${regularProject!.id || regularProject!.name}`);
 		await page.waitForLoadState('load');
 
-		const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 		await configTab.click();
 		await page.waitForLoadState('load');
 
 		let layoutSwitch = page.getByRole('switch', {
-			name: /workspace/i
+			name: 'Toggle workspace mode',
+			exact: true
 		});
 		test.skip(
 			(await layoutSwitch.count()) === 0,
@@ -1283,7 +1315,10 @@ test.describe('Project Detail Page', () => {
 		await page.reload();
 		await page.waitForLoadState('load');
 
-		const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
+		const restoredConfigTab = page.getByRole('tab', {
+			name: 'Configuration',
+			exact: true
+		});
 		if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 			await restoredConfigTab.click();
 			await page.waitForLoadState('load');
@@ -1292,7 +1327,7 @@ test.describe('Project Detail Page', () => {
 		await expect(projectFilesLabel).toBeVisible();
 		await expect(page.locator('[data-tab-key="compose"][data-active="true"]')).toBeVisible();
 
-		const treeComposeEditor = page.locator('.cm-editor:visible').first();
+		const treeComposeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 		await expect(treeComposeEditor).toBeVisible();
 
 		const marker = `ARCANE_TREE_SAVE_${Date.now()}`;
@@ -1308,7 +1343,8 @@ test.describe('Project Detail Page', () => {
 		await expect(envFileButton).toBeVisible();
 
 		layoutSwitch = page.getByRole('switch', {
-			name: /workspace/i
+			name: 'Toggle workspace mode',
+			exact: true
 		});
 		await layoutSwitch.click();
 		await expect(page.getByRole('heading', { name: 'compose.yaml' })).toBeVisible();
@@ -1321,11 +1357,11 @@ test.describe('Project Detail Page', () => {
 		await createProjectViaUI(page, projectName);
 
 		try {
-			const configTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			const configTab = page.getByRole('tab', { name: 'Configuration', exact: true });
 			await configTab.click();
 			await page.waitForLoadState('load');
 
-			let composeEditor = page.locator('.cm-editor:visible').first();
+			let composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			await expect(composeEditor).toBeVisible();
 
 			const marker = `ARCANE_SAVE_PERSIST_${Date.now()}`;
@@ -1341,7 +1377,7 @@ test.describe('Project Detail Page', () => {
 
 			await expect(saveButtons).toHaveCount(0);
 
-			composeEditor = page.locator('.cm-editor:visible').first();
+			composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			await expect
 				.poll(async () => getCodeMirrorValue(composeEditor), {
 					message: 'expected saved compose editor content to remain visible'
@@ -1349,13 +1385,14 @@ test.describe('Project Detail Page', () => {
 				.toContain(marker);
 
 			const layoutSwitch = page.getByRole('switch', {
-				name: /workspace/i
+				name: 'Toggle workspace mode',
+				exact: true
 			});
 			if (await layoutSwitch.count()) {
 				await layoutSwitch.click();
-				await expect(page.locator('.cm-editor:visible').first()).toBeVisible();
+				await expect(page.locator('.cm-editor').filter({ visible: true }).first()).toBeVisible();
 
-				composeEditor = page.locator('.cm-editor:visible').first();
+				composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 				await expect
 					.poll(async () => getCodeMirrorValue(composeEditor), {
 						message: 'expected saved compose editor content to persist across layout changes'
@@ -1366,13 +1403,16 @@ test.describe('Project Detail Page', () => {
 			await page.reload();
 			await page.waitForLoadState('load');
 
-			const restoredConfigTab = page.getByRole('tab', { name: /Configuration|Config/i });
+			const restoredConfigTab = page.getByRole('tab', {
+				name: 'Configuration',
+				exact: true
+			});
 			if ((await restoredConfigTab.getAttribute('aria-selected')) !== 'true') {
 				await restoredConfigTab.click();
 				await page.waitForLoadState('load');
 			}
 
-			composeEditor = page.locator('.cm-editor:visible').first();
+			composeEditor = page.locator('.cm-editor').filter({ visible: true }).first();
 			await expect(composeEditor).toBeVisible();
 			await expect
 				.poll(async () => getCodeMirrorValue(composeEditor), {
@@ -1394,14 +1434,19 @@ test.describe('Project Detail Page', () => {
 		await page.goto(`/projects/${targetProject.id || targetProject.name}`);
 		await page.waitForLoadState('load');
 
-		const logsTab = page.getByRole('tab', { name: /Logs/i });
+		const logsTab = page.getByRole('tab', { name: 'Logs', exact: true });
 		await expect(logsTab).toBeEnabled();
 		await logsTab.click();
 
 		const logsSelected = await logsTab.getAttribute('aria-selected');
 		if (logsSelected === 'true') {
-			await expect(page.getByText(/Real-time project logs/i)).toBeVisible();
-			await expect(page.getByRole('button', { name: /^(Start|Stop)$/i })).toBeVisible();
+			await expect(page.getByText('Real-time project logs', { exact: true })).toBeVisible();
+			await expect(
+				page
+					.getByRole('button', { name: 'Start', exact: true })
+					.or(page.getByRole('button', { name: 'Stop', exact: true }))
+					.first()
+			).toBeVisible();
 			await expect(page.getByTitle('Refresh')).toBeVisible();
 
 			const startButton = page.getByRole('button', {
@@ -1412,7 +1457,11 @@ test.describe('Project Detail Page', () => {
 				await startButton.click();
 			}
 
-			await expect(page.getByText(/No project selected/i)).not.toBeVisible();
+			await expect(
+				page.getByText('No project selected. Please select a project to view logs.', {
+					exact: true
+				})
+			).not.toBeVisible();
 		} else {
 			await expect(logsTab).toBeEnabled();
 		}

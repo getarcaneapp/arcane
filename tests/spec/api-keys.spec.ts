@@ -44,10 +44,10 @@ test.describe('API Keys Page', () => {
 		await expect(dialog).toBeVisible();
 
 		// Try to submit without filling required name field
-		await dialog.getByRole('button', { name: /Create API Key/i }).click();
+		await dialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
 		// Should show validation error for name field
-		await expect(dialog.getByText(/is required/i)).toBeVisible();
+		await expect(dialog.getByText('Name is required', { exact: true })).toBeVisible();
 	});
 
 	test('should create a new API key and show the key dialog', async ({ page }) => {
@@ -60,44 +60,58 @@ test.describe('API Keys Page', () => {
 		const apiKeyName = `test-key-${Date.now()}`;
 
 		// Fill in the name field
-		await createDialog.getByLabel(/Name/i).fill(apiKeyName);
+		await createDialog.getByLabel('Name', { exact: true }).fill(apiKeyName);
 
 		// Optionally fill description
-		const descInput = createDialog.getByLabel(/Description/i);
+		const descInput = createDialog.getByLabel('Description', { exact: true });
 		if (await descInput.count()) {
 			await descInput.fill('E2E test API key');
 		}
 
 		// Select at least one permission (form requires min 1)
-		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
+		await createDialog
+			.getByPlaceholder('Filter permissions…', { exact: true })
+			.fill('containers:list');
 		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
 
 		// Submit the form
-		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
+		await createDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
 		// Should show success toast
-		await expect(page.locator('li[data-sonner-toast][data-type="success"]').first()).toBeVisible({
-			timeout: 10000
-		});
+		await expect(
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.first()
+		).toBeVisible({ timeout: 10000 });
 
 		// Should show the API key reveal dialog
 		await expect(page.getByText('API Key Created')).toBeVisible();
-		await expect(page.getByText(/Copy your API key now/i)).toBeVisible();
+		await expect(
+			page.getByText("Copy your API key now. You won't be able to see it again!", {
+				exact: true
+			})
+		).toBeVisible();
 
 		// The key should be visible in a code/snippet element
-		await expect(page.locator('code, [data-snippet]').first()).toBeVisible();
+		await expect(page.locator('code').first()).toBeVisible();
 
 		// Close the dialog
 		await page.getByRole('button', { name: 'Done' }).click();
 
 		// The new key should appear in the table
-		await expect(page.locator(`tr:has-text("${apiKeyName}")`)).toBeVisible();
+		await expect(
+			page.getByRole('row').filter({ has: page.getByText(apiKeyName, { exact: true }) })
+		).toBeVisible();
 	});
 
 	test('should open edit dialog from row actions', async ({ page }) => {
 		await navigateToApiKeys(page);
 
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
 		await expect(firstRow).toBeVisible();
 
 		const menu = await openRowActionsMenu(page, firstRow);
@@ -113,15 +127,25 @@ test.describe('API Keys Page', () => {
 	test('should open delete confirmation dialog from row actions', async ({ page }) => {
 		await navigateToApiKeys(page);
 
-		const firstRow = page.locator('tbody tr').first();
+		const firstRow = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.first();
 		await expect(firstRow).toBeVisible();
 
 		const menu = await openRowActionsMenu(page, firstRow);
 		await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Should show confirmation dialog
-		await expect(page.getByText(/Delete API Key/i)).toBeVisible();
-		await expect(page.getByText(/Are you sure/i)).toBeVisible();
+		const confirmationDialog = page.getByRole('dialog');
+		await expect(
+			confirmationDialog.getByRole('heading', { name: 'Delete API Key', exact: false })
+		).toBeVisible();
+		await expect(
+			confirmationDialog.getByText('Are you sure you want to delete the API key', {
+				exact: false
+			})
+		).toBeVisible();
 
 		// Cancel the deletion
 		await page.getByRole('button', { name: 'Cancel' }).click();
@@ -135,13 +159,15 @@ test.describe('API Keys Page', () => {
 		const createDialog = page.getByRole('dialog');
 
 		const apiKeyName = `delete-test-${Date.now()}`;
-		await createDialog.getByLabel(/Name/i).fill(apiKeyName);
+		await createDialog.getByLabel('Name', { exact: true }).fill(apiKeyName);
 
 		// Select at least one permission (form requires min 1)
-		await createDialog.getByPlaceholder(/Filter permissions/i).fill('containers:list');
+		await createDialog
+			.getByPlaceholder('Filter permissions…', { exact: true })
+			.fill('containers:list');
 		await createDialog.getByRole('checkbox', { name: 'Select all' }).check();
 
-		await createDialog.getByRole('button', { name: /Create API Key/i }).click();
+		await createDialog.getByRole('button', { name: 'Create API Key', exact: true }).click();
 
 		// Wait for creation success and close reveal dialog
 		await expect(page.getByText('API Key Created')).toBeVisible({ timeout: 10000 });
@@ -151,18 +177,24 @@ test.describe('API Keys Page', () => {
 		await page.waitForTimeout(1000);
 
 		// Now delete the key
-		const keyRow = page.locator(`tr:has-text("${apiKeyName}")`);
+		const keyRow = page
+			.getByRole('row')
+			.filter({ has: page.getByText(apiKeyName, { exact: true }) });
 		await expect(keyRow).toBeVisible();
 
 		const menu = await openRowActionsMenu(page, keyRow);
 		await menu.getByRole('menuitem', { name: 'Delete' }).click();
 
 		// Confirm deletion
-		await expect(page.getByText(/Delete API Key/i)).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: `Delete API Key "${apiKeyName}"?`, exact: true })
+		).toBeVisible();
 		await page.getByRole('button', { name: 'Delete' }).click();
 
 		// Should show success toast for deletion
-		await expect(page.getByText(/deleted successfully/i)).toBeVisible({ timeout: 10000 });
+		await expect(
+			page.getByText(`API key "${apiKeyName}" deleted successfully`, { exact: true })
+		).toBeVisible({ timeout: 10000 });
 
 		// Key should no longer be in the table
 		await expect(keyRow).toBeHidden();
@@ -172,7 +204,10 @@ test.describe('API Keys Page', () => {
 		await navigateToApiKeys(page);
 
 		// Select first two checkboxes
-		const checkboxes = page.locator('tbody tr input[type="checkbox"]');
+		const checkboxes = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.getByRole('checkbox');
 		const checkboxCount = await checkboxes.count();
 
 		if (checkboxCount < 2) {
@@ -184,14 +219,19 @@ test.describe('API Keys Page', () => {
 		await checkboxes.nth(1).check();
 
 		// Remove Selected button should appear
-		const removeSelectedBtn = page.getByRole('button', { name: /Remove Selected/i });
+		const removeSelectedBtn = page.getByRole('button', {
+			name: 'Remove Selected (2)',
+			exact: true
+		});
 		await expect(removeSelectedBtn).toBeVisible();
 
 		// Click it to open confirmation
 		await removeSelectedBtn.click();
 
 		// Should show bulk delete confirmation
-		await expect(page.getByText(/Delete.*API Key/i)).toBeVisible();
+		await expect(
+			page.getByRole('heading', { name: 'Delete 2 API Key(s)?', exact: true })
+		).toBeVisible();
 
 		// Cancel
 		await page.getByRole('button', { name: 'Cancel' }).click();
@@ -201,13 +241,13 @@ test.describe('API Keys Page', () => {
 		await navigateToApiKeys(page);
 
 		// Check if Active badge is visible
-		await expect(page.locator('text="Active"').first()).toBeVisible();
+		await expect(page.getByText('Active', { exact: true }).first()).toBeVisible();
 	});
 
 	test('should display "Never" for keys without expiration', async ({ page }) => {
 		await navigateToApiKeys(page);
 
 		// Test keys created without expiration should show "Never"
-		await expect(page.locator('text="Never"').first()).toBeVisible();
+		await expect(page.getByText('Never', { exact: true }).first()).toBeVisible();
 	});
 });

@@ -21,7 +21,9 @@ const FIELD_LABELS = {
 async function navigateToBuildWorkspace(page: Page) {
 	await page.goto(ROUTES.page);
 	await page.waitForLoadState('load');
-	await expect(page.getByRole('heading', { level: 1, name: /Build Workspace/i })).toBeVisible();
+	await expect(
+		page.getByRole('heading', { level: 1, name: 'Build Workspace', exact: true })
+	).toBeVisible();
 }
 
 async function ensureSwitchState(toggle: Locator, desired: boolean) {
@@ -48,10 +50,7 @@ async function openAdvancedBuildOptions(page: Page) {
 		return;
 	}
 
-	await page
-		.getByRole('button', { name: /Advanced/i })
-		.first()
-		.click();
+	await page.getByRole('button', { name: 'Advanced', exact: true }).first().click();
 	await expect(dockerfileInput).toBeVisible();
 }
 
@@ -400,7 +399,7 @@ test.describe('Build workspace provider flows', () => {
 
 		await getBuildButton(page).click();
 		const localUnsupportedToast = getToastTitle(page).filter({
-			hasText: /Unsupported build options for provider local:/
+			hasText: 'Unsupported build options for provider local:'
 		});
 		await expect(localUnsupportedToast.first()).toBeVisible();
 		const localUnsupportedText = await localUnsupportedToast.first().innerText();

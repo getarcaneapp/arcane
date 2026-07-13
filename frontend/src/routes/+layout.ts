@@ -34,32 +34,28 @@ const queryClient = new QueryClient({
 let authenticatedUserId: string | null | undefined;
 
 export const load = async () => {
-	// Step 1: Check authentication first
-	let user = await userService.getCurrentUser().catch(() => null);
+	const versionInformationRequest = versionService.getVersionInformation();
+	const autoLoginConfigRequest = browser
+		? queryClient.fetchQuery({
+				queryKey: queryKeys.auth.autoLoginConfig(),
+				queryFn: () => authService.getAutoLoginConfig()
+			})
+		: Promise.resolve(null);
+	let [user, autoLoginConfig] = await Promise.all([userService.getCurrentUser().catch(() => null), autoLoginConfigRequest]);
 
-	// Step 1.5: Check auto-login config (and attempt auto-login if enabled)
-	if (browser) {
-		const autoLoginConfig = await queryClient.fetchQuery({
-			queryKey: queryKeys.auth.autoLoginConfig(),
-			queryFn: () => authService.getAutoLoginConfig()
-		});
-
-		if (autoLoginConfig) {
-			if (autoLoginConfig.enabled) {
-				settingsStore.autoLoginEnabled.set(true);
-				settingsStore.autoLoginEnabled.clearDisabledCache();
-				if (!user) {
-					// Attempt auto-login using server-configured credentials
-					user = await queryClient.fetchQuery({
-						queryKey: queryKeys.auth.autoLoginAttempt(),
-						queryFn: () => authService.attemptAutoLogin()
-					});
-				}
-			} else {
-				settingsStore.autoLoginEnabled.set(false);
-				// Cache that auto-login is disabled to avoid checking on every page load
-				settingsStore.autoLoginEnabled.cacheDisabled();
+	if (autoLoginConfig) {
+		if (autoLoginConfig.enabled) {
+			settingsStore.autoLoginEnabled.set(true);
+			settingsStore.autoLoginEnabled.clearDisabledCache();
+			if (!user) {
+				user = await queryClient.fetchQuery({
+					queryKey: queryKeys.auth.autoLoginAttempt(),
+					queryFn: () => authService.attemptAutoLogin()
+				});
 			}
+		} else {
+			settingsStore.autoLoginEnabled.set(false);
+			settingsStore.autoLoginEnabled.cacheDisabled();
 		}
 	}
 
@@ -69,7 +65,6 @@ export const load = async () => {
 	}
 	authenticatedUserId = nextAuthenticatedUserId;
 
-	// Step 2: Only fetch authenticated data if user is logged in
 	let settings = null;
 	let swarmEnabled = false;
 	let permissionsManifest: PermissionsManifest | null = null;
@@ -83,19 +78,19 @@ export const load = async () => {
 			}
 		};
 
-		const environments = await tryCatch(environmentManagementService.getEnvironments(environmentRequestOptions));
+		const environmentsRequest = tryCatch(environmentManagementService.getEnvironments(environmentRequestOptions));
+		const permissionsManifestRequest = roleService.getPermissionsManifest().catch((): PermissionsManifest | null => null);
+		const environments = await environmentsRequest;
 		if (!environments.error) {
 			await environmentStore.initialize(environments.data.data);
 		} else {
 			await environmentStore.initialize([]);
 		}
 
-		// Fetch settings after environment store is initialized
-		// Settings service depends on environmentStore.getCurrentEnvironmentId()
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsService.getSettings().catch(() => null),
 			swarmService.getSwarmStatus().catch(() => null),
-			roleService.getPermissionsManifest().catch((): PermissionsManifest | null => null)
+			permissionsManifestRequest
 		]);
 		settings = loadedSettings;
 		swarmEnabled = loadedSwarmStatus?.enabled === true;
@@ -109,7 +104,6 @@ export const load = async () => {
 		settings = await settingsService.getPublicSettings().catch(() => null);
 	}
 
-	// Step 3: Update stores with fetched data (always, even if null)
 	if (user) {
 		await userStore.setUser(user);
 	} else {
@@ -120,7 +114,6 @@ export const load = async () => {
 		settingsStore.set(settings);
 	}
 
-	// Step 4: Fetch version information (independent, works for all users)
 	let versionInformation: AppVersionInformation = {
 		currentVersion: versionService.getCurrentVersion(),
 		displayVersion: versionService.getCurrentVersion(),
@@ -134,7 +127,7 @@ export const load = async () => {
 	};
 
 	try {
-		const info = await versionService.getVersionInformation();
+		const info = await versionInformationRequest;
 		versionInformation = {
 			currentVersion: info.currentVersion,
 			currentTag: info.currentTag,
