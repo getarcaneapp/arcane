@@ -227,7 +227,7 @@ func runProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int
 	b.ResetTimer()
 
 	for b.Loop() {
-		statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/bench", "", headers, body)
+		statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", headers, body)
 		if err != nil {
 			b.Fatalf("proxy request failed: %v", err)
 		}
@@ -300,14 +300,14 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 			if err != nil {
 				return
 			}
-			req := msg.GetHttpRequest()
+			req := msg.GetCommandRequest()
 			if req == nil {
 				continue
 			}
 			if err := stream.Send(&tunnelpb.AgentMessage{
-				Payload: &tunnelpb.AgentMessage_HttpResponse{
-					HttpResponse: &tunnelpb.HttpResponse{
-						RequestId: req.GetRequestId(),
+				Payload: &tunnelpb.AgentMessage_CommandComplete{
+					CommandComplete: &tunnelpb.CommandComplete{
+						CommandId: req.GetCommandId(),
 						Status:    http.StatusOK,
 						Body:      responseBody,
 					},
@@ -321,10 +321,11 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	tunnel := waitForBenchmarkTunnel(b, envID)
 
 	return tunnel, func() {
-		_ = conn.Close()
-		grpcServer.GracefulStop()
 		cancel()
 		<-agentDone
+		_ = stream.CloseSend()
+		_ = conn.Close()
+		grpcServer.GracefulStop()
 		tunnelServer.WaitForCleanupDone()
 		GetRegistry().Unregister(envID)
 	}
@@ -349,13 +350,13 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 				return
 			}
 
-			if msg.Type != MessageTypeRequest {
+			if msg.Type != MessageTypeCommandRequest {
 				continue
 			}
 
 			resp := TunnelMessage{
 				ID:     msg.ID,
-				Type:   MessageTypeResponse,
+				Type:   MessageTypeCommandComplete,
 				Status: http.StatusOK,
 				Body:   responseBody,
 			}
