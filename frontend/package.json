@@ -43,7 +43,7 @@
     "date-fns": "^4.4.0",
     "embla-carousel-svelte": "^8.6.0",
     "ky": "^2.0.2",
-    "marked": "^18.0.5",
+    "marked": "^18.0.6",
     "prettier": "^3.9.3",
     "prettier-plugin-svelte": "^4.1.1",
     "prettier-plugin-tailwindcss": "^0.8.0",
