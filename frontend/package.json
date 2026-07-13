@@ -56,7 +56,7 @@
     "@iconify/json": "^2.2.496",
     "@inlang/paraglide-js": "2.21.0",
     "@internationalized/date": "^3.12.2",
-    "@prettier/plugin-oxc": "^0.2.0",
+    "@prettier/plugin-oxc": "^0.2.1",
     "@sveltejs/adapter-static": "^4.0.0-next.0",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tailwindcss/vite": "^4.3.2",
