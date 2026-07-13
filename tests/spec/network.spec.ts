@@ -15,7 +15,7 @@ async function createNetworkViaUI(page: Page, networkName: string) {
 	await page.getByRole('button', { name: 'Create Network' }).first().click();
 	await expect(page.getByRole('dialog')).toBeVisible();
 	await expect(page.getByRole('heading', { name: 'Create New Network' })).toBeVisible();
-	await page.locator('#network-name').fill(networkName);
+	await page.getByLabel('Network Name *').fill(networkName);
 
 	const createRequest = page.waitForResponse(
 		(response) => {
@@ -57,17 +57,23 @@ async function createNetworkViaApi(page: Page, networkName: string) {
 
 async function findNetworkRow(page: Page, networkName: string, maxRetries = 10) {
 	for (let i = 0; i < maxRetries; i++) {
-		const searchInput = page.getByPlaceholder(/Search/i).first();
+		const searchInput = page.getByPlaceholder('Search…').first();
 		if (await searchInput.isVisible().catch(() => false)) {
 			await searchInput.fill(networkName);
 		}
 
-		const row = page.locator('tbody tr', { has: page.getByText(networkName) }).first();
+		const row = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('link', { name: networkName, exact: true }) })
+			.first();
 		if (await row.isVisible().catch(() => false)) return row;
 		await page.waitForTimeout(500);
 		await navigateToNetworks(page);
 	}
-	return page.locator('tbody tr', { has: page.getByText(networkName) }).first();
+	return page
+		.getByRole('row')
+		.filter({ has: page.getByRole('link', { name: networkName, exact: true }) })
+		.first();
 }
 
 async function removeNetworkViaApi(page: Page, networkName: string) {
@@ -101,7 +107,7 @@ test.describe('Networks Page', () => {
 		try {
 			await createNetworkViaApi(page, networkName);
 			await navigateToNetworks(page);
-			await expect(page.locator('table')).toBeVisible();
+			await expect(page.getByRole('table')).toBeVisible();
 			await expect(page.getByRole('button', { name: 'Name' })).toBeVisible();
 			await expect(await findNetworkRow(page, networkName)).toBeVisible();
 		} finally {
@@ -142,7 +148,7 @@ test.describe('Networks Page', () => {
 		await page.getByRole('button', { name: 'Remove', exact: true }).click();
 		await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
 		await expect(
-			page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
+			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 		).toBeVisible();
 
 		await expect
@@ -157,11 +163,10 @@ test.describe('Networks Page', () => {
 
 	test('Default networks cannot be removed on details page', async ({ page }) => {
 		await navigateToNetworks(page);
-		const bridgeRow = page
-			.locator('tbody tr', { has: page.getByText('bridge', { exact: true }) })
-			.first();
+		const bridgeLink = page.getByRole('link', { name: 'bridge', exact: true });
+		const bridgeRow = page.getByRole('row').filter({ has: bridgeLink }).first();
 		await expect(bridgeRow).toBeVisible();
-		await bridgeRow.locator('a[href*="/networks/"]').first().click();
+		await bridgeLink.click();
 		await page.waitForLoadState('load');
 
 		const removeBtn = page.getByRole('button', { name: 'Remove' });

@@ -204,7 +204,7 @@ test.describe('Dashboard system stats websocket', () => {
 			)
 			.toBe(1);
 
-		await page.getByRole('button', { name: /^Close$/ }).click();
+		await page.getByRole('button', { name: 'Close', exact: true }).click();
 		await expect(page.getByRole('dialog')).not.toBeVisible();
 
 		await page.getByRole('button', { name: 'Inspect' }).first().click();

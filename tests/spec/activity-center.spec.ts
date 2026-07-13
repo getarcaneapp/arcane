@@ -451,7 +451,7 @@ test.describe('Activity Center', () => {
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
 		await expect(activityCenter.getByText('Local').first()).toBeVisible();
 		await expect(activityCenter.getByText('Remote Lab').first()).toBeVisible();
-		await expect(page.getByRole('button', { name: /Local/ }).first()).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Local', exact: false }).first()).toBeVisible();
 	});
 
 	test('keeps reachable activity visible when a configured environment fails', async ({ page }) => {
@@ -559,7 +559,7 @@ test.describe('Activity Center', () => {
 			await expect(activityItem).toContainText('Resource Action');
 			await expect(activityItem).toContainText('Success');
 			await expect(activityItem).toContainText('Local');
-			await expect(activityItem).toContainText(/Started by/i);
+			await expect(activityItem).toContainText('Started by');
 
 			await activityItem.click();
 			await expect(activityCenter.getByText('Output', { exact: true })).toBeVisible();

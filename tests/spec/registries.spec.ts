@@ -96,7 +96,10 @@ test.describe('Container Registries', () => {
 
 		await page.getByRole('button', { name: 'Refresh' }).click();
 		await expect(
-			page.locator('li[data-sonner-toast]').filter({ hasText: 'Registries Refreshed!' })
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.filter({ hasText: 'Registries Refreshed!' })
 		).toBeVisible({ timeout: 10000 });
 	});
 
@@ -107,8 +110,8 @@ test.describe('Container Registries', () => {
 		await expect(dialog).toBeVisible();
 
 		// Submit without URL -> expect validation error
-		await dialog.getByRole('button', { name: /Add Registry|Save Changes/ }).click();
-		await expect(dialog.getByText(/Registry URL is required/i)).toBeVisible();
+		await dialog.getByRole('button', { name: 'Add Registry', exact: true }).click();
+		await expect(dialog.getByText('Registry URL is required', { exact: true })).toBeVisible();
 
 		// Close dialog
 		await page.keyboard.press('Escape');
@@ -148,24 +151,27 @@ test.describe('Container Registries', () => {
 		const url = `e2e.example.com-${Date.now()}`;
 
 		// URL
-		await dialog.getByLabel(/Registry URL|^URL$/i).fill(url);
+		await dialog.getByLabel('Registry URL', { exact: true }).fill(url);
 		// Username (frontend requires it)
-		await dialog.getByLabel(/^Username$/i).fill('e2e');
+		await dialog.getByLabel('Username', { exact: true }).fill('e2e');
 		// Token (backend needs it to avoid 400)
-		const tokenInput = dialog.getByLabel(/token|access token/i);
+		const tokenInput = dialog.getByLabel('Token', { exact: true });
 		await tokenInput.fill(TOKEN);
 
 		// Optional description
-		const desc = dialog.getByLabel(/^Description$/i);
+		const desc = dialog.getByLabel('Description', { exact: true });
 		if (await desc.count()) await desc.fill('E2E test registry');
 
-		await dialog.getByRole('button', { name: /Add Registry/ }).click();
+		await dialog.getByRole('button', { name: 'Add Registry', exact: true }).click();
 
 		// Creation complete when dialog closes
 		await expect(dialog).toBeHidden({ timeout: 10000 });
 
 		// Row should appear
-		const row = page.locator('tbody tr', { hasText: url }).first();
+		const row = page
+			.getByRole('row')
+			.filter({ has: page.getByText(url, { exact: true }) })
+			.first();
 		await expect(row).toBeVisible();
 
 		// Test Connection (accept either success or failure toast)
@@ -174,18 +180,25 @@ test.describe('Container Registries', () => {
 	});
 
 	test('should open Remove Selected dialog and cancel (no mutation)', async ({ page }) => {
-		const firstRowCheckbox = page.locator('tbody tr input[type="checkbox"]').first();
+		const firstRowCheckbox = page
+			.getByRole('row')
+			.filter({ has: page.getByRole('button', { name: 'Open menu', exact: true }) })
+			.getByRole('checkbox')
+			.first();
 		if (await firstRowCheckbox.count()) {
 			await firstRowCheckbox.check();
 
-			const removeSelected = page.getByRole('button', { name: /Remove Selected/i });
+			const removeSelected = page.getByRole('button', {
+				name: 'Remove Selected (1)',
+				exact: true
+			});
 			if (await removeSelected.count()) {
 				await removeSelected.click();
 
-				const confirm = page.locator(
-					'div[role="heading"][aria-level="2"][data-dialog-title], [role="dialog"] >> text=Remove'
-				);
-				await expect(confirm).toBeVisible();
+				const confirm = page.getByRole('dialog');
+				await expect(
+					confirm.getByRole('heading', { name: 'Remove 1 Registry(ies)', exact: true })
+				).toBeVisible();
 
 				await page.getByRole('button', { name: 'Cancel' }).click();
 				await expect(confirm).toBeHidden();

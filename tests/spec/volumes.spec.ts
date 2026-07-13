@@ -29,7 +29,7 @@ async function openCreateVolumeSheet(page: Page) {
 
 async function createVolumeViaUI(page: Page, volumeName: string) {
 	await openCreateVolumeSheet(page);
-	await page.getByRole('dialog').locator('input[type="text"]').first().fill(volumeName);
+	await page.getByRole('dialog').getByLabel('Volume Name *').fill(volumeName);
 	const createRequest = page.waitForResponse(
 		(response) => {
 			const request = response.request();
@@ -48,7 +48,7 @@ async function createVolumeViaUI(page: Page, volumeName: string) {
 		);
 	}
 	await expect(
-		page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
+		page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 	).toBeVisible();
 }
 
@@ -131,8 +131,8 @@ test.describe('Volumes Page', () => {
 		await page.waitForLoadState('load');
 
 		const { content } = await ensureFacetOpen(page, 'Usage');
-		await expect(content.getByRole('option', { name: /In Use\b/i })).toBeVisible();
-		await expect(content.getByRole('option', { name: /Unused\b/i })).toBeVisible();
+		await expect(content.getByRole('option', { name: 'In Use' })).toBeVisible();
+		await expect(content.getByRole('option', { name: 'Unused' })).toBeVisible();
 	});
 
 	test('Inspect Volume', async ({ page }) => {
@@ -153,11 +153,11 @@ test.describe('Volumes Page', () => {
 		await page.waitForLoadState('load');
 
 		await expect(page).toHaveURL(new RegExp(`/volumes/.+`));
-		await page.locator('button[data-slot="arcane-button"][data-action="remove"]').click();
-		await page.getByRole('button', { name: 'Remove', exact: true }).last().click();
+		await page.getByRole('button', { name: 'Remove', exact: true }).click();
+		await page.getByRole('dialog').getByRole('button', { name: 'Remove', exact: true }).click();
 
 		await expect(
-			page.locator('li[data-sonner-toast][data-type="success"] div[data-title]')
+			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 		).toBeVisible();
 	});
 
