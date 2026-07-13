@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
 )
 
@@ -123,6 +125,69 @@ func createDefaultAdminUser(t *testing.T, ctx context.Context, userService *User
 	created, err := userService.CreateUser(ctx, user)
 	require.NoError(t, err)
 	return created
+}
+
+func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
+	queryCounts := make(map[int]int64, 2)
+	userQueryCounts := make(map[int]int64, 2)
+
+	for _, keyCount := range []int{1, 5} {
+		t.Run(fmt.Sprintf("%d_keys", keyCount), func(t *testing.T) {
+			db := setupAuthServiceTestDB(t)
+			service := NewApiKeyService(db, NewUserService(db)).WithRoleService(NewRoleService(db))
+			userID := "query-count-user"
+
+			apiKeys := make([]models.ApiKey, keyCount)
+			permissions := make([]models.ApiKeyPermission, keyCount)
+			for i := range keyCount {
+				keyID := fmt.Sprintf("key-%d", i)
+				apiKeys[i] = models.ApiKey{
+					BaseModel: models.BaseModel{ID: keyID},
+					Name:      keyID,
+					KeyHash:   "hash",
+					KeyPrefix: fmt.Sprintf("arc_%04d", i),
+					Kind:      models.ApiKeyKindScoped,
+					UserID:    &userID,
+				}
+				permissions[i] = models.ApiKeyPermission{
+					BaseModel:  models.BaseModel{ID: fmt.Sprintf("permission-%d", i)},
+					ApiKeyID:   keyID,
+					Permission: authz.PermContainersList,
+				}
+			}
+			require.NoError(t, db.Create(&apiKeys).Error)
+			require.NoError(t, db.Create(&permissions).Error)
+
+			var queryCount atomic.Int64
+			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("count_api_key_list_queries", func(*gorm.DB) {
+				queryCount.Add(1)
+			}))
+
+			result, _, err := service.ListApiKeys(context.Background(), pagination.QueryParams{
+				Params: pagination.Params{Limit: 100},
+			})
+			require.NoError(t, err)
+			require.Len(t, result, keyCount)
+			for _, apiKey := range result {
+				require.Len(t, apiKey.Permissions, 1)
+			}
+			queryCounts[keyCount] = queryCount.Load()
+
+			queryCount.Store(0)
+			result, err = service.ListApiKeysByUser(context.Background(), userID)
+			require.NoError(t, err)
+			require.Len(t, result, keyCount)
+			for _, apiKey := range result {
+				require.Len(t, apiKey.Permissions, 1)
+			}
+			userQueryCounts[keyCount] = queryCount.Load()
+		})
+	}
+
+	require.Equal(t, int64(3), queryCounts[1])
+	require.Equal(t, int64(3), queryCounts[5])
+	require.Equal(t, int64(2), userQueryCounts[1])
+	require.Equal(t, int64(2), userQueryCounts[5])
 }
 
 func TestCreateDefaultAdminAPIKeyUsesProvidedRawKey(t *testing.T) {
