@@ -184,8 +184,8 @@ importers:
         version: 2.9.0
     devDependencies:
       '@iconify/json':
-        specifier: ^2.2.496
-        version: 2.2.496
+        specifier: ^2.2.498
+        version: 2.2.498
       '@inlang/paraglide-js':
         specifier: 2.21.0
         version: 2.21.0(@typescript/typescript6@6.0.1)
@@ -703,8 +703,8 @@ packages:
   '@hapi/topo@6.0.2':
     resolution: {integrity: sha512-KR3rD5inZbGMrHmgPxsJ9dbi6zEK+C3ZwUwTa+eMwWLz7oijWUTWD2pMSNNYJAU6Qq+65NkxXjqHr/7LM2Xkqg==}
 
-  '@iconify/json@2.2.496':
-    resolution: {integrity: sha512-wjgusv8jfx8fL5KpFBKP2cTdDjGv9oywiXFeoCIWUQYtp+wcrdzUNvw43anbaDcEs7jIgdNDSWZJsIh8WsJhEQ==}
+  '@iconify/json@2.2.498':
+    resolution: {integrity: sha512-aHeANR4JvpCcGZBOHXwsPDf8C5YtrZjZjb7NwC8kwoVRtA2vyQImp5U3wzqe8HIbKgQgjAtqYEPPVHtqIj62JA==}
 
   '@iconify/types@2.0.0':
     resolution: {integrity: sha512-+wluvCrRhXrhyOmRDJ3q8mux9JkKy5SJ/v8ol2tu4FVjyYvtEzkc/3pK15ET6RKg4b4w4BmTk1+gsCUhf21Ykg==}
@@ -3445,7 +3445,7 @@ snapshots:
       '@hapi/hoek': 11.0.7
     optional: true
 
-  '@iconify/json@2.2.496':
+  '@iconify/json@2.2.498':
     dependencies:
       '@iconify/types': 2.0.0
       pathe: 2.0.3
