@@ -11,6 +11,8 @@ export function getSwarmNodeAgentLabel(state: SwarmNodeAgentState | null | undef
 			return m.swarm_node_agent_status_connected();
 		case 'mismatched':
 			return m.swarm_node_agent_status_mismatched();
+		case 'ambiguous':
+			return m.swarm_node_agent_status_ambiguous();
 		case 'none':
 		default:
 			return m.swarm_node_agent_status_none();
@@ -25,6 +27,7 @@ export function getSwarmNodeAgentVariant(state: SwarmNodeAgentState | null | und
 			return 'red';
 		case 'pending':
 		case 'mismatched':
+		case 'ambiguous':
 			return 'amber';
 		case 'none':
 		default:

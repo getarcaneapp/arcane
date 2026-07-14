@@ -555,7 +555,6 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 	var envs []models.Environment
 	if err := s.db.WithContext(ctx).
 		Model(&models.Environment{}).
-		Where("hidden = ?", true).
 		Where("parent_environment_id = ?", parentEnvironmentID).
 		Find(&envs).Error; err != nil {
 		return nil, fmt.Errorf("failed to list swarm node agent environments: %w", err)
@@ -564,15 +563,120 @@ func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context,
 	return envs, nil
 }
 
+// ListSwarmNodeCandidateEnvironments returns enabled visible environments that
+// can provide swarm-node coverage for a manager environment.
+func (s *EnvironmentService) ListSwarmNodeCandidateEnvironments(ctx context.Context) ([]models.Environment, error) {
+	var envs []models.Environment
+	if err := s.db.WithContext(ctx).
+		Model(&models.Environment{}).
+		Where("hidden = ?", false).
+		Where("enabled = ?", true).
+		Where("id <> ?", "0").
+		Order("name ASC").
+		Find(&envs).Error; err != nil {
+		return nil, fmt.Errorf("failed to list swarm node candidate environments: %w", err)
+	}
+
+	return envs, nil
+}
+
+// BindSwarmNodeEnvironment binds an existing visible environment to a swarm
+// node without modifying its connection details or agent token.
+func (s *EnvironmentService) BindSwarmNodeEnvironment(
+	ctx context.Context,
+	parentEnvironmentID, nodeID, environmentID string,
+	rebind bool,
+) (*models.Environment, error) {
+	var environment models.Environment
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("id = ?", environmentID).First(&environment).Error; err != nil {
+			return fmt.Errorf("failed to load environment for swarm node binding: %w", err)
+		}
+		if environment.Hidden {
+			return errors.New("dedicated agent environments cannot be attached as visible environments")
+		}
+		if !environment.Enabled {
+			return errors.New("disabled environments cannot be attached to swarm nodes")
+		}
+
+		boundElsewhere := environment.ParentEnvironmentID != nil && environment.SwarmNodeID != nil &&
+			(strings.TrimSpace(*environment.ParentEnvironmentID) != parentEnvironmentID || strings.TrimSpace(*environment.SwarmNodeID) != nodeID)
+		if boundElsewhere && !rebind {
+			return errors.New("environment is already bound to another swarm node; explicit rebinding is required")
+		}
+
+		var existingVisibleBindings int64
+		if err := tx.Model(&models.Environment{}).
+			Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
+			Count(&existingVisibleBindings).Error; err != nil {
+			return fmt.Errorf("failed to inspect existing swarm node binding: %w", err)
+		}
+		if existingVisibleBindings > 0 && !rebind {
+			return errors.New("swarm node already has a visible environment binding; explicit rebinding is required")
+		}
+		if rebind {
+			if err := tx.Model(&models.Environment{}).
+				Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ? AND id <> ?", false, parentEnvironmentID, nodeID, environmentID).
+				Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": new(time.Now())}).Error; err != nil {
+				return fmt.Errorf("failed to clear previous swarm node binding: %w", err)
+			}
+		}
+
+		if err := tx.Model(&models.Environment{}).Where("id = ?", environmentID).Updates(map[string]any{
+			"parent_environment_id": parentEnvironmentID,
+			"swarm_node_id":         nodeID,
+			"updated_at":            new(time.Now()),
+		}).Error; err != nil {
+			return fmt.Errorf("failed to bind environment to swarm node: %w", err)
+		}
+
+		return tx.Where("id = ?", environmentID).First(&environment).Error
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	s.cacheRemoteEnvironmentSnapshotInternal(environment)
+	return &environment, nil
+}
+
+// DetachSwarmNodeEnvironment clears a visible environment binding from a node.
+func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, parentEnvironmentID, nodeID string) error {
+	now := time.Now()
+	if err := s.db.WithContext(ctx).Model(&models.Environment{}).
+		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", false, parentEnvironmentID, nodeID).
+		Updates(map[string]any{"parent_environment_id": nil, "swarm_node_id": nil, "updated_at": &now}).Error; err != nil {
+		return fmt.Errorf("failed to detach swarm node environment: %w", err)
+	}
+
+	return nil
+}
+
+// DeleteSwarmNodeAgentDeployment removes a dedicated hidden agent registration
+// while leaving visible remote environments untouched.
+func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context, parentEnvironmentID, nodeID string, userID, username *string) error {
+	var environment models.Environment
+	if err := s.db.WithContext(ctx).
+		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", true, parentEnvironmentID, nodeID).
+		First(&environment).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil
+		}
+		return fmt.Errorf("failed to load swarm node agent deployment: %w", err)
+	}
+
+	return s.DeleteEnvironment(ctx, environment.ID, userID, username)
+}
+
 func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
 	trimmedHostname := strings.TrimSpace(hostname)
 	if trimmedHostname != "" {
-		return "Swarm Node Agent - " + trimmedHostname
+		return trimmedHostname
 	}
 	if len(nodeID) > 12 {
 		nodeID = nodeID[:12]
 	}
-	return "Swarm Node Agent - " + nodeID
+	return "Swarm Node " + nodeID
 }
 
 func buildSwarmNodeAgentURLInternal(nodeID string) string {
@@ -626,10 +730,13 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 	}
 
 	var env models.Environment
+	// Prefer an existing visible binding. Legacy hidden registrations remain
+	// reusable, but all newly provisioned node agents are normal Remote
+	// Environments so one token and one agent can serve both use cases.
 	err := s.db.WithContext(ctx).
-		Where("hidden = ?", true).
 		Where("parent_environment_id = ?", parentEnvironmentID).
 		Where("swarm_node_id = ?", nodeID).
+		Order("hidden ASC").
 		First(&env).Error
 	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, "", fmt.Errorf("failed to load swarm node agent environment: %w", err)
@@ -642,7 +749,7 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 			Status:              string(models.EnvironmentStatusPending),
 			Enabled:             true,
 			IsEdge:              true,
-			Hidden:              true,
+			Hidden:              false,
 			ParentEnvironmentID: new(parentEnvironmentID),
 			SwarmNodeID:         new(nodeID),
 		}
@@ -651,34 +758,6 @@ func (s *EnvironmentService) EnsureSwarmNodeAgentEnvironment(
 			return nil, "", fmt.Errorf("failed to create swarm node agent environment: %w", createErr)
 		}
 		env = *createdEnv
-	} else {
-		updates := map[string]any{}
-		expectedName := buildSwarmNodeAgentNameInternal(hostname, nodeID)
-		if env.Name != expectedName {
-			updates["name"] = expectedName
-		}
-		if !env.Hidden {
-			updates["hidden"] = true
-		}
-		if !env.IsEdge {
-			updates["is_edge"] = true
-		}
-		if !env.Enabled {
-			updates["enabled"] = true
-		}
-		if env.ParentEnvironmentID == nil || *env.ParentEnvironmentID != parentEnvironmentID {
-			updates["parent_environment_id"] = parentEnvironmentID
-		}
-		if env.SwarmNodeID == nil || *env.SwarmNodeID != nodeID {
-			updates["swarm_node_id"] = nodeID
-		}
-		if len(updates) > 0 {
-			updatedEnv, updateErr := s.UpdateEnvironment(ctx, env.ID, updates, new(userID), new(username))
-			if updateErr != nil {
-				return nil, "", fmt.Errorf("failed to update swarm node agent environment: %w", updateErr)
-			}
-			env = *updatedEnv
-		}
 	}
 
 	apiKey, err := s.applySwarmNodeAgentApiKeyInternal(ctx, &env, userID, username, rotate)
@@ -1439,13 +1518,13 @@ func (s *EnvironmentService) GenerateDeploymentSnippets(ctx context.Context, env
 		"  -p 3553:3553 \\",
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+		"  ghcr.io/getarcaneapp/agent:latest",
 	}, "\n")
 
 	dockerCompose := strings.Join([]string{
 		"services:",
 		"  arcane-agent:",
-		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    image: ghcr.io/getarcaneapp/agent:latest",
 		"    container_name: arcane-agent",
 		"    restart: unless-stopped",
 		"    environment:",
@@ -1484,14 +1563,14 @@ func (s *EnvironmentService) GenerateEdgeDeploymentSnippets(ctx context.Context,
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+		"  ghcr.io/getarcaneapp/agent:latest",
 	}, "\n")
 
 	dockerCompose := strings.Join([]string{
 		"# Edge agent - connects outbound, no exposed ports required",
 		"services:",
 		"  arcane-edge-agent:",
-		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    image: ghcr.io/getarcaneapp/agent:latest",
 		"    container_name: arcane-edge-agent",
 		"    restart: unless-stopped",
 		"    environment:",
@@ -1586,14 +1665,14 @@ func buildMTLSDeploymentSnippetInternal(managerURL string, apiKey string, genera
 		fmt.Sprintf("  -e MANAGER_API_URL=%s \\", managerURL),
 		"  -v /var/run/docker.sock:/var/run/docker.sock \\",
 		fmt.Sprintf("  -v arcane-data:%s \\", deploymentSnippetsDataPath),
-		"  ghcr.io/getarcaneapp/arcane-headless:latest",
+		"  ghcr.io/getarcaneapp/agent:latest",
 	}, "\n")
 
 	mtlsDockerCompose := strings.Join([]string{
 		"# Edge agent with automatic mTLS enrollment",
 		"services:",
 		"  arcane-edge-agent:",
-		"    image: ghcr.io/getarcaneapp/arcane-headless:latest",
+		"    image: ghcr.io/getarcaneapp/agent:latest",
 		"    container_name: arcane-edge-agent",
 		"    restart: unless-stopped",
 		"    environment:",
