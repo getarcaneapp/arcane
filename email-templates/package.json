@@ -11,7 +11,7 @@
   "dependencies": {
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
-    "react-email": "6.7.0",
+    "react-email": "6.8.1",
     "tailwind-merge": "^3.6.0"
   },
   "devDependencies": {
