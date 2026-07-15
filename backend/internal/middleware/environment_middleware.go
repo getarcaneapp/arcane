@@ -309,7 +309,7 @@ func isCentralSwarmManagementPathInternal(method, suffix string) bool {
 			return method == http.MethodPut || method == http.MethodDelete
 		}
 		if parts[4] == "deployment" {
-			return method == http.MethodDelete
+			return method == http.MethodPost || method == http.MethodDelete
 		}
 	}
 
