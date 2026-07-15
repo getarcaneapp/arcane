@@ -167,6 +167,7 @@ let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
 // window the backend briefly restarts and returns version-mismatch 401s; we must not
 // bounce the user to /login — the session is recoverable once the backend is back.
 let upgradeInProgressInternal = false;
+let upgradeReloadStartedInternal = false;
 const skipAuthPathsInternal = [
 	'/auth/login',
 	'/auth/logout',
@@ -179,7 +180,7 @@ const skipAuthPathsInternal = [
 	'/settings/public'
 ];
 
-type UnauthorizedActionInternal = 'none' | 'redirect' | 'retry';
+type UnauthorizedActionInternal = 'none' | 'redirect' | 'reload' | 'retry';
 
 function isAuthPagePathInternal(pathname: string): boolean {
 	return (
@@ -208,19 +209,27 @@ export async function handleUnauthorizedResponseInternal(
 		return 'none';
 	}
 
-	// During a server self-update the backend briefly returns version-mismatch 401s
-	// (and is momentarily unreachable mid-restart). The session is recoverable — the
-	// refresh path rotates the token across the version change — so never bounce to
-	// /login for these: refresh and retry when possible, otherwise let the caller
-	// (e.g. the update poller) keep retrying until the backend is back.
+	// During a server self-update the backend briefly returns version-mismatch 401s.
+	// Refresh first so the new backend rotates both tokens, then replace the stale
+	// frontend document exactly once. Only transport failures are recoverable restart
+	// noise; a rejected or missing refresh token is a terminal authentication failure.
 	const recoverable = isVersionMismatch || upgradeInProgressInternal;
 
 	if (tokenRefreshHandler) {
 		try {
 			await tokenRefreshHandler();
+			if (isVersionMismatch && upgradeInProgressInternal) {
+				if (!upgradeReloadStartedInternal) {
+					upgradeReloadStartedInternal = true;
+					window.location.reload();
+				}
+				return 'reload';
+			}
 			return 'retry';
-		} catch {
-			if (recoverable) {
+		} catch (error) {
+			const isTransientRefreshFailure =
+				error instanceof APIError && (error.name === 'NetworkError' || error.name === 'TimeoutError');
+			if (recoverable && isTransientRefreshFailure) {
 				return 'none';
 			}
 			const redirectTo = encodeURIComponent(pathname);
@@ -316,6 +325,9 @@ class APIClient {
 					if (action === 'redirect') {
 						return new Promise(() => {});
 					}
+					if (action === 'reload') {
+						return new Promise(() => {});
+					}
 				}
 
 				if (errorResponse.status === 403 && typeof window !== 'undefined' && !config.suppressAccessDeniedToast) {
@@ -405,6 +417,12 @@ abstract class BaseAPIService {
 	// Toggled by the update flows (Update All / local update center) so an in-progress
 	// self-update restart is treated as a recoverable reconnect, not a logout.
 	static setUpgradeInProgress(value: boolean) {
+		if (value && !upgradeInProgressInternal) {
+			upgradeReloadStartedInternal = false;
+		}
+		if (!value) {
+			upgradeReloadStartedInternal = false;
+		}
 		upgradeInProgressInternal = value;
 	}
 

@@ -2,6 +2,7 @@ import { test, expect, type Page } from '@playwright/test';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
+const REFRESH_COOKIE = 'arcane_refresh_test=complete';
 
 /**
  * Register an addInitScript that plants a fake refresh token in sessionStorage
@@ -19,15 +20,13 @@ async function registerTokenSeeding(page: Page) {
 }
 
 /**
- * Intercept the FIRST request matching urlPattern with a 401 version-mismatch
- * body. All subsequent requests (e.g. the interceptor's automatic retry) pass
- * through. Uses a flag rather than unroute() to avoid "Route is already handled".
+ * Keep returning a version-mismatch 401 until the refresh response's cookie is
+ * present. This verifies that a retry is authenticated by refreshed browser state
+ * instead of passing merely because it happens to be the second request.
  */
-async function injectVersionMismatch401Once(page: Page, urlPattern: string | RegExp) {
-	let fired = false;
+async function injectVersionMismatchUntilRefresh(page: Page, urlPattern: string | RegExp) {
 	await page.route(urlPattern, async (route) => {
-		if (!fired) {
-			fired = true;
+		if (!route.request().headers()['cookie']?.includes(REFRESH_COOKIE)) {
 			await route.fulfill({
 				status: 401,
 				contentType: 'application/json',
@@ -56,16 +55,22 @@ async function injectExpired401Always(page: Page, urlPattern: string | RegExp) {
 }
 
 /**
- * Mock /auth/refresh to return a synthetic 200. Returns a getter to assert
- * whether the endpoint was called.
+ * Mock /auth/refresh to return a synthetic 200 and browser cookie. Returns a
+ * getter to assert how many refresh requests were made.
  */
-async function mockRefreshSuccess(page: Page): Promise<() => boolean> {
-	let called = false;
+async function mockRefreshSuccess(page: Page, delayMs = 0): Promise<() => number> {
+	let callCount = 0;
 	await page.route(/\/api\/auth\/refresh$/, async (route) => {
-		called = true;
+		callCount++;
+		if (delayMs > 0) {
+			await new Promise((resolve) => setTimeout(resolve, delayMs));
+		}
 		await route.fulfill({
 			status: 200,
-			contentType: 'application/json',
+			headers: {
+				'content-type': 'application/json',
+				'set-cookie': `${REFRESH_COOKIE}; Path=/; SameSite=Lax`
+			},
 			body: JSON.stringify({
 				success: true,
 				data: {
@@ -76,7 +81,7 @@ async function mockRefreshSuccess(page: Page): Promise<() => boolean> {
 			})
 		});
 	});
-	return () => called;
+	return () => callCount;
 }
 
 test.describe('Token refresh behaviour', () => {
@@ -84,13 +89,13 @@ test.describe('Token refresh behaviour', () => {
 		page
 	}) => {
 		await registerTokenSeeding(page);
-		const wasRefreshCalled = await mockRefreshSuccess(page);
-		await injectVersionMismatch401Once(page, /\/api\/auth\/me(?:\?.*)?$/);
+		const refreshCallCount = await mockRefreshSuccess(page);
+		await injectVersionMismatchUntilRefresh(page, /\/api\/auth\/me(?:\?.*)?$/);
 
 		await page.goto('/dashboard');
 		await page.waitForLoadState('load');
 
-		await expect.poll(() => wasRefreshCalled()).toBe(true);
+		await expect.poll(() => refreshCallCount()).toBe(1);
 		await expect(page).toHaveURL('/dashboard');
 		await expect(page.getByRole('button', { name: 'Sign in to Arcane' })).not.toBeVisible();
 	});
@@ -99,13 +104,13 @@ test.describe('Token refresh behaviour', () => {
 		page
 	}) => {
 		await registerTokenSeeding(page);
-		const wasRefreshCalled = await mockRefreshSuccess(page);
-		await injectVersionMismatch401Once(page, /\/api\/environments\/[^/]+\/containers/);
+		const refreshCallCount = await mockRefreshSuccess(page);
+		await injectVersionMismatchUntilRefresh(page, /\/api\/environments\/[^/]+\/containers/);
 
 		await page.goto('/containers');
 		await page.waitForLoadState('load');
 
-		await expect.poll(() => wasRefreshCalled()).toBe(true);
+		await expect.poll(() => refreshCallCount()).toBe(1);
 		await expect(page).toHaveURL('/containers');
 		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Sign in to Arcane' })).not.toBeVisible();

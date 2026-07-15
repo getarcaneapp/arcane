@@ -12,5 +12,5 @@
   "tasks.statusbar.limit": 8,
   "github.copilot.chat.summarizeAgentConversationHistory.enabled": false,
   "snyk.advanced.autoSelectOrganization": false,
-  "js/ts.tsdk.path": "frontend/node_modules/typescript/lib"
+  "js/ts.tsdk.path": "node_modules/@typescript/native-preview"
 }
