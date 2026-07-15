@@ -55,6 +55,9 @@ class ActivityService extends BaseAPIService {
 			if (action === 'redirect') {
 				return new Promise<Response>(() => {});
 			}
+			if (action === 'reload') {
+				return new Promise<Response>(() => {});
+			}
 		}
 		if (!response.ok) {
 			throw new Error(`Activity stream failed with status ${response.status}`);
