@@ -37,7 +37,7 @@ require (
 	github.com/klauspost/compress v1.19.0
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/libtnb/sqlite v1.2.0
-	github.com/lmittmann/tint v1.1.3
+	github.com/lmittmann/tint v1.2.0
 	github.com/moby/buildkit v0.31.1
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
