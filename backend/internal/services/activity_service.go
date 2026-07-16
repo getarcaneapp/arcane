@@ -16,6 +16,7 @@ import (
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
 	"gorm.io/gorm"
 )
@@ -157,9 +158,9 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		EnvironmentID:        environmentID,
 		Type:                 req.Type,
 		Status:               models.ActivityStatusRunning,
-		ResourceType:         copyPtrInternal(req.ResourceType),
-		ResourceID:           copyPtrInternal(req.ResourceID),
-		ResourceName:         copyPtrInternal(req.ResourceName),
+		ResourceType:         utils.CopyPtr(req.ResourceType),
+		ResourceID:           utils.CopyPtr(req.ResourceID),
+		ResourceName:         utils.CopyPtr(req.ResourceName),
 		StartedByUserID:      startedByUserID,
 		StartedByUsername:    startedByUsername,
 		StartedByDisplayName: startedByDisplayName,
@@ -176,8 +177,8 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		model.Type = models.ActivityTypeAutoUpdate
 	}
 
-	if err := s.db.WithContext(ctx).Create(model).Error; err != nil {
-		return nil, fmt.Errorf("failed to create activity: %w", err)
+	if err := s.db.Create(ctx, model); err != nil {
+		return nil, err
 	}
 
 	dto := activityToDTOInternal(model)
@@ -217,7 +218,7 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 	}
 
 	var model models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
 		if result.Error != nil {
 			return fmt.Errorf("failed to update activity: %w", result.Error)
@@ -272,7 +273,7 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 	}
 
 	var updated models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(message).Error; err != nil {
 			return fmt.Errorf("failed to append activity message: %w", err)
 		}
@@ -334,7 +335,7 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 
 	now := time.Now()
 	var model models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
 			return fmt.Errorf("failed to load activity: %w", err)
 		}
@@ -431,7 +432,7 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 	// clobbering a concurrently-completing activity.
 	now := time.Now()
 	var finalized models.Activity
-	if err := s.db.WithContext(writeCtx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(writeCtx, func(tx *gorm.DB) error {
 		if err := tx.First(&finalized, "id = ? AND environment_id = ?", activityID, environmentID).Error; err != nil {
 			return err
 		}
@@ -469,10 +470,8 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	}
 
 	cutoff := time.Now().Add(-staleImageUpdateCheckAge)
-	var staleChecks []models.Activity
-	if err := s.db.WithContext(ctx).
-		Where("type = ? AND status = ? AND started_at < ?", models.ActivityTypeImageUpdateCheck, models.ActivityStatusRunning, cutoff).
-		Find(&staleChecks).Error; err != nil {
+	staleChecks, err := s.db.ListWhere[models.Activity](ctx, "type = ? AND status = ? AND started_at < ?", models.ActivityTypeImageUpdateCheck, models.ActivityStatusRunning, cutoff)
+	if err != nil {
 		return 0, fmt.Errorf("find stale image update checks: %w", err)
 	}
 
@@ -505,7 +504,7 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 		return nil
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var activity models.Activity
 		if err := tx.First(&activity, "id = ?", activityID).Error; err != nil {
 			return fmt.Errorf("failed to load activity: %w", err)
@@ -532,10 +531,8 @@ func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) 
 		return 0, nil
 	}
 
-	var stale []models.Activity
-	if err := s.db.WithContext(ctx).
-		Where("type = ? AND status = ?", models.ActivityTypeAutoUpdate, models.ActivityStatusRunning).
-		Find(&stale).Error; err != nil {
+	stale, err := s.db.ListWhere[models.Activity](ctx, "type = ? AND status = ?", models.ActivityTypeAutoUpdate, models.ActivityStatusRunning)
+	if err != nil {
 		return 0, fmt.Errorf("find stale auto-update activities: %w", err)
 	}
 
@@ -622,10 +619,9 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate activities: %w", err)
 	}
 
-	out := make([]activitytypes.Activity, 0, len(activities))
-	for i := range activities {
-		out = append(out, activityToDTOInternal(&activities[i]))
-	}
+	out := mapper.MapFunc(activities, func(a models.Activity) activitytypes.Activity {
+		return activityToDTOInternal(&a)
+	})
 	return out, paginationResp, nil
 }
 
@@ -676,7 +672,7 @@ func (s *ActivityService) PruneHistory(ctx context.Context, retentionDays, maxEn
 	}
 
 	var deleted int64
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if retentionDays > 0 {
 			cutoff := time.Now().Add(-time.Duration(retentionDays) * 24 * time.Hour)
 			ids, err := findTerminalActivityIDsInternal(tx.
@@ -722,7 +718,7 @@ func (s *ActivityService) DeleteHistory(ctx context.Context, environmentID strin
 	}
 
 	var deleted int64
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		ids, err := findTerminalActivityIDsInternal(tx.Where("environment_id = ?", environmentID))
 		if err != nil {
 			return fmt.Errorf("failed to find activity history: %w", err)
@@ -830,20 +826,20 @@ func activityToDTOInternal(model *models.Activity) activitytypes.Activity {
 		SourceEnvironmentID: model.EnvironmentID,
 		Type:                activitytypes.Type(model.Type),
 		Status:              activitytypes.Status(model.Status),
-		ResourceType:        copyPtrInternal(model.ResourceType),
-		ResourceID:          copyPtrInternal(model.ResourceID),
-		ResourceName:        copyPtrInternal(model.ResourceName),
+		ResourceType:        utils.CopyPtr(model.ResourceType),
+		ResourceID:          utils.CopyPtr(model.ResourceID),
+		ResourceName:        utils.CopyPtr(model.ResourceName),
 		Progress:            clampProgressPtrInternal(model.Progress),
 		Step:                model.Step,
 		LatestMessage:       model.LatestMessage,
 		StartedBy:           activityStartedByDTOInternal(model),
 		StartedAt:           model.StartedAt,
-		EndedAt:             copyPtrInternal(model.EndedAt),
-		DurationMs:          copyPtrInternal(model.DurationMs),
-		Error:               copyPtrInternal(model.Error),
+		EndedAt:             utils.CopyPtr(model.EndedAt),
+		DurationMs:          utils.CopyPtr(model.DurationMs),
+		Error:               utils.CopyPtr(model.Error),
 		Metadata:            jsonToMapInternal(model.Metadata),
 		CreatedAt:           model.CreatedAt,
-		UpdatedAt:           copyPtrInternal(model.UpdatedAt),
+		UpdatedAt:           utils.CopyPtr(model.UpdatedAt),
 	}
 }
 
@@ -859,13 +855,6 @@ func activityMessageToDTOInternal(model *models.ActivityMessage) activitytypes.M
 		Payload:    jsonToMapInternal(model.Payload),
 		CreatedAt:  model.CreatedAt,
 	}
-}
-
-func copyPtrInternal[T any](value *T) *T {
-	if value == nil {
-		return nil
-	}
-	return new(*value)
 }
 
 func clampProgressPtrInternal(value *int) *int {

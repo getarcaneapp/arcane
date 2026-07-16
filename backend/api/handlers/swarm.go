@@ -28,12 +28,6 @@ type SwarmHandler struct {
 	cfg                *config.Config
 }
 
-type SwarmPaginatedResponse[T any] struct {
-	Success    bool                    `json:"success"`
-	Data       []T                     `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListSwarmServicesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -44,7 +38,7 @@ type ListSwarmServicesInput struct {
 }
 
 type ListSwarmServicesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.ServiceSummary]
+	Body base.Paginated[swarmtypes.ServiceSummary]
 }
 
 type GetSwarmServiceInput struct {
@@ -95,7 +89,7 @@ type ListSwarmServiceTasksInput struct {
 }
 
 type ListSwarmServiceTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type RollbackSwarmServiceInput struct {
@@ -127,7 +121,7 @@ type ListSwarmNodesInput struct {
 }
 
 type ListSwarmNodesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.NodeSummary]
+	Body base.Paginated[swarmtypes.NodeSummary]
 }
 
 type GetSwarmNodeInput struct {
@@ -250,7 +244,7 @@ type ListSwarmNodeTasksInput struct {
 }
 
 type ListSwarmNodeTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type ListSwarmTasksInput struct {
@@ -263,7 +257,7 @@ type ListSwarmTasksInput struct {
 }
 
 type ListSwarmTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type ListSwarmStacksInput struct {
@@ -276,7 +270,7 @@ type ListSwarmStacksInput struct {
 }
 
 type ListSwarmStacksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.StackSummary]
+	Body base.Paginated[swarmtypes.StackSummary]
 }
 
 type DeploySwarmStackInput struct {
@@ -336,7 +330,7 @@ type ListSwarmStackServicesInput struct {
 }
 
 type ListSwarmStackServicesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.ServiceSummary]
+	Body base.Paginated[swarmtypes.ServiceSummary]
 }
 
 type ListSwarmStackTasksInput struct {
@@ -350,7 +344,7 @@ type ListSwarmStackTasksInput struct {
 }
 
 type ListSwarmStackTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type RenderSwarmStackConfigInput struct {
@@ -661,7 +655,7 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmServicesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmServicesOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // GetService returns detailed information for a single swarm service.
@@ -793,7 +787,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmServiceTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmServiceTasksOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // RollbackService requests a server-side rollback for a swarm service.
@@ -870,7 +864,7 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 		items = []swarmtypes.NodeSummary{}
 	}
 
-	return &ListSwarmNodesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmNodesOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // GetNode returns detailed information for a single swarm node.
@@ -1195,7 +1189,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmNodeTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmNodeTasksOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // ListTasks lists swarm tasks across the current environment.
@@ -1222,7 +1216,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmTasksOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // ListStacks lists swarm stacks for the current environment.
@@ -1249,7 +1243,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 		items = []swarmtypes.StackSummary{}
 	}
 
-	return &ListSwarmStacksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStacksOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // DeployStack deploys or updates a swarm stack.
@@ -1406,7 +1400,7 @@ func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmSt
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmStackServicesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStackServicesOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // ListStackTasks lists tasks belonging to a swarm stack.
@@ -1437,7 +1431,7 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmStackTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStackTasksOutput{Body: toPaginatedInternal(items, paginationResp)}, nil
 }
 
 // RenderStackConfig renders and validates a swarm stack configuration without deploying it.
@@ -2053,14 +2047,9 @@ func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecre
 	return &DeleteSwarmSecretOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm secret removed successfully"}}}, nil
 }
 
-// toSwarmPaginatedResponse wraps items and pagination metadata in the standard swarm list envelope.
-//
-// items is the collection to include in the response body.
-// p provides the pagination metadata produced by the pagination package.
-//
-// Returns a SwarmPaginatedResponse with `Success` set to true.
-func toSwarmPaginatedResponse[T any](items []T, p pagination.Response) SwarmPaginatedResponse[T] {
-	return SwarmPaginatedResponse[T]{
+// toPaginatedInternal wraps items and pagination metadata in the standard paginated list envelope.
+func toPaginatedInternal[T any](items []T, p pagination.Response) base.Paginated[T] {
+	return base.Paginated[T]{
 		Success:    true,
 		Data:       items,
 		Pagination: toPaginationResponseInternal(p),

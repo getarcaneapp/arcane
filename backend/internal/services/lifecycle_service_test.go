@@ -247,7 +247,7 @@ func TestRunPreDeploy_KillSwitchDisabled(t *testing.T) {
 		GitOpsManagedBy: &syncID,
 	}
 	project.ID = "proj-1"
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	scriptPath := "pre-deploy.sh"
 	runnerImage := "alpine:latest"
@@ -264,7 +264,7 @@ func TestRunPreDeploy_KillSwitchDisabled(t *testing.T) {
 		PreDeployRunnerImage: &runnerImage,
 	}
 	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	require.NoError(t, svc.RunPreDeploy(context.Background(), project, models.User{}))
 }
@@ -281,7 +281,7 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 		GitOpsManagedBy: &syncID,
 	}
 	project.ID = "proj-1"
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	sync := &models.GitOpsSync{
 		Name:          "demo-sync",
@@ -294,7 +294,7 @@ func TestRunPreDeploy_NoScriptConfigured(t *testing.T) {
 		ProjectID:     &project.ID,
 	}
 	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	require.NoError(t, svc.RunPreDeploy(context.Background(), project, models.User{}))
 }
@@ -313,7 +313,7 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 		GitOpsManagedBy: &syncID,
 	}
 	project.ID = "proj-1"
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	scriptPath := "pre-deploy.sh"
 	sync := &models.GitOpsSync{
@@ -328,7 +328,7 @@ func TestRunPreDeploy_MissingRunnerImage(t *testing.T) {
 		PreDeployScriptPath: &scriptPath,
 	}
 	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	err := svc.RunPreDeploy(context.Background(), project, models.User{})
 	require.Error(t, err)
@@ -360,7 +360,7 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 		GitOpsManagedBy: &syncID,
 	}
 	project.ID = "proj-1"
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	scriptPath := "../etc/passwd"
 	runnerImage := "alpine:latest"
@@ -377,7 +377,7 @@ func TestRunPreDeploy_PathTraversalRejected(t *testing.T) {
 		PreDeployRunnerImage: &runnerImage,
 	}
 	sync.ID = syncID
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	err := svc.RunPreDeploy(context.Background(), project, models.User{})
 	require.Error(t, err)
@@ -406,7 +406,7 @@ func TestPersistLastRun_UpdatesGitOpsSyncRow(t *testing.T) {
 		ProjectName:   "demo",
 	}
 	sync.ID = "sync-1"
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	now := time.Now().UTC().Truncate(time.Second)
 	svc.persistLastRunInternal(context.Background(), sync.ID, lifecycleStatusSuccess, "all good", now)

@@ -286,8 +286,7 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 		return n
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 	defer close(stopManager)
 	go client.StartWithErrorChan(ctx, nil)
 

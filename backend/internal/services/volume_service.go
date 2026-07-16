@@ -1253,7 +1253,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	}
 	backup.ID = backupID
 
-	if err := s.db.WithContext(ctx).Create(backup).Error; err != nil {
+	if err := s.db.Create(ctx, backup); err != nil {
 		return nil, err
 	}
 
@@ -1314,29 +1314,12 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 		return nil, pagination.Response{}, err
 	}
 
-	paginationResp := s.buildPaginationResponseFromCountsInternal(totalItems, totalItems, params)
+	paginationResp := pagination.FilterResult[models.VolumeBackup]{
+		Items:          backups,
+		TotalCount:     totalItems,
+		TotalAvailable: totalItems,
+	}.BuildResponse(params)
 	return backups, paginationResp, nil
-}
-
-func (s *VolumeService) buildPaginationResponseFromCountsInternal(totalCount int64, totalAvailable int64, params pagination.QueryParams) pagination.Response {
-	slog.Debug("volume service: build pagination response", "total_count", totalCount, "total_available", totalAvailable, "start", params.Start, "limit", params.Limit)
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (totalCount + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      totalCount,
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: totalAvailable,
-	}
 }
 
 func (s *VolumeService) ListBackups(ctx context.Context, volumeName string) ([]models.VolumeBackup, error) {
@@ -2255,7 +2238,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	config := s.buildVolumePaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 	counts := s.calculateVolumeUsageCountsInternal(items)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, counts, nil
 }

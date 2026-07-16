@@ -24,9 +24,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
 )
 
@@ -163,7 +163,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	}
 
 	var created models.FederatedCredential
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		serviceUser := models.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 			DisplayName:      pkgutils.StringPtrFromTrimmed("Federated: " + normalized.Name),
@@ -236,10 +236,9 @@ func (s *FederatedCredentialService) List(ctx context.Context, params pagination
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate federated credentials: %w", err)
 	}
 
-	result := make([]federatedtypes.FederatedCredential, len(credentials))
-	for i := range credentials {
-		result[i] = toFederatedCredentialDTOInternal(&credentials[i])
-	}
+	result := mapper.MapFunc(credentials, func(c models.FederatedCredential) federatedtypes.FederatedCredential {
+		return toFederatedCredentialDTOInternal(&c)
+	})
 	return result, resp, nil
 }
 
@@ -260,15 +259,12 @@ func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*feder
 }
 
 func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID string, id string, req federatedtypes.UpdateFederatedCredential) (*federatedtypes.FederatedCredential, error) {
-	var credential models.FederatedCredential
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &common.FederatedCredentialNotFoundError{}
-		}
-		return nil, fmt.Errorf("failed to load federated credential: %w", err)
+	credential, err := s.db.First[models.FederatedCredential](ctx, &common.FederatedCredentialNotFoundError{}, "id = ?", id)
+	if err != nil {
+		return nil, err
 	}
 
-	updated, roleChanged, err := applyFederatedCredentialUpdateInternal(credential, req)
+	updated, roleChanged, err := applyFederatedCredentialUpdateInternal(*credential, req)
 	if err != nil {
 		return nil, err
 	}
@@ -279,7 +275,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 		}
 	}
 
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Save(&updated).Error; err != nil {
 			return fmt.Errorf("failed to update federated credential: %w", err)
 		}
@@ -316,15 +312,12 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 }
 
 func (s *FederatedCredentialService) Delete(ctx context.Context, id string) error {
-	var credential models.FederatedCredential
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &common.FederatedCredentialNotFoundError{}
-		}
-		return fmt.Errorf("failed to load federated credential: %w", err)
+	credential, err := s.db.First[models.FederatedCredential](ctx, &common.FederatedCredentialNotFoundError{}, "id = ?", id)
+	if err != nil {
+		return err
 	}
 
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Delete(&models.FederatedCredential{}, "id = ?", credential.ID).Error; err != nil {
 			return fmt.Errorf("failed to delete federated credential: %w", err)
 		}
@@ -407,9 +400,7 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 	}
 
 	now := time.Now()
-	if err := s.db.WithContext(ctx).
-		Where("expires_at < ?", now).
-		Delete(&models.FederatedTokenReplay{}).Error; err != nil {
+	if err := s.db.DeleteWhere[models.FederatedTokenReplay](ctx, "expires_at < ?", now); err != nil {
 		return fmt.Errorf("failed to prune federated token replay records: %w", err)
 	}
 
@@ -418,7 +409,7 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 		IssuerURL: issuer,
 		ExpiresAt: expiresAt,
 	}
-	if err := s.db.WithContext(ctx).Create(&replay).Error; err != nil {
+	if err := s.db.Create(ctx, &replay); err != nil {
 		if isUniqueConstraintErrorInternal(err) {
 			return &common.FederatedCredentialInvalidGrantError{}
 		}
@@ -592,7 +583,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
 	req.MatchType = normalizeMatchTypeInternal(req.MatchType)
 	req.Audiences = pkgutils.UniqueNonEmptyStrings(req.Audiences)
-	req.EnvironmentID = pkgutils.StringPtrFromTrimmed(pkgutils.DerefString(req.EnvironmentID))
+	req.EnvironmentID = pkgutils.StringPtrFromTrimmed(pkgutils.Deref(req.EnvironmentID))
 	req.TokenTTLSeconds = clampFederatedTokenTTLSecondsInternal(req.TokenTTLSeconds)
 
 	if req.SubjectClaim == "" {
@@ -687,7 +678,7 @@ func applyFederatedRoleScopeUpdateInternal(existing *models.FederatedCredential,
 	}
 	if environmentID != nil {
 		normalized := pkgutils.StringPtrFromTrimmed(*environmentID)
-		roleChanged = roleChanged || pkgutils.DerefString(existing.EnvironmentID) != pkgutils.DerefString(normalized)
+		roleChanged = roleChanged || pkgutils.Deref(existing.EnvironmentID) != pkgutils.Deref(normalized)
 		existing.EnvironmentID = normalized
 	}
 	return roleChanged, nil

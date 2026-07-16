@@ -2,7 +2,8 @@ package projects
 
 import (
 	"encoding/json"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
@@ -39,14 +40,8 @@ func MarshalImageRefsJSON(refs []string) string {
 // ImageRefsFromComposeServices returns unique, non-empty image references from
 // a compose service map in stable service-name order.
 func ImageRefsFromComposeServices(services composetypes.Services) []string {
-	serviceNames := make([]string, 0, len(services))
-	for name := range services {
-		serviceNames = append(serviceNames, name)
-	}
-	sort.Strings(serviceNames)
-
 	serviceConfigs := make([]composetypes.ServiceConfig, 0, len(services))
-	for _, name := range serviceNames {
+	for _, name := range slices.Sorted(maps.Keys(services)) {
 		serviceConfigs = append(serviceConfigs, services[name])
 	}
 
@@ -56,38 +51,30 @@ func ImageRefsFromComposeServices(services composetypes.Services) []string {
 // ImageRefsFromComposeConfigs returns unique, non-empty image references from
 // compose service configs while preserving first-seen order.
 func ImageRefsFromComposeConfigs(services []composetypes.ServiceConfig) []string {
-	return uniqueImageRefsInternal(len(services), func(yield func(string)) {
-		for _, svc := range services {
-			yield(svc.Image)
-		}
-	})
+	return uniqueImageRefsInternal(services, func(svc composetypes.ServiceConfig) string { return svc.Image })
 }
 
 // ImageRefsFromRuntimeServices returns unique, non-empty image references from
 // runtime service DTOs while preserving first-seen order.
 func ImageRefsFromRuntimeServices(services []projecttypes.RuntimeService) []string {
-	return uniqueImageRefsInternal(len(services), func(yield func(string)) {
-		for _, svc := range services {
-			yield(svc.Image)
-		}
-	})
+	return uniqueImageRefsInternal(services, func(svc projecttypes.RuntimeService) string { return svc.Image })
 }
 
-func uniqueImageRefsInternal(size int, collect func(yield func(string))) []string {
-	refs := make([]string, 0, size)
-	seen := make(map[string]struct{}, size)
+func uniqueImageRefsInternal[T any](items []T, image func(T) string) []string {
+	refs := make([]string, 0, len(items))
+	seen := make(map[string]struct{}, len(items))
 
-	collect(func(image string) {
-		ref := strings.TrimSpace(image)
+	for _, item := range items {
+		ref := strings.TrimSpace(image(item))
 		if ref == "" {
-			return
+			continue
 		}
 		if _, exists := seen[ref]; exists {
-			return
+			continue
 		}
 		seen[ref] = struct{}{}
 		refs = append(refs, ref)
-	})
+	}
 
 	return refs
 }

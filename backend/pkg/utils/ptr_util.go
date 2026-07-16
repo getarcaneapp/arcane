@@ -2,11 +2,30 @@ package utils
 
 import "strings"
 
-func DerefString(p *string) string {
+// Deref returns the value p points to, or T's zero value when p is nil.
+func Deref[T any](p *T) T {
 	if p == nil {
-		return ""
+		var zero T
+		return zero
 	}
 	return *p
+}
+
+// PtrEqual reports whether a and b are both nil or point to equal values.
+func PtrEqual[T comparable](a, b *T) bool {
+	if a == nil || b == nil {
+		return a == b
+	}
+	return *a == *b
+}
+
+// CopyPtr returns a pointer to a shallow copy of *p, or nil when p is nil.
+func CopyPtr[T any](p *T) *T {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func StringPtrFromTrimmed(value string) *string {
@@ -15,14 +34,4 @@ func StringPtrFromTrimmed(value string) *string {
 		return nil
 	}
 	return &trimmed
-}
-
-func StringPtrEqual(a, b *string) bool {
-	if a == nil && b == nil {
-		return true
-	}
-	if a == nil || b == nil {
-		return false
-	}
-	return *a == *b
 }

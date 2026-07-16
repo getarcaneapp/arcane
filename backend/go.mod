@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/backend/v2
 
-go 1.26.5
+go 1.27rc2
 
 replace (
 	github.com/getarcaneapp/arcane/cli/v2 => ../cli
@@ -157,6 +157,7 @@ require (
 	github.com/mattn/go-isatty v0.0.22 // indirect
 	github.com/mattn/go-runewidth v0.0.24 // indirect
 	github.com/mattn/go-shellwords v1.0.13 // indirect
+	github.com/mattn/go-sqlite3 v1.14.24 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect

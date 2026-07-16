@@ -321,7 +321,7 @@ func jsonFieldNameInternal(field reflect.StructField) (string, bool) {
 		return field.Name, true
 	}
 
-	name := strings.Split(tag, ",")[0]
+	name, _, _ := strings.Cut(tag, ",")
 	if name == "" {
 		return field.Name, true
 	}

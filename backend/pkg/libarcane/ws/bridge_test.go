@@ -57,7 +57,7 @@ func TestForwardLines(t *testing.T) {
 	lines <- "line 3"
 	close(lines)
 
-	go ForwardLines(ctx, h, lines)
+	go h.ForwardLines(ctx, lines)
 
 	msgs := drainClient(t, c, 3, 2*time.Second)
 	assert.Equal(t, "line 1", string(msgs[0]))
@@ -75,7 +75,7 @@ func TestForwardLines_ContextCancellation(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		ForwardLines(forwardCtx, h, lines)
+		h.ForwardLines(forwardCtx, lines)
 		close(done)
 	}()
 
@@ -101,7 +101,7 @@ func TestForwardLogJSON(t *testing.T) {
 	logs <- LogMessage{Seq: 2, Level: "stderr", Message: "error", Timestamp: "2024-01-15T10:30:46Z"}
 	close(logs)
 
-	go ForwardLogJSON(ctx, h, logs)
+	go h.ForwardLogJSON(ctx, logs)
 
 	msgs := drainClient(t, c, 2, 2*time.Second)
 
@@ -126,7 +126,7 @@ func TestForwardLogJSON_FillsEmptyTimestamp(t *testing.T) {
 	logs <- LogMessage{Seq: 1, Message: "no timestamp"}
 	close(logs)
 
-	go ForwardLogJSON(ctx, h, logs)
+	go h.ForwardLogJSON(ctx, logs)
 
 	msgs := drainClient(t, c, 1, 2*time.Second)
 
@@ -155,7 +155,7 @@ func TestForwardLogJSONBatched(t *testing.T) {
 	}
 	close(logs)
 
-	go ForwardLogJSONBatched(ctx, h, logs, 5, 100*time.Millisecond)
+	go h.ForwardLogJSONBatched(ctx, logs, 5, 100*time.Millisecond)
 
 	msgs := drainClient(t, c, 1, 2*time.Second)
 
@@ -175,7 +175,7 @@ func TestForwardLogJSONBatched_FlushesOnInterval(t *testing.T) {
 	logs <- LogMessage{Seq: 1, Message: "a", Timestamp: "2024-01-15T10:30:45Z"}
 	logs <- LogMessage{Seq: 2, Message: "b", Timestamp: "2024-01-15T10:30:46Z"}
 
-	go ForwardLogJSONBatched(ctx, h, logs, 10, 50*time.Millisecond)
+	go h.ForwardLogJSONBatched(ctx, logs, 10, 50*time.Millisecond)
 
 	msgs := drainClient(t, c, 1, 2*time.Second)
 
@@ -201,7 +201,7 @@ func TestForwardLogJSONBatched_MultipleBatches(t *testing.T) {
 	}
 	close(logs)
 
-	go ForwardLogJSONBatched(ctx, h, logs, 3, time.Second)
+	go h.ForwardLogJSONBatched(ctx, logs, 3, time.Second)
 
 	msgs := drainClient(t, c, 2, 2*time.Second)
 
@@ -224,7 +224,7 @@ func TestForwardLogJSONBatched_DelegatesToUnbatchedWhenMaxBatchOne(t *testing.T)
 	logs <- LogMessage{Seq: 2, Message: "items", Timestamp: "2024-01-15T10:30:46Z"}
 	close(logs)
 
-	go ForwardLogJSONBatched(ctx, h, logs, 1, time.Second)
+	go h.ForwardLogJSONBatched(ctx, logs, 1, time.Second)
 
 	msgs := drainClient(t, c, 2, 2*time.Second)
 
@@ -247,7 +247,7 @@ func TestForwardLogJSONBatched_FlushesOnChannelClose(t *testing.T) {
 	logs <- LogMessage{Seq: 2, Message: "also flushed", Timestamp: "2024-01-15T10:30:46Z"}
 	close(logs)
 
-	go ForwardLogJSONBatched(ctx, h, logs, 100, time.Hour)
+	go h.ForwardLogJSONBatched(ctx, logs, 100, time.Hour)
 
 	msgs := drainClient(t, c, 1, 2*time.Second)
 
@@ -271,7 +271,7 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		ForwardLogJSONBatched(forwardCtx, h, logs, 100, time.Hour)
+		h.ForwardLogJSONBatched(forwardCtx, logs, 100, time.Hour)
 		close(done)
 	}()
 

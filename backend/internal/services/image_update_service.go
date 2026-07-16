@@ -928,7 +928,7 @@ func tagWithFallbackInternal(tag string, fallback *ImageParts) string {
 }
 
 func (s *ImageUpdateService) savePreparedUpdateResultInternal(ctx context.Context, imageID, repo, tag string, result *imageupdate.Response) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		return savePreparedUpdateResultWithTxInternal(tx, imageID, repo, tag, result)
 	})
 }
@@ -972,7 +972,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 	}
 
 	lookup, hasLookup := parseImageRefUpdateLookupInternal(imageRef)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if hasLookup {
 			repositories := repositoryCandidatesSliceInternal(lookup.repositoryCandidates)
 			if len(repositories) > 0 {
@@ -1014,10 +1014,8 @@ func (s *ImageUpdateService) getStoredUpdateByImageIDInternal(ctx context.Contex
 
 // GetUnnotifiedUpdates returns a map of image IDs that have updates but haven't been notified yet
 func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[string]*models.ImageUpdateRecord, error) {
-	var records []models.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).
-		Where("has_update = ? AND notification_sent = ?", true, false).
-		Find(&records).Error; err != nil {
+	records, err := s.db.ListWhere[models.ImageUpdateRecord](ctx, "has_update = ? AND notification_sent = ?", true, false)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get unnotified updates: %w", err)
 	}
 

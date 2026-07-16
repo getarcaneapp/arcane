@@ -276,8 +276,8 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 	settingsList := h.settingsService.ListSettings(models.SettingVisibilityPublic)
 
-	var settingsDto []settings.PublicSetting
-	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
+	settingsDto, err := mapper.MapSlice[models.SettingVariable, settings.PublicSetting](settingsList)
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 
@@ -323,8 +323,8 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	settingsList := h.settingsService.ListSettings(visibility)
 
-	var settingsDto []settings.PublicSetting
-	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
+	settingsDto, err := mapper.MapSlice[models.SettingVariable, settings.PublicSetting](settingsList)
+	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
 	}
 

@@ -291,13 +291,8 @@ func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context
 		return
 	}
 
-	var totalEdgeEnvs int64
-	var edgeEnvsWithToken int64
-	totalEdgeEnvsErr := s.db.WithContext(ctx).Model(&models.Environment{}).Where("is_edge = ?", true).Count(&totalEdgeEnvs).Error
-	edgeEnvsWithTokenErr := s.db.WithContext(ctx).Model(&models.Environment{}).
-		Where("is_edge = ?", true).
-		Where("access_token IS NOT NULL AND access_token != ?", "").
-		Count(&edgeEnvsWithToken).Error
+	totalEdgeEnvs, totalEdgeEnvsErr := s.db.Count[models.Environment](ctx, "is_edge = ?", true)
+	edgeEnvsWithToken, edgeEnvsWithTokenErr := s.db.Count[models.Environment](ctx, "is_edge = ? AND access_token IS NOT NULL AND access_token != ?", true, "")
 
 	args := []any{
 		"token_length", len(token),
@@ -516,7 +511,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		Enabled: true,
 	}
 
-	if err := s.db.WithContext(ctx).Create(localEnv).Error; err != nil {
+	if err := s.db.Create(ctx, localEnv); err != nil {
 		return fmt.Errorf("failed to create local environment: %w", err)
 	}
 
@@ -536,7 +531,7 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 	environment.CreatedAt = now
 	environment.UpdatedAt = new(now)
 
-	if err := s.db.WithContext(ctx).Create(environment).Error; err != nil {
+	if err := s.db.Create(ctx, environment); err != nil {
 		return nil, fmt.Errorf("failed to create environment: %w", err)
 	}
 
@@ -552,11 +547,8 @@ func (s *EnvironmentService) CreateEnvironment(ctx context.Context, environment 
 }
 
 func (s *EnvironmentService) ListSwarmNodeAgentEnvironments(ctx context.Context, parentEnvironmentID string) ([]models.Environment, error) {
-	var envs []models.Environment
-	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
-		Where("parent_environment_id = ?", parentEnvironmentID).
-		Find(&envs).Error; err != nil {
+	envs, err := s.db.ListWhere[models.Environment](ctx, "parent_environment_id = ?", parentEnvironmentID)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list swarm node agent environments: %w", err)
 	}
 
@@ -588,7 +580,7 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	rebind bool,
 ) (*models.Environment, error) {
 	var environment models.Environment
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Where("id = ?", environmentID).First(&environment).Error; err != nil {
 			return fmt.Errorf("failed to load environment for swarm node binding: %w", err)
 		}
@@ -787,14 +779,11 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 }
 
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
-	var environment models.Environment
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, errors.New("environment not found")
-		}
-		return nil, fmt.Errorf("failed to get environment: %w", err)
+	environment, err := s.db.First[models.Environment](ctx, errors.New("environment not found"), "id = ?", id)
+	if err != nil {
+		return nil, err
 	}
-	return &environment, nil
+	return environment, nil
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
@@ -826,14 +815,9 @@ func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, para
 	q = pagination.ApplyFilter(q, "status", params.Filters["status"])
 	q = pagination.ApplyBooleanFilter(q, "enabled", params.Filters["enabled"])
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &envs)
+	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.Environment, environment.Environment](params, q, &envs)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate environments: %w", err)
-	}
-
-	out, mapErr := mapper.MapSlice[models.Environment, environment.Environment](envs)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map environments: %w", mapErr)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list environments: %w", err)
 	}
 
 	return out, paginationResp, nil
@@ -857,11 +841,8 @@ func filterEnvironmentsByIDInternal(items []environment.Environment, allowedIDs 
 }
 
 func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
-	var envs []models.Environment
-	if err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
-		Where("hidden = ?", false).
-		Find(&envs).Error; err != nil {
+	envs, err := s.db.ListWhere[models.Environment](ctx, "hidden = ?", false)
+	if err != nil {
 		return nil, pagination.Response{}, fmt.Errorf("failed to list environments: %w", err)
 	}
 
@@ -950,7 +931,7 @@ func (s *EnvironmentService) listEnvironmentsPaginatedWithRuntimeFiltersInternal
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -1019,13 +1000,7 @@ func (s *EnvironmentService) ListRemoteEnvironmentIDs(ctx context.Context) ([]st
 
 // ListRemoteEnvironments returns all non-local, enabled environments for syncing purposes.
 func (s *EnvironmentService) ListRemoteEnvironments(ctx context.Context) ([]models.Environment, error) {
-	var envs []models.Environment
-	err := s.db.WithContext(ctx).
-		Model(&models.Environment{}).
-		Where("id != ?", "0").
-		Where("enabled = ?", true).
-		Where("hidden = ?", false).
-		Find(&envs).Error
+	envs, err := s.db.ListWhere[models.Environment](ctx, "id != ? AND enabled = ? AND hidden = ?", "0", true, false)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remote environments: %w", err)
 	}
@@ -1118,7 +1093,7 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 	s.removeHealthJobInternal(ctx, id)
 
 	var syncIDs []string
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.GitOpsSync{}).
 			Where("environment_id = ?", id).
 			Pluck("id", &syncIDs).Error; err != nil {
@@ -1435,22 +1410,17 @@ func (s *EnvironmentService) ResolveEnvironmentByAccessToken(ctx context.Context
 		return nil, ErrEnvironmentAccessTokenRequired
 	}
 
-	var env models.Environment
-	if err := s.db.WithContext(ctx).
-		Where("access_token = ?", token).
-		First(&env).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrInvalidEnvironmentAccessToken
-		}
-		return nil, fmt.Errorf("failed to resolve environment by access token: %w", err)
+	env, err := s.db.First[models.Environment](ctx, ErrInvalidEnvironmentAccessToken, "access_token = ?", token)
+	if err != nil {
+		return nil, err
 	}
 
-	return &env, nil
+	return env, nil
 }
 
 func (s *EnvironmentService) GetEnabledRegistryCredentials(ctx context.Context) ([]containerregistry.Credential, error) {
-	var registries []models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
+	registries, err := s.db.ListWhere[models.ContainerRegistry](ctx, "enabled = ?", true)
+	if err != nil {
 		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
 	}
 
@@ -1848,6 +1818,16 @@ func (s *EnvironmentService) ProxyJSONRequest(ctx context.Context, envID string,
 	return s.proxyJSONRequestForTargetInternal(proxyCtx, target, method, path, body, out)
 }
 
+// ProxyJSON forwards a JSON request to the environment's agent and decodes the
+// response into T.
+func (s *EnvironmentService) ProxyJSON[T any](ctx context.Context, envID string, method string, path string, body []byte) (*T, error) {
+	var out T
+	if err := s.ProxyJSONRequest(ctx, envID, method, path, body, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
 // ProxyJSONRequestForEnvironment sends a JSON request using an already-loaded
 // environment row, avoiding an extra environment lookup on hot stream paths.
 func (s *EnvironmentService) ProxyJSONRequestForEnvironment(ctx context.Context, environment models.Environment, method string, path string, body []byte, out any) error {
@@ -1934,8 +1914,8 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 	slog.InfoContext(ctx, "Starting registry sync to environment", "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
 
 	// Get all registries from this manager
-	var registries []models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Find(&registries).Error; err != nil {
+	registries, err := s.db.ListWhere[models.ContainerRegistry](ctx, "")
+	if err != nil {
 		return fmt.Errorf("failed to get registries: %w", err)
 	}
 
@@ -2029,8 +2009,8 @@ func (s *EnvironmentService) SyncRepositoriesToEnvironment(ctx context.Context, 
 	slog.InfoContext(ctx, "Starting git repository sync to environment", "environmentID", environmentID, "environmentName", target.Name, "apiUrl", target.TargetURL)
 
 	// Get all git repositories from this manager
-	var repositories []models.GitRepository
-	if err := s.db.WithContext(ctx).Find(&repositories).Error; err != nil {
+	repositories, err := s.db.ListWhere[models.GitRepository](ctx, "")
+	if err != nil {
 		return fmt.Errorf("failed to get git repositories: %w", err)
 	}
 

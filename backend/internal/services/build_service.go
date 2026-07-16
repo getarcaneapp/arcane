@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	buildapi "go.getarcane.app/builds/api"
 	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
@@ -411,10 +412,9 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate builds: %w", err)
 	}
 
-	records := make([]imagetypes.BuildRecord, 0, len(builds))
-	for _, build := range builds {
-		records = append(records, buildToRecord(build, false))
-	}
+	records := mapper.MapFunc(builds, func(build models.ImageBuild) imagetypes.BuildRecord {
+		return buildToRecord(build, false)
+	})
 
 	return records, paginationResp, nil
 }
@@ -475,8 +475,8 @@ func (s *BuildService) createBuildRecord(ctx context.Context, environmentID stri
 		},
 	}
 
-	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {
-		return nil, fmt.Errorf("failed to create build record: %w", err)
+	if err := s.db.Create(ctx, record); err != nil {
+		return nil, err
 	}
 
 	return record, nil
@@ -509,7 +509,7 @@ func (s *BuildService) completeBuildRecord(
 		"provider":         provider,
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		result := tx.Model(&models.ImageBuild{}).Where("id = ?", buildID).Updates(updates)
 		if result.Error != nil {
 			return fmt.Errorf("failed to update build record: %w", result.Error)

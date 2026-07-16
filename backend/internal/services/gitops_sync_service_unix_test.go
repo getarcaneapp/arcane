@@ -50,7 +50,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	oldSyncedFilesJSON, err := json.Marshal([]string{"docker-compose.yaml"})
 	require.NoError(t, err)
@@ -66,7 +66,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_PreservesUnreadableBindMountData
 		SyncDirectory: true,
 		SyncedFiles:   new(string(oldSyncedFilesJSON)),
 	}
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	syncFiles := []projects.SyncFile{
 		{

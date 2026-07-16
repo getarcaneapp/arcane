@@ -182,7 +182,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 
 	config := s.buildServicePaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -494,7 +494,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 
 		s.enrichNodeAgentStatusesInternal(ctx, environmentID, remote.Data)
 		result := pagination.SearchOrderAndPaginate(remote.Data, params, s.buildNodePaginationConfigInternal())
-		return result.Items, buildPaginationResponseInternal(result, params), nil
+		return result.Items, result.BuildResponse(params), nil
 	}
 
 	if err := s.ensureSwarmManagerInternal(ctx); err != nil {
@@ -521,7 +521,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 
 	config := s.buildNodePaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -1073,8 +1073,8 @@ func (s *SwarmService) buildNodeAgentStatusInternal(nodeID string, env *models.E
 		Connected:     &live,
 		LastHeartbeat: runtime.lastHeartbeat,
 		LastPollAt:    runtime.lastPollAt,
-	}
-	status.EnvironmentName = &env.Name
+
+		EnvironmentName: &env.Name}
 	environmentType := "direct"
 	if env.IsEdge {
 		environmentType = "edge"
@@ -1170,7 +1170,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 
 	config := s.buildTaskPaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -1238,7 +1238,7 @@ func (s *SwarmService) ListStacksPaginated(ctx context.Context, environmentID st
 
 	config := s.buildStackPaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -2056,7 +2056,7 @@ func (s *SwarmService) ListStackServicesPaginated(ctx context.Context, stackName
 
 	config := s.buildServicePaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(summaries, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 	return result.Items, paginationResp, nil
 }
 
@@ -2328,7 +2328,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 
 	config := s.buildTaskPaginationConfigInternal()
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := buildPaginationResponseInternal(result, params)
+	paginationResp := result.BuildResponse(params)
 	return result.Items, paginationResp, nil
 }
 
@@ -2895,26 +2895,6 @@ func (s *SwarmService) buildStackPaginationConfigInternal() pagination.Config[sw
 			{Key: "created", Fn: func(a, b swarmtypes.StackSummary) int { return compareTimeInternal(a.CreatedAt, b.CreatedAt) }},
 			{Key: "updated", Fn: func(a, b swarmtypes.StackSummary) int { return compareTimeInternal(a.UpdatedAt, b.UpdatedAt) }},
 		},
-	}
-}
-
-func buildPaginationResponseInternal[T any](result pagination.FilterResult[T], params pagination.QueryParams) pagination.Response {
-	totalPages := int64(0)
-	if params.Limit > 0 {
-		totalPages = (result.TotalCount + int64(params.Limit) - 1) / int64(params.Limit)
-	}
-
-	page := 1
-	if params.Limit > 0 {
-		page = (params.Start / params.Limit) + 1
-	}
-
-	return pagination.Response{
-		TotalPages:      totalPages,
-		TotalItems:      result.TotalCount,
-		CurrentPage:     page,
-		ItemsPerPage:    params.Limit,
-		GrandTotalItems: result.TotalAvailable,
 	}
 }
 

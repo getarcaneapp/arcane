@@ -112,8 +112,7 @@ func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *test
 }
 
 func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	js := NewJobScheduler(ctx, nil)
 	manualWatcher := &testBusWatcherInternal{

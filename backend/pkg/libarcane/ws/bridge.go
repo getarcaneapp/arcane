@@ -16,7 +16,7 @@ type LogMessage struct {
 }
 
 // ForwardLines forwards plain text lines to the hub.
-func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {
+func (h *Hub) ForwardLines(ctx context.Context, lines <-chan string) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -25,13 +25,13 @@ func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {
 			if !ok {
 				return
 			}
-			hub.Broadcast([]byte(line))
+			h.Broadcast([]byte(line))
 		}
 	}
 }
 
 // ForwardLogJSON sends each LogMessage as its own JSON object frame.
-func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
+func (h *Hub) ForwardLogJSON(ctx context.Context, logs <-chan LogMessage) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -44,7 +44,7 @@ func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
 				m.Timestamp = NowRFC3339()
 			}
 			if b, err := json.Marshal(m); err == nil {
-				hub.Broadcast(b)
+				h.Broadcast(b)
 			}
 		}
 	}
@@ -52,9 +52,9 @@ func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
 
 // ForwardLogJSONBatched batches log messages into a JSON array frame to reduce frame count.
 // Flushes when maxBatch reached or flushInterval elapsed.
-func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage, maxBatch int, flushInterval time.Duration) {
+func (h *Hub) ForwardLogJSONBatched(ctx context.Context, logs <-chan LogMessage, maxBatch int, flushInterval time.Duration) {
 	if maxBatch <= 1 {
-		ForwardLogJSON(ctx, hub, logs)
+		h.ForwardLogJSON(ctx, logs)
 		return
 	}
 	ticker := time.NewTicker(flushInterval)
@@ -68,7 +68,7 @@ func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage
 		}
 		b, err := json.Marshal(buf)
 		if err == nil {
-			hub.Broadcast(b)
+			h.Broadcast(b)
 		}
 		buf = buf[:0]
 	}

@@ -90,32 +90,6 @@ func registerSecuredInternal[I, O any](
 	humamw.RegisterWithPermission(api, op, permission, handler)
 }
 
-func registerCustomizeSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "Customize", permission, handler)
-}
-
-func registerGitOpsSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "GitOps Syncs", permission, handler)
-}
-
 func registerTaggedSecuredInternal[I, O any](
 	api huma.API,
 	operationID string,
@@ -181,12 +155,12 @@ func proxyRemoteJSONInternal[T any](
 		return nil, huma.Error500InternalServerError("failed to marshal request body: " + err.Error())
 	}
 
-	var output T
-	if err := environmentService.ProxyJSONRequest(ctx, environmentID, method, path, body, &output); err != nil {
+	output, err := environmentService.ProxyJSON[T](ctx, environmentID, method, path, body)
+	if err != nil {
 		return nil, translateRemoteProxyErrorInternal(err)
 	}
 
-	return &output, nil
+	return output, nil
 }
 
 func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {

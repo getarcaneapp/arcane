@@ -394,7 +394,7 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.EqualValues(t, 1, failed)
 
 	var stale models.Activity
-	require.NoError(t, db.First(&stale, "id = ?", staleCheck.ID).Error)
+	require.NoError(t, db.DB.First(&stale, "id = ?", staleCheck.ID).Error)
 	require.Equal(t, models.ActivityStatusFailed, stale.Status)
 	require.NotNil(t, stale.EndedAt)
 	require.NotNil(t, stale.DurationMs)
@@ -403,17 +403,17 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.Contains(t, *stale.Error, "stale")
 
 	var fresh models.Activity
-	require.NoError(t, db.First(&fresh, "id = ?", freshCheck.ID).Error)
+	require.NoError(t, db.DB.First(&fresh, "id = ?", freshCheck.ID).Error)
 	require.Equal(t, models.ActivityStatusRunning, fresh.Status)
 	require.Nil(t, fresh.EndedAt)
 
 	var other models.Activity
-	require.NoError(t, db.First(&other, "id = ?", staleOtherType.ID).Error)
+	require.NoError(t, db.DB.First(&other, "id = ?", staleOtherType.ID).Error)
 	require.Equal(t, models.ActivityStatusRunning, other.Status)
 	require.Nil(t, other.EndedAt)
 
 	var completed models.Activity
-	require.NoError(t, db.First(&completed, "id = ?", completedCheck.ID).Error)
+	require.NoError(t, db.DB.First(&completed, "id = ?", completedCheck.ID).Error)
 	require.Equal(t, models.ActivityStatusSuccess, completed.Status)
 }
 
@@ -449,19 +449,19 @@ func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
 	require.EqualValues(t, 2, resolved)
 
 	var selfUpdated models.Activity
-	require.NoError(t, db.First(&selfUpdated, "id = ?", selfUpdateRun.ID).Error)
+	require.NoError(t, db.DB.First(&selfUpdated, "id = ?", selfUpdateRun.ID).Error)
 	require.Equal(t, models.ActivityStatusSuccess, selfUpdated.Status)
 	require.NotNil(t, selfUpdated.EndedAt)
 	require.Contains(t, selfUpdated.LatestMessage, "restarted with the updated image")
 	require.Equal(t, false, selfUpdated.Metadata["dryRun"])
 
 	var interrupted models.Activity
-	require.NoError(t, db.First(&interrupted, "id = ?", interruptedRun.ID).Error)
+	require.NoError(t, db.DB.First(&interrupted, "id = ?", interruptedRun.ID).Error)
 	require.Equal(t, models.ActivityStatusFailed, interrupted.Status)
 	require.Contains(t, interrupted.LatestMessage, "interrupted")
 
 	var other models.Activity
-	require.NoError(t, db.First(&other, "id = ?", otherType.ID).Error)
+	require.NoError(t, db.DB.First(&other, "id = ?", otherType.ID).Error)
 	require.Equal(t, models.ActivityStatusRunning, other.Status)
 }
 

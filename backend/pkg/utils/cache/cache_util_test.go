@@ -412,8 +412,7 @@ func TestCacheStaleFallbackRequiresCurrentGeneration(t *testing.T) {
 		if got.value != "" || !errors.Is(got.err, upstreamErr) {
 			t.Fatalf("expected upstream error without stale data, got %q (err=%v)", got.value, got.err)
 		}
-		var staleErr *StaleError
-		if errors.As(got.err, &staleErr) {
+		if _, ok := errors.AsType[*StaleError](got.err); ok {
 			t.Fatalf("invalidated stale generation must not be returned: %v", got.err)
 		}
 	})

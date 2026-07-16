@@ -116,14 +116,14 @@ type SyncGitRepositoriesOutput struct {
 func RegisterGitRepositories(api huma.API, repoService *services.GitRepositoryService) {
 	h := &GitRepositoryHandler{repoService: repoService}
 
-	registerCustomizeSecuredInternal(api, "listGitRepositories", "GET", "/customize/git-repositories", "List git repositories", "Get a paginated list of git repositories", authz.PermGitReposList, h.ListRepositories)
-	registerCustomizeSecuredInternal(api, "createGitRepository", "POST", "/customize/git-repositories", "Create a git repository", "Create a new git repository configuration", authz.PermGitReposCreate, h.CreateRepository)
-	registerCustomizeSecuredInternal(api, "getGitRepository", "GET", "/customize/git-repositories/{id}", "Get a git repository", "Get a git repository by ID", authz.PermGitReposRead, h.GetRepository)
-	registerCustomizeSecuredInternal(api, "updateGitRepository", "PUT", "/customize/git-repositories/{id}", "Update a git repository", "Update an existing git repository configuration", authz.PermGitReposUpdate, h.UpdateRepository)
-	registerCustomizeSecuredInternal(api, "deleteGitRepository", "DELETE", "/customize/git-repositories/{id}", "Delete a git repository", "Delete a git repository configuration by ID", authz.PermGitReposDelete, h.DeleteRepository)
-	registerCustomizeSecuredInternal(api, "testGitRepository", "POST", "/customize/git-repositories/{id}/test", "Test a git repository", "Test connectivity and authentication to a git repository", authz.PermGitReposTest, h.TestRepository)
-	registerCustomizeSecuredInternal(api, "listGitRepositoryBranches", "GET", "/customize/git-repositories/{id}/branches", "List repository branches", "Get all branches from a git repository with default branch detection", authz.PermGitReposRead, h.ListBranches)
-	registerCustomizeSecuredInternal(api, "browseGitRepositoryFiles", "GET", "/customize/git-repositories/{id}/files", "Browse repository files", "Browse files and directories in a git repository", authz.PermGitReposRead, h.BrowseFiles)
+	registerTaggedSecuredInternal(api, "listGitRepositories", "GET", "/customize/git-repositories", "List git repositories", "Get a paginated list of git repositories", "Customize", authz.PermGitReposList, h.ListRepositories)
+	registerTaggedSecuredInternal(api, "createGitRepository", "POST", "/customize/git-repositories", "Create a git repository", "Create a new git repository configuration", "Customize", authz.PermGitReposCreate, h.CreateRepository)
+	registerTaggedSecuredInternal(api, "getGitRepository", "GET", "/customize/git-repositories/{id}", "Get a git repository", "Get a git repository by ID", "Customize", authz.PermGitReposRead, h.GetRepository)
+	registerTaggedSecuredInternal(api, "updateGitRepository", "PUT", "/customize/git-repositories/{id}", "Update a git repository", "Update an existing git repository configuration", "Customize", authz.PermGitReposUpdate, h.UpdateRepository)
+	registerTaggedSecuredInternal(api, "deleteGitRepository", "DELETE", "/customize/git-repositories/{id}", "Delete a git repository", "Delete a git repository configuration by ID", "Customize", authz.PermGitReposDelete, h.DeleteRepository)
+	registerTaggedSecuredInternal(api, "testGitRepository", "POST", "/customize/git-repositories/{id}/test", "Test a git repository", "Test connectivity and authentication to a git repository", "Customize", authz.PermGitReposTest, h.TestRepository)
+	registerTaggedSecuredInternal(api, "listGitRepositoryBranches", "GET", "/customize/git-repositories/{id}/branches", "List repository branches", "Get all branches from a git repository with default branch detection", "Customize", authz.PermGitReposRead, h.ListBranches)
+	registerTaggedSecuredInternal(api, "browseGitRepositoryFiles", "GET", "/customize/git-repositories/{id}/files", "Browse repository files", "Browse files and directories in a git repository", "Customize", authz.PermGitReposRead, h.BrowseFiles)
 	registerTaggedSecuredInternal(api, "syncGitRepositories", "POST", "/git-repositories/sync", "Sync git repositories", "Sync git repositories from a manager to this agent instance", "Git Repositories", authz.PermGitReposSync, h.SyncRepositories)
 }
 

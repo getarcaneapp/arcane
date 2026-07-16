@@ -288,9 +288,7 @@ _format-js:
 
 [group('quality')]
 _format-go:
-    cd backend && gofmt -s -w .
-    cd cli && gofmt -s -w .
-    cd types && gofmt -s -w .
+    "$(go env GOROOT)/bin/gofmt" -s -w backend cli types
 
 [group('quality')]
 _format-just:
@@ -310,7 +308,7 @@ _format-check-go:
     #!/usr/bin/env bash
     set -euo pipefail
 
-    unformatted=$(gofmt -l backend cli types)
+    unformatted=$("$(go env GOROOT)/bin/gofmt" -l backend cli types)
     if [ -n "$unformatted" ]; then
         echo "Unformatted Go files:"
         echo "$unformatted"

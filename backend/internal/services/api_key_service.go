@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
 	"gorm.io/gorm"
 )
@@ -255,8 +255,8 @@ func (s *ApiKeyService) createAPIKeyWithRawKey(
 		ExpiresAt:     req.ExpiresAt,
 	}
 
-	if err := s.db.WithContext(ctx).Create(ak).Error; err != nil {
-		return nil, fmt.Errorf("failed to create API key: %w", err)
+	if err := s.db.Create(ctx, ak); err != nil {
+		return nil, err
 	}
 
 	return &apikey.ApiKeyCreatedDto{
@@ -444,7 +444,7 @@ func (s *ApiKeyService) ReconcileDefaultAdminAPIKey(ctx context.Context, rawKey 
 		return err
 	}
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		return s.reconcileManagedAPIKeys(tx, adminUser.ID, rawKey)
 	})
 }
@@ -527,13 +527,12 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 		return nil, pagination.Response{}, fmt.Errorf("failed to paginate API keys: %w", err)
 	}
 
-	result := make([]apikey.ApiKey, len(apiKeys))
-	for i := range apiKeys {
-		// Include per-key permission grants so the edit form preloads with the
-		// key's actual current grants. Without this, the form starts empty and
-		// "Save" would wipe whatever grants the DB has.
-		result[i] = toAPIKeyDTOWithPermissionsInternal(&apiKeys[i])
-	}
+	// Include per-key permission grants so the edit form preloads with the
+	// key's actual current grants. Without this, the form starts empty and
+	// "Save" would wipe whatever grants the DB has.
+	result := mapper.MapFunc(apiKeys, func(k models.ApiKey) apikey.ApiKey {
+		return toAPIKeyDTOWithPermissionsInternal(&k)
+	})
 
 	return result, paginationResp, nil
 }
@@ -564,13 +563,11 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 }
 
 func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.PermissionSet, id string, req apikey.UpdateApiKey) (*apikey.ApiKey, error) {
-	var ak models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrApiKeyNotFound
-		}
-		return nil, fmt.Errorf("failed to get API key: %w", err)
+	found, err := s.db.First[models.ApiKey](ctx, ErrApiKeyNotFound, "id = ?", id)
+	if err != nil {
+		return nil, err
 	}
+	ak := *found
 	if isStaticAPIKeyInternal(ak) || isEnvironmentBootstrapKeyInternal(ak) {
 		return nil, ErrApiKeyProtected
 	}
@@ -610,7 +607,7 @@ func (s *ApiKeyService) UpdateApiKey(ctx context.Context, callerPerms *authz.Per
 	}
 
 	permissionsUpdated := false
-	if err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Save(&ak).Error; err != nil {
 			return fmt.Errorf("failed to update API key: %w", err)
 		}
@@ -655,8 +652,8 @@ func (s *ApiKeyService) loadKeyGrantsInternal(ctx context.Context, apiKeyID stri
 	if s.roleService == nil {
 		return empty
 	}
-	var rows []models.ApiKeyPermission
-	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&rows).Error; err != nil {
+	rows, err := s.db.ListWhere[models.ApiKeyPermission](ctx, "api_key_id = ?", apiKeyID)
+	if err != nil {
 		slog.WarnContext(ctx, "failed to load api key permission grants", "api_key_id", apiKeyID, "error", err)
 		return empty
 	}
@@ -668,14 +665,11 @@ func (s *ApiKeyService) loadKeyGrantsInternal(ctx context.Context, apiKeyID stri
 }
 
 func (s *ApiKeyService) DeleteApiKey(ctx context.Context, id string) error {
-	var apiKey models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&apiKey).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrApiKeyNotFound
-		}
-		return fmt.Errorf("failed to load API key: %w", err)
+	apiKey, err := s.db.First[models.ApiKey](ctx, ErrApiKeyNotFound, "id = ?", id)
+	if err != nil {
+		return err
 	}
-	if isStaticAPIKeyInternal(apiKey) || isEnvironmentBootstrapKeyInternal(apiKey) {
+	if isStaticAPIKeyInternal(*apiKey) || isEnvironmentBootstrapKeyInternal(*apiKey) {
 		return ErrApiKeyProtected
 	}
 
@@ -702,8 +696,8 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 		return nil, nil, err
 	}
 
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+	apiKeys, err := s.db.ListWhere[models.ApiKey](ctx, "key_prefix = ?", keyPrefix)
+	if err != nil {
 		return nil, nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 
@@ -740,8 +734,8 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 		return nil, err
 	}
 
-	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("key_prefix = ?", keyPrefix).Find(&apiKeys).Error; err != nil {
+	apiKeys, err := s.db.ListWhere[models.ApiKey](ctx, "key_prefix = ?", keyPrefix)
+	if err != nil {
 		return nil, fmt.Errorf("failed to find API keys: %w", err)
 	}
 

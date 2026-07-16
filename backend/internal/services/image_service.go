@@ -137,7 +137,7 @@ func (s *ImageService) RemoveImage(ctx context.Context, id string, force bool, u
 	}
 
 	if s.db != nil {
-		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 			return tx.Delete(&models.ImageUpdateRecord{}, "id = ?", id).Error
 		}); err != nil {
 			slog.WarnContext(ctx, "failed to delete image update record", "id", id, "error", err)
@@ -585,7 +585,7 @@ func (s *ImageService) cleanupImageUpdateRecordsAfterPruneInternal(ctx context.C
 		return
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		return tx.Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error
 	}); err != nil {
 		slog.WarnContext(ctx, "failed to clean up image update records after prune", "error", err)
@@ -619,9 +619,9 @@ func (s *ImageService) GetUpdateInfoByImageIDs(ctx context.Context, imageIDs []s
 		return make(map[string]*imagetypes.UpdateInfo), nil
 	}
 
-	var updateRecords []models.ImageUpdateRecord
-	if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
-		return nil, fmt.Errorf("failed to fetch update records: %w", err)
+	updateRecords, err := s.db.ListWhere[models.ImageUpdateRecord](ctx, "id IN ?", imageIDs)
+	if err != nil {
+		return nil, err
 	}
 
 	result := make(map[string]*imagetypes.UpdateInfo, len(updateRecords))
@@ -732,8 +732,10 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	}
 
 	if s.db != nil && len(imageIDs) > 0 {
-		if err := s.db.WithContext(ctx).Where("id IN ?", imageIDs).Find(&updateRecords).Error; err != nil {
-			return nil, pagination.Response{}, fmt.Errorf("failed to fetch image update records: %w", err)
+		var err error
+		updateRecords, err = s.db.ListWhere[models.ImageUpdateRecord](ctx, "id IN ?", imageIDs)
+		if err != nil {
+			return nil, pagination.Response{}, err
 		}
 	}
 
@@ -756,7 +758,7 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 		applyVulnerabilitySummariesToItemsInternal(result.Items, vulnerabilityMap)
 	}
 
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }

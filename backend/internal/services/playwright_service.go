@@ -110,7 +110,7 @@ func (ps *PlaywrightService) CreateTestFederatedCredential(ctx context.Context, 
 	}
 
 	var credentialID string
-	err := ps.federatedCredentialService.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := ps.federatedCredentialService.db.WithTx(ctx, func(tx *gorm.DB) error {
 		serviceUser := models.User{
 			Username:         "svc_federated_e2e_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
 			IsServiceAccount: true,

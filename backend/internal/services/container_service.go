@@ -1030,7 +1030,7 @@ func (s *ContainerService) ListContainersPaginated(
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
 	s.applyContainerSummaryIconsInternal(ctx, result.Items, nil)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return ContainerListResult{
 		Items:      result.Items,

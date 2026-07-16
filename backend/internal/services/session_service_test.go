@@ -14,7 +14,7 @@ func TestSessionService_RotateRefreshTokenRequiresCurrentHash(t *testing.T) {
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	require.NoError(t, userSvc.db.Create(&models.User{
+	require.NoError(t, userSvc.db.DB.Create(&models.User{
 		BaseModel: models.BaseModel{ID: "u-session"},
 		Username:  "session-user",
 	}).Error)
@@ -37,7 +37,7 @@ func TestSessionService_DeleteExpiredSessions(t *testing.T) {
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	require.NoError(t, userSvc.db.Create(&models.User{
+	require.NoError(t, userSvc.db.DB.Create(&models.User{
 		BaseModel: models.BaseModel{ID: "u-cleanup"},
 		Username:  "cleanup-user",
 	}).Error)
