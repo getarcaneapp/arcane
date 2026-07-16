@@ -579,27 +579,39 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 	}
 
 	s.invalidateComposeCacheInternal(proj.ID)
-	refs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
+	refs, buildRefs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
 	if err != nil {
 		if dbErr := s.db.WithContext(ctx).
 			Model(&models.Project{}).
 			Where("id = ?", proj.ID).
-			Update("image_refs_json", "").Error; dbErr != nil {
+			Updates(map[string]any{
+				"image_refs_json":       "",
+				"build_image_refs_json": nil,
+			}).Error; dbErr != nil {
 			slog.WarnContext(ctx, "failed to clear stale project image refs", "projectID", proj.ID, "error", dbErr)
 		}
 		proj.ImageRefsJSON = ""
+		proj.BuildImageRefsJSON = nil
 		slog.WarnContext(ctx, "failed to refresh project image refs", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 		return
 	}
 	imageRefsJSON := projects.MarshalImageRefsJSON(refs)
+	buildImageRefsJSON := projects.MarshalImageRefsJSON(buildRefs)
+	if buildImageRefsJSON == "" {
+		buildImageRefsJSON = "[]"
+	}
 	if err := s.db.WithContext(ctx).
 		Model(&models.Project{}).
 		Where("id = ?", proj.ID).
-		Update("image_refs_json", imageRefsJSON).Error; err != nil {
+		Updates(map[string]any{
+			"image_refs_json":       imageRefsJSON,
+			"build_image_refs_json": buildImageRefsJSON,
+		}).Error; err != nil {
 		slog.WarnContext(ctx, "failed to persist project image refs", "projectID", proj.ID, "error", err)
 		return
 	}
 	proj.ImageRefsJSON = imageRefsJSON
+	proj.BuildImageRefsJSON = new(buildImageRefsJSON)
 }
 
 func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []string) {
@@ -625,7 +637,7 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) {
 
 	var projectsList []models.Project
 	if err := s.db.WithContext(ctx).
-		Where("image_refs_json = '' OR image_refs_json IS NULL").
+		Where("build_image_refs_json IS NULL").
 		Find(&projectsList).Error; err != nil {
 		slog.WarnContext(ctx, "failed to list projects for image ref backfill", "error", err)
 		return
@@ -1328,7 +1340,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 			}
 			defer func() { <-sem }()
 
-			refs, err := s.getProjectImageRefsFromComposeInternal(ctx, proj, cfg)
+			refs, _, err := s.getProjectImageRefsFromComposeInternal(ctx, proj, cfg)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to resolve project image refs for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 				return
@@ -1361,13 +1373,13 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	}
 }
 
-func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project, cfg *models.Settings) ([]string, error) {
+func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project, cfg *models.Settings) ([]string, []string, error) {
 	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("load compose project: %w", err)
+		return nil, nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	return projects.ImageRefsFromComposeServices(composeProject.Services), nil
+	return projects.ImageRefsFromComposeServices(composeProject.Services), projects.BuildImageRefsFromComposeProject(composeProject), nil
 }
 
 func buildProjectUpdateInfoSummaryInternal(

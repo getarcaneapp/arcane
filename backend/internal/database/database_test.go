@@ -63,6 +63,26 @@ func TestMigrateDatabase_DowngradesWhenAllowed(t *testing.T) {
 	assert.Equal(t, targetVersion, readGooseSQLiteVersionInternal(t, dsn))
 }
 
+func TestMigration065_ProjectBuildImageRefs_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-project-build-refs.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 64))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 65))
+	var notNull int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*), COALESCE(MAX("notnull"), 0) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount, &notNull))
+	assert.Equal(t, 1, columnCount)
+	assert.Zero(t, notNull)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 64))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

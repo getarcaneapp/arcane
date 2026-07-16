@@ -27,6 +27,7 @@ type Project struct {
 	GitOpsManagedBy    *string       `json:"gitops_managed_by,omitempty" gorm:"column:gitops_managed_by"`
 	ComposeProjectName *string       `json:"compose_project_name,omitempty" gorm:"column:compose_project_name"`
 	ImageRefsJSON      string        `json:"image_refs_json,omitempty" gorm:"column:image_refs_json"`
+	BuildImageRefsJSON *string       `json:"-" gorm:"column:build_image_refs_json"`
 	IsArchived         bool          `json:"is_archived" gorm:"column:is_archived;default:false;index"`
 	ArchivedAt         *time.Time    `json:"archived_at,omitempty" gorm:"column:archived_at"`
 }

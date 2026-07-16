@@ -78,6 +78,97 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`services:
+  explicit:
+    build: .
+    image: test2:latest
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+  regular:
+    image: postgres:17
+`), 0o644))
+
+	proj := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-build-image-refs"},
+		Name:      "demo",
+		Path:      projectPath,
+	}
+	require.NoError(t, db.Create(proj).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.refreshProjectImageRefsInternal(ctx, proj)
+
+	var saved models.Project
+	require.NoError(t, db.First(&saved, "id = ?", proj.ID).Error)
+	assert.ElementsMatch(t, []string{"test2:latest", "postgres:17"}, projects.ParseImageRefsJSON(saved.ImageRefsJSON))
+	require.NotNil(t, saved.BuildImageRefsJSON)
+	assert.ElementsMatch(t, []string{"test2:latest", "demo-worker"}, projects.ParseImageRefsJSON(*saved.BuildImageRefsJSON))
+}
+
+func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	validPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(validPath, "compose.yaml"), []byte(`services:
+  app:
+    build: .
+    image: local-app:latest
+`), 0o644))
+	invalidPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(invalidPath, "compose.yaml"), []byte("services: [\n"), 0o644))
+	regularPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(regularPath, "compose.yaml"), []byte(`services:
+  app:
+    image: nginx:latest
+`), 0o644))
+
+	valid := &models.Project{BaseModel: models.BaseModel{ID: "backfill-valid"}, Name: "valid", Path: validPath}
+	invalid := &models.Project{BaseModel: models.BaseModel{ID: "backfill-invalid"}, Name: "invalid", Path: invalidPath}
+	regular := &models.Project{BaseModel: models.BaseModel{ID: "backfill-regular"}, Name: "regular", Path: regularPath}
+	require.NoError(t, db.Create(valid).Error)
+	require.NoError(t, db.Create(invalid).Error)
+	require.NoError(t, db.Create(regular).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.BackfillProjectImageRefs(ctx)
+
+	var savedValid models.Project
+	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
+	require.NotNil(t, savedValid.BuildImageRefsJSON)
+	assert.Equal(t, []string{"local-app:latest"}, projects.ParseImageRefsJSON(*savedValid.BuildImageRefsJSON))
+
+	var savedInvalid models.Project
+	require.NoError(t, db.First(&savedInvalid, "id = ?", invalid.ID).Error)
+	assert.Nil(t, savedInvalid.BuildImageRefsJSON)
+
+	var savedRegular models.Project
+	require.NoError(t, db.First(&savedRegular, "id = ?", regular.ID).Error)
+	require.NotNil(t, savedRegular.BuildImageRefsJSON)
+	assert.Equal(t, "[]", *savedRegular.BuildImageRefsJSON)
+
+	require.NoError(t, os.Remove(filepath.Join(validPath, "compose.yaml")))
+	require.NoError(t, os.Remove(filepath.Join(regularPath, "compose.yaml")))
+	svc.BackfillProjectImageRefs(ctx)
+	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
+	require.NotNil(t, savedValid.BuildImageRefsJSON)
+	assert.Equal(t, []string{"local-app:latest"}, projects.ParseImageRefsJSON(*savedValid.BuildImageRefsJSON))
+	require.NoError(t, db.First(&savedRegular, "id = ?", regular.ID).Error)
+	require.NotNil(t, savedRegular.BuildImageRefsJSON)
+	assert.Equal(t, "[]", *savedRegular.BuildImageRefsJSON)
+}
+
 func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *database.DB, string) {
 	t.Helper()
 
