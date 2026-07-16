@@ -514,6 +514,7 @@ export interface SwarmSecretUpdateRequest {
 
 export interface ServicePort {
 	mode?: string;
+	host_ip?: string;
 	target: number;
 	published?: string;
 	protocol?: string;

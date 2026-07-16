@@ -344,7 +344,7 @@
 
 {#snippet PortsCell({ item }: { item: ServiceWithId })}
 	{#if item.serviceConfig?.ports && item.serviceConfig.ports.length > 0}
-		<PortBadge ports={item.serviceConfig.ports as any} wrap={false} />
+		<PortBadge ports={item.serviceConfig.ports} wrap={false} />
 	{:else if item.ports && item.ports.length > 0}
 		{@const parsedPorts = item.ports.map((p) => {
 			const [numsPart, proto] = p.split('/');

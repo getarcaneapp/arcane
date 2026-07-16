@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { ContainerPorts } from '$lib/types/docker';
+	import type { ServicePort } from '$lib/types/swarm';
 	import { m } from '$lib/paraglide/messages';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { badgeVariants } from '$lib/components/ui/badge';
@@ -9,13 +10,13 @@
 	import { mergeProps } from 'bits-ui';
 
 	let {
-		ports = [] as ContainerPorts[],
+		ports = [] as PortBadgePort[],
 		collapsible = true,
 		maxVisible = 3,
 		hideExposed = false,
 		wrap = true
 	} = $props<{
-		ports?: ContainerPorts[];
+		ports?: PortBadgePort[];
 		collapsible?: boolean;
 		maxVisible?: number;
 		hideExposed?: boolean;
@@ -26,6 +27,7 @@
 	let expanded = $state(false);
 
 	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? 'http://localhost');
+	type PortBadgePort = ContainerPorts | ServicePort;
 
 	type NormalizedPort = {
 		hostPort: string | null;
@@ -35,36 +37,39 @@
 		isPublished: boolean;
 	};
 
-	function getPublicPort(p: ContainerPorts): string | null {
-		const pub =
-			(p as any).publicPort?.toString?.() ?? (p as any).hostPort?.toString?.() ?? (p as any).published?.toString?.() ?? null;
+	function isContainerPort(p: PortBadgePort): p is ContainerPorts {
+		return 'privatePort' in p;
+	}
+
+	function getPublicPort(p: PortBadgePort): string | null {
+		const pub = isContainerPort(p) ? p.publicPort?.toString() : p.published?.toString();
 		return pub && pub !== '0' ? pub : null;
 	}
 
-	function getPrivatePort(p: ContainerPorts): string {
-		return ((p as any).privatePort ?? (p as any).target ?? '?').toString();
+	function getPrivatePort(p: PortBadgePort): string {
+		return (isContainerPort(p) ? p.privatePort : p.target).toString();
 	}
 
-	function getProto(p: ContainerPorts): string | undefined {
-		return (p as any).type ?? (p as any).protocol ?? undefined;
+	function getProto(p: PortBadgePort): string | undefined {
+		return isContainerPort(p) ? p.type : p.protocol;
 	}
 
-	function normalize(p: ContainerPorts): NormalizedPort {
+	function normalize(p: PortBadgePort): NormalizedPort {
 		const hostPort = getPublicPort(p);
 		return {
 			hostPort,
 			containerPort: getPrivatePort(p),
 			proto: getProto(p),
-			ip: (p as any).ip ?? null,
+			ip: (isContainerPort(p) ? p.ip : p.host_ip)?.trim() || null,
 			isPublished: hostPort !== null
 		};
 	}
 
-	function uniquePorts(list: ContainerPorts[]): NormalizedPort[] {
+	function uniquePorts(list: PortBadgePort[]): NormalizedPort[] {
 		const map = new Map<string, NormalizedPort>();
 		for (const p of list) {
 			const n = normalize(p);
-			const key = `${n.hostPort ?? ''}:${n.containerPort}/${n.proto ?? ''}`;
+			const key = `${n.ip ?? ''}:${n.hostPort ?? ''}:${n.containerPort}/${n.proto ?? ''}`;
 			if (!map.has(key)) map.set(key, n);
 		}
 		return Array.from(map.values()).sort((a, b) => {
@@ -116,7 +121,7 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
-						Published: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
+						{m.ports_published_label()}: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
 					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
@@ -133,7 +138,7 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
-						Exposed: {p.containerPort}{p.proto ? `/${p.proto}` : ''} (not published to host)
+						{m.ports_exposed_label()}: {p.containerPort}{p.proto ? `/${p.proto}` : ''} ({m.ports_no_host_binding()})
 					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>

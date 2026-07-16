@@ -161,7 +161,11 @@ async function expectProjectCreateResponse(responsePromise: Promise<Response>) {
 	);
 }
 
-async function createProjectViaUI(page: Page, projectName: string) {
+async function createProjectViaUI(
+	page: Page,
+	projectName: string,
+	composeContent = TEST_COMPOSE_YAML
+) {
 	const containerName = `test-nginx-container-${Date.now()}`;
 	const envFile = TEST_ENV_FILE.replace(/CONTAINER_NAME=.*/m, `CONTAINER_NAME=${containerName}`);
 
@@ -178,13 +182,13 @@ async function createProjectViaUI(page: Page, projectName: string) {
 	await expect(composeEditor).toBeVisible();
 	await expect(envEditor).toBeVisible();
 
-	await setCodeMirrorValue(page, composeEditor, TEST_COMPOSE_YAML);
+	await setCodeMirrorValue(page, composeEditor, composeContent);
 	await setCodeMirrorValue(page, envEditor, envFile);
 	await expect
 		.poll(async () => (await getCodeMirrorValue(composeEditor)).trimEnd(), {
 			message: 'Expected compose editor to contain the exact test compose fixture before creation'
 		})
-		.toBe(TEST_COMPOSE_YAML.trimEnd());
+		.toBe(composeContent.trimEnd());
 
 	const createButton = page.locator('button[data-action="create"]');
 	await expect(createButton).toBeEnabled();
@@ -1222,6 +1226,37 @@ test.describe('Project Detail Page', () => {
 				await expect(anyServiceBadge).toBeVisible();
 			} else {
 				await expect(emptyState).toBeVisible();
+			}
+		}
+	});
+
+	test('should display the configured service port host IP', async ({ page }) => {
+		test.slow();
+
+		const projectName = `test-project-port-host-${Date.now()}`;
+		const composeContent = [
+			'services:',
+			'  web:',
+			'    image: public.ecr.aws/nginx/nginx:stable-alpine',
+			'    ports:',
+			'      - "127.0.0.1:8081:80"',
+			''
+		].join('\n');
+		let projectId = '';
+
+		try {
+			projectId = await createProjectViaUI(page, projectName, composeContent);
+			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
+
+			await page.getByText('8081:80', { exact: true }).hover();
+			await expect(
+				page.getByText('Published: 127.0.0.1:8081 → 80/tcp', { exact: true })
+			).toBeVisible();
+		} finally {
+			if (projectId) {
+				await destroyProjectByIdViaAPI(page, projectId);
+			} else {
+				await destroyProjectByNameViaUI(page, projectName);
 			}
 		}
 	});
