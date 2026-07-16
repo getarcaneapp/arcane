@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	sqlite "github.com/libtnb/sqlite"
 	dockertypescontainer "github.com/moby/moby/api/types/container"
@@ -367,8 +368,100 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}, &models.Project{}))
 	return &database.DB{DB: db}
+}
+
+func newComposeBuildImageUpdateServiceInternal(t *testing.T) (*ImageUpdateService, *atomic.Int32) {
+	t.Helper()
+
+	db := setupImageUpdateTestDB(t)
+	buildRefsJSON := `["test2:latest"]`
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:          models.BaseModel{ID: "compose-build-project"},
+		Name:               "compose-build-project",
+		BuildImageRefsJSON: &buildRefsJSON,
+	}).Error)
+
+	localDigest := digest.FromString("compose-build-local").String()
+	remoteDigest := digest.FromString("compose-build-remote").String()
+	dockerServer := newImageUpdateFallbackServer(t, "library/test2:latest", localDigest, remoteDigest)
+	t.Cleanup(dockerServer.Close)
+
+	var registryCalls atomic.Int32
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				registryCalls.Add(1)
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(remoteDigest)},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	eventService := NewEventService(db, nil, nil)
+	return NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil), &registryCalls
+}
+
+func TestImageUpdateService_CheckImageUpdate_ComposeBuildSkipsRegistryWithRepoDigests(t *testing.T) {
+	svc, registryCalls := newComposeBuildImageUpdateServiceInternal(t)
+
+	result, err := svc.CheckImageUpdate(context.Background(), "test2:latest")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, models.UpdateTypeLocal, result.UpdateType)
+	assert.False(t, result.HasUpdate)
+	assert.Empty(t, result.Error)
+	assert.Zero(t, registryCalls.Load())
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, svc.db.First(&saved, "id = ?", "sha256:local-image-id").Error)
+	assert.Equal(t, models.UpdateTypeLocal, saved.UpdateType)
+	assert.Nil(t, saved.LastError)
+}
+
+func TestImageUpdateService_CheckMultipleImages_ComposeBuildSkipsRegistryWithRepoDigests(t *testing.T) {
+	svc, registryCalls := newComposeBuildImageUpdateServiceInternal(t)
+	credentials := []containerregistry.Credential{{
+		URL:      "https://index.docker.io/v1/",
+		Username: "unused",
+		Token:    "unused",
+		Enabled:  true,
+	}}
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"test2:latest"}, credentials)
+	require.NoError(t, err)
+	result := results["test2:latest"]
+	require.NotNil(t, result)
+	assert.Equal(t, models.UpdateTypeLocal, result.UpdateType)
+	assert.False(t, result.HasUpdate)
+	assert.Empty(t, result.Error)
+	assert.Zero(t, registryCalls.Load())
+}
+
+func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:       "sha256:local-only-image",
+				RepoTags: []string{"local-only:latest"},
+			}))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	svc := &ImageUpdateService{dockerService: &DockerClientService{client: newTestDockerClient(t, server)}}
+	snapshot, err := svc.inspectLocalImageSnapshotInternal(context.Background(), "local-only:latest", map[string]struct{}{})
+	require.NoError(t, err)
+	assert.True(t, snapshot.IsLocalBuild)
+	assert.Equal(t, "sha256:local-only-image", snapshot.PrimaryDigest)
 }
 
 func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remoteDigest string) *httptest.Server {
@@ -815,7 +908,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeoutInterna
 	defer cancel()
 
 	start := time.Now()
-	_, err := svc.inspectLocalImageSnapshotInternal(parentCtx, "registry.example.com/team/app:1.2.3")
+	_, err := svc.inspectLocalImageSnapshotInternal(parentCtx, "registry.example.com/team/app:1.2.3", nil)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -825,7 +918,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeoutInterna
 
 func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}, &models.Project{}))
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
 	localDigest := digest.FromString("batchlocal-rate-limit").String()

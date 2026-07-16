@@ -114,7 +114,7 @@ func setupImageServiceAuthTest(t *testing.T) (*ImageService, *database.DB) {
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}))
+	require.NoError(t, db.AutoMigrate(&models.ContainerRegistry{}, &models.KVEntry{}, &models.Project{}))
 
 	crypto.InitEncryption(&crypto.Config{
 		Environment:   string(config.AppEnvironmentTest),

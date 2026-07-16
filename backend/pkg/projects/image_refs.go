@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	composeapi "github.com/docker/compose/v5/pkg/api"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 )
 
@@ -51,6 +52,34 @@ func ImageRefsFromComposeServices(services composetypes.Services) []string {
 	}
 
 	return ImageRefsFromComposeConfigs(serviceConfigs)
+}
+
+// BuildImageRefsFromComposeProject returns the image references produced by
+// services with build directives, including Compose's default image name when
+// a service does not declare image explicitly.
+func BuildImageRefsFromComposeProject(project *composetypes.Project) []string {
+	if project == nil {
+		return nil
+	}
+
+	serviceNames := make([]string, 0, len(project.Services))
+	for name := range project.Services {
+		serviceNames = append(serviceNames, name)
+	}
+	sort.Strings(serviceNames)
+
+	return uniqueImageRefsInternal(len(serviceNames), func(yield func(string)) {
+		for _, name := range serviceNames {
+			svc := project.Services[name]
+			if svc.Build == nil {
+				continue
+			}
+			if svc.Name == "" {
+				svc.Name = name
+			}
+			yield(composeapi.GetImageNameOrDefault(svc, project.Name))
+		}
+	})
 }
 
 // ImageRefsFromComposeConfigs returns unique, non-empty image references from

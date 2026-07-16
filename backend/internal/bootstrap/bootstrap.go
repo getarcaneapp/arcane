@@ -184,7 +184,7 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		if err := appServices.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
 		}
-		go appServices.Project.BackfillProjectImageRefs(appCtx)
+		appServices.Project.BackfillProjectImageRefs(appCtx)
 	}
 
 	if !cfg.AgentMode {
