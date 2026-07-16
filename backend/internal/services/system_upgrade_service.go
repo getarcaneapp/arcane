@@ -486,8 +486,8 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	job.Status = models.EnvironmentUpdateJobStatusRunning
 	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
-	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
-		return nil, fmt.Errorf("create update-all job: %w", err)
+	if err := s.db.Create(ctx, job); err != nil {
+		return nil, err
 	}
 
 	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "user", user.Username)
@@ -808,7 +808,7 @@ func (s *SystemUpgradeService) getUpdateAllJobByIDInternal(ctx context.Context, 
 }
 
 func (s *SystemUpgradeService) persistUpdateAllJobInternal(ctx context.Context, job *models.EnvironmentUpdateJob) error {
-	return s.db.WithContext(ctx).Save(job).Error
+	return s.db.Save(ctx, job)
 }
 
 func (s *SystemUpgradeService) markUpdateAllFailedInternal(ctx context.Context, job *models.EnvironmentUpdateJob, reason string) {

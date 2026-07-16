@@ -21,7 +21,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
@@ -459,10 +458,8 @@ func (s *GitOpsSyncService) RegisterAutoSyncJobsOnStartup(ctx context.Context) {
 	if s.scheduler == nil {
 		return
 	}
-	var syncs []models.GitOpsSync
-	if err := s.db.WithContext(ctx).
-		Where("auto_sync = ? AND environment_id IN (SELECT id FROM environments)", true).
-		Find(&syncs).Error; err != nil {
+	syncs, err := s.db.ListWhere[models.GitOpsSync](ctx, "auto_sync = ? AND environment_id IN (SELECT id FROM environments)", true)
+	if err != nil {
 		slog.ErrorContext(ctx, "Failed to load auto-sync jobs on startup", "error", err)
 		return
 	}
@@ -556,14 +553,9 @@ func (s *GitOpsSyncService) GetSyncsPaginated(ctx context.Context, environmentID
 		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to get sync counts: %w", err)
 	}
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q.Preload("Repository").Preload("Project"), &syncs)
+	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.GitOpsSync, gitops.GitOpsSync](params, q.Preload("Repository").Preload("Project"), &syncs)
 	if err != nil {
-		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to paginate gitops syncs: %w", err)
-	}
-
-	out, mapErr := mapper.MapSlice[models.GitOpsSync, gitops.GitOpsSync](syncs)
-	if mapErr != nil {
-		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to map syncs: %w", mapErr)
+		return nil, pagination.Response{}, gitops.SyncCounts{}, fmt.Errorf("failed to list gitops syncs: %w", err)
 	}
 
 	return out, paginationResp, counts, nil
@@ -595,8 +587,7 @@ func (s *GitOpsSyncService) getFilteredSyncCounts(query *gorm.DB) (gitops.SyncCo
 func (s *GitOpsSyncService) GetSyncByID(ctx context.Context, environmentID, id string) (*models.GitOpsSync, error) {
 	sync, err := s.getSyncByIDInternal(ctx, environmentID, id, true)
 	if err != nil {
-		var notFound *models.NotFoundError
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*models.NotFoundError](err); ok {
 			slog.WarnContext(ctx, "GitOps sync not found", "syncID", id, "environmentID", environmentID)
 			return nil, err
 		}
@@ -862,7 +853,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 	// below instead of aborting.
 	sync, loadErr := s.getSyncRecordByIDInternal(ctx, environmentID, id)
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		// Clear gitops_managed_by for any project still pointing at this sync, keyed
 		// on the sync id so orphaned managed flags are cleared even when the sync row
 		// (and its ProjectID) could not be loaded.
@@ -1047,8 +1038,7 @@ func (s *GitOpsSyncService) performDirectorySync(ctx context.Context, sync *mode
 
 	project, syncedFiles, _, contentsChanged, err := s.syncProjectDirectoryInternal(ctx, sync, syncFiles, actor)
 	if err != nil {
-		var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-		if errors.As(err, &bindingErr) {
+		if bindingErr, ok := errors.AsType[*common.GitOpsSyncProjectBindingBrokenError](err); ok {
 			errMsg := bindingErr.Error()
 			result.Message = "GitOps project binding broken"
 			result.Error = new(errMsg)
@@ -1325,7 +1315,7 @@ func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) e
 		return nil
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.Project{}).
 			Where("gitops_managed_by IN ?", syncIDs).
 			Update("gitops_managed_by", nil).Error; err != nil {
@@ -1344,10 +1334,8 @@ func (s *GitOpsSyncService) CleanupOrphanedSyncsOnStartup(ctx context.Context) e
 }
 
 func (s *GitOpsSyncService) ReconcileDirectorySyncProjectsOnStartup(ctx context.Context) error {
-	var syncs []models.GitOpsSync
-	if err := s.db.WithContext(ctx).
-		Where("sync_directory = ?", true).
-		Find(&syncs).Error; err != nil {
+	syncs, err := s.db.ListWhere[models.GitOpsSync](ctx, "sync_directory = ?", true)
+	if err != nil {
 		return fmt.Errorf("failed to list directory syncs for startup reconciliation: %w", err)
 	}
 
@@ -2076,7 +2064,7 @@ func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context
 		return nil
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if len(updatesSync) > 0 {
 			if err := tx.Model(&models.GitOpsSync{}).Where("id = ?", sync.ID).Updates(updatesSync).Error; err != nil {
 				return fmt.Errorf("failed to relink GitOps sync %s: %w", sync.ID, err)
@@ -2100,10 +2088,8 @@ func (s *GitOpsSyncService) ensureDirectorySyncProjectLinkedInternal(ctx context
 }
 
 func (s *GitOpsSyncService) findRecoverableManagedProjectInternal(ctx context.Context, sync *models.GitOpsSync) (*models.Project, error) {
-	var managedProjects []models.Project
-	if err := s.db.WithContext(ctx).
-		Where("gitops_managed_by = ?", sync.ID).
-		Find(&managedProjects).Error; err != nil {
+	managedProjects, err := s.db.ListWhere[models.Project](ctx, "gitops_managed_by = ?", sync.ID)
+	if err != nil {
 		return nil, fmt.Errorf("failed to list GitOps-managed projects for sync %s: %w", sync.ID, err)
 	}
 
@@ -2201,7 +2187,7 @@ func (s *GitOpsSyncService) createRecoveredProjectFromDirectoryInternal(ctx cont
 		slog.WarnContext(ctx, "Failed to count services while recovering GitOps project", "syncId", sync.ID, "path", projectPath, "error", err)
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(project).Error; err != nil {
 			return fmt.Errorf("failed to create recovered project for sync %s: %w", sync.ID, err)
 		}
@@ -2376,7 +2362,7 @@ func (s *GitOpsSyncService) createDirectorySyncProjectInternal(ctx context.Conte
 		RunningCount: 0,
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(project).Error; err != nil {
 			return fmt.Errorf("failed to create project: %w", err)
 		}

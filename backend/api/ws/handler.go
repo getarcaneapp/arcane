@@ -464,11 +464,11 @@ func startProjectJSONForwarderInternal(ctx context.Context, batched bool, lines 
 	}()
 
 	if batched {
-		go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
+		go ls.hub.ForwardLogJSONBatched(ctx, msgs, 50, 400*time.Millisecond)
 		return
 	}
 
-	go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
+	go ls.hub.ForwardLogJSON(ctx, msgs)
 }
 
 func startProjectTextForwarderInternal(ctx context.Context, lines <-chan string, ls *wsLogStream) {
@@ -481,7 +481,7 @@ func startProjectTextForwarderInternal(ctx context.Context, lines <-chan string,
 		}
 	}()
 
-	go wshub.ForwardLines(ctx, ls.hub, cleanChan)
+	go ls.hub.ForwardLines(ctx, cleanChan)
 }
 
 func (h *WebSocketHandler) startProjectLogHub(key, projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
@@ -583,12 +583,12 @@ func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string,
 			}
 		}()
 		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
+			go ls.hub.ForwardLogJSONBatched(ctx, msgs, 50, 400*time.Millisecond)
 		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
+			go ls.hub.ForwardLogJSON(ctx, msgs)
 		}
 	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
+		go ls.hub.ForwardLines(ctx, lines)
 	}
 
 	return ls
@@ -681,12 +681,12 @@ func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, bat
 			}
 		}()
 		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
+			go ls.hub.ForwardLogJSONBatched(ctx, msgs, 50, 400*time.Millisecond)
 		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
+			go ls.hub.ForwardLogJSON(ctx, msgs)
 		}
 	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
+		go ls.hub.ForwardLines(ctx, lines)
 	}
 
 	return ls

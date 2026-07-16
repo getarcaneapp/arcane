@@ -192,7 +192,7 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 
 func (s *LifecycleService) resolveRunnerImageInternal(ctx context.Context, sync *models.GitOpsSync) string {
 	if sync != nil {
-		runnerImage := strings.TrimSpace(utils.DerefString(sync.PreDeployRunnerImage))
+		runnerImage := strings.TrimSpace(utils.Deref(sync.PreDeployRunnerImage))
 		if runnerImage != "" {
 			return runnerImage
 		}
@@ -416,7 +416,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 ) {
 	severity := models.EventSeveritySuccess
 	title := "Pre-deploy lifecycle hook succeeded: " + project.Name
-	description := fmt.Sprintf("Script %s exited with code %d in %dms", utils.DerefString(sync.PreDeployScriptPath), exitCode, durationMs)
+	description := fmt.Sprintf("Script %s exited with code %d in %dms", utils.Deref(sync.PreDeployScriptPath), exitCode, durationMs)
 	if status != lifecycleStatusSuccess {
 		severity = models.EventSeverityWarning
 		title = fmt.Sprintf("Pre-deploy lifecycle hook %s: %s", status, project.Name)
@@ -426,7 +426,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 	}
 
 	metadata := models.JSON{
-		"scriptPath":   utils.DerefString(sync.PreDeployScriptPath),
+		"scriptPath":   utils.Deref(sync.PreDeployScriptPath),
 		"runnerImage":  runnerImage,
 		"exitCode":     exitCode,
 		"durationMs":   durationMs,

@@ -183,19 +183,19 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 		}, nil
 	}
 
-	var current int32
-	var maxConcurrent int32
-	var restarts int32
+	var current atomic.Int32
+	var maxConcurrent atomic.Int32
+	var restarts atomic.Int32
 
 	job.inspectContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) (container.InspectResponse, error) {
-		active := atomic.AddInt32(&current, 1)
+		active := current.Add(1)
 		for {
-			maxSeen := atomic.LoadInt32(&maxConcurrent)
-			if active <= maxSeen || atomic.CompareAndSwapInt32(&maxConcurrent, maxSeen, active) {
+			maxSeen := maxConcurrent.Load()
+			if active <= maxSeen || maxConcurrent.CompareAndSwap(maxSeen, active) {
 				break
 			}
 		}
-		defer atomic.AddInt32(&current, -1)
+		defer current.Add(-1)
 
 		time.Sleep(40 * time.Millisecond)
 
@@ -209,13 +209,13 @@ func TestAutoHeal_Run_UsesBoundedConcurrency(t *testing.T) {
 		}
 	}
 	job.restartContainer = func(ctx context.Context, dockerClient *client.Client, containerID string) error {
-		atomic.AddInt32(&restarts, 1)
+		restarts.Add(1)
 		return nil
 	}
 
 	job.Run(ctx)
 
-	require.Greater(t, atomic.LoadInt32(&maxConcurrent), int32(1))
-	require.LessOrEqual(t, atomic.LoadInt32(&maxConcurrent), int32(autoHealInspectConcurrency))
-	require.Equal(t, int32(4), atomic.LoadInt32(&restarts))
+	require.Greater(t, maxConcurrent.Load(), int32(1))
+	require.LessOrEqual(t, maxConcurrent.Load(), int32(autoHealInspectConcurrency))
+	require.Equal(t, int32(4), restarts.Load())
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
@@ -307,11 +308,7 @@ func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ct
 		return 0, nil
 	}
 
-	var count int64
-	err := s.db.WithContext(ctx).
-		Model(&models.ImageUpdateRecord{}).
-		Where("id IN ? AND has_update = ?", imageIDs, true).
-		Count(&count).Error
+	count, err := s.db.Count[models.ImageUpdateRecord](ctx, "id IN ? AND has_update = ?", imageIDs, true)
 	if err != nil {
 		return 0, fmt.Errorf("failed to count pending container updates: %w", err)
 	}
@@ -344,12 +341,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 		return 0, nil
 	}
 
-	var count int64
-	err := s.db.WithContext(ctx).
-		Model(&models.ApiKey{}).
-		Where("expires_at IS NOT NULL").
-		Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
-		Count(&count).Error
+	count, err := s.db.Count[models.ApiKey](ctx, "expires_at IS NOT NULL AND expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow))
 	if err != nil {
 		return 0, fmt.Errorf("failed to count expiring API keys: %w", err)
 	}
@@ -358,22 +350,12 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 }
 
 func buildDashboardPaginationResponseInternal(totalItems int, limit int) base.PaginationResponse {
-	if limit <= 0 {
-		limit = dashboardSnapshotPreloadLimit
+	result := pagination.FilterResult[struct{}]{
+		TotalCount:     int64(totalItems),
+		TotalAvailable: int64(totalItems),
 	}
-
-	totalPages := 1
-	if totalItems > 0 {
-		totalPages = (totalItems + limit - 1) / limit
-	}
-
-	return base.PaginationResponse{
-		TotalPages:      int64(totalPages),
-		TotalItems:      int64(totalItems),
-		CurrentPage:     1,
-		ItemsPerPage:    limit,
-		GrandTotalItems: int64(totalItems),
-	}
+	params := pagination.QueryParams{Params: pagination.Params{Limit: limit}}
+	return base.PaginationResponse(result.BuildResponse(params))
 }
 
 func limitDashboardItemsInternal[T any](items []T, limit int) []T {

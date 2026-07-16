@@ -8,9 +8,9 @@ type Response struct {
 	GrandTotalItems int64 `json:"grandTotalItems,omitempty"`
 }
 
-// BuildResponseFromFilterResult creates a pagination Response from a FilterResult.
+// BuildResponse creates a pagination Response from a FilterResult.
 // Handles the special case where limit = -1 means "show all".
-func BuildResponseFromFilterResult[T any](result FilterResult[T], params QueryParams) Response {
+func (result FilterResult[T]) BuildResponse(params QueryParams) Response {
 	limit := params.Limit
 	totalCount := result.TotalCount
 

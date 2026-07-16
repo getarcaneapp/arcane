@@ -50,7 +50,7 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, s.buildPortPaginationConfig())
-	return result.Items, pagination.BuildResponseFromFilterResult(result, params), nil
+	return result.Items, result.BuildResponse(params), nil
 }
 
 func (s *PortService) buildPortPaginationConfig() pagination.Config[porttypes.PortMapping] {

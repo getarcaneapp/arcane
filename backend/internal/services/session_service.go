@@ -13,7 +13,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -42,8 +41,8 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 		ExpiresAt:        expiresAt,
 	}
 
-	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to create user session: %w", err)
+	if err := s.db.Create(ctx, session); err != nil {
+		return nil, "", err
 	}
 
 	return session, refreshJTI, nil
@@ -62,7 +61,7 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 		ExpiresAt:             expiresAt,
 	}
 
-	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
+	if err := s.db.Create(ctx, session); err != nil {
 		return nil, fmt.Errorf("failed to create federated user session: %w", err)
 	}
 
@@ -74,14 +73,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 		return nil, ErrInvalidToken
 	}
 
-	var session models.UserSession
-	if err := s.db.WithContext(ctx).Where("id = ?", sessionID).First(&session).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, ErrInvalidToken
-		}
-		return nil, fmt.Errorf("failed to get user session: %w", err)
-	}
-	return &session, nil
+	return s.db.First[models.UserSession](ctx, ErrInvalidToken, "id = ?", sessionID)
 }
 
 func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID string, refreshJTI string, meta auth.SessionMeta) (*models.UserSession, string, error) {
@@ -95,7 +87,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 	now := time.Now()
 	var rotated models.UserSession
 
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var session models.UserSession
 		if err := tx.Where("id = ?", sessionID).First(&session).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

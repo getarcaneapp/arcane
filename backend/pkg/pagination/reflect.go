@@ -9,7 +9,7 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response, error) {
+func PaginateAndSortDB[M any](params QueryParams, query *gorm.DB, result *[]M) (Response, error) {
 	sortColumn := params.Sort
 	sortDirection := string(params.Order)
 
@@ -18,7 +18,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 	}
 
 	capitalizedSortColumn := stringutils.CapitalizeFirstLetter(sortColumn)
-	sortField, sortFieldFound := reflect.TypeOf(result).Elem().Elem().FieldByName(capitalizedSortColumn)
+	sortField, sortFieldFound := reflect.TypeFor[M]().FieldByName(capitalizedSortColumn)
 	isSortable, _ := strconv.ParseBool(sortField.Tag.Get("sortable"))
 
 	sortDirection = normalizeSortDirection(sortDirection)

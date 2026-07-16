@@ -11,7 +11,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -196,13 +196,8 @@ func envContextFingerprintInternal(envMap EnvMap) string {
 	if len(envMap) == 0 {
 		return ""
 	}
-	keys := make([]string, 0, len(envMap))
-	for key := range envMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
 	var b strings.Builder
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(envMap)) {
 		b.WriteString(key)
 		b.WriteByte('=')
 		b.WriteString(envMap[key])
@@ -548,14 +543,8 @@ func formatEnvMapInternal(envMap EnvMap) string {
 		return ""
 	}
 
-	keys := make([]string, 0, len(envMap))
-	for key := range envMap {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
 	var builder strings.Builder
-	for _, key := range keys {
+	for _, key := range slices.Sorted(maps.Keys(envMap)) {
 		builder.WriteString(key)
 		builder.WriteByte('=')
 		builder.WriteString(formatEnvValueInternal(envMap[key]))

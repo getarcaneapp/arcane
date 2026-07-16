@@ -113,7 +113,7 @@ func TestProjectService_DestroyProject_RemovesFilesWhenRequested(t *testing.T) {
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	require.NoError(t, svc.DestroyProject(ctx, project.ID, true, false, models.User{}))
 
@@ -138,7 +138,7 @@ func TestProjectService_DestroyProject_PreservesFilesWhenRequested(t *testing.T)
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	require.NoError(t, svc.DestroyProject(ctx, project.ID, false, false, models.User{}))
 
@@ -218,7 +218,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 		Name: "test-project",
 		Path: "/tmp/test-project",
 	}
-	require.NoError(t, db.Create(proj).Error)
+	require.NoError(t, db.DB.Create(proj).Error)
 
 	// Test success
 	found, err := svc.GetProjectFromDatabaseByID(ctx, "p1")
@@ -333,13 +333,13 @@ func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 		},
 		Status: models.ProjectStatusUnknown,
 	}
-	require.NoError(t, db.Create(proj).Error)
+	require.NoError(t, db.DB.Create(proj).Error)
 
 	err := svc.updateProjectStatusInternal(ctx, "p1", models.ProjectStatusRunning)
 	require.NoError(t, err)
 
 	var updated models.Project
-	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
+	require.NoError(t, db.DB.First(&updated, "id = ?", "p1").Error)
 	assert.Equal(t, models.ProjectStatusRunning, updated.Status)
 	if updated.UpdatedAt != nil {
 		assert.WithinDuration(t, time.Now(), *updated.UpdatedAt, time.Second)
@@ -413,7 +413,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "myproject",
 			Path:      "/tmp/myproject",
 		}
-		require.NoError(t, db.Create(proj).Error)
+		require.NoError(t, db.DB.Create(proj).Error)
 
 		found, err := svc.GetProjectByComposeName(ctx, "myproject")
 		require.NoError(t, err)
@@ -429,7 +429,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "myproject",
 			Path:      "/tmp/myproject",
 		}
-		require.NoError(t, db.Create(proj).Error)
+		require.NoError(t, db.DB.Create(proj).Error)
 
 		found, err := svc.GetProjectByComposeName(ctx, "My Project!")
 		require.NoError(t, err)
@@ -445,7 +445,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "My Project!",
 			Path:      "/tmp/my-project",
 		}
-		require.NoError(t, db.Create(display).Error)
+		require.NoError(t, db.DB.Create(display).Error)
 
 		found, err := svc.GetProjectByComposeName(ctx, "myproject")
 		require.NoError(t, err)
@@ -461,7 +461,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "My Project!",
 			Path:      "/tmp/my-project",
 		}
-		require.NoError(t, db.Create(original).Error)
+		require.NoError(t, db.DB.Create(original).Error)
 
 		found, err := svc.GetProjectByComposeName(ctx, "myproject")
 		require.NoError(t, err)
@@ -478,7 +478,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "My Project!",
 			Path:      "/tmp/my-project-recreated",
 		}
-		require.NoError(t, db.Create(replacement).Error)
+		require.NoError(t, db.DB.Create(replacement).Error)
 
 		found, err = svc.GetProjectByComposeName(ctx, "myproject")
 		require.NoError(t, err)
@@ -498,7 +498,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 			Name:      "My App!",
 			Path:      "/tmp/my-app",
 		}
-		require.NoError(t, db.Create(original).Error)
+		require.NoError(t, db.DB.Create(original).Error)
 
 		found, err := svc.GetProjectByComposeName(ctx, "myapp")
 		require.NoError(t, err)
@@ -565,10 +565,10 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(projectRecord).Error)
 
 	now := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-full",
 		Repository:     repository,
 		Tag:            "1.2.3",
@@ -577,7 +577,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		CurrentVersion: "1.2.3",
 		CheckTime:      now,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-short",
 		Repository:     "team/app",
 		Tag:            "1.2.3",
@@ -586,7 +586,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 		CurrentVersion: "1.2.3",
 		CheckTime:      now.Add(time.Minute),
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:build-only",
 		Repository:     buildRepository,
 		Tag:            "latest",
@@ -649,7 +649,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-api",
 		Repository:     repository,
 		Tag:            "2.0.0",
@@ -701,7 +701,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	imageService := NewImageService(db, dockerService, nil, imageUpdateService, nil, eventService)
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-worker",
 		Repository:     repository,
 		Tag:            "3.1.4",
@@ -787,7 +787,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	}
 
 	now := time.Now().UTC().Add(-time.Hour)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:selected-old",
 		Repository:     privateRepository,
 		Tag:            "9.9.9",
@@ -796,7 +796,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 		CurrentVersion: "9.9.9",
 		CheckTime:      now,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:sidecar-old",
 		Repository:     publicRepository,
 		Tag:            "1.27",
@@ -878,7 +878,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 		},
 	}
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:selected-old",
 		Repository:     repository,
 		Tag:            "9.9.9",
@@ -935,8 +935,8 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 		Path:      projectPath,
 		Status:    models.ProjectStatusRunning,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:selected-old",
 		Repository:     "registry.example.com/team/app",
 		Tag:            "9.9.9",
@@ -1008,7 +1008,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 		Path:      projectPath,
 		Status:    models.ProjectStatusRunning,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(projectRecord).Error)
 
 	originalComposeStop := composeStopProjectServicesInternal
 	originalComposeUp := composeUpProjectServicesInternal
@@ -1112,7 +1112,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1125,7 +1125,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 }
@@ -1155,7 +1155,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	projectForUpdate := *project
 	journalActive := false
@@ -1172,7 +1172,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	assert.NoDirExists(t, originalPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "bar", fromDB.Name)
 	assert.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
 }
@@ -1323,7 +1323,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	projectForUpdate := *project
 	journalActive := false
@@ -1368,7 +1368,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	projectForUpdate := *project
 	journalActive := false
@@ -1385,7 +1385,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	require.DirExists(t, filepath.Join(projectsDir, "bar"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "bar", fromDB.Name)
 	require.Equal(t, filepath.Join(projectsDir, "bar"), fromDB.Path)
 }
@@ -1415,7 +1415,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	journal := projectRenameJournalInternal{
 		ProjectID:  project.ID,
@@ -1481,7 +1481,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	journal := projectRenameJournalInternal{
 		ProjectID:  project.ID,
@@ -1544,7 +1544,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1562,7 +1562,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	assert.DirExists(t, expectedPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "bar", fromDB.Name)
 	assert.Equal(t, expectedPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -1596,7 +1596,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1609,7 +1609,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	assert.DirExists(t, targetPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -1640,7 +1640,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 		Path:      originalPath,
 		Status:    models.ProjectStatusRunning,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1653,7 +1653,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -1699,7 +1699,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1712,7 +1712,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
@@ -1747,7 +1747,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 		Status:       models.ProjectStatusUnknown,
 		StatusReason: &statusReason,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1767,7 +1767,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	assert.DirExists(t, expectedPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "bar", fromDB.Name)
 	assert.Equal(t, expectedPath, fromDB.Path)
 	assert.Equal(t, models.ProjectStatusStopped, fromDB.Status)
@@ -1819,7 +1819,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 		Status:       models.ProjectStatusUnknown,
 		StatusReason: &statusReason,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, err = svc.UpdateProject(ctx, project.ID, new("bar"), nil, nil, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -1832,7 +1832,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	assert.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	assert.Equal(t, "Foo", fromDB.Name)
 	assert.Equal(t, originalPath, fromDB.Path)
 	assert.Equal(t, models.ProjectStatusUnknown, fromDB.Status)
@@ -1864,7 +1864,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `name: ${COMPOSE_PROJECT_NAME}
 services:
@@ -1907,7 +1907,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -1952,7 +1952,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `include:
   - metadata.yaml
@@ -2017,7 +2017,7 @@ func TestProjectService_UpdateProject_RejectsMissingExternalIncludeDuringCompose
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `include:
   - ../metadata.yaml
@@ -2357,7 +2357,7 @@ func TestProjectService_GetProjectFileContent_RejectsExternalInclude(t *testing.
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `include:
   - ../metadata.yaml
@@ -2403,7 +2403,7 @@ func TestProjectService_GetProjectFileContent_RejectsSymlinkInclude(t *testing.T
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `include:
   - ./evil-link
@@ -2449,7 +2449,7 @@ func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkInclude(
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `include:
   - ./subdir/secret.yaml
@@ -2496,7 +2496,7 @@ func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkProjectF
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "subdir/secret.yaml")
 	require.Error(t, err)
@@ -2531,7 +2531,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -2580,7 +2580,7 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName, baseCompose
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	return svc, project, projectPath
 }
@@ -2691,7 +2691,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -2738,7 +2738,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -2784,7 +2784,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   cats:
@@ -2833,7 +2833,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -2879,7 +2879,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=example\n"), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -2931,7 +2931,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &effectiveContent, nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3026,7 +3026,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, new("BASE=git\nLOCAL_ONLY=1\n"), nil, nil, nil, models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3074,7 +3074,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	gitEnv := "TOKEN=git\nREMOTE_ONLY=1\n"
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", &gitEnv, nil, "", models.User{
@@ -3124,7 +3124,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   app:
@@ -3188,7 +3188,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("BASE=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3236,7 +3236,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", new("TOKEN=git-updated\nSHARED=1\nREMOTE_ONLY=1\n"), nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3284,7 +3284,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3326,7 +3326,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	overrideContent := "services:\n  app:\n    image: busybox:latest\n"
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, new(overrideContent), "compose.override.yaml", models.User{
@@ -3377,7 +3377,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	compose := `services:
   cats:
@@ -3437,7 +3437,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updated, err := svc.ApplyGitSyncProjectFiles(ctx, project.ID, compose, nil, nil, "", models.User{
 		BaseModel: models.BaseModel{ID: "u1"},
@@ -3517,7 +3517,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
 	require.NoError(t, err)
@@ -3639,9 +3639,9 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(projectRecord).Error)
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:update-demo",
 		Repository:     "docker.io/library/nginx",
 		Tag:            "latest",
@@ -3724,7 +3724,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 		ServiceCount: 2,
 		RunningCount: 0,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(projectRecord).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 
@@ -3776,7 +3776,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 		ServiceCount: 1,
 		RunningCount: 0,
 	}
-	require.NoError(t, db.Create(projectRecord).Error)
+	require.NoError(t, db.DB.Create(projectRecord).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 
@@ -3813,28 +3813,28 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	unknownPath := createComposeProjectDir(t, projectsDir, "unknown-demo")
 	require.NoError(t, os.WriteFile(filepath.Join(unknownPath, "compose.yaml"), []byte("services:\n  app:\n    image: alpine:latest\n"), 0o644))
 
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-updated"},
 		Name:      "updated-demo",
 		DirName:   ptr("updated-demo"),
 		Path:      updatedPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-current"},
 		Name:      "current-demo",
 		DirName:   ptr("current-demo"),
 		Path:      upToDatePath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-error"},
 		Name:      "error-demo",
 		DirName:   ptr("error-demo"),
 		Path:      errorPath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-unknown"},
 		Name:      "unknown-demo",
 		DirName:   ptr("unknown-demo"),
@@ -3843,7 +3843,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	}).Error)
 
 	now := time.Now().UTC()
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:updated-image",
 		Repository:     "docker.io/library/nginx",
 		Tag:            "latest",
@@ -3852,7 +3852,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 		CurrentVersion: "latest",
 		CheckTime:      now,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:current-image",
 		Repository:     "docker.io/library/redis",
 		Tag:            "7",
@@ -3861,7 +3861,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 		CurrentVersion: "7",
 		CheckTime:      now.Add(-time.Minute),
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:error-image",
 		Repository:     "docker.io/library/busybox",
 		Tag:            "latest",
@@ -3910,7 +3910,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 	imageService := &ImageService{db: db}
 	now := time.Now().UTC()
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:media-image",
 		Repository:     "docker.io/library/nginx",
 		Tag:            "latest",
@@ -3919,7 +3919,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal(t *testing.T) {
 		CurrentVersion: "latest",
 		CheckTime:      now,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:known-image",
 		Repository:     "docker.io/library/redis",
 		Tag:            "7",
@@ -3978,7 +3978,7 @@ func TestBuildDiscoveredComposeProjectUpdateRowsInternal_FallsBackToImageID(t *t
 	ctx := context.Background()
 	imageService := &ImageService{db: db}
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:media-image",
 		Repository:     "registry.example.test/custom/media",
 		Tag:            "latest",
@@ -4016,14 +4016,14 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 
 	activePath := createComposeProjectDir(t, projectsRoot, "active-demo")
 	archivedPath := createComposeProjectDir(t, projectsRoot, "archived-demo")
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-active"},
 		Name:      "active-demo",
 		DirName:   ptr("active-demo"),
 		Path:      activePath,
 		Status:    models.ProjectStatusStopped,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel:  models.BaseModel{ID: "project-archived"},
 		Name:       "archived-demo",
 		DirName:    ptr("archived-demo"),
@@ -4076,7 +4076,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "running-demo")
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel:    models.BaseModel{ID: "project-running"},
 		Name:         "running-demo",
 		DirName:      ptr("running-demo"),
@@ -4092,7 +4092,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	assert.ErrorAs(t, err, &stoppedErr)
 
 	var stored models.Project
-	require.NoError(t, db.First(&stored, "id = ?", "project-running").Error)
+	require.NoError(t, db.DB.First(&stored, "id = ?", "project-running").Error)
 	assert.False(t, stored.IsArchived)
 	assert.Nil(t, stored.ArchivedAt)
 }
@@ -4107,7 +4107,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
 	projectPath := createComposeProjectDir(t, projectsRoot, "stopped-demo")
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "project-stopped"},
 		Name:      "stopped-demo",
 		DirName:   ptr("stopped-demo"),
@@ -4120,13 +4120,13 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 
 	require.NoError(t, svc.ArchiveProject(ctx, "project-stopped", user))
 	var stored models.Project
-	require.NoError(t, db.First(&stored, "id = ?", "project-stopped").Error)
+	require.NoError(t, db.DB.First(&stored, "id = ?", "project-stopped").Error)
 	assert.True(t, stored.IsArchived)
 	assert.NotNil(t, stored.ArchivedAt)
 
 	require.NoError(t, svc.UnarchiveProject(ctx, "project-stopped", user))
 	var unarchived models.Project
-	require.NoError(t, db.First(&unarchived, "id = ?", "project-stopped").Error)
+	require.NoError(t, db.DB.First(&unarchived, "id = ?", "project-stopped").Error)
 	assert.False(t, unarchived.IsArchived)
 	assert.Nil(t, unarchived.ArchivedAt)
 }
@@ -4247,7 +4247,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 
 	for i := range 25 {
 		projectPath := createComposeProjectDir(t, projectsRoot, fmt.Sprintf("stopped-%02d", i))
-		require.NoError(t, db.Create(&models.Project{
+		require.NoError(t, db.DB.Create(&models.Project{
 			BaseModel: models.BaseModel{ID: fmt.Sprintf("project-%02d", i)},
 			Name:      fmt.Sprintf("stopped-%02d", i),
 			DirName:   ptr(fmt.Sprintf("stopped-%02d", i)),
@@ -4491,7 +4491,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 		Path:      projectDir,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(proj).Error)
+	require.NoError(t, db.DB.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
 	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load())
@@ -4502,7 +4502,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 	assert.Contains(t, err.Error(), "boom build")
 
 	var updated models.Project
-	require.NoError(t, db.First(&updated, "id = ?", "p1").Error)
+	require.NoError(t, db.DB.First(&updated, "id = ?", "p1").Error)
 	assert.Equal(t, models.ProjectStatusStopped, updated.Status)
 }
 
@@ -4533,7 +4533,7 @@ func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing
 		Path:      projectDir,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(proj).Error)
+	require.NoError(t, db.DB.Create(proj).Error)
 
 	buildSvc := &BuildService{builder: testBuildBuilder{err: errors.New("boom build")}}
 	svc := NewProjectService(db, settingsService, nil, nil, nil, buildSvc, nil, nil, config.Load())
@@ -4821,7 +4821,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 
 	scratchName := ".gitops-backup-9"
 	scratchPath := createComposeProjectDir(t, projectsRoot, scratchName)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "phantom-scratch"},
 		Name:      scratchName,
 		DirName:   &scratchName,
@@ -5021,7 +5021,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	// Seed a DB row (bypassing the filesystem) whose Path sits under the
 	// now-unreadable subtree, simulating a project Arcane previously knew about.
 	strandedDirName := "stranded-project"
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel: models.BaseModel{ID: "stranded-under-unreadable"},
 		Name:      "stranded-project",
 		DirName:   &strandedDirName,
@@ -5222,7 +5222,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 	require.NoError(t, svc.SyncProjectsFromFileSystem(ctx))
@@ -5260,7 +5260,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 		ProjectID:     &syncProjectID,
 		SyncDirectory: true,
 	}
-	require.NoError(t, db.Create(sync).Error)
+	require.NoError(t, db.DB.Create(sync).Error)
 
 	project := &models.Project{
 		BaseModel:       models.BaseModel{ID: syncProjectID},
@@ -5270,7 +5270,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 		Status:          models.ProjectStatusStopped,
 		GitOpsManagedBy: &syncID,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -5302,7 +5302,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 
 	syncProjectID := "proj-custom-compose-details"
 	syncID := "sync-custom-compose-details"
-	require.NoError(t, db.Create(&models.GitOpsSync{
+	require.NoError(t, db.DB.Create(&models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: syncID},
 		Name:          "Radarr Sync",
 		EnvironmentID: "0",
@@ -5313,7 +5313,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 		SyncDirectory: true,
 	}).Error)
 
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel:       models.BaseModel{ID: syncProjectID},
 		Name:            "Radarr",
 		DirName:         ptr("Radarr-3"),
@@ -5365,7 +5365,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 		Path:      linkPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updatedCompose := "services:\n  app:\n    image: nginx:1.27-alpine\n"
 	updatedEnv := "FOO=updated\n"
@@ -5420,7 +5420,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	updatedEnv := "FOO=updated\n"
 	updated, err := svc.UpdateProject(ctx, project.ID, nil, nil, &updatedEnv, nil, nil, nil, models.User{
@@ -5479,7 +5479,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	require.NoError(t, db.Callback().Update().Before("gorm:update").Register("arcane_test_external_env_project_save_failure", func(tx *gorm.DB) {
 		if tx.Statement != nil && tx.Statement.Schema != nil && tx.Statement.Schema.Name == "Project" {
@@ -5636,7 +5636,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 		Path:      originalPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)
@@ -5659,7 +5659,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	require.NoFileExists(t, filepath.Join(originalPath, "notes.txt"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "Foo", fromDB.Name)
 	require.Equal(t, originalPath, fromDB.Path)
 }
@@ -5684,7 +5684,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -5711,7 +5711,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackUncommittedDirecto
 	require.False(t, ok)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -5738,7 +5738,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -5772,7 +5772,7 @@ func TestProjectService_RecoverProjectRenameJournals_StartedPhaseSkipsVolumeRoll
 	require.False(t, ok)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -5801,7 +5801,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -5833,7 +5833,7 @@ func TestProjectService_RecoverProjectRenameJournals_RelocatesTargetWhenBothPath
 	require.FileExists(t, filepath.Join(conflictPaths[0], "compose.yaml"))
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -5864,7 +5864,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -5910,7 +5910,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	var targetRemoved bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -5989,7 +5989,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournal(t *t
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -6029,7 +6029,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_ClearsJournalAfterSourc
 		Path:      filepath.Join(t.TempDir(), newDir),
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -6070,7 +6070,7 @@ func TestProjectService_FinalizeProjectRenameAfterCommit_KeepsJournalWhenSourceC
 		Path:      filepath.Join(t.TempDir(), newDir),
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -6148,7 +6148,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6186,7 +6186,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -6240,7 +6240,7 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6311,7 +6311,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6348,7 +6348,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -6413,7 +6413,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6459,7 +6459,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -6491,7 +6491,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsRollbackCleanupWhenDoc
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -6553,7 +6553,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6589,7 +6589,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalWhenS
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 }
@@ -6635,7 +6635,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6677,7 +6677,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 }
@@ -6716,7 +6716,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6760,7 +6760,7 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 }
@@ -6799,7 +6799,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6890,7 +6890,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -6937,7 +6937,7 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 	require.NotNil(t, fromDB.DirName)
@@ -6978,7 +6978,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		Path:      newPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -7022,7 +7022,7 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 	require.NoDirExists(t, oldPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "web", fromDB.Name)
 	require.Equal(t, newPath, fromDB.Path)
 }
@@ -7045,7 +7045,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsStartedJournalWhenDir
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	svc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, config.Load()).WithKVService(kvService)
@@ -7110,7 +7110,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -7146,7 +7146,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 }
@@ -7184,7 +7184,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -7220,7 +7220,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackSo
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 }
@@ -7261,7 +7261,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -7297,7 +7297,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 	require.NoDirExists(t, newPath)
 
 	var fromDB models.Project
-	require.NoError(t, db.First(&fromDB, "id = ?", project.ID).Error)
+	require.NoError(t, db.DB.First(&fromDB, "id = ?", project.ID).Error)
 	require.Equal(t, "nginx", fromDB.Name)
 	require.Equal(t, oldPath, fromDB.Path)
 }
@@ -7342,7 +7342,7 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		Path:      oldPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	kvService := NewKVService(db)
 	dockerService := &DockerClientService{client: newTestDockerClient(t, server)}
@@ -7442,7 +7442,7 @@ func TestProjectService_UpdateProject_FileChangeFailureRollsBackScoped(t *testin
 		Path:      projectPath,
 		Status:    models.ProjectStatusStopped,
 	}
-	require.NoError(t, db.Create(project).Error)
+	require.NoError(t, db.DB.Create(project).Error)
 
 	_, revision, _, err := projects.ReadProjectFileTree(project.Path, config.Load().ProjectFileTreeMaxDepth, config.Load().ProjectScanSkipDirs, "compose.yaml", 0)
 	require.NoError(t, err)

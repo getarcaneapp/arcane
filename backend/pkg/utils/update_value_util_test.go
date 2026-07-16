@@ -7,92 +7,42 @@ import (
 )
 
 func TestUpdateIfChanged(t *testing.T) {
-	t.Run("string target with string value", func(t *testing.T) {
-		target := "initial"
-		updated := UpdateIfChanged(&target, "new")
-		assert.True(t, updated)
-		assert.Equal(t, "new", target)
+	target := "initial"
+	assert.True(t, UpdateIfChanged(&target, "new"))
+	assert.Equal(t, "new", target)
 
-		updated = UpdateIfChanged(&target, "new")
-		assert.False(t, updated)
-		assert.Equal(t, "new", target)
-	})
+	assert.False(t, UpdateIfChanged(&target, "new"))
+	assert.Equal(t, "new", target)
 
-	t.Run("string target with *string value", func(t *testing.T) {
-		target := "initial"
-		newValue := "new"
-		updated := UpdateIfChanged(&target, &newValue)
-		assert.True(t, updated)
-		assert.Equal(t, "new", target)
+	count := 10
+	assert.True(t, UpdateIfChanged(&count, 20))
+	assert.Equal(t, 20, count)
+}
 
-		updated = UpdateIfChanged(&target, &newValue)
-		assert.False(t, updated)
-		assert.Equal(t, "new", target)
+func TestUpdateIfChangedPtr(t *testing.T) {
+	target := "initial"
+	newValue := "new"
+	assert.True(t, UpdateIfChangedPtr(&target, &newValue))
+	assert.Equal(t, "new", target)
 
-		var nilValue *string
-		updated = UpdateIfChanged(&target, nilValue)
-		assert.False(t, updated)
-		assert.Equal(t, "new", target)
-	})
+	assert.False(t, UpdateIfChangedPtr(&target, &newValue))
 
-	t.Run("bool target with bool value", func(t *testing.T) {
-		target := false
-		updated := UpdateIfChanged(&target, true)
-		assert.True(t, updated)
-		assert.True(t, target)
+	assert.False(t, UpdateIfChangedPtr(&target, nil))
+	assert.Equal(t, "new", target)
+}
 
-		updated = UpdateIfChanged(&target, true)
-		assert.False(t, updated)
-		assert.True(t, target)
-	})
+func TestUpdatePtrIfChanged(t *testing.T) {
+	target := new("initial")
+	newValue := "new"
 
-	t.Run("bool target with *bool value", func(t *testing.T) {
-		target := false
-		newValue := true
-		updated := UpdateIfChanged(&target, &newValue)
-		assert.True(t, updated)
-		assert.True(t, target)
+	assert.True(t, UpdatePtrIfChanged(&target, &newValue))
+	assert.Equal(t, "new", *target)
 
-		updated = UpdateIfChanged(&target, &newValue)
-		assert.False(t, updated)
-		assert.True(t, target)
+	assert.False(t, UpdatePtrIfChanged(&target, &newValue))
 
-		var nilValue *bool
-		updated = UpdateIfChanged(&target, nilValue)
-		assert.False(t, updated)
-		assert.True(t, target)
-	})
+	assert.True(t, UpdatePtrIfChanged(&target, nil))
+	assert.Nil(t, target)
 
-	t.Run("*string target with *string value", func(t *testing.T) {
-		target := new("initial")
-		newValue := "new"
-
-		// Update from value to new value
-		updated := UpdateIfChanged(&target, &newValue)
-		assert.True(t, updated)
-		assert.Equal(t, "new", *target)
-
-		// Update with same value
-		updated = UpdateIfChanged(&target, &newValue)
-		assert.False(t, updated)
-		assert.Equal(t, "new", *target)
-
-		// Update to nil
-		var nilValue *string
-		updated = UpdateIfChanged(&target, nilValue)
-		assert.True(t, updated)
-		assert.Nil(t, target)
-
-		// Update from nil to value
-		updated = UpdateIfChanged(&target, &newValue)
-		assert.True(t, updated)
-		assert.Equal(t, "new", *target)
-	})
-
-	t.Run("unsupported types", func(t *testing.T) {
-		target := 10
-		updated := UpdateIfChanged(&target, 20)
-		assert.False(t, updated)
-		assert.Equal(t, 10, target)
-	})
+	assert.True(t, UpdatePtrIfChanged(&target, &newValue))
+	assert.Equal(t, "new", *target)
 }

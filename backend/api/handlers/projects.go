@@ -741,7 +741,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.StatusReason = proj.StatusReason
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
-	response.DirName = utils.DerefString(proj.DirName)
+	response.DirName = utils.Deref(proj.DirName)
 	response.RelativePath = h.projectService.GetProjectRelativePath(ctx, proj.Path)
 	response.GitOpsManagedBy = proj.GitOpsManagedBy
 	response.IsArchived = proj.IsArchived
@@ -949,7 +949,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     input.ProjectID,
-		ResourceName:   utils.DerefString(input.Body.Name),
+		ResourceName:   utils.Deref(input.Body.Name),
 		User:           user,
 		Step:           "Updating project",
 		Message:        "Updating project",

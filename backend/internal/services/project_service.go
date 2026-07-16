@@ -623,10 +623,8 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) {
 		return
 	}
 
-	var projectsList []models.Project
-	if err := s.db.WithContext(ctx).
-		Where("image_refs_json = '' OR image_refs_json IS NULL").
-		Find(&projectsList).Error; err != nil {
+	projectsList, err := s.db.ListWhere[models.Project](ctx, "image_refs_json = '' OR image_refs_json IS NULL")
+	if err != nil {
 		slog.WarnContext(ctx, "failed to list projects for image ref backfill", "error", err)
 		return
 	}
@@ -636,8 +634,8 @@ func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) {
 }
 
 func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]models.Project, error) {
-	var projectsList []models.Project
-	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
+	projectsList, err := s.db.ListWhere[models.Project](ctx, "")
+	if err != nil {
 		return nil, fmt.Errorf("list projects for changed paths: %w", err)
 	}
 
@@ -1014,7 +1012,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.IsArchived = proj.IsArchived
 	resp.ArchivedAt = proj.ArchivedAt
 	resp.HasBuildDirective = false
-	resp.DirName = utils.DerefString(proj.DirName)
+	resp.DirName = utils.Deref(proj.DirName)
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, *proj)
@@ -1571,7 +1569,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 		if serviceCountErr != nil {
 			slog.WarnContext(ctx, "failed to read compose service count during project discovery", "project", dirName, "path", dirPath, "error", serviceCountErr)
 		}
-		if cerr := s.db.WithContext(ctx).Create(proj).Error; cerr != nil {
+		if cerr := s.db.Create(ctx, proj); cerr != nil {
 			return fmt.Errorf("create project for %q failed: %w", dirPath, cerr)
 		}
 		s.warnDuplicateComposeNameForPathInternal(ctx, composeMetadata.resolvedProjectName, dirPath, proj.ID)
@@ -1593,7 +1591,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	} else if serviceCountErr != nil {
 		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
-	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeMetadata.composeProjectName) {
+	if serviceCountErr == nil && !utils.PtrEqual(existing.ComposeProjectName, composeMetadata.composeProjectName) {
 		updates["compose_project_name"] = composeMetadata.composeProjectName
 	}
 	if serviceCountErr == nil {
@@ -1627,11 +1625,8 @@ func (s *ProjectService) warnDuplicateComposeNameForPathInternal(ctx context.Con
 		return
 	}
 
-	var count int64
-	if err := s.db.WithContext(ctx).
-		Model(&models.Project{}).
-		Where("name = ? AND path <> ? AND id <> ?", composeProjectName, dirPath, projectID).
-		Count(&count).Error; err != nil {
+	count, err := s.db.Count[models.Project](ctx, "name = ? AND path <> ? AND id <> ?", composeProjectName, dirPath, projectID)
+	if err != nil {
 		slog.WarnContext(ctx, "failed to check duplicate compose project names during project sync", "composeProjectName", composeProjectName, "path", dirPath, "error", err)
 		return
 	}
@@ -1699,8 +1694,8 @@ func (s activeProjectRenameSyncStateInternal) markProtectedPathsSeenInternal(see
 }
 
 func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map[string]struct{}, followProjectSymlinks bool, projectsDir string, maxDepth int) error {
-	var all []models.Project
-	if err := s.db.WithContext(ctx).Find(&all).Error; err != nil {
+	all, err := s.db.ListWhere[models.Project](ctx, "")
+	if err != nil {
 		return fmt.Errorf("list projects for cleanup failed: %w", err)
 	}
 
@@ -1867,7 +1862,7 @@ func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context,
 	logAttrs = append(logAttrs, "projectID", p.ID, "name", p.Name, "path", p.Path)
 	logAttrs = append(logAttrs, attrs...)
 
-	if derr := s.db.WithContext(ctx).Delete(&models.Project{}, "id = ?", p.ID).Error; derr != nil {
+	if derr := s.db.DeleteWhere[models.Project](ctx, "id = ?", p.ID); derr != nil {
 		slog.ErrorContext(ctx, "failed to delete project during filesystem cleanup",
 			append(logAttrs, "reason", reason, "error", derr)...)
 		return
@@ -1877,35 +1872,36 @@ func (s *ProjectService) deleteProjectDuringCleanupInternal(ctx context.Context,
 }
 
 func (s *ProjectService) ListAllProjects(ctx context.Context) ([]models.Project, error) {
-	var items []models.Project
-	if err := s.db.WithContext(ctx).Find(&items).Error; err != nil {
+	items, err := s.db.ListWhere[models.Project](ctx, "")
+	if err != nil {
 		return nil, fmt.Errorf("list projects: %w", err)
 	}
 	return items, nil
 }
 
-func formatPorts(publishers []api.PortPublisher) []string {
+func formatPortStrings[T any](items []T, extract func(T) (published int, target int, protocol string)) []string {
 	var ports []string
-	for _, pub := range publishers {
-		if pub.PublishedPort > 0 {
-			ports = append(ports, fmt.Sprintf("%d:%d/%s", pub.PublishedPort, pub.TargetPort, pub.Protocol))
+	for _, item := range items {
+		published, target, protocol := extract(item)
+		if published > 0 {
+			ports = append(ports, fmt.Sprintf("%d:%d/%s", published, target, protocol))
 		} else {
-			ports = append(ports, fmt.Sprintf("%d/%s", pub.TargetPort, pub.Protocol))
+			ports = append(ports, fmt.Sprintf("%d/%s", target, protocol))
 		}
 	}
 	return ports
 }
 
+func formatPorts(publishers []api.PortPublisher) []string {
+	return formatPortStrings(publishers, func(p api.PortPublisher) (int, int, string) {
+		return p.PublishedPort, p.TargetPort, p.Protocol
+	})
+}
+
 func formatDockerPorts(ports []container.PortSummary) []string {
-	var res []string
-	for _, p := range ports {
-		if p.PublicPort == 0 {
-			res = append(res, fmt.Sprintf("%d/%s", p.PrivatePort, p.Type))
-		} else {
-			res = append(res, fmt.Sprintf("%d:%d/%s", p.PublicPort, p.PrivatePort, p.Type))
-		}
-	}
-	return res
+	return formatPortStrings(ports, func(p container.PortSummary) (int, int, string) {
+		return int(p.PublicPort), int(p.PrivatePort), p.Type
+	})
 }
 
 func (s *ProjectService) countProjectFolders(ctx context.Context) (int, error) {
@@ -1949,9 +1945,9 @@ func (s *ProjectService) incrementStatusCounts(status models.ProjectStatus, runn
 func (s *ProjectService) GetProjectStatusCounts(ctx context.Context) (folderCount, runningProjects, stoppedProjects, totalProjects, archivedProjects int, err error) {
 	folderCount, _ = s.countProjectFolders(ctx)
 
-	var projectsList []models.Project
-	if err := s.db.WithContext(ctx).Find(&projectsList).Error; err != nil {
-		return folderCount, 0, 0, 0, 0, fmt.Errorf("failed to list projects: %w", err)
+	projectsList, listErr := s.db.ListWhere[models.Project](ctx, "")
+	if listErr != nil {
+		return folderCount, 0, 0, 0, 0, fmt.Errorf("failed to list projects: %w", listErr)
 	}
 
 	totalProjects = len(projectsList)
@@ -2276,7 +2272,7 @@ func (s *ProjectService) createProjectInternal(ctx context.Context, name, compos
 		return nil, fmt.Errorf("failed to save project files: %w", err)
 	}
 
-	if err := s.db.WithContext(ctx).Create(proj).Error; err != nil {
+	if err := s.db.Create(ctx, proj); err != nil {
 		_ = os.RemoveAll(projectPath)
 		return nil, fmt.Errorf("failed to create project: %w", err)
 	}
@@ -3055,8 +3051,7 @@ func (s *ProjectService) finalizeProjectRenameAfterCommitInternal(ctx context.Co
 	if committer, ok := volumeMigration.(volumes.Committer); ok {
 		if err := committer.Commit(ctx); err != nil {
 			slog.WarnContext(ctx, "failed to clean up project source volumes after committed rename", "projectID", projectID, "error", err)
-			var cleanupErr *volumes.SourceCleanupError
-			if errors.As(err, &cleanupErr) {
+			if _, ok := errors.AsType[*volumes.SourceCleanupError](err); ok {
 				if writeErr := s.writeProjectRenameJournalInternal(ctx, renameJournal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
 					slog.WarnContext(ctx, "failed to mark project rename source cleanup pending", "projectID", projectID, "error", writeErr)
 				}
@@ -3162,7 +3157,7 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 	if err := projects.WriteComposeOverrideFile(projectsDirectory, proj.Path, gitOverrideContent, gitOverrideFileName); err != nil {
 		return nil, fmt.Errorf("failed to sync git override file: %w", err)
 	}
-	if err := s.db.WithContext(ctx).Save(&proj).Error; err != nil {
+	if err := s.db.Save(ctx, &proj); err != nil {
 		return nil, fmt.Errorf("failed to update project: %w", err)
 	}
 	s.refreshComposeProjectNameInternal(ctx, &proj)
@@ -3190,12 +3185,9 @@ func (s *ProjectService) ApplyGitSyncProjectFiles(ctx context.Context, projectID
 }
 
 func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID string) (models.Project, string, error) {
-	var proj models.Project
-	if err := s.db.WithContext(ctx).First(&proj, "id = ?", projectID).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return models.Project{}, "", errors.New("project not found")
-		}
-		return models.Project{}, "", fmt.Errorf("failed to get project: %w", err)
+	proj, err := s.db.First[models.Project](ctx, errors.New("project not found"), "id = ?", projectID)
+	if err != nil {
+		return models.Project{}, "", err
 	}
 
 	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
@@ -3203,11 +3195,11 @@ func (s *ProjectService) getProjectForUpdate(ctx context.Context, projectID stri
 		return models.Project{}, "", fmt.Errorf("failed to get projects directory: %w", err)
 	}
 
-	if err := s.ensureProjectPathUnderRoot(ctx, &proj, false); err != nil {
+	if err := s.ensureProjectPathUnderRoot(ctx, proj, false); err != nil {
 		return models.Project{}, "", err
 	}
 
-	return proj, projectsDirectory, nil
+	return *proj, projectsDirectory, nil
 }
 
 func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ctx context.Context, proj *models.Project, name *string, projectsDirectory string, composeContent, envContent, overrideContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange) (volumes.Migration, error) {
@@ -3256,8 +3248,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationInternal(ctx context
 
 	composeProject, _, err := s.loadComposeProjectForProjectInternal(ctx, proj, nil)
 	if err != nil {
-		var notFound *common.ProjectComposeFileNotFoundError
-		if errors.As(err, &notFound) {
+		if _, ok := errors.AsType[*common.ProjectComposeFileNotFoundError](err); ok {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to load compose project for volume rename: %w", err)
@@ -4124,7 +4115,7 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 	}
 
 	// Attempt to repair using known directory name or sanitized project name
-	dirName := utils.DerefString(proj.DirName)
+	dirName := utils.Deref(proj.DirName)
 	if strings.TrimSpace(dirName) == "" {
 		dirName = projects.SanitizeProjectName(proj.Name)
 	}
@@ -4134,7 +4125,7 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 	proj.Path = filepath.Clean(candidate)
 
 	if persist {
-		if saveErr := s.db.WithContext(ctx).Save(proj).Error; saveErr != nil {
+		if saveErr := s.db.Save(ctx, proj); saveErr != nil {
 			slog.WarnContext(ctx, "failed to persist normalized project path", "error", saveErr)
 		}
 	}
@@ -4266,7 +4257,7 @@ func (s *ProjectService) listProjectsWithDerivedFiltersInternal(
 	if err != nil {
 		return nil, pagination.Response{}, err
 	}
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -4707,7 +4698,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			_ = mapper.MapStruct(p, &results[i])
 			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
 			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
-			results[i].DirName = utils.DerefString(p.DirName)
+			results[i].DirName = utils.Deref(p.DirName)
 			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
 			meta := s.getProjectMetadataForProject(ctx, p)
@@ -4739,7 +4730,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.IsArchived = p.IsArchived
 	resp.ArchivedAt = p.ArchivedAt
-	resp.DirName = utils.DerefString(p.DirName)
+	resp.DirName = utils.Deref(p.DirName)
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, p)
@@ -4975,7 +4966,7 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
 		updates["name"] = meta.resolvedProjectName
 	}
-	if !utils.StringPtrEqual(proj.ComposeProjectName, meta.composeProjectName) {
+	if !utils.PtrEqual(proj.ComposeProjectName, meta.composeProjectName) {
 		updates["compose_project_name"] = meta.composeProjectName
 	}
 	if len(updates) == 0 {
@@ -5245,8 +5236,7 @@ func (s *ProjectService) recoverProjectRenameJournalInternal(ctx context.Context
 			return s.clearProjectRenameJournalInternal(ctx, journal.ProjectID)
 		}
 		if err := s.cleanupProjectRenameJournalSourcesInternal(ctx, journal); err != nil {
-			var cleanupErr *volumes.SourceCleanupError
-			if errors.As(err, &cleanupErr) {
+			if _, ok := errors.AsType[*volumes.SourceCleanupError](err); ok {
 				if writeErr := s.writeProjectRenameJournalInternal(ctx, journal, projectRenameJournalPhaseSourceCleanupPendingInternal); writeErr != nil {
 					return errors.Join(err, writeErr)
 				}
@@ -5272,13 +5262,11 @@ func (s *ProjectService) cleanupProjectRenameJournalSourcesInternal(ctx context.
 	}
 
 	if err := volumes.EnsureTargetsReadyForCleanup(ctx, dockerClient, journal.Volumes); err != nil {
-		var missingWithSource *volumes.TargetMissingWithSourceError
-		if errors.As(err, &missingWithSource) {
+		if missingWithSource, ok := errors.AsType[*volumes.TargetMissingWithSourceError](err); ok {
 			slog.WarnContext(ctx, "rolling back project rename because target volume is missing and source volume remains", "projectID", journal.ProjectID, "sourceVolume", missingWithSource.SourceVolume, "targetVolume", missingWithSource.TargetVolume)
 			return s.rollbackProjectRenameJournalInternal(ctx, journal)
 		}
-		var externallyRemoved *volumes.VolumesExternallyRemovedError
-		if errors.As(err, &externallyRemoved) {
+		if externallyRemoved, ok := errors.AsType[*volumes.VolumesExternallyRemovedError](err); ok {
 			slog.WarnContext(ctx, "project rename cleanup found source and target volumes externally removed", "projectID", journal.ProjectID, "volumeCount", len(externallyRemoved.Volumes), "error", externallyRemoved)
 		} else {
 			return err

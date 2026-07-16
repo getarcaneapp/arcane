@@ -82,7 +82,7 @@ func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.
 	defer server.Close()
 
 	now := time.Now()
-	require.NoError(t, db.Create(&models.Environment{
+	require.NoError(t, db.DB.Create(&models.Environment{
 		BaseModel: models.BaseModel{
 			ID:        "remote-1",
 			CreatedAt: now,
@@ -117,7 +117,7 @@ func limitStreamTestDBToSingleConnInternal(t *testing.T, db *database.DB) {
 func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, environmentID, name, apiURL, token string) {
 	t.Helper()
 	now := time.Now()
-	require.NoError(t, db.Create(&models.Environment{
+	require.NoError(t, db.DB.Create(&models.Environment{
 		BaseModel: models.BaseModel{
 			ID:        environmentID,
 			CreatedAt: now,

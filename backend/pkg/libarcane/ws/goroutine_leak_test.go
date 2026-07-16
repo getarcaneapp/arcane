@@ -311,7 +311,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 			}
 		}()
 
-		go ForwardLines(ctx, hub, lines) //nolint:contextcheck // intentional: context must outlive the HTTP request
+		go hub.ForwardLines(ctx, lines) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
 		ServeClientWithOnRemove(ctx, hub, conn, nil) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))
@@ -391,7 +391,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 			}
 		}()
 
-		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond) //nolint:contextcheck // intentional: context must outlive the HTTP request
+		go hub.ForwardLogJSONBatched(ctx, msgs, 50, 400*time.Millisecond) //nolint:contextcheck // intentional: context must outlive the HTTP request
 
 		ServeClientWithOnRemove(ctx, hub, conn, nil) //nolint:contextcheck // intentional: context must outlive the HTTP request
 	}))

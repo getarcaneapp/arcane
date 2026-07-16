@@ -549,7 +549,7 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	repository := "ghcr.io/fosrl/newt"
 	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             recordID,
 		Repository:     repository,
 		Tag:            "latest",
@@ -737,7 +737,7 @@ func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestConte
 	}
 
 	require.Eventually(t, func() bool {
-		if err := db.First(&activity, "id = ?", activity.ID).Error; err != nil {
+		if err := db.DB.First(&activity, "id = ?", activity.ID).Error; err != nil {
 			return false
 		}
 		return activity.Status == models.ActivityStatusFailed
@@ -973,7 +973,7 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	now := time.Now().UTC().Add(-time.Hour)
 
 	// Real sha256 records for OTHER containers running the old image — must not be cleared.
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-full",
 		Repository:     repository,
 		Tag:            "1.2.3",
@@ -982,7 +982,7 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 		CurrentVersion: "1.2.3",
 		CheckTime:      now,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "sha256:old-short",
 		Repository:     "team/app",
 		Tag:            "1.2.3",
@@ -994,7 +994,7 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 
 	// Synthetic ref:: record — must be cleared when new image is pulled.
 	syntheticID := "ref::" + repository + "@1.2.3"
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             syntheticID,
 		Repository:     repository,
 		Tag:            "1.2.3",
@@ -1060,12 +1060,12 @@ func TestImageUpdateService_NotificationSentLogic(t *testing.T) {
 		// New record should have NotificationSent = false
 		assert.False(t, updateRecord.NotificationSent)
 
-		err := db.Create(updateRecord).Error
+		err := db.DB.Create(updateRecord).Error
 		require.NoError(t, err)
 
 		// Verify it was saved correctly
 		var saved models.ImageUpdateRecord
-		err = db.First(&saved, "id = ?", imageID).Error
+		err = db.DB.First(&saved, "id = ?", imageID).Error
 		require.NoError(t, err)
 		assert.False(t, saved.NotificationSent)
 	})
@@ -1186,12 +1186,12 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 			db.Exec("DELETE FROM image_updates WHERE id = ?", imageID)
 
 			// Insert existing record
-			err := db.Create(tt.existingRecord).Error
+			err := db.DB.Create(tt.existingRecord).Error
 			require.NoError(t, err)
 
 			// Verify it was marked as notified
 			var check models.ImageUpdateRecord
-			err = db.First(&check, "id = ?", imageID).Error
+			err = db.DB.First(&check, "id = ?", imageID).Error
 			require.NoError(t, err)
 			assert.True(t, check.NotificationSent, "existing record should be marked as notified")
 
@@ -1214,12 +1214,12 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 			}
 
 			// Save the updated record
-			err = db.Save(updateRecord).Error
+			err = db.DB.Save(updateRecord).Error
 			require.NoError(t, err)
 
 			// Verify the result
 			var updated models.ImageUpdateRecord
-			err = db.First(&updated, "id = ?", imageID).Error
+			err = db.DB.First(&updated, "id = ?", imageID).Error
 			require.NoError(t, err)
 
 			if tt.expectNotifReset {
@@ -1270,7 +1270,7 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 				LatestDigest:   stringToPtr("sha256:current"),
 				CheckTime:      checkTime,
 			}
-			require.NoError(t, db.Create(existing).Error)
+			require.NoError(t, db.DB.Create(existing).Error)
 
 			result := &imageupdate.Response{
 				Error:     tt.resultError,
@@ -1279,7 +1279,7 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 			require.NoError(t, savePreparedUpdateResultWithTxInternal(db.DB, imageID, repo, tag, result))
 
 			var saved models.ImageUpdateRecord
-			require.NoError(t, db.First(&saved, "id = ?", imageID).Error)
+			require.NoError(t, db.DB.First(&saved, "id = ?", imageID).Error)
 
 			if tt.expectPreserved {
 				assert.Nil(t, saved.LastError, "previous good record should be preserved")
@@ -1332,7 +1332,7 @@ func TestImageUpdateService_GetUnnotifiedUpdates(t *testing.T) {
 	}
 
 	for _, rec := range records {
-		err := db.Create(&rec).Error
+		err := db.DB.Create(&rec).Error
 		require.NoError(t, err)
 	}
 
@@ -1364,7 +1364,7 @@ func TestImageUpdateService_MarkUpdatesAsNotified(t *testing.T) {
 			HasUpdate:        true,
 			NotificationSent: false,
 		}
-		err := db.Create(&rec).Error
+		err := db.DB.Create(&rec).Error
 		require.NoError(t, err)
 	}
 
@@ -1374,18 +1374,18 @@ func TestImageUpdateService_MarkUpdatesAsNotified(t *testing.T) {
 
 	// Verify img1 and img2 are marked
 	var img1 models.ImageUpdateRecord
-	err = db.First(&img1, "id = ?", "sha256:img1").Error
+	err = db.DB.First(&img1, "id = ?", "sha256:img1").Error
 	require.NoError(t, err)
 	assert.True(t, img1.NotificationSent)
 
 	var img2 models.ImageUpdateRecord
-	err = db.First(&img2, "id = ?", "sha256:img2").Error
+	err = db.DB.First(&img2, "id = ?", "sha256:img2").Error
 	require.NoError(t, err)
 	assert.True(t, img2.NotificationSent)
 
 	// Verify img3 is still false
 	var img3 models.ImageUpdateRecord
-	err = db.First(&img3, "id = ?", "sha256:img3").Error
+	err = db.DB.First(&img3, "id = ?", "sha256:img3").Error
 	require.NoError(t, err)
 	assert.False(t, img3.NotificationSent)
 }
@@ -1420,7 +1420,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&models.NotificationSettings{
+	require.NoError(t, db.DB.Create(&models.NotificationSettings{
 		Provider: models.NotificationProviderGeneric,
 		Enabled:  true,
 		Config: models.JSON{
@@ -1440,7 +1440,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 		HasUpdate:        true,
 		NotificationSent: false,
 	}
-	require.NoError(t, db.Create(&rec).Error)
+	require.NoError(t, db.DB.Create(&rec).Error)
 
 	// Simulate the post-activity-completion state: the tracked ctx is already
 	// canceled. Derive it from a lifecycle-marked parent to mirror production,
@@ -1456,7 +1456,7 @@ func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *te
 	// parent ctx (issue #2920).
 	require.EqualValues(t, 1, calls.Load())
 	var reloaded models.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img1").Error)
+	require.NoError(t, db.DB.First(&reloaded, "id = ?", "sha256:img1").Error)
 	assert.True(t, reloaded.NotificationSent)
 }
 
@@ -1479,12 +1479,12 @@ func TestImageUpdateService_SendBatchNotifications_NoEligibleProviders_LeavesUnn
 		HasUpdate:        true,
 		NotificationSent: false,
 	}
-	require.NoError(t, db.Create(&rec).Error)
+	require.NoError(t, db.DB.Create(&rec).Error)
 
 	svc.sendBatchImageUpdateNotificationsInternal(context.Background())
 
 	var reloaded models.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img-no-provider").Error)
+	require.NoError(t, db.DB.First(&reloaded, "id = ?", "sha256:img-no-provider").Error)
 	assert.False(t, reloaded.NotificationSent)
 
 	unnotified, err := svc.GetUnnotifiedUpdates(context.Background())
@@ -1510,7 +1510,7 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 	defer broken.Close()
 
 	for _, url := range []string{healthy.URL, broken.URL} {
-		require.NoError(t, db.Create(&models.NotificationSettings{
+		require.NoError(t, db.DB.Create(&models.NotificationSettings{
 			Provider: models.NotificationProviderGeneric,
 			Enabled:  true,
 			Config: models.JSON{
@@ -1531,12 +1531,12 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 		HasUpdate:        true,
 		NotificationSent: false,
 	}
-	require.NoError(t, db.Create(&rec).Error)
+	require.NoError(t, db.DB.Create(&rec).Error)
 
 	svc.sendBatchImageUpdateNotificationsInternal(context.Background())
 
 	var reloaded models.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:img-partial").Error)
+	require.NoError(t, db.DB.First(&reloaded, "id = ?", "sha256:img-partial").Error)
 	assert.True(t, reloaded.NotificationSent)
 }
 
@@ -1578,7 +1578,7 @@ func TestImageUpdateService_GetUpdateSummaryForImageIDs_FiltersToLiveImages(t *t
 		},
 	}
 	for i := range records {
-		err := db.Create(&records[i]).Error
+		err := db.DB.Create(&records[i]).Error
 		require.NoError(t, err)
 	}
 

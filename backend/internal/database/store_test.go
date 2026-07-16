@@ -1,4 +1,4 @@
-package dbutil
+package database
 
 import (
 	"context"
@@ -17,34 +17,34 @@ type widget struct {
 
 var errWidgetNotFound = errors.New("widget not found")
 
-func newTestDB(t *testing.T) *gorm.DB {
+func newTestDB(t *testing.T) *DB {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&widget{}))
-	return db
+	return &DB{DB: db}
 }
 
-func TestFirstWhereFound(t *testing.T) {
+func TestFirstFound(t *testing.T) {
 	db := newTestDB(t)
-	require.NoError(t, db.Create(&widget{ID: "w-1", Name: "alpha"}).Error)
+	require.NoError(t, db.Create(context.Background(), &widget{ID: "w-1", Name: "alpha"}))
 
-	got, err := FirstWhere[widget](context.Background(), db, errWidgetNotFound, "name = ?", "alpha")
+	got, err := db.First[widget](context.Background(), errWidgetNotFound, "name = ?", "alpha")
 	require.NoError(t, err)
 	require.Equal(t, "w-1", got.ID)
 }
 
-func TestFirstWhereNotFoundReturnsSentinel(t *testing.T) {
+func TestFirstNotFoundReturnsSentinel(t *testing.T) {
 	db := newTestDB(t)
 
-	_, err := FirstWhere[widget](context.Background(), db, errWidgetNotFound, "name = ?", "missing")
+	_, err := db.First[widget](context.Background(), errWidgetNotFound, "name = ?", "missing")
 	require.ErrorIs(t, err, errWidgetNotFound)
 }
 
-func TestFirstWhereNotFoundWithNilSentinel(t *testing.T) {
+func TestFirstNotFoundWithNilSentinel(t *testing.T) {
 	db := newTestDB(t)
 
-	_, err := FirstWhere[widget](context.Background(), db, nil, "name = ?", "missing")
+	_, err := db.First[widget](context.Background(), nil, "name = ?", "missing")
 	require.Error(t, err)
 	require.ErrorIs(t, err, gorm.ErrRecordNotFound)
 }
@@ -52,12 +52,12 @@ func TestFirstWhereNotFoundWithNilSentinel(t *testing.T) {
 func TestWithTxCommit(t *testing.T) {
 	db := newTestDB(t)
 
-	err := WithTx(context.Background(), db, func(tx *gorm.DB) error {
+	err := db.WithTx(context.Background(), func(tx *gorm.DB) error {
 		return tx.Create(&widget{ID: "w-1", Name: "alpha"}).Error
 	})
 	require.NoError(t, err)
 
-	got, err := FirstWhere[widget](context.Background(), db, errWidgetNotFound, "id = ?", "w-1")
+	got, err := db.First[widget](context.Background(), errWidgetNotFound, "id = ?", "w-1")
 	require.NoError(t, err)
 	require.Equal(t, "alpha", got.Name)
 }
@@ -66,7 +66,7 @@ func TestWithTxRollback(t *testing.T) {
 	db := newTestDB(t)
 	boom := errors.New("boom")
 
-	err := WithTx(context.Background(), db, func(tx *gorm.DB) error {
+	err := db.WithTx(context.Background(), func(tx *gorm.DB) error {
 		if err := tx.Create(&widget{ID: "w-1", Name: "alpha"}).Error; err != nil {
 			return err
 		}
@@ -74,6 +74,6 @@ func TestWithTxRollback(t *testing.T) {
 	})
 	require.ErrorIs(t, err, boom)
 
-	_, err = FirstWhere[widget](context.Background(), db, errWidgetNotFound, "id = ?", "w-1")
+	_, err = db.First[widget](context.Background(), errWidgetNotFound, "id = ?", "w-1")
 	require.ErrorIs(t, err, errWidgetNotFound)
 }

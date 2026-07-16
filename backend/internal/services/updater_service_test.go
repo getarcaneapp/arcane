@@ -430,7 +430,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 	latestDigest := "sha256:2222222222222222222222222222222222222222222222222222222222222222"
 	lastError := "previous check failed"
 	checkTime := time.Now().Add(-time.Hour).UTC()
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:             "pending",
 		Repository:     "registry.example.com/team/app",
 		Tag:            "1.2.3",
@@ -443,7 +443,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 		CheckTime:      checkTime,
 		LastError:      &lastError,
 	}).Error)
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:         "not-pending",
 		Repository: "registry.example.com/team/old",
 		Tag:        "1.0.0",
@@ -484,7 +484,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 		w.WriteHeader(http.StatusOK)
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&models.NotificationSettings{
+	require.NoError(t, db.DB.Create(&models.NotificationSettings{
 		Provider: models.NotificationProviderGeneric,
 		Enabled:  true,
 		Config: models.JSON{
@@ -498,7 +498,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:               "sha256:pending-unnotified",
 		Repository:       "test/repo",
 		Tag:              "latest",
@@ -512,7 +512,7 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 	require.Len(t, records, 1)
 	require.EqualValues(t, 1, calls.Load())
 	var reloaded models.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-unnotified").Error)
+	require.NoError(t, db.DB.First(&reloaded, "id = ?", "sha256:pending-unnotified").Error)
 	assert.True(t, reloaded.NotificationSent)
 }
 
@@ -528,7 +528,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 
-	require.NoError(t, db.Create(&models.ImageUpdateRecord{
+	require.NoError(t, db.DB.Create(&models.ImageUpdateRecord{
 		ID:               "sha256:pending-no-provider",
 		Repository:       "test/repo",
 		Tag:              "latest",
@@ -541,7 +541,7 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 	require.NoError(t, err)
 	require.Len(t, records, 1)
 	var reloaded models.ImageUpdateRecord
-	require.NoError(t, db.First(&reloaded, "id = ?", "sha256:pending-no-provider").Error)
+	require.NoError(t, db.DB.First(&reloaded, "id = ?", "sha256:pending-no-provider").Error)
 	assert.False(t, reloaded.NotificationSent)
 }
 
@@ -565,7 +565,7 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 
 	require.NoError(t, err)
 	var record models.AutoUpdateRecord
-	require.NoError(t, db.First(&record, "resource_id = ?", "container-1").Error)
+	require.NoError(t, db.DB.First(&record, "resource_id = ?", "container-1").Error)
 	assert.Equal(t, "web", record.ResourceName)
 	assert.Equal(t, "container", record.ResourceType)
 	assert.Equal(t, models.AutoUpdateStatus(moduletypes.StatusUpdated), record.Status)

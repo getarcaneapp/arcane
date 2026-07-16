@@ -19,7 +19,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
 )
 
@@ -64,7 +63,7 @@ func (s *RoleService) EnsureBuiltInRoles(ctx context.Context) error {
 		authz.BuiltInRoleViewer:        {"Viewer", "Read-only access to all resources", authz.BuiltInViewerPermissions()},
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for id, spec := range builtIns {
 			role := models.Role{
 				BaseModel:   models.BaseModel{ID: id},
@@ -107,7 +106,7 @@ func (s *RoleService) BackfillLegacyRoleAssignments(ctx context.Context) error {
 		Roles string `gorm:"column:roles"`
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var rows []legacyUser
 		if err := tx.Table("users").Select("id, roles").Scan(&rows).Error; err != nil {
 			return fmt.Errorf("failed to read legacy users.roles for backfill: %w", err)
@@ -190,15 +189,15 @@ func (s *RoleService) BackfillApiKeyPermissions(ctx context.Context) error {
 	//     always carry full perms.
 	// Regular user-created keys are deliberately excluded — empty grants on
 	// those are an intentional "no access" state we must not overwrite.
-	var keys []models.ApiKey
-	if err := s.db.WithContext(ctx).Where("user_id IS NULL OR managed_by IS NOT NULL").Find(&keys).Error; err != nil {
+	keys, err := s.db.ListWhere[models.ApiKey](ctx, "user_id IS NULL OR managed_by IS NOT NULL")
+	if err != nil {
 		return fmt.Errorf("failed to list bootstrap api keys for backfill: %w", err)
 	}
 	if len(keys) == 0 {
 		return nil
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for _, key := range keys {
 			var existing int64
 			if err := tx.Model(&models.ApiKeyPermission{}).Where("api_key_id = ?", key.ID).Count(&existing).Error; err != nil {
@@ -297,7 +296,7 @@ func (s *RoleService) ListAllRoles(ctx context.Context) ([]models.Role, error) {
 }
 
 func (s *RoleService) GetRole(ctx context.Context, id string) (*models.Role, error) {
-	return dbutil.FirstWhere[models.Role](ctx, s.db.DB, &common.RoleNotFoundError{}, "id = ?", id)
+	return s.db.First[models.Role](ctx, &common.RoleNotFoundError{}, "id = ?", id)
 }
 
 func (s *RoleService) CreateRole(ctx context.Context, name string, description *string, permissions []string) (*models.Role, error) {
@@ -313,7 +312,7 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 		Permissions: models.StringSlice(permissions),
 		BuiltIn:     false,
 	}
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var conflict int64
 		if err := tx.Model(&models.Role{}).Where("name = ?", name).Count(&conflict).Error; err != nil {
 			return fmt.Errorf("failed to check role name uniqueness: %w", err)
@@ -334,7 +333,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 		return nil, err
 	}
 	var out models.Role
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.Role
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -372,7 +371,7 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 
 func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 	var affected []string
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.Role
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -445,7 +444,7 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 		desired[i].UserID = userID
 		desired[i].Source = source
 	}
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := validateAssignmentsExistInternal(tx, desired); err != nil {
 			return err
 		}
@@ -666,8 +665,8 @@ func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID str
 	if ps, ok := s.apiKeyCache.Get(apiKeyID); ok {
 		return ps, nil
 	}
-	var perms []models.ApiKeyPermission
-	if err := s.db.WithContext(ctx).Where("api_key_id = ?", apiKeyID).Find(&perms).Error; err != nil {
+	perms, err := s.db.ListWhere[models.ApiKeyPermission](ctx, "api_key_id = ?", apiKeyID)
+	if err != nil {
 		return nil, fmt.Errorf("failed to resolve api key permissions: %w", err)
 	}
 	ps := authz.NewPermissionSet()
@@ -686,7 +685,7 @@ func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID str
 // atomically. Validation that the granted permissions don't exceed the
 // creator's capabilities happens in the handler layer.
 func (s *RoleService) SetApiKeyPermissions(ctx context.Context, apiKeyID string, grants []models.ApiKeyPermission) error {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		return s.setApiKeyPermissionsInternal(ctx, tx, apiKeyID, grants)
 	})
 	if err != nil {
@@ -722,7 +721,7 @@ func (s *RoleService) ListOidcMappings(ctx context.Context) ([]models.OidcRoleMa
 }
 
 func (s *RoleService) GetOidcMapping(ctx context.Context, id string) (*models.OidcRoleMapping, error) {
-	return dbutil.FirstWhere[models.OidcRoleMapping](ctx, s.db.DB, &common.OidcMappingNotFoundError{}, "id = ?", id)
+	return s.db.First[models.OidcRoleMapping](ctx, &common.OidcMappingNotFoundError{}, "id = ?", id)
 }
 
 func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID string, environmentID *string) (*models.OidcRoleMapping, error) {
@@ -735,7 +734,7 @@ func (s *RoleService) CreateOidcMapping(ctx context.Context, claimValue, roleID 
 		return nil, errors.New("role id is required")
 	}
 	var mapping models.OidcRoleMapping
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := validateRoleIDsExistInternal(tx, []string{roleID}); err != nil {
 			return err
 		}
@@ -766,7 +765,7 @@ func (s *RoleService) UpdateOidcMapping(ctx context.Context, id, claimValue, rol
 		return nil, errors.New("role id is required")
 	}
 	var out models.OidcRoleMapping
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.OidcRoleMapping
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -828,7 +827,7 @@ func validateRoleIDsExistInternal(tx *gorm.DB, roleIDs []string) error {
 }
 
 func (s *RoleService) DeleteOidcMapping(ctx context.Context, id string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.OidcRoleMapping
 		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -875,7 +874,7 @@ func (s *RoleService) ReconcileEnvOidcMappings(ctx context.Context, rawSpec stri
 		}
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		// Verify every referenced role exists. Done inside the tx so a concurrent
 		// role delete can't race past this check.
 		for i, sp := range specs {
@@ -992,7 +991,7 @@ func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, c
 	if err := validatePermissionsInternal(desired); err != nil {
 		return err
 	}
-	return validatePermissionSetAgainstCallerInternal(caller, desired, pkgutils.DerefString(environmentID))
+	return validatePermissionSetAgainstCallerInternal(caller, desired, pkgutils.Deref(environmentID))
 }
 
 func validatePermissionSetAgainstCallerInternal(caller *authz.PermissionSet, desired []string, environmentID string) error {

@@ -136,7 +136,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		return tx.Save(&models.SettingVariable{Key: key, Value: *v}).Error
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for _, field := range fields {
 			if err := upsert(tx, field.key, field.update, field.current); err != nil {
 				return err
@@ -244,7 +244,7 @@ func (s *JobService) restoreJobSchedulesInternal(ctx context.Context, previousVa
 		return nil
 	}
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for key, value := range previousValues {
 			if err := tx.Save(&models.SettingVariable{Key: key, Value: value}).Error; err != nil {
 				return err

@@ -95,11 +95,7 @@ func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGet
 }
 
 func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
-	var registries []models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get container registries: %w", err)
-	}
-	return registries, nil
+	return s.db.ListWhere[models.ContainerRegistry](ctx, "")
 }
 
 func (s *ContainerRegistryService) GetRegistriesPaginated(ctx context.Context, params pagination.QueryParams) ([]containerregistry.ContainerRegistry, pagination.Response, error) {
@@ -175,8 +171,8 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 		registry.Token = encryptedToken
 	}
 
-	if err := s.db.WithContext(ctx).Create(registry).Error; err != nil {
-		return nil, fmt.Errorf("failed to create registry: %w", err)
+	if err := s.db.Create(ctx, registry); err != nil {
+		return nil, err
 	}
 
 	return registry, nil
@@ -189,10 +185,10 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 	}
 
 	// Update common fields
-	utils.UpdateIfChanged(&registry.URL, req.URL)
+	utils.UpdateIfChangedPtr(&registry.URL, req.URL)
 	utils.UpdateIfChanged(&registry.Description, req.Description)
-	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
-	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
+	utils.UpdateIfChangedPtr(&registry.Insecure, req.Insecure)
+	utils.UpdateIfChangedPtr(&registry.Enabled, req.Enabled)
 
 	if err := s.applyRegistryTypeUpdateInternal(registry, req.RegistryType); err != nil {
 		return nil, err
@@ -208,8 +204,8 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 
 	registry.UpdatedAt = time.Now()
 
-	if err := s.db.WithContext(ctx).Save(registry).Error; err != nil {
-		return nil, fmt.Errorf("failed to update registry: %w", err)
+	if err := s.db.Save(ctx, registry); err != nil {
+		return nil, err
 	}
 
 	return registry, nil
@@ -233,15 +229,15 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *mod
 }
 
 func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.AWSAccessKeyID, req.AWSAccessKeyID)
-	utils.UpdateIfChanged(&registry.AWSRegion, req.AWSRegion)
+	utils.UpdateIfChangedPtr(&registry.AWSAccessKeyID, req.AWSAccessKeyID)
+	utils.UpdateIfChangedPtr(&registry.AWSRegion, req.AWSRegion)
 
 	if req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "" {
 		encryptedSecret, err := crypto.Encrypt(*req.AWSSecretAccessKey)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
 		}
-		utils.UpdateIfChanged(&registry.AWSSecretAccessKey, &encryptedSecret)
+		utils.UpdateIfChangedPtr(&registry.AWSSecretAccessKey, &encryptedSecret)
 	}
 
 	if strings.TrimSpace(registry.AWSAccessKeyID) == "" {
@@ -263,14 +259,14 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *mod
 }
 
 func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.Username, req.Username)
+	utils.UpdateIfChangedPtr(&registry.Username, req.Username)
 
 	if req.Token != nil && *req.Token != "" {
 		encryptedToken, err := crypto.Encrypt(*req.Token)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt token: %w", err)
 		}
-		utils.UpdateIfChanged(&registry.Token, &encryptedToken)
+		utils.UpdateIfChangedPtr(&registry.Token, &encryptedToken)
 	}
 
 	if strings.TrimSpace(registry.Username) == "" {
@@ -281,10 +277,7 @@ func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry 
 }
 
 func (s *ContainerRegistryService) DeleteRegistry(ctx context.Context, id string) error {
-	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.ContainerRegistry{}).Error; err != nil {
-		return fmt.Errorf("failed to delete container registry: %w", err)
-	}
-	return nil
+	return s.db.DeleteWhere[models.ContainerRegistry](ctx, "id = ?", id)
 }
 
 // GetDecryptedToken returns the decrypted token for a registry
@@ -304,11 +297,7 @@ func (s *ContainerRegistryService) GetDecryptedToken(ctx context.Context, id str
 
 // GetEnabledRegistries returns all enabled registries
 func (s *ContainerRegistryService) GetEnabledRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
-	var registries []models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Where("enabled = ?", true).Find(&registries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get enabled container registries: %w", err)
-	}
-	return registries, nil
+	return s.db.ListWhere[models.ContainerRegistry](ctx, "enabled = ?", true)
 }
 
 // GetRegistryAuthForImage returns X-Registry-Auth for the image's registry host.
@@ -1094,9 +1083,9 @@ func (s *ContainerRegistryService) SyncRegistries(ctx context.Context, syncItems
 }
 
 func (s *ContainerRegistryService) getExistingRegistriesMapInternal(ctx context.Context) (map[string]*models.ContainerRegistry, error) {
-	var existingRegistries []models.ContainerRegistry
-	if err := s.db.WithContext(ctx).Find(&existingRegistries).Error; err != nil {
-		return nil, fmt.Errorf("failed to get existing registries: %w", err)
+	existingRegistries, err := s.db.ListWhere[models.ContainerRegistry](ctx, "")
+	if err != nil {
+		return nil, err
 	}
 
 	existingMap := make(map[string]*models.ContainerRegistry)
@@ -1123,7 +1112,7 @@ func (s *ContainerRegistryService) updateExistingRegistryInternal(ctx context.Co
 
 	if needsUpdate {
 		existing.UpdatedAt = time.Now()
-		if err := s.db.WithContext(ctx).Save(existing).Error; err != nil {
+		if err := s.db.Save(ctx, existing); err != nil {
 			return fmt.Errorf("failed to update registry %s: %w", item.ID, err)
 		}
 	}
@@ -1232,7 +1221,7 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 		newRegistry.AWSSecretAccessKey = encryptedSecret
 	}
 
-	if err := s.db.WithContext(ctx).Create(newRegistry).Error; err != nil {
+	if err := s.db.Create(ctx, newRegistry); err != nil {
 		return fmt.Errorf("failed to create registry %s: %w", item.ID, err)
 	}
 
@@ -1259,7 +1248,7 @@ func normalizeRegistryTypeInternal(value string) (string, error) {
 func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, existingMap map[string]*models.ContainerRegistry, syncedIDs map[string]bool) error {
 	for id := range existingMap {
 		if !syncedIDs[id] {
-			if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.ContainerRegistry{}).Error; err != nil {
+			if err := s.db.DeleteWhere[models.ContainerRegistry](ctx, "id = ?", id); err != nil {
 				return fmt.Errorf("failed to delete registry %s: %w", id, err)
 			}
 		}

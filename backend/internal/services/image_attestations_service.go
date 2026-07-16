@@ -385,8 +385,7 @@ func (s *ImageService) readReferrerAttestationsInternal(ctx context.Context, rep
 }
 
 func shouldIgnoreReferrersErrorInternal(err error) bool {
-	var transportErr *transport.Error
-	if errors.As(err, &transportErr) {
+	if transportErr, ok := errors.AsType[*transport.Error](err); ok {
 		return transportErr.StatusCode == http.StatusNotFound || transportErr.StatusCode == http.StatusMethodNotAllowed
 	}
 	return false

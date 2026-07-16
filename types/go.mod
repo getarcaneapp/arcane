@@ -1,6 +1,6 @@
 module github.com/getarcaneapp/arcane/types/v2
 
-go 1.26.5
+go 1.27rc2
 
 require (
 	github.com/compose-spec/compose-go/v2 v2.13.0

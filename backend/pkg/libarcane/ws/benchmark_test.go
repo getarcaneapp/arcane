@@ -261,7 +261,7 @@ func BenchmarkForwardLogJSONBatched_Throughput(b *testing.B) {
 			}
 			close(logs)
 
-			ForwardLogJSONBatched(ctx, h, logs, batchSize, 10*time.Millisecond)
+			h.ForwardLogJSONBatched(ctx, logs, batchSize, 10*time.Millisecond)
 		})
 	}
 }
@@ -281,7 +281,7 @@ func BenchmarkForwardLines_Throughput(b *testing.B) {
 	}
 	close(lines)
 
-	ForwardLines(ctx, h, lines)
+	h.ForwardLines(ctx, lines)
 }
 
 // ============================================================================

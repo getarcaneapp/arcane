@@ -252,8 +252,8 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 	dest := s.getDefaultSettings()
 
 	// Fetch all settings once to avoid N+1 queries for internal keys
-	var allSettings []models.SettingVariable
-	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
+	allSettings, err := db.ListWhere[models.SettingVariable](ctx, "")
+	if err != nil {
 		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
 	}
 	settingsMap := make(map[string]string, len(allSettings))
@@ -401,7 +401,7 @@ func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) 
 }
 
 func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Context, key, value string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		settingVar := &models.SettingVariable{
 			Key:   key,
 			Value: value,
@@ -575,7 +575,7 @@ func extractUpdateValue(field reflect.StructField, fieldValue reflect.Value) (st
 }
 
 func (s *SettingsService) persistSettings(ctx context.Context, values []models.SettingVariable) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if err := tx.Save(&setting).Error; err != nil {
 				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
@@ -614,7 +614,7 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 	defaultSettings := s.getDefaultSettings()
 	defaultSettingVars := defaultSettings.ToSettingVariableSlice(models.SettingVisibilityAll, false)
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for _, defaultSetting := range defaultSettingVars {
 			var existing models.SettingVariable
 			err := tx.Where("key = ?", defaultSetting.Key).First(&existing).Error
@@ -668,7 +668,7 @@ func (s *SettingsService) PersistEnvSettingsIfMissing(ctx context.Context) error
 	appCfg := config.Load()
 	isEnvOnlyMode := appCfg.AgentMode || appCfg.UIConfigurationDisabled
 
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	if err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		for field := range rt.Fields() {
 			if err := s.processEnvField(ctx, tx, field, isEnvOnlyMode); err != nil {
 				return err
@@ -889,7 +889,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 	const keyName = "encryptionKey"
 	var key string
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var sv models.SettingVariable
 		err := tx.Where("key = ?", keyName).First(&sv).Error
 

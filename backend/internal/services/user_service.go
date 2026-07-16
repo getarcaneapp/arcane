@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
@@ -143,7 +143,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 }
 
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
 			return fmt.Errorf("failed to create user: %w", err)
 		}
@@ -156,23 +156,23 @@ func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*model
 }
 
 func (s *UserService) GetUserByUsername(ctx context.Context, username string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "username = ?", username)
+	return s.db.First[models.User](ctx, ErrUserNotFound, "username = ?", username)
 }
 
 func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "id = ?", id)
+	return s.db.First[models.User](ctx, ErrUserNotFound, "id = ?", id)
 }
 
 func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "oidc_subject_id = ?", subjectId)
+	return s.db.First[models.User](ctx, ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
 
 func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
-	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "email = ?", email)
+	return s.db.First[models.User](ctx, ErrUserNotFound, "email = ?", email)
 }
 
 func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", user.ID).
@@ -202,7 +202,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 // This MUST be done inside a transaction to ensure the lock is held until the update is committed.
 func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID string, subject string, updateFn func(u *models.User)) (*models.User, error) {
 	var out *models.User
-	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var u models.User
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
@@ -254,7 +254,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// Either way the role assignment is reconciled below — idempotently — so
 	// upgrades from older builds that didn't grant the role get patched up.
 	var adminUserID string
-	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	err = s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
 			return fmt.Errorf("failed to count users: %w", err)
@@ -352,7 +352,7 @@ func (s *UserService) DeleteUser(ctx context.Context, id string) error {
 			}
 		}
 	}
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.
 			Clauses(clause.Locking{Strength: "UPDATE"}).
 			Where("id = ?", id).
@@ -384,7 +384,7 @@ func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password 
 		return fmt.Errorf("failed to create new hash: %w", err)
 	}
 
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", userID).
 			Update("password_hash", newHash).Error; err != nil {
@@ -423,11 +423,9 @@ func (s *UserService) ToUserResponseDto(ctx context.Context, u models.User) (use
 }
 
 func (s *UserService) toUserResponseDtosInternal(ctx context.Context, users []models.User) []user.User {
-	result := make([]user.User, len(users))
-	for i, u := range users {
-		result[i] = s.toUserResponseDtoInternal(ctx, u)
-	}
-	return result
+	return mapper.MapFunc(users, func(u models.User) user.User {
+		return s.toUserResponseDtoInternal(ctx, u)
+	})
 }
 
 // toUserResponseDtoInternal builds the public User DTO. RoleAssignments and
@@ -527,7 +525,7 @@ func (s *UserService) getUserInternal(ctx context.Context, userID string, tx *go
 
 // UploadAvatar stores avatar bytes for a user, replacing any existing avatar.
 func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []byte, mimeType string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		avatar := models.UserAvatar{
 			UserID:   userID,
 			Data:     data,
@@ -551,7 +549,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 
 // DeleteAvatar removes the avatar for a user.
 func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
-	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAvatar{}).Error; err != nil {
 			return fmt.Errorf("failed to delete avatar data: %w", err)
 		}

@@ -19,7 +19,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/event"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
@@ -84,7 +83,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 		},
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(event).Error; err != nil {
 			return fmt.Errorf("failed to create event: %w", err)
 		}
@@ -300,14 +299,9 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 	q = pagination.ApplyFilter(q, "environment_id", params.Filters["environmentId"])
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
+	eventDtos, paginationResp, err := pagination.PaginateSortAndMapDB[models.Event, event.Event](params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
-	}
-
-	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list events: %w", err)
 	}
 
 	return eventDtos, paginationResp, nil
@@ -330,21 +324,16 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
 	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 
-	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
+	eventDtos, paginationResp, err := pagination.PaginateSortAndMapDB[models.Event, event.Event](params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
-	}
-
-	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
-	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
+		return nil, pagination.Response{}, fmt.Errorf("failed to list events: %w", err)
 	}
 
 	return eventDtos, paginationResp, nil
 }
 
 func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		result := tx.Delete(&models.Event{}, "id = ?", eventID)
 		if result.Error != nil {
 			return fmt.Errorf("failed to delete event: %w", result.Error)
@@ -358,7 +347,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 
 func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Duration) error {
 	cutoff := time.Now().Add(-olderThan)
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		result := tx.Where("timestamp < ?", cutoff).Delete(&models.Event{})
 		if result.Error != nil {
 			return fmt.Errorf("failed to delete old events: %w", result.Error)

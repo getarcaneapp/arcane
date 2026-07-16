@@ -15,12 +15,12 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 	webhooktypes "github.com/getarcaneapp/arcane/types/v2/webhook"
 	libcrypto "go.getarcane.app/sys/crypto"
-	"gorm.io/gorm"
 )
 
 var (
@@ -208,8 +208,8 @@ func (s *WebhookService) CreateWebhook(ctx context.Context, name, targetType, ac
 		Enabled:       true,
 	}
 
-	if err := s.db.WithContext(ctx).Create(wh).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to create webhook: %w", err)
+	if err := s.db.Create(ctx, wh); err != nil {
+		return nil, "", err
 	}
 
 	if s.eventService != nil {
@@ -248,10 +248,8 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 		return nil, err
 	}
 
-	summaries := make([]webhooktypes.Summary, len(webhooks))
-	for i := range webhooks {
-		wh := webhooks[i]
-		summaries[i] = webhooktypes.Summary{
+	summaries := mapper.MapFunc(webhooks, func(wh models.Webhook) webhooktypes.Summary {
+		return webhooktypes.Summary{
 			ID:              wh.ID,
 			Name:            wh.Name,
 			TokenPrefix:     wh.TokenPrefix,
@@ -264,7 +262,7 @@ func (s *WebhookService) ListWebhookSummaries(ctx context.Context, environmentID
 			LastTriggeredAt: wh.LastTriggeredAt,
 			CreatedAt:       wh.CreatedAt,
 		}
-	}
+	})
 
 	return summaries, nil
 }
@@ -324,17 +322,7 @@ func (s *WebhookService) resolveWebhookTargetNameInternal(ctx context.Context, w
 
 // GetWebhookByID returns a single webhook by ID, scoped to an environment.
 func (s *WebhookService) GetWebhookByID(ctx context.Context, id, environmentID string) (*models.Webhook, error) {
-	var wh models.Webhook
-	err := s.db.WithContext(ctx).
-		Where("id = ? AND environment_id = ?", id, environmentID).
-		First(&wh).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrWebhookNotFound
-	}
-	if err != nil {
-		return nil, fmt.Errorf("failed to get webhook: %w", err)
-	}
-	return &wh, nil
+	return s.db.First[models.Webhook](ctx, ErrWebhookNotFound, "id = ? AND environment_id = ?", id, environmentID)
 }
 
 // DeleteWebhook removes a webhook by ID, scoped to an environment.
@@ -374,18 +362,12 @@ func (s *WebhookService) DeleteWebhook(ctx context.Context, id, environmentID st
 
 // UpdateWebhook updates the enabled state of a webhook, scoped to an environment.
 func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID string, enabled bool, actor models.User) (*models.Webhook, error) {
-	var wh models.Webhook
-	err := s.db.WithContext(ctx).
-		Where("id = ? AND environment_id = ?", id, environmentID).
-		First(&wh).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, ErrWebhookNotFound
-	}
+	wh, err := s.db.First[models.Webhook](ctx, ErrWebhookNotFound, "id = ? AND environment_id = ?", id, environmentID)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get webhook: %w", err)
+		return nil, err
 	}
 
-	if err := s.db.WithContext(ctx).Model(&wh).Update("enabled", enabled).Error; err != nil {
+	if err := s.db.WithContext(ctx).Model(wh).Update("enabled", enabled).Error; err != nil {
 		return nil, fmt.Errorf("failed to update webhook: %w", err)
 	}
 
@@ -404,7 +386,7 @@ func (s *WebhookService) UpdateWebhook(ctx context.Context, id, environmentID st
 		})
 	}
 
-	return &wh, nil
+	return wh, nil
 }
 
 // TriggerByToken looks up a webhook by its raw token and executes the configured action.
@@ -416,10 +398,8 @@ func (s *WebhookService) TriggerByToken(ctx context.Context, rawToken string) (*
 	}
 
 	// Narrow by prefix first (indexed), then verify hash
-	var candidates []models.Webhook
-	if err := s.db.WithContext(ctx).
-		Where("token_prefix = ?", prefix).
-		Find(&candidates).Error; err != nil {
+	candidates, err := s.db.ListWhere[models.Webhook](ctx, "token_prefix = ?", prefix)
+	if err != nil {
 		return nil, fmt.Errorf("failed to look up webhook: %w", err)
 	}
 

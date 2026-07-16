@@ -182,7 +182,7 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 			}
 		}()
 
-		go ForwardLogJSONBatched(ctx, hub, msgs, 50, 400*time.Millisecond)
+		go hub.ForwardLogJSONBatched(ctx, msgs, 50, 400*time.Millisecond)
 
 		ServeClientWithOnRemove(ctx, hub, conn, nil)
 	}))

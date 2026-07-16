@@ -239,11 +239,7 @@ func (s *NotificationService) DispatchNotification(ctx context.Context, accessTo
 }
 
 func (s *NotificationService) GetAllSettings(ctx context.Context) ([]models.NotificationSettings, error) {
-	var settings []models.NotificationSettings
-	if err := s.db.WithContext(ctx).Find(&settings).Error; err != nil {
-		return nil, fmt.Errorf("failed to get notification settings: %w", err)
-	}
-	return settings, nil
+	return s.db.ListWhere[models.NotificationSettings](ctx, "")
 }
 
 func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provider models.NotificationProvider) (*models.NotificationSettings, error) {
@@ -275,14 +271,14 @@ func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provid
 			Enabled:  enabled,
 			Config:   config,
 		}
-		if err := s.db.WithContext(ctx).Create(&setting).Error; err != nil {
-			return nil, fmt.Errorf("failed to create notification settings: %w", err)
+		if err := s.db.Create(ctx, &setting); err != nil {
+			return nil, err
 		}
 	} else {
 		setting.Enabled = enabled
 		setting.Config = config
-		if err := s.db.WithContext(ctx).Save(&setting).Error; err != nil {
-			return nil, fmt.Errorf("failed to update notification settings: %w", err)
+		if err := s.db.Save(ctx, &setting); err != nil {
+			return nil, err
 		}
 	}
 
@@ -377,10 +373,7 @@ func cloneNotificationConfigInternal(config models.JSON) models.JSON {
 }
 
 func (s *NotificationService) DeleteSettings(ctx context.Context, provider models.NotificationProvider) error {
-	if err := s.db.WithContext(ctx).Where("provider = ?", provider).Delete(&models.NotificationSettings{}).Error; err != nil {
-		return fmt.Errorf("failed to delete notification settings: %w", err)
-	}
-	return nil
+	return s.db.DeleteWhere[models.NotificationSettings](ctx, "provider = ?", provider)
 }
 
 // SendImageUpdateNotification dispatches a single-image update notification and

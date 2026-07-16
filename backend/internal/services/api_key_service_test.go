@@ -128,8 +128,8 @@ func TestListApiKeysPermissionQueryCountIsConstant(t *testing.T) {
 					Permission: authz.PermContainersList,
 				}
 			}
-			require.NoError(t, db.Create(&apiKeys).Error)
-			require.NoError(t, db.Create(&permissions).Error)
+			require.NoError(t, db.DB.Create(&apiKeys).Error)
+			require.NoError(t, db.DB.Create(&permissions).Error)
 
 			var queryCount atomic.Int64
 			require.NoError(t, db.Callback().Query().Before("gorm:query").Register("count_api_key_list_queries", func(*gorm.DB) {

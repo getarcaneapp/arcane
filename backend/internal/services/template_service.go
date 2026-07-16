@@ -251,7 +251,7 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 	}
 
 	result := pagination.SearchOrderAndPaginate(items, params, config)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := result.BuildResponse(params)
 
 	return result.Items, paginationResp, nil
 }
@@ -325,7 +325,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.C
 	template.IsCustom = true
 	template.IsRemote = false
 	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, derefString(template.EnvContent)))
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
 		}
@@ -334,7 +334,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.C
 }
 
 func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates *models.ComposeTemplate) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -362,7 +362,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 }
 
 func (s *TemplateService) DeleteTemplate(ctx context.Context, id string) error {
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -449,8 +449,7 @@ func (s *TemplateService) SaveEnvTemplate(content string) error {
 }
 
 func (s *TemplateService) GetRegistries(ctx context.Context) ([]models.TemplateRegistry, error) {
-	var registries []models.TemplateRegistry
-	err := s.db.WithContext(ctx).Find(&registries).Error
+	registries, err := s.db.ListWhere[models.TemplateRegistry](ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("failed to get registries: %w", err)
 	}
@@ -489,7 +488,7 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *models.T
 		registry.ID = uuid.NewString()
 	}
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		if err := tx.Create(registry).Error; err != nil {
 			return fmt.Errorf("failed to create registry: %w", err)
 		}
@@ -504,7 +503,7 @@ func (s *TemplateService) CreateRegistry(ctx context.Context, registry *models.T
 }
 
 func (s *TemplateService) UpdateRegistry(ctx context.Context, id string, updates *models.TemplateRegistry) error {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.TemplateRegistry
 		if err := tx.Where("id = ?", id).First(&existing).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -556,7 +555,7 @@ func (s *TemplateService) hydrateRegistryUpdates(ctx context.Context, updates, e
 }
 
 func (s *TemplateService) DeleteRegistry(ctx context.Context, id string) error {
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		result := tx.Where("id = ?", id).Delete(&models.TemplateRegistry{})
 		if result.Error != nil {
 			return result.Error
@@ -611,7 +610,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			defer mu.Unlock()
 			for _, template := range remoteTemplates {
 				template.Registry = cloneRegistry(&reg)
-				template.RegistryID = stringPtr(reg.ID)
+				template.RegistryID = utils.StringPtrFromTrimmed(reg.ID)
 				templates = append(templates, template)
 			}
 			return nil
@@ -736,15 +735,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 		EnvContent:  nil,
 		IsCustom:    false,
 		IsRemote:    true,
-		RegistryID:  stringPtr(registry.ID),
+		RegistryID:  utils.StringPtrFromTrimmed(registry.ID),
 		Registry:    cloneRegistry(registry),
 		Metadata: &models.ComposeTemplateMetadata{
-			Version:          stringPtr(remote.Version),
-			Author:           stringPtr(remote.Author),
+			Version:          utils.StringPtrFromTrimmed(remote.Version),
+			Author:           utils.StringPtrFromTrimmed(remote.Author),
 			Tags:             remote.Tags,
-			RemoteURL:        stringPtr(remote.ComposeURL),
-			EnvURL:           stringPtr(remote.EnvURL),
-			DocumentationURL: stringPtr(remote.DocumentationURL),
+			RemoteURL:        utils.StringPtrFromTrimmed(remote.ComposeURL),
+			EnvURL:           utils.StringPtrFromTrimmed(remote.EnvURL),
+			DocumentationURL: utils.StringPtrFromTrimmed(remote.DocumentationURL),
 		},
 	}
 }
@@ -871,7 +870,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 func (s *TemplateService) downloadTemplateTransaction(ctx context.Context, remoteTemplate *models.ComposeTemplate, base, composePath, envPath, srcDesc string) (*models.ComposeTemplate, error) {
 	var resultTemplate *models.ComposeTemplate
 
-	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	err := s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
 		if err := tx.
 			Where("is_remote = ? AND registry_id IS NULL AND (description = ? OR name = ?)", false, srcDesc, base).
@@ -956,13 +955,13 @@ func cloneTemplateMetadata(meta *models.ComposeTemplateMetadata) *models.Compose
 		return nil
 	}
 	return &models.ComposeTemplateMetadata{
-		Version:          stringPtr(derefString(meta.Version)),
-		Author:           stringPtr(derefString(meta.Author)),
+		Version:          utils.StringPtrFromTrimmed(derefString(meta.Version)),
+		Author:           utils.StringPtrFromTrimmed(derefString(meta.Author)),
 		Tags:             append([]string(nil), meta.Tags...),
-		RemoteURL:        stringPtr(derefString(meta.RemoteURL)),
-		EnvURL:           stringPtr(derefString(meta.EnvURL)),
-		DocumentationURL: stringPtr(derefString(meta.DocumentationURL)),
-		IconURL:          stringPtr(derefString(meta.IconURL)),
+		RemoteURL:        utils.StringPtrFromTrimmed(derefString(meta.RemoteURL)),
+		EnvURL:           utils.StringPtrFromTrimmed(derefString(meta.EnvURL)),
+		DocumentationURL: utils.StringPtrFromTrimmed(derefString(meta.DocumentationURL)),
+		IconURL:          utils.StringPtrFromTrimmed(derefString(meta.IconURL)),
 	}
 }
 
@@ -974,7 +973,7 @@ func cloneRemoteTemplates(items []models.ComposeTemplate) []models.ComposeTempla
 	cloned := make([]models.ComposeTemplate, len(items))
 	for i := range items {
 		cloned[i] = items[i]
-		cloned[i].RegistryID = stringPtr(derefString(items[i].RegistryID))
+		cloned[i].RegistryID = utils.StringPtrFromTrimmed(derefString(items[i].RegistryID))
 		cloned[i].Registry = cloneRegistry(items[i].Registry)
 		cloned[i].Metadata = cloneTemplateMetadata(items[i].Metadata)
 	}
@@ -1006,7 +1005,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, desc, compose string, envPtr *string) error {
 	iconURL := s.resolveTemplateIconURL(ctx, compose, derefString(envPtr))
 
-	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+	return s.db.WithTx(ctx, func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
 		// Match on description (which encodes the absolute compose path) OR name (folder name).
 		// Matching on name as a fallback keeps a single row across templates-directory
@@ -1319,20 +1318,12 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 		getFirstString(arcaneBlockMap[templateArcaneIconsAliasKey]),
 	)
 
-	return stringPtr(icon)
+	return utils.StringPtrFromTrimmed(icon)
 }
 
 func getFirstString(value any) string {
 	values := utils.Collect(value, utils.ToString)
 	return utils.FirstNonEmpty(values...)
-}
-
-func stringPtr(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
 }
 
 func derefString(value *string) string {

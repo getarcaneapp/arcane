@@ -1,43 +1,30 @@
 package utils
 
-// UpdateIfChanged updates the target value if it differs from the new value.
+// UpdateIfChanged sets *target to value when they differ.
 // It returns true if an update occurred.
-// Supported types: *string, *bool, **string.
-// For *string and *bool targets, if the value is a pointer of the same type,
-// the update only happens if the value pointer is not nil.
-func UpdateIfChanged(target any, value any) bool {
-	switch t := target.(type) {
-	case *string:
-		if v, ok := value.(string); ok {
-			if *t != v {
-				*t = v
-				return true
-			}
-		} else if v, ok := value.(*string); ok && v != nil {
-			if *t != *v {
-				*t = *v
-				return true
-			}
-		}
-	case *bool:
-		if v, ok := value.(bool); ok {
-			if *t != v {
-				*t = v
-				return true
-			}
-		} else if v, ok := value.(*bool); ok && v != nil {
-			if *t != *v {
-				*t = *v
-				return true
-			}
-		}
-	case **string:
-		if v, ok := value.(*string); ok {
-			if (*t == nil && v != nil) || (*t != nil && v == nil) || (*t != nil && v != nil && **t != *v) {
-				*t = v
-				return true
-			}
-		}
+func UpdateIfChanged[T comparable](target *T, value T) bool {
+	if *target == value {
+		return false
 	}
-	return false
+	*target = value
+	return true
+}
+
+// UpdateIfChangedPtr sets *target to *value when value is non-nil and differs.
+// It returns true if an update occurred.
+func UpdateIfChangedPtr[T comparable](target *T, value *T) bool {
+	if value == nil {
+		return false
+	}
+	return UpdateIfChanged(target, *value)
+}
+
+// UpdatePtrIfChanged replaces the pointer field *target with value when the two
+// differ by pointee (nil-ness or value). It returns true if an update occurred.
+func UpdatePtrIfChanged[T comparable](target **T, value *T) bool {
+	if PtrEqual(*target, value) {
+		return false
+	}
+	*target = value
+	return true
 }

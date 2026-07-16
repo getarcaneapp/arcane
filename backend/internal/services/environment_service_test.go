@@ -129,7 +129,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 
 	createTestEnvironment(t, db, "env-delete-gitops", "http://env.example", nil)
 	syncID := "sync-delete-env"
-	require.NoError(t, db.Create(&models.GitOpsSync{
+	require.NoError(t, db.DB.Create(&models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: syncID},
 		Name:          "delete-env-sync",
 		EnvironmentID: "env-delete-gitops",
@@ -138,7 +138,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 		ProjectName:   "demo",
 		SyncInterval:  15,
 	}).Error)
-	require.NoError(t, db.Create(&models.Project{
+	require.NoError(t, db.DB.Create(&models.Project{
 		BaseModel:       models.BaseModel{ID: "project-managed-by-deleted-env"},
 		Name:            "demo",
 		Path:            "/tmp/demo",
@@ -157,7 +157,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 	require.Zero(t, syncCount)
 
 	var project models.Project
-	require.NoError(t, db.First(&project, "id = ?", "project-managed-by-deleted-env").Error)
+	require.NoError(t, db.DB.First(&project, "id = ?", "project-managed-by-deleted-env").Error)
 	require.Nil(t, project.GitOpsManagedBy)
 	require.Contains(t, scheduler.removed, gitOpsSyncJobNameInternal(syncID))
 }

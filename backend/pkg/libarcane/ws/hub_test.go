@@ -337,11 +337,9 @@ func TestHub_BroadcastOverloadAggregatesDropWarning(t *testing.T) {
 	const dropCount = 1000
 	var wg sync.WaitGroup
 	for range dropCount {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
+		wg.Go(func() {
 			h.Broadcast([]byte("overload"))
-		}()
+		})
 	}
 	wg.Wait()
 

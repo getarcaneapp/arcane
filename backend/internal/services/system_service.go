@@ -516,7 +516,7 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 
 	// Batch delete update records
 	if len(idsToDelete) > 0 && s.db != nil {
-		if err := s.db.WithContext(ctx).Where("id IN ?", idsToDelete).Delete(&models.ImageUpdateRecord{}).Error; err != nil {
+		if err := s.db.DeleteWhere[models.ImageUpdateRecord](ctx, "id IN ?", idsToDelete); err != nil {
 			slog.WarnContext(ctx, "Failed to delete image update records", "count", len(idsToDelete), "error", err.Error())
 		}
 	}
