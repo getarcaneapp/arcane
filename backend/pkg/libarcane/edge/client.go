@@ -1080,17 +1080,17 @@ type responseRecorder struct {
 }
 
 type commandResponseRecorder struct {
-	commandID   string
-	commandName string
 	conn        TunnelConnection
 	headers     http.Header
-	statusCode  int
+	commandID   string
+	commandName string
 	buffer      bytes.Buffer
+	statusCode  int
+	sequence    int64
+	mu          sync.Mutex
 	wroteHeader bool
 	streaming   bool
-	sequence    int64
 	closed      bool
-	mu          sync.Mutex
 }
 
 func newCommandResponseRecorderInternal(commandID, commandName string, conn TunnelConnection) *commandResponseRecorder {

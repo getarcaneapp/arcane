@@ -45,16 +45,16 @@ const (
 
 // StackDeployOptions controls how a swarm stack is deployed.
 type StackDeployOptions struct {
+	RegistryAuthForImage func(context.Context, string) (string, error)
+	PathMapper           *projects.PathMapper
 	Name                 string
 	ComposeContent       string
 	OverrideContent      string
 	EnvContent           string
-	WithRegistryAuth     bool
-	RegistryAuthForImage func(context.Context, string) (string, error)
-	Prune                bool
 	ResolveImage         string
 	WorkingDir           string
-	PathMapper           *projects.PathMapper
+	WithRegistryAuth     bool
+	Prune                bool
 }
 
 type StackRenderOptions struct {

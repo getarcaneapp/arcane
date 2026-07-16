@@ -63,31 +63,31 @@ const (
 
 // TunnelMessage represents a transport-agnostic edge tunnel message.
 type TunnelMessage struct {
+	Headers       map[string]string `json:"headers,omitempty"`         // HTTP headers
+	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
+	Metadata      map[string]string `json:"metadata,omitempty"`        // Correlation and audit metadata
 	ID            string            `json:"id"`                        // Unique request/stream ID
 	Type          TunnelMessageType `json:"type"`                      // Message type
 	Method        string            `json:"method,omitempty"`          // HTTP method for requests
 	Path          string            `json:"path,omitempty"`            // Request path
 	Query         string            `json:"query,omitempty"`           // Query string
-	Headers       map[string]string `json:"headers,omitempty"`         // HTTP headers
-	Body          []byte            `json:"body,omitempty"`            // Request/response body
-	WSMessageType int               `json:"ws_message_type,omitempty"` // WebSocket message type
-	Status        int               `json:"status,omitempty"`          // HTTP status for responses
-	Accepted      bool              `json:"accepted,omitempty"`        // Registration accepted
 	AgentToken    string            `json:"agent_token,omitempty"`     // Register request token
 	EnvironmentID string            `json:"environment_id,omitempty"`  // Manager-resolved environment ID
 	Error         string            `json:"error,omitempty"`           // Error field for register response
-	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
 	Command       string            `json:"command,omitempty"`         // Typed command name
 	SessionID     string            `json:"session_id,omitempty"`      // Manager-issued session identifier
 	ResumeSession string            `json:"resume_session,omitempty"`  // Previous session being resumed
 	AgentInstance string            `json:"agent_instance,omitempty"`  // Stable agent runtime identity
-	Capabilities  []string          `json:"capabilities,omitempty"`    // Agent advertised capabilities
 	SecurityMode  string            `json:"security_mode,omitempty"`   // token, mtls, etc.
-	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
+	Body          []byte            `json:"body,omitempty"`            // Request/response body
+	Capabilities  []string          `json:"capabilities,omitempty"`    // Agent advertised capabilities
+	WSMessageType int               `json:"ws_message_type,omitempty"` // WebSocket message type
+	Status        int               `json:"status,omitempty"`          // HTTP status for responses
 	TimeoutMillis int64             `json:"timeout_millis,omitempty"`  // Command timeout
 	Sequence      int64             `json:"sequence,omitempty"`        // Chunk sequence number
+	Accepted      bool              `json:"accepted,omitempty"`        // Registration accepted
+	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
 	Streaming     bool              `json:"streaming,omitempty"`       // Response used chunked output
-	Metadata      map[string]string `json:"metadata,omitempty"`        // Correlation and audit metadata
 	EOF           bool              `json:"eof,omitempty"`             // Final chunk indicator
 }
 

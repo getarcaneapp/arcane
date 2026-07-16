@@ -131,37 +131,13 @@ type Inspect struct {
 	// Required: true
 	Created time.Time `json:"created"`
 
-	// EnableIPv4 represents whether IPv4 is enabled.
-	EnableIPv4 bool `json:"enableIPv4"`
-
-	// EnableIPv6 represents whether IPv6 is enabled.
-	EnableIPv6 bool `json:"enableIPv6"`
-
 	// IPAM contains IP address management configuration.
 	//
 	// Required: true
 	IPAM IPAM `json:"ipam"`
 
-	// Internal indicates if the network is internal.
-	//
-	// Required: true
-	Internal bool `json:"internal"`
-
-	// Attachable indicates if the network is attachable.
-	//
-	// Required: true
-	Attachable bool `json:"attachable"`
-
-	// Ingress indicates if the network is an ingress network.
-	//
-	// Required: true
-	Ingress bool `json:"ingress"`
-
 	// ConfigFrom specifies the source which will provide the configuration for this network.
 	ConfigFrom network.ConfigReference `json:"configFrom"`
-
-	// ConfigOnly networks are place-holder networks.
-	ConfigOnly bool `json:"configOnly"`
 
 	// Containers is a map of containers connected to this network.
 	//
@@ -188,6 +164,30 @@ type Inspect struct {
 	//
 	// Required: true
 	ContainersList []ContainerEndpoint `json:"containersList"`
+
+	// EnableIPv4 represents whether IPv4 is enabled.
+	EnableIPv4 bool `json:"enableIPv4"`
+
+	// EnableIPv6 represents whether IPv6 is enabled.
+	EnableIPv6 bool `json:"enableIPv6"`
+
+	// Internal indicates if the network is internal.
+	//
+	// Required: true
+	Internal bool `json:"internal"`
+
+	// Attachable indicates if the network is attachable.
+	//
+	// Required: true
+	Attachable bool `json:"attachable"`
+
+	// Ingress indicates if the network is an ingress network.
+	//
+	// Required: true
+	Ingress bool `json:"ingress"`
+
+	// ConfigOnly networks are place-holder networks.
+	ConfigOnly bool `json:"configOnly"`
 }
 
 type CreateResponse struct {
@@ -237,6 +237,15 @@ type IPAM struct {
 
 // CreateOptions contains options for creating a network.
 type CreateOptions struct {
+	// IPAM configuration for the network.
+	IPAM *IPAM `json:"ipam,omitempty" doc:"IP Address Management configuration"`
+
+	// Options are driver-specific options.
+	Options map[string]string `json:"options,omitempty" doc:"Driver-specific options"`
+
+	// Labels are user-defined metadata.
+	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
+
 	// Driver is the network driver to use (e.g., bridge, overlay).
 	Driver string `json:"driver,omitempty" doc:"Network driver (e.g., bridge, overlay)"`
 
@@ -252,17 +261,8 @@ type CreateOptions struct {
 	// Ingress enables routing-mesh for swarm cluster.
 	Ingress bool `json:"ingress,omitempty" doc:"Enable routing-mesh for swarm cluster"`
 
-	// IPAM configuration for the network.
-	IPAM *IPAM `json:"ipam,omitempty" doc:"IP Address Management configuration"`
-
 	// EnableIPv6 enables IPv6 networking.
 	EnableIPv6 bool `json:"enableIPv6,omitempty" doc:"Enable IPv6 networking"`
-
-	// Options are driver-specific options.
-	Options map[string]string `json:"options,omitempty" doc:"Driver-specific options"`
-
-	// Labels are user-defined metadata.
-	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
 }
 
 // ToDockerCreateOptions converts to Docker SDK CreateOptions.

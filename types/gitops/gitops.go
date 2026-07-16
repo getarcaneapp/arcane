@@ -57,10 +57,109 @@ type GitRepository struct {
 
 // GitOpsSync represents a GitOps sync configuration.
 type GitOpsSync struct {
-	// ID of the gitops sync.
+
+	// CreatedAt is the date and time at which the sync was created.
 	//
 	// Required: true
-	ID string `json:"id"`
+	CreatedAt time.Time `json:"createdAt"`
+
+	// UpdatedAt is the date and time at which the sync was last updated.
+	//
+	// Required: true
+	UpdatedAt time.Time `json:"updatedAt"`
+
+	// PreDeployEnv is the KEY=VALUE env config exposed to the script, one
+	// entry per line; same format as a .env file.
+	//
+	// Required: false
+	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
+
+	// PreDeployLastRunOutput is the truncated combined stdout+stderr from
+	// the most recent pre-deploy lifecycle hook run.
+	//
+	// Required: false
+	PreDeployLastRunOutput *string `json:"preDeployLastRunOutput,omitempty"`
+
+	// Repository is the associated git repository.
+	//
+	// Required: false
+	Repository *GitRepository `json:"repository,omitempty"`
+
+	// PreDeployLastRunStatus is the status of the most recent pre-deploy
+	// lifecycle hook run: "success", "failed", or "timeout".
+	//
+	// Required: false
+	PreDeployLastRunStatus *string `json:"preDeployLastRunStatus,omitempty"`
+
+	// PreDeployLastRunAt is the timestamp of the most recent pre-deploy
+	// lifecycle hook run on this sync.
+	//
+	// Required: false
+	PreDeployLastRunAt *time.Time `json:"preDeployLastRunAt,omitempty"`
+
+	// PreDeployExtraMounts is the bind-mount config added to the runner
+	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
+	//
+	// Required: false
+	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
+
+	// LastSyncAt is the date and time of the last successful sync.
+	//
+	// Required: false
+	LastSyncAt *time.Time `json:"lastSyncAt,omitempty"`
+
+	// ProjectID is the ID of the linked project (set after first sync).
+	//
+	// Required: false
+	ProjectID *string `json:"projectId,omitempty"`
+
+	// PreDeployRunnerImage is the image used to run the pre-deploy script.
+	// Required whenever PreDeployScriptPath is set.
+	//
+	// Required: false
+	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
+
+	// PreDeployScriptPath is the optional path inside the synced repo to a
+	// script executed in a throwaway container before each deploy. Scripts
+	// are repo-trusted code; the configured runner image, env, and mounts
+	// shape the runtime context (admin-managed, never from repo data).
+	//
+	// Required: false
+	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
+
+	// LastSyncCommit is the commit hash from the last successful sync.
+	//
+	// Required: false
+	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
+	// SyncedFiles is a JSON-encoded list of file paths that were synced in the last successful sync.
+	// Only populated when SyncDirectory is true. Parse as JSON array of strings.
+	//
+	// Required: false
+	SyncedFiles *string `json:"syncedFiles,omitempty"`
+
+	// LastSyncError is the error message from the last sync attempt if it failed.
+	//
+	// Required: false
+	LastSyncError *string `json:"lastSyncError,omitempty"`
+
+	// LastSyncStatus is the status of the last sync attempt.
+	//
+	// Required: false
+	LastSyncStatus *string `json:"lastSyncStatus,omitempty"`
+
+	// ProjectName is the name used to create/identify the project or stack.
+	//
+	// Required: true
+	ProjectName string `json:"projectName"`
+
+	// PreDeployNetworkMode is the Docker network mode passed to the runner
+	// container. Defaults to "none" so scripts run with no network access
+	// unless explicitly opted in. Set to "bridge", "host", or a named
+	// network when the script needs outbound or compose-network access.
+	//
+	// Required: true
+	PreDeployNetworkMode string `json:"preDeployNetworkMode"`
 
 	// Name of the sync configuration.
 	//
@@ -77,11 +176,6 @@ type GitOpsSync struct {
 	// Required: true
 	RepositoryID string `json:"repositoryId"`
 
-	// Repository is the associated git repository.
-	//
-	// Required: false
-	Repository *GitRepository `json:"repository,omitempty"`
-
 	// Branch to sync from.
 	//
 	// Required: true
@@ -91,44 +185,32 @@ type GitOpsSync struct {
 	//
 	// Required: true
 	ComposePath string `json:"composePath"`
+	// ID of the gitops sync.
+	//
+	// Required: true
+	ID string `json:"id"`
 
 	// TargetType indicates what entity is being deployed (e.g. "project" or "swarm_stack").
 	//
 	// Required: true
 	TargetType string `json:"targetType"`
 
-	// ProjectName is the name used to create/identify the project or stack.
+	// PreDeployTimeoutSec bounds the script execution. Capped by the
+	// lifecycleMaxTimeoutSec global setting at run time.
 	//
 	// Required: true
-	ProjectName string `json:"projectName"`
+	PreDeployTimeoutSec int `json:"preDeployTimeoutSec"`
 
-	// ProjectID is the ID of the linked project (set after first sync).
-	//
-	// Required: false
-	ProjectID *string `json:"projectId,omitempty"`
-
-	// AutoSync indicates if the sync should run automatically.
+	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
+	// 0 means unlimited; env var overrides take precedence.
 	//
 	// Required: true
-	AutoSync bool `json:"autoSync"`
+	MaxSyncBinarySize int64 `json:"maxSyncBinarySize"`
 
 	// SyncInterval is the interval in minutes between automatic syncs.
 	//
 	// Required: true
 	SyncInterval int `json:"syncInterval"`
-
-	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
-	// When true, all files in the compose file's directory (and subdirectories) are synced.
-	// When false, only the compose file itself is synced.
-	//
-	// Required: true
-	SyncDirectory bool `json:"syncDirectory"`
-
-	// SyncedFiles is a JSON-encoded list of file paths that were synced in the last successful sync.
-	// Only populated when SyncDirectory is true. Parse as JSON array of strings.
-	//
-	// Required: false
-	SyncedFiles *string `json:"syncedFiles,omitempty"`
 
 	// MaxSyncFiles is the maximum number of files to sync.
 	// 0 means unlimited; env var overrides take precedence.
@@ -142,99 +224,17 @@ type GitOpsSync struct {
 	// Required: true
 	MaxSyncTotalSize int64 `json:"maxSyncTotalSize"`
 
-	// MaxSyncBinarySize is the maximum size in bytes for individual binary files.
-	// 0 means unlimited; env var overrides take precedence.
+	// AutoSync indicates if the sync should run automatically.
 	//
 	// Required: true
-	MaxSyncBinarySize int64 `json:"maxSyncBinarySize"`
+	AutoSync bool `json:"autoSync"`
 
-	// LastSyncAt is the date and time of the last successful sync.
-	//
-	// Required: false
-	LastSyncAt *time.Time `json:"lastSyncAt,omitempty"`
-
-	// LastSyncStatus is the status of the last sync attempt.
-	//
-	// Required: false
-	LastSyncStatus *string `json:"lastSyncStatus,omitempty"`
-
-	// LastSyncError is the error message from the last sync attempt if it failed.
-	//
-	// Required: false
-	LastSyncError *string `json:"lastSyncError,omitempty"`
-
-	// LastSyncCommit is the commit hash from the last successful sync.
-	//
-	// Required: false
-	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
-
-	// PreDeployScriptPath is the optional path inside the synced repo to a
-	// script executed in a throwaway container before each deploy. Scripts
-	// are repo-trusted code; the configured runner image, env, and mounts
-	// shape the runtime context (admin-managed, never from repo data).
-	//
-	// Required: false
-	PreDeployScriptPath *string `json:"preDeployScriptPath,omitempty"`
-
-	// PreDeployRunnerImage is the image used to run the pre-deploy script.
-	// Required whenever PreDeployScriptPath is set.
-	//
-	// Required: false
-	PreDeployRunnerImage *string `json:"preDeployRunnerImage,omitempty"`
-
-	// PreDeployEnv is the KEY=VALUE env config exposed to the script, one
-	// entry per line; same format as a .env file.
-	//
-	// Required: false
-	PreDeployEnv *string `json:"preDeployEnv,omitempty"`
-
-	// PreDeployExtraMounts is the bind-mount config added to the runner
-	// container, one entry per line in docker -v "src:tgt[:ro|:rw]" form.
-	//
-	// Required: false
-	PreDeployExtraMounts *string `json:"preDeployExtraMounts,omitempty"`
-
-	// PreDeployTimeoutSec bounds the script execution. Capped by the
-	// lifecycleMaxTimeoutSec global setting at run time.
+	// SyncDirectory indicates if the entire directory containing the compose file should be synced.
+	// When true, all files in the compose file's directory (and subdirectories) are synced.
+	// When false, only the compose file itself is synced.
 	//
 	// Required: true
-	PreDeployTimeoutSec int `json:"preDeployTimeoutSec"`
-
-	// PreDeployNetworkMode is the Docker network mode passed to the runner
-	// container. Defaults to "none" so scripts run with no network access
-	// unless explicitly opted in. Set to "bridge", "host", or a named
-	// network when the script needs outbound or compose-network access.
-	//
-	// Required: true
-	PreDeployNetworkMode string `json:"preDeployNetworkMode"`
-
-	// PreDeployLastRunAt is the timestamp of the most recent pre-deploy
-	// lifecycle hook run on this sync.
-	//
-	// Required: false
-	PreDeployLastRunAt *time.Time `json:"preDeployLastRunAt,omitempty"`
-
-	// PreDeployLastRunStatus is the status of the most recent pre-deploy
-	// lifecycle hook run: "success", "failed", or "timeout".
-	//
-	// Required: false
-	PreDeployLastRunStatus *string `json:"preDeployLastRunStatus,omitempty"`
-
-	// PreDeployLastRunOutput is the truncated combined stdout+stderr from
-	// the most recent pre-deploy lifecycle hook run.
-	//
-	// Required: false
-	PreDeployLastRunOutput *string `json:"preDeployLastRunOutput,omitempty"`
-
-	// CreatedAt is the date and time at which the sync was created.
-	//
-	// Required: true
-	CreatedAt time.Time `json:"createdAt"`
-
-	// UpdatedAt is the date and time at which the sync was last updated.
-	//
-	// Required: true
-	UpdatedAt time.Time `json:"updatedAt"`
+	SyncDirectory bool `json:"syncDirectory"`
 }
 
 // SyncCounts contains counts of syncs by status within the current filtered set.

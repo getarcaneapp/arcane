@@ -159,8 +159,8 @@ type GetSwarmNodeAgentDeploymentOutput struct {
 }
 
 type ReconcileSwarmNodeAgentsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.NodeAgentReconcileRequest
+	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type ReconcileSwarmNodeAgentsOutput struct {

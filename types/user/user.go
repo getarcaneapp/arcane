@@ -42,20 +42,20 @@ type RoleAssignmentSummary struct {
 
 // User represents a user in API responses.
 type User struct {
-	ID                     string                  `json:"id" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
-	Username               string                  `json:"username" doc:"Username of the user" example:"johndoe"`
+	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 	DisplayName            *string                 `json:"displayName,omitempty" doc:"Display name of the user" example:"John Doe"`
 	Email                  *string                 `json:"email,omitempty" doc:"Email address of the user" example:"john@example.com"`
 	AvatarURL              *string                 `json:"avatarUrl,omitempty" doc:"URL to the user's custom avatar image; omitted when using the default profile picture"`
-	RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" doc:"Role assignments held by the user"`
-	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" doc:"Permissions the user effectively holds, keyed by environment ID. The 'global' key holds permissions that apply across every environment (and to org-level endpoints)."`
-	IsGlobalAdmin          bool                    `json:"isGlobalAdmin" doc:"Whether the user effectively holds global administrator access"`
-	CanDelete              bool                    `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	OidcSubjectId          *string                 `json:"oidcSubjectId,omitempty" doc:"OIDC subject identifier for SSO users"`
 	Locale                 *string                 `json:"locale,omitempty" doc:"Locale preference of the user" example:"en-US"`
+	PermissionsByEnv       map[string][]string     `json:"permissionsByEnv" doc:"Permissions the user effectively holds, keyed by environment ID. The 'global' key holds permissions that apply across every environment (and to org-level endpoints)."`
+	ID                     string                  `json:"id" doc:"Unique identifier of the user" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Username               string                  `json:"username" doc:"Username of the user" example:"johndoe"`
 	TimeFormat             TimeFormat              `json:"timeFormat" enum:"auto,12h,24h" doc:"Preferred time display format" example:"auto"`
-	FontSize               *int                    `json:"fontSize,omitempty" minimum:"12" maximum:"20" doc:"Preferred root UI font size in px" example:"14"`
 	CreatedAt              string                  `json:"createdAt,omitempty" doc:"Date and time when the user was created"`
 	UpdatedAt              string                  `json:"updatedAt,omitempty" doc:"Date and time when the user was last updated"`
+	RoleAssignments        []RoleAssignmentSummary `json:"roleAssignments" doc:"Role assignments held by the user"`
+	IsGlobalAdmin          bool                    `json:"isGlobalAdmin" doc:"Whether the user effectively holds global administrator access"`
+	CanDelete              bool                    `json:"canDelete" doc:"Whether the user can currently be deleted"`
 	RequiresPasswordChange bool                    `json:"requiresPasswordChange" doc:"Whether the user must change their password"`
 }

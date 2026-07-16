@@ -193,20 +193,20 @@ type ServiceNetworkConfigDetail struct {
 
 // ServiceNetworkDetail holds enriched network information for a service's attached network.
 type ServiceNetworkDetail struct {
+	Options       map[string]string           `json:"options,omitempty"`
+	ConfigNetwork *ServiceNetworkConfigDetail `json:"configNetwork,omitempty"`
 	ID            string                      `json:"id"`
 	Name          string                      `json:"name"`
 	Driver        string                      `json:"driver"`
 	Scope         string                      `json:"scope"`
+	ConfigFrom    string                      `json:"configFrom,omitempty"`
+	IPAMConfigs   []ServiceNetworkIPAMConfig  `json:"ipamConfigs,omitempty"`
 	Internal      bool                        `json:"internal"`
 	Attachable    bool                        `json:"attachable"`
 	Ingress       bool                        `json:"ingress"`
 	EnableIPv4    bool                        `json:"enableIPv4"`
 	EnableIPv6    bool                        `json:"enableIPv6"`
-	ConfigFrom    string                      `json:"configFrom,omitempty"`
 	ConfigOnly    bool                        `json:"configOnly"`
-	Options       map[string]string           `json:"options,omitempty"`
-	IPAMConfigs   []ServiceNetworkIPAMConfig  `json:"ipamConfigs,omitempty"`
-	ConfigNetwork *ServiceNetworkConfigDetail `json:"configNetwork,omitempty"`
 }
 
 type ServiceCreateRequest struct {

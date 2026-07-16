@@ -43,10 +43,10 @@ type ProjectEnvState struct {
 	EditableContent  string
 	EffectiveContent string
 	DirectContent    string
-	HasEffective     bool
 	GitContent       string
-	HasGitSource     bool
 	OverrideContent  string
+	HasEffective     bool
+	HasGitSource     bool
 	HasOverride      bool
 	// The *Unreadable fields report a file that exists on disk but could not be
 	// read because of a permission error (e.g. a chmod 000 or foreign-owned

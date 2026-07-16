@@ -42,11 +42,6 @@ type Info struct {
 	// Required: true
 	SvelteKitVersion string `json:"svelteKitVersion"`
 
-	// EnabledFeatures is the list of build-time feature flags compiled into the binary.
-	//
-	// Required: false
-	EnabledFeatures []string `json:"enabledFeatures,omitempty"`
-
 	// BuildTime is the timestamp when the application was built.
 	//
 	// Required: false
@@ -57,11 +52,6 @@ type Info struct {
 	// Required: true
 	DisplayVersion string `json:"displayVersion"`
 
-	// IsSemverVersion indicates if the current version follows semantic versioning.
-	//
-	// Required: true
-	IsSemverVersion bool `json:"isSemverVersion"`
-
 	// NewestVersion is the newest available version string.
 	//
 	// Required: false
@@ -71,11 +61,6 @@ type Info struct {
 	//
 	// Required: false
 	NewestDigest string `json:"newestDigest,omitempty"`
-
-	// UpdateAvailable indicates if an update is available.
-	//
-	// Required: true
-	UpdateAvailable bool `json:"updateAvailable"`
 
 	// ReleaseURL is the URL to the release page.
 	//
@@ -91,6 +76,21 @@ type Info struct {
 	//
 	// Required: false
 	ReleasedAt string `json:"releasedAt,omitempty"`
+
+	// EnabledFeatures is the list of build-time feature flags compiled into the binary.
+	//
+	// Required: false
+	EnabledFeatures []string `json:"enabledFeatures,omitempty"`
+
+	// IsSemverVersion indicates if the current version follows semantic versioning.
+	//
+	// Required: true
+	IsSemverVersion bool `json:"isSemverVersion"`
+
+	// UpdateAvailable indicates if an update is available.
+	//
+	// Required: true
+	UpdateAvailable bool `json:"updateAvailable"`
 }
 
 // Check contains simplified version check information.

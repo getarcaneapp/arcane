@@ -67,15 +67,15 @@ type SettingOverrideEntry struct {
 	Description  string `json:"description,omitempty"`
 	DefaultValue string `json:"defaultValue,omitempty"`
 	Type         string `json:"type"`
-	Sensitive    bool   `json:"sensitive"`
-	Deprecated   bool   `json:"deprecated"`
 	Category     string `json:"category,omitempty"`
-	Public       bool   `json:"public"`
 	Requires     string `json:"requires,omitempty"`
 	Note         string `json:"note,omitempty"`
 	Source       string `json:"source"`
 	SourceFile   string `json:"sourceFile"`
 	SourceSymbol string `json:"sourceSymbol"`
+	Sensitive    bool   `json:"sensitive"`
+	Deprecated   bool   `json:"deprecated"`
+	Public       bool   `json:"public"`
 }
 
 type envFieldOptions struct {

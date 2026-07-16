@@ -253,11 +253,11 @@ func NewWebSocketHandler(
 
 // logStreamParams holds the standard query parameters shared by every WS log endpoint.
 type logStreamParams struct {
-	follow     bool
 	tail       string
 	since      string
-	timestamps bool
 	format     string
+	follow     bool
+	timestamps bool
 	batched    bool
 }
 
