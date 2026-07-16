@@ -12,7 +12,7 @@
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { PermissionsManifest, User } from '$lib/types/auth';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { registerNavigationVisibilityController } from '$lib/utils/navigation';
+	import { matchesNavigationPath, registerNavigationVisibilityController } from '$lib/utils/navigation';
 
 	let {
 		navigationSettings,
@@ -190,14 +190,14 @@
 <nav bind:this={navElement} class={navClasses} data-testid={testId} aria-label={ariaLabel}>
 	<!-- Left side items -->
 	{#each leftItems as item (item.url)}
-		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />
+		<MobileNavItem {item} {showLabels} active={matchesNavigationPath(currentPath, item)} />
 	{/each}
 
 	<!-- Center action button -->
 	<MobileNavMenuButton {showLabels} onclick={() => (menuOpen = true)} />
 
 	{#each rightItems as item (item.url)}
-		<MobileNavItem {item} {showLabels} active={currentPath === item.url || currentPath.startsWith(item.url + '/')} />
+		<MobileNavItem {item} {showLabels} active={matchesNavigationPath(currentPath, item)} />
 	{/each}
 
 	{#if pinnedItems.length === 0}

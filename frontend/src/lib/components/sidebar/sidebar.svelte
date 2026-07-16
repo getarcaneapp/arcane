@@ -123,7 +123,7 @@
 			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		{/if}
 		{#if resourceItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_resources()} items={resourceItems} />
+			<SidebarItemGroup label={m.sidebar_infrastructure()} items={resourceItems} />
 		{/if}
 		{#if swarmItems.length > 0}
 			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />

@@ -42,10 +42,12 @@ const PROTECTED_PREFIXES = [
 	'/images',
 	'/volumes',
 	'/networks',
+	'/operations',
 	'/ports',
 	'/settings',
 	'/swarm',
-	'/updates'
+	'/updates',
+	'/workloads'
 ];
 
 const UNAUTHENTICATED_ONLY_PREFIXES = ['/login', '/oidc/login', '/oidc/callback', '/auth/oidc/callback', '/img', '/favicon.ico'];

@@ -152,7 +152,7 @@ test('grouped containers do not split the same project across pages', async ({ p
 		});
 	});
 
-	await page.goto('/containers');
+	await page.goto('/workloads/containers');
 	await page.waitForLoadState('load');
 
 	await page.setViewportSize({ width: 1440, height: 900 });

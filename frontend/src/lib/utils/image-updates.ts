@@ -4,11 +4,11 @@ import { formatDateTimeShort } from '$lib/utils/formatting';
 export function formatImageUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
 	if (!updateInfo) return '-';
 
-	const digest = mode === 'current' ? updateInfo.currentDigest : updateInfo.latestDigest;
-	if (digest?.trim()) return digest.trim();
-
 	const version = mode === 'current' ? updateInfo.currentVersion : updateInfo.latestVersion;
 	if (version?.trim()) return version.trim();
+
+	const digest = mode === 'current' ? updateInfo.currentDigest : updateInfo.latestDigest;
+	if (digest?.trim()) return digest.trim();
 
 	return '-';
 }

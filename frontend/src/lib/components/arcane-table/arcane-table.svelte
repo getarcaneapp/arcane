@@ -338,7 +338,7 @@
 					return renderComponent(ArcaneTableCell, { value });
 				},
 				enableSorting: !!spec.sortable,
-				enableHiding: true
+				enableHiding: spec.hideable ?? true
 			});
 		});
 

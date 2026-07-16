@@ -4,6 +4,7 @@ import (
 	"context"
 	"log/slog"
 	"net/http"
+	"slices"
 
 	"github.com/danielgtaylor/huma/v2"
 
@@ -33,6 +34,54 @@ func RegisterWithPermission[I, O any](api huma.API, op huma.Operation, perm stri
 	op.Metadata[authz.MetaRequiredPermission] = perm
 	op.Middlewares = append(op.Middlewares, RequirePermission(api, perm)...)
 	huma.Register(api, op, handler)
+}
+
+// RegisterWithAnyPermissions registers an operation that accepts any one of
+// the supplied permissions and records the full set for remote proxy checks.
+func RegisterWithAnyPermissions[I, O any](api huma.API, op huma.Operation, permissions []string, handler func(context.Context, *I) (*O, error)) {
+	if op.Metadata == nil {
+		op.Metadata = map[string]any{}
+	}
+	op.Metadata[authz.MetaRequiredPermissions] = append([]string(nil), permissions...)
+	op.Middlewares = append(op.Middlewares, RequireAnyPermissions(api, permissions...)...)
+	huma.Register(api, op, handler)
+}
+
+// RequireAnyPermissions allows the request when at least one permission is
+// granted for the operation's target environment or global scope.
+func RequireAnyPermissions(api huma.API, permissions ...string) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		ps, _ := PermissionsFromContext(ctx.Context())
+		envID := authz.EnvIDFromPath(ctx.URL().Path)
+		for _, permission := range permissions {
+			scopeEnvironmentID := ""
+			if authz.IsEnvScoped(permission) {
+				scopeEnvironmentID = envID
+			}
+			if ps.Allows(permission, scopeEnvironmentID) {
+				next(ctx)
+				return
+			}
+		}
+		if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied"); err != nil {
+			slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+		}
+	}}
+}
+
+// RequireAnyEnvironmentPermissions protects a multi-environment aggregate when the caller
+// has at least one supplied permission in any effective scope.
+func RequireAnyEnvironmentPermissions(api huma.API, permissions ...string) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		ps, _ := PermissionsFromContext(ctx.Context())
+		if slices.ContainsFunc(permissions, ps.AllowsAny) {
+			next(ctx)
+			return
+		}
+		if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied"); err != nil {
+			slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+		}
+	}}
 }
 
 // RequirePermission returns a per-operation Huma middleware that rejects

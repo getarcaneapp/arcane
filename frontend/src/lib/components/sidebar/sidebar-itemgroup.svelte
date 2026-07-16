@@ -3,7 +3,7 @@
 	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
 	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import type { ShortcutKey } from '$lib/utils/navigation';
+	import { matchesNavigationPath, type ShortcutKey } from '$lib/utils/navigation';
 	import type { Snippet } from 'svelte';
 	import { ArrowRightIcon } from '$lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
@@ -18,11 +18,13 @@
 		items: {
 			title: string;
 			url: string;
+			activePrefixes?: string[];
 			icon?: typeof ArrowRightIcon;
 			shortcut?: ShortcutKey[];
 			items?: {
 				title: string;
 				url: string;
+				activePrefixes?: string[];
 				icon?: typeof ArrowRightIcon;
 				shortcut?: ShortcutKey[];
 			}[];
@@ -31,24 +33,23 @@
 
 	const sidebar = useSidebar();
 
-	function isActiveItem(url: string): boolean {
+	function isActiveItem(item: { url: string; activePrefixes?: string[] }): boolean {
 		// Special case: Don't highlight "Environments" when on GitOps page
-		if (url === '/environments' && page.url.pathname.includes('/gitops')) {
+		if (item.url === '/environments' && page.url.pathname.includes('/gitops')) {
 			return false;
 		}
-		return page.url.pathname === url || (page.url.pathname.startsWith(url) && url !== '/');
+		return matchesNavigationPath(page.url.pathname, item);
 	}
 
-	function hasActiveChild(items?: { url: string }[]): boolean {
-		return items?.some((child) => isActiveItem(child.url)) ?? false;
+	function hasActiveChild(items?: { url: string; activePrefixes?: string[] }[]): boolean {
+		return items?.some((child) => isActiveItem(child)) ?? false;
 	}
 
 	let openStates = $state<Record<string, boolean>>({});
-	let hoveredGroup = $state<string | null>(null);
 
 	const enhancedItems = $derived(
 		items.map((item) => {
-			const isItemActive = isActiveItem(item.url);
+			const isItemActive = isActiveItem(item);
 			const hasActiveSubItem = hasActiveChild(item.items);
 			const isActive = isItemActive || hasActiveSubItem;
 
@@ -57,7 +58,7 @@
 				isActive,
 				items: item.items?.map((subItem) => ({
 					...subItem,
-					isActive: isActiveItem(subItem.url)
+					isActive: isActiveItem(subItem)
 				}))
 			};
 		})
@@ -71,6 +72,7 @@
 	}
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
+	const hoverCollapsed = $derived(collapsed && sidebar.hoverExpansionEnabled && !sidebar.isHovered);
 	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
 	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
 </script>
@@ -98,63 +100,42 @@
 	</Sidebar.MenuItem>
 {/snippet}
 
-<Sidebar.Group class="p-1.5">
-	<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
-	<Sidebar.Menu class="gap-0.5">
+<Sidebar.Group class={hoverCollapsed ? 'items-center p-1.5' : 'p-1.5'}>
+	{#if !hoverCollapsed}
+		<Sidebar.GroupLabel class="h-7 px-1.5">{label}</Sidebar.GroupLabel>
+	{/if}
+	<Sidebar.Menu class={hoverCollapsed ? 'w-8 gap-0.5' : 'gap-0.5'}>
 		{#each enhancedItems as item (item.url)}
-			{#if (item.items?.length ?? 0) > 0}
-				{#if sidebar.state === 'collapsed' && !sidebar.hoverExpansionEnabled}
-					{#snippet tooltipContent()}
-						<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={true} />
-					{/snippet}
-					{@const groupExpanded = hoveredGroup === item.url}
-					<div
-						class={['rounded-lg transition-colors duration-150', groupExpanded && 'bg-sidebar-accent/40 py-0.5']}
-						role="group"
-						onmouseenter={() => (hoveredGroup = item.url)}
-						onmouseleave={() => (hoveredGroup = null)}
-					>
-						{@render menuEntry(item, tooltipContent)}
-						{#if groupExpanded}
+			{#if (item.items?.length ?? 0) > 0 && !hoverCollapsed}
+				{#snippet collapsibleSubMenu()}
+					<Collapsible.Content>
+						<Sidebar.MenuSub
+							class={sidebar.state === 'collapsed' && (!sidebar.isHovered || !sidebar.hoverExpansionEnabled)
+								? 'hidden'
+								: undefined}
+						>
 							{#each item.items ?? [] as subItem (subItem.url)}
-								{#snippet subItemTooltipContent()}
-									<SidebarItemTooltipContent title={subItem.title} shortcut={subItem.shortcut} includeTitle={true} />
-								{/snippet}
-								{@render menuEntry(subItem, subItemTooltipContent)}
+								<Sidebar.MenuSubItem>
+									<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
+										{#snippet child({ props })}
+											{@render itemAnchor(subItem, props)}
+										{/snippet}
+									</Sidebar.MenuSubButton>
+								</Sidebar.MenuSubItem>
 							{/each}
-						{/if}
-					</div>
-				{:else}
-					{#snippet collapsibleSubMenu()}
-						<Collapsible.Content>
-							<Sidebar.MenuSub
-								class={sidebar.state === 'collapsed' && (!sidebar.isHovered || !sidebar.hoverExpansionEnabled)
-									? 'hidden'
-									: undefined}
-							>
-								{#each item.items ?? [] as subItem (subItem.url)}
-									<Sidebar.MenuSubItem>
-										<Sidebar.MenuSubButton isActive={subItem.isActive} size="md">
-											{#snippet child({ props })}
-												{@render itemAnchor(subItem, props)}
-											{/snippet}
-										</Sidebar.MenuSubButton>
-									</Sidebar.MenuSubItem>
-								{/each}
-							</Sidebar.MenuSub>
-						</Collapsible.Content>
-					{/snippet}
-					<SidebarCollapsibleItem
-						{item}
-						showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
-						{includeTitleInTooltip}
-						getIsOpen={(itemUrl: string, isActive: boolean) => getIsOpen(itemUrl, isActive)}
-						onOpenChange={(open) => {
-							openStates[item.url] = open;
-						}}
-						content={collapsibleSubMenu}
-					/>
-				{/if}
+						</Sidebar.MenuSub>
+					</Collapsible.Content>
+				{/snippet}
+				<SidebarCollapsibleItem
+					{item}
+					showTooltip={collapsed || (shortcutsEnabled && !!item.shortcut?.length)}
+					{includeTitleInTooltip}
+					getIsOpen={(itemUrl: string, isActive: boolean) => getIsOpen(itemUrl, isActive)}
+					onOpenChange={(open) => {
+						openStates[item.url] = open;
+					}}
+					content={collapsibleSubMenu}
+				/>
 			{:else}
 				{#snippet simpleItemTooltipContent()}
 					<SidebarItemTooltipContent title={item.title} shortcut={item.shortcut} includeTitle={includeTitleInTooltip} />

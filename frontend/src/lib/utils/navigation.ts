@@ -27,6 +27,12 @@ export function resetNavigationVisibility() {
 	mobileNavController?.resetVisibility();
 }
 
+export function matchesNavigationPath(pathname: string, item: { url: string; activePrefixes?: string[] }): boolean {
+	return [item.url, ...(item.activePrefixes ?? [])].some(
+		(prefix) => pathname === prefix || (prefix !== '/' && pathname.startsWith(`${prefix}/`))
+	);
+}
+
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 	const serverSettings = get(settingsStore);
 	const overrides = navigationSettingsOverridesStore.current;

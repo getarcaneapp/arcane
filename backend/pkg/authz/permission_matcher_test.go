@@ -1,17 +1,20 @@
 package authz
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestPermissionMatcherLookupExactAndWildcard(t *testing.T) {
 	m := NewPermissionMatcher()
 	m.Add("POST", "/containers/{containerId}/start", "containers:start")
 	m.Add("GET", "/containers/{containerId}", "containers:read")
 
-	if perm, ok := m.Lookup("POST", "/containers/abc123/start"); !ok || perm != "containers:start" {
-		t.Fatalf("expected containers:start, got %q ok=%v", perm, ok)
+	if permissions, ok := m.Lookup("POST", "/containers/abc123/start"); !ok || !slices.Equal(permissions, []string{"containers:start"}) {
+		t.Fatalf("expected containers:start, got %v ok=%v", permissions, ok)
 	}
-	if perm, ok := m.Lookup("GET", "/containers/abc123"); !ok || perm != "containers:read" {
-		t.Fatalf("expected containers:read, got %q ok=%v", perm, ok)
+	if permissions, ok := m.Lookup("GET", "/containers/abc123"); !ok || !slices.Equal(permissions, []string{"containers:read"}) {
+		t.Fatalf("expected containers:read, got %v ok=%v", permissions, ok)
 	}
 }
 
@@ -22,11 +25,11 @@ func TestPermissionMatcherStaticBeatsWildcard(t *testing.T) {
 	m.Add("GET", "/containers/{containerId}", "containers:read")
 	m.Add("GET", "/containers/counts", "containers:list")
 
-	if perm, ok := m.Lookup("GET", "/containers/counts"); !ok || perm != "containers:list" {
-		t.Fatalf("expected static route to win with containers:list, got %q ok=%v", perm, ok)
+	if permissions, ok := m.Lookup("GET", "/containers/counts"); !ok || !slices.Equal(permissions, []string{"containers:list"}) {
+		t.Fatalf("expected static route to win with containers:list, got %v ok=%v", permissions, ok)
 	}
-	if perm, ok := m.Lookup("GET", "/containers/xyz"); !ok || perm != "containers:read" {
-		t.Fatalf("expected wildcard route containers:read, got %q ok=%v", perm, ok)
+	if permissions, ok := m.Lookup("GET", "/containers/xyz"); !ok || !slices.Equal(permissions, []string{"containers:read"}) {
+		t.Fatalf("expected wildcard route containers:read, got %v ok=%v", permissions, ok)
 	}
 }
 
@@ -49,8 +52,21 @@ func TestPermissionMatcherNormalizesEchoParamsAndStripsQuery(t *testing.T) {
 	m := NewPermissionMatcher()
 	m.Add("GET", "/volumes/:volumeName/browse", "volumes:browse")
 
-	if perm, ok := m.Lookup("GET", "/volumes/data/browse?path=/etc"); !ok || perm != "volumes:browse" {
-		t.Fatalf("expected volumes:browse with echo param + query string, got %q ok=%v", perm, ok)
+	if permissions, ok := m.Lookup("GET", "/volumes/data/browse?path=/etc"); !ok || !slices.Equal(permissions, []string{"volumes:browse"}) {
+		t.Fatalf("expected volumes:browse with echo param + query string, got %v ok=%v", permissions, ok)
+	}
+}
+
+func TestPermissionMatcherReturnsEveryAcceptedPermission(t *testing.T) {
+	m := NewPermissionMatcher()
+	m.Add("GET", "/operations", "projects:list", "containers:list", "image-updates:read")
+
+	permissions, ok := m.Lookup("GET", "/operations")
+	if !ok {
+		t.Fatal("expected operations route to be found")
+	}
+	if !slices.Equal(permissions, []string{"projects:list", "containers:list", "image-updates:read"}) {
+		t.Fatalf("unexpected accepted permissions: %v", permissions)
 	}
 }
 
@@ -58,12 +74,12 @@ func TestPermissionMatcherPublicRoute(t *testing.T) {
 	m := NewPermissionMatcher()
 	m.AddPublic("GET", "/settings/public")
 
-	perm, ok := m.Lookup("GET", "/settings/public")
+	permissions, ok := m.Lookup("GET", "/settings/public")
 	if !ok {
 		t.Fatal("expected public route to be found")
 	}
-	if perm != "" {
-		t.Fatalf("expected empty permission for public route, got %q", perm)
+	if len(permissions) != 0 {
+		t.Fatalf("expected no permissions for public route, got %v", permissions)
 	}
 }
 

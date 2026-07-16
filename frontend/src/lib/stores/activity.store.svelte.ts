@@ -109,7 +109,7 @@ function createActivityStore() {
 					break;
 			}
 		},
-		async fetchSnapshot(environmentId, generation) {
+		async fetchCurrentState(environmentId, generation) {
 			core.updateEnvironmentState(environmentId, (state) => ({
 				...state,
 				loading: true

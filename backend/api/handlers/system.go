@@ -593,7 +593,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 	}, nil
 }
 
-// TriggerUpdateAll starts a fleet-wide update, upgrading the manager first and then
+// TriggerUpdateAll updates all environments, upgrading the manager first and then
 // the remote agents (the latter resume after the manager restarts).
 func (h *SystemHandler) TriggerUpdateAll(ctx context.Context, input *TriggerUpdateAllInput) (*TriggerUpdateAllOutput, error) {
 	if h.upgradeService == nil || h.environmentService == nil {

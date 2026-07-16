@@ -149,7 +149,7 @@ test.describe('Environment switch isolation', () => {
 			});
 		page.on('websocket', (socket) => websocketPaths.push(new URL(socket.url()).pathname));
 
-		await page.goto('/containers');
+		await page.goto('/workloads/containers');
 		await expect(page.getByRole('link', { name: 'local-a-container', exact: true })).toBeVisible();
 
 		try {
@@ -191,7 +191,7 @@ test.describe('Environment switch isolation', () => {
 				});
 			});
 
-		await page.goto('/containers');
+		await page.goto('/workloads/containers');
 		await expect(page.getByRole('link', { name: 'local-a-container', exact: true })).toBeVisible();
 		const failedRemoteRequest = page.waitForResponse((response) => {
 			return (

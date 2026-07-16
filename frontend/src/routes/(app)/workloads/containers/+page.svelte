@@ -1,10 +1,10 @@
 <script lang="ts">
 	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
+	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { containerService } from '$lib/services/container-service';
-	import ContainerTable from './container-table.svelte';
+	import ContainerTable from '../../containers/container-table.svelte';
 	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -15,8 +15,8 @@
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ContainerListRequestOptions } from '$lib/services/container-service';
-	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import ContainerEnvironmentSync from '../../containers/components/container-environment-sync.svelte';
+	import WorkloadTabs from '$lib/components/workloads/workload-tabs.svelte';
 
 	let { data } = $props();
 
@@ -65,24 +65,6 @@
 		}
 	}
 
-	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.containers.checkUpdates(envId),
-		mutationFn: async () => {
-			const requestedEnvId = envId;
-			const result = await imageService.runAutoUpdate(undefined, requestedEnvId);
-			return { requestedEnvId, result };
-		},
-		onSuccess: async ({ requestedEnvId, result }) => {
-			toast.success(m.containers_check_updates_success(), activityToastOptions(extractActivityId(result)));
-			if (requestedEnvId === envId) {
-				await refreshContainers(buildRequestOptions(), requestedEnvId);
-			}
-		},
-		onError: () => {
-			toast.error(m.containers_check_updates_failed());
-		}
-	}));
-
 	const createContainerMutation = createMutation(() => ({
 		mutationKey: queryKeys.containers.create(envId),
 		mutationFn: async (options: ContainerCreateRequest) => {
@@ -127,17 +109,13 @@
 		return refreshContainers(buildRequestOptions(nextOptions), envId);
 	}
 
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync();
-	}
-
 	async function refresh() {
 		await refreshContainers();
 	}
 
 	const containerStatusCounts = $derived(resourcesReady ? (containers.counts ?? countsFallback) : countsFallback);
 
-	const canAutoUpdate = $derived(hasPermission('containers:autoupdate', envId));
+	const canReviewUpdates = $derived(hasPermission('image-updates:read', envId));
 
 	const actionButtons: ActionButton[] = $derived(
 		[
@@ -149,14 +127,13 @@
 				loading: createContainerMutation.isPending,
 				disabled: !resourcesReady || createContainerMutation.isPending
 			},
-			canAutoUpdate
+			canReviewUpdates
 				? {
-						id: 'check-updates',
+						id: 'review-updates',
 						action: 'update',
-						label: m.containers_check_updates(),
-						onclick: handleCheckForUpdates,
-						loading: checkUpdatesMutation.isPending,
-						disabled: !resourcesReady || checkUpdatesMutation.isPending
+						label: m.images_updates(),
+						onclick: () => goto('/operations/updates?tab=containers'),
+						disabled: !resourcesReady
 					}
 				: null,
 			{
@@ -196,8 +173,11 @@
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
-<ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.workloads_title()} subtitle={m.workloads_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
+		<div class="mb-4">
+			<WorkloadTabs value="containers" />
+		</div>
 		{#if resourcesReady}
 			<ContainerTable
 				environmentId={displayedEnvId!}
@@ -205,6 +185,7 @@
 				bind:selectedIds
 				bind:requestOptions
 				bind:groupByProject
+				showStandaloneFilter
 				onRefreshData={async (options) => {
 					const requestedEnvId = envId;
 					requestOptions = {
@@ -214,7 +195,7 @@
 						filters: options.filters,
 						includeInternal: options.includeInternal
 					};
-					return refreshContainers(options, requestedEnvId);
+					return refreshContainers(buildRequestOptions(requestOptions), requestedEnvId);
 				}}
 			/>
 		{/if}

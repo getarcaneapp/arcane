@@ -12,8 +12,11 @@
 	import { ContainersIcon, UpdateIcon } from '$lib/icons';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { confirmAndUpdateContainer } from '$lib/utils/container-actions';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { imageService } from '$lib/services/image-service';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '$lib/utils/image-updates';
+	import { toast } from 'svelte-sonner';
 
 	type ContainerUpdateRow = {
 		id: string;
@@ -75,19 +78,31 @@
 		{ id: 'actions', label: m.common_actions(), defaultVisible: true }
 	];
 
-	async function handleUpdateContainer(container: ContainerSummaryDto) {
+	function handleUpdateContainer(container: ContainerSummaryDto) {
 		const containerName = getContainerDisplayName(container);
 
-		confirmAndUpdateContainer({
-			containerId: container.id,
-			containerName,
-			showPullingToast: true,
-			setLoading: (loading) => {
-				updatingContainerIds = { ...updatingContainerIds, [container.id]: loading };
-			},
-			onRefresh: async () => {
-				const next = await onRefreshData(requestOptions as ContainerListRequestOptions);
-				containers = next;
+		openConfirmDialog({
+			title: m.operations_update_workload_title({ name: containerName }),
+			message: m.operations_update_workload_description({ name: containerName }),
+			confirm: {
+				label: m.common_update(),
+				action: async () => {
+					updatingContainerIds = { ...updatingContainerIds, [container.id]: true };
+					try {
+						const result = await imageService.runAutoUpdate({ type: 'container', resourceIds: [container.id] });
+						const toastOptions = activityToastOptions(extractActivityId(result));
+						if (result.failed > 0) {
+							toast.error(m.operations_update_partial({ updated: result.updated, failed: result.failed }), toastOptions);
+						} else {
+							toast.success(m.operations_update_complete({ count: result.updated }), toastOptions);
+						}
+						containers = await onRefreshData(requestOptions as ContainerListRequestOptions);
+					} catch {
+						toast.error(m.containers_update_failed({ name: containerName }));
+					} finally {
+						updatingContainerIds = { ...updatingContainerIds, [container.id]: false };
+					}
+				}
 			}
 		});
 	}

@@ -7,7 +7,7 @@ import (
 	"time"
 )
 
-// EnvironmentUpdateJobStatus is the lifecycle status of a fleet-wide "update all
+// EnvironmentUpdateJobStatus is the lifecycle status of an environment-wide "update all
 // environments" job.
 type EnvironmentUpdateJobStatus string
 
@@ -86,7 +86,7 @@ func (r *EnvironmentUpdateResults) Scan(value any) error {
 	}
 }
 
-// EnvironmentUpdateJob is a persisted fleet-wide update orchestration record. It
+// EnvironmentUpdateJob is a persisted environment-wide update orchestration record. It
 // survives the manager's final self-upgrade restart so the manager result can be
 // finalized on the next boot. See [EnvironmentUpdateJobStatus].
 type EnvironmentUpdateJob struct {

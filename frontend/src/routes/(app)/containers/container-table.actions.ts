@@ -7,10 +7,10 @@ import { handleApiResultWithCallbacks } from '$lib/utils/api';
 import { tryCatch } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
-import { confirmAndRemoveContainer, confirmAndUpdateContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
+import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
 import type { TableActionConfig, TableBulkActionConfig } from '$lib/utils/table-action-types';
 import { toast } from 'svelte-sonner';
-import { getContainerDisplayName, type ActionStatus } from './container-table.helpers';
+import type { ActionStatus } from './container-table.helpers';
 
 type BulkLoadingState = {
 	start: boolean;
@@ -98,20 +98,6 @@ export function createContainerActions({
 			containerName: name,
 			setStatus: (status) => {
 				actionStatus[id] = status;
-			},
-			onRefresh: reloadContainers
-		});
-	}
-
-	async function handleUpdateContainer(container: ContainerSummaryDto) {
-		const containerName = getContainerDisplayName(container);
-
-		confirmAndUpdateContainer({
-			containerId: container.id,
-			containerName,
-			useActivityToast: true,
-			setLoading: (loading) => {
-				actionStatus[container.id] = loading ? 'updating' : '';
 			},
 			onRefresh: reloadContainers
 		});
@@ -231,7 +217,6 @@ export function createContainerActions({
 	return {
 		performContainerAction,
 		handleRemoveContainer,
-		handleUpdateContainer,
 		handleRedeployContainer,
 		handleBulkStart,
 		handleBulkStop,

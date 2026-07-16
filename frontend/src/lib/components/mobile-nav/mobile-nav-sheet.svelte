@@ -14,6 +14,7 @@
 	import UpdateAvailableBanner from '$lib/components/sidebar/update-available-banner.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import type { PermissionsManifest, User } from '$lib/types/auth';
+	import { matchesNavigationPath } from '$lib/utils/navigation';
 
 	let {
 		open = $bindable(false),
@@ -63,7 +64,7 @@
 	}
 
 	function isActiveItem(item: NavigationItem): boolean {
-		return currentPath === item.url || currentPath.startsWith(item.url + '/');
+		return matchesNavigationPath(currentPath, item);
 	}
 </script>
 
@@ -150,7 +151,7 @@
 
 				<section>
 					<h4 class="mb-4 px-3 text-[11px] font-semibold tracking-widest text-muted-foreground/70 uppercase">
-						{m.sidebar_resources()}
+						{m.sidebar_infrastructure()}
 					</h4>
 					{@render navItems(resourceItems, true)}
 				</section>

@@ -33,7 +33,7 @@ func registerJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, 
 		}
 	}
 
-	// Finalize a fleet-wide update-all job whose manager self-upgrade restarted the
+	// Finalize an environment-wide update-all job whose manager self-upgrade restarted the
 	// process as its final step (manager only). Runs off the app context so it does
 	// not block bootstrap.
 	if !appConfig.AgentMode && appServices.SystemUpgrade != nil {

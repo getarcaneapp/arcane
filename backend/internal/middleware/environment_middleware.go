@@ -194,28 +194,30 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c echo.Context, ps *authz.
 
 	method := c.Request().Method
 	suffix := m.buildResourceSuffix(c.Request().URL.Path, envID)
-	perm, ok := m.matcher.Lookup(method, suffix)
+	permissions, ok := m.matcher.Lookup(method, suffix)
 	if !ok {
 		slog.WarnContext(c.Request().Context(), "Denying proxied request with no known permission mapping",
 			"method", method, "path", suffix, "environment_id", envID)
 		return true
 	}
-	if perm == "" {
+	if len(permissions) == 0 {
 		// Explicitly public proxied route (e.g. public settings): allowed for
 		// any authenticated caller, matching local enforcement.
 		return false
 	}
 
-	scopeEnvID := ""
-	if authz.IsEnvScoped(perm) {
-		scopeEnvID = envID
+	for _, permission := range permissions {
+		scopeEnvID := ""
+		if authz.IsEnvScoped(permission) {
+			scopeEnvID = envID
+		}
+		if ps.Allows(permission, scopeEnvID) {
+			return false
+		}
 	}
-	if !ps.Allows(perm, scopeEnvID) {
-		slog.DebugContext(c.Request().Context(), "Denying proxied request: permission denied",
-			"method", method, "path", suffix, "permission", perm, "environment_id", envID)
-		return true
-	}
-	return false
+	slog.DebugContext(c.Request().Context(), "Denying proxied request: permission denied",
+		"method", method, "path", suffix, "permissions", permissions, "environment_id", envID)
+	return true
 }
 
 func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {

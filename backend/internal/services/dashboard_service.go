@@ -12,11 +12,13 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	operationstypes "github.com/getarcaneapp/arcane/types/v2/operations"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
@@ -164,6 +166,118 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	}, nil
 }
 
+// GetOperationsState returns the current workload-centric attention state
+// visible to the caller for one environment.
+func (s *DashboardService) GetOperationsState(ctx context.Context, ps *authz.PermissionSet, environmentID string) (*operationstypes.State, error) {
+	if s.dockerService == nil {
+		return nil, errors.New("docker service not available")
+	}
+
+	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to load containers for operations: %w", err)
+	}
+
+	return s.buildOperationsStateInternal(ctx, ps, environmentID, filterInternalContainers(containers, false))
+}
+
+func (s *DashboardService) buildOperationsStateInternal(
+	ctx context.Context,
+	ps *authz.PermissionSet,
+	environmentID string,
+	containers []dockercontainer.Summary,
+) (*operationstypes.State, error) {
+	state := &operationstypes.State{Compatibility: operationstypes.CompatibilityCurrent}
+
+	canReadUpdates := ps.Allows(authz.PermImageUpdatesRead, environmentID)
+	canReadProjects := ps.Allows(authz.PermProjectsList, environmentID) || ps.Allows(authz.PermProjectsRead, environmentID)
+	canReadContainers := ps.Allows(authz.PermContainersList, environmentID) || ps.Allows(authz.PermContainersRead, environmentID)
+	canReadVulnerabilities := ps.Allows(authz.PermVulnsRead, environmentID)
+	canReadAPIKeys := ps.Allows(authz.PermApiKeysList, "") || ps.Allows(authz.PermApiKeysRead, "")
+
+	var (
+		projectUpdates    int
+		containerUpdates  int
+		stoppedProjects   int
+		stoppedContainers int
+		vulnerabilities   int
+		expiringAPIKeys   int
+	)
+
+	g, groupCtx := errgroup.WithContext(ctx)
+	if canReadUpdates {
+		g.Go(func() error {
+			var err error
+			containerUpdates, projectUpdates, err = s.getPendingWorkloadUpdatesInternal(groupCtx, containers)
+			return err
+		})
+	}
+	if canReadProjects {
+		g.Go(func() error {
+			if s.projectService == nil {
+				return nil
+			}
+			var err error
+			_, _, stoppedProjects, _, _, err = s.projectService.GetProjectStatusCounts(groupCtx)
+			if err != nil {
+				return fmt.Errorf("failed to count stopped projects: %w", err)
+			}
+			return nil
+		})
+	}
+	if canReadVulnerabilities {
+		g.Go(func() error {
+			var err error
+			vulnerabilities, err = s.getActionableVulnerabilitiesCountInternal(groupCtx)
+			return err
+		})
+	}
+	if canReadAPIKeys {
+		g.Go(func() error {
+			var err error
+			expiringAPIKeys, err = s.getExpiringAPIKeysCountInternal(groupCtx)
+			return err
+		})
+	}
+
+	if canReadContainers {
+		for _, container := range filterStandaloneDockerContainersInternal(containers) {
+			if container.State != "running" {
+				stoppedContainers++
+			}
+		}
+	}
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	if canReadUpdates {
+		state.Updates = &operationstypes.WorkloadCount{
+			Total:                projectUpdates + containerUpdates,
+			Projects:             &projectUpdates,
+			StandaloneContainers: &containerUpdates,
+		}
+	}
+	if canReadProjects || canReadContainers {
+		state.Stopped = &operationstypes.WorkloadCount{Total: stoppedProjects + stoppedContainers}
+		if canReadProjects {
+			state.Stopped.Projects = &stoppedProjects
+		}
+		if canReadContainers {
+			state.Stopped.StandaloneContainers = &stoppedContainers
+		}
+	}
+	if canReadVulnerabilities {
+		state.Vulnerabilities = &vulnerabilities
+	}
+	if canReadAPIKeys {
+		state.ExpiringAPIKeys = &expiringAPIKeys
+	}
+
+	return state, nil
+}
+
 func (s *DashboardService) buildActionItemsForSnapshotInternal(
 	ctx context.Context,
 	options DashboardActionItemsOptions,
@@ -277,18 +391,27 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 	}
 
 	filteredContainers := filterInternalContainers(containers, false)
-	standaloneContainers := filterStandaloneDockerContainersInternal(filteredContainers)
-	containerCount, err := s.getPendingContainerUpdatesCountForImageIDsInternal(ctx, collectImageIDs(standaloneContainers))
-	if err != nil {
-		return 0, err
-	}
-
-	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx)
+	containerCount, projectCount, err := s.getPendingWorkloadUpdatesInternal(ctx, filteredContainers)
 	if err != nil {
 		return 0, err
 	}
 
 	return containerCount + projectCount, nil
+}
+
+func (s *DashboardService) getPendingWorkloadUpdatesInternal(ctx context.Context, containers []dockercontainer.Summary) (int, int, error) {
+	standaloneContainers := filterStandaloneDockerContainersInternal(containers)
+	containerCount, err := s.getPendingContainerUpdatesCountInternal(ctx, standaloneContainers)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	projectCount, err := s.getPendingProjectUpdatesCountInternal(ctx)
+	if err != nil {
+		return 0, 0, err
+	}
+
+	return containerCount, projectCount, nil
 }
 
 func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summary) []dockercontainer.Summary {
@@ -302,21 +425,32 @@ func filterStandaloneDockerContainersInternal(containers []dockercontainer.Summa
 	return filtered
 }
 
-func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ctx context.Context, imageIDs []string) (int, error) {
-	if s.db == nil || len(imageIDs) == 0 {
+func (s *DashboardService) getPendingContainerUpdatesCountInternal(ctx context.Context, containers []dockercontainer.Summary) (int, error) {
+	if s.db == nil || len(containers) == 0 {
 		return 0, nil
 	}
 
-	var count int64
+	imageIDs := collectImageIDs(containers)
+	var updatedImageIDs []string
 	err := s.db.WithContext(ctx).
 		Model(&models.ImageUpdateRecord{}).
 		Where("id IN ? AND has_update = ?", imageIDs, true).
-		Count(&count).Error
+		Pluck("id", &updatedImageIDs).Error
 	if err != nil {
 		return 0, fmt.Errorf("failed to count pending container updates: %w", err)
 	}
 
-	return int(count), nil
+	updated := make(map[string]struct{}, len(updatedImageIDs))
+	for _, imageID := range updatedImageIDs {
+		updated[imageID] = struct{}{}
+	}
+	count := 0
+	for _, container := range containers {
+		if _, ok := updated[container.ImageID]; ok {
+			count++
+		}
+	}
+	return count, nil
 }
 
 func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Context) (int, error) {

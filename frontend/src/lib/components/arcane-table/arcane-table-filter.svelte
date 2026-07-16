@@ -34,6 +34,7 @@
 	} = $props();
 
 	const selectedValues = $derived(new SvelteSet(column?.getFilterValue() as any[]));
+	const showSelectedSummary = $derived(options.length !== 1 || options[0]?.label !== title);
 </script>
 
 <Popover.Root>
@@ -52,7 +53,7 @@
 				)}
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
-				{#if selectedValues.size > 0}
+				{#if selectedValues.size > 0 && showSelectedSummary}
 					<Separator orientation="vertical" class="mx-1 h-4" />
 					<div class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
 						{#if selectedValues.size > 2}

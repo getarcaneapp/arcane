@@ -13,16 +13,30 @@ import (
 func RunAuthorizedAggregateStream[T any](
 	ctx context.Context,
 	ps *authz.PermissionSet,
-	permission string,
 	config agg.Config[T],
 	localProducer agg.Producer[T],
 	remoteProducer agg.Producer[T],
+	permissions ...string,
 ) error {
 	config.Producers = make([]agg.Producer[T], 0, 2)
-	if ps.Allows(permission, "0") {
+	localAllowed := false
+	remoteAllowed := false
+	for _, permission := range permissions {
+		scopeEnvironmentID := ""
+		if authz.IsEnvScoped(permission) {
+			scopeEnvironmentID = "0"
+		}
+		if ps.Allows(permission, scopeEnvironmentID) {
+			localAllowed = true
+		}
+		if authz.IsEnvScoped(permission) && ps.AllowsAny(permission) {
+			remoteAllowed = true
+		}
+	}
+	if localAllowed {
 		config.Producers = append(config.Producers, localProducer)
 	}
-	if ps.AllowsAny(permission) {
+	if remoteAllowed {
 		config.Producers = append(config.Producers, remoteProducer)
 	}
 	return agg.Run(ctx, config)

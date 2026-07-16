@@ -62,8 +62,8 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 	} else if dockerPrefix, ok := dockerSchemaPrefix(pkgPath, shortPkg); ok {
 		name = dockerPrefix + name
 	}
-	if innerPkg, ok := genericInnerPackageName(pkgPath, typeStr); ok {
-		return strings.Replace(name, "UsageCounts", innerPkg+"UsageCounts", 1)
+	if innerPkg, innerType, ok := genericInnerPackageName(pkgPath, typeStr); ok {
+		return strings.Replace(name, innerType, innerPkg+innerType, 1)
 	}
 
 	return name
@@ -121,24 +121,25 @@ func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
 	return prefix, true
 }
 
-func genericInnerPackageName(pkgPath, typeName string) (string, bool) {
+func genericInnerPackageName(pkgPath, typeName string) (string, string, bool) {
 	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix+"base") {
-		return "", false
+		return "", "", false
 	}
 	if !strings.Contains(typeName, "[") || !strings.Contains(typeName, arcaneTypesPrefix) {
-		return "", false
+		return "", "", false
 	}
 
 	_, after, ok := strings.Cut(typeName, arcaneTypesPrefix)
 	if !ok {
-		return "", false
+		return "", "", false
 	}
-	before, _, ok := strings.Cut(after, ".")
-	if !ok || before == "" {
-		return "", false
+	pkgName, innerType, ok := strings.Cut(after, ".")
+	if !ok || pkgName == "" || innerType == "" {
+		return "", "", false
 	}
 
-	return capitalizeFirst(before), true
+	innerType = strings.TrimSuffix(innerType, "]")
+	return capitalizeFirst(pkgName), innerType, true
 }
 
 func capitalizeFirst(s string) string {

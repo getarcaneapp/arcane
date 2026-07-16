@@ -14,6 +14,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	sqlite "github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
@@ -218,4 +220,76 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	require.Equal(t, 1, snapshot.Containers.Counts.StoppedContainers)
 	require.Equal(t, 1, snapshot.ImageUsageCounts.Inuse)
 	require.Empty(t, snapshot.ActionItems.Items)
+}
+
+func TestDashboardService_BuildOperationsStateCountsStandaloneWorkloads(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	require.NoError(t, db.WithContext(context.Background()).Create(&models.Project{
+		BaseModel: models.BaseModel{ID: "stopped-project"},
+		Name:      "stopped-project",
+		Path:      t.TempDir(),
+		Status:    models.ProjectStatusStopped,
+	}).Error)
+
+	projectSvc := NewProjectService(db, settingsSvc, nil, nil, nil, nil, nil, nil, config.Load())
+	svc := NewDashboardService(db, nil, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
+	permissions := authz.NewPermissionSet()
+	permissions.AddEnv("env-1", authz.PermProjectsList)
+	permissions.AddEnv("env-1", authz.PermContainersList)
+
+	state, err := svc.buildOperationsStateInternal(context.Background(), permissions, "env-1", []dockercontainer.Summary{
+		{ID: "standalone-stopped", State: "exited", Labels: map[string]string{}},
+		{ID: "standalone-running", State: "running", Labels: map[string]string{}},
+		{
+			ID:     "compose-stopped",
+			State:  "exited",
+			Labels: map[string]string{dockerutils.ComposeProjectLabelKey: "compose-project"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, state.Stopped)
+	require.Equal(t, 2, state.Stopped.Total)
+	require.Equal(t, 1, *state.Stopped.Projects)
+	require.Equal(t, 1, *state.Stopped.StandaloneContainers)
+}
+
+func TestDashboardService_BuildOperationsStateOmitsUnauthorizedCategories(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, nil, nil)
+	permissions := authz.NewPermissionSet()
+	permissions.AddEnv("env-1", authz.PermContainersList)
+
+	state, err := svc.buildOperationsStateInternal(context.Background(), permissions, "env-1", []dockercontainer.Summary{
+		{ID: "standalone-stopped", State: "exited", Labels: map[string]string{}},
+	})
+	require.NoError(t, err)
+	require.Nil(t, state.Updates)
+	require.Nil(t, state.Vulnerabilities)
+	require.Nil(t, state.ExpiringAPIKeys)
+	require.NotNil(t, state.Stopped)
+	require.Nil(t, state.Stopped.Projects)
+	require.Equal(t, 1, *state.Stopped.StandaloneContainers)
+}
+
+func TestDashboardService_BuildOperationsStateCountsAffectedStandaloneContainers(t *testing.T) {
+	db, settingsSvc := setupDashboardServiceTestDB(t)
+	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:shared", HasUpdate: true})
+	svc := NewDashboardService(db, nil, nil, nil, nil, settingsSvc, nil, nil, nil)
+	permissions := authz.NewPermissionSet()
+	permissions.AddEnv("env-1", authz.PermImageUpdatesRead)
+
+	state, err := svc.buildOperationsStateInternal(context.Background(), permissions, "env-1", []dockercontainer.Summary{
+		{ID: "standalone-one", ImageID: "sha256:shared", Labels: map[string]string{}},
+		{ID: "standalone-two", ImageID: "sha256:shared", Labels: map[string]string{}},
+		{
+			ID:      "compose-service",
+			ImageID: "sha256:shared",
+			Labels:  map[string]string{dockerutils.ComposeProjectLabelKey: "compose-project"},
+		},
+	})
+	require.NoError(t, err)
+	require.NotNil(t, state.Updates)
+	require.Equal(t, 2, state.Updates.Total)
+	require.Equal(t, 0, *state.Updates.Projects)
+	require.Equal(t, 2, *state.Updates.StandaloneContainers)
 }

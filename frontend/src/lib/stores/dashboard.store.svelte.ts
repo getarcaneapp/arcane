@@ -57,7 +57,7 @@ function createDashboardStore() {
 					break;
 			}
 		},
-		async fetchSnapshot(environmentId, generation) {
+		async fetchCurrentState(environmentId, generation) {
 			try {
 				const snapshot = await dashboardService.getDashboardForEnvironment(environmentId, { debugAllGood });
 				// The environment can be removed while the fetch is in-flight; don't resurrect it.

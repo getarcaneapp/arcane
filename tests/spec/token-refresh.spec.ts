@@ -107,12 +107,12 @@ test.describe('Token refresh behaviour', () => {
 		const refreshCallCount = await mockRefreshSuccess(page);
 		await injectVersionMismatchUntilRefresh(page, /\/api\/environments\/[^/]+\/containers/);
 
-		await page.goto('/containers');
+		await page.goto('/workloads/containers');
 		await page.waitForLoadState('load');
 
 		await expect.poll(() => refreshCallCount()).toBe(1);
-		await expect(page).toHaveURL('/containers');
-		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
+		await expect(page).toHaveURL('/workloads/containers');
+		await expect(page.getByRole('heading', { name: 'Workloads', level: 1 })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Sign in to Arcane' })).not.toBeVisible();
 	});
 
@@ -133,7 +133,7 @@ test.describe('Token refresh behaviour', () => {
 		// Keep /auth/me unauthenticated too so the login page does not immediately bounce back.
 		await injectExpired401Always(page, /\/api\/auth\/me$/);
 
-		await page.goto('/containers');
+		await page.goto('/workloads/containers');
 		await expect.poll(() => refreshCalled).toBe(true);
 		await page.waitForURL(/\/login(\?|$)/, { timeout: 15_000 });
 		await expect(
@@ -155,9 +155,9 @@ test.describe('Token refresh behaviour', () => {
 	test('login page honours the redirect param and returns users to their original path', async ({
 		page
 	}) => {
-		await page.goto('/login?redirect=%2Fcontainers');
-		await page.waitForURL(/\/containers|\/login/, { timeout: 8_000 });
+		await page.goto('/login?redirect=%2Fworkloads%2Fcontainers');
+		await page.waitForURL(/\/workloads\/containers|\/login/, { timeout: 8_000 });
 		const url = page.url();
-		expect(url).toMatch(/\/containers|\/login\?redirect=%2Fcontainers/);
+		expect(url).toMatch(/\/workloads\/containers|\/login\?redirect=%2Fworkloads%2Fcontainers/);
 	});
 });

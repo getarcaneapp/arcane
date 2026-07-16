@@ -40,9 +40,9 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	/** Handles every event type except 'heartbeat' (core owns connection state). */
 	applyEvent(environmentId: string, event: TEvent): void;
 	/** Fully owns a per-environment REST refresh, including generation/removal guards via core helpers. */
-	fetchSnapshot(environmentId: string, generation: number): Promise<void>;
+	fetchCurrentState(environmentId: string, generation: number): Promise<void>;
 	refreshOnStart?: boolean;
-	/** Limits aggregate stream state and REST snapshots to caller-authorized environments. */
+	/** Limits aggregate stream and REST state to caller-authorized environments. */
 	includeEnvironment?(environment: Pick<Environment, 'id' | 'name'>): boolean;
 	/** Reconciles when state used by includeEnvironment changes (for example, user permissions). */
 	subscribeEnvironmentFilter?(reconcile: () => void): () => void;
@@ -149,7 +149,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 
 	async function refresh(generation = streamGeneration) {
 		reconcileEnvironments();
-		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, generation)));
+		await Promise.all(
+			Object.keys(_environmentStates).map((environmentId) => config.fetchCurrentState(environmentId, generation))
+		);
 	}
 
 	async function connectStream(generation: number) {
@@ -293,9 +295,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				};
 				// An already-open aggregated stream only picks new environments
 				// up on its server-side reconcile tick; fetch once so the first
-				// snapshot doesn't take up to that interval to appear.
+				// state update doesn't take up to that interval to appear.
 				if (streamAbortController) {
-					void config.fetchSnapshot(environmentId, streamGeneration);
+					void config.fetchCurrentState(environmentId, streamGeneration);
 				}
 				continue;
 			}

@@ -53,7 +53,6 @@
 		NetworksIcon,
 		ProjectsIcon,
 		InspectIcon,
-		UpdateIcon,
 		RedeployIcon,
 		PauseIcon,
 		PlayIcon,
@@ -69,6 +68,7 @@
 		selectedIds = $bindable(),
 		requestOptions = $bindable(),
 		groupByProject = $bindable(false),
+		showStandaloneFilter = false,
 		withoutFilters = false,
 		onRefreshData
 	}: {
@@ -77,6 +77,7 @@
 		selectedIds: string[];
 		requestOptions: SearchPaginationSortRequest;
 		groupByProject?: boolean;
+		showStandaloneFilter?: boolean;
 		withoutFilters?: boolean;
 		onRefreshData?: (options: ContainerListRequestOptions) => Promise<ContainersPaginatedResponse>;
 	} = $props();
@@ -134,7 +135,6 @@
 	const {
 		performContainerAction,
 		handleRemoveContainer,
-		handleUpdateContainer,
 		handleRedeployContainer,
 		handleBulkStart,
 		handleBulkStop,
@@ -190,7 +190,6 @@
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const resourcesCurrent = $derived(environmentId === currentEnvId);
-	const canUpdateContainers = $derived(hasPermission('containers:autoupdate', currentEnvId));
 	const canKillContainers = $derived(hasPermission('containers:kill', currentEnvId));
 	const canPauseContainers = $derived(hasPermission('containers:pause', currentEnvId));
 
@@ -253,6 +252,18 @@
 	const columns = $derived([
 		{ accessorKey: 'id', title: m.common_id(), cell: IdCell, hidden: true },
 		{ accessorKey: 'names', id: 'name', title: m.common_name(), sortable: !groupByProject, cell: NameCell },
+		...(showStandaloneFilter
+			? [
+					{
+						id: 'standalone',
+						accessorFn: (row: ContainerSummaryDto) => getProjectName(row) === '',
+						title: m.workloads_scope_standalone(),
+						hidden: true,
+						hideable: false,
+						filterOptions: [{ value: true, label: m.workloads_scope_standalone() }]
+					}
+				]
+			: []),
 		{ accessorKey: 'image', title: m.common_image(), sortable: !groupByProject, cell: ImageCell },
 		{ accessorKey: 'state', title: m.common_state(), sortable: !groupByProject, cell: StateCell },
 		{
@@ -446,18 +457,6 @@
 					icon={StopIcon}
 				/>
 			{/if}
-			{#if !status && item.updateInfo?.hasUpdate && canUpdateContainers}
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="size-7 p-0"
-					onclick={() => handleUpdateContainer(item)}
-					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.containers_update_container()}
-					icon={UpdateIcon}
-				/>
-			{/if}
 		</div>
 	</div>
 {/snippet}
@@ -469,7 +468,7 @@
 		imageId={item.imageId}
 		repo={imageRef.repo}
 		tag={imageRef.tag}
-		onUpdateContainer={canUpdateContainers ? () => handleUpdateContainer(item) : undefined}
+		allowCheck={false}
 		debugHasUpdate={false}
 	/>
 {/snippet}
@@ -631,16 +630,6 @@
 
 			<DropdownMenu.Separator />
 
-			{#if item.updateInfo?.hasUpdate && canUpdateContainers}
-				<DropdownMenu.Item onclick={() => handleUpdateContainer(item)} disabled={status === 'updating' || isAnyLoading}>
-					{#if status === 'updating'}
-						<Spinner class="size-4" />
-					{:else}
-						<UpdateIcon class="size-4" />
-						{m.common_update()}
-					{/if}
-				</DropdownMenu.Item>
-			{/if}
 			{#if item.state === 'paused'}
 				{#if canPauseContainers}
 					<DropdownMenu.Item

@@ -4,11 +4,8 @@
 	import { m } from '$lib/paraglide/messages';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { queryKeys } from '$lib/query/query-keys';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import ContainerUpdatesTable from './container-updates-table.svelte';
-	import ProjectUpdatesTable from './project-updates-table.svelte';
+	import WorkloadUpdatesTable from './workload-updates-table.svelte';
 	import { imageService } from '$lib/services/image-service';
 	import { containerService, type ContainerListRequestOptions } from '$lib/services/container-service';
 	import { projectService } from '$lib/services/project-service';
@@ -19,7 +16,10 @@
 	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/docker';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { hasPermission } from '$lib/utils/auth';
+	import type { AutoUpdateCheck } from '$lib/types/automation';
+	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
 	let { data } = $props();
 
@@ -57,21 +57,30 @@
 
 	let containerSnapshot = $state<{ envId: string; value: ContainersPaginatedResponse } | null>(null);
 	let projectSnapshot = $state<{ envId: string; value: Paginated<Project> } | null>(null);
-	let containerRequestOptions = $state(untrack(() => data.containerRequestOptions as ContainerListRequestOptions));
-	let projectRequestOptions = $state(untrack(() => data.projectRequestOptions as SearchPaginationSortRequest));
+	let requestOptions = $state(untrack(() => data.requestOptions as SearchPaginationSortRequest));
 	const envId = $derived(environmentStore.selected?.id || '0');
+	const sourceRequestOptions = $derived.by(() => {
+		const sourceLimit = (requestOptions.pagination?.page ?? 1) * (requestOptions.pagination?.limit ?? 20);
+		return {
+			...requestOptions,
+			pagination: { page: 1, limit: sourceLimit }
+		};
+	});
+	const containerRequestOptions = $derived(
+		ensureStandaloneContainerUpdatesFilter(sourceRequestOptions) as ContainerListRequestOptions
+	);
+	const projectRequestOptions = $derived(ensureUpdatesFilter(sourceRequestOptions));
 
 	const containersQuery = createQuery(() => ({
-		queryKey: queryKeys.containers.list(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
-		queryFn: () =>
-			containerService.getContainersForEnvironment(envId, ensureStandaloneContainerUpdatesFilter(containerRequestOptions)),
+		queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+		queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions),
 		initialData: envId === data.envId ? data.containers : undefined,
 		refetchOnMount: false
 	}));
 
 	const projectsQuery = createQuery(() => ({
-		queryKey: queryKeys.projects.list(envId, ensureUpdatesFilter(projectRequestOptions)),
-		queryFn: () => projectService.getProjectsForEnvironment(envId, ensureUpdatesFilter(projectRequestOptions)),
+		queryKey: queryKeys.projects.list(envId, projectRequestOptions),
+		queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions),
 		initialData: envId === data.envId ? data.projects : undefined,
 		refetchOnMount: false
 	}));
@@ -88,27 +97,25 @@
 	);
 
 	const projectUpdatedImageRefs = $derived.by(() => {
-		const refs = new Set<string>();
+		const refs: string[] = [];
 		for (const project of projects.data ?? []) {
 			for (const imageRef of project.updateInfo?.updatedImageRefs ?? []) {
-				refs.add(imageRef);
+				if (!refs.includes(imageRef)) refs.push(imageRef);
 			}
 		}
-		return Array.from(refs).sort();
+		return refs.sort();
 	});
 
 	const projectUpdateDetailsQuery = createQuery<Record<string, ImageUpdateInfoDto>>(() => ({
 		queryKey: ['updates', 'projects', 'details', envId, projectUpdatedImageRefs],
-		queryFn: () =>
-			projectUpdatedImageRefs.length > 0 ? imageService.getUpdateInfoByRefs(projectUpdatedImageRefs) : Promise.resolve({}),
-		initialData: {},
-		enabled: projectUpdatedImageRefs.length > 0,
-		refetchOnMount: false
+		queryFn: () => imageService.getUpdateInfoByRefs(projectUpdatedImageRefs, envId),
+		placeholderData: {},
+		enabled: projectUpdatedImageRefs.length > 0
 	}));
 
 	const checkUpdatesMutation = createMutation(() => ({
 		mutationKey: ['updates', 'check-all', envId],
-		mutationFn: () => imageService.checkAllImages(),
+		mutationFn: () => imageService.checkAllImages(envId),
 		onSuccess: async () => {
 			toast.success(m.images_update_check_completed());
 			await Promise.all([containersQuery.refetch(), projectsQuery.refetch()]);
@@ -121,35 +128,29 @@
 		}
 	}));
 
+	const applyUpdatesMutation = createMutation(() => ({
+		mutationKey: ['updates', 'apply', envId],
+		mutationFn: (options: AutoUpdateCheck | undefined) => imageService.runAutoUpdate(options, envId),
+		onSuccess: async (result) => {
+			const toastOptions = activityToastOptions(extractActivityId(result));
+			if (result.failed > 0) {
+				toast.error(m.operations_update_partial({ updated: result.updated, failed: result.failed }), toastOptions);
+			} else {
+				toast.success(m.operations_update_complete({ count: result.updated }), toastOptions);
+			}
+			await refresh();
+		},
+		onError: () => toast.error(m.operations_update_failed())
+	}));
+
 	const isRefreshing = $derived(
 		(containersQuery.isFetching && !containersQuery.isPending) || (projectsQuery.isFetching && !projectsQuery.isPending)
 	);
 	const isChecking = $derived(checkUpdatesMutation.isPending);
+	const canApplyUpdates = $derived(hasPermission('image-updates:check', envId));
 	const containerCount = $derived(containers.pagination?.totalItems ?? 0);
 	const projectCount = $derived(projects.pagination?.totalItems ?? 0);
 	const totalAffectedResources = $derived(containerCount + projectCount);
-	const tabItems: TabItem[] = $derived([
-		{
-			value: 'containers',
-			label: m.containers_title(),
-			icon: ContainersIcon
-		},
-		{
-			value: 'projects',
-			label: m.projects_title(),
-			icon: ProjectsIcon
-		}
-	]);
-	type UpdateTab = 'containers' | 'projects';
-	const urlTab = useUrlTab<UpdateTab>({
-		validTabs: () => {
-			if (containerCount === 0 && projectCount > 0) return ['projects'];
-			if (projectCount === 0 && containerCount > 0) return ['containers'];
-			return ['containers', 'projects'];
-		},
-		defaultTab: () => (containerCount > 0 || projectCount === 0 ? 'containers' : 'projects')
-	});
-	const effectiveTab = $derived(urlTab.value);
 
 	async function refresh() {
 		containerSnapshot = null;
@@ -160,8 +161,40 @@
 		}
 	}
 
-	function handleTabChange(value: string) {
-		urlTab.select(value);
+	function confirmUpdateAll() {
+		openConfirmDialog({
+			title: m.operations_update_all_title(),
+			message: m.operations_update_all_description(),
+			confirm: {
+				label: m.operations_update_all(),
+				action: async () => {
+					await applyUpdatesMutation.mutateAsync(undefined);
+				}
+			}
+		});
+	}
+
+	async function updateWorkload(type: 'container' | 'project', resourceId: string) {
+		await applyUpdatesMutation.mutateAsync({ type, resourceIds: [resourceId] });
+	}
+
+	async function refreshTable(options: SearchPaginationSortRequest) {
+		requestOptions = options;
+		const sourceLimit = (options.pagination?.page ?? 1) * (options.pagination?.limit ?? 20);
+		const sourceOptions = {
+			...options,
+			pagination: { page: 1, limit: sourceLimit }
+		};
+		const [nextContainers, nextProjects] = await Promise.all([
+			containerService.getContainersForEnvironment(
+				envId,
+				ensureStandaloneContainerUpdatesFilter(sourceOptions) as ContainerListRequestOptions
+			),
+			projectService.getProjectsForEnvironment(envId, ensureUpdatesFilter(sourceOptions))
+		]);
+		containerSnapshot = { envId, value: nextContainers };
+		projectSnapshot = { envId, value: nextProjects };
+		return { containers: nextContainers, projects: nextProjects };
 	}
 
 	const actionButtons: ActionButton[] = $derived([
@@ -174,6 +207,18 @@
 			loading: isChecking,
 			disabled: isChecking
 		},
+		...(canApplyUpdates
+			? [
+					{
+						id: 'update-all',
+						action: 'update' as const,
+						label: m.operations_update_all(),
+						onclick: confirmUpdateAll,
+						loading: applyUpdatesMutation.isPending,
+						disabled: applyUpdatesMutation.isPending || totalAffectedResources === 0
+					}
+				]
+			: []),
 		{
 			id: 'refresh',
 			action: 'restart',
@@ -206,44 +251,24 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.images_updates()} icon={UpdateIcon} {actionButtons} {statCards}>
+<ResourcePageLayout
+	title={m.operations_workload_updates()}
+	subtitle={m.operations_updates_subtitle()}
+	icon={UpdateIcon}
+	{actionButtons}
+	{statCards}
+>
 	{#snippet mainContent()}
-		<div class="space-y-6">
-			<Tabs.Root value={effectiveTab}>
-				<TabBar items={tabItems} value={effectiveTab} onValueChange={handleTabChange} />
-
-				<Tabs.Content value="containers" class="mt-4">
-					{#key `${envId}-containers`}
-						<ContainerUpdatesTable
-							{containers}
-							bind:requestOptions={containerRequestOptions}
-							onRefreshData={async (options) => {
-								containerRequestOptions = ensureStandaloneContainerUpdatesFilter(options);
-								const next = await containerService.getContainersForEnvironment(envId, containerRequestOptions);
-								containerSnapshot = { envId, value: next };
-								return next;
-							}}
-						/>
-					{/key}
-				</Tabs.Content>
-
-				<Tabs.Content value="projects" class="mt-4">
-					{#key `${envId}-projects`}
-						<ProjectUpdatesTable
-							{projects}
-							bind:requestOptions={projectRequestOptions}
-							updateInfoByRef={projectUpdateDetailsQuery.data}
-							onRefreshData={async (options) => {
-								projectRequestOptions = ensureUpdatesFilter(options);
-								projectSnapshot = {
-									envId,
-									value: await projectService.getProjectsForEnvironment(envId, projectRequestOptions)
-								};
-							}}
-						/>
-					{/key}
-				</Tabs.Content>
-			</Tabs.Root>
-		</div>
+		{#key envId}
+			<WorkloadUpdatesTable
+				{containers}
+				{projects}
+				environmentName={environmentStore.selected?.name ?? envId}
+				onUpdate={updateWorkload}
+				bind:requestOptions
+				updateInfoByRef={projectUpdateDetailsQuery.data}
+				onRefreshData={refreshTable}
+			/>
+		{/key}
 	{/snippet}
 </ResourcePageLayout>

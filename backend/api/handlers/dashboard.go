@@ -82,6 +82,8 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		},
 		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermDashboardRead),
 	}, h.StreamAllDashboards)
+
+	h.registerOperationsInternal(api)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
@@ -137,7 +139,7 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
 func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
-	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
+	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, agg.Config[dashboardtypes.StreamEvent]{
 		Writer:            writer,
 		Flush:             flush,
 		Buffer:            dashboardStreamEventBuffer,
@@ -151,7 +153,7 @@ func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *
 		},
 		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
 			h.runRemoteDashboardStreamPollersInternal(ctx, ps, debugAllGood, events)
-		})
+		}, authz.PermDashboardRead)
 }
 
 // trimDashboardStreamSnapshotInternal drops the first-page container/image

@@ -178,7 +178,7 @@ setup('create gitops sync in arcane', async ({ page }) => {
 	}
 
 	// Verify project was created
-	await page.goto('/projects');
+	await page.goto('/workloads/projects');
 	await page.waitForLoadState('load');
 	await page.waitForTimeout(2000);
 

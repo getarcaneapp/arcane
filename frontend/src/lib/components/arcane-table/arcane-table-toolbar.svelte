@@ -67,6 +67,15 @@
 	const typeColumnFilterOptions = $derived(
 		(typeColumn?.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions ?? []
 	);
+	const customFilterColumns = $derived(
+		table
+			.getAllColumns()
+			.filter(
+				(column) =>
+					column.id !== 'type' &&
+					((column.columnDef.meta as { filterOptions?: FilterOption[] } | undefined)?.filterOptions?.length ?? 0) > 0
+			)
+	);
 
 	const debouncedSetGlobal = debounced((v: string) => table.setGlobalFilter(v), 300);
 	const imageNameFilterOptionsFormatted = $derived(imageNameFilterOptions.map((name) => ({ label: name, value: name })));
@@ -76,7 +85,8 @@
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && typeColumnFilterOptions.length > 0) ||
+			(!!(typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn) ||
+				customFilterColumns.length > 0 ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -91,6 +101,13 @@
 	{#if typeColumn && typeColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 	{/if}
+	{#each customFilterColumns as column (column.id)}
+		<DataTableFacetedFilter
+			{column}
+			title={column.columnDef.meta?.title ?? column.id}
+			options={(column.columnDef.meta as { filterOptions?: FilterOption[] }).filterOptions ?? []}
+		/>
+	{/each}
 	{#if usageColumn}
 		<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
 	{/if}

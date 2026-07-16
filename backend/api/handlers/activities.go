@@ -331,7 +331,7 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
 func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *authz.PermissionSet, limit int, writer io.Writer, flush func()) {
-	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermActivitiesRead, agg.Config[activity.StreamEvent]{
+	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, agg.Config[activity.StreamEvent]{
 		Writer:            writer,
 		Flush:             flush,
 		Buffer:            activityStreamEventBuffer,
@@ -345,7 +345,7 @@ func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *a
 		},
 		func(ctx context.Context, events chan<- activity.StreamEvent) {
 			h.runRemoteActivityStreamPollersInternal(ctx, ps, limit, events)
-		})
+		}, authz.PermActivitiesRead)
 }
 
 func (h *ActivityHandler) runLocalActivityStreamProducerInternal(ctx context.Context, limit int, events chan<- activity.StreamEvent) {

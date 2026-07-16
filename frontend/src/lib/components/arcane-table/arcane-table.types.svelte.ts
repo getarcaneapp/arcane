@@ -44,6 +44,7 @@ export type ColumnSpec<T extends RowData> = {
 	id?: string;
 	title: string;
 	hidden?: boolean;
+	hideable?: boolean;
 	sortable?: boolean;
 	cell?: Snippet<[{ row: ArcaneRow<T>; item: T; value: unknown }]>;
 	header?: Snippet<[{ column: ArcaneColumn<T>; title: string; class?: string }]>;

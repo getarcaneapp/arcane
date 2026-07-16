@@ -19,6 +19,8 @@ function getResourceListPage(): string | null {
 		// but not /containers or /containers/components/...
 		const pattern = prefix + '/[';
 		if (routeId.includes(pattern) && !routeId.includes('/components/')) {
+			if (prefix === '/projects') return '/workloads/projects';
+			if (prefix === '/containers') return '/workloads/containers';
 			return prefix;
 		}
 	}

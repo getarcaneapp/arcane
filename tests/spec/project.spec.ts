@@ -6,7 +6,7 @@ import { TEST_COMPOSE_YAML, TEST_ENV_FILE } from '../setup/project.data';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const ROUTES = {
-	page: '/projects',
+	page: '/workloads/projects',
 	apiProjects: '/api/environments/0/projects',
 	apiImageUpdatesCheckAll: '/api/environments/0/image-updates/check-all',
 	apiImageUpdatesCheckBatch: '/api/environments/0/image-updates/check-batch',
@@ -41,15 +41,6 @@ async function getCodeMirrorValue(editor: Locator) {
 
 		return (node as { textContent?: string | null }).textContent ?? '';
 	});
-}
-
-async function clickProjectsPageUpdateAction(page: Page) {
-	const updateProjectsButton = page
-		.getByRole('button', { name: 'Update Projects', exact: true })
-		.filter({ visible: true })
-		.first();
-	await expect(updateProjectsButton).toBeVisible();
-	await updateProjectsButton.click();
 }
 
 async function clickProjectDetailUpdateAction(page: Page) {
@@ -296,8 +287,11 @@ test.beforeEach(async ({ page }) => {
 
 test.describe('Projects Page', () => {
 	test('should display the main heading and description', async ({ page }) => {
-		await expect(page.getByRole('heading', { name: 'Projects', level: 1 })).toBeVisible();
-		await expect(page.getByText('View and Manage Compose Projects')).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Workloads', level: 1 })).toBeVisible();
+		await expect(
+			page.getByText('Projects and standalone containers running in this environment.')
+		).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Projects', exact: true })).toBeVisible();
 	});
 
 	test('should display summary cards with correct counts', async ({ page }) => {
@@ -426,7 +420,7 @@ test.describe('Projects Page', () => {
 		}
 	});
 
-	test('should check project updates without triggering updater run', async ({ page }) => {
+	test('should open workload updates without triggering update execution', async ({ page }) => {
 		let checkAllRequests = 0;
 		let updaterRunRequests = 0;
 
@@ -448,9 +442,10 @@ test.describe('Projects Page', () => {
 			});
 		});
 
-		await clickProjectsPageUpdateAction(page);
+		await page.locator('header').getByRole('button', { name: 'Updates', exact: true }).click();
 
-		await expect.poll(() => checkAllRequests).toBe(1);
+		await expect(page).toHaveURL('/operations/updates?tab=projects');
+		expect(checkAllRequests).toBe(0);
 		expect(updaterRunRequests).toBe(0);
 	});
 

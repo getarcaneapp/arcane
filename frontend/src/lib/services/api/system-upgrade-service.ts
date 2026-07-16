@@ -64,7 +64,7 @@ async function triggerUpgrade(environmentId: string = '0'): Promise<UpgradeRespo
 }
 
 /**
- * Trigger a fleet-wide update, upgrading every online remote environment that has an
+ * Update every online remote environment that has an
  * update available first and then the manager itself (last) when it has an update.
  * No client timeout is set: the manager pulls the upgrader image before responding.
  */

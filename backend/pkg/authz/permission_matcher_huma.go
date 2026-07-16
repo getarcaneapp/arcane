@@ -14,6 +14,9 @@ import (
 // to an agent.
 const MetaRequiredPermission = "arcane:requiredPermission"
 
+// MetaRequiredPermissions records an any-of permission requirement.
+const MetaRequiredPermissions = "arcane:requiredPermissions"
+
 const envPathPrefixInternal = "/environments/{id}"
 
 // CollectFromHumaAPI walks every operation registered on humaAPI and records,
@@ -45,6 +48,10 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 				m.Add(method, suffix, perm)
 				continue
 			}
+			if permissions, ok := requiredPermissionsInternal(op); ok {
+				m.Add(method, suffix, permissions...)
+				continue
+			}
 			// An environment-scoped operation that declares no required
 			// permission is only allowed through the proxy when it is an
 			// explicitly public endpoint (empty Security). Anything else is
@@ -54,6 +61,17 @@ func (m *PermissionMatcher) CollectFromHumaAPI(humaAPI huma.API) {
 			}
 		}
 	}
+}
+
+func requiredPermissionsInternal(op *huma.Operation) ([]string, bool) {
+	if op.Metadata == nil {
+		return nil, false
+	}
+	permissions, ok := op.Metadata[MetaRequiredPermissions].([]string)
+	if !ok || len(permissions) == 0 {
+		return nil, false
+	}
+	return permissions, true
 }
 
 // envResourceSuffixInternal returns the resource path after /environments/{id}

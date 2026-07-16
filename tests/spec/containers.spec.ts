@@ -3,7 +3,7 @@ import { fetchContainersWithRetry, type Paginated } from '../utils/fetch.util';
 import { ContainerSummary } from 'types/containers.type';
 import { openRowActionsMenu } from '../utils/table-actions.util';
 
-const CONTAINERS_ROUTE = '/containers';
+const CONTAINERS_ROUTE = '/workloads/containers';
 
 async function navigateToContainers(page: Page) {
 	await page.goto(CONTAINERS_ROUTE);
@@ -20,8 +20,11 @@ test.describe('Containers Page', () => {
 
 	test('should display the containers page title and description', async ({ page }) => {
 		await navigateToContainers(page);
-		await expect(page.getByRole('heading', { name: 'Containers', level: 1 })).toBeVisible();
-		await expect(page.getByText('View and Manage your Containers').first()).toBeVisible();
+		await expect(page.getByRole('heading', { name: 'Workloads', level: 1 })).toBeVisible();
+		await expect(
+			page.getByText('Projects and standalone containers running in this environment.')
+		).toBeVisible();
+		await expect(page.getByRole('tab', { name: 'Containers', exact: true })).toBeVisible();
 	});
 
 	test('should display stat cards with correct counts', async ({ page }) => {
@@ -43,6 +46,20 @@ test.describe('Containers Page', () => {
 		await expect(page.getByRole('button', { name: 'Image', exact: true })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'State' })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Created' })).toBeVisible();
+	});
+
+	test('should filter to standalone containers from the table toolbar', async ({ page }) => {
+		const standaloneResponse = page.waitForResponse((response) => {
+			const url = new URL(response.url());
+			return (
+				url.pathname === '/api/environments/0/containers' &&
+				url.searchParams.get('standalone') === 'true'
+			);
+		});
+
+		await page.getByRole('button', { name: 'Standalone only', exact: true }).click();
+		await page.getByRole('option', { name: 'Standalone only', exact: true }).click();
+		await standaloneResponse;
 	});
 
 	test('should navigate to container details on Inspect', async ({ page }) => {

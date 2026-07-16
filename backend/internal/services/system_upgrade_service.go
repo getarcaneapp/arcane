@@ -408,7 +408,7 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 	return containertypes.InspectResponse{}, &common.ArcaneContainerNotFoundError{}
 }
 
-// --- Fleet-wide "update all environments" orchestration ---
+// --- "Update all environments" orchestration ---
 //
 // Remote agents upgrade first, while the manager is still up and can orchestrate
 // and report live progress. The manager upgrades itself LAST, which recreates its
@@ -430,7 +430,7 @@ const (
 	updateAllErrorMaxLenInternal         = 500
 )
 
-// StartUpdateAll begins a fleet-wide update. The agents phase runs first in the
+// StartUpdateAll begins an update across all environments. The agents phase runs first in the
 // background (while the manager is up); the agents goroutine triggers the manager
 // self-upgrade as its final step (job left pending_restart, finalized at next
 // boot). Every environment pulls the latest image, whether or not it reports an
@@ -463,7 +463,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	}
 
 	// Seed a pending row for every remote environment up front so the dialog can
-	// show the whole fleet immediately instead of popping rows in as each finishes.
+	// show all environments immediately instead of popping rows in as each finishes.
 	// Best effort: the agents phase re-lists authoritatively and fills any gaps.
 	remoteResults := s.seedRemoteResultsInternal(ctx, env)
 
@@ -629,7 +629,7 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 }
 
 // seedRemoteResultsInternal builds a pending result row for every remote environment
-// so the dialog can render the whole fleet immediately. Best effort: on error it
+// so the dialog can render all environments immediately. Best effort: on error it
 // returns nil and the agents phase appends rows as it processes them.
 func (s *SystemUpgradeService) seedRemoteResultsInternal(ctx context.Context, env *EnvironmentService) models.EnvironmentUpdateResults {
 	envs, err := env.ListRemoteEnvironments(ctx)

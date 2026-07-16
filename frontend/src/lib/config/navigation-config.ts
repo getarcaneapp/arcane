@@ -38,6 +38,7 @@ export type NavigationItem = {
 	url: string;
 	icon: any;
 	shortcut?: ShortcutKey[];
+	activePrefixes?: string[];
 	items?: NavigationItem[];
 	/**
 	 * Backend-owned access-surface ID that gates this item. Omit to make the
@@ -63,11 +64,58 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.dashboard'
 		},
 		{
-			title: m.projects_title(),
-			url: '/projects',
-			icon: ProjectsIcon,
+			title: m.workloads_title(),
+			url: '/workloads',
+			icon: LayersIcon,
 			shortcut: ['mod', '2'],
-			accessSurfaceId: 'route.projects'
+			activePrefixes: ['/projects', '/containers'],
+			accessSurfaceId: 'landing.workloads',
+			items: [
+				{
+					title: m.projects_title(),
+					url: '/workloads/projects',
+					icon: ProjectsIcon,
+					accessSurfaceId: 'route.projects',
+					activePrefixes: ['/projects']
+				},
+				{
+					title: m.containers_title(),
+					url: '/workloads/containers',
+					icon: ContainersIcon,
+					shortcut: ['mod', '5'],
+					accessSurfaceId: 'route.containers',
+					activePrefixes: ['/containers']
+				}
+			]
+		},
+		{
+			title: m.operations_title(),
+			url: '/operations',
+			icon: ActivityIcon,
+			shortcut: ['mod', 'u'],
+			accessSurfaceId: 'landing.operations',
+			items: [
+				{
+					title: m.images_updates(),
+					url: '/operations/updates',
+					icon: UpdateIcon,
+					accessSurfaceId: 'route.updates',
+					activePrefixes: ['/updates']
+				},
+				{
+					title: m.vuln_title(),
+					url: '/images/vulnerabilities',
+					icon: ShieldAlertIcon,
+					accessSurfaceId: 'route.images.vulnerabilities'
+				},
+				{
+					title: m.events_title(),
+					url: '/events',
+					icon: EventsIcon,
+					shortcut: ['mod', '9'],
+					accessSurfaceId: 'route.events'
+				}
+			]
 		},
 		{
 			title: m.environments_title(),
@@ -112,34 +160,12 @@ export const navigationItems: NavigationSections = {
 	],
 	resourceItems: [
 		{
-			title: m.containers_title(),
-			url: '/containers',
-			icon: ContainersIcon,
-			shortcut: ['mod', '5'],
-			accessSurfaceId: 'route.containers'
-		},
-		{
 			title: m.images_title(),
 			url: '/images',
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
 			accessSurfaceId: 'route.images',
-			items: [
-				{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' },
-				{
-					title: m.vuln_title(),
-					url: '/images/vulnerabilities',
-					icon: ShieldAlertIcon,
-					accessSurfaceId: 'route.images.vulnerabilities'
-				}
-			]
-		},
-		{
-			title: m.images_updates(),
-			url: '/updates',
-			icon: UpdateIcon,
-			shortcut: ['mod', 'u'],
-			accessSurfaceId: 'route.updates'
+			items: [{ title: m.builds(), url: '/images/builds', icon: HammerIcon, accessSurfaceId: 'route.images.builds' }]
 		},
 		{
 			title: m.networks_title(),
@@ -175,13 +201,6 @@ export const navigationItems: NavigationSections = {
 		{ title: 'Secrets', url: '/swarm/secrets', icon: LockIcon, accessSurfaceId: 'route.swarm.secrets' }
 	],
 	settingsItems: [
-		{
-			title: m.events_title(),
-			url: '/events',
-			icon: EventsIcon,
-			shortcut: ['mod', '9'],
-			accessSurfaceId: 'route.events'
-		},
 		{
 			title: m.settings_title(),
 			url: '/settings',
@@ -303,10 +322,6 @@ export function filterByPermissions(
 		if (!canSeeItem(item, user, currentEnvId, accessManifest)) continue;
 		if (item.items && item.items.length > 0) {
 			const filteredChildren = filterByPermissions(item.items, user, currentEnvId, accessManifest);
-			// Drop a parent group only when it has children declared but none
-			// survived the filter. A parent with NO children declared (a leaf
-			// link that happens to have an empty items array) stays.
-			if (filteredChildren.length === 0 && item.items.length > 0) continue;
 			out.push({ ...item, items: filteredChildren });
 		} else {
 			out.push(item);
@@ -339,8 +354,8 @@ export function getCustomizeSubpageUrlsInNavOrder(): string[] {
 const defaultMobilePinnedItems: NavigationItem[] = [
 	navigationItems.managementItems[0]!,
 	navigationItems.managementItems[1]!,
-	navigationItems.resourceItems[0]!,
-	navigationItems.resourceItems[1]!
+	navigationItems.managementItems[2]!,
+	navigationItems.managementItems[3]!
 ];
 
 export function getSwarmNavigationItems(swarmEnabled: boolean): NavigationItem[] {

@@ -22,7 +22,7 @@ type PermissionMatcher struct {
 type permRoute struct {
 	method   string
 	segments []string // literal segment, or "*" for a path parameter
-	perm     string
+	perms    []string
 }
 
 // NewPermissionMatcher returns an empty matcher.
@@ -30,15 +30,14 @@ func NewPermissionMatcher() *PermissionMatcher {
 	return &PermissionMatcher{}
 }
 
-// Add registers the permission required for method + pathTemplate. pathTemplate
-// is the resource suffix after /environments/{id}. Path parameters may use
-// either Huma's "{name}" or Echo's ":name" syntax; both are treated as
-// single-segment wildcards.
-func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
+// Add registers the permissions accepted for method + pathTemplate. Path
+// parameters may use Huma's "{name}" or Echo's ":name" syntax; both are
+// treated as single-segment wildcards.
+func (m *PermissionMatcher) Add(method, pathTemplate string, permissions ...string) {
 	m.routes = append(m.routes, permRoute{
 		method:   strings.ToUpper(method),
 		segments: templateSegmentsInternal(pathTemplate),
-		perm:     perm,
+		perms:    append([]string(nil), permissions...),
 	})
 }
 
@@ -46,10 +45,14 @@ func (m *PermissionMatcher) Add(method, pathTemplate, perm string) {
 // permission (an intentionally public endpoint). Lookup reports it as found
 // with an empty permission string, which the proxy treats as "allow".
 func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
-	m.Add(method, pathTemplate, "")
+	m.routes = append(m.routes, permRoute{
+		method:   strings.ToUpper(method),
+		segments: templateSegmentsInternal(pathTemplate),
+		perms:    nil,
+	})
 }
 
-// Lookup returns the permission required for method + suffixPath, where
+// Lookup returns the permissions accepted for method + suffixPath, where
 // suffixPath is the resource path after /environments/{id} (for example
 // "/containers/abc123/start"). When multiple templates match, the most specific
 // one wins — a route with more literal (non-wildcard) segments is preferred, so
@@ -58,7 +61,7 @@ func (m *PermissionMatcher) AddPublic(method, pathTemplate string) {
 //
 // The boolean result reports whether any route matched. Callers should treat a
 // false result as "deny" for proxied resource paths.
-func (m *PermissionMatcher) Lookup(method, suffixPath string) (string, bool) {
+func (m *PermissionMatcher) Lookup(method, suffixPath string) ([]string, bool) {
 	if i := strings.IndexByte(suffixPath, '?'); i >= 0 {
 		suffixPath = suffixPath[:i]
 	}
@@ -66,7 +69,7 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) (string, bool) {
 	method = strings.ToUpper(method)
 
 	bestScore := -1
-	bestPerm := ""
+	var bestPermissions []string
 	found := false
 	for i := range m.routes {
 		r := m.routes[i]
@@ -87,11 +90,11 @@ func (m *PermissionMatcher) Lookup(method, suffixPath string) (string, bool) {
 		}
 		if match && score > bestScore {
 			bestScore = score
-			bestPerm = r.perm
+			bestPermissions = r.perms
 			found = true
 		}
 	}
-	return bestPerm, found
+	return append([]string(nil), bestPermissions...), found
 }
 
 // pathSegmentsInternal splits a path into its non-empty segments, ignoring

@@ -167,8 +167,8 @@ class ImageService extends BaseAPIService {
 		return this.handleResponse(this.api.post(`/environments/${envId}/image-updates/check-batch`, { imageRefs }));
 	}
 
-	async getUpdateInfoByRefs(imageRefs: string[]): Promise<Record<string, ImageUpdateInfoDto>> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
+	async getUpdateInfoByRefs(imageRefs: string[], environmentId?: string): Promise<Record<string, ImageUpdateInfoDto>> {
+		const envId = await this.resolveEnvironmentId(environmentId);
 		if (imageRefs.length === 0) {
 			return {};
 		}

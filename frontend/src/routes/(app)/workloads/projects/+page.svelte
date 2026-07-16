@@ -1,21 +1,19 @@
 <script lang="ts">
 	import { BoxIcon, ProjectsIcon, StartIcon, StopIcon } from '$lib/icons';
-	import { toast } from 'svelte-sonner';
-	import ProjectsTable from './projects-table.svelte';
+	import ProjectsTable from '../../projects/projects-table.svelte';
 	import { goto } from '$app/navigation';
 	import { page } from '$app/state';
 	import { m } from '$lib/paraglide/messages';
 	import { projectService } from '$lib/services/project-service';
-	import { imageService } from '$lib/services/image-service';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { queryKeys } from '$lib/query/query-keys';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
 	import type { ProjectStatusCounts } from '$lib/types/swarm';
 	import { untrack } from 'svelte';
-	import { createMutation, createQuery } from '@tanstack/svelte-query';
+	import { createQuery } from '@tanstack/svelte-query';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import WorkloadTabs from '$lib/components/workloads/workload-tabs.svelte';
 
 	let { data } = $props();
 
@@ -78,72 +76,6 @@
 		isManualRefreshing = false;
 	});
 
-	const checkUpdatesMutation = createMutation(() => ({
-		mutationKey: queryKeys.projects.checkUpdates(envId),
-		mutationFn: async (requestedEnvId: string) => {
-			// Refresh update info for all images, then use the image->project usage
-			// map to narrow the redeploy to projects that actually have updates.
-			// This avoids hitting every project (and its registry) when nothing has
-			// changed, which is especially expensive on instances with many projects.
-			const imageCheckResults = await imageService.checkAllImages(requestedEnvId);
-
-			const images = await imageService.getImagesForEnvironment(requestedEnvId, {
-				pagination: { page: 1, limit: 10000 }
-			});
-			const projectIdsWithUpdates = new Set<string>();
-			for (const img of images.data) {
-				if (!img.updateInfo?.hasUpdate) continue;
-				for (const user of img.usedBy ?? []) {
-					if (user.type === 'project' && user.id) {
-						projectIdsWithUpdates.add(user.id);
-					}
-				}
-			}
-
-			if (projectIdsWithUpdates.size === 0) {
-				return { updated: 0, activityId: extractActivityId(imageCheckResults) };
-			}
-
-			const allProjects = await projectService.getProjectsForEnvironment(requestedEnvId, {
-				pagination: { page: 1, limit: 1000 }
-			});
-			const projectsToUpdate = allProjects.data.filter((p) => projectIdsWithUpdates.has(p.id));
-
-			const results = await Promise.allSettled(
-				projectsToUpdate.map(async (proj) => {
-					// deployProject with pullPolicy 'always' already pulls fresh images,
-					// so no separate pullProjectImages call is needed.
-					await projectService.deployProject(proj.id, { pullPolicy: 'always' });
-					return proj.name;
-				})
-			);
-			const failed = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
-			if (failed.length > 0) {
-				const succeeded = results.length - failed.length;
-				throw new Error(`${failed.length} project(s) failed to update (${succeeded} succeeded)`);
-			}
-
-			return { updated: results.length, activityId: extractActivityId(imageCheckResults) };
-		},
-		onSuccess: async (result, requestedEnvId) => {
-			const toastOptions = activityToastOptions(result.activityId);
-			if (result && result.updated === 0) {
-				toast.success(m.image_update_up_to_date_title(), toastOptions);
-			} else {
-				toast.success(m.compose_update_success(), toastOptions);
-			}
-			if (requestedEnvId === envId) {
-				await Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-			}
-		},
-		onError: (error, requestedEnvId) => {
-			toast.error(error instanceof Error ? error.message : m.containers_check_updates_failed());
-			if (requestedEnvId === envId) {
-				void Promise.all([projectsQuery.refetch(), projectStatusCountsQuery.refetch()]);
-			}
-		}
-	}));
-
 	const projectStatusCounts = $derived(
 		projectStatusCountsQuery.data?.envId === envId ? projectStatusCountsQuery.data.value : countsFallback
 	);
@@ -152,10 +84,6 @@
 	const stoppedCompose = $derived(projectStatusCounts.stoppedProjects);
 	const archivedCompose = $derived(projectStatusCounts.archivedProjects);
 	const isRefreshBlocked = $derived(isManualRefreshing || projectsQuery.isFetching || projectStatusCountsQuery.isFetching);
-
-	async function handleCheckForUpdates() {
-		await checkUpdatesMutation.mutateAsync(envId);
-	}
 
 	async function refreshCompose() {
 		if (isRefreshBlocked) return;
@@ -181,7 +109,7 @@
 	}
 
 	const canCreateProject = $derived(hasPermission('projects:create', envId));
-	const canDeployProject = $derived(hasPermission('projects:deploy', envId));
+	const canReviewUpdates = $derived(hasPermission('image-updates:read', envId));
 
 	const actionButtons: ActionButton[] = $derived.by(() => {
 		const buttons: ActionButton[] = [];
@@ -193,14 +121,13 @@
 				onclick: () => goto('/projects/new')
 			});
 		}
-		if (canDeployProject) {
+		if (canReviewUpdates) {
 			buttons.push({
-				id: 'check-updates',
+				id: 'review-updates',
 				action: 'update',
-				label: m.compose_update_projects(),
-				onclick: handleCheckForUpdates,
-				loading: checkUpdatesMutation.isPending,
-				disabled: !resourcesReady || checkUpdatesMutation.isPending
+				label: m.images_updates(),
+				onclick: () => goto('/operations/updates?tab=projects'),
+				disabled: !resourcesReady
 			});
 		}
 		buttons.push({
@@ -242,8 +169,11 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.projects_title()} subtitle={m.compose_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.workloads_title()} subtitle={m.workloads_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
+		<div class="mb-4">
+			<WorkloadTabs value="projects" />
+		</div>
 		{#if projects}
 			<ProjectsTable
 				{projects}

@@ -163,7 +163,7 @@ function getRequestPath(url: string, baseURL: string): string {
 }
 
 let tokenRefreshHandler: (() => Promise<string | null>) | null = null;
-// Set true while a manager self-update / fleet "Update All" is running. During that
+// Set true while a manager self-update / environment "Update All" is running. During that
 // window the backend briefly restarts and returns version-mismatch 401s; we must not
 // bounce the user to /login — the session is recoverable once the backend is back.
 let upgradeInProgressInternal = false;

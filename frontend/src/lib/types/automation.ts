@@ -3,11 +3,10 @@
 export type AutoUpdateResourceType = 'image' | 'container' | 'project';
 
 export interface AutoUpdateCheck {
-	type?: 'containers' | 'projects' | 'all';
+	type?: AutoUpdateResourceType;
 	resourceIds?: string[];
 	forceUpdate?: boolean;
 	dryRun?: boolean;
-	resourceType?: AutoUpdateResourceType;
 }
 
 export interface AutoUpdateResult {

@@ -44,6 +44,16 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Contains(t, settingsLanding.Children, "settings.category.apikeys")
 	require.Contains(t, settingsLanding.Children, "settings.category.jobschedule")
 
+	operationsLanding := requireAccessSurfaceInternal(t, "landing.operations")
+	require.Empty(t, operationsLanding.URL)
+	require.Contains(t, operationsLanding.Children, "route.operations.overview")
+	require.Contains(t, operationsLanding.Children, "route.events")
+
+	operationsOverview := requireAccessSurfaceInternal(t, "route.operations.overview")
+	require.Equal(t, "/operations", operationsOverview.URL)
+	require.NotContains(t, operationsOverview.Permissions, authz.PermActivitiesRead)
+	require.NotContains(t, operationsOverview.Permissions, authz.PermEventsRead)
+
 	dashboard := requireAccessSurfaceInternal(t, "route.dashboard")
 	require.Equal(t, authz.AccessSurfaceKindRoute, dashboard.Kind)
 	require.Equal(t, "/dashboard", dashboard.URL)
@@ -75,6 +85,16 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	require.True(t, authz.CanAccessSurface(customizePS, "landing.customize", "env-a"))
 
 	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "missing.surface", "env-a"))
+
+	activityPS := authz.NewPermissionSet()
+	activityPS.AddEnv("env-a", authz.PermActivitiesRead)
+	require.False(t, authz.CanAccessSurface(activityPS, "route.operations.overview", "env-a"))
+	require.False(t, authz.CanAccessSurface(activityPS, "landing.operations", "env-a"))
+
+	eventsPS := authz.NewPermissionSet()
+	eventsPS.AddGlobal(authz.PermEventsRead)
+	require.False(t, authz.CanAccessSurface(eventsPS, "route.operations.overview", "env-a"))
+	require.True(t, authz.CanAccessSurface(eventsPS, "landing.operations", "env-a"))
 }
 
 func TestAccessSurfaceRegistryIsDefensiveAndInternallyConsistent(t *testing.T) {

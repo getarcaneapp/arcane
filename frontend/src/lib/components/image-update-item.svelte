@@ -23,9 +23,8 @@
 		repo?: string;
 		tag?: string;
 		isLocal?: boolean;
+		allowCheck?: boolean;
 		onUpdated?: (data: ImageUpdateData) => void;
-		/** Callback when user clicks "Update Container" button */
-		onUpdateContainer?: () => void;
 		/** Debug: force hasUpdate to true for testing */
 		debugHasUpdate?: boolean;
 	}
@@ -37,8 +36,8 @@
 		repo,
 		tag,
 		isLocal = false,
+		allowCheck = true,
 		onUpdated,
-		onUpdateContainer,
 		debugHasUpdate
 	}: Props = $props();
 
@@ -93,7 +92,7 @@
 	let isOpen = $state(false);
 
 	const isLocalImage = $derived(!!isLocal || effectiveUpdateInfo?.updateType === 'local');
-	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
+	const canCheckUpdate = $derived(allowCheck && !!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
 	type AuthBadge = { label: string; variant: BadgeVariant };
@@ -194,11 +193,6 @@
 		}
 	}
 
-	function handleUpdateContainer() {
-		isOpen = false;
-		onUpdateContainer?.();
-	}
-
 	const updatePriority = $derived.by(() => {
 		if (!effectiveUpdateInfo) return null;
 		if (effectiveUpdateInfo.error)
@@ -261,29 +255,19 @@
 {#snippet recheckButton()}
 	{#if canCheckUpdate}
 		<div class="border-t border-border/50 bg-muted/50 p-3">
-			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
-				<button
-					onclick={handleUpdateContainer}
-					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
-				>
-					<CircleArrowUpIcon class="size-3" />
-					{m.containers_update_container()}
-				</button>
-			{:else}
-				<button
-					onclick={checkImageUpdate}
-					disabled={isChecking}
-					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-secondary/80 px-3 py-2 text-xs font-medium text-secondary-foreground shadow-sm transition-all hover:bg-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
-				>
-					{#if isChecking}
-						<Spinner class="size-3" />
-						{m.common_action_checking()}
-					{:else}
-						<RefreshIcon class="size-3 transition-transform group-hover:rotate-45" />
-						{m.image_update_recheck_button()}
-					{/if}
-				</button>
-			{/if}
+			<button
+				onclick={checkImageUpdate}
+				disabled={isChecking}
+				class="group flex w-full items-center justify-center gap-2 rounded-lg bg-secondary/80 px-3 py-2 text-xs font-medium text-secondary-foreground shadow-sm transition-all hover:bg-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+			>
+				{#if isChecking}
+					<Spinner class="size-3" />
+					{m.common_action_checking()}
+				{:else}
+					<RefreshIcon class="size-3 transition-transform group-hover:rotate-45" />
+					{m.image_update_recheck_button()}
+				{/if}
+			</button>
 		</div>
 	{/if}
 {/snippet}

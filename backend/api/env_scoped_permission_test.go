@@ -41,8 +41,9 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 			if op.Security != nil && len(op.Security) == 0 {
 				continue
 			}
-			perm, ok := op.Metadata[authz.MetaRequiredPermission].(string)
-			if !ok || perm == "" {
+			perm, hasSingle := op.Metadata[authz.MetaRequiredPermission].(string)
+			permissions, hasMultiple := op.Metadata[authz.MetaRequiredPermissions].([]string)
+			if (!hasSingle || perm == "") && (!hasMultiple || len(permissions) == 0) {
 				missing = append(missing, method+" "+path)
 			}
 		}

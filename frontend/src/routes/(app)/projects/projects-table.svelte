@@ -7,7 +7,6 @@
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
-	import { toast } from 'svelte-sonner';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -16,7 +15,6 @@
 	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
 	import { projectService } from '$lib/services/project-service';
 	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
@@ -55,7 +53,6 @@
 	} = $props();
 
 	let actionStatus = $state<Record<string, ActionStatus>>({});
-	let checkingProjectIds = $state<Record<string, boolean>>({});
 
 	let isBulkLoading = $state({
 		up: false,
@@ -70,39 +67,6 @@
 			return;
 		}
 		projects = await projectService.getProjects(options);
-	}
-
-	async function handleCheckProjectUpdates(project: Project) {
-		const imageRefs = project.updateInfo?.imageRefs ?? [];
-		if (imageRefs.length === 0 || checkingProjectIds[project.id]) {
-			return;
-		}
-
-		checkingProjectIds = {
-			...checkingProjectIds,
-			[project.id]: true
-		};
-
-		try {
-			const results = await imageService.checkMultipleImages(imageRefs);
-			const firstError = Object.values(results)
-				.find((result) => !!result?.error?.trim())
-				?.error?.trim();
-			const hasErrors = !!firstError;
-			if (hasErrors) {
-				toast.error(firstError || m.containers_check_updates_failed());
-			} else {
-				toast.success(m.images_update_check_completed());
-			}
-			await refreshProjects(requestOptions);
-		} catch {
-			toast.error(m.containers_check_updates_failed());
-		} finally {
-			checkingProjectIds = {
-				...checkingProjectIds,
-				[project.id]: false
-			};
-		}
 	}
 
 	function getStatusTooltip(project: Project): string | undefined {
@@ -286,13 +250,7 @@
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: Project })}
-	<ProjectUpdateItem
-		updateInfo={item.updateInfo}
-		onCheck={() => handleCheckProjectUpdates(item)}
-		checking={!!checkingProjectIds[item.id]}
-		disabled={!!item.isArchived}
-		class="mr-2"
-	/>
+	<ProjectUpdateItem updateInfo={item.updateInfo} disabled={!!item.isArchived} class="mr-2" />
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: unknown })}

@@ -34,6 +34,17 @@ type AccessSurface struct {
 }
 
 var accessSurfacesInternal = []AccessSurface{
+	landingSurfaceInternal("landing.workloads", "/workloads", "Workloads", []string{
+		"route.projects",
+		"route.containers",
+	}, 20),
+	landingSurfaceInternal("landing.operations", "", "Operations", []string{
+		"route.operations.overview",
+		"route.updates",
+		"route.images.vulnerabilities",
+		"route.events",
+		"settings.category.apikeys",
+	}, 25),
 	landingSurfaceInternal("landing.customize", "/customize", "Customize", []string{
 		"customize.category.templates",
 		"customize.category.registries",
@@ -56,19 +67,20 @@ var accessSurfacesInternal = []AccessSurface{
 	}, 120),
 
 	routeSurfaceInternal("route.dashboard", "/dashboard", "Dashboard", AccessScopeModeSelectedEnvPlusGlobal, []string{PermDashboardRead}, 10),
-	routeSurfaceInternal("route.projects", "/projects", "Projects", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
+	routeSurfaceInternal("route.projects", "/workloads/projects", "Projects", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 30),
 	routeSurfaceInternal("route.projects.new", "/projects/new", "Create project", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead, PermProjectsCreate}, 0),
 	routeSurfaceInternal("route.projects.detail", "/projects/{projectId}", "Project", AccessScopeModeSelectedEnvPlusGlobal, []string{PermProjectsList, PermProjectsRead}, 0),
 	routeSurfaceInternal("route.environments", "/environments", "Environments", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 130),
 	routeSurfaceInternal("route.environments.detail", "/environments/{id}", "Environment", AccessScopeModeGlobalOnly, []string{PermEnvironmentsList, PermEnvironmentsRead}, 0),
 	routeSurfaceInternal("route.environments.gitops", "/environments/{id}/gitops", "GitOps Syncs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
-	routeSurfaceInternal("route.containers", "/containers", "Containers", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
+	routeSurfaceInternal("route.containers", "/workloads/containers", "Containers", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
 	routeSurfaceInternal("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
 	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
 	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
 	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesBuild}, 0),
 	routeSurfaceInternal("route.images.vulnerabilities", "/images/vulnerabilities", "Vulnerabilities", AccessScopeModeSelectedEnvPlusGlobal, []string{PermVulnsRead}, 0),
-	routeSurfaceInternal("route.updates", "/updates", "Image Updates", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
+	routeSurfaceInternal("route.operations.overview", "/operations", "Operations", AccessScopeModeAnyEffectiveScope, []string{PermImageUpdatesRead, PermProjectsList, PermProjectsRead, PermContainersList, PermContainersRead, PermVulnsRead, PermApiKeysList, PermApiKeysRead}, 25),
+	routeSurfaceInternal("route.updates", "/operations/updates", "Workload Updates", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImageUpdatesRead}, 0),
 	routeSurfaceInternal("route.networks", "/networks", "Networks", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 70),
 	routeSurfaceInternal("route.networks.detail", "/networks/{networkId}", "Network", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNetworksList, PermNetworksRead}, 0),
 	routeSurfaceInternal("route.ports", "/ports", "Ports", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList}, 0),
