@@ -2,7 +2,7 @@
 	import { createContainerStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import type { ContainerStats as ContainerStatsType } from '$lib/types/docker';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 
 	let {
@@ -38,7 +38,7 @@
 				containerId,
 				onMessage: (statsData) => {
 					if (statsData.removed) {
-						void invalidateAll();
+						void refreshAll();
 						return;
 					}
 

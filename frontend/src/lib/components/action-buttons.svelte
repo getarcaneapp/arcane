@@ -2,7 +2,7 @@
 	import { onMount } from 'svelte';
 	import type { Snippet } from 'svelte';
 	import { openConfirmDialog } from './confirm-dialog';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -264,7 +264,7 @@
 								type: type
 							}),
 							onSuccess: async () => {
-								await invalidateAll();
+								await refreshAll();
 								goto(type === 'project' ? '/projects' : '/containers');
 							}
 						});
@@ -323,7 +323,7 @@
 
 		try {
 			await projectService.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions());
-			await invalidateAll();
+			await refreshAll();
 			itemState = 'running';
 			onActionComplete('running');
 		} catch (e: any) {
@@ -365,7 +365,7 @@
 			projectService
 				.pullProjectImages(id, () => {})
 				.then(async () => {
-					await invalidateAll();
+					await refreshAll();
 					onActionComplete(itemState);
 				})
 				.catch((error: any) => {
@@ -393,7 +393,7 @@
 					() => {}
 				)
 				.then(async () => {
-					await invalidateAll();
+					await refreshAll();
 				})
 				.catch((error: any) => {
 					const message = error?.message || m.build_failed();

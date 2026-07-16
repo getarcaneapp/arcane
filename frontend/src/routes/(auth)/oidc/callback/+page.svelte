@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { page } from '$app/state';
 	import { toast } from 'svelte-sonner';
 	import userStore from '$lib/stores/user-store';
@@ -94,7 +94,7 @@
 		},
 		onSuccess: async ({ authResult, redirectTo }) => {
 			// Build a placeholder user from the OIDC response. The real user
-			// (with role assignments + permissions) is fetched by invalidateAll
+			// (with role assignments + permissions) is fetched by refreshAll
 			// below, which re-runs the root +layout.ts loader.
 			const user: User = {
 				id: authResult.user!.sub || authResult.user!.email || '',
@@ -115,11 +115,11 @@
 			};
 
 			userStore.setUser(user);
-			// invalidateAll re-runs the root +layout.ts loader, which fetches
+			// refreshAll re-runs the root +layout.ts loader, which fetches
 			// settings (with a graceful catch). We don't fetch them here directly
 			// — a user with zero/limited permissions would 403 on settings:read
 			// and crash this handler, leaving them stuck on a white screen.
-			await invalidateAll();
+			await refreshAll();
 			try {
 				const settings = await queryClient.fetchQuery({
 					queryKey: queryKeys.settings.global(),
@@ -137,7 +137,7 @@
 			// (app) layout's auth-redirect superseding this navigation: an interrupted
 			// goto() never resolves, which would hang this callback on "Processing
 			// Login…". Environment-scoped users (no global perms) would otherwise bounce
-			// to /no-access mid-navigation. invalidateAll() above has repopulated
+			// to /no-access mid-navigation. refreshAll() above has repopulated
 			// page.data (user + permissions manifest) and the environment store.
 			const landingUser = page.data['user'] ?? user;
 			const target =

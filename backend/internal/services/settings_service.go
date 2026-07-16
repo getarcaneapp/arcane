@@ -535,7 +535,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
 
 		switch key {
-		case "pollingEnabled", "pollingInterval":
+		case "pollingEnabled":
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true

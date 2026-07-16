@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '$lib/utils/settings';
 	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
@@ -322,5 +322,5 @@
 	bind:open={ui.showTemplateDialog}
 	templates={data.composeTemplates || []}
 	onSelect={composeHandlers.handleTemplateSelect}
-	onDownloadSuccess={invalidateAll}
+	onDownloadSuccess={refreshAll}
 />

@@ -73,6 +73,13 @@
 			job = next;
 			if (next.status === 'completed' || next.status === 'failed') {
 				stopPolling();
+				const managerUpdated =
+					next.status === 'completed' &&
+					(next.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
+				if (managerUpdated) {
+					window.location.reload();
+					return;
+				}
 				BaseAPIService.setUpgradeInProgress(false);
 				phase = 'finished';
 				return;
@@ -100,6 +107,13 @@
 		if (phase !== 'running') return;
 
 		if (job && (job.status === 'completed' || job.status === 'failed')) {
+			const managerUpdated =
+				job.status === 'completed' &&
+				(job.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
+			if (managerUpdated) {
+				window.location.reload();
+				return;
+			}
 			BaseAPIService.setUpgradeInProgress(false);
 			phase = 'finished';
 			return;
@@ -110,17 +124,8 @@
 	}
 
 	async function handleClose() {
-		// Capture before resetState() clears the job: the manager (env "0") upgrading
-		// means our own frontend assets are now stale and need a reload.
-		const managerUpdated = job?.results?.some((r) => r.environmentId === '0' && r.status === 'updated') ?? false;
 		resetState();
 		open = false;
-		if (managerUpdated) {
-			// Reload to pick up the new frontend assets. The session survives — the
-			// cookie was re-minted by the recovered refresh during the restart.
-			window.location.reload();
-			return;
-		}
 		await onFinished?.();
 	}
 

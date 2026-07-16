@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { browser, dev } from '$app/env';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import { navigating, page } from '$app/state';
 	import ConfirmDialog from '$lib/components/confirm-dialog/confirm-dialog.svelte';
 	import FirstLoginPasswordDialog from '$lib/components/dialogs/first-login-password-dialog.svelte';
@@ -46,7 +46,7 @@
 	);
 
 	function handlePasswordChangeSuccess() {
-		invalidateAll();
+		refreshAll();
 	}
 
 	const pageTitle = $derived(

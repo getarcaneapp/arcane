@@ -31,6 +31,7 @@ import (
 
 const dockerClientNegotiationTimeout = 5 * time.Second
 const dockerListCacheTTL = 0
+const dockerImageStateResyncActionInternal events.Action = "arcane-resync"
 
 type DockerClientService struct {
 	db                *database.DB
@@ -329,6 +330,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 		s.invalidateListCachesInternal()
 		eventBackoff.Reset()
 		result := dockerClient.Events(ctx, client.EventsListOptions{})
+		s.publishImageStateResyncInternal()
 		err = s.consumeEventsInternal(ctx, result.Messages, result.Err)
 		if err != nil && !errors.Is(err, context.Canceled) && !errors.Is(err, io.EOF) {
 			slog.WarnContext(ctx, "Docker event stream stopped", "error", err)
@@ -337,6 +339,13 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 			return
 		}
 	}
+}
+
+func (s *DockerClientService) publishImageStateResyncInternal() {
+	s.EventBus().Publish(events.Message{
+		Type:   events.ImageEventType,
+		Action: dockerImageStateResyncActionInternal,
+	})
 }
 
 func (s *DockerClientService) consumeEventsInternal(ctx context.Context, messages <-chan events.Message, errs <-chan error) error {

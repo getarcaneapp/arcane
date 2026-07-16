@@ -48,6 +48,32 @@ test.describe('Swarm UI', () => {
 		} else {
 			await expect(initializeCard).toBeVisible();
 			await expect(page.getByText('Join Existing Cluster')).toBeVisible();
+			await expect(page.getByText('Choose how to set up this engine')).toBeVisible();
+			await expect(
+				page.locator('[data-slot="card-title"]').filter({ hasText: 'Cluster Status' })
+			).toHaveCount(0);
+			await expect(
+				page.locator('[data-slot="card-title"]').filter({ hasText: 'Join Tokens' })
+			).toHaveCount(0);
+			await expect(
+				page.locator('[data-slot="card-title"]').filter({ hasText: 'Update Swarm Spec' })
+			).toHaveCount(0);
+
+			const initializeRoot = initializeCard.locator('xpath=ancestor::*[@data-slot="card"]');
+			const joinRoot = page
+				.locator('[data-slot="card-title"]')
+				.filter({ hasText: 'Join Existing Cluster' })
+				.locator('xpath=ancestor::*[@data-slot="card"]');
+			const [initializeBox, joinBox] = await Promise.all([
+				initializeRoot.boundingBox(),
+				joinRoot.boundingBox()
+			]);
+			expect(initializeBox?.y).toBe(joinBox?.y);
+			expect(initializeBox?.height).toBe(joinBox?.height);
+
+			await expect(page.getByPlaceholder('Remote manager addrs (comma separated)')).toBeVisible();
+			await expect(page.getByPlaceholder('Listen address (optional)').first()).toBeHidden();
+			await page.getByText('Advanced settings').first().click();
 			await expect(page.getByPlaceholder('Listen address (optional)').first()).toBeVisible();
 			await expect(page.getByRole('button', { name: 'Initialize' })).toBeVisible();
 			await expect(page.getByRole('button', { name: 'Join' })).toBeVisible();

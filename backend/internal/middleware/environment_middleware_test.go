@@ -367,3 +367,33 @@ func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *t
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "Invalid proxy target URL")
 }
+
+func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.T) {
+	middleware := newTestEnvironmentMiddleware()
+	router := echo.New()
+	api := attachMiddleware(router, middleware)
+
+	localHandlerHit := false
+	api.POST("/environments/:id/swarm/nodes/:nodeId/agent/deployment", func(c echo.Context) error {
+		localHandlerHit = true
+		return c.JSON(http.StatusOK, map[string]any{"success": true})
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-edge/swarm/nodes/node-1/agent/deployment", nil)
+	recorder := httptest.NewRecorder()
+	router.ServeHTTP(recorder, req)
+
+	assert.Equal(t, http.StatusOK, recorder.Code)
+	assert.Contains(t, recorder.Body.String(), "\"success\":true")
+	assert.True(t, localHandlerHit)
+}
+
+func TestIsCentralSwarmManagementPathInternal_IsMethodAware(t *testing.T) {
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodGet, "/swarm/nodes"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodGet, "/swarm/nodes/node-1"))
+	assert.False(t, isCentralSwarmManagementPathInternal(http.MethodPatch, "/swarm/nodes/node-1"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodPost, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodDelete, "/swarm/nodes/node-1/agent/deployment"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
+	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
+}

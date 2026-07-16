@@ -90,8 +90,8 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	require.NoError(t, err)
 
 	nextRun := time.Date(2026, time.July, 10, 8, 0, 0, 0, time.UTC)
-	scheduler := newFakeJobSchedulerInternal("image-polling")
-	scheduler.runtimeStates["image-polling"] = schedulertypes.JobRuntimeState{
+	scheduler := newFakeJobSchedulerInternal("auto-update")
+	scheduler.runtimeStates["auto-update"] = schedulertypes.JobRuntimeState{
 		Schedule:  "0 0 8 * * *",
 		NextRun:   &nextRun,
 		Scheduled: true,
@@ -102,9 +102,31 @@ func TestJobService_ListJobs_UsesRuntimeScheduleAndNextRun(t *testing.T) {
 	jobs, err := jobSvc.ListJobs(ctx)
 	require.NoError(t, err)
 
-	imagePollingJob := findJobStatusByIDInternal(t, jobs.Jobs, "image-polling")
-	require.Equal(t, "0 0 8 * * *", imagePollingJob.Schedule)
-	require.Equal(t, nextRun, *imagePollingJob.NextRun)
+	autoUpdateJob := findJobStatusByIDInternal(t, jobs.Jobs, "auto-update")
+	require.Equal(t, "0 0 8 * * *", autoUpdateJob.Schedule)
+	require.Equal(t, nextRun, *autoUpdateJob.NextRun)
+}
+
+func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "pollingEnabled", false))
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	jobs, err := jobSvc.ListJobs(ctx)
+	require.NoError(t, err)
+
+	watcher := findJobStatusByIDInternal(t, jobs.Jobs, "image-polling")
+	require.Equal(t, "Image Update Watcher", watcher.Name)
+	require.Equal(t, "continuous", watcher.Schedule)
+	require.Empty(t, watcher.SettingsKey)
+	require.Nil(t, watcher.NextRun)
+	require.True(t, watcher.IsContinuous)
+	require.True(t, watcher.CanRunManually)
+	require.False(t, watcher.Enabled)
 }
 
 func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
@@ -115,15 +137,34 @@ func TestJobService_UpdateJobSchedules_ReschedulesChangedJob(t *testing.T) {
 	require.NoError(t, err)
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
-	scheduler := newFakeJobSchedulerInternal("image-polling", "auto-update")
+	scheduler := newFakeJobSchedulerInternal("auto-update")
 	jobSvc.SetScheduler(ctx, scheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("0 */10 * * * *"),
+		AutoUpdateInterval: new("0 */10 * * * *"),
 	})
 	require.NoError(t, err)
 
-	require.Equal(t, []string{"image-polling"}, scheduler.rescheduled)
+	require.Equal(t, []string{"auto-update"}, scheduler.rescheduled)
+}
+
+func TestJobService_UpdateJobSchedules_DeprecatedPollingIntervalDoesNotReschedule(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+
+	settingsSvc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
+	scheduler := newFakeJobSchedulerInternal("auto-update")
+	jobSvc.SetScheduler(ctx, scheduler)
+
+	updated, err := jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
+		PollingInterval: new("0 */10 * * * *"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "0 */10 * * * *", updated.PollingInterval)
+	require.Empty(t, scheduler.rescheduled)
 }
 
 func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *testing.T) {
@@ -138,11 +179,11 @@ func TestJobService_UpdateJobSchedules_UsesLifecycleContextForReschedule(t *test
 	requestCtx, cancelRequest := context.WithCancel(context.Background())
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
-	scheduler := newFakeJobSchedulerInternal("image-polling")
+	scheduler := newFakeJobSchedulerInternal("auto-update")
 	jobSvc.SetScheduler(lifecycleCtx, scheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(requestCtx, jobschedule.Update{
-		PollingInterval: new("0 */10 * * * *"),
+		AutoUpdateInterval: new("0 */10 * * * *"),
 	})
 	require.NoError(t, err)
 
@@ -163,7 +204,7 @@ func TestJobService_UpdateJobSchedules_RejectsInvalidCronWithoutChangingSetting(
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
-	scheduler := newFakeJobSchedulerInternal("image-polling")
+	scheduler := newFakeJobSchedulerInternal()
 	jobSvc.SetScheduler(ctx, scheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
@@ -199,19 +240,19 @@ func TestJobService_UpdateJobSchedules_RestoresPreviousScheduleWhenRescheduleFai
 	require.NoError(t, settingsSvc.LoadDatabaseSettings(ctx))
 
 	jobSvc := NewJobService(db, settingsSvc, &config.Config{})
-	scheduler := newFakeJobSchedulerInternal("image-polling")
+	scheduler := newFakeJobSchedulerInternal("auto-update")
 	scheduler.rescheduleErr = errors.New("scheduler unavailable")
 	jobSvc.SetScheduler(ctx, scheduler)
 
 	_, err = jobSvc.UpdateJobSchedules(ctx, jobschedule.Update{
-		PollingInterval: new("0 0 8 * * *"),
+		AutoUpdateInterval: new("0 0 8 * * *"),
 	})
 	require.ErrorContains(t, err, "scheduler unavailable")
-	require.Equal(t, "0 0 * * * *", settingsSvc.GetStringSetting(ctx, "pollingInterval", ""))
+	require.Equal(t, "0 0 0 * * *", settingsSvc.GetStringSetting(ctx, "autoUpdateInterval", ""))
 
 	var persisted models.SettingVariable
-	require.NoError(t, db.WithContext(ctx).First(&persisted, "key = ?", "pollingInterval").Error)
-	require.Equal(t, "0 0 * * * *", persisted.Value)
+	require.NoError(t, db.WithContext(ctx).First(&persisted, "key = ?", "autoUpdateInterval").Error)
+	require.Equal(t, "0 0 0 * * *", persisted.Value)
 }
 
 func TestJobService_UpdateJobSchedules_SkipsManagerOnlyJobsInAgentMode(t *testing.T) {
@@ -257,6 +298,19 @@ func TestJobService_UpdateJobSchedules_DelegatesEnvironmentHealthReschedule(t *t
 	require.Empty(t, scheduler.rescheduled)
 }
 
+func TestJobService_RunJobNowInline_DelegatesImageUpdateWatcherWithDetachedContext(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	scheduler := newFakeJobSchedulerInternal()
+	jobSvc := &JobService{scheduler: scheduler}
+
+	require.NoError(t, jobSvc.RunJobNowInline(ctx, "image-polling"))
+	require.Equal(t, []string{"image-polling"}, scheduler.busWatcherRuns)
+	require.Len(t, scheduler.busWatcherContexts, 1)
+	require.NoError(t, scheduler.busWatcherContexts[0].Err())
+}
+
 func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id string) jobschedule.JobStatus {
 	t.Helper()
 
@@ -276,6 +330,8 @@ type fakeJobSchedulerInternal struct {
 	rescheduled        []string
 	rescheduleContexts []context.Context
 	rescheduleErr      error
+	busWatcherRuns     []string
+	busWatcherContexts []context.Context
 }
 
 func newFakeJobSchedulerInternal(jobIDs ...string) *fakeJobSchedulerInternal {
@@ -311,6 +367,12 @@ func (s *fakeJobSchedulerInternal) RescheduleJob(ctx context.Context, job schedu
 		Schedule:  job.Schedule(ctx),
 		Scheduled: true,
 	}
+	return nil
+}
+
+func (s *fakeJobSchedulerInternal) RunBusWatcherNow(ctx context.Context, watcherID string) error {
+	s.busWatcherRuns = append(s.busWatcherRuns, watcherID)
+	s.busWatcherContexts = append(s.busWatcherContexts, ctx)
 	return nil
 }
 

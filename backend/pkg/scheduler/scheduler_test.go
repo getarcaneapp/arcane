@@ -31,6 +31,29 @@ type conditionalTestSchedulerJob struct {
 	shouldSchedule func(context.Context) bool
 }
 
+type testBusWatcherInternal struct {
+	name    string
+	started chan struct{}
+	stopped chan struct{}
+	ranNow  chan context.Context
+}
+
+func (w *testBusWatcherInternal) RunNow(ctx context.Context) error {
+	if w.ranNow != nil {
+		w.ranNow <- ctx
+	}
+	return nil
+}
+
+func (w *testBusWatcherInternal) Name() string { return w.name }
+
+func (w *testBusWatcherInternal) Start(ctx context.Context) error {
+	close(w.started)
+	<-ctx.Done()
+	close(w.stopped)
+	return nil
+}
+
 func (j *conditionalTestSchedulerJob) ShouldSchedule(ctx context.Context) bool {
 	if j.shouldSchedule == nil {
 		return true
@@ -56,6 +79,62 @@ func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) 
 
 	require.NotContains(t, js.entryIDs, job.Name())
 	require.Empty(t, js.cron.Entries())
+}
+
+func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	js := NewJobScheduler(ctx, nil)
+	watcher := &testBusWatcherInternal{
+		name:    "test-bus-watcher",
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
+		ranNow:  make(chan context.Context, 1),
+	}
+
+	js.RegisterBusWatcher(watcher, true)
+
+	select {
+	case <-watcher.started:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bus watcher to start")
+	}
+
+	runDone := make(chan error, 1)
+	go func() { runDone <- js.Run(ctx) }()
+	cancel()
+
+	select {
+	case <-watcher.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("timed out waiting for bus watcher to stop")
+	}
+	require.NoError(t, <-runDone)
+}
+
+func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	js := NewJobScheduler(ctx, nil)
+	manualWatcher := &testBusWatcherInternal{
+		name:    "manual-bus-watcher",
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
+		ranNow:  make(chan context.Context, 1),
+	}
+	automaticOnlyWatcher := &testBusWatcherInternal{
+		name:    "automatic-only-bus-watcher",
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
+	}
+
+	js.RegisterBusWatcher(manualWatcher, true)
+	js.RegisterBusWatcher(automaticOnlyWatcher, false)
+
+	runCtx := context.Background()
+	require.NoError(t, js.RunBusWatcherNow(runCtx, manualWatcher.Name()))
+	require.Equal(t, runCtx, <-manualWatcher.ranNow)
+	require.Error(t, js.RunBusWatcherNow(runCtx, automaticOnlyWatcher.Name()))
 }
 
 func TestJobScheduler_RescheduleJob_RemovesEntryWhenDisabled(t *testing.T) {

@@ -1,5 +1,5 @@
 import { PersistedState } from 'runed';
-import { goto, invalidateAll } from '$app/navigation';
+import { goto, refreshAll } from '$app/navigation';
 import { page } from '$app/state';
 import type { Environment } from '$lib/types/environment';
 import { isEnvironmentOnline } from '$lib/utils/docker';
@@ -160,7 +160,7 @@ function createEnvironmentManagementStore() {
 				if (listPage) {
 					await goto(listPage);
 				} else {
-					await invalidateAll();
+					await refreshAll();
 				}
 			}
 		},

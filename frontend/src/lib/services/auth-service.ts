@@ -1,4 +1,4 @@
-import { goto, invalidateAll } from '$app/navigation';
+import { goto, refreshAll } from '$app/navigation';
 import BaseAPIService, { APIError } from './api-service';
 import userStore from '$lib/stores/user-store';
 import type { User } from '$lib/types/auth';
@@ -136,7 +136,7 @@ class AuthService extends BaseAPIService {
 		}
 
 		userStore.setUser(user);
-		await invalidateAll();
+		await refreshAll();
 		goto('/dashboard');
 
 		return user;

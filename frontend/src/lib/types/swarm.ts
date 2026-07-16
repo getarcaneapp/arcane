@@ -254,6 +254,7 @@ export interface SwarmNodeSummary {
 	agent: SwarmNodeAgentStatus;
 	address?: string | null;
 	managerStatus?: string | null;
+	managerAddress?: string | null;
 	reachability?: string | null;
 	labels?: Record<string, string> | null;
 	systemLabels?: Record<string, string> | null;
@@ -263,16 +264,27 @@ export interface SwarmNodeSummary {
 	updatedAt: string;
 }
 
-export type SwarmNodeAgentState = 'none' | 'pending' | 'offline' | 'connected' | 'mismatched';
+export type SwarmNodeAgentState = 'none' | 'pending' | 'offline' | 'connected' | 'mismatched' | 'ambiguous';
+export type SwarmNodeAgentBindingKind = 'local' | 'environment' | 'dedicated';
+
+export interface SwarmNodeAgentCandidate {
+	environmentId: string;
+	environmentName: string;
+	environmentType: string;
+}
 
 export interface SwarmNodeAgentStatus {
 	state: SwarmNodeAgentState;
+	bindingKind?: SwarmNodeAgentBindingKind | null;
 	environmentId?: string | null;
+	environmentName?: string | null;
+	environmentType?: string | null;
 	connected?: boolean | null;
 	lastHeartbeat?: string | null;
 	lastPollAt?: string | null;
 	reportedNodeId?: string | null;
 	reportedHostname?: string | null;
+	candidates?: SwarmNodeAgentCandidate[];
 }
 
 export interface SwarmNodeAgentDeployment {
@@ -280,6 +292,23 @@ export interface SwarmNodeAgentDeployment {
 	agent: SwarmNodeAgentStatus;
 	dockerRun: string;
 	dockerCompose: string;
+}
+
+export interface SwarmNodeAgentBindingRequest {
+	environmentId: string;
+	rebind?: boolean;
+	replaceDeployment?: boolean;
+}
+
+export interface SwarmNodeAgentReconcileResult {
+	nodeId: string;
+	state: SwarmNodeAgentState;
+	environmentId?: string | null;
+	candidates?: SwarmNodeAgentCandidate[];
+}
+
+export interface SwarmNodeAgentReconcileResponse {
+	results: SwarmNodeAgentReconcileResult[];
 }
 
 export interface SwarmNodeUpdateRequest {
@@ -380,6 +409,41 @@ export interface SwarmJoinRequest {
 	remoteAddrs: string[];
 	joinToken: string;
 	availability?: 'active' | 'pause' | 'drain';
+}
+
+export type SwarmJoinEnvironmentRole = 'worker' | 'manager';
+export type SwarmJoinEnvironmentResultState = 'joined' | 'already_member' | 'joined_unverified' | 'failed';
+
+export interface SwarmJoinCandidate {
+	environmentId: string;
+	environmentName: string;
+	environmentType: string;
+	status: string;
+}
+
+export interface SwarmJoinEnvironmentTarget {
+	environmentId: string;
+	role: SwarmJoinEnvironmentRole;
+	availability?: 'active' | 'pause' | 'drain';
+	listenAddr?: string;
+	advertiseAddr?: string;
+	dataPathAddr?: string;
+}
+
+export interface SwarmJoinEnvironmentsRequest {
+	remoteAddrs: string[];
+	targets: SwarmJoinEnvironmentTarget[];
+}
+
+export interface SwarmJoinEnvironmentResult {
+	environmentId: string;
+	state: SwarmJoinEnvironmentResultState;
+	nodeId?: string | null;
+	error?: string | null;
+}
+
+export interface SwarmJoinEnvironmentsResponse {
+	results: SwarmJoinEnvironmentResult[];
 }
 
 export interface SwarmLeaveRequest {

@@ -263,10 +263,13 @@ func (m *EnvironmentMiddleware) hasResourcePath(c echo.Context, envID string) bo
 	if !ok || len(suffix) <= 1 || suffix[0] != '/' {
 		return false
 	}
-	return !isManagementPathInternal(suffix)
+	return !isManagementPathInternal(c.Request().Method, suffix)
 }
 
-func isManagementPathInternal(suffix string) bool {
+func isManagementPathInternal(method, suffix string) bool {
+	if isCentralSwarmManagementPathInternal(method, suffix) {
+		return true
+	}
 	if suffix == "/activities" || strings.HasPrefix(suffix, "/activities/") {
 		return true
 	}
@@ -287,6 +290,30 @@ func isManagementPathInternal(suffix string) bool {
 
 	_, isManagement := managementEndpointSet[suffix]
 	return isManagement
+}
+
+func isCentralSwarmManagementPathInternal(method, suffix string) bool {
+	if method == http.MethodGet && (suffix == "/swarm/join-candidates" || suffix == "/swarm/nodes") {
+		return true
+	}
+	if method == http.MethodPost && (suffix == "/swarm/join-environments" || suffix == "/swarm/nodes/agents/reconcile") {
+		return true
+	}
+
+	parts := strings.Split(strings.Trim(suffix, "/"), "/")
+	if len(parts) == 3 && method == http.MethodGet && parts[0] == "swarm" && parts[1] == "nodes" {
+		return true
+	}
+	if len(parts) == 5 && parts[0] == "swarm" && parts[1] == "nodes" && parts[3] == "agent" {
+		if parts[4] == "binding" {
+			return method == http.MethodPut || method == http.MethodDelete
+		}
+		if parts[4] == "deployment" {
+			return method == http.MethodPost || method == http.MethodDelete
+		}
+	}
+
+	return false
 }
 
 // extractEnvironmentID gets the environment ID from the request.

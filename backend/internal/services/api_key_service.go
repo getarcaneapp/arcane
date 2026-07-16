@@ -100,16 +100,16 @@ func parseAPIKeyPrefixInternal(rawKey string) (string, error) {
 	return rawKey[:prefixLen], nil
 }
 
-func (s *ApiKeyService) markApiKeyUsedAsync(ctx context.Context, keyID string) {
-	go func(keyID string) {
-		bgCtx := context.WithoutCancel(ctx)
-		now := time.Now()
-		cutoff := now.Add(-apiKeyLastUsedWriteWindow)
-		s.db.WithContext(bgCtx).
-			Model(&models.ApiKey{}).
-			Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
-			Update("last_used_at", now)
-	}(keyID)
+func (s *ApiKeyService) markApiKeyUsedInternal(ctx context.Context, keyID string) error {
+	now := time.Now()
+	cutoff := now.Add(-apiKeyLastUsedWriteWindow)
+	if err := s.db.WithContext(ctx).
+		Model(&models.ApiKey{}).
+		Where("id = ? AND (last_used_at IS NULL OR last_used_at < ?)", keyID, cutoff).
+		Update("last_used_at", now).Error; err != nil {
+		return fmt.Errorf("failed to update API key last-used timestamp: %w", err)
+	}
+	return nil
 }
 
 func (s *ApiKeyService) CreateApiKey(ctx context.Context, userID string, callerPerms *authz.PermissionSet, req apikey.CreateApiKey) (*apikey.ApiKeyCreatedDto, error) {
@@ -299,9 +299,15 @@ func toAPIKeyDTOInternal(ak *models.ApiKey) apikey.ApiKey {
 
 // toAPIKeyDTOWithPermissionsInternal is like toAPIKeyDTOInternal but
 // additionally attaches the key's persisted permission grants.
-func (s *ApiKeyService) toAPIKeyDTOWithPermissionsInternal(ctx context.Context, ak *models.ApiKey) apikey.ApiKey {
+func toAPIKeyDTOWithPermissionsInternal(ak *models.ApiKey) apikey.ApiKey {
 	dto := toAPIKeyDTOInternal(ak)
-	dto.Permissions = s.loadKeyGrantsInternal(ctx, ak.ID)
+	dto.Permissions = make([]apikey.PermissionGrant, len(ak.PermissionGrants))
+	for i, grant := range ak.PermissionGrants {
+		dto.Permissions[i] = apikey.PermissionGrant{
+			Permission:    grant.Permission,
+			EnvironmentID: grant.EnvironmentID,
+		}
+	}
 	return dto
 }
 
@@ -488,18 +494,25 @@ func (s *ApiKeyService) CreateEnvironmentApiKey(ctx context.Context, environment
 
 func (s *ApiKeyService) GetApiKey(ctx context.Context, id string) (*apikey.ApiKey, error) {
 	var ak models.ApiKey
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&ak).Error; err != nil {
+	query := s.db.WithContext(ctx)
+	if s.roleService != nil {
+		query = query.Preload("PermissionGrants")
+	}
+	if err := query.Where("id = ?", id).First(&ak).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrApiKeyNotFound
 		}
 		return nil, fmt.Errorf("failed to get API key: %w", err)
 	}
-	return new(s.toAPIKeyDTOWithPermissionsInternal(ctx, &ak)), nil
+	return new(toAPIKeyDTOWithPermissionsInternal(&ak)), nil
 }
 
 func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.QueryParams) ([]apikey.ApiKey, pagination.Response, error) {
 	var apiKeys []models.ApiKey
 	query := s.db.WithContext(ctx).Model(&models.ApiKey{})
+	if s.roleService != nil {
+		query = query.Preload("PermissionGrants")
+	}
 
 	if term := strings.TrimSpace(params.Search); term != "" {
 		searchPattern := "%" + term + "%"
@@ -519,7 +532,7 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 		// Include per-key permission grants so the edit form preloads with the
 		// key's actual current grants. Without this, the form starts empty and
 		// "Save" would wipe whatever grants the DB has.
-		result[i] = s.toAPIKeyDTOWithPermissionsInternal(ctx, &apiKeys[i])
+		result[i] = toAPIKeyDTOWithPermissionsInternal(&apiKeys[i])
 	}
 
 	return result, paginationResp, nil
@@ -529,7 +542,11 @@ func (s *ApiKeyService) ListApiKeys(ctx context.Context, params pagination.Query
 // userID. Used by the self-service personal-keys flow.
 func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([]apikey.ApiKey, error) {
 	var apiKeys []models.ApiKey
-	if err := s.db.WithContext(ctx).
+	query := s.db.WithContext(ctx)
+	if s.roleService != nil {
+		query = query.Preload("PermissionGrants")
+	}
+	if err := query.
 		Where("user_id = ?", userID).
 		Order("created_at DESC").
 		Find(&apiKeys).Error; err != nil {
@@ -541,7 +558,7 @@ func (s *ApiKeyService) ListApiKeysByUser(ctx context.Context, userID string) ([
 		if isStaticAPIKeyInternal(apiKeys[i]) || isEnvironmentBootstrapKeyInternal(apiKeys[i]) {
 			continue
 		}
-		result = append(result, s.toAPIKeyDTOWithPermissionsInternal(ctx, &apiKeys[i]))
+		result = append(result, toAPIKeyDTOWithPermissionsInternal(&apiKeys[i]))
 	}
 	return result, nil
 }
@@ -701,7 +718,9 @@ func (s *ApiKeyService) ValidateApiKeyWithID(ctx context.Context, rawKey string)
 				return nil, nil, ErrApiKeyInvalid
 			}
 
-			s.markApiKeyUsedAsync(ctx, apiKey.ID)
+			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
+				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
+			}
 
 			user, err := s.userService.GetUserByID(ctx, *apiKey.UserID)
 			if err != nil {
@@ -733,7 +752,9 @@ func (s *ApiKeyService) GetEnvironmentByApiKey(ctx context.Context, rawKey strin
 				return nil, ErrApiKeyExpired
 			}
 
-			s.markApiKeyUsedAsync(ctx, apiKey.ID)
+			if err := s.markApiKeyUsedInternal(ctx, apiKey.ID); err != nil {
+				slog.WarnContext(ctx, "failed to persist API key usage", "api_key_id", apiKey.ID, "error", err)
+			}
 
 			return apiKey.EnvironmentID, nil
 		}

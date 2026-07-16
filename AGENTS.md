@@ -17,6 +17,7 @@ Arcane is a Docker management UI: **Go backend** (Echo + Huma v2), **SvelteKit v
 2. **NEVER create stub, shim, or pass-through helper functions.** If a `pkg/` helper or service method exists, call it directly. Do not write a thin wrapper that just forwards to it.
 3. **NEVER duplicate functionality.** Before writing anything, search `pkg/`, `internal/services/`, and `frontend/src/lib/services/` for existing implementations.
 4. **NEVER create a new API standard.** If the codebase uses Huma v2 typed handlers on Echo, do not introduce Gin, raw `http.HandlerFunc`, or untyped patterns. Extend the existing standard.
+5. If you need a paragraph comment in order to justify a function, it is wrong. Fix the code.
 
 ## Architecture Overview
 
@@ -148,7 +149,8 @@ All user-facing text goes in `frontend/messages/en.json`, accessed via Paraglide
 <Button>{m.common_save_changes()}</Button>
 ```
 
-**AI Agent Rule for i18n**: 
+**AI Agent Rule for i18n**:
+
 - Never use hardcoded English strings in frontend UI components (`.svelte` files). This includes text inside HTML tags and text assigned to variables, props, or state that is rendered in the UI.
 - Always define new keys ONLY in `frontend/messages/en.json` and use `m.*()`. Do NOT edit other language files (e.g., `fr.json`, `es.json`) because translations are handled automatically by Crowdin via pull requests.
 

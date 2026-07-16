@@ -108,10 +108,8 @@
 		}
 	});
 
-	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'countdown' | 'complete'>('upgrading');
-	let countdown = $state(10);
+	let upgradeStatus = $state<'upgrading' | 'waiting' | 'ready' | 'complete'>('upgrading');
 	let pollAbort = $state<{ aborted: boolean } | null>(null);
-	let countdownInterval: ReturnType<typeof setInterval> | null = null;
 	let fallbackTimeout: ReturnType<typeof setTimeout> | null = null;
 	let baselineVersionInfo = $state<AppVersionInformation | null>(null);
 	let consecutiveHealthyChecks = $state(0);
@@ -258,13 +256,11 @@
 						currentDigest: short(info.currentDigest)
 					});
 					upgradeStatus = 'ready';
-					setTimeout(() => {
-						if (isRemoteEnvironment) {
-							upgradeStatus = 'complete';
-						} else {
-							startCountdown();
-						}
-					}, 1500);
+					if (isRemoteEnvironment) {
+						setTimeout(() => (upgradeStatus = 'complete'), 1500);
+					} else {
+						reloadPage();
+					}
 					return;
 				}
 
@@ -306,6 +302,10 @@
 			if (isRemoteEnvironment) {
 				upgradeStatus = 'complete';
 			} else {
+				if (fallbackTimeout) {
+					clearTimeout(fallbackTimeout);
+					fallbackTimeout = null;
+				}
 				upgradeStatus = 'upgrading';
 				upgrading = false;
 				BaseAPIService.setUpgradeInProgress(false);
@@ -332,18 +332,6 @@
 			log('baseline-error', err);
 			baselineVersionInfo = null;
 		}
-	}
-
-	function startCountdown() {
-		upgradeStatus = 'countdown';
-		countdown = 10;
-		countdownInterval = setInterval(() => {
-			countdown--;
-			if (countdown <= 0) {
-				if (countdownInterval) clearInterval(countdownInterval);
-				reloadPage();
-			}
-		}, 1000);
 	}
 
 	function reloadPage() {
@@ -403,7 +391,7 @@
 				log('fallback-timeout', { reason: 'timeout', isRemoteEnvironment });
 				if (isRemoteEnvironment) {
 					if (upgradeStatus !== 'complete') upgradeStatus = 'complete';
-				} else if (upgradeStatus !== 'countdown') {
+				} else {
 					reloadPage();
 				}
 			},
@@ -449,8 +437,6 @@
 					return 1;
 				case 'ready':
 					return 2;
-				case 'countdown':
-					return 3;
 				case 'complete':
 					return labels.length;
 				default:
@@ -467,7 +453,6 @@
 
 	onDestroy(() => {
 		log('destroy');
-		if (countdownInterval) clearInterval(countdownInterval);
 		if (fallbackTimeout) clearTimeout(fallbackTimeout);
 		if (pollAbort) pollAbort.aborted = true;
 		BaseAPIService.setUpgradeInProgress(false);
@@ -522,14 +507,7 @@
 					{/each}
 				</ol>
 
-				{#if upgradeStatus === 'countdown'}
-					<div class="mt-4 flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2.5">
-						<p class="text-sm font-medium text-green-700 dark:text-green-400">
-							{m.upgrade_reload_auto({ countdown })}
-						</p>
-						<ArcaneButton action="base" onclick={reloadPage} size="sm" customLabel={m.upgrade_reload_now()} />
-					</div>
-				{:else if upgradeStatus === 'complete'}
+				{#if upgradeStatus === 'complete'}
 					<div class="mt-4 flex items-center justify-between rounded-lg border border-green-500/20 bg-green-500/5 px-3 py-2.5">
 						<p class="flex items-center gap-2 text-sm font-medium text-green-700 dark:text-green-400">
 							<SuccessIcon class="size-4" />

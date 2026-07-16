@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { invalidateAll } from '$app/navigation';
+	import { refreshAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { bytes } from '$lib/utils/formatting';
@@ -129,7 +129,7 @@
 	const primaryIpAddress = $derived(getPrimaryIpAddress(container?.networkSettings));
 
 	async function refreshData() {
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	const hasEnvVars = $derived(!!(container?.config?.env && container.config.env.length > 0));
@@ -165,7 +165,7 @@
 			setStatus: (status) => {
 				lifecycleStatus = status === 'pausing' ? status : '';
 			},
-			onRefresh: () => invalidateAll()
+			onRefresh: () => refreshAll()
 		});
 	}
 
@@ -177,7 +177,7 @@
 			setStatus: (status) => {
 				lifecycleStatus = status === 'unpausing' ? status : '';
 			},
-			onRefresh: () => invalidateAll()
+			onRefresh: () => refreshAll()
 		});
 	}
 	const showStats = $derived(!!container?.state?.running);
@@ -516,7 +516,7 @@
 			containerId={container.id}
 			containerName={containerDisplayName}
 			onClose={() => (killDialogOpen = false)}
-			onComplete={() => invalidateAll()}
+			onComplete={() => refreshAll()}
 		/>
 	{/if}
 	{#if commitDialogOpen && canCommitImage}
@@ -524,7 +524,7 @@
 			bind:open={commitDialogOpen}
 			containerId={container.id}
 			containerName={containerDisplayName}
-			onCommitted={() => invalidateAll()}
+			onCommitted={() => refreshAll()}
 		/>
 	{/if}
 {:else}

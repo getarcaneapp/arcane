@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { resolve } from '$app/paths';
 	import { formatDistanceToNow } from 'date-fns';
 	import { onDestroy, onMount, untrack } from 'svelte';
@@ -399,7 +399,7 @@
 	async function refreshOverview() {
 		isRefreshing = true;
 		try {
-			await invalidateAll();
+			await refreshAll();
 			await dashboardStore.refresh();
 			reloadVersion += 1;
 		} finally {

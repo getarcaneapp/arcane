@@ -12,7 +12,7 @@ type Config struct {
 	ExpiredSessionsCleanupInterval string `json:"expiredSessionsCleanupInterval"`
 	AutoUpdateInterval             string `json:"autoUpdateInterval"`
 	DockerClientRefreshInterval    string `json:"dockerClientRefreshInterval"`
-	PollingInterval                string `json:"pollingInterval"`
+	PollingInterval                string `json:"pollingInterval"` // Deprecated: image update checks are event-driven.
 	ScheduledPruneInterval         string `json:"scheduledPruneInterval"`
 	VulnerabilityScanInterval      string `json:"vulnerabilityScanInterval"`
 	AutoHealInterval               string `json:"autoHealInterval"`
@@ -27,7 +27,7 @@ type Update struct {
 	ExpiredSessionsCleanupInterval *string `json:"expiredSessionsCleanupInterval,omitempty"`
 	AutoUpdateInterval             *string `json:"autoUpdateInterval,omitempty"`
 	DockerClientRefreshInterval    *string `json:"dockerClientRefreshInterval,omitempty"`
-	PollingInterval                *string `json:"pollingInterval,omitempty"`
+	PollingInterval                *string `json:"pollingInterval,omitempty"` // Deprecated: accepted and persisted for compatibility, but ignored.
 	ScheduledPruneInterval         *string `json:"scheduledPruneInterval,omitempty"`
 	VulnerabilityScanInterval      *string `json:"vulnerabilityScanInterval,omitempty"`
 	AutoHealInterval               *string `json:"autoHealInterval,omitempty"`

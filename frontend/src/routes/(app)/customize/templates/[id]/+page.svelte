@@ -5,7 +5,7 @@
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import IconImage from '$lib/components/icon-image.svelte';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -101,7 +101,7 @@
 				originalDescription = validated.description ?? '';
 				originalCompose = validated.composeContent;
 				originalEnv = validated.envContent ?? '';
-				await invalidateAll();
+				await refreshAll();
 			}
 		});
 	}
@@ -144,7 +144,7 @@
 			if (downloadedTemplate?.id) {
 				await goto(`/customize/templates/${downloadedTemplate.id}`, { replaceState: true });
 			} else {
-				await invalidateAll();
+				await refreshAll();
 			}
 		} catch (error) {
 			console.error('Error downloading template:', error);

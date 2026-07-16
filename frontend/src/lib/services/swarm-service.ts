@@ -10,6 +10,8 @@ import type {
 	SwarmInfo,
 	SwarmRuntimeStatus,
 	SwarmNodeAgentDeployment,
+	SwarmNodeAgentBindingRequest,
+	SwarmNodeAgentReconcileResponse,
 	SwarmServiceCreateRequest,
 	SwarmServiceUpdateRequest,
 	SwarmServiceCreateResponse,
@@ -38,7 +40,10 @@ import type {
 	SwarmConfigCreateRequest,
 	SwarmConfigUpdateRequest,
 	SwarmSecretCreateRequest,
-	SwarmSecretUpdateRequest
+	SwarmSecretUpdateRequest,
+	SwarmJoinCandidate,
+	SwarmJoinEnvironmentsRequest,
+	SwarmJoinEnvironmentsResponse
 } from '$lib/types/swarm';
 
 export type SwarmServicesPaginatedResponse = Paginated<SwarmServiceSummary>;
@@ -106,6 +111,26 @@ class SwarmService extends BaseAPIService {
 	async getNodeAgentDeployment(nodeId: string, rotate = false): Promise<SwarmNodeAgentDeployment> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/${nodeId}/agent/deployment`, { rotate }));
+	}
+
+	async reconcileNodeAgents(): Promise<SwarmNodeAgentReconcileResponse> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/nodes/agents/reconcile`, {}));
+	}
+
+	async bindNodeAgent(nodeId: string, request: SwarmNodeAgentBindingRequest): Promise<SwarmNodeSummary> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		return this.handleResponse(this.api.put(`/environments/${envId}/swarm/nodes/${nodeId}/agent/binding`, request));
+	}
+
+	async detachNodeAgent(nodeId: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}/agent/binding`));
+	}
+
+	async removeNodeAgentDeployment(nodeId: string): Promise<void> {
+		const envId = await environmentStore.getCurrentEnvironmentId();
+		await this.handleResponse(this.api.delete(`/environments/${envId}/swarm/nodes/${nodeId}/agent/deployment`));
 	}
 
 	async updateNode(nodeId: string, request: SwarmNodeUpdateRequest): Promise<void> {
@@ -211,6 +236,16 @@ class SwarmService extends BaseAPIService {
 	async joinSwarm(request: SwarmJoinRequest): Promise<void> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		await this.handleResponse(this.api.post(`/environments/${envId}/swarm/join`, request));
+	}
+
+	async getSwarmJoinCandidates(environmentId?: string): Promise<SwarmJoinCandidate[]> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+		return this.handleResponse(this.api.get(`/environments/${envId}/swarm/join-candidates`));
+	}
+
+	async joinEnvironments(request: SwarmJoinEnvironmentsRequest, environmentId?: string): Promise<SwarmJoinEnvironmentsResponse> {
+		const envId = environmentId ?? (await environmentStore.getCurrentEnvironmentId());
+		return this.handleResponse(this.api.post(`/environments/${envId}/swarm/join-environments`, request));
 	}
 
 	async leaveSwarm(request: SwarmLeaveRequest): Promise<void> {

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { invalidateAll, goto } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
@@ -199,7 +199,7 @@
 	}
 
 	async function refreshData() {
-		await invalidateAll();
+		await refreshAll();
 	}
 
 	// Editor

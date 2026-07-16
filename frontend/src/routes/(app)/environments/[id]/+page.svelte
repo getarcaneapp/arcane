@@ -9,7 +9,7 @@
 	import { Switch } from '$lib/components/ui/switch/index.js';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { cn } from '$lib/utils';
-	import { goto, invalidateAll } from '$app/navigation';
+	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { m } from '$lib/paraglide/messages';
 	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
@@ -29,6 +29,8 @@
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
 	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
 	import LifecycleSecuritySettings from '$lib/components/settings/lifecycle-security-settings.svelte';
+	import { useEasyJoinCandidates } from '$lib/hooks/use-easy-join-candidates.svelte';
+	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
@@ -39,7 +41,8 @@
 		SettingsIcon,
 		GitBranchIcon,
 		JobsIcon,
-		ResetIcon
+		ResetIcon,
+		ConnectionIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -60,6 +63,8 @@
 	let isRegeneratingKey = $state(false);
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
+	let easyJoinDialogOpen = $state(false);
+	const easyJoinCandidates = useEasyJoinCandidates();
 
 	// Version state
 	let remoteVersion = $state<AppVersionInformation | null>(null);
@@ -82,8 +87,23 @@
 	let mtlsBundleDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/bundle`);
 	let mtlsCertificateDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.crt`);
 	let mtlsKeyDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.key`);
+	let canEasyJoin = $derived(
+		runtimeEnvironment.id !== '0' &&
+			runtimeEnvironment.enabled &&
+			isCurrentlyOnline &&
+			easyJoinCandidates.isCandidate(runtimeEnvironment.id)
+	);
 	let headerActions = $derived.by((): ActionButton[] => {
 		const actions: ActionButton[] = [];
+		if (canEasyJoin) {
+			actions.push({
+				id: 'easy-join',
+				action: 'create',
+				label: m.swarm_easy_join_action(),
+				onclick: () => (easyJoinDialogOpen = true),
+				icon: ConnectionIcon
+			});
+		}
 
 		if (environment.id !== '0') {
 			actions.push({
@@ -413,7 +433,7 @@
 			isRefreshing = true;
 			statusOverride = null;
 			remoteVersion = null;
-			await invalidateAll();
+			await refreshAll();
 		} catch (err) {
 			console.error('Failed to refresh environment:', err);
 			toast.error(m.common_refresh_failed({ resource: m.resource_environment() }));
@@ -454,7 +474,7 @@
 
 			// If testing with saved URL (not custom), refresh to get backend's updated status
 			if (!customUrl) {
-				await invalidateAll();
+				await refreshAll();
 			}
 		} catch (error) {
 			statusOverride = environment.isEdge ? null : 'offline';
@@ -477,7 +497,7 @@
 			if (result.apiKey) {
 				regeneratedApiKey = result.apiKey;
 				toast.success(m.environments_regenerate_key_success());
-				await invalidateAll();
+				await refreshAll();
 			} else {
 				toast.error(m.environments_regenerate_key_failed());
 			}
@@ -699,6 +719,13 @@
 		</AlertDialog.Content>
 	</AlertDialog.Root>
 </div>
+
+<EasyJoinDialog
+	bind:open={easyJoinDialogOpen}
+	managerEnvironmentId={easyJoinCandidates.managerEnvironmentId ?? undefined}
+	targetEnvironmentId={runtimeEnvironment.id}
+	onComplete={easyJoinCandidates.refresh}
+/>
 
 <MobileFloatingFormActions
 	hasChanges={settingsForm.hasChanges}
