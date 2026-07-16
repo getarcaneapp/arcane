@@ -76,7 +76,7 @@
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn) ||
+			(!!(typeColumn && typeColumnFilterOptions.length > 0) ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -88,7 +88,7 @@
 </script>
 
 {#snippet filterList()}
-	{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+	{#if typeColumn && typeColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 	{/if}
 	{#if usageColumn}

@@ -42,11 +42,23 @@ type ListEventsInput struct {
 	Start    int    `query:"start" default:"0" doc:"Start index"`
 	Limit    int    `query:"limit" default:"20" doc:"Limit"`
 	Severity string `query:"severity" doc:"Filter by severity"`
-	Type     string `query:"type" doc:"Filter by event type"`
+	Type     string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
 type ListEventsOutput struct {
 	Body EventPaginatedResponse
+}
+
+type GetEventStatsInput struct{}
+
+// EventStatsResponse is a dedicated response type to avoid schema name collision.
+type EventStatsResponse struct {
+	Success bool                         `json:"success"`
+	Data    services.EventSeverityCounts `json:"data"`
+}
+
+type GetEventStatsOutput struct {
+	Body EventStatsResponse
 }
 
 type GetEventsByEnvironmentInput struct {
@@ -57,7 +69,7 @@ type GetEventsByEnvironmentInput struct {
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 	Severity      string `query:"severity" doc:"Filter by severity"`
-	Type          string `query:"type" doc:"Filter by event type"`
+	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
 type GetEventsByEnvironmentOutput struct {
@@ -159,6 +171,20 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 	}, h.ListEvents)
 
 	huma.Register(api, huma.Operation{
+		OperationID: "getEventStats",
+		Method:      "GET",
+		Path:        "/events/stats",
+		Summary:     "Event severity counts",
+		Description: "Get global event counts grouped by severity",
+		Tags:        []string{"Events"},
+		Security: []map[string][]string{
+			{"BearerAuth": {}},
+			{"ApiKeyAuth": {}},
+		},
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
+	}, h.GetEventStats)
+
+	huma.Register(api, huma.Operation{
 		OperationID: "deleteEvent",
 		Method:      "DELETE",
 		Path:        "/events/{eventId}",
@@ -216,6 +242,25 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
+		},
+	}, nil
+}
+
+// GetEventStats returns global event counts grouped by severity.
+func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*GetEventStatsOutput, error) {
+	if h.eventService == nil {
+		return nil, huma.Error500InternalServerError("service not available")
+	}
+
+	counts, err := h.eventService.GetEventSeverityCounts(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.EventStatsError{Err: err}).Error())
+	}
+
+	return &GetEventStatsOutput{
+		Body: EventStatsResponse{
+			Success: true,
+			Data:    counts,
 		},
 	}, nil
 }

@@ -142,13 +142,20 @@
 
 	// Row actions are a real pinned column: sticky to the row's right edge with its own reserved
 	// width, so the floating button never overlaps data columns and survives horizontal scroll.
-	// bg-inherit picks up the row's background (including hover/selected tints) to mask content
-	// scrolling beneath the sticky cell. Under the virtualized table-fixed layout an auto-sized
-	// (w-0 + nowrap) column would collapse, so it gets an explicit width there instead.
+	// The gutter must stay opaque to mask content scrolling beneath it, so it can't bg-inherit the
+	// row's translucent tints (they'd stack with the row's own paint into a darker block). Instead it
+	// mirrors the row states from ui/table table-row.svelte as pre-composited opaque colors. Under
+	// the virtualized table-fixed layout an auto-sized (w-0 + nowrap) column would collapse, so it
+	// gets an explicit width there instead.
 	const actionsCellClasses = $derived(
-		shouldVirtualize
-			? 'sticky right-0 z-[var(--arcane-z-sticky)] w-24 bg-inherit p-0 whitespace-nowrap'
-			: 'sticky right-0 z-[var(--arcane-z-sticky)] w-0 bg-inherit p-0 whitespace-nowrap'
+		cn(
+			'sticky right-0 z-[var(--arcane-z-sticky)] p-0 whitespace-nowrap',
+			shouldVirtualize ? 'w-24' : 'w-0',
+			'bg-background',
+			'group-hover/row:bg-[color-mix(in_oklab,var(--color-primary)_10%,var(--color-background))]',
+			'group-data-[state=selected]/row:bg-[color-mix(in_oklab,var(--color-primary)_20%,var(--color-background))]',
+			'group-data-[expanded]/row:bg-[color-mix(in_oklab,var(--color-primary)_15%,var(--color-background))]'
+		)
 	);
 
 	// Runes can't be created conditionally, so the virtualizer always exists but is `enabled` only
@@ -185,6 +192,7 @@
 	<Table.Row
 		{@attach measureRow}
 		data-state={(selectedIds ?? []).includes(rowId) && 'selected'}
+		data-expanded={isExpanded ? true : undefined}
 		onclick={(event) => handleRowClick(event, rowId)}
 		class={cn(hasExpand && 'cursor-pointer', isExpanded && 'bg-primary/15')}
 	>
@@ -248,7 +256,7 @@
 	class={cn(
 		'h-full w-full',
 		unstyled &&
-			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
+			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_td]:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
 	<Table.Root class={shouldVirtualize ? 'table-fixed' : undefined}>

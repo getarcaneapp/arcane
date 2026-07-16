@@ -1,7 +1,7 @@
 export { default as DataTableToolbar } from './arcane-table-toolbar.svelte';
 export { default as DataTableViewOptions } from './arcane-table-view-options.svelte';
 export { default as DataTableFacetedFilter } from './arcane-table-filter.svelte';
-export type { ColumnSpec, FieldSpec, MobileFieldVisibility, BulkAction } from './arcane-table.types.svelte';
+export type { ColumnSpec, FieldSpec, FilterOption, MobileFieldVisibility, BulkAction } from './arcane-table.types.svelte';
 export type {
 	ArcaneFeatures,
 	ArcaneColumnDef,

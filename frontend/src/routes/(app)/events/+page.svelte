@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import type { Event } from '$lib/types/shared';
 	import EventTable from './event-table.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { m } from '$lib/paraglide/messages';
@@ -9,7 +8,7 @@
 	import { untrack } from 'svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
-	import { EventsIcon } from '$lib/icons';
+	import { AlertIcon, CheckIcon, CloseIcon, EventsIcon, InfoIcon } from '$lib/icons';
 	import { hasPermission } from '$lib/utils/auth';
 
 	let { data } = $props();
@@ -22,6 +21,12 @@
 		queryKey: queryKeys.events.listGlobal(requestOptions),
 		queryFn: () => eventService.getEvents(requestOptions),
 		initialData: data.events
+	}));
+
+	const statsQuery = createQuery(() => ({
+		queryKey: queryKeys.events.statsGlobal(),
+		queryFn: () => eventService.getEventStats(),
+		initialData: data.eventStats
 	}));
 
 	const deleteSelectedMutation = createMutation(() => ({
@@ -44,7 +49,7 @@
 		onSuccess: async ({ successCount, failureCount }) => {
 			if (successCount > 0) {
 				toast.success(m.common_bulk_delete_success({ count: successCount, resource: m.events_title() }));
-				await eventsQuery.refetch();
+				await refresh();
 			}
 			if (failureCount > 0) {
 				toast.error(m.common_bulk_delete_failed({ count: failureCount, resource: m.events_title() }));
@@ -59,15 +64,36 @@
 		}
 	});
 
-	const infoEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'info').length || 0);
-	const warningEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'warning').length || 0);
-	const errorEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'error').length || 0);
-	const successEvents = $derived(events?.data?.filter((e: Event) => e.severity === 'success').length || 0);
-	const totalEvents = $derived(events?.pagination?.totalItems || 0);
+	const counts = $derived(statsQuery.data);
 	const isRefreshing = $derived(eventsQuery.isFetching && !eventsQuery.isPending);
 
 	async function refresh() {
-		await eventsQuery.refetch();
+		await Promise.all([eventsQuery.refetch(), statsQuery.refetch()]);
+	}
+
+	const activeSeverities = $derived.by(() => {
+		const value = requestOptions.filters?.['severity'];
+		if (Array.isArray(value)) {
+			return value.map(String);
+		}
+		return value ? [String(value)] : [];
+	});
+
+	function toggleSeverityFilter(severity: string) {
+		const next = activeSeverities.includes(severity)
+			? activeSeverities.filter((s) => s !== severity)
+			: [...activeSeverities, severity];
+		const filters = { ...requestOptions.filters };
+		if (next.length) {
+			filters['severity'] = next;
+		} else {
+			delete filters['severity'];
+		}
+		requestOptions = {
+			...requestOptions,
+			filters: Object.keys(filters).length ? filters : undefined,
+			pagination: { page: 1, limit: requestOptions.pagination?.limit ?? 20 }
+		};
 	}
 
 	async function handleDeleteSelected() {
@@ -114,37 +140,40 @@
 	const statCards: StatCardConfig[] = $derived([
 		{
 			title: m.events_total(),
-			value: totalEvents,
-			subtitle: m.events_total_subtitle(),
+			value: counts?.total ?? 0,
 			icon: EventsIcon
 		},
 		{
 			title: m.events_info(),
-			value: infoEvents,
-			subtitle: m.events_info_subtitle(),
-			icon: EventsIcon,
-			iconColor: 'text-blue-500'
+			value: counts?.info ?? 0,
+			icon: InfoIcon,
+			iconColor: 'text-blue-500',
+			onclick: () => toggleSeverityFilter('info'),
+			active: activeSeverities.includes('info')
 		},
 		{
 			title: m.events_success(),
-			value: successEvents,
-			subtitle: m.events_success_subtitle(),
-			icon: EventsIcon,
-			iconColor: 'text-green-500'
+			value: counts?.success ?? 0,
+			icon: CheckIcon,
+			iconColor: 'text-green-500',
+			onclick: () => toggleSeverityFilter('success'),
+			active: activeSeverities.includes('success')
 		},
 		{
 			title: m.events_warning(),
-			value: warningEvents,
-			subtitle: m.events_warning_subtitle(),
-			icon: EventsIcon,
-			iconColor: 'text-yellow-500'
+			value: counts?.warning ?? 0,
+			icon: AlertIcon,
+			iconColor: 'text-yellow-500',
+			onclick: () => toggleSeverityFilter('warning'),
+			active: activeSeverities.includes('warning')
 		},
 		{
 			title: m.events_error(),
-			value: errorEvents,
-			subtitle: m.events_error_subtitle(),
-			icon: EventsIcon,
-			iconColor: 'text-red-500'
+			value: counts?.error ?? 0,
+			icon: CloseIcon,
+			iconColor: 'text-red-500',
+			onclick: () => toggleSeverityFilter('error'),
+			active: activeSeverities.includes('error')
 		}
 	]);
 </script>
@@ -157,7 +186,7 @@
 			bind:requestOptions
 			onRefreshData={async (options) => {
 				requestOptions = options;
-				await eventsQuery.refetch();
+				await refresh();
 			}}
 		/>
 	{/snippet}

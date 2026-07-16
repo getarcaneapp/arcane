@@ -295,7 +295,7 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 	}
 
 	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
-	q = pagination.ApplyFilter(q, "type", params.Filters["type"])
+	q = applyEventTypeFilter(q, params.Filters["type"])
 	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
 	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 	q = pagination.ApplyFilter(q, "environment_id", params.Filters["environmentId"])
@@ -326,7 +326,7 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	}
 
 	q = pagination.ApplyFilter(q, "severity", params.Filters["severity"])
-	q = pagination.ApplyFilter(q, "type", params.Filters["type"])
+	q = applyEventTypeFilter(q, params.Filters["type"])
 	q = pagination.ApplyFilter(q, "resource_type", params.Filters["resourceType"])
 	q = pagination.ApplyFilter(q, "username", params.Filters["username"])
 
@@ -341,6 +341,82 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 	}
 
 	return eventDtos, paginationResp, nil
+}
+
+// applyEventTypeFilter filters by event type. Values containing a '.' are
+// exact types (e.g. "container.start"); values without one are category
+// prefixes (e.g. "container" matches "container.%"). Comma-separated values
+// are OR-ed together, mirroring pagination.ApplyFilter's multi-value handling.
+func applyEventTypeFilter(q *gorm.DB, value string) *gorm.DB {
+	if value == "" {
+		return q
+	}
+	var (
+		exact []string
+		conds []string
+		args  []any
+	)
+	for part := range strings.SplitSeq(value, ",") {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+		if strings.Contains(part, ".") {
+			exact = append(exact, part)
+		} else {
+			conds = append(conds, "type LIKE ?")
+			args = append(args, part+".%")
+		}
+	}
+	if len(exact) > 0 {
+		conds = append(conds, "type IN ?")
+		args = append(args, exact)
+	}
+	if len(conds) == 0 {
+		return q
+	}
+	return q.Where(strings.Join(conds, " OR "), args...)
+}
+
+// EventSeverityCounts holds global event counts per severity.
+type EventSeverityCounts struct {
+	Total   int64 `json:"total"`
+	Info    int64 `json:"info"`
+	Success int64 `json:"success"`
+	Warning int64 `json:"warning"`
+	Error   int64 `json:"error"`
+}
+
+func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverityCounts, error) {
+	var rows []struct {
+		Severity string
+		Count    int64
+	}
+	if err := s.db.WithContext(ctx).Model(&models.Event{}).
+		Select("severity, COUNT(*) AS count").
+		Group("severity").
+		Scan(&rows).Error; err != nil {
+		return EventSeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
+	}
+
+	var counts EventSeverityCounts
+	for _, r := range rows {
+		switch models.EventSeverity(r.Severity) {
+		case models.EventSeveritySuccess:
+			counts.Success = r.Count
+		case models.EventSeverityWarning:
+			counts.Warning = r.Count
+		case models.EventSeverityError:
+			counts.Error = r.Count
+		case models.EventSeverityInfo:
+			counts.Info += r.Count
+		default:
+			// Unclassified severities fold into Info.
+			counts.Info += r.Count
+		}
+		counts.Total += r.Count
+	}
+	return counts, nil
 }
 
 func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {

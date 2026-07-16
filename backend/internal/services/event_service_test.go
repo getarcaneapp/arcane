@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -276,4 +277,61 @@ func TestEventService_CreateEvent_NormalizesActor(t *testing.T) {
 		require.Equal(t, "kmendell", *evt.UserID)
 		require.Equal(t, "kmendell", *evt.Username)
 	})
+}
+
+func TestEventService_GetEventSeverityCounts(t *testing.T) {
+	ctx := context.Background()
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+
+	seed := []models.EventSeverity{
+		models.EventSeverityInfo,
+		models.EventSeverityInfo,
+		models.EventSeveritySuccess,
+		models.EventSeverityError,
+	}
+	for i, severity := range seed {
+		_, err := svc.CreateEvent(ctx, CreateEventRequest{
+			Type:     models.EventTypeContainerStart,
+			Severity: severity,
+			Title:    "event",
+		})
+		require.NoError(t, err, "seed event %d", i)
+	}
+
+	counts, err := svc.GetEventSeverityCounts(ctx)
+	require.NoError(t, err)
+	require.Equal(t, EventSeverityCounts{Total: 4, Info: 2, Success: 1, Warning: 0, Error: 1}, counts)
+}
+
+func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
+	ctx := context.Background()
+	db := setupEventServiceTestDB(t)
+	svc := NewEventService(db, nil, nil)
+
+	for _, eventType := range []models.EventType{
+		models.EventTypeContainerStart,
+		models.EventTypeContainerStop,
+		models.EventTypeImagePull,
+	} {
+		_, err := svc.CreateEvent(ctx, CreateEventRequest{Type: eventType, Title: "event"})
+		require.NoError(t, err)
+	}
+
+	listWithTypeFilter := func(value string) []string {
+		events, _, err := svc.ListEventsPaginated(ctx, pagination.QueryParams{
+			Params:  pagination.Params{Limit: 10},
+			Filters: map[string]string{"type": value},
+		})
+		require.NoError(t, err)
+		types := make([]string, 0, len(events))
+		for _, e := range events {
+			types = append(types, string(e.Type))
+		}
+		return types
+	}
+
+	require.ElementsMatch(t, []string{"container.start", "container.stop"}, listWithTypeFilter("container"))
+	require.ElementsMatch(t, []string{"image.pull"}, listWithTypeFilter("image.pull"))
+	require.ElementsMatch(t, []string{"container.start", "container.stop", "image.pull"}, listWithTypeFilter("container,image.pull"))
 }

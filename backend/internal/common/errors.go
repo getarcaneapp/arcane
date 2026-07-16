@@ -515,6 +515,14 @@ func (e *EventListError) Error() string {
 	return fmt.Sprintf("Failed to list events: %v", e.Err)
 }
 
+type EventStatsError struct {
+	Err error
+}
+
+func (e *EventStatsError) Error() string {
+	return fmt.Sprintf("Failed to load event statistics: %v", e.Err)
+}
+
 type EnvironmentIDRequiredError struct{}
 
 func (e *EnvironmentIDRequiredError) Error() string {

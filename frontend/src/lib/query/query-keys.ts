@@ -71,6 +71,7 @@ export const queryKeys = {
 	events: {
 		all: ['events'] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
+		statsGlobal: () => ['events', 'stats', 'global'] as const,
 		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
 	system: {
