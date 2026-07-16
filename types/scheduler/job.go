@@ -25,6 +25,13 @@ type ConditionalJob interface {
 	ShouldSchedule(ctx context.Context) bool
 }
 
+// BusWatcher is a continuous event consumer owned by the application scheduler lifecycle.
+type BusWatcher interface {
+	Name() string
+	Start(ctx context.Context) error
+	RunNow(ctx context.Context) error
+}
+
 // GenericJob is a reusable Job built from closures. It lets a service register a
 // per-entity dynamic job (e.g. one per GitOps sync or one per environment) without
 // importing the scheduler package: the service constructs a GenericJob and hands it

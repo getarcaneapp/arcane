@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	pkg_scheduler "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/resources"
 )
 
@@ -157,30 +157,30 @@ func provideAuthMiddlewareInternal(auth *services.AuthService, apiKey *services.
 // bootstrap then registers the constructed jobs with the scheduler and wires the
 // settings-change callbacks — those are post-construction concerns wire does not handle.
 type Jobs struct {
-	AutoUpdate             *pkg_scheduler.AutoUpdateJob
-	ImagePolling           *pkg_scheduler.ImagePollingJob
-	DockerClientRefresh    *pkg_scheduler.DockerClientRefreshJob
-	Analytics              *pkg_scheduler.AnalyticsJob
-	EventCleanup           *pkg_scheduler.EventCleanupJob
-	PruningVolumeHelper    *pkg_scheduler.PruningVolumeHelperJob
-	ExpiredSessionsCleanup *pkg_scheduler.ExpiredSessionsCleanupJob
-	ScheduledPrune         *pkg_scheduler.ScheduledPruneJob
-	FilesystemWatcher      *pkg_scheduler.FilesystemWatcherJob
-	VulnerabilityScan      *pkg_scheduler.VulnerabilityScanJob
-	AutoHeal               *pkg_scheduler.AutoHealJob
+	AutoUpdate             *scheduler.AutoUpdateJob
+	ImageUpdateWatcher     *scheduler.ImageUpdateWatcher
+	DockerClientRefresh    *scheduler.DockerClientRefreshJob
+	Analytics              *scheduler.AnalyticsJob
+	EventCleanup           *scheduler.EventCleanupJob
+	PruningVolumeHelper    *scheduler.PruningVolumeHelperJob
+	ExpiredSessionsCleanup *scheduler.ExpiredSessionsCleanupJob
+	ScheduledPrune         *scheduler.ScheduledPruneJob
+	FilesystemWatcher      *scheduler.FilesystemWatcherJob
+	VulnerabilityScan      *scheduler.VulnerabilityScanJob
+	AutoHeal               *scheduler.AutoHealJob
 }
 
 // provideAnalyticsJobInternal preserves the existing nil http.Client (the analytics job
 // builds its own default client when none is supplied).
-func provideAnalyticsJobInternal(settings *services.SettingsService, kv *services.KVService, cfg *config.Config) *pkg_scheduler.AnalyticsJob {
-	return pkg_scheduler.NewAnalyticsJob(settings, kv, nil, cfg)
+func provideAnalyticsJobInternal(settings *services.SettingsService, kv *services.KVService, cfg *config.Config) *scheduler.AnalyticsJob {
+	return scheduler.NewAnalyticsJob(settings, kv, nil, cfg)
 }
 
 // provideFilesystemWatcherJobInternal supplies ctx + cfg.ProjectScanMaxDepth and keeps the
 // watcher-setup failure non-fatal (logged; a nil job is tolerated downstream), matching
 // the previous bootstrap behavior.
-func provideFilesystemWatcherJobInternal(ctx context.Context, project *services.ProjectService, template *services.TemplateService, settings *services.SettingsService, cfg *config.Config) *pkg_scheduler.FilesystemWatcherJob {
-	job, err := pkg_scheduler.RegisterFilesystemWatcherJob(ctx, project, template, settings, cfg.ProjectScanMaxDepth)
+func provideFilesystemWatcherJobInternal(ctx context.Context, project *services.ProjectService, template *services.TemplateService, settings *services.SettingsService, cfg *config.Config) *scheduler.FilesystemWatcherJob {
+	job, err := scheduler.RegisterFilesystemWatcherJob(ctx, project, template, settings, cfg.ProjectScanMaxDepth)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to register filesystem watcher job", "error", err)
 	}

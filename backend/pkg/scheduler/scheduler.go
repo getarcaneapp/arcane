@@ -2,6 +2,7 @@ package scheduler
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"sync"
 	"time"
@@ -19,11 +20,13 @@ type JobScheduler struct {
 	cron      *cron.Cron
 	jobs      []schedulertypes.Job
 	jobsByID  map[string]schedulertypes.Job
+	watchers  map[string]schedulertypes.BusWatcher
 	entryIDs  map[string]cron.EntryID
 	schedules map[string]string
 	parser    cron.Parser
 	context   context.Context
 	location  *time.Location
+	watcherWG sync.WaitGroup
 }
 
 // NewJobScheduler creates a new job scheduler with the specified timezone location.
@@ -39,6 +42,7 @@ func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler
 		cron:      cron.New(cron.WithParser(parser), cron.WithLocation(location)),
 		jobs:      []schedulertypes.Job{},
 		jobsByID:  make(map[string]schedulertypes.Job),
+		watchers:  make(map[string]schedulertypes.BusWatcher),
 		entryIDs:  make(map[string]cron.EntryID),
 		schedules: make(map[string]string),
 		parser:    parser,
@@ -54,6 +58,36 @@ func (js *JobScheduler) RegisterJob(job schedulertypes.Job) {
 	defer js.mu.Unlock()
 	js.jobs = append(js.jobs, job)
 	js.jobsByID[job.Name()] = job
+}
+
+// RegisterBusWatcher starts a continuous event watcher on the scheduler lifecycle.
+func (js *JobScheduler) RegisterBusWatcher(watcher schedulertypes.BusWatcher, canRunManually bool) {
+	if watcher == nil {
+		return
+	}
+	if canRunManually {
+		js.mu.Lock()
+		js.watchers[watcher.Name()] = watcher
+		js.mu.Unlock()
+	}
+
+	js.watcherWG.Go(func() {
+		if err := watcher.Start(js.context); err != nil {
+			slog.ErrorContext(js.context, "Bus watcher failed", "name", watcher.Name(), "error", err)
+		}
+	})
+}
+
+// RunBusWatcherNow runs a watcher through its serialized manual path.
+func (js *JobScheduler) RunBusWatcherNow(ctx context.Context, watcherID string) error {
+	js.mu.Lock()
+	watcher, ok := js.watchers[watcherID]
+	js.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("bus watcher %s is not manually runnable", watcherID)
+	}
+
+	return watcher.RunNow(ctx)
 }
 
 func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
@@ -163,6 +197,7 @@ func (js *JobScheduler) Run(ctx context.Context) error {
 	// so Bootstrap cannot close shared services underneath them; the process-level
 	// signal handler owns the hard shutdown deadline for non-cooperative jobs.
 	<-js.cron.Stop().Done()
+	js.watcherWG.Wait()
 	return nil
 }
 

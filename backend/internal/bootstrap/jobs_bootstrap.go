@@ -9,10 +9,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	pkg_scheduler "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 )
 
-func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
+func registerJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
 	// wire constructs every job from the built services; bootstrap owns registration,
 	// the agent-mode gating, the startup heartbeat, and the settings callbacks.
 	jobs := di.InitializeJobs(appCtx, appConfig, appServices)
@@ -41,7 +41,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 	}
 
 	newScheduler.RegisterJob(jobs.AutoUpdate)
-	newScheduler.RegisterJob(jobs.ImagePolling)
+	newScheduler.RegisterBusWatcher(jobs.ImageUpdateWatcher, true)
 	newScheduler.RegisterJob(jobs.DockerClientRefresh)
 	newScheduler.RegisterJob(jobs.Analytics)
 	// Send initial heartbeat on startup without blocking bootstrap.
@@ -65,7 +65,7 @@ func registerJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobSchedul
 // registerDynamicJobs injects the scheduler into the services that own per-entity
 // jobs and registers the jobs for already-existing entities at startup. AddJob is
 // an idempotent upsert, so these run safely before the scheduler is started.
-func registerDynamicJobs(appCtx context.Context, newScheduler *pkg_scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
+func registerDynamicJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if appServices.GitOpsSync != nil {
 		appServices.GitOpsSync.SetScheduler(appCtx, newScheduler)
@@ -87,10 +87,10 @@ func registerDynamicJobs(appCtx context.Context, newScheduler *pkg_scheduler.Job
 	}
 }
 
-func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Services, appConfig *config.Config, newScheduler *pkg_scheduler.JobScheduler, jobs *di.Jobs) {
+func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Services, appConfig *config.Config, newScheduler *scheduler.JobScheduler, jobs *di.Jobs) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
-		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.ImagePolling); err != nil {
-			slog.WarnContext(lifecycleCtx, "Failed to reschedule image-polling job", "error", err)
+		if jobs.ImageUpdateWatcher != nil {
+			jobs.ImageUpdateWatcher.Trigger()
 		}
 		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.AutoUpdate); err != nil {
 			slog.WarnContext(lifecycleCtx, "Failed to reschedule auto-update job", "error", err)

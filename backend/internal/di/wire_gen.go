@@ -123,8 +123,8 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	autoUpdateJob := scheduler.NewAutoUpdateJob(updaterService, settingsService)
 	imageUpdateService := svcs.ImageUpdate
 	environmentService := svcs.Environment
-	imagePollingJob := scheduler.NewImagePollingJob(imageUpdateService, settingsService, environmentService)
 	dockerClientService := svcs.Docker
+	imageUpdateWatcher := scheduler.NewImageUpdateWatcher(imageUpdateService, settingsService, environmentService, dockerClientService)
 	dockerClientRefreshJob := scheduler.NewDockerClientRefreshJob(dockerClientService, settingsService)
 	kvService := svcs.KV
 	analyticsJob := provideAnalyticsJobInternal(settingsService, kvService, cfg)
@@ -146,7 +146,7 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	autoHealJob := scheduler.NewAutoHealJob(dockerClientService, settingsService, eventService, notificationService)
 	jobs := &Jobs{
 		AutoUpdate:             autoUpdateJob,
-		ImagePolling:           imagePollingJob,
+		ImageUpdateWatcher:     imageUpdateWatcher,
 		DockerClientRefresh:    dockerClientRefreshJob,
 		Analytics:              analyticsJob,
 		EventCleanup:           eventCleanupJob,
@@ -187,5 +187,5 @@ var JobSet = wire.NewSet(wire.FieldsOf(new(*Services),
 	"Updater", "Settings", "ImageUpdate", "Environment", "Docker", "KV",
 	"Event", "Activity", "Session", "System", "Notification", "Project",
 	"Template", "Vulnerability", "Volume",
-), scheduler.NewAutoUpdateJob, scheduler.NewImagePollingJob, scheduler.NewDockerClientRefreshJob, provideAnalyticsJobInternal, scheduler.NewEventCleanupJob, scheduler.NewPruningVolumeHelperJob, scheduler.NewExpiredSessionsCleanupJob, scheduler.NewScheduledPruneJob, provideFilesystemWatcherJobInternal, scheduler.NewVulnerabilityScanJob, scheduler.NewAutoHealJob, wire.Struct(new(Jobs), "*"),
+), scheduler.NewAutoUpdateJob, scheduler.NewImageUpdateWatcher, scheduler.NewDockerClientRefreshJob, provideAnalyticsJobInternal, scheduler.NewEventCleanupJob, scheduler.NewPruningVolumeHelperJob, scheduler.NewExpiredSessionsCleanupJob, scheduler.NewScheduledPruneJob, provideFilesystemWatcherJobInternal, scheduler.NewVulnerabilityScanJob, scheduler.NewAutoHealJob, wire.Struct(new(Jobs), "*"),
 )

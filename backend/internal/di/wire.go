@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	pkg_scheduler "github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 )
 
 // ServiceSet is the single, central provider set for the whole backend. Every
@@ -94,17 +94,17 @@ var JobSet = wire.NewSet(
 		"Event", "Activity", "Session", "System", "Notification", "Project",
 		"Template", "Vulnerability", "Volume",
 	),
-	pkg_scheduler.NewAutoUpdateJob,
-	pkg_scheduler.NewImagePollingJob,
-	pkg_scheduler.NewDockerClientRefreshJob,
+	scheduler.NewAutoUpdateJob,
+	scheduler.NewImageUpdateWatcher,
+	scheduler.NewDockerClientRefreshJob,
 	provideAnalyticsJobInternal,
-	pkg_scheduler.NewEventCleanupJob,
-	pkg_scheduler.NewPruningVolumeHelperJob,
-	pkg_scheduler.NewExpiredSessionsCleanupJob,
-	pkg_scheduler.NewScheduledPruneJob,
+	scheduler.NewEventCleanupJob,
+	scheduler.NewPruningVolumeHelperJob,
+	scheduler.NewExpiredSessionsCleanupJob,
+	scheduler.NewScheduledPruneJob,
 	provideFilesystemWatcherJobInternal,
-	pkg_scheduler.NewVulnerabilityScanJob,
-	pkg_scheduler.NewAutoHealJob,
+	scheduler.NewVulnerabilityScanJob,
+	scheduler.NewAutoHealJob,
 	wire.Struct(new(Jobs), "*"),
 )
 

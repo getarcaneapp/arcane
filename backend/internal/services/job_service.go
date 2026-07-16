@@ -22,6 +22,7 @@ type JobRunner interface {
 	GetJob(jobID string) (schedulertypes.Job, bool)
 	GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool)
 	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
+	RunBusWatcherNow(ctx context.Context, watcherID string) error
 }
 
 // JobService manages configuration for background job schedules.
@@ -323,6 +324,13 @@ func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
 	if jobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
 		return s.RunEnvironmentHealthNow(context.WithoutCancel(ctx))
 	}
+	jobMeta, ok := meta.GetJobMetadata(jobID)
+	if ok && jobMeta.IsContinuous && jobMeta.CanRunManually {
+		if s == nil || s.scheduler == nil {
+			return errors.New("job service or scheduler not initialized")
+		}
+		return s.scheduler.RunBusWatcherNow(context.WithoutCancel(ctx), jobID)
+	}
 
 	job, err := s.getRunnableJobInternal(jobID)
 	if err != nil {
@@ -383,12 +391,11 @@ func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMe
 }
 
 func (s *JobService) isJobEnabledInternal(ctx context.Context, meta meta.JobMetadata) bool {
-	if meta.IsContinuous {
-		return true
-	}
-
 	if meta.EnabledKey != "" {
 		return s.settings.GetBoolSetting(ctx, meta.EnabledKey, false)
+	}
+	if meta.IsContinuous {
+		return true
 	}
 
 	return true
