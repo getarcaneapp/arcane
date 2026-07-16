@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
 	import { goto } from '$app/navigation';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { formatDateTimeShort, truncateString } from '$lib/utils/formatting';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog/';
 	import { toast } from 'svelte-sonner';
@@ -103,15 +103,15 @@
 				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
 				<div class="flex flex-wrap items-center gap-2 pt-1">
 					{#if volume.inUse}
-						<StatusBadge variant="green" text={m.common_in_use()} />
+						<Badge variant="green" minWidth="20">{m.common_in_use()}</Badge>
 					{:else}
-						<StatusBadge variant="amber" text={m.common_unused()} />
+						<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
 					{/if}
 					{#if volume.driver}
-						<StatusBadge variant="blue" text={volume.driver} />
+						<Badge variant="blue" minWidth="20">{volume.driver}</Badge>
 					{/if}
 					{#if volume.scope}
-						<StatusBadge variant="purple" text={volume.scope} />
+						<Badge variant="purple" minWidth="20">{volume.scope}</Badge>
 					{/if}
 				</div>
 			</div>
@@ -166,9 +166,9 @@
 								<PropertyItem icon={InfoIcon} color="amber" label={m.common_status()}>
 									<p class="mt-1 text-base font-semibold">
 										{#if volume.inUse}
-											<StatusBadge variant="green" text={m.common_in_use()} />
+											<Badge variant="green" minWidth="20">{m.common_in_use()}</Badge>
 										{:else}
-											<StatusBadge variant="amber" text={m.common_unused()} />
+											<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
 										{/if}
 									</p>
 								</PropertyItem>

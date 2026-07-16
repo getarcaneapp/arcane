@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -182,7 +182,7 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: FederatedCredential })}
-	<StatusBadge text={getStatusText(item)} variant={getStatusVariant(item)} />
+	<Badge variant={getStatusVariant(item)} minWidth="20">{getStatusText(item)}</Badge>
 {/snippet}
 
 {#snippet LastUsedCell({ item }: { item: FederatedCredential })}

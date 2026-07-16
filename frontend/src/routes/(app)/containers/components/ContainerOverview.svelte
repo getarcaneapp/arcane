@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { Switch } from '$lib/components/ui/switch';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto } from '$lib/types/docker';
@@ -203,15 +203,14 @@
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10">
 							<HealthIcon class="size-5 text-pink-500" />
 						</div>
-						<StatusBadge
+						<Badge
 							variant={container.state.health.status === 'healthy'
 								? 'green'
 								: container.state.health.status === 'unhealthy'
 									? 'red'
 									: 'amber'}
-							text={container.state.health.status}
-							size="md"
-						/>
+							minWidth="20">{container.state.health.status}</Badge
+						>
 					</div>
 				</div>
 			{/if}

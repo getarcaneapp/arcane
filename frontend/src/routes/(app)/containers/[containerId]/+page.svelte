@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { refreshAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { bytes } from '$lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
@@ -318,10 +318,10 @@
 					{containerDisplayName}
 				</h1>
 				{#if container?.state}
-					<StatusBadge
+					<Badge
 						variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-						text={getContainerStatusLabel(container.state.status)}
-					/>
+						minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
+					>
 				{/if}
 			</div>
 		{/snippet}

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
 	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
@@ -135,7 +135,7 @@
 							{m.common_health_status()}
 						</div>
 						<div>
-							<StatusBadge variant={statusVariant} text={health?.status ?? m.common_unknown()} size="md" />
+							<Badge variant={statusVariant} minWidth="20">{health?.status ?? m.common_unknown()}</Badge>
 						</div>
 					</Card.Content>
 				</Card.Root>
@@ -294,11 +294,9 @@
 							<Card.Content class="flex flex-col gap-2 p-4">
 								<div class="flex flex-wrap items-center justify-between gap-2">
 									<div class="flex items-center gap-3">
-										<StatusBadge
-											variant={probe.exitCode === 0 ? 'green' : 'red'}
-											text={`${m.health_exit_code()}: ${probe.exitCode}`}
-											size="sm"
-										/>
+										<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
+											>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
+										>
 										<span class="text-muted-foreground text-xs" title={formatProbeDate(probe.start)}>
 											{probe.start ? formatDistanceToNow(probe.start, { addSuffix: true }) : '—'}
 										</span>

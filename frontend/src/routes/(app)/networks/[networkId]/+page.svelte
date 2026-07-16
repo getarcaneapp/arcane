@@ -16,7 +16,7 @@
 		ArrowDownIcon
 	} from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -128,14 +128,14 @@
 >
 	{#snippet badges()}
 		{#if inUse}
-			<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
+			<Badge variant="green" minWidth="20">{m.networks_in_use_count({ count: connectedContainers.length })}</Badge>
 		{:else}
-			<StatusBadge variant="amber" text={m.common_unused()} />
+			<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
 		{/if}
 		{#if isPredefined}
-			<StatusBadge variant="blue" text={m.networks_predefined()} />
+			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
-		<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
+		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
 	{/snippet}
 
 	{#if errorMessage}
@@ -187,26 +187,24 @@
 
 						<PropertyItem icon={LayersIcon} color="yellow" label={m.attachable()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.attachable ? 'green' : 'gray'}
-									text={network.attachable ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.attachable ? 'green' : 'gray'} minWidth="20"
+									>{network.attachable ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						<PropertyItem icon={SettingsIcon} color="red" label={m.internal()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.internal ? 'blue' : 'gray'}
-									text={network.internal ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.internal ? 'blue' : 'gray'} minWidth="20"
+									>{network.internal ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						{#snippet ipToggleTile(label: string, enabled: boolean | undefined)}
 							<PropertyItem icon={NetworksIcon} color="indigo" {label}>
 								<p class="mt-1 text-base font-semibold">
-									<StatusBadge variant={enabled ? 'indigo' : 'gray'} text={enabled ? m.common_yes() : m.common_no()} />
+									<Badge variant={enabled ? 'indigo' : 'gray'} minWidth="20">{enabled ? m.common_yes() : m.common_no()}</Badge>
 								</p>
 							</PropertyItem>
 						{/snippet}
@@ -217,19 +215,17 @@
 
 						<PropertyItem icon={SettingsIcon} color="cyan" label={m.ingress()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.ingress ? 'cyan' : 'gray'}
-									text={network.ingress ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.ingress ? 'cyan' : 'gray'} minWidth="20"
+									>{network.ingress ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						<PropertyItem icon={SettingsIcon} color="pink" label={m.config_only()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.configOnly ? 'pink' : 'gray'}
-									text={network.configOnly ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.configOnly ? 'pink' : 'gray'} minWidth="20"
+									>{network.configOnly ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 					</div>
@@ -402,7 +398,7 @@
 						{#if network.ipam.driver}
 							<div class="mt-4 flex items-center">
 								<span class="text-muted-foreground mr-2 text-sm font-medium">{m.networks_ipam_driver_label()}:</span>
-								<StatusBadge variant="cyan" text={network.ipam.driver} />
+								<Badge variant="cyan" minWidth="20">{network.ipam.driver}</Badge>
 							</div>
 						{/if}
 

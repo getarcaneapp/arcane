@@ -16,7 +16,7 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
@@ -317,30 +317,29 @@
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={statusVariant(String(value ?? ''))} />
+	<Badge variant={statusVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet AvailabilityCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={availabilityVariant(String(value ?? ''))} />
+	<Badge variant={availabilityVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet AgentCell({ value }: { value: unknown })}
-	<StatusBadge
-		text={getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
-		variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
-	/>
+	<Badge variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])} minWidth="20"
+		>{getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}</Badge
+	>
 {/snippet}
 
 {#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="gray" minWidth="none" class="max-w-[200px] truncate" />
+				<Badge variant="gray" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
 			</div>
 		{/each}
 		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="blue" minWidth="none" class="max-w-[200px] truncate" />
+				<Badge variant="blue" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
 				{#if canManageNodes}
 					<button
 						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-[var(--radius)] bg-blue-500/10 pr-1 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100 dark:bg-blue-400/20"

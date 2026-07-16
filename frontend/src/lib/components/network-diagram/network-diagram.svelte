@@ -2,7 +2,7 @@
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { EyeOnIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
@@ -471,8 +471,8 @@
 
 <div class={cn('space-y-4', className)}>
 	<div class="flex flex-wrap items-center gap-2">
-		<StatusBadge text={m.networks_topology_legend_networks()} variant="violet" minWidth="none" />
-		<StatusBadge text={m.networks_topology_legend_containers()} variant="emerald" minWidth="none" />
+		<Badge variant="violet">{m.networks_topology_legend_networks()}</Badge>
+		<Badge variant="emerald">{m.networks_topology_legend_containers()}</Badge>
 		<p class="text-muted-foreground text-sm">{m.networks_topology_hint()}</p>
 		{#if presentDefaults.length > 0}
 			<div class="ml-auto">

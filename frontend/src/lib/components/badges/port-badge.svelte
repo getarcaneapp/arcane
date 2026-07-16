@@ -2,6 +2,8 @@
 	import type { ContainerPorts } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { badgeVariants } from '$lib/components/ui/badge';
+	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
 	import { toPortHref } from '$lib/utils/navigation';
 	import { mergeProps } from 'bits-ui';
@@ -96,8 +98,10 @@
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
-							class:
-								'ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-md border border-sky-700/20 px-2 py-1 text-[11px] transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-slate-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30',
+							class: cn(
+								badgeVariants({ variant: 'sky', size: 'sm' }),
+								'hover:bg-sky-500/20 hover:border-sky-500/40 dark:hover:border-sky-500/50 focus-visible:outline-none'
+							),
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
 							rel: 'noopener noreferrer'
@@ -120,9 +124,7 @@
 		{#each exposedOnly as p, i (i)}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<span
-						class="bg-background/50 inline-flex items-center gap-1 rounded-md border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 dark:border-slate-400/40 dark:bg-slate-500/20 dark:text-slate-200"
-					>
+					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
@@ -142,8 +144,7 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							onclick: () => (expanded = !expanded),
-							class:
-								'bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors'
+							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:bg-muted cursor-pointer')
 						})}
 						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
 					{/snippet}

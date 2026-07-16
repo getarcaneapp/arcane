@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import DashTableCardHeader from './dash-table-card-header.svelte';
 	import { getStatusVariant } from '$lib/utils/docker';
@@ -59,7 +59,7 @@
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
-	<StatusBadge variant={getStatusVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+	<Badge variant={getStatusVariant(item.state)} minWidth="20">{capitalizeFirstLetter(item.state)}</Badge>
 {/snippet}
 
 {#snippet DashContainerMobileCard({ item }: { item: ContainerSummaryDto })}

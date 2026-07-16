@@ -8,7 +8,8 @@
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '$lib/utils/formatting';
@@ -269,11 +270,19 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
-	<StatusBadge
-		variant={getStatusVariant(item.status)}
-		text={capitalizeFirstLetter(item.status)}
-		tooltip={getStatusTooltip(item)}
-	/>
+	{@const statusTooltip = getStatusTooltip(item)}
+	{#if statusTooltip}
+		<ArcaneTooltip.Root>
+			<ArcaneTooltip.Trigger>
+				<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content>
+				<p class="max-w-xs text-xs">{statusTooltip}</p>
+			</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
+	{:else}
+		<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+	{/if}
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: Project })}

@@ -30,7 +30,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
 	import {
 		type LayerProgress,
@@ -880,11 +880,9 @@
 {/snippet}
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
-	<StatusBadge
-		variant={getStatusBadgeVariant(value as ImageBuildStatus)}
-		text={buildHistoryStatusLabel(value as ImageBuildStatus)}
-		size="sm"
-	/>
+	<Badge variant={getStatusBadgeVariant(value as ImageBuildStatus)} size="sm" minWidth="20"
+		>{buildHistoryStatusLabel(value as ImageBuildStatus)}</Badge
+	>
 {/snippet}
 
 {#snippet BuildHistoryTagsCell({ item }: { item: ImageBuildRecord })}
@@ -1003,11 +1001,9 @@
 				{#if buildHistorySelected}
 					<div class="flex flex-wrap items-center justify-between gap-3 text-sm">
 						<div class="flex flex-wrap items-center gap-2">
-							<StatusBadge
-								variant={getStatusBadgeVariant(buildHistorySelected.status)}
-								text={buildHistoryStatusLabel(buildHistorySelected.status)}
-								size="sm"
-							/>
+							<Badge variant={getStatusBadgeVariant(buildHistorySelected.status)} size="sm" minWidth="20"
+								>{buildHistoryStatusLabel(buildHistorySelected.status)}</Badge
+							>
 							{#if buildHistorySelected.provider}
 								<span class="text-muted-foreground">{buildHistorySelected.provider}</span>
 							{/if}

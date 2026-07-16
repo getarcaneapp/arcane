@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '$lib/components/ui/copy-button';
@@ -192,7 +192,7 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Webhook })}
-	<StatusBadge text={webhookStatusLabel(item)} variant={webhookStatusVariant(item)} />
+	<Badge variant={webhookStatusVariant(item)} minWidth="20">{webhookStatusLabel(item)}</Badge>
 {/snippet}
 
 {#snippet TokenPrefixCell({ item }: { item: Webhook })}

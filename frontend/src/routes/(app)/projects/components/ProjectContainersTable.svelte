@@ -6,7 +6,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
@@ -327,7 +327,7 @@
 			</span>
 		</div>
 	{:else}
-		<StatusBadge variant={getStatusVariant(item.status)} text={capitalizeFirstLetter(item.status)} />
+		<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
 	{/if}
 {/snippet}
 

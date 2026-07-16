@@ -4,7 +4,7 @@
 	import AgentCommandBlock from '$lib/components/agent-command-block.svelte';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
@@ -97,7 +97,7 @@
 			<div class="bg-muted/40 rounded-lg border p-4">
 				<div class="text-muted-foreground text-xs font-medium tracking-wide uppercase">{m.common_status()}</div>
 				<div class="mt-2 flex items-center gap-2">
-					<StatusBadge text={agentStatusLabel} variant={getSwarmNodeAgentVariant(agentStatus.state)} />
+					<Badge variant={getSwarmNodeAgentVariant(agentStatus.state)} minWidth="20">{agentStatusLabel}</Badge>
 				</div>
 			</div>
 

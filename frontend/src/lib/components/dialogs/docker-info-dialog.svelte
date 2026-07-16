@@ -278,7 +278,7 @@
 					<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_address_pools_label()}</div>
 					<div class="flex flex-wrap gap-1">
 						{#each info.DefaultAddressPools as pool, i (i)}
-							<Badge variant="outline" class="px-1.5 py-0 font-mono text-[10px]">{pool.Base}/{pool.Size}</Badge>
+							<Badge variant="outline" size="sm" class="font-mono">{pool.Base}/{pool.Size}</Badge>
 						{/each}
 					</div>
 				</div>
@@ -343,7 +343,7 @@
 		<div class="rounded-lg border p-3">
 			<div class="flex flex-wrap gap-1">
 				{#each info.Labels ?? [] as label, i (i)}
-					<Badge variant="outline" class="px-1.5 py-0 font-mono text-[10px]">{label}</Badge>
+					<Badge variant="outline" size="sm" class="font-mono">{label}</Badge>
 				{/each}
 			</div>
 		</div>
@@ -375,7 +375,7 @@
 	}}
 	<div class="rounded-lg border p-3 {colors[color].bg}">
 		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
-		<Badge variant="outline" class="{colors[color].badge} rounded-md text-base font-semibold tabular-nums">
+		<Badge variant="outline" class="{colors[color].badge} text-base font-semibold tabular-nums">
 			{value}
 		</Badge>
 	</div>
@@ -386,7 +386,7 @@
 		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
 		<div class="flex flex-wrap gap-1">
 			{#each items ?? [] as item, i (i)}
-				<Badge variant="outline" class="px-1.5 py-0 text-[10px]">{item}</Badge>
+				<Badge variant="outline" size="sm">{item}</Badge>
 			{:else}
 				<span class="text-muted-foreground text-xs">-</span>
 			{/each}

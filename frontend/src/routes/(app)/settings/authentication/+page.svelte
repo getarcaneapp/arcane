@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { Settings } from '$lib/types/settings';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon, ArrowDownIcon } from '$lib/icons';
 	import settingsStore from '$lib/stores/config-store';
@@ -360,15 +361,13 @@
 												<div class="mt-2">
 													<ArcaneTooltip.Root>
 														<ArcaneTooltip.Trigger>
-															<span
-																class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
-															>
+															<Badge variant="amber">
 																{#if isOidcForcedDisabled}
 																	{m.security_server_disabled_via_server()}
 																{:else}
 																	{m.security_server_configured()}
 																{/if}
-															</span>
+															</Badge>
 														</ArcaneTooltip.Trigger>
 														<ArcaneTooltip.Content side="top">
 															{#if isOidcForcedDisabled}

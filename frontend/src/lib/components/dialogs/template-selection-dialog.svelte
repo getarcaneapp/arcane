@@ -201,7 +201,7 @@
 			{#if normalizeTags(template.metadata?.tags).length > 0}
 				<div class="mb-3 flex flex-wrap gap-1">
 					{#each normalizeTags(template.metadata?.tags) as tag}
-						<Badge variant="outline" class="text-[10px]">{tag}</Badge>
+						<Badge variant="outline" size="sm">{tag}</Badge>
 					{/each}
 				</div>
 			{/if}

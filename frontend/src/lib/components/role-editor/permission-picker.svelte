@@ -2,7 +2,7 @@
 	import * as Accordion from '$lib/components/ui/accordion';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '$lib/types/auth';
 	import { normalizePermissionSelection } from '$lib/utils/permissions';
 	import { m } from '$lib/paraglide/messages';
@@ -152,12 +152,9 @@
 										total: group.resource.actions.length
 									})}
 								</span>
-								<StatusBadge
-									text={group.resource.scope === 'global' ? m.permissions_scope_global() : m.permissions_scope_env()}
-									variant={group.resource.scope === 'global' ? 'amber' : 'blue'}
-									size="sm"
-									minWidth="none"
-								/>
+								<Badge variant={group.resource.scope === 'global' ? 'amber' : 'blue'} size="sm"
+									>{group.resource.scope === 'global' ? m.permissions_scope_global() : m.permissions_scope_env()}</Badge
+								>
 							</div>
 						</Accordion.Trigger>
 					</div>

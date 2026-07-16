@@ -70,7 +70,7 @@
 			<div class="flex items-center gap-2">
 				<Card.Title class="text-sm leading-none font-medium">{job.name}</Card.Title>
 				{#if job.isContinuous}
-					<Badge variant="outline" class="h-4.5 border-white/10 px-1.5 text-[0.6rem] font-medium">{m.jobs_continuous()}</Badge>
+					<Badge variant="outline" size="sm">{m.jobs_continuous()}</Badge>
 				{/if}
 			</div>
 			<Card.Description class="text-muted-foreground/80 line-clamp-1 text-xs">{job.description}</Card.Description>

@@ -1,6 +1,6 @@
 <script lang="ts" generics="T">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import type { Snippet, Component } from 'svelte';
 
@@ -111,7 +111,7 @@
 
 {#snippet FieldValue(field: FieldDefinition<T>, value: any, isCompact: boolean)}
 	{#if field.type === 'badge' && field.badgeVariant}
-		<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
+		<Badge variant={field.badgeVariant} size="sm" minWidth="20">{String(value)}</Badge>
 	{:else if field.type === 'mono'}
 		<span class={isCompact ? 'text-muted-foreground truncate font-mono text-xs leading-tight' : 'font-mono text-xs'}>{value}</span
 		>
@@ -189,7 +189,7 @@
 			{#if resolvedBadges.length > 0}
 				<div class="flex flex-wrap items-center gap-1">
 					{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
-						<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
+						<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
 					{/each}
 				</div>
 			{/if}

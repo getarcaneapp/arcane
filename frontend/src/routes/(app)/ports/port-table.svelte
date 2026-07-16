@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
 	import { ContainersIcon, ConnectionIcon, GlobeIcon, HashIcon } from '$lib/icons';
@@ -80,7 +80,7 @@
 {/snippet}
 
 {#snippet ProtocolCell({ item }: { item: PortMappingDto })}
-	<StatusBadge text={item.protocol.toUpperCase()} variant="gray" minWidth="none" />
+	<Badge variant="gray">{item.protocol.toUpperCase()}</Badge>
 {/snippet}
 
 {#snippet ContainerCell({ item }: { item: PortMappingDto })}
@@ -96,11 +96,9 @@
 {/snippet}
 
 {#snippet PublishedCell({ item }: { item: PortMappingDto })}
-	<StatusBadge
-		text={item.isPublished ? m.ports_published_label() : m.ports_exposed_label()}
-		variant={item.isPublished ? 'sky' : 'gray'}
-		minWidth="none"
-	/>
+	<Badge variant={item.isPublished ? 'sky' : 'gray'}
+		>{item.isPublished ? m.ports_published_label() : m.ports_exposed_label()}</Badge
+	>
 {/snippet}
 
 {#snippet PortMobileCardSnippet({

@@ -1,13 +1,10 @@
 <script lang="ts">
-	import type { ComponentProps } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
 	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
 	import { formatDateTimeShort } from '$lib/utils/formatting';
-
-	type BadgeVariant = ComponentProps<typeof StatusBadge>['variant'];
 
 	let {
 		environment,
@@ -90,7 +87,7 @@
 	<Card.Root variant="subtle">
 		<Card.Content class="flex flex-col gap-1.5 p-4">
 			<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-			<div><StatusBadge {text} {variant} /></div>
+			<div><Badge {variant} minWidth="20">{text}</Badge></div>
 		</Card.Content>
 	</Card.Root>
 {/snippet}

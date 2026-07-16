@@ -7,7 +7,7 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -130,7 +130,9 @@
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
-	<StatusBadge text={getSwarmServiceModeLabel(String(value ?? ''))} variant={getSwarmServiceModeVariant(String(value ?? ''))} />
+	<Badge variant={getSwarmServiceModeVariant(String(value ?? ''))} minWidth="20"
+		>{getSwarmServiceModeLabel(String(value ?? ''))}</Badge
+	>
 {/snippet}
 
 {#snippet StackCell({ value }: { value: unknown })}

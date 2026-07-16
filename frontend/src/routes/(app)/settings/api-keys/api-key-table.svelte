@@ -5,7 +5,7 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -195,7 +195,7 @@
 		{:else}
 			<span class="text-muted-foreground">{m.api_key_expires_never()}</span>
 		{/if}
-		<StatusBadge text={getStatusText(item)} variant={getStatusVariant(item)} />
+		<Badge variant={getStatusVariant(item)} minWidth="20">{getStatusText(item)}</Badge>
 	</div>
 {/snippet}
 

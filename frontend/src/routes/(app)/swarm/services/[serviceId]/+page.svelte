@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
@@ -297,7 +297,7 @@
 				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={serviceName}>
 					{serviceName}
 				</h1>
-				<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
 				{#if canScaleService}
 					<span class="text-muted-foreground font-mono text-sm">
 						{desiredReplicas}

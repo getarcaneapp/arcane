@@ -6,7 +6,7 @@
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { DEFAULT_NETWORK_NAMES } from '$lib/constants';
@@ -165,7 +165,7 @@
 {/snippet}
 
 {#snippet DriverCell({ item }: { item: NetworkSummaryDto })}
-	<StatusBadge
+	<Badge
 		variant={item.driver === 'bridge'
 			? 'blue'
 			: item.driver === 'overlay'
@@ -175,17 +175,17 @@
 					: item.driver === 'macvlan'
 						? 'orange'
 						: 'gray'}
-		text={capitalizeFirstLetter(item.driver)}
-	/>
+		minWidth="20">{capitalizeFirstLetter(item.driver)}</Badge
+	>
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: NetworkSummaryDto })}
-	<StatusBadge variant={item.scope === 'local' ? 'green' : 'amber'} text={capitalizeFirstLetter(item.scope)} />
+	<Badge variant={item.scope === 'local' ? 'green' : 'amber'} minWidth="20">{capitalizeFirstLetter(item.scope)}</Badge>
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: NetworkSummaryDto })}
 	{#if item.isDefault}
-		<StatusBadge text={m.networks_predefined()} variant="sky" />
+		<Badge variant="sky" minWidth="20">{m.networks_predefined()}</Badge>
 	{:else}
 		<InUseStatus inUse={item.inUse} />
 	{/if}

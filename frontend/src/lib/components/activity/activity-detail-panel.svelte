@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import type { Activity, ActivityMessage } from '$lib/types/activity.type';
@@ -105,12 +105,9 @@
 					<div class="min-w-0">
 						<div class="flex flex-wrap items-center gap-2">
 							<h3 class="truncate text-sm font-semibold">{activityTypeLabel(liveActivity.type)}</h3>
-							<StatusBadge
-								text={activityStatusLabel(liveActivity.status)}
-								variant={activityStatusVariant(liveActivity.status)}
-								size="sm"
-								minWidth="none"
-							/>
+							<Badge variant={activityStatusVariant(liveActivity.status)} size="sm"
+								>{activityStatusLabel(liveActivity.status)}</Badge
+							>
 						</div>
 						<p class="text-muted-foreground mt-1 truncate text-xs">{activityTarget}</p>
 					</div>

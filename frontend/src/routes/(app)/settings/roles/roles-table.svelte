@@ -5,7 +5,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { goto } from '$app/navigation';
@@ -198,7 +198,7 @@
 {/snippet}
 
 {#snippet TypeCell({ item }: { item: Role })}
-	<StatusBadge text={item.builtIn ? m.roles_built_in() : m.roles_custom()} variant={item.builtIn ? 'amber' : 'blue'} />
+	<Badge variant={item.builtIn ? 'amber' : 'blue'} minWidth="20">{item.builtIn ? m.roles_built_in() : m.roles_custom()}</Badge>
 {/snippet}
 
 {#snippet AssignedUsersCell({ item }: { item: Role })}

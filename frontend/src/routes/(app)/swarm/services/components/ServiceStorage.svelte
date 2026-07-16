@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '$lib/icons';
 	import type { SwarmServiceMount } from '$lib/types/swarm';
@@ -87,12 +86,12 @@
 											<div class="mt-1 flex flex-wrap items-center gap-1.5">
 												<span class="text-muted-foreground text-xs">{getMountLabel(type)}</span>
 												{#if mount.volumeDriver}
-													<StatusBadge text={mount.volumeDriver} variant="gray" size="sm" minWidth="none" />
+													<Badge variant="gray" size="sm">{mount.volumeDriver}</Badge>
 												{/if}
 											</div>
 										</div>
 									</div>
-									<Badge variant={readOnly ? 'secondary' : 'outline'} class="text-xs font-semibold">
+									<Badge variant={readOnly ? 'secondary' : 'outline'}>
 										{readOnly ? m.common_ro() : m.common_rw()}
 									</Badge>
 								</div>

@@ -7,7 +7,7 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmTaskSummary } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { getSwarmTaskIconVariant, getSwarmTaskStateVariant } from '$lib/utils/swarm-tasks';
 
 	let {
@@ -42,11 +42,11 @@
 </script>
 
 {#snippet StateCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={getSwarmTaskStateVariant(String(value ?? ''))} />
+	<Badge variant={getSwarmTaskStateVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet DesiredStateCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={getSwarmTaskStateVariant(String(value ?? ''))} />
+	<Badge variant={getSwarmTaskStateVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet TaskMobileCardSnippet({

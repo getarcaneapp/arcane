@@ -7,7 +7,7 @@
 	import { type ActionButton } from '$lib/components/action-button-group/index.js';
 	import { cn } from '$lib/utils';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge, badgeVariants } from '$lib/components/ui/badge';
 	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -878,15 +878,11 @@
 										<div class="flex min-w-0 flex-wrap items-center gap-2">
 											<div class="min-w-0 max-w-full break-words text-base font-semibold tracking-tight">{environment.name}</div>
 											{#if isCurrent}
-												<StatusBadge text={m.common_current()} variant="blue" size="sm" minWidth="none" />
+												<Badge variant="blue" size="sm">{m.common_current()}</Badge>
 											{/if}
-											<StatusBadge
-												text={capitalizeFirstLetter(getResolvedStatusLabel(environment))}
-												variant={statusVariant}
-												size="sm"
-												minWidth="none"
-											/>
-											<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
+											<Badge variant={statusVariant} size="sm">{capitalizeFirstLetter(getResolvedStatusLabel(environment))}</Badge
+											>
+											<Badge variant={transportBadge.variant} size="sm">{transportBadge.text}</Badge>
 											{#if boardState}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 												{@const vInfo =
@@ -899,7 +895,7 @@
 														{#if vInfo.updateAvailable || debugUpgrade}
 															<ArcaneTooltip.Root>
 																<ArcaneTooltip.Trigger
-																	class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
+																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:text-foreground font-mono')}
 																>
 																	v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
 																	<span class="relative ml-1.5 flex h-2 w-2">
@@ -927,11 +923,9 @@
 																</ArcaneTooltip.Content>
 															</ArcaneTooltip.Root>
 														{:else}
-															<div
-																class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
-															>
+															<Badge variant="gray" size="sm" class="font-mono">
 																{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-															</div>
+															</Badge>
 														{/if}
 													</div>
 													{#if vInfo.updateAvailable || debugUpgrade}

@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import PermissionPicker from './permission-picker.svelte';
 	import type { Role, PermissionsManifest } from '$lib/types/auth';
 	import { normalizePermissionSelection } from '$lib/utils/permissions';
@@ -62,12 +62,7 @@
 			</Card.Header>
 			<Card.Content class="space-y-4 p-6 pt-2">
 				<div class="flex items-center gap-2">
-					<StatusBadge
-						text={isBuiltIn ? m.roles_built_in() : m.roles_custom()}
-						variant={isBuiltIn ? 'blue' : 'green'}
-						size="sm"
-						minWidth="none"
-					/>
+					<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.roles_custom()}</Badge>
 				</div>
 
 				<FormInput

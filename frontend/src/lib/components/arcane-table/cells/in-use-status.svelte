@@ -1,12 +1,12 @@
 <script lang="ts">
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 
 	let { inUse }: { inUse: boolean } = $props();
 </script>
 
 {#if inUse}
-	<StatusBadge text={m.common_in_use()} variant="green" />
+	<Badge variant="green" minWidth="20">{m.common_in_use()}</Badge>
 {:else}
-	<StatusBadge text={m.common_unused()} variant="amber" />
+	<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
 {/if}

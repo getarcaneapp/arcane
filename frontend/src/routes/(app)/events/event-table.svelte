@@ -4,7 +4,6 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { tryCatch } from '$lib/utils/api';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -150,7 +149,7 @@
 </script>
 
 {#snippet SeverityCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? '')} variant={getSeverityBadgeVariant(String(value ?? 'info'))} />
+	<Badge variant={getSeverityBadgeVariant(String(value ?? 'info'))} minWidth="20">{String(value ?? '')}</Badge>
 {/snippet}
 
 {#snippet TypeCell({ value }: { value: unknown })}

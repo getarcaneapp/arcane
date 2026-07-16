@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmServiceInspect } from '$lib/types/swarm';
 	import { formatDistanceToNow } from 'date-fns';
@@ -75,7 +75,7 @@
 					{m.swarm_mode()} / {m.swarm_replicas()}
 				</div>
 				<div class="flex items-center gap-2">
-					<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+					<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
 					{#if canScaleService}
 						<span class="text-foreground font-mono text-sm">
 							{desiredReplicas}
@@ -164,7 +164,7 @@
 					<Card.Content class="flex flex-col gap-2 p-4">
 						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
 						<div class="flex items-center gap-2">
-							<StatusBadge
+							<Badge
 								variant={updateStatus['State'] === 'completed'
 									? 'green'
 									: updateStatus['State'] === 'updating'
@@ -172,8 +172,8 @@
 										: updateStatus['State'] === 'paused'
 											? 'amber'
 											: 'red'}
-								text={updateStatus['State']}
-							/>
+								minWidth="20">{updateStatus['State']}</Badge
+							>
 							{#if updateStatus['Message']}
 								<span class="text-muted-foreground text-sm">{updateStatus['Message']}</span>
 							{/if}

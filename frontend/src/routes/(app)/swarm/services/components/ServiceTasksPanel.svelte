@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { m } from '$lib/paraglide/messages';
 	import { swarmService } from '$lib/services/swarm-service';
@@ -80,7 +80,7 @@
 									</div>
 									<div class="text-muted-foreground font-mono text-xs">{task.id.slice(0, 12)}</div>
 								</div>
-								<StatusBadge text={task.currentState} variant={getSwarmTaskStateVariant(task.currentState)} />
+								<Badge variant={getSwarmTaskStateVariant(task.currentState)} minWidth="20">{task.currentState}</Badge>
 							</div>
 							<div class="grid grid-cols-2 gap-2">
 								<div>
@@ -96,7 +96,7 @@
 									<div class="text-muted-foreground mb-1 text-xs font-semibold">
 										{m.swarm_desired_state()}
 									</div>
-									<StatusBadge text={task.desiredState} variant={getSwarmTaskStateVariant(task.desiredState)} size="sm" />
+									<Badge variant={getSwarmTaskStateVariant(task.desiredState)} size="sm" minWidth="20">{task.desiredState}</Badge>
 								</div>
 								{#if task.error}
 									<div class="col-span-2">

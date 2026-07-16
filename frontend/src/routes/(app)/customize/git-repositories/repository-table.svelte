@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import RemoveMenuItem from '$lib/components/arcane-table/cells/remove-menu-item.svelte';
@@ -190,11 +190,11 @@
 {#snippet AuthTypeCell({ value }: { value: unknown })}
 	{@const authType = String(value)}
 	{#if authType === 'http'}
-		<StatusBadge variant="blue" text={m.git_repository_auth_http()} />
+		<Badge variant="blue" minWidth="20">{m.git_repository_auth_http()}</Badge>
 	{:else if authType === 'ssh'}
-		<StatusBadge variant="purple" text={m.git_repository_auth_ssh()} />
+		<Badge variant="purple" minWidth="20">{m.git_repository_auth_ssh()}</Badge>
 	{:else}
-		<StatusBadge variant="gray" text={m.git_repository_auth_none()} />
+		<Badge variant="gray" minWidth="20">{m.git_repository_auth_none()}</Badge>
 	{/if}
 {/snippet}
 

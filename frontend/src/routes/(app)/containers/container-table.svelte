@@ -7,7 +7,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { formatDateTimeShort, truncateImageDigest } from '$lib/utils/formatting';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
@@ -420,7 +420,7 @@
 				</span>
 			</div>
 		{:else}
-			<StatusBadge variant={getStateBadgeVariant(item.state)} text={getContainerStatusLabel(item.state)} />
+			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}

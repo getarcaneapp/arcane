@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import { NetworksIcon, GlobeIcon } from '$lib/icons';
 	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '$lib/types/swarm';
@@ -100,7 +100,7 @@
 			{#if ports.length > 0}
 				<div class="flex flex-wrap gap-2">
 					{#each ports as port (`${port.publishedPort ?? 'internal'}:${port.targetPort}/${port.protocol}:${port.publishMode ?? ''}`)}
-						<StatusBadge text={formatPort(port)} variant="gray" size="md" minWidth="none" />
+						<Badge variant="gray">{formatPort(port)}</Badge>
 					{/each}
 				</div>
 			{:else}
@@ -139,22 +139,22 @@
 										</div>
 										<div class="mt-1 flex flex-wrap items-center gap-2">
 											{#if info?.driver}
-												<StatusBadge text={info.driver} variant={driverVariant(info.driver)} />
+												<Badge variant={driverVariant(info.driver)} minWidth="20">{info.driver}</Badge>
 											{/if}
 											{#if info?.scope}
-												<StatusBadge text={info.scope} variant="gray" />
+												<Badge variant="gray" minWidth="20">{info.scope}</Badge>
 											{/if}
 											{#if info?.internal}
-												<StatusBadge text={m.internal()} variant="blue" />
+												<Badge variant="blue" minWidth="20">{m.internal()}</Badge>
 											{/if}
 											{#if info?.attachable}
-												<StatusBadge text={m.attachable()} variant="green" />
+												<Badge variant="green" minWidth="20">{m.attachable()}</Badge>
 											{/if}
 											{#if info?.ingress}
-												<StatusBadge text={m.ingress()} variant="cyan" />
+												<Badge variant="cyan" minWidth="20">{m.ingress()}</Badge>
 											{/if}
 											{#if info?.configOnly}
-												<StatusBadge text={m.config_only()} variant="pink" />
+												<Badge variant="pink" minWidth="20">{m.config_only()}</Badge>
 											{/if}
 											{#if info?.configFrom}
 												<span class="text-muted-foreground text-xs">{info.configFrom}</span>
@@ -217,10 +217,10 @@
 														</div>
 														<div class="mt-1 flex flex-wrap items-center gap-1.5">
 															{#if info.configNetwork.driver}
-																<StatusBadge text={info.configNetwork.driver} variant="gray" size="sm" minWidth="none" />
+																<Badge variant="gray" size="sm">{info.configNetwork.driver}</Badge>
 															{/if}
 															{#if info.configNetwork.scope}
-																<StatusBadge text={info.configNetwork.scope} variant="gray" size="sm" minWidth="none" />
+																<Badge variant="gray" size="sm">{info.configNetwork.scope}</Badge>
 															{/if}
 															{#if info.configNetwork.options?.['parent']}
 																<span class="text-muted-foreground text-xs">{info.configNetwork.options['parent']}</span>
@@ -228,18 +228,12 @@
 														</div>
 													</div>
 													<div class="flex items-center gap-2">
-														<StatusBadge
-															text={info.configNetwork.enableIPv4 ? m.ipv4_enabled() : m.common_disabled()}
-															variant={info.configNetwork.enableIPv4 ? 'indigo' : 'gray'}
-															size="sm"
-															minWidth="none"
-														/>
-														<StatusBadge
-															text={info.configNetwork.enableIPv6 ? m.ipv6_enabled() : m.common_disabled()}
-															variant={info.configNetwork.enableIPv6 ? 'indigo' : 'gray'}
-															size="sm"
-															minWidth="none"
-														/>
+														<Badge variant={info.configNetwork.enableIPv4 ? 'indigo' : 'gray'} size="sm"
+															>{info.configNetwork.enableIPv4 ? m.ipv4_enabled() : m.common_disabled()}</Badge
+														>
+														<Badge variant={info.configNetwork.enableIPv6 ? 'indigo' : 'gray'} size="sm"
+															>{info.configNetwork.enableIPv6 ? m.ipv6_enabled() : m.common_disabled()}</Badge
+														>
 													</div>
 												</div>
 												<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">

@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { ArrowDownIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
@@ -90,12 +90,7 @@
 					{/if}
 				</div>
 			</div>
-			<StatusBadge
-				text={activityStatusLabel(activity.status)}
-				variant={activityStatusVariant(activity.status)}
-				size="sm"
-				minWidth="none"
-			/>
+			<Badge variant={activityStatusVariant(activity.status)} size="sm">{activityStatusLabel(activity.status)}</Badge>
 		</div>
 
 		<div class="space-y-1.5">

@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
@@ -95,7 +96,7 @@
 	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
-	type AuthBadge = { label: string; classes: string };
+	type AuthBadge = { label: string; variant: BadgeVariant };
 
 	const authBadge = $derived.by((): AuthBadge | null => {
 		const mth = effectiveUpdateInfo?.authMethod;
@@ -105,19 +106,19 @@
 			const user = effectiveUpdateInfo?.authUsername;
 			return {
 				label: user ? m.image_update_auth_credential_with_user({ username: user }) : m.image_update_auth_credential(),
-				classes: 'border-amber-200/60 text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
+				variant: 'amber'
 			};
 		}
 		if (mth === 'anonymous') {
 			return {
 				label: m.image_update_auth_anonymous(),
-				classes: 'border-slate-200/60 text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
+				variant: 'gray'
 			};
 		}
 		if (mth === 'none') {
 			return {
 				label: m.image_update_auth_none(),
-				classes: 'border-gray-200/60 text-gray-800 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
+				variant: 'gray'
 			};
 		}
 		return null;
@@ -233,12 +234,10 @@
 {#snippet authBadgeDisplay()}
 	{#if authBadge}
 		<div class="mt-2">
-			<div
-				class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap {authBadge.classes}"
-			>
-				<ApiKeyIcon class="size-3 opacity-80" />
+			<Badge variant={authBadge.variant} size="sm">
+				<ApiKeyIcon class="opacity-80" />
 				<span>{m.image_update_auth({ label: authBadge.label })}</span>
-			</div>
+			</Badge>
 		</div>
 	{/if}
 {/snippet}

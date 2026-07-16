@@ -4,7 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -153,14 +153,14 @@
 	<div class="flex items-center gap-2">
 		<code class="bg-muted rounded px-2 py-1 text-xs">{item.claimValue}</code>
 		{#if item.source === 'env'}
-			<StatusBadge text="ENV" variant="amber" size="sm" minWidth="none" />
+			<Badge variant="amber" size="sm">ENV</Badge>
 		{/if}
 	</div>
 {/snippet}
 
 {#snippet RoleCell({ item }: { item: OidcRoleMapping })}
 	{@const role = rolesById[item.roleId]}
-	<StatusBadge text={getRoleName(item.roleId)} variant={getRoleBadgeVariant(role)} />
+	<Badge variant={getRoleBadgeVariant(role)} minWidth="20">{getRoleName(item.roleId)}</Badge>
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: OidcRoleMapping })}

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { formatDistance } from 'date-fns';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
@@ -108,13 +107,13 @@
 		<span class={cn('size-2.5 rounded-full transition-colors', statusDotClass)}></span>
 		<span class="text-sm font-semibold">{statusBadge.text}</span>
 	</div>
-	<StatusBadge text={transportBadge.text} variant={transportBadge.variant} />
+	<Badge variant={transportBadge.variant} minWidth="20">{transportBadge.text}</Badge>
 	<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
 		<TagIcon class="size-4 shrink-0" />
 		{#if environment.id === '0'}
 			<span class="font-mono">{localDisplayVersion}</span>
 			{#if versionInformation?.updateAvailable}
-				<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+				<Badge variant="amber">
 					{m.sidebar_update_available()}: {versionInformation.newestVersion}
 				</Badge>
 			{/if}
@@ -124,7 +123,7 @@
 		{:else if remoteVersion}
 			<span class="font-mono">{remoteDisplayVersion}</span>
 			{#if remoteVersion.updateAvailable}
-				<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+				<Badge variant="amber">
 					{m.sidebar_update_available()}: {remoteVersion.newestVersion}
 				</Badge>
 				{#if remoteVersion.releaseUrl}

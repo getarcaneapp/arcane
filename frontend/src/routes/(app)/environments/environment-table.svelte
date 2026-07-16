@@ -2,7 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -312,7 +311,7 @@
 			></div>
 		</div>
 		{#if environmentStore.selected?.id === item.id}
-			<Badge variant="default" class="border-blue-500/20 bg-blue-500/10 text-blue-600">
+			<Badge variant="blue">
 				{m.common_current()}
 			</Badge>
 		{/if}
@@ -331,7 +330,7 @@
 {#snippet StatusCell({ value }: { value: unknown })}
 	{@const statusValue = String(value)}
 	{@const variant = getEnvironmentStatusVariant(statusValue as Environment['status'])}
-	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
+	<Badge {variant} minWidth="20">{capitalizeFirstLetter(statusValue) || m.common_unknown()}</Badge>
 {/snippet}
 
 {#snippet TypeCell({ value }: { value: unknown })}
@@ -339,7 +338,7 @@
 	{@const typeLabel = getEnvironmentTypeLabel(env)}
 	{@const transport = resolveEnvironmentTransport(env)}
 	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
-	<StatusBadge text={typeLabel} variant={typeVariant} />
+	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
 {/snippet}
 
 {#snippet ApiCell({ value }: { value: unknown })}
@@ -347,7 +346,7 @@
 {/snippet}
 
 {#snippet EnabledCell({ value }: { value: unknown })}
-	<StatusBadge text={value ? m.common_enabled() : m.common_disabled()} variant={value ? 'green' : 'red'} />
+	<Badge variant={value ? 'green' : 'red'} minWidth="20">{value ? m.common_enabled() : m.common_disabled()}</Badge>
 {/snippet}
 
 {#snippet EnvironmentMobileCardSnippet({

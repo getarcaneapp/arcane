@@ -267,12 +267,6 @@ html.reduce-effects *::after {
 		box-shadow: 0 2px 8px -4px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
 	}
 
-	.bubble-pill {
-		border-radius: 9999px;
-		padding-inline: 0.875rem;
-		padding-block: 0.5rem;
-	}
-
 	.bubble-shadow {
 		box-shadow: 0 1px 2px -1px color-mix(in oklch, var(--glass-shadow-color) 60%, transparent);
 	}

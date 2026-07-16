@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { LifecycleIndicator } from '$lib/components/lifecycle-indicator';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
@@ -218,18 +218,18 @@
 {/snippet}
 
 {#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	<StatusBadge variant={value ? 'blue' : 'gray'} text={value ? m.common_enabled() : m.common_disabled()} />
+	<Badge variant={value ? 'blue' : 'gray'} minWidth="20">{value ? m.common_enabled() : m.common_disabled()}</Badge>
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	{#if value === 'success'}
-		<StatusBadge variant="green" text={m.common_success()} />
+		<Badge variant="green" minWidth="20">{m.common_success()}</Badge>
 	{:else if value === 'failed'}
-		<StatusBadge variant="red" text={m.common_failed()} />
+		<Badge variant="red" minWidth="20">{m.common_failed()}</Badge>
 	{:else if value === 'pending'}
-		<StatusBadge variant="amber" text={m.common_pending()} />
+		<Badge variant="amber" minWidth="20">{m.common_pending()}</Badge>
 	{:else}
-		<StatusBadge variant="gray" text={m.common_na()} />
+		<Badge variant="gray" minWidth="20">{m.common_na()}</Badge>
 	{/if}
 {/snippet}
 

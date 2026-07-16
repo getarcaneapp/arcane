@@ -2,7 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import {
 		type Role,
 		BUILT_IN_ROLE_ADMIN,
@@ -113,7 +113,7 @@
 					/>
 					<div class="flex flex-col gap-1">
 						<div class="flex items-center gap-2">
-							<StatusBadge text={role.name} variant={getRoleVariant(role.id)} size="sm" minWidth="none" />
+							<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
 							<span class="text-xs text-muted-foreground">{m.users_role_assignments_scope_global()}</span>
 						</div>
 						{#if role.description}
@@ -171,7 +171,7 @@
 					{#each roles as role (role.id)}
 						<Select.Item value={role.id} label={role.name}>
 							<span class="flex items-center gap-2">
-								<StatusBadge text={role.name} variant={getRoleVariant(role.id)} size="sm" minWidth="none" />
+								<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
 								{#if role.description}
 									<span class="text-muted-foreground text-xs">{role.description}</span>
 								{/if}

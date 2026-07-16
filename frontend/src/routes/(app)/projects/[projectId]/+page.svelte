@@ -24,7 +24,8 @@
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { page } from '$app/state';
@@ -1347,14 +1348,25 @@
 						/>
 						{#if project.status}
 							{@const showTooltip = project.status.toLowerCase() === 'unknown' && project.statusReason}
-							<StatusBadge
-								variant={getStatusVariant(project.status)}
-								text={capitalizeFirstLetter(project.status)}
-								tooltip={showTooltip ? project.statusReason : undefined}
-							/>
+							{#if showTooltip}
+								<ArcaneTooltip.Root>
+									<ArcaneTooltip.Trigger>
+										<Badge variant={getStatusVariant(project.status)} minWidth="20">
+											{capitalizeFirstLetter(project.status)}
+										</Badge>
+									</ArcaneTooltip.Trigger>
+									<ArcaneTooltip.Content>
+										<p class="max-w-xs text-xs">{project.statusReason}</p>
+									</ArcaneTooltip.Content>
+								</ArcaneTooltip.Root>
+							{:else}
+								<Badge variant={getStatusVariant(project.status)} minWidth="20">
+									{capitalizeFirstLetter(project.status)}
+								</Badge>
+							{/if}
 						{/if}
 						{#if project.isArchived}
-							<StatusBadge variant="gray" text={m.projects_archived_badge()} />
+							<Badge variant="gray" minWidth="20">{m.projects_archived_badge()}</Badge>
 						{/if}
 						<ProjectUpdateItem
 							updateInfo={project.updateInfo}
