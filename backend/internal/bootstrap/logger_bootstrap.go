@@ -137,7 +137,7 @@ func SetupSlogLogger(cfg *config.Config) {
 	if cfg.LogJson {
 		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lv})
 	} else {
-		h = tint.NewHandler(os.Stdout, &tint.Options{
+		h = tint.NewTextHandler(os.Stdout, &tint.Options{
 			Level:      lv,
 			TimeFormat: "Jan 02 15:04:05.000",
 		})
