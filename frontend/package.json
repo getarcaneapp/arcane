@@ -33,7 +33,7 @@
 		"@tanstack/svelte-query": "^6.1.36",
 		"@tanstack/svelte-table": "^9.0.0-beta.47",
 		"@tanstack/table-core": "9.0.0-beta.47",
-		"@tanstack/virtual-core": "^3.17.3",
+		"@tanstack/virtual-core": "^3.17.4",
 		"@uiw/codemirror-themes": "^4.25.11",
 		"@xterm/addon-fit": "^0.11.0",
 		"@xterm/xterm": "^6.0.0",

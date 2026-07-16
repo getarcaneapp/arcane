@@ -129,8 +129,8 @@ importers:
         specifier: 9.0.0-beta.47
         version: 9.0.0-beta.47
       '@tanstack/virtual-core':
-        specifier: ^3.17.3
-        version: 3.17.3
+        specifier: ^3.17.4
+        version: 3.17.4
       '@uiw/codemirror-themes':
         specifier: ^4.25.11
         version: 4.25.11(@codemirror/language@6.12.4)(@codemirror/state@6.7.1)(@codemirror/view@6.43.6)
@@ -1377,8 +1377,8 @@ packages:
     resolution: {integrity: sha512-KhOa5XxkhhMDVs6zMu6N8U8ex2XgeUZUjEB7Kv3CdhCuyf7mh34gT3JcNVEOaOh8l/sSM1hLbz4+DzdWoaj3yQ==}
     engines: {node: '>=20'}
 
-  '@tanstack/virtual-core@3.17.3':
-    resolution: {integrity: sha512-8Np/TFELpI0ySuJoVmjvOrQYXH/8sTX0Biv9szhFhY39xOdAAY+smrMxjxOum/ux3eM8MUJQsEJ0/R0UpvC8dw==}
+  '@tanstack/virtual-core@3.17.4':
+    resolution: {integrity: sha512-nGm5KteqxasUdThLc2izl6dHUqLv0LQj7Nuyo5gYalTPf/U8a9ermvsl7reT+6ioBW1l8WfpP/mcU338nLXpqw==}
 
   '@tybys/wasm-util@0.10.3':
     resolution: {integrity: sha512-F3fo1MYrRJYL3zER0OUOmkutjr1Vp23m7OsSgp7nq4SP6OqX6C/56XFIPAl5bt3zaBRjmW7SGz3u/6LwFpYcOg==}
@@ -3946,7 +3946,7 @@ snapshots:
     dependencies:
       '@tanstack/store': 0.11.0
 
-  '@tanstack/virtual-core@3.17.3': {}
+  '@tanstack/virtual-core@3.17.4': {}
 
   '@tybys/wasm-util@0.10.3':
     dependencies:
