@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
 	import * as Alert from '$lib/components/ui/alert';
 	import { Switch } from '$lib/components/ui/switch';
@@ -62,8 +61,8 @@
 		</div>
 	{:else}
 		<div class="space-y-3">
-			{#each registries as registry}
-				<Card.Root class="p-4">
+			{#each registries as registry (registry.id)}
+				<div class="rounded-xl border border-border/50 p-4">
 					<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 						<div class="min-w-0 flex-1">
 							<div class="mb-1 flex flex-wrap items-center gap-2">
@@ -107,7 +106,7 @@
 							/>
 						</div>
 					</div>
-				</Card.Root>
+				</div>
 			{/each}
 		</div>
 	{/if}
