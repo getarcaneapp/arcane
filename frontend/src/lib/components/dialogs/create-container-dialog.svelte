@@ -138,7 +138,7 @@
 		return result;
 	}
 
-	// fallow-ignore-next-line code-duplication add/remove row-editor; divergent state shape from customize/variables
+	// fallow-ignore-next-line code-duplication -- add/remove row-editor; divergent state shape from customize/variables
 	function addEnvVar() {
 		envVars = [...envVars, { key: '', value: '' }];
 	}

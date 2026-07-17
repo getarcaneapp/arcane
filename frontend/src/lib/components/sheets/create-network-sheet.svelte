@@ -300,7 +300,7 @@
 									</div>
 								</div>
 							{/if}
-							<!-- fallow-ignore-next-line code-duplication network vs volume sheet share only structural closing tags + the already-shared SheetFooterActions footer; form bodies differ -->
+							<!-- fallow-ignore-next-line code-duplication -- network vs volume sheet share only structural closing tags + the already-shared SheetFooterActions footer; form bodies differ -->
 						</div>
 					</Accordion.Content>
 				</Accordion.Item>

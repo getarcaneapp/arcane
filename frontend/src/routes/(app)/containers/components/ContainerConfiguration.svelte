@@ -15,7 +15,7 @@
 	let { container, hasEnvVars, hasLabels }: Props = $props();
 </script>
 
-<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
+<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service config; typed props diverge across the boundary -->
 <div class="space-y-6">
 	{#if hasEnvVars}
 		<Card.Root>
@@ -41,7 +41,7 @@
 						<div class="text-sm">{m.containers_no_env_vars()}</div>
 					</div>
 				{/if}
-				<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
+				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service config; typed props diverge across the boundary -->
 			</Card.Content>
 		</Card.Root>
 	{/if}

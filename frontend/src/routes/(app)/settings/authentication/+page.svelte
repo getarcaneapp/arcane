@@ -312,6 +312,26 @@
 	});
 </script>
 
+{#snippet passwordPolicyOption(value: 'basic' | 'standard' | 'strong', label: string, tooltip: string)}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			{#snippet child({ props })}
+				{@const triggerProps = mergeProps(props, {
+					onclick: () => ($formInputs.authPasswordPolicy.value = value),
+					class: 'h-12 w-full text-xs sm:text-sm'
+				})}
+				<ArcaneButton
+					{...triggerProps}
+					action="base"
+					tone={$formInputs.authPasswordPolicy.value === value ? 'outline-primary' : 'outline'}
+					customLabel={label}
+				/>
+			{/snippet}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="top">{tooltip}</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{/snippet}
+
 <SettingsPageLayout
 	title={m.authentication_title()}
 	description={m.authentication_description()}
@@ -579,65 +599,17 @@
 						<h3 class="text-base font-semibold">{m.security_password_policy_label()}</h3>
 						<SettingsRow label={m.security_password_policy_label()} description={m.security_password_policy_description()}>
 							<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'basic'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
-												customLabel={m.common_basic()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_basic_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'standard'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'standard' ? 'outline-primary' : 'outline'}
-												customLabel={m.security_password_policy_standard()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_standard_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'strong'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
-												customLabel={m.security_password_policy_strong()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_strong_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
+								{@render passwordPolicyOption('basic', m.common_basic(), m.security_password_policy_basic_tooltip())}
+								{@render passwordPolicyOption(
+									'standard',
+									m.security_password_policy_standard(),
+									m.security_password_policy_standard_tooltip()
+								)}
+								{@render passwordPolicyOption(
+									'strong',
+									m.security_password_policy_strong(),
+									m.security_password_policy_strong_tooltip()
+								)}
 							</div>
 						</SettingsRow>
 					</div>

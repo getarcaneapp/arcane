@@ -60,7 +60,7 @@ export function eventSeverityIconVariant(severity: string): 'emerald' | 'red' | 
 	}
 }
 
-export function eventTypeCategory(type: string): string {
+function eventTypeCategory(type: string): string {
 	return type.split('.')[0] ?? '';
 }
 
@@ -79,7 +79,7 @@ const categoryLabels: Record<string, () => string> = {
 	lifecycle: m.security_lifecycle_tab
 };
 
-export function eventTypeCategoryLabel(category: string): string {
+function eventTypeCategoryLabel(category: string): string {
 	return categoryLabels[category]?.() ?? humanize(category);
 }
 

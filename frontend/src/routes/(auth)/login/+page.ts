@@ -19,7 +19,9 @@ export const load = async ({ parent, url }) => {
 		settings: data.settings,
 		redirectTo,
 		error,
+		// fallow-ignore-next-line unused-load-data-key -- rendered in the sibling page's login error alerts
 		errorMessage,
+		// fallow-ignore-next-line unused-load-data-key -- rendered in the sibling page's desktop and mobile version labels
 		versionInformation: data.versionInformation
 	};
 };

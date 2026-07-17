@@ -2,7 +2,6 @@ import type { SearchPaginationSortRequest } from '$lib/types/shared';
 import { containerService } from '$lib/services/container-service';
 import { resolveInitialTableRequest } from '$lib/utils/tables';
 import type { PageLoad } from './$types';
-import { settingsService } from '$lib/services/settings-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
 import { throwPageLoadError } from '$lib/utils/api';
@@ -16,20 +15,12 @@ export const load: PageLoad = async ({ parent }) => {
 		sort: { column: 'created', direction: 'desc' }
 	} satisfies SearchPaginationSortRequest);
 
-	// containers includes counts, settings is separate
 	let containers;
-	let settings;
 	try {
-		[containers, settings] = await Promise.all([
-			queryClient.fetchQuery({
-				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
-				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
-			}),
-			queryClient.fetchQuery({
-				queryKey: queryKeys.settings.byEnvironment(envId),
-				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
-			})
-		]);
+		containers = await queryClient.fetchQuery({
+			queryKey: queryKeys.containers.list(envId, containerRequestOptions),
+			queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
+		});
 	} catch (err) {
 		throwPageLoadError(err, 'Failed to load containers');
 	}
@@ -37,9 +28,6 @@ export const load: PageLoad = async ({ parent }) => {
 	return {
 		envId,
 		containers,
-		containerRequestOptions,
-		settings,
-		// Use counts from the containers response
-		containerStatusCounts: containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 }
+		containerRequestOptions
 	};
 };

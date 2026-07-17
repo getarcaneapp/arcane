@@ -3,9 +3,9 @@ import { Context } from 'runed';
 import type { CropArea, DispatchEvents } from 'svelte-easy-crop';
 import { getCroppedImg } from './utils';
 
-export const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
+const VALID_IMAGE_TYPES = ['image/jpeg', 'image/png', 'image/webp'];
 
-export type ImageCropperRootProps = WritableBoxedValues<{
+type ImageCropperRootStateProps = WritableBoxedValues<{
 	src: string;
 }> &
 	ReadableBoxedValues<{
@@ -21,7 +21,7 @@ class ImageCropperRootState {
 	tempUrl = $state<string>();
 	pixelCrop = $state<CropArea>();
 
-	constructor(readonly opts: ImageCropperRootProps) {
+	constructor(readonly opts: ImageCropperRootStateProps) {
 		this.onUpload = this.onUpload.bind(this);
 		this.onCancel = this.onCancel.bind(this);
 		this.onCrop = this.onCrop.bind(this);
@@ -116,7 +116,7 @@ class ImageCropperCancelState {
 
 const ImageCropperRootContext = new Context<ImageCropperRootState>('ImageCropper.Root');
 
-export const useImageCropperRoot = (props: ImageCropperRootProps) => {
+export const useImageCropperRoot = (props: ImageCropperRootStateProps) => {
 	return ImageCropperRootContext.set(new ImageCropperRootState(props));
 };
 

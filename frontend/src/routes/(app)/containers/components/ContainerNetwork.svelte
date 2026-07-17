@@ -14,7 +14,7 @@
 
 <div class="space-y-6">
 	<Card.Root id="container-port-mappings">
-		<!-- fallow-ignore-next-line code-duplication container vs swarm-service network; typed props diverge across the boundary -->
+		<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 		<Card.Header icon={NetworksIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
@@ -26,7 +26,7 @@
 		</Card.Header>
 		<Card.Content class="p-4">
 			{#if container.ports && container.ports.length > 0}
-				<!-- fallow-ignore-next-line code-duplication container vs swarm-service network; typed props diverge across the boundary -->
+				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 				<PortBadge ports={container.ports} />
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
@@ -50,7 +50,7 @@
 		<Card.Content class="p-4">
 			{#if container.networkSettings?.networks && Object.keys(container.networkSettings.networks).length > 0}
 				<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-					<!-- fallow-ignore-next-line code-duplication container vs swarm-service network; typed props diverge across the boundary -->
+					<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 					{#each Object.entries(container.networkSettings.networks) as [networkName, rawNetworkConfig] (networkName)}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
@@ -160,7 +160,7 @@
 														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
 															{alias}
 														</div>
-														<!-- fallow-ignore-next-line code-duplication container vs swarm-service network; typed props diverge across the boundary -->
+														<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service network; typed props diverge across the boundary -->
 													{/each}
 												</div>
 											</Card.Content>

@@ -39,7 +39,7 @@
 	});
 </script>
 
-<!-- fallow-ignore-next-line code-duplication vendored shadcn-svelte; keep in sync with sidebar-menu-button / sidebar-group-action upstream -->
+<!-- fallow-ignore-next-line code-duplication -- vendored shadcn-svelte; keep in sync with sidebar-menu-button / sidebar-group-action upstream -->
 {#if child}
 	{@render child({ props: mergedProps })}
 {:else}
