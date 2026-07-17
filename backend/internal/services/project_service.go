@@ -630,21 +630,24 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 	}
 }
 
-func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) {
+func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, error) {
 	if s.db == nil {
-		return
+		return 0, nil
 	}
 
 	var projectsList []models.Project
 	if err := s.db.WithContext(ctx).
 		Where("build_image_refs_json IS NULL").
 		Find(&projectsList).Error; err != nil {
-		slog.WarnContext(ctx, "failed to list projects for image ref backfill", "error", err)
-		return
+		return 0, fmt.Errorf("list projects for image ref backfill: %w", err)
 	}
 	for i := range projectsList {
+		if err := ctx.Err(); err != nil {
+			return i, err
+		}
 		s.refreshProjectImageRefsInternal(ctx, &projectsList[i])
 	}
+	return len(projectsList), nil
 }
 
 func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]models.Project, error) {

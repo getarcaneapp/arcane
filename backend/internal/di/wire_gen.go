@@ -124,7 +124,8 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	imageUpdateService := svcs.ImageUpdate
 	environmentService := svcs.Environment
 	dockerClientService := svcs.Docker
-	imageUpdateWatcher := scheduler.NewImageUpdateWatcher(imageUpdateService, settingsService, environmentService, dockerClientService)
+	projectService := svcs.Project
+	imageUpdateWatcher := scheduler.NewImageUpdateWatcher(imageUpdateService, settingsService, environmentService, dockerClientService, projectService)
 	dockerClientRefreshJob := scheduler.NewDockerClientRefreshJob(dockerClientService, settingsService)
 	kvService := svcs.KV
 	analyticsJob := provideAnalyticsJobInternal(settingsService, kvService, cfg)
@@ -138,7 +139,6 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	systemService := svcs.System
 	notificationService := svcs.Notification
 	scheduledPruneJob := scheduler.NewScheduledPruneJob(systemService, settingsService, notificationService)
-	projectService := svcs.Project
 	templateService := svcs.Template
 	filesystemWatcherJob := provideFilesystemWatcherJobInternal(ctx, projectService, templateService, settingsService, cfg)
 	vulnerabilityService := svcs.Vulnerability

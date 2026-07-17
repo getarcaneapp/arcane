@@ -142,7 +142,9 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 	require.NoError(t, db.Create(regular).Error)
 
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
-	svc.BackfillProjectImageRefs(ctx)
+	count, err := svc.BackfillProjectImageRefs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, count)
 
 	var savedValid models.Project
 	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
@@ -160,7 +162,9 @@ func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *t
 
 	require.NoError(t, os.Remove(filepath.Join(validPath, "compose.yaml")))
 	require.NoError(t, os.Remove(filepath.Join(regularPath, "compose.yaml")))
-	svc.BackfillProjectImageRefs(ctx)
+	count, err = svc.BackfillProjectImageRefs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
 	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
 	require.NotNil(t, savedValid.BuildImageRefsJSON)
 	assert.Equal(t, []string{"local-app:latest"}, projects.ParseImageRefsJSON(*savedValid.BuildImageRefsJSON))
