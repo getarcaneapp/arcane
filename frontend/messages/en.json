@@ -1920,6 +1920,8 @@
 	"templates_sort_name_asc": "Name (A-Z)",
 	"templates_sort_name_desc": "Name (Z-A)",
 	"templates_no_templates": "No templates available",
+	"templates_search_placeholder": "Search templates...",
+	"templates_no_description": "No description provided",
 	"templates_add_registry_prompt_part1": "Add a template registry in ",
 	"templates_add_registry_prompt_part2": " to access community templates.",
 	"templates_template_settings": "Template Settings",

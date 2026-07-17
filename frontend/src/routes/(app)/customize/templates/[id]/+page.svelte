@@ -1,10 +1,12 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
+	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
+	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
+	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
+	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { goto, refreshAll } from '$app/navigation';
 	import { m } from '$lib/paraglide/messages.js';
 	import { templateService } from '$lib/services/template-service';
@@ -12,7 +14,7 @@
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { createForm } from '$lib/utils/settings';
-	import ComposeTemplateEditor from '$lib/components/ComposeTemplateEditor.svelte';
+	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
 	import {
 		createNamedTemplateSchema,
@@ -21,16 +23,15 @@
 		runTemplateEditorSave
 	} from '$lib/utils/template-editor';
 	import {
-		ArrowLeftIcon,
-		ProjectsIcon,
+		EllipsisIcon,
 		CodeIcon,
-		TemplateIcon,
-		DownloadIcon,
 		GlobeIcon,
-		ContainersIcon,
 		BoxIcon,
-		VariableIcon,
-		FileTextIcon
+		FileTextIcon,
+		RegistryIcon,
+		ExternalLinkIcon,
+		MoveToFolderIcon,
+		TrashIcon
 	} from '$lib/icons';
 
 	let { data } = $props();
@@ -181,277 +182,246 @@
 			}
 		});
 	}
+
+	const remoteActions = $derived.by(() => {
+		const actions: DetailAction[] = [
+			{
+				id: 'create-project',
+				action: 'create',
+				label: m.compose_create_project(),
+				onclick: () => goto(`/projects/new?templateId=${template.id}`)
+			}
+		];
+		if (canDownload) {
+			actions.push({
+				id: 'download',
+				action: 'base',
+				label: m.templates_download(),
+				loadingLabel: m.common_action_downloading(),
+				loading: status.isDownloading,
+				disabled: status.isDownloading,
+				onclick: handleDownload
+			});
+		} else if (localVersionOfRemote) {
+			actions.push({
+				id: 'view-local',
+				action: 'base',
+				label: m.templates_view_local_version(),
+				onclick: () => goto(`/customize/templates/${localVersionOfRemote?.id}`)
+			});
+		}
+		return actions;
+	});
+
+	const documentationHost = $derived.by(() => {
+		const url = template.metadata?.documentationUrl;
+		if (!url) return null;
+		try {
+			return new URL(url).hostname;
+		} catch {
+			return url;
+		}
+	});
 </script>
 
-<div class="mx-auto flex h-full min-h-0 w-full max-w-full flex-col gap-6 overflow-hidden p-2 pb-10 sm:p-6 sm:pb-10">
-	<!-- Header -->
-	<!-- fallow-ignore-next-line code-duplication page header/back chrome differs per template page (editable vs static header) -->
-	<div class="flex-shrink-0 space-y-3 sm:space-y-4">
-		<ArcaneButton action="base" tone="ghost" onclick={() => goto('/customize/templates')} class="w-fit gap-2">
-			<ArrowLeftIcon class="size-4" />
-			<span>{m.common_back_to({ resource: m.templates_title() })}</span>
-		</ArcaneButton>
-
-		{#if !template.isRemote}
-			<!-- Editable header for custom templates -->
-			<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-start">
-				<div class="min-w-0 flex-1 space-y-3">
-					<FormInput
-						input={$inputs.name}
-						label={m.templates_template_name_label()}
-						placeholder={m.templates_template_name_placeholder()}
-						disabled={status.saving}
-					/>
-					<FormInput
-						input={$inputs.description}
-						label={m.templates_template_description_label()}
-						placeholder={m.templates_template_description_placeholder()}
-						disabled={status.saving}
-					/>
-				</div>
-				<div class="flex flex-col gap-2 sm:flex-row sm:items-start">
-					<ArcaneButton
-						action="create"
-						onclick={() => goto(`/projects/new?templateId=${template.id}`)}
-						customLabel={m.compose_create_project()}
-						class="w-full gap-2 sm:w-auto"
-					/>
-					<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || status.saving}>
-						{m.common_reset()}
-					</ArcaneButton>
-					<ArcaneButton
-						action="save"
-						onclick={handleSave}
-						disabled={!canSave}
-						loading={status.saving}
-						loadingLabel={m.common_action_saving()}
-					/>
-					<ArcaneButton
-						action="remove"
-						onclick={handleDelete}
-						disabled={status.isDeleting}
-						loading={status.isDeleting}
-						loadingLabel={m.common_action_deleting()}
-						customLabel={m.templates_delete_template()}
-						class="w-full gap-2 sm:w-auto"
-					/>
-				</div>
-			</div>
-
-			<div class="flex flex-wrap items-center gap-2">
-				<Badge variant="secondary" class="gap-1">
-					<TemplateIcon class="size-3" />
-					{m.templates_local()}
+{#if !template.isRemote}
+	<!-- Editor workspace for custom templates (same chrome as the create page) -->
+	<TemplateEditorWorkspace
+		{inputs}
+		bind:validation
+		{originalName}
+		{originalCompose}
+		{originalEnv}
+		fileIdPrefix="templates:custom:{template.id}"
+		{globalVariableMap}
+		saving={status.saving}
+		onSubmit={handleSave}
+	>
+		{#snippet toolbarActions()}
+			<ArcaneButton action="cancel" onclick={handleReset} disabled={!hasChanges || status.saving}>
+				{m.common_reset()}
+			</ArcaneButton>
+			<ArcaneButton
+				action="save"
+				onclick={handleSave}
+				disabled={!canSave}
+				loading={status.saving}
+				loadingLabel={m.common_action_saving()}
+			/>
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger>
+					{#snippet child({ props })}
+						<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-9">
+							<span class="sr-only">{m.common_open_menu()}</span>
+							<EllipsisIcon class="size-4" />
+						</ArcaneButton>
+					{/snippet}
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end">
+					<IfPermitted perm="projects:create">
+						<DropdownMenu.Item onclick={() => goto(`/projects/new?templateId=${template.id}`)}>
+							<MoveToFolderIcon class="size-4" />
+							{m.compose_create_project()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Separator />
+					</IfPermitted>
+					<DropdownMenu.Item variant="destructive" onclick={handleDelete} disabled={status.isDeleting}>
+						{#if status.isDeleting}
+							<Spinner class="size-4" />
+						{:else}
+							<TrashIcon class="size-4" />
+						{/if}
+						{m.templates_delete_template()}
+					</DropdownMenu.Item>
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		{/snippet}
+	</TemplateEditorWorkspace>
+{:else}
+	<!-- Marketplace-style read-only view for remote templates -->
+	<ResourceDetailLayout
+		backUrl="/customize/templates"
+		backLabel={m.templates_title()}
+		title={template.name}
+		subtitle={template.description}
+		actions={remoteActions}
+	>
+		{#snippet badges()}
+			<Badge variant="secondary" class="gap-1">
+				<GlobeIcon class="size-3" />
+				{m.templates_remote()}
+			</Badge>
+			{#if template.registry?.name}
+				<Badge variant="outline" class="gap-1">
+					<RegistryIcon class="size-3" />
+					{template.registry.name}
 				</Badge>
-			</div>
-		{:else}
-			<!-- Read-only header for remote templates -->
-			<div class="flex min-w-0 items-start gap-3">
-				<IconImage
-					src={template.metadata?.iconUrl}
-					alt={template.name}
-					fallback={GlobeIcon}
-					class="size-6"
-					containerClass="size-9 bg-transparent ring-0"
-				/>
-				<div class="min-w-0 flex-1">
-					<h1 class="text-xl font-semibold break-words sm:text-2xl">{template.name}</h1>
-					{#if template.description}
-						<p class="mt-1.5 text-sm break-words text-muted-foreground sm:text-base">{template.description}</p>
-					{/if}
-				</div>
-			</div>
+			{/if}
+		{/snippet}
 
-			<div class="flex flex-wrap items-center gap-2">
-				<Badge variant="secondary" class="gap-1">
-					<GlobeIcon class="size-3" />
-					{m.templates_remote()}
-				</Badge>
-				{#if template.metadata?.tags && template.metadata.tags.length > 0}
-					{#each template.metadata.tags as tag (tag)}
-						<Badge variant="outline">{tag}</Badge>
-					{/each}
-				{/if}
-			</div>
-
-			<div class="flex flex-col gap-2 sm:flex-row">
-				<ArcaneButton
-					action="create"
-					onclick={() => goto(`/projects/new?templateId=${template.id}`)}
-					customLabel={m.compose_create_project()}
-					class="w-full gap-2 sm:w-auto"
-				/>
-				{#if canDownload}
-					<ArcaneButton
-						action="base"
-						onclick={handleDownload}
-						disabled={status.isDownloading}
-						loading={status.isDownloading}
-						loadingLabel={m.common_action_downloading()}
-						class="w-full gap-2 sm:w-auto"
-					>
-						<DownloadIcon class="size-4" />
-						{m.templates_download()}
-					</ArcaneButton>
-				{:else if template.isRemote && localVersionOfRemote}
-					<ArcaneButton
-						action="base"
-						onclick={() => goto(`/customize/templates/${localVersionOfRemote?.id}`)}
-						class="w-full gap-2 sm:w-auto"
-					>
-						<ProjectsIcon class="size-4" />
-						{m.templates_view_local_version()}
-					</ArcaneButton>
-				{/if}
-			</div>
-		{/if}
-	</div>
-
-	{#if !template.isRemote}
-		<!-- Edit layout: compose editor + env editor side by side -->
-		<ComposeTemplateEditor
-			bind:composeValue={$inputs.composeContent.value}
-			bind:envValue={$inputs.envContent.value}
-			{originalCompose}
-			{originalEnv}
-			bind:validation
-			{globalVariableMap}
-			fileIdPrefix="templates:custom:{template.id}"
-			readOnly={status.saving}
-			composeError={$inputs.composeContent.error}
-			envError={$inputs.envContent.error}
-		/>
-	{:else}
-		<!-- Read-only view for remote templates -->
-		<div class="grid flex-shrink-0 gap-4 sm:grid-cols-2">
-			<Card.Root variant="subtle">
-				<Card.Content class="flex items-center gap-4 p-4">
-					<div class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-						<ContainersIcon class="size-6 text-blue-500" />
+		<div class="flex flex-col gap-8 lg:flex-row">
+			<div class="min-w-0 flex-1 space-y-8">
+				<section class="space-y-2">
+					<div class="flex items-center gap-2">
+						<CodeIcon class="size-4 text-muted-foreground" />
+						<h2 class="font-mono text-sm font-medium">compose.yaml</h2>
 					</div>
-					<div class="min-w-0 flex-1">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.compose_services()}</div>
-						<div class="mt-1">
-							<div class="text-2xl font-semibold">{services?.length ?? 0}</div>
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-
-			<Card.Root variant="subtle">
-				<Card.Content class="flex items-center gap-4 p-4">
-					<div class="flex size-12 shrink-0 items-center justify-center rounded-lg bg-purple-500/10">
-						<VariableIcon class="size-6 text-purple-500" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
-							{m.common_environment_variables()}
-						</div>
-						<div class="mt-1 flex flex-wrap items-baseline gap-2">
-							<div class="text-2xl font-semibold">{envVars?.length ?? 0}</div>
-							{#if envVars?.length}
-								<div class="text-sm text-muted-foreground">{m.templates_configurable_settings()}</div>
-							{/if}
-						</div>
-					</div>
-				</Card.Content>
-			</Card.Root>
-		</div>
-
-		<div class="min-h-0 flex-1">
-			<div class="grid h-full min-h-0 gap-6 lg:grid-cols-2 xl:grid-cols-3">
-				<Card.Root class="flex h-full min-h-0 min-w-0 flex-col lg:col-span-1 xl:col-span-2">
-					<Card.Header icon={CodeIcon} class="flex-shrink-0">
-						<div class="flex flex-col space-y-1.5">
-							<Card.Title>
-								<h2>{m.common_docker_compose()}</h2>
-							</Card.Title>
-							<Card.Description>{m.templates_service_definitions()}</Card.Description>
-						</div>
-					</Card.Header>
-					<Card.Content class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0">
-						<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-t-none rounded-b-xl">
+					<div class="relative h-[480px] overflow-hidden rounded-lg border border-border/50 sm:h-[560px]">
+						<div class="absolute inset-0">
 							<CodeEditor bind:value={data.templateData.content} language="yaml" readOnly={true} fontSize="13px" />
 						</div>
-					</Card.Content>
-				</Card.Root>
+					</div>
+				</section>
 
-				<div class="flex h-full min-h-0 min-w-0 flex-1 flex-col gap-6 lg:col-span-1">
-					{#if services?.length}
-						<Card.Root class="min-w-0 flex-shrink-0">
-							<Card.Header icon={ContainersIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.services()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_containers_to_create()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each services as service (service)}
-									<Card.Root variant="subtle" class="min-w-0">
-										<Card.Content class="flex min-w-0 items-center gap-3 p-3">
-											<div class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-blue-500/10">
-												<BoxIcon class="size-4 text-blue-500" />
-											</div>
-											<div class="min-w-0 flex-1 truncate font-mono text-sm font-semibold">{service}</div>
-										</Card.Content>
-									</Card.Root>
-								{/each}
-							</Card.Content>
-						</Card.Root>
-					{/if}
-
-					{#if envVars?.length}
-						<Card.Root class="min-w-0 flex-shrink-0">
-							<Card.Header icon={VariableIcon}>
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.common_environment_variables()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_default_config_values()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content class="grid grid-cols-1 gap-2 p-4">
-								{#each envVars as envVar (envVar.key)}
-									<Card.Root variant="subtle" class="min-w-0">
-										<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
-											<div class="text-xs font-semibold tracking-wide break-words text-muted-foreground uppercase select-all">
-												{envVar.key}
-											</div>
-											{#if envVar.value}
-												<div class="min-w-0 font-mono text-sm break-words text-foreground select-all">{envVar.value}</div>
-											{:else}
-												<div class="text-xs text-muted-foreground italic">{m.common_no_default_value()}</div>
-											{/if}
-										</Card.Content>
-									</Card.Root>
-								{/each}
-							</Card.Content>
-						</Card.Root>
-					{/if}
-
-					{#if data.templateData.envContent}
-						<Card.Root class="flex h-full min-h-0 min-w-0 flex-1 flex-col">
-							<Card.Header icon={FileTextIcon} class="flex-shrink-0">
-								<div class="flex flex-col space-y-1.5">
-									<Card.Title>
-										<h2>{m.environment_file()}</h2>
-									</Card.Title>
-									<Card.Description>{m.templates_raw_env_config()}</Card.Description>
-								</div>
-							</Card.Header>
-							<Card.Content
-								class="relative z-[var(--arcane-z-content)] flex min-h-0 min-w-0 flex-1 flex-col overflow-visible p-0"
-							>
-								<div class="absolute inset-0 min-h-0 w-full min-w-0 rounded-b-xl">
-									<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
-								</div>
-							</Card.Content>
-						</Card.Root>
-					{/if}
-				</div>
+				{#if data.templateData.envContent}
+					<section class="space-y-2">
+						<div class="flex items-center gap-2">
+							<FileTextIcon class="size-4 text-muted-foreground" />
+							<h2 class="font-mono text-sm font-medium">.env</h2>
+						</div>
+						<div class="relative h-[280px] overflow-hidden rounded-lg border border-border/50">
+							<div class="absolute inset-0">
+								<CodeEditor bind:value={data.templateData.envContent} language="env" readOnly={true} fontSize="13px" />
+							</div>
+						</div>
+					</section>
+				{/if}
 			</div>
+
+			<aside class="w-full shrink-0 space-y-6 lg:w-72 lg:border-l lg:border-border/50 lg:pl-8 xl:w-80">
+				<div class="space-y-3">
+					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_overview()}</h3>
+					<dl class="space-y-2 text-sm">
+						{#if template.registry?.name}
+							<div class="flex items-center justify-between gap-4">
+								<dt class="shrink-0 text-muted-foreground">{m.resource_registry_cap()}</dt>
+								<dd class="min-w-0 text-right font-medium break-words">{template.registry.name}</dd>
+							</div>
+						{/if}
+						{#if template.metadata?.version}
+							<div class="flex items-center justify-between gap-4">
+								<dt class="shrink-0 text-muted-foreground">{m.common_version()}</dt>
+								<dd class="min-w-0 text-right font-medium break-words">{template.metadata.version}</dd>
+							</div>
+						{/if}
+						{#if template.metadata?.author}
+							<div class="flex items-center justify-between gap-4">
+								<dt class="shrink-0 text-muted-foreground">{m.common_author()}</dt>
+								<dd class="min-w-0 text-right font-medium break-words">{template.metadata.author}</dd>
+							</div>
+						{/if}
+						{#if template.metadata?.updatedAt}
+							<div class="flex items-center justify-between gap-4">
+								<dt class="shrink-0 text-muted-foreground">{m.common_updated()}</dt>
+								<dd class="min-w-0 text-right font-medium break-words">{formatDateTimeShort(template.metadata.updatedAt)}</dd>
+							</div>
+						{/if}
+						{#if template.metadata?.documentationUrl}
+							<div class="flex items-center justify-between gap-4">
+								<dt class="shrink-0 text-muted-foreground">{m.common_documentation()}</dt>
+								<dd class="min-w-0 text-right">
+									<a
+										href={template.metadata.documentationUrl}
+										target="_blank"
+										rel="noopener noreferrer"
+										class="inline-flex items-center gap-1 font-medium break-all text-primary hover:underline"
+									>
+										{documentationHost}
+										<ExternalLinkIcon class="size-3.5 shrink-0" />
+									</a>
+								</dd>
+							</div>
+						{/if}
+					</dl>
+				</div>
+
+				{#if services?.length}
+					<div class="space-y-3 border-t border-border/50 pt-6">
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							{m.services()} ({services.length})
+						</h3>
+						<ul class="space-y-1.5">
+							{#each services as service (service)}
+								<li class="flex min-w-0 items-center gap-2 text-sm">
+									<BoxIcon class="size-4 shrink-0 text-muted-foreground" />
+									<span class="min-w-0 truncate font-mono">{service}</span>
+								</li>
+							{/each}
+						</ul>
+					</div>
+				{/if}
+
+				{#if envVars?.length}
+					<div class="space-y-3 border-t border-border/50 pt-6">
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+							{m.common_environment_variables()} ({envVars.length})
+						</h3>
+						<div class="space-y-2.5">
+							{#each envVars as envVar (envVar.key)}
+								<div class="min-w-0">
+									<div class="font-mono text-xs font-medium break-words select-all">{envVar.key}</div>
+									{#if envVar.value}
+										<div class="font-mono text-xs break-words text-muted-foreground select-all">{envVar.value}</div>
+									{:else}
+										<div class="text-xs text-muted-foreground italic">{m.common_no_default_value()}</div>
+									{/if}
+								</div>
+							{/each}
+						</div>
+					</div>
+				{/if}
+
+				{#if template.metadata?.tags && template.metadata.tags.length > 0}
+					<div class="space-y-3 border-t border-border/50 pt-6">
+						<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_tags()}</h3>
+						<div class="flex flex-wrap gap-1">
+							{#each template.metadata.tags as tag (tag)}
+								<Badge variant="outline" class="text-xs">{tag}</Badge>
+							{/each}
+						</div>
+					</div>
+				{/if}
+			</aside>
 		</div>
-	{/if}
-</div>
+	</ResourceDetailLayout>
+{/if}
