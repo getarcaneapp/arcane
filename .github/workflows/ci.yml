@@ -1,5 +1,8 @@
 name: CI
 
+env:
+  GOEXPERIMENT: jsonv2
+
 on:
   push:
     branches: [main]

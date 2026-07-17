@@ -2,6 +2,9 @@ package api
 
 import (
 	"context"
+	json "encoding/json/v2"
+	"io"
+	"maps"
 	"net/http"
 	"reflect"
 	"strings"
@@ -34,6 +37,15 @@ var dockerSchemaPrefixes = map[string]string{
 	"strslice":  "DockerStrslice",
 	"events":    "DockerEvents",
 	"image":     "DockerImage",
+}
+
+var jsonV2Format = huma.Format{
+	Marshal: func(writer io.Writer, value any) error {
+		return json.MarshalWrite(writer, value, jsonV2APIOptions)
+	},
+	Unmarshal: func(data []byte, value any) error {
+		return json.Unmarshal(data, value, jsonV2APIOptions)
+	},
 }
 
 // customSchemaNamer creates unique schema names using package prefix for types
@@ -139,7 +151,12 @@ func capitalizeFirst(s string) string {
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
 func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlers.ActivityAppContext, cfg *config.Config, svc *di.Services) huma.API {
+	e.JSONSerializer = jsonV2Serializer{}
+
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
+	humaConfig.Formats = maps.Clone(humaConfig.Formats)
+	humaConfig.Formats["application/json"] = jsonV2Format
+	humaConfig.Formats["json"] = jsonV2Format
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 
 	// Disable default docs path - we'll use Scalar instead
@@ -234,6 +251,9 @@ func SetupAPIForSpec() huma.API {
 	apiGroup := e.Group("/api")
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
+	humaConfig.Formats = maps.Clone(humaConfig.Formats)
+	humaConfig.Formats["application/json"] = jsonV2Format
+	humaConfig.Formats["json"] = jsonV2Format
 	humaConfig.Info.Description = "Modern Docker Management, Designed for Everyone"
 	humaConfig.Servers = []*huma.Server{
 		{URL: "/api"},

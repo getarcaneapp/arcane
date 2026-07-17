@@ -23,6 +23,7 @@ builds:
     binary: arcane
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin
@@ -63,6 +64,7 @@ builds:
       - exclude_frontend
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin
@@ -99,6 +101,7 @@ builds:
     binary: arcane-cli
     env:
       - CGO_ENABLED=0
+      - GOEXPERIMENT=jsonv2
     goos:
       - linux
       - darwin

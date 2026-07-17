@@ -5,7 +5,7 @@ package vuln
 
 import (
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"net/url"
 	"runtime"

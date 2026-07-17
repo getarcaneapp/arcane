@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -464,8 +464,7 @@ func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *mode
 	}
 
 	var claims map[string]any
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&claims); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &claims); err != nil {
 		return nil, err
 	}
 
@@ -761,7 +760,7 @@ func (s *OidcService) makeDeviceAuthRequestInternal(ctx context.Context, endpoin
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errorResp map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+		if err := json.UnmarshalRead(resp.Body, &errorResp); err == nil {
 			if errMsg, ok := errorResp["error"].(string); ok {
 				return nil, fmt.Errorf("device authorization failed: %s", errMsg)
 			}
@@ -770,7 +769,7 @@ func (s *OidcService) makeDeviceAuthRequestInternal(ctx context.Context, endpoin
 	}
 
 	var respData map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &respData); err != nil {
 		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
 	}
 
@@ -869,7 +868,7 @@ func (s *OidcService) makeTokenRequestInternal(ctx context.Context, endpoint str
 	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 

@@ -32,6 +32,7 @@ CMD ["pnpm", "-C", "frontend", "dev", "--host", "0.0.0.0"]
 
 # Stage 2: Backend Development with optimized caching
 FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS backend-dev
+ENV GOEXPERIMENT=jsonv2
 
 # Install development tools in a single layer
 RUN apt-get update && apt-get install -y --no-install-recommends \

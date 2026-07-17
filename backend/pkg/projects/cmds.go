@@ -2,7 +2,7 @@ package projects
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"io"
 	"strings"
 	"time"

@@ -4,6 +4,8 @@
 
 set working-directory := './'
 
+export GOEXPERIMENT := "jsonv2"
+
 edge_proto_dir := 'backend/pkg/libarcane/edge/proto'
 
 _default:

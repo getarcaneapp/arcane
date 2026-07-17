@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -114,8 +114,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventServ
 		}
 
 		var input services.CreateEventRequest
-		decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20))
-		if err := decoder.Decode(&input); err != nil {
+		if err := json.UnmarshalRead(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20), &input); err != nil {
 			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
 				Success: false,
 				Data:    base.MessageResponse{Message: "invalid event payload"},

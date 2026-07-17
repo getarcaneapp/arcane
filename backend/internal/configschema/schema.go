@@ -2,7 +2,8 @@ package configschema
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -166,7 +167,7 @@ func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
 
 // MarshalJSON returns a stable, indented JSON encoding of the schema document.
 func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
-	output, err := json.MarshalIndent(doc, "", "  ")
+	output, err := json.Marshal(doc, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("marshal schema document: %w", err)
 	}

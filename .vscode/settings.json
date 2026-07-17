@@ -7,6 +7,17 @@
     "typescript": true
   },
   "go.buildTags": "playwright,buildables",
+  "go.toolsEnvVars": {
+    "GOEXPERIMENT": "jsonv2"
+  },
+  "go.testEnvVars": {
+    "GOEXPERIMENT": "jsonv2"
+  },
+  "gopls": {
+    "ui.diagnostic.analyses": {
+      "stdversion": false
+    }
+  },
   "prettier.documentSelectors": ["**/*.svelte"],
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,

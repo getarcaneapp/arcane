@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -88,7 +88,7 @@ func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRe
 			Body        string `json:"body"`
 			PublishedAt string `json:"published_at"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
 			return latestRelease{}, fmt.Errorf("decode payload: %w", err)
 		}
 		if payload.TagName == "" {

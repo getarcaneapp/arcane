@@ -8,7 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	json "encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -358,7 +358,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	}
 
 	var enrollResp enrollMTLSResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxEnrollResponseBytes)).Decode(&enrollResp); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(resp.Body, maxEnrollResponseBytes), &enrollResp); err != nil {
 		return fmt.Errorf("failed to decode edge mTLS enrollment response: %w", err)
 	}
 	if len(enrollResp.Files) == 0 {

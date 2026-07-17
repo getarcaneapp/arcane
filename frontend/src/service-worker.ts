@@ -3,20 +3,22 @@
 /// <reference lib="webworker" />
 /// <reference types="@sveltejs/kit" />
 
-import { files, version } from '$service-worker';
+import { base, files, version } from '$service-worker';
 
 const self = globalThis.self as unknown as ServiceWorkerGlobalScope;
 
 const CACHE = `cache-${version}`;
 
+const API_PREFIX = `${base}/api/`;
 const ASSETS = files;
+const ASSET_PATHS = new Set(ASSETS.map((asset) => new URL(asset, self.location.origin).pathname));
 
 self.addEventListener('install', (event) => {
 	console.log('[ServiceWorker] Install');
 
 	async function addFilesToCache() {
 		const cache = await caches.open(CACHE);
-		console.log('[ServiceWorker] Caching app shell');
+		console.log('[ServiceWorker] Caching static assets');
 		await cache.addAll(ASSETS);
 	}
 
@@ -55,12 +57,18 @@ self.addEventListener('fetch', (event) => {
 	if (event.request.method !== 'GET') return;
 
 	const url = new URL(event.request.url);
+	if (url.origin !== self.location.origin) return;
 
 	// Never intercept API requests. Caching the never-ending `/api/.../stream`
 	// responses leaked memory and collapsed every tab onto a single cached
 	// connection, so only the first tab received live events. Let API requests
 	// — including streams — go straight to the network, one per tab.
-	if (url.pathname.startsWith('/api/')) return;
+	if (url.pathname.startsWith(API_PREFIX)) return;
+
+	// Generated application chunks and navigations already carry content-hashed
+	// URLs or need the current backend response. Intercept only the static assets
+	// installed above so an uncached network failure cannot reject respondWith().
+	if (!ASSET_PATHS.has(url.pathname)) return;
 
 	async function respond() {
 		const cache = await caches.open(CACHE);
@@ -70,7 +78,11 @@ self.addEventListener('fetch', (event) => {
 			return cachedResponse;
 		}
 
-		return fetch(event.request);
+		try {
+			return await fetch(event.request);
+		} catch {
+			return new Response(null, { status: 503 });
+		}
 	}
 
 	event.respondWith(respond());

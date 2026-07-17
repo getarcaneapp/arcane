@@ -46,7 +46,8 @@
   "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
   "remoteUser": "root",
   "containerEnv": {
-    "TZ": "Pacific/Auckland"
+    "TZ": "Pacific/Auckland",
+    "GOEXPERIMENT": "jsonv2"
   },
   "remoteEnv": {
     "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"

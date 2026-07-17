@@ -3,7 +3,7 @@ package jwtclaims
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"strings"
 )
@@ -84,12 +84,12 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 }
 
 const (
-	// KnownInsecureJWTSecret is the placeholder shipped in config.go's struct
+	// knownInsecureJWTSecret is the placeholder shipped in config.go's struct
 	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
 	// on Config.JWTSecret.
-	KnownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
-	// MinJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
-	MinJWTSecretLength = 32
+	knownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
+	// minJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
+	minJWTSecretLength = 32
 )
 
 // CheckOrGenerateJwtSecret returns the HMAC signing key for JWTs.
@@ -100,16 +100,16 @@ const (
 // a random per-boot key is generated when none (or only the public default) is
 // configured, so the public default never becomes a live signing key.
 func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
-	isDefault := jwtSecret == "" || jwtSecret == KnownInsecureJWTSecret
+	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret
 
 	if requireExplicit {
 		if isDefault {
 			panic("JWT_SECRET is required in production. Set JWT_SECRET to a unique " +
 				"random value of at least 32 characters (e.g. `openssl rand -base64 32`).")
 		}
-		if len(jwtSecret) < MinJWTSecretLength {
+		if len(jwtSecret) < minJWTSecretLength {
 			panic(fmt.Sprintf("JWT_SECRET must be at least %d characters (got %d).",
-				MinJWTSecretLength, len(jwtSecret)))
+				minJWTSecretLength, len(jwtSecret)))
 		}
 		return []byte(jwtSecret)
 	}

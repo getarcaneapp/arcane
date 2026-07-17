@@ -133,7 +133,7 @@ func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, en
 
 // runStreamAllInternal drives streamAllActivitiesInternal through a pipe and
 // returns each decoded event to onEvent until it reports done or the stream
-// ends; remaining output is drained so a blocked encoder can always finish.
+// ends; remaining output is drained so a blocked writer can always finish.
 func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
 	t.Helper()
 
@@ -142,7 +142,7 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllActivitiesInternal(ctx, ps, 50, json.NewEncoder(pw), func() {})
+		handler.streamAllActivitiesInternal(ctx, ps, 50, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)

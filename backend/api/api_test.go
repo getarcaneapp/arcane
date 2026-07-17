@@ -1,9 +1,11 @@
 package api
 
 import (
+	"bytes"
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 
 	humav2 "github.com/danielgtaylor/huma/v2"
 	basetypes "github.com/getarcaneapp/arcane/types/v2/base"
@@ -69,6 +71,41 @@ func TestSetupAPIForSpec_DefaultSecurity(t *testing.T) {
 
 	if !reflect.DeepEqual(api.OpenAPI().Security, expectedSecurity) {
 		t.Fatalf("expected default API security %v, got %v", expectedSecurity, api.OpenAPI().Security)
+	}
+}
+
+func TestSetupAPIForSpecUsesV2JSONFormats(t *testing.T) {
+	type response struct {
+		Items []string `json:"items"`
+		Count int      `json:"count,omitempty"`
+	}
+
+	api := SetupAPIForSpec()
+	for _, contentType := range []string{"application/json", "application/problem+json"} {
+		t.Run(contentType, func(t *testing.T) {
+			var body bytes.Buffer
+			if err := api.Marshal(&body, contentType, response{}); err != nil {
+				t.Fatalf("marshal %s: %v", contentType, err)
+			}
+			if got, want := body.String(), `{"items":[],"count":0}`; got != want {
+				t.Fatalf("marshal %s = %s, want %s", contentType, got, want)
+			}
+		})
+	}
+}
+
+func TestSetupAPIForSpecPreservesDurationNanoseconds(t *testing.T) {
+	type response struct {
+		HeartbeatPeriod time.Duration `json:"heartbeatPeriod"`
+	}
+
+	api := SetupAPIForSpec()
+	var body bytes.Buffer
+	if err := api.Marshal(&body, "application/json", response{HeartbeatPeriod: 5 * time.Second}); err != nil {
+		t.Fatalf("marshal duration: %v", err)
+	}
+	if got, want := body.String(), `{"heartbeatPeriod":5000000000}`; got != want {
+		t.Fatalf("marshal duration = %s, want %s", got, want)
 	}
 }
 

@@ -4,7 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -1116,7 +1116,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))
 		}
 
-		if err := json.NewDecoder(resp.Body).Decode(&versionInfo); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &versionInfo); err != nil {
 			return nil, huma.Error500InternalServerError("Failed to decode version response")
 		}
 	}

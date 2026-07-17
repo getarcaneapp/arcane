@@ -30,6 +30,7 @@ RUN pnpm -C frontend build
 
 # Stage 2: Build Backend
 FROM --platform=$BUILDPLATFORM golang:1.26.5-trixie AS backend-builder
+ENV GOEXPERIMENT=jsonv2
 ARG TARGETARCH
 ARG TARGETVARIANT
 ARG BUILD_TAGS

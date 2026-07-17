@@ -2,9 +2,9 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -315,7 +315,6 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 			httpx.SetJSONStreamHeaders(humaCtx)
 
 			writer := humaCtx.BodyWriter()
-			encoder := json.NewEncoder(writer)
 			flush := func() {
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
@@ -323,7 +322,7 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 			}
 
 			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllActivitiesInternal(humaCtx.Context(), ps, input.Limit, encoder, flush)
+			h.streamAllActivitiesInternal(humaCtx.Context(), ps, input.Limit, writer, flush)
 		},
 	}, nil
 }
@@ -331,9 +330,9 @@ func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *Stream
 // streamAllActivitiesInternal multiplexes activity events for the local
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
-func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *authz.PermissionSet, limit int, encoder *json.Encoder, flush func()) {
+func (h *ActivityHandler) streamAllActivitiesInternal(ctx context.Context, ps *authz.PermissionSet, limit int, writer io.Writer, flush func()) {
 	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermActivitiesRead, agg.Config[activity.StreamEvent]{
-		Encoder:           encoder,
+		Writer:            writer,
 		Flush:             flush,
 		Buffer:            activityStreamEventBuffer,
 		HeartbeatInterval: activityStreamHeartbeatInterval,

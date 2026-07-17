@@ -3,7 +3,7 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"html"
@@ -165,7 +165,7 @@ func (s *NotificationService) dispatchNotificationToManagerInternal(ctx context.
 		var apiResponse struct {
 			Data notificationdto.DispatchResponse `json:"data"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&apiResponse); err != nil {
+		if err := json.UnmarshalRead(resp.Body, &apiResponse); err != nil {
 			return notificationdto.DispatchResponse{}, fmt.Errorf("failed to decode manager notification dispatch response: %w", err)
 		}
 		return apiResponse.Data, nil
