@@ -1,7 +1,7 @@
 package edge
 
 import (
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
@@ -228,7 +228,7 @@ func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error)
 	defer func() { _ = req.Body.Close() }()
 
 	var pollReq TunnelPollRequest
-	if err := json.NewDecoder(req.Body).Decode(&pollReq); err != nil {
+	if err := json.UnmarshalRead(req.Body, &pollReq); err != nil {
 		if errors.Is(err, http.ErrBodyReadAfterClose) {
 			return &TunnelPollRequest{}, nil
 		}

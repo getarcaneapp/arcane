@@ -2,7 +2,8 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -895,7 +896,7 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 	}
 	defer func() { _ = stats.Body.Close() }()
 
-	decoder := json.NewDecoder(stats.Body)
+	decoder := jsontext.NewDecoder(stats.Body)
 	historySent := false
 
 	for {
@@ -904,11 +905,11 @@ func (s *ContainerService) StreamStats(ctx context.Context, containerID string, 
 		}
 
 		var statsData container.StatsResponse
-		if err := decoder.Decode(&statsData); err != nil {
+		if err := json.UnmarshalDecode(decoder, &statsData); err != nil {
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
-			if err == io.EOF {
+			if errors.Is(err, io.EOF) {
 				return nil
 			}
 			return fmt.Errorf("failed to decode stats: %w", err)

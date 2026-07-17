@@ -3,7 +3,7 @@ package edge
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -195,7 +195,7 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 	}
 
 	var pollResp TunnelPollResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &pollResp); err != nil {
 		return nil, fmt.Errorf("failed to decode poll response: %w", err)
 	}
 	return &pollResp, nil

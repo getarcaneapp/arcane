@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -374,12 +374,16 @@ func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, sta
 		return
 	}
 
-	if err := json.NewEncoder(progressWriter).Encode(buildtypes.ProgressEvent{
+	if err := json.MarshalWrite(progressWriter, buildtypes.ProgressEvent{
 		Type:    "build",
 		Service: serviceName,
 		Status:  status,
 	}); err != nil {
 		slog.Debug("failed to write build progress status", "error", err)
+		return
+	}
+	if _, err := io.WriteString(progressWriter, "\n"); err != nil {
+		slog.Debug("failed to terminate build progress status", "error", err)
 	}
 }
 

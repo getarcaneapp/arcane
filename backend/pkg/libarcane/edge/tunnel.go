@@ -2,7 +2,7 @@ package edge
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"sync"
@@ -103,16 +103,6 @@ type TunnelEvent struct {
 	UserID       string `json:"user_id,omitempty"`
 	Username     string `json:"username,omitempty"`
 	MetadataJSON []byte `json:"metadata_json,omitempty"`
-}
-
-// MarshalJSON custom marshaler to handle nil body as empty.
-func (m *TunnelMessage) MarshalJSON() ([]byte, error) {
-	type Alias TunnelMessage
-	return json.Marshal(&struct {
-		*Alias
-	}{
-		Alias: (*Alias)(m),
-	})
 }
 
 // PendingRequest tracks an in-flight request waiting for response.

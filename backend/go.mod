@@ -53,13 +53,13 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
-	go.getarcane.app/builds v0.1.1
+	go.getarcane.app/builds v0.2.0
 	go.getarcane.app/docker/convert v0.1.0
-	go.getarcane.app/streams v0.2.0
+	go.getarcane.app/streams v0.3.0
 	go.getarcane.app/sys/atomic v0.1.0
 	go.getarcane.app/sys/cgroup v0.1.0
 	go.getarcane.app/sys/crypto v0.1.0
-	go.getarcane.app/updater v0.5.3
+	go.getarcane.app/updater v0.6.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.54.0
 	golang.org/x/mod v0.38.0

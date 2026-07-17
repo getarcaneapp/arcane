@@ -2,7 +2,7 @@ package docker
 
 import (
 	"bufio"
-	"encoding/json"
+	json "encoding/json/v2"
 	"io"
 
 	"github.com/moby/moby/api/types/jsonstream"

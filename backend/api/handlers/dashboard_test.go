@@ -139,7 +139,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 
 // runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
 // pipe and returns each decoded event to onEvent until it reports done or the
-// stream ends; remaining output is drained so a blocked encoder can finish.
+// stream ends; remaining output is drained so a blocked writer can finish.
 func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, ps *authz.PermissionSet, onEvent func(dashboardtypes.StreamEvent) bool) {
 	t.Helper()
 
@@ -148,7 +148,7 @@ func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel con
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllDashboardsInternal(ctx, ps, false, json.NewEncoder(pw), func() {})
+		handler.streamAllDashboardsInternal(ctx, ps, false, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)

@@ -3,7 +3,7 @@ package libarcane
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"

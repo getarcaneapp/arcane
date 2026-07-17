@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -121,7 +121,6 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 			httpx.SetJSONStreamHeaders(humaCtx)
 
 			writer := humaCtx.BodyWriter()
-			encoder := json.NewEncoder(writer)
 			flush := func() {
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
@@ -129,7 +128,7 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 			}
 
 			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, encoder, flush)
+			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, writer, flush)
 		},
 	}, nil
 }
@@ -137,9 +136,9 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // streamAllDashboardsInternal multiplexes dashboard snapshots for the local
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
-func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, encoder *json.Encoder, flush func()) {
+func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
 	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
-		Encoder:           encoder,
+		Writer:            writer,
 		Flush:             flush,
 		Buffer:            dashboardStreamEventBuffer,
 		HeartbeatInterval: dashboardStreamHeartbeatInterval,

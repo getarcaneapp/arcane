@@ -3,7 +3,8 @@ package services
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -2478,7 +2479,7 @@ func isTaskTerminalInternal(state swarm.TaskState) bool {
 	return false
 }
 
-func decodeConfigSpecInternal(raw json.RawMessage) (swarm.ConfigSpec, error) {
+func decodeConfigSpecInternal(raw stdjson.RawMessage) (swarm.ConfigSpec, error) {
 	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
 		return swarm.ConfigSpec{}, errors.New("config spec is required")
 	}
@@ -2495,7 +2496,7 @@ func decodeConfigSpecInternal(raw json.RawMessage) (swarm.ConfigSpec, error) {
 	return spec, nil
 }
 
-func decodeSwarmSpecInternal(raw json.RawMessage) (swarm.Spec, error) {
+func decodeSwarmSpecInternal(raw stdjson.RawMessage) (swarm.Spec, error) {
 	trimmed := bytes.TrimSpace(raw)
 	if len(trimmed) == 0 || bytes.Equal(trimmed, []byte("null")) {
 		return swarm.Spec{}, errors.New("swarm spec is required")
@@ -2522,7 +2523,7 @@ func defaultSwarmListenAddrInternal(listenAddr string) string {
 	return trimmed
 }
 
-func decodeSecretSpecInternal(raw json.RawMessage) (swarm.SecretSpec, error) {
+func decodeSecretSpecInternal(raw stdjson.RawMessage) (swarm.SecretSpec, error) {
 	if len(raw) == 0 || strings.TrimSpace(string(raw)) == "" || strings.TrimSpace(string(raw)) == "null" {
 		return swarm.SecretSpec{}, errors.New("secret spec is required")
 	}

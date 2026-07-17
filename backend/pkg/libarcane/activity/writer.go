@@ -3,7 +3,8 @@ package activity
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	stdjson "encoding/json"
+	json "encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
@@ -299,7 +300,7 @@ func numberToInt64Internal(value any) int64 {
 		return typed
 	case int:
 		return int64(typed)
-	case json.Number:
+	case stdjson.Number:
 		out, _ := typed.Int64()
 		return out
 	default:

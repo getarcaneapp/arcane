@@ -9,7 +9,7 @@ import (
 func TestCheckOrGenerateJwtSecret(t *testing.T) {
 	// Production (requireExplicit) must reject empty, the public default, and short secrets.
 	assert.Panics(t, func() { CheckOrGenerateJwtSecret("", true) })
-	assert.Panics(t, func() { CheckOrGenerateJwtSecret(KnownInsecureJWTSecret, true) })
+	assert.Panics(t, func() { CheckOrGenerateJwtSecret(knownInsecureJWTSecret, true) })
 	assert.Panics(t, func() { CheckOrGenerateJwtSecret("too-short", true) })
 
 	// Production accepts a real secret verbatim.
@@ -17,7 +17,7 @@ func TestCheckOrGenerateJwtSecret(t *testing.T) {
 	assert.Equal(t, []byte(good), CheckOrGenerateJwtSecret(good, true))
 
 	// Development / agent mode replaces the public default with a random key.
-	got := CheckOrGenerateJwtSecret(KnownInsecureJWTSecret, false)
+	got := CheckOrGenerateJwtSecret(knownInsecureJWTSecret, false)
 	assert.Len(t, got, 32)
-	assert.NotEqual(t, []byte(KnownInsecureJWTSecret), got)
+	assert.NotEqual(t, []byte(knownInsecureJWTSecret), got)
 }

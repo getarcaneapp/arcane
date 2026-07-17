@@ -2,7 +2,7 @@ package activity
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -149,9 +149,11 @@ func WriteStartedLine(writer io.Writer, activityID string) {
 		"type":       "activity",
 		"activityId": activityID,
 	}
-	if err := json.NewEncoder(writer).Encode(payload); err != nil {
+	if err := json.MarshalWrite(writer, payload); err != nil {
 		_, _ = fmt.Fprintf(writer, `{"activityId":%q}`+"\n", activityID)
+		return
 	}
+	_, _ = io.WriteString(writer, "\n")
 }
 
 func FlushWriter(writer io.Writer) {
