@@ -257,7 +257,7 @@
 				<div class="min-w-0 flex-1">
 					<h1 class="text-xl font-semibold break-words sm:text-2xl">{template.name}</h1>
 					{#if template.description}
-						<p class="text-muted-foreground mt-1.5 text-sm break-words sm:text-base">{template.description}</p>
+						<p class="mt-1.5 text-sm break-words text-muted-foreground sm:text-base">{template.description}</p>
 					{/if}
 				</div>
 			</div>
@@ -330,7 +330,7 @@
 						<ContainersIcon class="size-6 text-blue-500" />
 					</div>
 					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.compose_services()}</div>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.compose_services()}</div>
 						<div class="mt-1">
 							<div class="text-2xl font-semibold">{services?.length ?? 0}</div>
 						</div>
@@ -344,13 +344,13 @@
 						<VariableIcon class="size-6 text-purple-500" />
 					</div>
 					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.common_environment_variables()}
 						</div>
 						<div class="mt-1 flex flex-wrap items-baseline gap-2">
 							<div class="text-2xl font-semibold">{envVars?.length ?? 0}</div>
 							{#if envVars?.length}
-								<div class="text-muted-foreground text-sm">{m.templates_configurable_settings()}</div>
+								<div class="text-sm text-muted-foreground">{m.templates_configurable_settings()}</div>
 							{/if}
 						</div>
 					</div>
@@ -416,13 +416,13 @@
 								{#each envVars as envVar (envVar.key)}
 									<Card.Root variant="subtle" class="min-w-0">
 										<Card.Content class="flex min-w-0 flex-col gap-2 p-3">
-											<div class="text-muted-foreground text-xs font-semibold tracking-wide break-words uppercase select-all">
+											<div class="text-xs font-semibold tracking-wide break-words text-muted-foreground uppercase select-all">
 												{envVar.key}
 											</div>
 											{#if envVar.value}
-												<div class="text-foreground min-w-0 font-mono text-sm break-words select-all">{envVar.value}</div>
+												<div class="min-w-0 font-mono text-sm break-words text-foreground select-all">{envVar.value}</div>
 											{:else}
-												<div class="text-muted-foreground text-xs italic">{m.common_no_default_value()}</div>
+												<div class="text-xs text-muted-foreground italic">{m.common_no_default_value()}</div>
 											{/if}
 										</Card.Content>
 									</Card.Root>

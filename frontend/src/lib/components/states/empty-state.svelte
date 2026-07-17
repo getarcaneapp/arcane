@@ -26,7 +26,7 @@
 	<Empty.Header>
 		{#if Icon}
 			<Empty.Media variant="icon">
-				<Icon class="text-muted-foreground size-8" aria-hidden="true" />
+				<Icon class="size-8 text-muted-foreground" aria-hidden="true" />
 			</Empty.Media>
 		{/if}
 		<Empty.Title>{title}</Empty.Title>

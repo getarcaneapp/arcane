@@ -55,10 +55,10 @@
 						<button
 							onclick={upgradeCheck.openDialog}
 							disabled={upgradeCheck.checkingUpgrade}
-							class="hover:bg-muted/60 focus-visible:ring-primary/40 relative mx-auto flex size-8 items-center justify-center rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
+							class="relative mx-auto flex size-8 items-center justify-center rounded-lg transition-colors hover:bg-muted/60 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-60"
 							{...props}
 						>
-							<DownloadIcon class="text-foreground/80 size-4" />
+							<DownloadIcon class="size-4 text-foreground/80" />
 							<span class="absolute top-1 right-1 flex size-2">
 								<span class="absolute inline-flex size-2 animate-ping rounded-full bg-blue-500 opacity-70"></span>
 								<span class="relative inline-flex size-2 rounded-full bg-blue-500 ring-2 ring-[var(--sidebar)]"></span>

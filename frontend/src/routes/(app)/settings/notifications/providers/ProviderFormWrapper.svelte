@@ -21,7 +21,7 @@
 	</SettingsRow>
 
 	{#if enabled && children}
-		<div class="border-border/60 space-y-4 border-l-2 pl-5">
+		<div class="space-y-4 border-l-2 border-border/60 pl-5">
 			{@render children()}
 		</div>
 	{/if}

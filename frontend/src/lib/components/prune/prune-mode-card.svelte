@@ -130,10 +130,10 @@
 	}
 </script>
 
-<div class="bg-muted/20 ring-border/20 flex h-full flex-col gap-2.5 rounded-lg p-3 ring-1">
+<div class="flex h-full flex-col gap-2.5 rounded-lg bg-muted/20 p-3 ring-1 ring-border/20">
 	<div class="space-y-0.5">
 		<p class="text-xs font-medium">{title}</p>
-		<p class="text-muted-foreground text-[11px] leading-tight">{description}</p>
+		<p class="text-[11px] leading-tight text-muted-foreground">{description}</p>
 	</div>
 
 	<Tabs.Root {value} onValueChange={handleModeChange}>
@@ -144,7 +144,7 @@
 					{disabled}
 					class={cn(
 						'h-6 flex-1 text-xs',
-						option.destructive && value === option.value && 'bg-destructive/15 text-destructive hover:bg-destructive/10 shadow-sm'
+						option.destructive && value === option.value && 'bg-destructive/15 text-destructive shadow-sm hover:bg-destructive/10'
 					)}
 				>
 					{option.label}
@@ -165,7 +165,7 @@
 				placeholder={m.prune_duration_placeholder()}
 			/>
 			<select
-				class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring h-8 rounded-md border px-2.5 py-1 text-xs focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
+				class="h-8 rounded-md border border-input bg-background px-2.5 py-1 text-xs ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50"
 				value={durationUnitInternal}
 				onchange={handleDurationUnitChangeInternal}
 				{disabled}
@@ -175,7 +175,7 @@
 				{/each}
 			</select>
 		</div>
-		<p class="text-muted-foreground text-xs">{m.prune_duration_help()}</p>
+		<p class="text-xs text-muted-foreground">{m.prune_duration_help()}</p>
 	{/if}
 
 	{#if warningDescription && getSelectedOptionInternal()?.destructive}

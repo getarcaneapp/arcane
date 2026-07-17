@@ -52,7 +52,7 @@
 	const severityIconClass = $derived(severityIconClasses[eventSeverityIconVariant(event.severity)]);
 </script>
 
-<div class="border-border/60 bg-background overflow-hidden rounded-lg border shadow-sm">
+<div class="overflow-hidden rounded-lg border border-border/60 bg-background shadow-sm">
 	<div class="space-y-4 px-5 py-4">
 		<div class="flex min-w-0 items-start justify-between gap-4">
 			<div class="flex min-w-0 items-start gap-3">
@@ -66,7 +66,7 @@
 				<div class="min-w-0">
 					<h3 class="truncate text-sm font-semibold" title={event.title}>{event.title}</h3>
 					{#if event.description}
-						<p class="text-muted-foreground mt-0.5 text-sm">{event.description}</p>
+						<p class="mt-0.5 text-sm text-muted-foreground">{event.description}</p>
 					{/if}
 				</div>
 			</div>
@@ -81,13 +81,13 @@
 			</CopyButton>
 		</div>
 
-		<div class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs">
-			<span class="text-foreground font-medium tabular-nums">{formatDateTime(event.timestamp, { includeSeconds: true })}</span>
+		<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
+			<span class="font-medium text-foreground tabular-nums">{formatDateTime(event.timestamp, { includeSeconds: true })}</span>
 			{#if environmentName}
 				<span class="text-border">•</span>
 				<div class="flex items-center gap-1.5">
 					<span>{m.events_environment_label()}</span>
-					<span class="text-foreground font-medium">{environmentName}</span>
+					<span class="font-medium text-foreground">{environmentName}</span>
 				</div>
 			{/if}
 			<span class="text-border">•</span>
@@ -96,7 +96,7 @@
 				{#if (event.username ?? 'System') === 'System'}
 					<span class="italic">System</span>
 				{:else}
-					<span class="text-foreground font-medium">{event.username}</span>
+					<span class="font-medium text-foreground">{event.username}</span>
 				{/if}
 			</div>
 			<span class="text-border">•</span>
@@ -104,7 +104,7 @@
 		</div>
 
 		{#if eventErrorMessage}
-			<div class="border-destructive/30 bg-destructive/10 text-destructive rounded-md border p-3 text-sm break-words">
+			<div class="rounded-md border border-destructive/30 bg-destructive/10 p-3 text-sm break-words text-destructive">
 				{eventErrorMessage}
 			</div>
 		{/if}
@@ -121,7 +121,7 @@
 		{/if}
 	</div>
 
-	<div class="border-border/60 border-t">
+	<div class="border-t border-border/60">
 		<div class="flex items-center justify-between px-5 py-2.5">
 			<span class="text-sm font-semibold">{m.events_metadata_title()}</span>
 			<ArcaneButton
@@ -133,27 +133,27 @@
 			/>
 		</div>
 		{#if showRawEvent}
-			<pre class="bg-muted/40 border-border/50 max-h-80 overflow-auto border-t p-4 text-xs leading-relaxed"><code
+			<pre class="max-h-80 overflow-auto border-t border-border/50 bg-muted/40 p-4 text-xs leading-relaxed"><code
 					class="font-mono">{eventJson}</code
 				></pre>
 		{:else if hasMetadata}
-			<div class="border-border/50 max-h-80 overflow-auto border-t">
+			<div class="max-h-80 overflow-auto border-t border-border/50">
 				{#each metadataEntries as entry (entry.key)}
-					<div class="border-border/50 grid grid-cols-[minmax(0,260px)_1fr] items-start gap-3 border-b px-5 py-2 last:border-b-0">
-						<div class="text-muted-foreground font-mono text-xs break-all">{entry.key}</div>
+					<div class="grid grid-cols-[minmax(0,260px)_1fr] items-start gap-3 border-b border-border/50 px-5 py-2 last:border-b-0">
+						<div class="font-mono text-xs break-all text-muted-foreground">{entry.key}</div>
 						<pre class="font-mono text-xs leading-relaxed break-all whitespace-pre-wrap">{entry.value}</pre>
 					</div>
 				{/each}
 			</div>
 		{:else}
-			<div class="text-muted-foreground border-border/50 border-t px-5 py-3 text-xs">{m.events_no_metadata_provided()}</div>
+			<div class="border-t border-border/50 px-5 py-3 text-xs text-muted-foreground">{m.events_no_metadata_provided()}</div>
 		{/if}
 	</div>
 </div>
 
 {#snippet resourceCell(label: string, value: string, copyTitle: string)}
-	<div class="border-border/50 rounded-md border p-3">
-		<div class="text-muted-foreground text-xs">{label}</div>
+	<div class="rounded-md border border-border/50 p-3">
+		<div class="text-xs text-muted-foreground">{label}</div>
 		<div class="mt-1 flex items-center justify-between gap-2">
 			<div class="min-w-0 font-mono text-sm break-all">{value}</div>
 			<CopyButton text={value} size="icon" class="size-7 shrink-0" title={copyTitle} />

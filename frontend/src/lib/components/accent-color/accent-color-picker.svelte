@@ -78,9 +78,9 @@
 			>
 				{#if isCustomColorSelection}
 					<div
-						class="bg-muted absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-gray-300"
+						class="absolute inset-0 flex items-center justify-center rounded-full border-2 border-dashed border-gray-300 bg-muted"
 					>
-						<AddIcon class="text-muted-foreground size-4" />
+						<AddIcon class="size-4 text-muted-foreground" />
 					</div>
 				{:else if isSelected}
 					<div class="absolute inset-0 flex items-center justify-center">
@@ -89,7 +89,7 @@
 				{/if}
 			</div>
 			<div
-				class="text-muted-foreground group-hover/item:text-foreground bg-background absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border px-2 py-1 text-xs whitespace-nowrap opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:opacity-100"
+				class="absolute top-12 left-1/2 z-[var(--arcane-z-sticky)] max-w-0 -translate-x-1/2 transform overflow-hidden rounded-md border bg-background px-2 py-1 text-xs whitespace-nowrap text-muted-foreground opacity-0 shadow-sm transition-all duration-300 ease-out group-hover/item:max-w-[100px] group-hover/item:text-foreground group-hover/item:opacity-100"
 			>
 				{label}
 			</div>

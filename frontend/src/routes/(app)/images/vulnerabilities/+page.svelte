@@ -300,16 +300,16 @@
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<!-- Minimal overview: one compact block -->
-			<div class="border-border/40 bg-muted/20 rounded-lg border px-4 py-3">
+			<div class="rounded-lg border border-border/40 bg-muted/20 px-4 py-3">
 				<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-					<div class="text-muted-foreground flex items-baseline gap-4 text-xs">
+					<div class="flex items-baseline gap-4 text-xs text-muted-foreground">
 						<span
 							>{m.security_images_scanned()}:
-							<span class="text-foreground font-medium tabular-nums">{imagesScannedLabel}</span></span
+							<span class="font-medium text-foreground tabular-nums">{imagesScannedLabel}</span></span
 						>
 						<span
 							>{m.security_total_vulnerabilities()}:
-							<span class="text-foreground font-medium tabular-nums">{summaryCounts.total}</span></span
+							<span class="font-medium text-foreground tabular-nums">{summaryCounts.total}</span></span
 						>
 					</div>
 					{#if severityItems.length > 0}
@@ -317,8 +317,8 @@
 							{#each severityItems as item (item.key)}
 								<div class="flex items-center gap-1.5">
 									<span class="{item.dotClass} h-1.5 w-1.5 shrink-0 rounded-full" aria-hidden="true"></span>
-									<span class="text-muted-foreground text-xs">
-										<span class="text-foreground font-semibold tabular-nums">{item.value}</span>
+									<span class="text-xs text-muted-foreground">
+										<span class="font-semibold text-foreground tabular-nums">{item.value}</span>
 										<span class="ml-0.5">{item.label}</span>
 									</span>
 								</div>
@@ -334,12 +334,12 @@
 					<Tabs.Trigger value="ignored">{m.vuln_ignored_title()}</Tabs.Trigger>
 				</Tabs.List>
 				<Tabs.Content value="vulnerabilities" class="mt-4">
-					<div class="border-border/60 rounded-xl border">
+					<div class="rounded-xl border border-border/60">
 						<SecurityVulnerabilityTable bind:vulnerabilities bind:requestOptions />
 					</div>
 				</Tabs.Content>
 				<Tabs.Content value="ignored" class="mt-4">
-					<div class="border-border/60 rounded-xl border">
+					<div class="rounded-xl border border-border/60">
 						<IgnoredVulnerabilitiesTable
 							{ignoredVulnerabilities}
 							requestOptions={ignoredRequestOptions}

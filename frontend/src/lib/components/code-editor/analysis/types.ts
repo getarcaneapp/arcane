@@ -1,7 +1,16 @@
 import type { Diagnostic } from '@codemirror/lint';
 
 export type CodeLanguage =
-	'yaml' | 'env' | 'json' | 'toml' | 'dockerfile' | 'shell' | 'javascript' | 'typescript' | 'markdown' | 'plaintext';
+	| 'yaml'
+	| 'env'
+	| 'json'
+	| 'toml'
+	| 'dockerfile'
+	| 'shell'
+	| 'javascript'
+	| 'typescript'
+	| 'markdown'
+	| 'plaintext';
 export type CodeValidationMode = 'compose' | 'env' | 'none';
 
 export type SchemaStatus = 'ready' | 'cached' | 'unavailable';

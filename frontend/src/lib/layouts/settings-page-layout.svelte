@@ -62,12 +62,12 @@
 {/snippet}
 
 <div class={cn('px-2 py-4 pb-5 sm:px-6 sm:py-6 sm:pb-10 lg:px-8', className)}>
-	<div class="border-border/50 border-b pb-4 sm:pb-6">
+	<div class="border-b border-border/50 pb-4 sm:pb-6">
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex flex-1 items-start gap-3 sm:gap-4">
 				{#if Icon}
 					<div
-						class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+						class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
 					>
 						<Icon class="size-4 sm:size-5" />
 					</div>
@@ -75,13 +75,13 @@
 				<div class="min-w-0">
 					<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
 					{#if description}
-						<p class="text-muted-foreground mt-1 hidden text-sm sm:block sm:text-base">{@html description}</p>
+						<p class="mt-1 hidden text-sm text-muted-foreground sm:block sm:text-base">{@html description}</p>
 					{/if}
 					{#if pageType === 'management' && statCards && statCards.length > 0}
 						<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">
 							{#each statCards as card, i}
 								{#if i > 0}
-									<div class="bg-border/50 h-4 w-px"></div>
+									<div class="h-4 w-px bg-border/50"></div>
 								{/if}
 								<StatCard
 									variant="mini"
@@ -150,7 +150,7 @@
 							<DropdownMenu.Root>
 								<DropdownMenu.Trigger>
 									{#snippet child({ props })}
-										<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="bg-background/70 size-8 border">
+										<ArcaneButton {...props} action="base" tone="ghost" size="icon" class="size-8 border bg-background/70">
 											<span class="sr-only">{m.common_open_menu()}</span>
 											<EllipsisIcon class="size-4" />
 										</ArcaneButton>
@@ -159,7 +159,7 @@
 
 								<DropdownMenu.Content
 									align="end"
-									class="bg-popover/90 z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+									class="z-[var(--arcane-z-surface)] min-w-[160px] rounded-xl border bg-popover/90 p-1 shadow-lg backdrop-blur-md"
 								>
 									<DropdownMenu.Group>
 										{#each mobileDropdownButtons as button}

@@ -82,26 +82,26 @@
 {/snippet}
 
 {#if stopped}
-	<div class="text-muted-foreground text-xs">{m.common_na()}</div>
+	<div class="text-xs text-muted-foreground">{m.common_na()}</div>
 {:else if loading}
 	<div class="flex items-center gap-2">
-		<div class="bg-muted size-[26px] shrink-0 animate-pulse rounded-full"></div>
-		<div class="bg-muted h-3 w-16 animate-pulse rounded"></div>
+		<div class="size-[26px] shrink-0 animate-pulse rounded-full bg-muted"></div>
+		<div class="h-3 w-16 animate-pulse rounded bg-muted"></div>
 	</div>
 {:else if type === 'memory' && memoryFormatted}
 	<div class="flex items-center gap-2">
 		{@render ring()}
-		<span class="text-foreground text-xs font-medium tabular-nums">
+		<span class="text-xs font-medium text-foreground tabular-nums">
 			{memoryFormatted}
 		</span>
 	</div>
 {:else if type === 'cpu' && value !== undefined}
 	<div class="flex items-center gap-2">
 		{@render ring()}
-		<span class="text-foreground text-xs font-medium tabular-nums">
+		<span class="text-xs font-medium text-foreground tabular-nums">
 			{value.toFixed(1)}%
 		</span>
 	</div>
 {:else}
-	<div class="text-muted-foreground text-xs">—</div>
+	<div class="text-xs text-muted-foreground">—</div>
 {/if}

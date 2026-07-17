@@ -226,7 +226,7 @@
 			{#if createdEnvironment}
 				<div class="space-y-4">
 					{#if createdEnvironment.isEdge}
-						<div class="bg-primary/10 text-primary flex items-center gap-2 rounded-lg p-3 text-sm">
+						<div class="flex items-center gap-2 rounded-lg bg-primary/10 p-3 text-sm text-primary">
 							<EdgeConnectionIcon class="size-5" />
 							<span>{m.env_edge_agent_desc()}</span>
 						</div>
@@ -235,21 +235,21 @@
 					<div class="space-y-2">
 						<div class="text-sm font-medium">{m.environments_api_key()}</div>
 						<div class="flex items-center gap-2">
-							<code class="bg-muted flex-1 rounded-md px-3 py-2 font-mono text-sm break-all">
+							<code class="flex-1 rounded-md bg-muted px-3 py-2 font-mono text-sm break-all">
 								{createdEnvironment.apiKey}
 							</code>
 							{#if createdEnvironment.apiKey}
 								<CopyButton text={createdEnvironment.apiKey} size="icon" class="size-7" />
 							{/if}
 						</div>
-						<p class="text-muted-foreground text-xs">{m.environments_api_key_warning()}</p>
+						<p class="text-xs text-muted-foreground">{m.environments_api_key_warning()}</p>
 					</div>
 
 					{#if createdEnvironment.mtlsEnabled}
 						<div class="space-y-3 rounded-lg border border-sky-500/25 bg-sky-500/8 p-4">
 							<div class="space-y-1">
 								<p class="text-sm font-medium">{m.environments_new_agent_mtls_enabled()}</p>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									{m.environments_new_agent_mtls_auto_enroll()}
 								</p>
 							</div>
@@ -305,7 +305,7 @@
 					</Tabs.List>
 
 					<Tabs.Content value="direct" class="mt-4">
-						<p class="text-muted-foreground mb-4 text-sm">
+						<p class="mb-4 text-sm text-muted-foreground">
 							{m.environments_direct_desc()}
 						</p>
 						<form onsubmit={preventDefault(handleDirectSubmit)} class="space-y-4">
@@ -339,7 +339,7 @@
 					</Tabs.Content>
 
 					<Tabs.Content value="edge" class="mt-4">
-						<p class="text-muted-foreground mb-4 text-sm">
+						<p class="mb-4 text-sm text-muted-foreground">
 							{m.environments_edge_desc()}
 						</p>
 						<form onsubmit={preventDefault(handleEdgeSubmit)} class="space-y-4">

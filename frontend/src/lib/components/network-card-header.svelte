@@ -10,12 +10,12 @@
 	let { name, children }: Props = $props();
 </script>
 
-<div class="border-border mb-4 flex items-center gap-3 border-b pb-4">
+<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
 	<div class="rounded-lg bg-blue-500/10 p-2">
 		<NetworksIcon class="size-5 text-blue-500" />
 	</div>
 	<div class="min-w-0 flex-1">
-		<div class="text-foreground text-base font-semibold break-all">
+		<div class="text-base font-semibold break-all text-foreground">
 			{name}
 		</div>
 		{#if children}

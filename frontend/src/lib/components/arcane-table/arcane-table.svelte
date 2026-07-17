@@ -711,7 +711,7 @@
 
 		<div
 			bind:this={desktopScrollEl}
-			class="bg-background/80 [isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto md:block"
+			class="[isolation:isolate] hidden h-full min-h-0 flex-1 overflow-auto bg-background/80 md:block"
 		>
 			<ArcaneTableDesktopView
 				{table}
@@ -734,9 +734,9 @@
 			/>
 		</div>
 
-		<div class="bg-background/80 [isolation:isolate] block flex-1 overflow-auto md:hidden">
+		<div class="[isolation:isolate] block flex-1 overflow-auto bg-background/80 md:hidden">
 			{#if unstyled}
-				<div class="divide-border/40 divide-y">
+				<div class="divide-y divide-border/40">
 					{@render MobileViewSnippet()}
 				</div>
 			{:else}
@@ -745,7 +745,7 @@
 		</div>
 
 		{#if !withoutPagination}
-			<div class="border-border/50 shrink-0 border-t px-4 py-3">
+			<div class="shrink-0 border-t border-border/50 px-4 py-3">
 				{@render PaginationSnippet()}
 			</div>
 		{/if}

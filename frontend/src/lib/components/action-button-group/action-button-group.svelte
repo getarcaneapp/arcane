@@ -144,7 +144,7 @@
 	<div class="flex w-full items-center justify-between gap-2">
 		<span>{button.loading ? button.loadingLabel || button.label : button.label}</span>
 		{#if button.badge !== undefined}
-			<span class="text-muted-foreground text-[10px]">({button.badge})</span>
+			<span class="text-[10px] text-muted-foreground">({button.badge})</span>
 		{/if}
 	</div>
 {/snippet}
@@ -176,7 +176,7 @@
 
 {#snippet buttonContent(button: ActionButton)}
 	{#if button.badge !== undefined}
-		<span class="text-muted-foreground rounded-full border px-1 py-0.5 text-[10px]">
+		<span class="rounded-full border px-1 py-0.5 text-[10px] text-muted-foreground">
 			{button.badge}
 		</span>
 	{/if}
@@ -207,7 +207,7 @@
 			<DropdownMenu.Root>
 				<DropdownMenu.Trigger
 					class={cn(
-						'border-input bg-background hover:bg-accent hover:text-accent-foreground inline-flex items-center justify-center rounded-md border transition-colors outline-none',
+						'inline-flex items-center justify-center rounded-md border border-input bg-background transition-colors outline-none hover:bg-accent hover:text-accent-foreground',
 						size === 'sm' ? 'size-8' : 'size-9'
 					)}
 					aria-label={m.common_open_menu()}

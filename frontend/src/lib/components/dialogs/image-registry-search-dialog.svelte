@@ -147,7 +147,7 @@
 			</div>
 
 			{#if results.length > 0}
-				<div class="border-border max-h-[420px] overflow-auto rounded-lg border">
+				<div class="max-h-[420px] overflow-auto rounded-lg border border-border">
 					{#each results as result (result.name)}
 						<div class="grid gap-3 border-b p-3 last:border-b-0 sm:grid-cols-[1fr_auto] sm:items-center">
 							<div class="min-w-0 space-y-1">
@@ -159,10 +159,10 @@
 										</span>
 									{/if}
 								</div>
-								<p class="text-muted-foreground line-clamp-2 text-sm">
+								<p class="line-clamp-2 text-sm text-muted-foreground">
 									{result.description || m.common_no_description()}
 								</p>
-								<p class="text-muted-foreground text-xs">{m.images_search_stars({ count: result.starCount })}</p>
+								<p class="text-xs text-muted-foreground">{m.images_search_stars({ count: result.starCount })}</p>
 							</div>
 							<ArcaneButton
 								action="pull"
@@ -178,7 +178,7 @@
 					{/each}
 				</div>
 			{:else if hasSearched && !isSearching}
-				<div class="border-border bg-muted/30 text-muted-foreground rounded-lg border px-4 py-8 text-center text-sm">
+				<div class="rounded-lg border border-border bg-muted/30 px-4 py-8 text-center text-sm text-muted-foreground">
 					{m.images_search_empty()}
 				</div>
 			{/if}

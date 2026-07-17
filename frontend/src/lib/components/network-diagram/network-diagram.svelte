@@ -473,7 +473,7 @@
 	<div class="flex flex-wrap items-center gap-2">
 		<Badge variant="violet">{m.networks_topology_legend_networks()}</Badge>
 		<Badge variant="emerald">{m.networks_topology_legend_containers()}</Badge>
-		<p class="text-muted-foreground text-sm">{m.networks_topology_hint()}</p>
+		<p class="text-sm text-muted-foreground">{m.networks_topology_hint()}</p>
 		{#if presentDefaults.length > 0}
 			<div class="ml-auto">
 				<DropdownMenu.Root>
@@ -485,7 +485,7 @@
 								tone="ghost"
 								icon={EyeOnIcon}
 								customLabel={`${m.networks_topology_default_networks()} (${visibleDefaultsCount}/${presentDefaults.length})`}
-								class="border-input hover:bg-card/60 border hover:text-inherit"
+								class="border border-input hover:bg-card/60 hover:text-inherit"
 							/>
 						{/snippet}
 					</DropdownMenu.Trigger>
@@ -508,8 +508,8 @@
 	</div>
 
 	{#if topology.nodes.length === 0}
-		<div class="bg-card border-border/70 rounded-3xl border px-6 py-16 text-center shadow-sm">
-			<p class="text-foreground text-base font-medium">{m.networks_topology_empty()}</p>
+		<div class="rounded-3xl border border-border/70 bg-card px-6 py-16 text-center shadow-sm">
+			<p class="text-base font-medium text-foreground">{m.networks_topology_empty()}</p>
 		</div>
 	{:else if browser && isReady}
 		<div

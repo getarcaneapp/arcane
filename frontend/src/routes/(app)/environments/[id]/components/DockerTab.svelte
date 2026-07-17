@@ -105,7 +105,7 @@
 		<div class="space-y-4 border-t pt-6">
 			<div class="space-y-0.5">
 				<h3 class="text-sm font-medium">{m.prune_options_title()}</h3>
-				<p class="text-muted-foreground text-xs">{m.prune_options_description()}</p>
+				<p class="text-xs text-muted-foreground">{m.prune_options_description()}</p>
 			</div>
 
 			<div class="grid gap-2 sm:grid-cols-2">

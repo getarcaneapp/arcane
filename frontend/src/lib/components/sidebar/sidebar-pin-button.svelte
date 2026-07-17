@@ -26,7 +26,7 @@
 	action="base"
 	tone="ghost"
 	size="icon"
-	class={cn('text-muted-foreground hover:text-foreground size-7', className)}
+	class={cn('size-7 text-muted-foreground hover:text-foreground', className)}
 	type="button"
 	disabled={sidebar.isTablet}
 	title={isPinned ? m.common_unpin_sidebar() : m.common_pin_sidebar()}

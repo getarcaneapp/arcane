@@ -178,13 +178,13 @@
 
 {#snippet NameCell({ value }: { value: unknown })}
 	<div class="flex items-center gap-2">
-		<GitBranchIcon class="text-muted-foreground size-4" />
+		<GitBranchIcon class="size-4 text-muted-foreground" />
 		<span class="font-medium">{value}</span>
 	</div>
 {/snippet}
 
 {#snippet UrlCell({ value }: { value: unknown })}
-	<code class="bg-muted text-muted-foreground rounded px-2 py-1 text-xs">{value}</code>
+	<code class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
 {/snippet}
 
 {#snippet AuthTypeCell({ value }: { value: unknown })}

@@ -29,7 +29,7 @@
 		{sideOffset}
 		{side}
 		class={cn(
-			'bg-popover/90 border-border/50 w-fit max-w-[min(calc(100vw-2rem),320px)] px-3 py-1.5 text-xs text-balance shadow-lg backdrop-blur-md',
+			'w-fit max-w-[min(calc(100vw-2rem),320px)] border-border/50 bg-popover/90 px-3 py-1.5 text-xs text-balance shadow-lg backdrop-blur-md',
 			className
 		)}
 		{...restProps}

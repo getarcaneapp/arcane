@@ -109,7 +109,7 @@
 
 {#snippet ImageCell({ item }: { item: ProjectUpdateRow })}
 	<div class="flex items-center gap-2">
-		<ImagesIcon class="text-muted-foreground size-3.5 shrink-0" />
+		<ImagesIcon class="size-3.5 shrink-0 text-muted-foreground" />
 		<span class="truncate text-sm" title={item.imageSummary !== '-' ? item.imageSummary : undefined}>
 			{item.imageSummary}
 		</span>

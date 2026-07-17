@@ -117,7 +117,7 @@
 							<span class="text-xs text-muted-foreground">{m.users_role_assignments_scope_global()}</span>
 						</div>
 						{#if role.description}
-							<span class="text-muted-foreground text-xs">{role.description}</span>
+							<span class="text-xs text-muted-foreground">{role.description}</span>
 						{/if}
 					</div>
 				</label>
@@ -126,14 +126,14 @@
 	{/if}
 
 	{#if assignments.length === 0}
-		<p class="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
+		<p class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
 			{m.users_role_assignments_description()}
 		</p>
 	{/if}
 
 	{#each assignments as assignment, index (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
-		<div class="bg-card/50 grid grid-cols-1 gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+		<div class="grid grid-cols-1 gap-2 rounded-md border bg-card/50 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
 			<Select.Root
 				type="single"
 				value={envValue}
@@ -173,7 +173,7 @@
 							<span class="flex items-center gap-2">
 								<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
 								{#if role.description}
-									<span class="text-muted-foreground text-xs">{role.description}</span>
+									<span class="text-xs text-muted-foreground">{role.description}</span>
 								{/if}
 							</span>
 						</Select.Item>
@@ -189,7 +189,7 @@
 				showLabel={false}
 				onclick={() => removeAssignment(index)}
 				{disabled}
-				class="text-muted-foreground hover:text-destructive justify-self-end"
+				class="justify-self-end text-muted-foreground hover:text-destructive"
 				customLabel={m.users_role_assignments_remove()}
 			/>
 		</div>

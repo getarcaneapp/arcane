@@ -337,7 +337,7 @@
 								</Alert.Description>
 							</Alert.Root>
 						{:else}
-							<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<div class="divide-y divide-border/40 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 								<SettingsRow
 									label={m.security_local_auth_label()}
 									description={m.security_local_auth_description()}
@@ -389,7 +389,7 @@
 											/>
 											{#if showOidcDetails}
 												<Collapsible.Trigger
-													class="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+													class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 												>
 													<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
 													<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
@@ -400,7 +400,7 @@
 
 									{#if showOidcDetails}
 										<Collapsible.Content class="mt-4">
-											<div class="border-border/60 space-y-5 border-l-2 pl-5">
+											<div class="space-y-5 border-l-2 border-border/60 pl-5">
 												<div class="grid gap-5 sm:grid-cols-2">
 													<TextInputWithLabel
 														id="oidcClientId"
@@ -472,7 +472,7 @@
 													helpText={m.oidc_groups_claim_help()}
 												/>
 
-												<div class="divide-border/40 divide-y pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+												<div class="divide-y divide-border/40 pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 													<SettingsRow
 														label={m.security_oidc_merge_accounts_label()}
 														description={m.security_oidc_merge_accounts_description()}
@@ -511,14 +511,14 @@
 													</SettingsRow>
 												</div>
 
-												<div class="bg-muted/30 rounded-lg border p-4">
+												<div class="rounded-lg border bg-muted/30 p-4">
 													<div class="mb-2 flex items-center gap-2">
 														<InfoIcon class="size-4 text-blue-600" />
 														<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
 													</div>
-													<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
+													<p class="mb-3 text-sm text-muted-foreground">{m.oidc_redirect_uri_description()}</p>
 													<div class="flex items-center gap-2">
-														<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
+														<code class="flex-1 rounded bg-muted p-2 font-mono text-xs break-all">{redirectUri}</code>
 														<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
 													</div>
 												</div>
@@ -529,11 +529,11 @@
 							</div>
 
 							<IfPermitted adminOnly>
-								<div class="border-border/40 space-y-4 border-t pt-6">
+								<div class="space-y-4 border-t border-border/40 pt-6">
 									<div class="flex items-start justify-between gap-4">
 										<div>
 											<h4 class="text-sm font-semibold">{m.oidc_role_mappings_title()}</h4>
-											<p class="text-muted-foreground mt-0.5 text-xs">{m.oidc_role_mappings_description()}</p>
+											<p class="mt-0.5 text-xs text-muted-foreground">{m.oidc_role_mappings_description()}</p>
 										</div>
 										<ArcaneButton
 											action="create"
@@ -552,8 +552,8 @@
 											onEdit={openEditMapping}
 										/>
 									{:else}
-										<div class="border-border/40 bg-muted/20 rounded-lg border border-dashed p-6 text-center">
-											<p class="text-muted-foreground text-sm">{m.oidc_mappings_empty_body()}</p>
+										<div class="rounded-lg border border-dashed border-border/40 bg-muted/20 p-6 text-center">
+											<p class="text-sm text-muted-foreground">{m.oidc_mappings_empty_body()}</p>
 										</div>
 									{/if}
 								</div>

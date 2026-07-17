@@ -39,9 +39,9 @@
 	}
 </script>
 
-<div class="divide-border divide-y">
+<div class="divide-y divide-border">
 	{#if ignoredVulnerabilities.data.length === 0}
-		<div class="text-muted-foreground flex h-32 items-center justify-center">
+		<div class="flex h-32 items-center justify-center text-muted-foreground">
 			{#if isLoading}
 				<div class="flex items-center gap-2">
 					<div class="h-4 w-4 animate-spin rounded-full border-2 border-current border-t-transparent"></div>
@@ -53,10 +53,10 @@
 		</div>
 	{:else}
 		{#each ignoredVulnerabilities.data as item (item.id)}
-			<div class="hover:bg-muted/50 flex items-center justify-between p-4">
+			<div class="flex items-center justify-between p-4 hover:bg-muted/50">
 				<div class="flex-1 space-y-1">
 					<div class="flex items-center gap-2">
-						<ShieldAlertIcon class="text-muted-foreground h-4 w-4" />
+						<ShieldAlertIcon class="h-4 w-4 text-muted-foreground" />
 						<a
 							href="https://nvd.nist.gov/vuln/detail/{item.vulnerabilityId}"
 							target="_blank"
@@ -66,7 +66,7 @@
 							{item.vulnerabilityId}
 						</a>
 					</div>
-					<div class="text-muted-foreground flex flex-wrap items-center gap-x-4 gap-y-1 text-xs">
+					<div class="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
 						<span class="flex items-center gap-1">
 							<CodeIcon class="h-3 w-3" />
 							<span class="font-mono">{item.pkgName}@{item.installedVersion}</span>
@@ -80,7 +80,7 @@
 						<span>• {formatDate(item.createdAt)}</span>
 					</div>
 					{#if item.reason}
-						<div class="text-muted-foreground text-xs italic">
+						<div class="text-xs text-muted-foreground italic">
 							{item.reason}
 						</div>
 					{/if}
@@ -100,7 +100,7 @@
 
 		{#if ignoredVulnerabilities.pagination.totalPages > 1}
 			<div class="flex items-center justify-between border-t px-4 py-3">
-				<div class="text-muted-foreground text-xs">
+				<div class="text-xs text-muted-foreground">
 					{m.pagination_showing({
 						from: (ignoredVulnerabilities.pagination.currentPage - 1) * ignoredVulnerabilities.pagination.itemsPerPage + 1,
 						to: Math.min(
@@ -120,7 +120,7 @@
 					>
 						{m.common_previous()}
 					</ArcaneButton>
-					<span class="text-muted-foreground text-xs">
+					<span class="text-xs text-muted-foreground">
 						{ignoredVulnerabilities.pagination.currentPage} / {ignoredVulnerabilities.pagination.totalPages}
 					</span>
 					<ArcaneButton

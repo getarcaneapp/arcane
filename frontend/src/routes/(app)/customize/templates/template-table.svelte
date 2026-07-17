@@ -184,7 +184,7 @@
 {/snippet}
 
 {#snippet DescriptionCell({ item }: { item: Template })}
-	<span class="text-muted-foreground line-clamp-2 text-sm">
+	<span class="line-clamp-2 text-sm text-muted-foreground">
 		{truncateString(item.description, 80)}
 	</span>
 {/snippet}
@@ -253,7 +253,7 @@
 						<TagIcon class="size-3.5 text-purple-500" />
 					</div>
 					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+						<div class="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
 							{m.common_tags()}
 						</div>
 						<div class="mt-1 flex flex-wrap gap-1">

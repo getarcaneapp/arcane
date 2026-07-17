@@ -5,4 +5,4 @@
 	let { ref = $bindable(null), class: className, ...restProps }: DrawerPrimitive.TitleProps = $props();
 </script>
 
-<DrawerPrimitive.Title bind:ref data-slot="drawer-title" class={cn('text-foreground font-semibold', className)} {...restProps} />
+<DrawerPrimitive.Title bind:ref data-slot="drawer-title" class={cn('font-semibold text-foreground', className)} {...restProps} />

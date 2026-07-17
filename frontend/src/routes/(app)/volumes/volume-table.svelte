@@ -220,14 +220,14 @@
 		{#if item.size > 0}
 			<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 		{:else}
-			<span class="text-muted-foreground flex items-center gap-1 text-sm">
+			<span class="flex items-center gap-1 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 			</span>
 		{/if}
 	{:else if item.size > 0}
 		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}
-		<span class="text-muted-foreground text-sm">-</span>
+		<span class="text-sm text-muted-foreground">-</span>
 	{/if}
 {/snippet}
 

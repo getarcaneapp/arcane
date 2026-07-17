@@ -198,30 +198,30 @@
 
 {#snippet row(label: string, value: string | number)}
 	<div class="flex items-center justify-between gap-4 py-1.5">
-		<span class="text-muted-foreground text-sm">{label}</span>
+		<span class="text-sm text-muted-foreground">{label}</span>
 		<span class="text-sm font-medium tabular-nums">{value}</span>
 	</div>
 {/snippet}
 
 {#snippet sectionHeader(title: string, Icon: typeof ActivityIcon)}
 	<div class="mb-3 flex items-center gap-2">
-		<Icon class="text-muted-foreground size-4" />
+		<Icon class="size-4 text-muted-foreground" />
 		<h2 class="text-sm font-semibold tracking-tight">{title}</h2>
 	</div>
 {/snippet}
 
 <div class="px-2 py-4 sm:px-6 sm:py-6 lg:px-8">
 	<!-- Header -->
-	<div class="border-border/50 flex flex-wrap items-center justify-between gap-4 border-b pb-4 sm:pb-6">
+	<div class="flex flex-wrap items-center justify-between gap-4 border-b border-border/50 pb-4 sm:pb-6">
 		<div class="flex items-start gap-3 sm:gap-4">
 			<div
-				class="bg-primary/10 text-primary ring-primary/20 flex size-9 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+				class="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
 			>
 				<ActivityIcon class="size-4 sm:size-5" />
 			</div>
 			<div>
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{m.diagnostics_title()}</h1>
-				<p class="text-muted-foreground mt-1 text-sm">{m.diagnostics_description()}</p>
+				<p class="mt-1 text-sm text-muted-foreground">{m.diagnostics_description()}</p>
 			</div>
 		</div>
 
@@ -232,7 +232,7 @@
 				></span>
 				{paused ? m.diagnostics_status_paused() : connected ? m.diagnostics_status_live() : m.diagnostics_status_connecting()}
 			</span>
-			<span class="text-muted-foreground hidden text-xs tabular-nums sm:inline"
+			<span class="hidden text-xs text-muted-foreground tabular-nums sm:inline"
 				>{m.diagnostics_updated_ago({ ago: agoText })}</span
 			>
 			<ArcaneButton
@@ -254,7 +254,7 @@
 	</div>
 
 	{#if error}
-		<div class="border-destructive/40 bg-destructive/10 text-destructive mt-4 rounded-lg border px-3 py-2 text-sm">
+		<div class="mt-4 rounded-lg border border-destructive/40 bg-destructive/10 px-3 py-2 text-sm text-destructive">
 			{error}
 		</div>
 	{/if}
@@ -304,7 +304,7 @@
 			<!-- Runtime -->
 			<section>
 				{@render sectionHeader(m.diagnostics_section_runtime(), CpuIcon)}
-				<div class="divide-border/40 divide-y">
+				<div class="divide-y divide-border/40">
 					{@render row(m.diagnostics_runtime_go_version(), diag.runtime.goVersion)}
 					{@render row(m.diagnostics_runtime_platform(), `${diag.runtime.os}/${diag.runtime.arch}`)}
 					{@render row(m.diagnostics_runtime_gomaxprocs(), diag.runtime.gomaxprocs)}
@@ -320,12 +320,12 @@
 			<section>
 				{@render sectionHeader(m.diagnostics_section_memory(), MemoryStickIcon)}
 				{#if heapBar}
-					<div class="bg-muted/40 mb-3 flex h-2.5 overflow-hidden rounded-full">
+					<div class="mb-3 flex h-2.5 overflow-hidden rounded-full bg-muted/40">
 						<div class="bg-violet-500" style="width: {heapBar.inuse}%" title={m.diagnostics_mem_in_use()}></div>
 						<div class="bg-violet-500/40" style="width: {heapBar.idle}%" title={m.diagnostics_mem_idle()}></div>
 						<div class="bg-zinc-500/40" style="width: {heapBar.released}%" title={m.diagnostics_mem_released()}></div>
 					</div>
-					<div class="text-muted-foreground mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px]">
+					<div class="mb-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-muted-foreground">
 						<span
 							><span class="mr-1 inline-block size-2 rounded-full bg-violet-500"></span>{m.diagnostics_mem_in_use()}
 							{fmtBytes(diag.memory.heapInuse)}</span
@@ -340,7 +340,7 @@
 						>
 					</div>
 				{/if}
-				<div class="divide-border/40 divide-y">
+				<div class="divide-y divide-border/40">
 					{@render row(m.diagnostics_mem_heap_alloc(), fmtBytes(diag.memory.heapAlloc))}
 					{@render row(m.diagnostics_mem_heap_sys(), fmtBytes(diag.memory.heapSys))}
 					{@render row(m.diagnostics_mem_heap_objects(), fmtNum(diag.memory.heapObjects))}
@@ -355,7 +355,7 @@
 			<!-- GC -->
 			<section>
 				{@render sectionHeader(m.diagnostics_section_gc(), RefreshIcon)}
-				<div class="divide-border/40 divide-y">
+				<div class="divide-y divide-border/40">
 					{@render row(m.diagnostics_gc_total_cycles(), fmtNum(diag.gc.numGc))}
 					{@render row(m.diagnostics_gc_forced_cycles(), fmtNum(diag.memory.numForcedGc))}
 					{@render row(m.diagnostics_gc_total_pause(), fmtMs(diag.gc.pauseTotalNs))}
@@ -363,11 +363,11 @@
 				</div>
 				{#if diag.gc.recentPausesNs?.length}
 					<div class="mt-3">
-						<div class="text-muted-foreground mb-1 text-[11px]">{m.diagnostics_gc_recent_pauses()}</div>
+						<div class="mb-1 text-[11px] text-muted-foreground">{m.diagnostics_gc_recent_pauses()}</div>
 						<div class="flex h-12 items-end gap-0.5">
 							{#each diag.gc.recentPausesNs as p, i (i)}
 								<div
-									class="bg-amber-500/70 flex-1 rounded-sm"
+									class="flex-1 rounded-sm bg-amber-500/70"
 									style="height: {maxPause ? Math.max(4, (p / maxPause) * 100) : 4}%"
 									title={fmtMs(p)}
 								></div>
@@ -380,7 +380,7 @@
 			<!-- WebSocket -->
 			<section>
 				{@render sectionHeader(m.diagnostics_section_websocket(), ConnectionIcon)}
-				<div class="divide-border/40 divide-y">
+				<div class="divide-y divide-border/40">
 					{@render row(m.diagnostics_ws_project_logs(), fmtNum(diag.websocket.snapshot.projectLogsActive))}
 					{@render row(m.diagnostics_ws_container_logs(), fmtNum(diag.websocket.snapshot.containerLogsActive))}
 					{@render row(m.diagnostics_ws_container_stats(), fmtNum(diag.websocket.snapshot.containerStats))}
@@ -395,9 +395,9 @@
 		{#if diag.websocket.connections?.length}
 			<section class="mt-8">
 				{@render sectionHeader(m.diagnostics_section_connections({ count: diag.websocket.connections.length }), ConnectionIcon)}
-				<div class="border-border/60 overflow-x-auto rounded-xl border">
+				<div class="overflow-x-auto rounded-xl border border-border/60">
 					<table class="w-full text-left text-sm">
-						<thead class="bg-muted/30 text-muted-foreground text-xs">
+						<thead class="bg-muted/30 text-xs text-muted-foreground">
 							<tr>
 								<th class="px-3 py-2 font-medium">{m.diagnostics_conn_kind()}</th>
 								<th class="px-3 py-2 font-medium">{m.diagnostics_conn_resource()}</th>
@@ -406,14 +406,14 @@
 								<th class="px-3 py-2 font-medium">{m.diagnostics_conn_since()}</th>
 							</tr>
 						</thead>
-						<tbody class="divide-border/40 divide-y">
+						<tbody class="divide-y divide-border/40">
 							{#each diag.websocket.connections as c (c.id)}
 								<tr class="hover:bg-muted/20">
 									<td class="px-3 py-2">{wsKindLabels[c.kind] ?? c.kind}</td>
-									<td class="text-muted-foreground px-3 py-2 font-mono text-xs">{c.resourceId || '—'}</td>
-									<td class="text-muted-foreground px-3 py-2 font-mono text-xs">{c.clientIp || '—'}</td>
-									<td class="text-muted-foreground px-3 py-2 text-xs">{c.userId || '—'}</td>
-									<td class="text-muted-foreground px-3 py-2 text-xs tabular-nums">
+									<td class="px-3 py-2 font-mono text-xs text-muted-foreground">{c.resourceId || '—'}</td>
+									<td class="px-3 py-2 font-mono text-xs text-muted-foreground">{c.clientIp || '—'}</td>
+									<td class="px-3 py-2 text-xs text-muted-foreground">{c.userId || '—'}</td>
+									<td class="px-3 py-2 text-xs text-muted-foreground tabular-nums">
 										{c.startedAt ? formatTime(c.startedAt) : '—'}
 									</td>
 								</tr>
@@ -438,14 +438,14 @@
 					{@const name = d.id as 'goroutine' | 'heap'}
 					<Collapsible.Root open={dumpOpen[name]} onOpenChange={(o: boolean) => onDumpToggle(name, o)}>
 						<Collapsible.Trigger
-							class="border-border/60 bg-card/40 hover:bg-muted/30 flex w-full items-center justify-between rounded-lg border px-3 py-2 text-sm font-medium"
+							class="flex w-full items-center justify-between rounded-lg border border-border/60 bg-card/40 px-3 py-2 text-sm font-medium hover:bg-muted/30"
 						>
 							{d.label}
 							<ArrowDownIcon class={cn('size-4 transition-transform', dumpOpen[name] && '-rotate-180')} />
 						</Collapsible.Trigger>
 						<Collapsible.Content>
 							<pre
-								class="border-border/60 bg-background mt-1 max-h-96 overflow-auto rounded-lg border p-3 font-mono text-[11px] leading-relaxed">{dumpLoading[
+								class="mt-1 max-h-96 overflow-auto rounded-lg border border-border/60 bg-background p-3 font-mono text-[11px] leading-relaxed">{dumpLoading[
 									name
 								]
 									? m.diagnostics_dump_loading()
@@ -459,7 +459,7 @@
 		<!-- Profiles -->
 		<section class="mt-8 pb-8">
 			{@render sectionHeader(m.diagnostics_section_profiles(), DownloadIcon)}
-			<p class="text-muted-foreground mb-3 text-sm">{m.diagnostics_profiles_hint()}</p>
+			<p class="mb-3 text-sm text-muted-foreground">{m.diagnostics_profiles_hint()}</p>
 			<div class="flex flex-wrap gap-2">
 				{#each profiles as p (p.id)}
 					<ArcaneButton
@@ -476,6 +476,6 @@
 			</div>
 		</section>
 	{:else if !error}
-		<div class="text-muted-foreground py-16 text-center text-sm">{m.diagnostics_loading()}</div>
+		<div class="py-16 text-center text-sm text-muted-foreground">{m.diagnostics_loading()}</div>
 	{/if}
 </div>

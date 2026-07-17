@@ -177,7 +177,7 @@
 	{#if cell.column.id === 'actions'}
 		<!-- Pinned row actions: a floating chip at the row's end, always present in its own gutter. -->
 		<div class="flex items-center justify-end py-1 pr-3 pl-2" data-row-select-ignore>
-			<div class="bg-card/90 border-border/50 flex items-center gap-0.5 rounded-full border p-0.5 shadow-sm backdrop-blur-sm">
+			<div class="flex items-center gap-0.5 rounded-full border border-border/50 bg-card/90 p-0.5 shadow-sm backdrop-blur-sm">
 				<FlexRender {cell} />
 			</div>
 		</div>
@@ -199,7 +199,7 @@
 		{#if hasExpand}
 			<Table.Cell class="w-8 px-2" data-row-select-ignore>
 				<button
-					class="text-muted-foreground hover:text-foreground flex items-center justify-center transition-transform duration-200"
+					class="flex items-center justify-center text-muted-foreground transition-transform duration-200 hover:text-foreground"
 					class:rotate-90={isExpanded}
 					onclick={(e) => {
 						e.stopPropagation();
@@ -256,7 +256,7 @@
 	class={cn(
 		'h-full w-full',
 		unstyled &&
-			'[&_tr]:border-border/40! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_td]:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
+			'[&_td]:bg-transparent! [&_thead]:bg-transparent! [&_thead]:backdrop-blur-none [&_tr]:border-border/40! [&_tr]:bg-transparent! [&_tr]:hover:bg-transparent! [&_tr:hover_td]:bg-transparent! [&_tr[data-state=selected]]:bg-transparent! [&_tr[data-state=selected]_td]:bg-transparent!'
 	)}
 >
 	<Table.Root class={shouldVirtualize ? 'table-fixed' : undefined}>
@@ -271,7 +271,7 @@
 							colspan={header.colSpan}
 							class={cn(
 								header.column.id === 'select' && selectCellClasses,
-								header.column.id === 'actions' && cn(actionsCellClasses, 'bg-background z-[var(--arcane-z-page-floating)]')
+								header.column.id === 'actions' && cn(actionsCellClasses, 'z-[var(--arcane-z-page-floating)] bg-background')
 							)}
 						>
 							{#if !header.isPlaceholder}
@@ -312,15 +312,15 @@
 						<Table.Cell colspan={columnsCount - (selectionDisabled ? 0 : 1)} class="py-3 font-medium">
 							<div class="flex items-center gap-2">
 								{#if isCollapsed}
-									<ArrowRightIcon class="text-muted-foreground size-4" />
+									<ArrowRightIcon class="size-4 text-muted-foreground" />
 								{:else}
-									<ArrowDownIcon class="text-muted-foreground size-4" />
+									<ArrowDownIcon class="size-4 text-muted-foreground" />
 								{/if}
 								{#if IconComponent}
-									<IconComponent class="text-muted-foreground size-4" />
+									<IconComponent class="size-4 text-muted-foreground" />
 								{/if}
 								<span>{group.groupName}</span>
-								<span class="text-muted-foreground text-xs font-normal">({group.items.length})</span>
+								<span class="text-xs font-normal text-muted-foreground">({group.items.length})</span>
 							</div>
 						</Table.Cell>
 					</Table.Row>

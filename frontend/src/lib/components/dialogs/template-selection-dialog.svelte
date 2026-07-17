@@ -155,7 +155,7 @@
 </script>
 
 {#snippet templateCard(template: Template, showRegistry: boolean = false)}
-	<Card class="hover:bg-muted/50 hover:border-primary/20 border transition-colors">
+	<Card class="border transition-colors hover:border-primary/20 hover:bg-muted/50">
 		<div class="p-4">
 			<div class="mb-2 flex items-start justify-between gap-2">
 				<div class="flex min-w-0 items-start gap-3">
@@ -194,7 +194,7 @@
 				</div>
 			{/if}
 
-			<p class="text-muted-foreground mb-3 line-clamp-2 text-sm">
+			<p class="mb-3 line-clamp-2 text-sm text-muted-foreground">
 				{template.description}
 			</p>
 
@@ -207,7 +207,7 @@
 			{/if}
 
 			<div class="flex items-center justify-between gap-2">
-				<div class="text-muted-foreground text-xs">
+				<div class="text-xs text-muted-foreground">
 					{template.isRemote ? m.templates_remote_template_label() : m.templates_local_template_label()}
 				</div>
 				<div class="flex gap-2">
@@ -259,7 +259,7 @@
 				<div class="flex items-center gap-3">
 					<Label for="sortBy" class="text-sm font-medium whitespace-nowrap">{m.common_sort_by()}</Label>
 					<Select.Root bind:value={sortBy} type="single">
-						<Select.Trigger id="sortBy" class="bg-background h-9 rounded-md border px-2 text-sm">
+						<Select.Trigger id="sortBy" class="h-9 rounded-md border bg-background px-2 text-sm">
 							{filters[sortBy]}
 						</Select.Trigger>
 						<Select.Content>
@@ -273,7 +273,7 @@
 
 			<ScrollArea class="max-h-[65vh]">
 				{#if allTemplates.length === 0}
-					<div class="text-muted-foreground py-10 text-center">
+					<div class="py-10 text-center text-muted-foreground">
 						<FileTextIcon class="mx-auto mb-4 size-12 opacity-50" />
 						<p class="mb-2">{m.templates_no_templates()}</p>
 						<p class="text-sm">

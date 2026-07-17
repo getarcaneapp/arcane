@@ -39,10 +39,10 @@
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
 			class={cn(
-				'group focus-visible:ring-ring relative flex items-center transition-colors focus-visible:ring-2 focus-visible:outline-hidden',
+				'group relative flex items-center transition-colors focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
 				collapsed
 					? 'mx-auto h-9 w-9 justify-center rounded-xl'
-					: 'text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground h-8 w-full rounded-md px-2',
+					: 'h-8 w-full rounded-md px-2 text-sidebar-foreground/80 hover:bg-sidebar-accent hover:text-sidebar-accent-foreground',
 				className
 			)}
 		>
@@ -69,7 +69,7 @@
 				</span>
 			{:else if isActive}
 				<span
-					class="bg-primary text-primary-foreground ring-sidebar absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-4 font-bold tabular-nums ring-2"
+					class="absolute -top-0.5 -right-0.5 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-bold text-primary-foreground tabular-nums ring-2 ring-sidebar"
 				>
 					{activeCount > 9 ? m.activity_count_many() : activeCount}
 				</span>
@@ -82,7 +82,7 @@
 			title={m.activity_center_open()}
 			aria-label={m.activity_center_open()}
 			class={cn(
-				'text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring relative flex items-center gap-3 rounded-lg transition-colors focus-visible:ring-2 focus-visible:outline-hidden',
+				'relative flex items-center gap-3 rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-hidden',
 				mobile
 					? 'w-full px-4 py-3 text-sm font-medium'
 					: collapsed
@@ -97,7 +97,7 @@
 					<span
 						aria-live="polite"
 						aria-atomic="true"
-						class="bg-primary text-primary-foreground absolute -top-2 -right-2 flex min-w-4 items-center justify-center rounded-full px-1 text-[10px] leading-4 font-bold tabular-nums"
+						class="absolute -top-2 -right-2 flex min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] leading-4 font-bold text-primary-foreground tabular-nums"
 					>
 						{activeCount > 9 ? m.activity_count_many() : activeCount}
 					</span>
@@ -106,7 +106,7 @@
 			{#if !collapsed || mobile}
 				<span class="min-w-0 flex-1 truncate text-left">{m.activity_center_title()}</span>
 				{#if activeCount > 0}
-					<span class="text-primary text-xs font-semibold tabular-nums">{m.activity_active_count({ count: activeCount })}</span>
+					<span class="text-xs font-semibold text-primary tabular-nums">{m.activity_active_count({ count: activeCount })}</span>
 				{/if}
 			{/if}
 		</button>

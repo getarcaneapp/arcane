@@ -135,14 +135,14 @@
 	{#snippet mainContent()}
 		<fieldset class="relative">
 			<div class="space-y-4 sm:space-y-6">
-				<Card.Root class="border-primary/20 bg-primary/5 overflow-hidden pt-0">
+				<Card.Root class="overflow-hidden border-primary/20 bg-primary/5 pt-0">
 					<Card.Content class="px-3 py-4 sm:px-6">
 						<div class="flex items-start gap-3">
-							<div class="text-primary mt-0.5 shrink-0">
+							<div class="mt-0.5 shrink-0 text-primary">
 								<AlertIcon class="size-5" />
 							</div>
 							<div class="space-y-1 text-sm">
-								<p class="text-foreground font-medium">{m.variables_about_title()}</p>
+								<p class="font-medium text-foreground">{m.variables_about_title()}</p>
 								<p class="text-muted-foreground">
 									{m.variables_about_description()}
 								</p>
@@ -152,10 +152,10 @@
 				</Card.Root>
 
 				<Card.Root class="overflow-hidden pt-0">
-					<Card.Header class="bg-muted/20 sticky top-0 z-[var(--arcane-z-sticky)] border-b !py-3">
+					<Card.Header class="sticky top-0 z-[var(--arcane-z-sticky)] border-b bg-muted/20 !py-3">
 						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
 							<div class="flex items-center gap-3">
-								<div class="bg-primary/10 text-primary ring-primary/20 flex size-8 items-center justify-center rounded-lg ring-1">
+								<div class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
 									<VariableIcon class="size-4" />
 								</div>
 								<div>
@@ -172,7 +172,7 @@
 
 							<div class="flex items-center gap-2">
 								<div class="relative w-full sm:w-52">
-									<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+									<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 									<Input type="text" placeholder={m.common_search()} bind:value={searchQuery} class="h-9 pl-10" />
 								</div>
 								{#if canUpdateVariables}
@@ -191,13 +191,13 @@
 
 					<Card.Content class="px-3 py-4 sm:px-6">
 						{#if filteredVars.length === 0 && searchQuery.trim()}
-							<div class="text-muted-foreground flex flex-col items-center justify-center py-12 text-center">
+							<div class="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
 								<SearchIcon class="mb-3 size-12 opacity-20" />
 								<p class="text-sm font-medium">{m.variables_no_results_title()}</p>
 								<p class="text-xs">{m.variables_no_results_description()}</p>
 							</div>
 						{:else if filteredVars.length === 0}
-							<div class="text-muted-foreground flex flex-col items-center justify-center py-12 text-center">
+							<div class="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
 								<VariableIcon class="mb-3 size-12 opacity-20" />
 								<p class="text-sm font-medium">{m.variables_no_variables_title()}</p>
 								<p class="text-xs">{m.variables_no_variables_description()}</p>
@@ -231,7 +231,7 @@
 													}}
 												/>
 											</InputGroup.Root>
-											<span class="text-muted-foreground font-mono text-sm">=</span>
+											<span class="font-mono text-sm text-muted-foreground">=</span>
 											<InputGroup.Root class="flex-[2]">
 												<InputGroup.Input
 													type="text"

@@ -75,9 +75,9 @@
 	}
 </script>
 
-<div class="bg-background flex h-full min-h-0 flex-col">
+<div class="flex h-full min-h-0 flex-col bg-background">
 	<div
-		class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-[var(--arcane-z-sticky)] mb-2 border-b backdrop-blur"
+		class="sticky top-0 z-[var(--arcane-z-sticky)] mb-2 border-b bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/80"
 	>
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex min-w-0 items-center gap-4">
@@ -90,7 +90,7 @@
 					customLabel={m.common_back()}
 					onclick={() => goto('/customize/templates')}
 				/>
-				<div class="bg-border hidden h-4 w-px sm:block"></div>
+				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden min-w-0 items-center gap-3 sm:flex">
 					<EditableName
 						bind:value={$inputs.name.value}

@@ -301,9 +301,9 @@
 									class={$inputs.containerName.error ? 'border-destructive' : ''}
 								/>
 								{#if $inputs.containerName.error}
-									<p class="text-destructive mt-1 text-xs">{$inputs.containerName.error}</p>
+									<p class="mt-1 text-xs text-destructive">{$inputs.containerName.error}</p>
 								{/if}
-								<p class="text-muted-foreground text-xs">{m.container_name_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.container_name_description()}</p>
 							</div>
 
 							<div class="space-y-3">
@@ -319,9 +319,9 @@
 									class={$inputs.image.error ? 'border-destructive' : ''}
 								/>
 								{#if $inputs.image.error}
-									<p class="text-destructive mt-1 text-xs">{$inputs.image.error}</p>
+									<p class="mt-1 text-xs text-destructive">{$inputs.image.error}</p>
 								{/if}
-								<p class="text-muted-foreground text-xs">{m.container_image_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.container_image_description()}</p>
 							</div>
 						</div>
 
@@ -421,7 +421,7 @@
 										{#each envVars as env, index (index)}
 											<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 												<Input type="text" placeholder="KEY" bind:value={env.key} disabled={isLoading} class="flex-1" />
-												<span class="text-muted-foreground hidden font-mono sm:inline">=</span>
+												<span class="hidden font-mono text-muted-foreground sm:inline">=</span>
 												<Input type="text" placeholder="value" bind:value={env.value} disabled={isLoading} class="flex-1" />
 												<ArcaneButton
 													action="base"
@@ -429,7 +429,7 @@
 													size="icon"
 													onclick={() => removeEnvVar(index)}
 													disabled={isLoading || envVars.length <= 1}
-													class="text-destructive hover:text-destructive shrink-0"
+													class="shrink-0 text-destructive hover:text-destructive"
 													icon={CloseIcon}
 												/>
 											</div>
@@ -460,9 +460,9 @@
 											class={$inputs.environmentVars.error ? 'border-destructive' : ''}
 										/>
 										{#if $inputs.environmentVars.error}
-											<p class="text-destructive text-xs">{$inputs.environmentVars.error}</p>
+											<p class="text-xs text-destructive">{$inputs.environmentVars.error}</p>
 										{/if}
-										<p class="text-muted-foreground text-xs">{m.env_text_description()}</p>
+										<p class="text-xs text-muted-foreground">{m.env_text_description()}</p>
 									</div>
 								</div>
 							</div>
@@ -480,14 +480,14 @@
 											<div class="space-y-2 rounded-lg border p-3 sm:space-y-0 sm:border-0 sm:p-0">
 												<div class="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-3">
 													<div class="flex flex-1 items-center gap-2">
-														<div class="text-muted-foreground min-w-12 text-xs whitespace-nowrap sm:text-sm">
+														<div class="min-w-12 text-xs whitespace-nowrap text-muted-foreground sm:text-sm">
 															{m.port_label_host()}
 														</div>
 														<Input type="text" placeholder="8080" bind:value={mapping.host} disabled={isLoading} class="flex-1" />
 													</div>
-													<span class="text-muted-foreground hidden sm:inline">→</span>
+													<span class="hidden text-muted-foreground sm:inline">→</span>
 													<div class="flex flex-1 items-center gap-2">
-														<div class="text-muted-foreground min-w-16 text-xs whitespace-nowrap sm:min-w-20 sm:text-sm">
+														<div class="min-w-16 text-xs whitespace-nowrap text-muted-foreground sm:min-w-20 sm:text-sm">
 															{m.port_label_container()}
 														</div>
 														<Input
@@ -513,7 +513,7 @@
 															size="icon"
 															onclick={() => removePortMapping(index)}
 															disabled={isLoading || portMappings.length <= 1}
-															class="text-destructive hover:text-destructive shrink-0"
+															class="shrink-0 text-destructive hover:text-destructive"
 															icon={CloseIcon}
 														/>
 													</div>
@@ -574,7 +574,7 @@
 														disabled={isLoading}
 														class="flex-1"
 													/>
-													<span class="text-muted-foreground hidden sm:inline">:</span>
+													<span class="hidden text-muted-foreground sm:inline">:</span>
 													<Input
 														type="text"
 														placeholder={m.container_path()}
@@ -588,7 +588,7 @@
 														size="icon"
 														onclick={() => removeVolumeMount(index)}
 														disabled={isLoading || volumeMounts.length <= 1}
-														class="text-destructive hover:text-destructive shrink-0 self-end sm:self-auto"
+														class="shrink-0 self-end text-destructive hover:text-destructive sm:self-auto"
 														icon={CloseIcon}
 													/>
 												</div>
@@ -624,9 +624,9 @@
 											class={$inputs.volumes.error ? 'border-destructive' : ''}
 										/>
 										{#if $inputs.volumes.error}
-											<p class="text-destructive text-xs">{$inputs.volumes.error}</p>
+											<p class="text-xs text-destructive">{$inputs.volumes.error}</p>
 										{/if}
-										<p class="text-muted-foreground text-xs">{m.volumes_text_description()}</p>
+										<p class="text-xs text-muted-foreground">{m.volumes_text_description()}</p>
 									</div>
 								</div>
 							</div>
@@ -701,7 +701,7 @@
 													disabled={isLoading}
 													bind:value={$inputs.restartMaxRetries.value}
 												/>
-												<p class="text-muted-foreground text-xs">{m.max_retry_description()}</p>
+												<p class="text-xs text-muted-foreground">{m.max_retry_description()}</p>
 											</div>
 										{/if}
 									</div>
@@ -720,9 +720,9 @@
 											class={$inputs.labels.error ? 'border-destructive' : ''}
 										/>
 										{#if $inputs.labels.error}
-											<p class="text-destructive text-xs">{$inputs.labels.error}</p>
+											<p class="text-xs text-destructive">{$inputs.labels.error}</p>
 										{/if}
-										<p class="text-muted-foreground text-xs">{m.containers_labels_description()}</p>
+										<p class="text-xs text-muted-foreground">{m.containers_labels_description()}</p>
 									</div>
 								</div>
 							</div>

@@ -297,11 +297,11 @@
 	{@const statusValue = resolveEnvironmentStatus(item)}
 	<div class="flex items-center gap-3">
 		<div class="relative">
-			<div class="bg-muted flex size-8 items-center justify-center rounded-lg">
-				<EnvironmentsIcon class="text-muted-foreground size-4" />
+			<div class="flex size-8 items-center justify-center rounded-lg bg-muted">
+				<EnvironmentsIcon class="size-4 text-muted-foreground" />
 			</div>
 			<div
-				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {statusValue === 'online'
+				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
 					? 'bg-green-500'
 					: statusValue === 'standby'
 						? 'bg-blue-500'
@@ -322,7 +322,7 @@
 			>
 				{item.name}
 			</button>
-			<span class="text-muted-foreground font-mono text-xs leading-tight">{item.apiUrl}</span>
+			<span class="font-mono text-xs leading-tight text-muted-foreground">{item.apiUrl}</span>
 		</div>
 	</div>
 {/snippet}
@@ -342,7 +342,7 @@
 {/snippet}
 
 {#snippet ApiCell({ value }: { value: unknown })}
-	<span class="text-muted-foreground font-mono text-sm">{String(value)}</span>
+	<span class="font-mono text-sm text-muted-foreground">{String(value)}</span>
 {/snippet}
 
 {#snippet EnabledCell({ value }: { value: unknown })}

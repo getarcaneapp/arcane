@@ -28,7 +28,7 @@
       "extensions": [
         "golang.go",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode",
+        "oxc.oxc-vscode",
         "svelte.svelte-vscode",
         "bradlc.vscode-tailwindcss",
         "ms-azuretools.vscode-docker",

@@ -102,7 +102,7 @@
 	}}
 >
 	{#if type !== undefined && loading}
-		<div class="bg-background/30 absolute inset-0 flex items-center justify-center rounded-[inherit] backdrop-blur-[1px]">
+		<div class="absolute inset-0 flex items-center justify-center rounded-[inherit] bg-background/30 backdrop-blur-[1px]">
 			<Spinner class="size-4" />
 		</div>
 		<span class="sr-only">{m.common_loading_label({ label: displayLoadingLabel })}</span>

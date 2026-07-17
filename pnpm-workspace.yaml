@@ -37,7 +37,6 @@ allowBuilds:
   esbuild: true
   sharp: true
 minimumReleaseAgeExclude:
-  - prettier-plugin-svelte@4.0.1
   - "@fallow-cli/darwin-arm64@2.89.0"
   - "@fallow-cli/darwin-x64@2.89.0"
   - "@fallow-cli/linux-arm64-gnu@2.89.0"

@@ -117,13 +117,13 @@
 	<div class="grid min-h-dvh w-full max-w-screen-2xl grid-cols-1 lg:grid-cols-[1.05fr_minmax(420px,0.95fr)]">
 		<aside class="showcase relative hidden flex-col justify-between overflow-hidden p-10 lg:flex xl:p-14">
 			<div class="relative z-[var(--arcane-z-raised)] flex items-center gap-3">
-				<div class="bg-card/40 ring-border/40 inline-flex size-10 items-center justify-center rounded-xl border ring-1">
+				<div class="inline-flex size-10 items-center justify-center rounded-xl border bg-card/40 ring-1 ring-border/40">
 					<img class="h-6 w-auto" src={logoUrl} alt="" />
 				</div>
 				<div class="flex flex-col leading-tight">
-					<span class="text-foreground/90 text-sm font-medium tracking-wide">{m.layout_title()}</span>
+					<span class="text-sm font-medium tracking-wide text-foreground/90">{m.layout_title()}</span>
 					{#if data.versionInformation?.displayVersion}
-						<span class="text-muted-foreground/60 font-mono text-[10px] tracking-wider"
+						<span class="font-mono text-[10px] tracking-wider text-muted-foreground/60"
 							>{data.versionInformation.displayVersion}</span
 						>
 					{/if}
@@ -131,10 +131,10 @@
 			</div>
 
 			<div class="relative z-[var(--arcane-z-raised)] max-w-xl">
-				<h2 class="text-foreground text-5xl leading-[1.05] font-semibold tracking-tight text-balance xl:text-6xl">
+				<h2 class="text-5xl leading-[1.05] font-semibold tracking-tight text-balance text-foreground xl:text-6xl">
 					{m.auth_tagline_line1()}
 					<span
-						class="to-foreground/70 bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] bg-clip-text text-transparent"
+						class="bg-gradient-to-br from-[var(--primary)] via-[var(--primary)] to-foreground/70 bg-clip-text text-transparent"
 						>{m.auth_tagline_line2()}</span
 					>
 				</h2>
@@ -146,18 +146,18 @@
 		<section class="form-pane relative flex min-h-dvh flex-col items-center justify-center p-6 sm:p-10 lg:p-10 xl:p-14">
 			<div class="mb-8 flex w-full max-w-md justify-center lg:hidden">
 				<div
-					class="bg-card/80 ring-border/40 flex items-center justify-center rounded-2xl border p-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)] ring-1"
+					class="flex items-center justify-center rounded-2xl border bg-card/80 p-5 shadow-[0_8px_32px_-8px_rgba(0,0,0,0.35)] ring-1 ring-border/40"
 				>
 					<img class="h-16 w-auto" src={logoUrl} alt={m.layout_title()} />
 				</div>
 			</div>
 
 			<div class="login-card-wrap relative w-full sm:w-[26rem] sm:max-w-full">
-				<div class="bg-primary/70 mb-8 h-px w-10 shadow-[0_0_8px_var(--primary)]"></div>
+				<div class="mb-8 h-px w-10 bg-primary/70 shadow-[0_0_8px_var(--primary)]"></div>
 
 				<div class="mb-8 flex flex-col text-left">
 					<h1 class="text-3xl font-semibold tracking-tight sm:text-[2rem]">{m.auth_welcome_back_title()}</h1>
-					<p class="text-muted-foreground mt-2 text-sm">{m.auth_login_subtitle()}</p>
+					<p class="mt-2 text-sm text-muted-foreground">{m.auth_login_subtitle()}</p>
 				</div>
 
 				<div class="space-y-4">
@@ -282,11 +282,11 @@
 						{#if showDivider}
 							<div class="relative my-4">
 								<div class="absolute inset-0 flex items-center">
-									<div class="border-border/60 w-full border-t"></div>
+									<div class="w-full border-t border-border/60"></div>
 								</div>
 								<div class="relative flex justify-center text-xs">
 									<span
-										class="bg-card/70 ring-border/40 text-muted-foreground rounded-full border px-3 py-1 shadow-sm ring-1 backdrop-blur-md"
+										class="rounded-full border bg-card/70 px-3 py-1 text-muted-foreground shadow-sm ring-1 ring-border/40 backdrop-blur-md"
 									>
 										{m.auth_or_continue()}
 									</span>
@@ -305,13 +305,13 @@
 						href="https://github.com/ofkm/arcane"
 						target="_blank"
 						rel="noopener noreferrer"
-						class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
+						class="inline-flex items-center gap-1.5 rounded-full border bg-card/50 px-3 py-1.5 text-xs text-muted-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-card/70 hover:text-foreground"
 					>
 						<GithubIcon class="size-3.5" />
 						{m.common_view_on_github()}
 					</a>
 					{#if data.versionInformation?.displayVersion}
-						<span class="text-muted-foreground/60 font-mono text-[11px] tracking-wider"
+						<span class="font-mono text-[11px] tracking-wider text-muted-foreground/60"
 							>{data.versionInformation.displayVersion}</span
 						>
 					{/if}
@@ -325,7 +325,7 @@
 			href="https://github.com/ofkm/arcane"
 			target="_blank"
 			rel="noopener noreferrer"
-			class="bg-card/50 ring-border/40 text-muted-foreground hover:text-foreground hover:bg-card/70 pointer-events-auto inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs shadow-sm ring-1 transition-colors"
+			class="pointer-events-auto inline-flex items-center gap-1.5 rounded-full border bg-card/50 px-3 py-1.5 text-xs text-muted-foreground shadow-sm ring-1 ring-border/40 transition-colors hover:bg-card/70 hover:text-foreground"
 		>
 			<GithubIcon class="size-3.5" />
 			{m.common_view_on_github()}

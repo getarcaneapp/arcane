@@ -129,7 +129,7 @@
 			{#if isLoading && candidates.length === 0}
 				<div class="flex justify-center py-10"><Spinner class="size-6" /></div>
 			{:else if candidates.length === 0}
-				<div class="text-muted-foreground rounded-lg border border-dashed p-6 text-center text-sm">
+				<div class="rounded-lg border border-dashed p-6 text-center text-sm text-muted-foreground">
 					{m.swarm_easy_join_no_candidates()}
 				</div>
 			{:else}
@@ -145,7 +145,7 @@
 								/>
 								<span>
 									<span class="block text-sm font-medium">{candidate.environmentName}</span>
-									<span class="text-muted-foreground text-xs">{candidate.environmentType} · {candidate.status}</span>
+									<span class="text-xs text-muted-foreground">{candidate.environmentType} · {candidate.status}</span>
 								</span>
 							</label>
 
@@ -155,7 +155,7 @@
 										<label class="space-y-1 text-xs">
 											<span class="text-muted-foreground">{m.common_role()}</span>
 											<select
-												class="border-input bg-background h-9 w-full rounded-md border px-3"
+												class="h-9 w-full rounded-md border border-input bg-background px-3"
 												value={target.role}
 												onchange={(event) =>
 													updateTarget(candidate.environmentId, {
@@ -169,7 +169,7 @@
 										<label class="space-y-1 text-xs">
 											<span class="text-muted-foreground">{m.swarm_availability()}</span>
 											<select
-												class="border-input bg-background h-9 w-full rounded-md border px-3"
+												class="h-9 w-full rounded-md border border-input bg-background px-3"
 												value={target.availability}
 												onchange={(event) =>
 													updateTarget(candidate.environmentId, {
@@ -215,7 +215,7 @@
 								>{candidates.find((candidate) => candidate.environmentId === result.environmentId)?.environmentName ??
 									result.environmentId}</span
 							>
-							<span class={result.state === 'failed' ? 'text-destructive text-right' : 'text-muted-foreground text-right'}>
+							<span class={result.state === 'failed' ? 'text-right text-destructive' : 'text-right text-muted-foreground'}>
 								{resultLabel(result)}{result.error ? `: ${result.error}` : ''}
 							</span>
 						</div>

@@ -131,7 +131,7 @@
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.common_health_status()}
 						</div>
 						<div>
@@ -142,10 +142,10 @@
 
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.health_failing_streak()}
 						</div>
-						<div class="text-foreground text-sm font-medium">
+						<div class="text-sm font-medium text-foreground">
 							{health?.failingStreak ?? 0}
 						</div>
 					</Card.Content>
@@ -154,10 +154,10 @@
 				{#if retriesBudget}
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_retries_remaining()}
 							</div>
-							<div class="text-foreground text-sm font-medium">
+							<div class="text-sm font-medium text-foreground">
 								{retriesBudget.remaining} / {retriesBudget.retries}
 							</div>
 						</Card.Content>
@@ -167,10 +167,10 @@
 				{#if nextCheck}
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_next_check()}
 							</div>
-							<div class="text-foreground text-sm font-medium" title={formatProbeDate(nextCheck.at)}>
+							<div class="text-sm font-medium text-foreground" title={formatProbeDate(nextCheck.at)}>
 								{#if nextCheck.overdue}
 									{m.health_next_check_running_now()}
 								{:else}
@@ -197,20 +197,20 @@
 			<div class="space-y-3">
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.health_test_command()}
 						</div>
 						{#if testCommand.type === 'inherit'}
-							<div class="text-muted-foreground text-sm italic">
+							<div class="text-sm text-muted-foreground italic">
 								{m.health_inherit_from_image()}
 							</div>
 						{:else if testCommand.type === 'none'}
-							<div class="text-muted-foreground text-sm italic">
+							<div class="text-sm text-muted-foreground italic">
 								{m.health_disabled_in_image()}
 							</div>
 						{:else}
 							<pre
-								class="text-foreground cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap select-all dark:bg-white/5"
+								class="cursor-pointer rounded-md bg-black/5 p-2 font-mono text-sm break-all whitespace-pre-wrap text-foreground select-all dark:bg-white/5"
 								title={m.common_click_to_select()}>{testCommand.text}</pre>
 						{/if}
 					</Card.Content>
@@ -219,50 +219,50 @@
 				<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_interval()}
 							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
+							<div class="font-mono text-sm font-medium text-foreground">
 								{formatDurationNs(healthcheck?.interval)}
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_timeout()}
 							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
+							<div class="font-mono text-sm font-medium text-foreground">
 								{formatDurationNs(healthcheck?.timeout)}
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_start_period()}
 							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
+							<div class="font-mono text-sm font-medium text-foreground">
 								{formatDurationNs(healthcheck?.startPeriod)}
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_start_interval()}
 							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
+							<div class="font-mono text-sm font-medium text-foreground">
 								{formatDurationNs(healthcheck?.startInterval)}
 							</div>
 						</Card.Content>
 					</Card.Root>
 					<Card.Root variant="subtle">
 						<Card.Content class="flex flex-col gap-2 p-4">
-							<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+							<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.health_retries()}
 							</div>
-							<div class="text-foreground font-mono text-sm font-medium">
+							<div class="font-mono text-sm font-medium text-foreground">
 								{healthcheck?.retries ?? 0}
 							</div>
 						</Card.Content>
@@ -283,7 +283,7 @@
 		</Card.Header>
 		<Card.Content class="p-4">
 			{#if recentProbes.length === 0}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+				<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 					<div class="text-sm">{m.health_no_probes_yet()}</div>
 				</div>
 			{:else}
@@ -297,22 +297,22 @@
 										<Badge variant={probe.exitCode === 0 ? 'green' : 'red'} size="sm" minWidth="20"
 											>{`${m.health_exit_code()}: ${probe.exitCode}`}</Badge
 										>
-										<span class="text-muted-foreground text-xs" title={formatProbeDate(probe.start)}>
+										<span class="text-xs text-muted-foreground" title={formatProbeDate(probe.start)}>
 											{probe.start ? formatDistanceToNow(probe.start, { addSuffix: true }) : '—'}
 										</span>
-										<span class="text-muted-foreground text-xs">
+										<span class="text-xs text-muted-foreground">
 											{m.health_probe_duration()}: {probeDuration(probe.start, probe.end)}
 										</span>
 									</div>
 									{#if probe.output}
-										<button type="button" class="text-primary text-xs hover:underline" onclick={() => toggleExpanded(key)}>
+										<button type="button" class="text-xs text-primary hover:underline" onclick={() => toggleExpanded(key)}>
 											{expanded[key] ? m.common_hide() : m.common_show()}
 										</button>
 									{/if}
 								</div>
 								{#if probe.output && expanded[key]}
 									<pre
-										class="text-foreground max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap dark:bg-white/5">{probe.output}</pre>
+										class="max-h-64 overflow-auto rounded-md bg-black/5 p-2 font-mono text-xs whitespace-pre-wrap text-foreground dark:bg-white/5">{probe.output}</pre>
 								{/if}
 							</Card.Content>
 						</Card.Root>

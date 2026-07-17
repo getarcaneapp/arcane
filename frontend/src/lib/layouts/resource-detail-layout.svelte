@@ -55,23 +55,23 @@
 
 {#if showFloatingHeader}
 	<div
-		class="animate-in fade-in slide-in-from-top-2 fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 px-2 duration-200 sm:w-auto sm:px-0"
+		class="fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] w-[calc(100%-2rem)] max-w-fit -translate-x-1/2 animate-in px-2 duration-200 fade-in slide-in-from-top-2 sm:w-auto sm:px-0"
 	>
 		<div
-			class="bg-popover/95 supports-backdrop-filter:bg-popover/85 border-border/60 bubble-shadow-lg flex items-center gap-3 rounded-lg border px-4 py-2 backdrop-blur-md"
+			class="bubble-shadow-lg flex items-center gap-3 rounded-lg border border-border/60 bg-popover/95 px-4 py-2 backdrop-blur-md supports-backdrop-filter:bg-popover/85"
 		>
 			{#if backUrl}
 				<ArcaneButton action="base" tone="ghost" href={backUrl} class="size-8 rounded-md p-0">
 					<ArrowLeftIcon class="size-4" />
 				</ArcaneButton>
 
-				<div class="bg-border/60 h-4 w-px"></div>
+				<div class="h-4 w-px bg-border/60"></div>
 			{/if}
 
 			<span class="max-w-[200px] truncate text-sm font-semibold">{title}</span>
 
 			{#if actions.length > 0}
-				<div class="bg-border/60 h-4 w-px"></div>
+				<div class="h-4 w-px bg-border/60"></div>
 				<div class="flex items-center gap-1.5">
 					{#if primaryAction}
 						<ArcaneButton
@@ -140,7 +140,7 @@
 			<div class="min-w-0 flex-1 space-y-2">
 				<h1 class="text-xl font-semibold tracking-tight break-all sm:text-2xl">{title}</h1>
 				{#if subtitle}
-					<p class="text-muted-foreground text-sm">{subtitle}</p>
+					<p class="text-sm text-muted-foreground">{subtitle}</p>
 				{/if}
 				{#if badges}
 					<div class="flex flex-wrap items-center gap-2 pt-1">

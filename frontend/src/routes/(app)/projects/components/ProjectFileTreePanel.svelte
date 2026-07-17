@@ -468,8 +468,8 @@
 </script>
 
 <div class="flex min-h-0 flex-1 flex-col">
-	<div class="border-border flex h-9 shrink-0 items-center border-b px-2">
-		<span class="text-muted-foreground text-[11px] font-semibold tracking-wider uppercase">{m.project_files()}</span>
+	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
+		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{m.project_files()}</span>
 		{#if canManageFiles}
 			<div class="ml-auto flex items-center gap-0.5">
 				<Tooltip.Root>
@@ -525,7 +525,7 @@
 	</div>
 
 	{#if readOnlyMessage}
-		<div class="text-muted-foreground border-border border-b px-3 py-2 text-xs">{readOnlyMessage}</div>
+		<div class="border-b border-border px-3 py-2 text-xs text-muted-foreground">{readOnlyMessage}</div>
 	{/if}
 
 	<div class="min-h-0 flex-1 overflow-auto">
@@ -533,7 +533,7 @@
 			<button
 				type="button"
 				class={cn(
-					'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
+					'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
 					selectedFile === 'compose' && 'bg-accent'
 				)}
 				onclick={() => onSelect('compose')}
@@ -544,7 +544,7 @@
 				<FileTextIcon class="size-4 shrink-0 text-blue-500" />
 				<span class="min-w-0 flex-1 truncate">{composeFileName}</span>
 				<span class="inline-flex size-6 shrink-0 items-center justify-center">
-					<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
 				</span>
 			</button>
 
@@ -552,7 +552,7 @@
 				<button
 					type="button"
 					class={cn(
-						'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
+						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
 						selectedFile === 'override' && 'bg-accent'
 					)}
 					onclick={() => onSelect('override')}
@@ -563,13 +563,13 @@
 					<FileTextIcon class="size-4 shrink-0 text-purple-500" />
 					<span class="min-w-0 flex-1 truncate">{overrideFileName}</span>
 					<span class="inline-flex size-6 shrink-0 items-center justify-center">
-						<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+						<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
 					</span>
 				</button>
 			{:else if onAddOverride}
 				<button
 					type="button"
-					class="text-muted-foreground hover:bg-accent hover:text-foreground flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]"
+					class="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
 					onclick={() => onAddOverride?.()}
 				>
 					{#if hasDirectories}
@@ -583,7 +583,7 @@
 			<button
 				type="button"
 				class={cn(
-					'hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px]',
+					'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
 					selectedFile === 'env' && 'bg-accent'
 				)}
 				onclick={() => onSelect('env')}
@@ -594,19 +594,19 @@
 				<FileTextIcon class="size-4 shrink-0 text-green-500" />
 				<span class="min-w-0 flex-1 truncate">.env</span>
 				<span class="inline-flex size-6 shrink-0 items-center justify-center">
-					<LockIcon class="text-muted-foreground size-3.5 shrink-0" aria-label={m.project_file_protected()} />
+					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
 				</span>
 			</button>
 
 			{#if rows.length === 0}
 				{#if canManageFiles}
-					<div class="text-muted-foreground px-7 py-3 text-xs">{m.project_files_empty()}</div>
+					<div class="px-7 py-3 text-xs text-muted-foreground">{m.project_files_empty()}</div>
 				{/if}
 			{:else}
 				{#each rows as row (row.relativePath)}
 					<div
 						class={cn(
-							'group hover:bg-accent flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px]',
+							'group flex w-full items-center gap-1.5 rounded-md px-2 py-0.5 text-[13px] hover:bg-accent',
 							selectedFile === `file:${row.relativePath}` && 'bg-accent'
 						)}
 						style={`padding-left: ${0.5 + row.depth * 1}rem`}
@@ -614,7 +614,7 @@
 						{#if row.isDirectory}
 							<button
 								type="button"
-								class="hover:bg-muted inline-flex size-4 shrink-0 items-center justify-center rounded"
+								class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
 								aria-label={openFolders[row.relativePath]
 									? m.project_file_collapse_folder({ name: row.name })
 									: m.project_file_expand_folder({ name: row.name })}
@@ -638,12 +638,12 @@
 							{#if row.isDirectory}
 								<FolderOpenIcon class="size-4 shrink-0 text-amber-500" />
 							{:else}
-								<FileTextIcon class="text-muted-foreground size-4 shrink-0" />
+								<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
 							{/if}
 							<span class="min-w-0 truncate">{row.name}</span>
 							{#if row.pending}
 								<span
-									class="bg-primary size-1.5 shrink-0 rounded-full"
+									class="size-1.5 shrink-0 rounded-full bg-primary"
 									role="img"
 									aria-label={m.common_unsaved_changes()}
 									title={m.common_unsaved_changes()}
@@ -657,7 +657,7 @@
 									<Tooltip.Trigger>
 										<button
 											type="button"
-											class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
+											class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
 											aria-label={m.project_file_rename_label({ name: row.relativePath })}
 											{disabled}
 											onclick={() => openRenameDialog(row.relativePath)}
@@ -671,7 +671,7 @@
 									<Tooltip.Trigger>
 										<button
 											type="button"
-											class="text-foreground hover:bg-foreground/10 inline-flex size-6 items-center justify-center rounded"
+											class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
 											aria-label={m.project_file_move_label({ name: row.relativePath })}
 											{disabled}
 											onclick={() => openMoveDialog(row.relativePath)}
@@ -685,7 +685,7 @@
 									<Tooltip.Trigger>
 										<button
 											type="button"
-											class="text-destructive hover:bg-destructive/10 inline-flex size-6 items-center justify-center rounded"
+											class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
 											aria-label={m.project_file_delete_label({ name: row.relativePath })}
 											{disabled}
 											onclick={() => handleDelete(row)}
@@ -767,7 +767,7 @@
 								{#if option.relativePath && option.hasChildren}
 									<button
 										type="button"
-										class="hover:bg-muted inline-flex size-4 shrink-0 items-center justify-center rounded"
+										class="inline-flex size-4 shrink-0 items-center justify-center rounded hover:bg-muted"
 										aria-label={destinationOpenFolders[option.relativePath]
 											? m.project_file_collapse_folder({ name: option.label })
 											: m.project_file_expand_folder({ name: option.label })}
@@ -796,7 +796,7 @@
 									<span class="min-w-0 flex-1 truncate">{option.label}</span>
 								</button>
 								{#if option.reason}
-									<span class="text-muted-foreground shrink-0 text-xs">{option.reason}</span>
+									<span class="shrink-0 text-xs text-muted-foreground">{option.reason}</span>
 								{/if}
 							</div>
 						{/each}
@@ -805,7 +805,7 @@
 			{/if}
 
 			{#if dialogError}
-				<p class="text-destructive text-sm">{dialogError}</p>
+				<p class="text-sm text-destructive">{dialogError}</p>
 			{/if}
 
 			<Dialog.Footer>

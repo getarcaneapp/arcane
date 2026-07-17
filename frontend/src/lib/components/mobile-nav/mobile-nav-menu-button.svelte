@@ -15,7 +15,7 @@
 <button
 	type="button"
 	class={cn(
-		'bg-primary text-primary-foreground hover:bg-primary/90 focus-visible:ring-ring/50 shadow-md',
+		'bg-primary text-primary-foreground shadow-md hover:bg-primary/90 focus-visible:ring-ring/50',
 		'flex-shrink-0 rounded-full transition-all duration-200 ease-out active:scale-95',
 		'flex items-center justify-center',
 		// Keep a large tap target but allow a slightly smaller footprint on the smallest screens.

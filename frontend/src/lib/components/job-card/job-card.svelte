@@ -64,7 +64,7 @@
 	}
 </script>
 
-<Card.Root class="bg-background/60 h-full rounded-xl border border-white/10 shadow-none backdrop-blur-md">
+<Card.Root class="h-full rounded-xl border border-white/10 bg-background/60 shadow-none backdrop-blur-md">
 	<Card.Header class="flex flex-row items-center justify-between space-y-0 px-4 py-4">
 		<div class="flex flex-col gap-1.5">
 			<div class="flex items-center gap-2">
@@ -73,7 +73,7 @@
 					<Badge variant="outline" size="sm">{m.jobs_continuous()}</Badge>
 				{/if}
 			</div>
-			<Card.Description class="text-muted-foreground/80 line-clamp-1 text-xs">{job.description}</Card.Description>
+			<Card.Description class="line-clamp-1 text-xs text-muted-foreground/80">{job.description}</Card.Description>
 		</div>
 		<div class="flex items-center gap-2">
 			{#if headerAccessory}
@@ -111,12 +111,12 @@
 	</Card.Header>
 	<Card.Content class="space-y-2 px-4 pt-0 pb-4">
 		{#if isEnabled}
-			<div class="text-muted-foreground grid gap-2 text-xs">
+			<div class="grid gap-2 text-xs text-muted-foreground">
 				{#if !job.isContinuous}
 					<div class="flex items-center gap-2">
 						<ClockIcon class="h-3.5 w-3.5" />
 						<span>{m.jobs_schedule()}:</span>
-						<code class="bg-muted rounded px-2 py-0.5 text-[0.65rem]">{job.schedule}</code>
+						<code class="rounded bg-muted px-2 py-0.5 text-[0.65rem]">{job.schedule}</code>
 					</div>
 					{#if nextRunText}
 						<div>

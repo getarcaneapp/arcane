@@ -162,7 +162,7 @@
 </script>
 
 {#if webhooks.length === 0}
-	<div class="text-muted-foreground flex flex-col items-center justify-center py-12 text-sm">
+	<div class="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
 		<GlobeIcon class="mb-3 size-10 opacity-40" />
 		<p>{m.webhook_empty_title()}</p>
 		<p class="mt-1">{m.webhook_empty_description()}</p>
@@ -197,17 +197,17 @@
 
 {#snippet TokenPrefixCell({ item }: { item: Webhook })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.tokenPrefix}...</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.tokenPrefix}...</code>
 		<CopyButton text={item.tokenPrefix} class="size-6" />
 	</div>
 {/snippet}
 
 {#snippet TargetTypeCell({ item }: { item: Webhook })}
-	<span class="bg-muted rounded px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
+	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
 {/snippet}
 
 {#snippet ActionTypeCell({ item }: { item: Webhook })}
-	<span class="bg-muted rounded px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
+	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
 {/snippet}
 
 {#snippet TargetNameCell({ item }: { item: Webhook })}

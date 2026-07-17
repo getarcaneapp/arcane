@@ -252,7 +252,7 @@
 					<Label for="federated-enabled" class="mb-0 text-sm leading-none font-medium">
 						{m.federated_credential_enabled_label()}
 					</Label>
-					<p class="text-muted-foreground text-[0.8rem]">
+					<p class="text-[0.8rem] text-muted-foreground">
 						{m.federated_credential_enabled_description()}
 					</p>
 				</div>

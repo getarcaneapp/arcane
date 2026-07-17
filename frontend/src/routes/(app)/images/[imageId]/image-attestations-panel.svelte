@@ -70,7 +70,7 @@
 	{#await attestationsPromise}
 		<div class="flex items-center justify-center py-8">
 			<Spinner class="size-7" />
-			<span class="text-muted-foreground ml-3 text-sm">{m.images_attestations_loading()}</span>
+			<span class="ml-3 text-sm text-muted-foreground">{m.images_attestations_loading()}</span>
 		</div>
 	{:then data}
 		{@const attestations = data.attestations}
@@ -111,7 +111,7 @@
 		</div>
 
 		{#if attestations.length === 0}
-			<div class="text-muted-foreground bg-muted/40 rounded-lg p-4 text-sm">
+			<div class="rounded-lg bg-muted/40 p-4 text-sm text-muted-foreground">
 				{#if hasActiveFilter}
 					{m.images_attestations_no_matches()}
 				{:else}
@@ -119,26 +119,26 @@
 				{/if}
 			</div>
 		{:else}
-			<div class="border-border/60 divide-border/60 divide-y overflow-hidden rounded-lg border">
+			<div class="divide-y divide-border/60 overflow-hidden rounded-lg border border-border/60">
 				{#each attestations as attestation (attestation.digest + attestation.predicateType + (attestation.platform ?? ''))}
 					<button
 						type="button"
 						onclick={() => openDetails(attestation)}
-						class="hover:bg-muted/40 flex w-full items-center gap-3 px-4 py-3 text-left transition-colors"
+						class="flex w-full items-center gap-3 px-4 py-3 text-left transition-colors hover:bg-muted/40"
 					>
 						<span class="min-w-0 flex-1 truncate font-mono text-xs font-semibold">{attestation.predicateType}</span>
 						{#if attestation.platform}
 							<Badge variant="outline" class="shrink-0">{attestation.platform}</Badge>
 						{/if}
-						<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
+						<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
 					</button>
 				{/each}
 			</div>
 		{/if}
 	{:catch}
-		<div class="bg-muted/40 rounded-lg p-4">
+		<div class="rounded-lg bg-muted/40 p-4">
 			<p class="text-sm font-medium">{m.images_attestations_lookup_failed()}</p>
-			<p class="text-muted-foreground mt-1 text-xs">{m.images_attestations_lookup_failed_description()}</p>
+			<p class="mt-1 text-xs text-muted-foreground">{m.images_attestations_lookup_failed_description()}</p>
 		</div>
 	{/await}
 
@@ -148,41 +148,41 @@
 			<div class="space-y-4 pb-6">
 				<div class="grid gap-3 sm:grid-cols-2">
 					<div>
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_predicate_type()}
 						</div>
 						<p class="mt-1 font-mono text-xs break-all">{attestation.predicateType}</p>
 					</div>
 					<div>
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_platform()}
 						</div>
 						<p class="mt-1 text-xs">{attestation.platform || m.common_na()}</p>
 					</div>
 					<div>
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_statement_type()}
 						</div>
 						<p class="mt-1 font-mono text-xs break-all">{attestation.statementType || m.common_na()}</p>
 					</div>
 					<div>
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_media_type()}
 						</div>
 						<p class="mt-1 font-mono text-xs break-all">{attestation.mediaType}</p>
 					</div>
 					<div>
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_size()}</div>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_size()}</div>
 						<p class="mt-1 text-xs font-medium">{bytes.format(attestation.size)}</p>
 					</div>
 					<div class="sm:col-span-2">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_digest()}
 						</div>
 						<p class="mt-1 font-mono text-xs break-all select-all">{attestation.digest}</p>
 					</div>
 					<div class="sm:col-span-2">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.images_attestations_subject()}
 						</div>
 						<p class="mt-1 font-mono text-xs break-all">{subjectLabel(attestation)}</p>

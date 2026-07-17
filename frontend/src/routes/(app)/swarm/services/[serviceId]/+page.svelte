@@ -291,15 +291,15 @@
 	<TabbedPageLayout backUrl="/swarm/services" backLabel={m.common_back()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex items-center gap-2">
-				<div class="bg-primary/10 flex size-9 items-center justify-center rounded-full">
-					<DockIcon class="text-primary size-5" />
+				<div class="flex size-9 items-center justify-center rounded-full bg-primary/10">
+					<DockIcon class="size-5 text-primary" />
 				</div>
 				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={serviceName}>
 					{serviceName}
 				</h1>
 				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
 				{#if canScaleService}
-					<span class="text-muted-foreground font-mono text-sm">
+					<span class="font-mono text-sm text-muted-foreground">
 						{desiredReplicas}
 						{m.swarm_replicas()}
 					</span>

@@ -44,7 +44,7 @@
 		<Label class="mb-0" for={id}>{label}</Label>
 	{/if}
 	{#if description}
-		<p class="text-muted-foreground mt-1 text-xs">{description}</p>
+		<p class="mt-1 text-xs text-muted-foreground">{description}</p>
 	{/if}
 	<div class={label || description ? 'mt-2' : ''}>
 		{#if children}
@@ -64,10 +64,10 @@
 			<p class="mt-1 text-sm text-red-500">{input.error}</p>
 		{/if}
 		{#if helpText}
-			<p class="text-muted-foreground mt-1 text-xs">{helpText}</p>
+			<p class="mt-1 text-xs text-muted-foreground">{helpText}</p>
 		{/if}
 		{#if warningText}
-			<p class="text-destructive mt-1 text-xs font-semibold">{warningText}</p>
+			<p class="mt-1 text-xs font-semibold text-destructive">{warningText}</p>
 		{/if}
 	</div>
 </div>

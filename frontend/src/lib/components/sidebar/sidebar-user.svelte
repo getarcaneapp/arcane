@@ -61,7 +61,7 @@
 											<!-- Gravatar failed, show fallback -->
 										{/await}
 									{/if}
-									<Avatar.Fallback class="bg-primary text-primary-foreground rounded-lg text-sm font-semibold">
+									<Avatar.Fallback class="rounded-lg bg-primary text-sm font-semibold text-primary-foreground">
 										{user.displayName?.charAt(0).toUpperCase()}
 									</Avatar.Fallback>
 								</Avatar.Root>
@@ -77,7 +77,7 @@
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content
-				class="border-border/30 min-w-60 rounded-xl border p-1.5 shadow-lg backdrop-blur-2xl backdrop-saturate-150"
+				class="min-w-60 rounded-xl border border-border/30 p-1.5 shadow-lg backdrop-blur-2xl backdrop-saturate-150"
 				side="right"
 				align="end"
 				sideOffset={12}
@@ -108,14 +108,14 @@
 										<!-- Gravatar failed, show fallback -->
 									{/await}
 								{/if}
-								<Avatar.Fallback class="bg-primary text-primary-foreground rounded-lg text-xs font-semibold">
+								<Avatar.Fallback class="rounded-lg bg-primary text-xs font-semibold text-primary-foreground">
 									{user.displayName?.charAt(0).toUpperCase()}
 								</Avatar.Fallback>
 							</Avatar.Root>
 						{/key}
 						<div class="grid min-w-0 flex-1 leading-tight">
 							<span class="truncate text-sm font-medium">{user.displayName}</span>
-							<span class="text-muted-foreground truncate text-xs">{user.email}</span>
+							<span class="truncate text-xs text-muted-foreground">{user.email}</span>
 						</div>
 					</div>
 
@@ -123,13 +123,13 @@
 
 					<button
 						type="button"
-						class="hover:bg-muted/60 text-foreground flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors"
+						class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-foreground transition-colors hover:bg-muted/60"
 						onclick={() => {
 							dropdownOpen = false;
 							goto('/account');
 						}}
 					>
-						<UserIcon class="text-muted-foreground size-4 shrink-0" />
+						<UserIcon class="size-4 shrink-0 text-muted-foreground" />
 						<span>{m.common_account()}</span>
 					</button>
 
@@ -137,7 +137,7 @@
 						<form action="/logout" method="POST" class="w-full">
 							<button
 								type="submit"
-								class="hover:bg-destructive/10 text-destructive flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm transition-colors"
+								class="flex w-full items-center gap-2.5 rounded-lg px-2 py-2 text-sm text-destructive transition-colors hover:bg-destructive/10"
 							>
 								<LogoutIcon class="size-4 shrink-0" />
 								<span>{m.common_log_out()}</span>

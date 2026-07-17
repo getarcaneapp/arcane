@@ -211,7 +211,7 @@
 				{#if isSemver && (semverCurrent || semverNew)}
 					<div class="flex flex-wrap items-center gap-2 text-sm">
 						{#if semverCurrent}
-							<span class="bg-muted text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs">
+							<span class="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 								{semverCurrent}
 							</span>
 						{/if}
@@ -220,32 +220,32 @@
 						{/if}
 						{#if semverNew}
 							<span
-								class="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-medium"
+								class="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary"
 							>
 								{semverNew}
 							</span>
 						{/if}
 						{#if releasedAgo}
-							<span class="text-muted-foreground/70 text-xs">· {m.update_center_released_at({ date: releasedAgo })}</span>
+							<span class="text-xs text-muted-foreground/70">· {m.update_center_released_at({ date: releasedAgo })}</span>
 						{/if}
 					</div>
 				{:else if !isSemver && (trackingTag || currentDigest || newDigest)}
 					<div class="space-y-1.5 text-xs">
 						{#if trackingTag}
 							<div class="flex items-baseline gap-2">
-								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase">{m.update_center_tag_label()}</span>
-								<span class="bg-muted text-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono">
+								<span class="w-16 shrink-0 tracking-wide text-muted-foreground/70 uppercase">{m.update_center_tag_label()}</span>
+								<span class="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-foreground">
 									{trackingTag}
 								</span>
 							</div>
 						{/if}
 						{#if currentDigest}
 							<div class="flex items-baseline gap-2">
-								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase"
+								<span class="w-16 shrink-0 tracking-wide text-muted-foreground/70 uppercase"
 									>{m.update_center_current_label()}</span
 								>
 								<code
-									class="text-muted-foreground bg-muted/50 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] break-all"
+									class="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 font-mono text-[11px] break-all text-muted-foreground"
 								>
 									{currentDigest}
 								</code>
@@ -253,29 +253,29 @@
 						{/if}
 						{#if newDigest}
 							<div class="flex items-baseline gap-2">
-								<span class="text-primary/80 w-16 shrink-0 tracking-wide uppercase">{m.update_center_new_label()}</span>
+								<span class="w-16 shrink-0 tracking-wide text-primary/80 uppercase">{m.update_center_new_label()}</span>
 								<code
-									class="text-primary bg-primary/10 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium break-all"
+									class="min-w-0 flex-1 rounded-md bg-primary/10 px-2 py-1 font-mono text-[11px] font-medium break-all text-primary"
 								>
 									{newDigest}
 								</code>
 							</div>
 						{/if}
 						{#if releasedAgo}
-							<p class="text-muted-foreground/70 pt-1">{m.update_center_released_at({ date: releasedAgo })}</p>
+							<p class="pt-1 text-muted-foreground/70">{m.update_center_released_at({ date: releasedAgo })}</p>
 						{/if}
 					</div>
 				{/if}
 
-				<div class="border-border/60 border-t pt-3">
+				<div class="border-t border-border/60 pt-3">
 					<div class="flex items-center justify-between pb-2">
-						<h3 class="text-foreground text-sm font-semibold">{m.update_center_whats_new()}</h3>
+						<h3 class="text-sm font-semibold text-foreground">{m.update_center_whats_new()}</h3>
 						{#if releaseUrl}
 							<a
 								href={releaseUrl}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+								class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 							>
 								{m.update_center_view_full_release()}
 								<ExternalLinkIcon class="size-3" />
@@ -286,7 +286,7 @@
 						{#if releaseNotes}
 							<ReleaseNotes markdown={releaseNotes} />
 						{:else}
-							<p class="text-muted-foreground text-sm italic">{m.update_center_release_notes_unavailable()}</p>
+							<p class="text-sm text-muted-foreground italic">{m.update_center_release_notes_unavailable()}</p>
 						{/if}
 					</ScrollArea.Root>
 				</div>
@@ -296,7 +296,7 @@
 		{#if phase !== 'confirm'}
 			<div class="space-y-3">
 				{#if reconnecting}
-					<div class="text-muted-foreground flex items-center gap-2 text-sm">
+					<div class="flex items-center gap-2 text-sm text-muted-foreground">
 						<Spinner class="size-4" />
 						<span>{m.environments_update_all_manager_restarting()}</span>
 					</div>
@@ -305,17 +305,17 @@
 				{#if job?.results?.length}
 					{#if phase === 'running'}
 						<div class="space-y-1.5">
-							<div class="text-muted-foreground flex items-center justify-end text-xs">
+							<div class="flex items-center justify-end text-xs text-muted-foreground">
 								<span>{m.environments_update_all_progress({ done: doneCount, total: totalCount })}</span>
 							</div>
-							<div class="bg-muted h-1.5 overflow-hidden rounded-full">
-								<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: {progressPct}%"></div>
+							<div class="h-1.5 overflow-hidden rounded-full bg-muted">
+								<div class="h-full rounded-full bg-primary transition-all duration-500" style="width: {progressPct}%"></div>
 							</div>
 						</div>
 					{/if}
 
 					<ScrollArea.Root class="max-h-72">
-						<ul class="divide-border divide-y">
+						<ul class="divide-y divide-border">
 							{#each job.results as result (result.environmentId)}
 								<li class="flex items-center gap-3 py-2.5 text-sm">
 									<span
@@ -346,11 +346,11 @@
 									<div class="min-w-0 flex-1">
 										<span class="block truncate font-medium">{result.environmentName}</span>
 										{#if result.status === 'updating'}
-											<div class="bg-muted mt-1.5 h-1 overflow-hidden rounded-full">
-												<div class="update-all-capbar bg-primary h-full rounded-full"></div>
+											<div class="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+												<div class="update-all-capbar h-full rounded-full bg-primary"></div>
 											</div>
 										{:else if result.error}
-											<span class="text-muted-foreground block truncate text-xs" title={result.error}>{result.error}</span>
+											<span class="block truncate text-xs text-muted-foreground" title={result.error}>{result.error}</span>
 										{/if}
 									</div>
 
@@ -369,7 +369,7 @@
 						</ul>
 					</ScrollArea.Root>
 				{:else}
-					<div class="text-muted-foreground flex items-center gap-2 py-2 text-sm">
+					<div class="flex items-center gap-2 py-2 text-sm text-muted-foreground">
 						<Spinner class="size-4" />
 						<span>{m.environments_update_all_in_progress()}</span>
 					</div>

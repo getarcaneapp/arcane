@@ -23,20 +23,20 @@
 	let { tabs, activeKey, onSelect, onClose, actions }: Props = $props();
 </script>
 
-<div class="border-border bg-muted/30 flex h-9 shrink-0 items-center border-b">
+<div class="flex h-9 shrink-0 items-center border-b border-border bg-muted/30">
 	<div class="scrollbar-hide flex h-full min-w-0 flex-1 items-center overflow-x-auto">
 		{#each tabs as tab (tab.key)}
 			{@const isActive = activeKey === tab.key}
 			<div
 				class={cn(
-					'group border-border relative flex h-full shrink-0 items-center border-r',
+					'group relative flex h-full shrink-0 items-center border-r border-border',
 					isActive ? 'bg-card' : 'hover:bg-accent/50'
 				)}
 				data-tab-key={tab.key}
 				data-active={isActive}
 			>
 				{#if isActive}
-					<span class="bg-primary absolute inset-x-0 top-0 h-0.5"></span>
+					<span class="absolute inset-x-0 top-0 h-0.5 bg-primary"></span>
 				{/if}
 				<button
 					type="button"
@@ -51,7 +51,7 @@
 					<span class="max-w-40 truncate">{tab.label}</span>
 					{#if tab.pending}
 						<span
-							class="bg-primary size-1.5 shrink-0 rounded-full"
+							class="size-1.5 shrink-0 rounded-full bg-primary"
 							role="img"
 							aria-label={m.common_unsaved_changes()}
 							title={m.common_unsaved_changes()}
@@ -61,7 +61,7 @@
 				<button
 					type="button"
 					class={cn(
-						'hover:bg-foreground/10 mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 focus-visible:opacity-100',
+						'mr-1 inline-flex size-5 shrink-0 items-center justify-center rounded opacity-0 group-hover:opacity-100 hover:bg-foreground/10 focus-visible:opacity-100',
 						isActive && 'opacity-100'
 					)}
 					aria-label={m.common_close()}

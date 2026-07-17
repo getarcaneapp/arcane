@@ -222,7 +222,7 @@
 {#snippet UrlCell({ item }: { item: ContainerRegistry })}
 	<div class="flex flex-col">
 		<span class="font-medium">{item.url || 'docker.io'}</span>
-		<span class="text-muted-foreground text-xs">{getRegistryDisplayName(item)}</span>
+		<span class="text-xs text-muted-foreground">{getRegistryDisplayName(item)}</span>
 	</div>
 {/snippet}
 
@@ -235,7 +235,7 @@
 {/snippet}
 
 {#snippet DescriptionCell({ value }: { value: unknown })}
-	<span class="text-muted-foreground text-sm">{String(value ?? m.common_no_description())}</span>
+	<span class="text-sm text-muted-foreground">{String(value ?? m.common_no_description())}</span>
 {/snippet}
 
 {#snippet PullUsageCell({ item }: { item: ContainerRegistry })}

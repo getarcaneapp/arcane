@@ -102,13 +102,13 @@
 	let heartbeatRelative = $derived(formatRelative(environment.lastHeartbeat, nowTick));
 </script>
 
-<div class="bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3">
+<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
 	<div class="flex items-center gap-2">
 		<span class={cn('size-2.5 rounded-full transition-colors', statusDotClass)}></span>
 		<span class="text-sm font-semibold">{statusBadge.text}</span>
 	</div>
 	<Badge variant={transportBadge.variant} minWidth="20">{transportBadge.text}</Badge>
-	<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+	<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 		<TagIcon class="size-4 shrink-0" />
 		{#if environment.id === '0'}
 			<span class="font-mono">{localDisplayVersion}</span>
@@ -144,12 +144,12 @@
 		{/if}
 	</div>
 	{#if environment.isEdge && environment.lastHeartbeat}
-		<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+		<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 			<HealthIcon class="size-4 shrink-0" />
 			<span>{heartbeatRelative}</span>
 		</div>
 	{/if}
-	<div class="text-muted-foreground flex items-center gap-1.5 text-sm sm:ml-auto">
+	<div class="flex items-center gap-1.5 text-sm text-muted-foreground sm:ml-auto">
 		<HashIcon class="size-4 shrink-0" />
 		<span class="font-mono">{environment.id}</span>
 	</div>

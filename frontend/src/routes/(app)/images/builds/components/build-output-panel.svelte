@@ -59,7 +59,7 @@
 
 <div class="flex h-full flex-col p-8">
 	<!-- Progress section with enhanced styling -->
-	<div class="border-border/50 bg-card mb-6 shrink-0 space-y-4 rounded-2xl border p-5">
+	<div class="mb-6 shrink-0 space-y-4 rounded-2xl border border-border/50 bg-card p-5">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
 				<div
@@ -85,7 +85,7 @@
 			</div>
 			<div class="flex items-center gap-3">
 				{#if !isIndeterminate || hasReachedComplete}
-					<span class="text-muted-foreground text-sm font-medium">{progressValue}%</span>
+					<span class="text-sm font-medium text-muted-foreground">{progressValue}%</span>
 				{/if}
 				<SwitchWithLabel
 					id="auto-scroll"
@@ -106,7 +106,7 @@
 	<!-- Terminal output with refined styling -->
 	<div
 		use:autoScrollToBottom={{ enabled: autoScroll, key: logLines.length }}
-		class="group border-border/50 relative min-h-0 flex-1 overflow-auto rounded-2xl border bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
+		class="group relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
 	>
 		<!-- Subtle scanline effect overlay -->
 		<div class="pointer-events-none absolute inset-0 hidden"></div>
@@ -129,7 +129,7 @@
 
 	<!-- Error display -->
 	{#if buildError}
-		<div class="border-destructive/30 bg-destructive/10 text-destructive mt-4 shrink-0 rounded-xl border p-4 text-sm">
+		<div class="mt-4 shrink-0 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
 			{buildError}
 		</div>
 	{/if}

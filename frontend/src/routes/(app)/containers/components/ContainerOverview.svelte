@@ -137,7 +137,7 @@
 	<Card.Content class="p-4">
 		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-4">
 			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+				<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					{m.common_image()}
 				</div>
 				<div class="flex items-center gap-3">
@@ -145,7 +145,7 @@
 						<VolumesIcon class="size-5 text-blue-500" />
 					</div>
 					<div
-						class="text-foreground cursor-pointer text-base font-semibold break-all select-all"
+						class="cursor-pointer text-base font-semibold break-all text-foreground select-all"
 						title={m.common_click_to_select()}
 					>
 						{container.image || m.common_na()}
@@ -155,24 +155,24 @@
 
 			{#if container.state?.running}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_uptime()}</div>
+					<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_uptime()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-green-500/10">
 							<StartIcon class="size-5 text-green-500" />
 						</div>
-						<div class="text-foreground text-base font-semibold">
+						<div class="text-base font-semibold text-foreground">
 							{getUptime(container.state.startedAt)}
 						</div>
 					</div>
 				</div>
 			{:else}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
+					<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-gray-500/10">
 							<StopIcon class="size-5 text-gray-500" />
 						</div>
-						<div class="text-foreground text-base font-semibold">
+						<div class="text-base font-semibold text-foreground">
 							{container.state?.status || m.common_stopped()}
 						</div>
 					</div>
@@ -180,7 +180,7 @@
 			{/if}
 
 			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+				<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					{m.containers_ip_address()}
 				</div>
 				<div class="flex items-center gap-3">
@@ -188,7 +188,7 @@
 						<NetworksIcon class="size-5 text-purple-500" />
 					</div>
 					<div
-						class="text-foreground cursor-pointer font-mono text-base font-semibold select-all"
+						class="cursor-pointer font-mono text-base font-semibold text-foreground select-all"
 						title={m.common_click_to_select()}
 					>
 						{primaryIpAddress}
@@ -198,7 +198,7 @@
 
 			{#if container.state?.health}
 				<div>
-					<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">{m.common_health_status()}</div>
+					<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_health_status()}</div>
 					<div class="flex items-center gap-3">
 						<div class="flex size-10 shrink-0 items-center justify-center rounded-full bg-pink-500/10">
 							<HealthIcon class="size-5 text-pink-500" />
@@ -221,13 +221,13 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{m.common_created()}
 					</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-sm font-medium text-foreground">
 						{formatRelativeDate(container?.created)}
 					</div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{formatDockerDate(container?.created)}
 					</div>
 				</Card.Content>
@@ -236,11 +236,11 @@
 			{#if container.state?.running}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_started()}</div>
-						<div class="text-foreground text-sm font-medium">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_started()}</div>
+						<div class="text-sm font-medium text-foreground">
 							{formatRelativeDate(container.state.startedAt)}
 						</div>
-						<div class="text-muted-foreground text-xs">
+						<div class="text-xs text-muted-foreground">
 							{formatDockerDate(container.state.startedAt)}
 						</div>
 					</Card.Content>
@@ -248,11 +248,11 @@
 			{:else if container.state?.finishedAt && !container.state.finishedAt.startsWith('0001')}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_finished()}</div>
-						<div class="text-foreground text-sm font-medium">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_finished()}</div>
+						<div class="text-sm font-medium text-foreground">
 							{formatRelativeDate(container.state.finishedAt)}
 						</div>
-						<div class="text-muted-foreground text-xs">
+						<div class="text-xs text-muted-foreground">
 							{formatDockerDate(container.state.finishedAt)}
 						</div>
 					</Card.Content>
@@ -261,8 +261,8 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_restart_policy()}</div>
-					<div class="text-foreground text-sm font-medium capitalize">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_restart_policy()}</div>
+					<div class="text-sm font-medium text-foreground capitalize">
 						{restartPolicy}
 					</div>
 				</Card.Content>
@@ -270,27 +270,27 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.auto_update_title()}</div>
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.auto_update_title()}</div>
 					<div class="flex items-center gap-3">
 						<Switch
 							checked={autoUpdateEnabled}
 							disabled={autoUpdateToggling || autoUpdateLabelControlled}
 							onCheckedChange={handleAutoUpdateToggle}
 						/>
-						<span class="text-foreground text-sm font-medium">
+						<span class="text-sm font-medium text-foreground">
 							{autoUpdateEnabled ? m.common_enabled() : m.common_disabled()}
 						</span>
 					</div>
 					{#if autoUpdateLabelControlled}
-						<span class="text-muted-foreground text-xs">{m.auto_update_controlled_by_label()}</span>
+						<span class="text-xs text-muted-foreground">{m.auto_update_controlled_by_label()}</span>
 					{/if}
 				</Card.Content>
 			</Card.Root>
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_ports()}</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_ports()}</div>
+					<div class="text-sm font-medium text-foreground">
 						{#if uniquePorts.total === 0}
 							{m.containers_no_ports()}
 						{:else if uniquePorts.published > 0 && uniquePorts.exposed > 0}
@@ -302,7 +302,7 @@
 						{/if}
 					</div>
 					{#if onViewPortMappings && uniquePorts.total > 0}
-						<button type="button" class="text-primary w-fit text-xs font-medium hover:underline" onclick={onViewPortMappings}>
+						<button type="button" class="w-fit text-xs font-medium text-primary hover:underline" onclick={onViewPortMappings}>
 							{m.common_view_details()} → {m.containers_nav_networks()}
 						</button>
 					{/if}
@@ -311,8 +311,8 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_volumes_cap()}</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.resource_volumes_cap()}</div>
+					<div class="text-sm font-medium text-foreground">
 						{mountCount}
 						{mountCount === 1 ? m.common_mount() : m.common_mounts()}
 					</div>
@@ -321,8 +321,8 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_networks_cap()}</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.resource_networks_cap()}</div>
+					<div class="text-sm font-medium text-foreground">
 						{networkCount}
 						{networkCount === 1 ? m.resource_network() : m.resource_networks()}
 					</div>
@@ -331,9 +331,9 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_image_id()}</div>
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_image_id()}</div>
 					<div
-						class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+						class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 						title={m.common_click_to_select()}
 					>
 						{container.imageId}
@@ -344,11 +344,11 @@
 			{#if container.config?.workingDir}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.common_working_directory()}
 						</div>
 						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+							class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 							title={m.common_click_to_select()}
 						>
 							{container.config.workingDir}
@@ -360,9 +360,9 @@
 			{#if container.config?.user}
 				<Card.Root variant="subtle">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.resource_user_cap()}</div>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.resource_user_cap()}</div>
 						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium select-all"
+							class="cursor-pointer font-mono text-sm font-medium text-foreground select-all"
 							title={m.common_click_to_select()}
 						>
 							{container.config.user}
@@ -374,9 +374,9 @@
 			{#if container.config?.entrypoint && container.config.entrypoint.length > 0}
 				<Card.Root variant="subtle" class="sm:col-span-2">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_entrypoint()}</div>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_entrypoint()}</div>
 						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+							class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 							title={m.common_click_to_select()}
 						>
 							{container.config.entrypoint.join(' ')}
@@ -388,11 +388,11 @@
 			{#if container.config?.cmd && container.config.cmd.length > 0}
 				<Card.Root variant="subtle" class="sm:col-span-2 lg:col-span-3 xl:col-span-4">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.common_command()}
 						</div>
 						<div
-							class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+							class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 							title={m.common_click_to_select()}
 						>
 							{container.config.cmd.join(' ')}

@@ -19,7 +19,7 @@
 {#if trimmedPath}
 	<ArcaneTooltip.Root>
 		<ArcaneTooltip.Trigger>
-			<span class={cn('text-muted-foreground inline-flex items-center', className)} aria-label={tooltipText}>
+			<span class={cn('inline-flex items-center text-muted-foreground', className)} aria-label={tooltipText}>
 				<CodeIcon class="size-3.5" />
 			</span>
 		</ArcaneTooltip.Trigger>

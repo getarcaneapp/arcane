@@ -261,14 +261,14 @@
 			onpointerdown={startResize}
 		>
 			{#if variant === 'flush'}
-				<div class="bg-border group-hover:bg-primary/50 w-px transition-colors"></div>
+				<div class="w-px bg-border transition-colors group-hover:bg-primary/50"></div>
 				<div class="absolute inset-y-0 -right-1 -left-1"></div>
 			{:else}
-				<div class="bg-border group-hover:bg-primary/50 my-2 w-0.5 rounded-full transition-colors"></div>
+				<div class="my-2 w-0.5 rounded-full bg-border transition-colors group-hover:bg-primary/50"></div>
 			{/if}
 			{#if collapsedSide}
 				<button
-					class="bg-background border-border text-muted-foreground hover:text-foreground focus-visible:ring-ring absolute inset-0 z-[var(--arcane-z-raised)] m-auto flex size-6 items-center justify-center rounded-full border shadow-sm focus-visible:ring-2 focus-visible:outline-none"
+					class="absolute inset-0 z-[var(--arcane-z-raised)] m-auto flex size-6 items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
 					onclick={(event) => {
 						event.stopPropagation();
 						restoreCollapsed();

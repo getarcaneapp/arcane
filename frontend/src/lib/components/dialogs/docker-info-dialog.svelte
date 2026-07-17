@@ -65,7 +65,7 @@
 		{:else}
 			<div class="flex min-h-56 flex-col items-center justify-center gap-3 pt-4">
 				<Spinner class="size-5" />
-				<p class="text-muted-foreground text-sm">{m.common_loading()}</p>
+				<p class="text-sm text-muted-foreground">{m.common_loading()}</p>
 			</div>
 		{/if}
 	{/snippet}
@@ -120,7 +120,7 @@
 
 {#snippet statsSection(info: DockerInfo)}
 	<div>
-		<h3 class="text-muted-foreground mb-2 text-xs font-semibold tracking-wider uppercase">
+		<h3 class="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_stats_section()}
 		</h3>
 		<div class="grid gap-3 sm:grid-cols-4">
@@ -134,27 +134,27 @@
 
 {#snippet resourcesSection(info: DockerInfo)}
 	<div>
-		<h3 class="text-muted-foreground mb-2 text-xs font-semibold tracking-wider uppercase">
+		<h3 class="mb-2 text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_resources_section()}
 		</h3>
 		<div class="grid gap-3 sm:grid-cols-4">
 			<div class="rounded-lg border p-3">
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.common_cpus()}</div>
+				<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{m.common_cpus()}</div>
 				<div class="flex items-center gap-2">
 					<Badge variant="outline" class="text-sm font-semibold">{info.NCPU ?? 0}</Badge>
-					<span class="text-muted-foreground text-[10px]">cores</span>
+					<span class="text-[10px] text-muted-foreground">cores</span>
 				</div>
 			</div>
 			<div class="rounded-lg border p-3">
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_memory_label()}</div>
+				<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{m.docker_info_memory_label()}</div>
 				<Badge variant="outline" class="text-sm font-semibold">{info.MemTotal ? bytes.format(info.MemTotal) : '-'}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_goroutines()}</div>
+				<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{m.docker_info_goroutines()}</div>
 				<Badge variant="outline" class="text-sm font-semibold">{info.NGoroutines ?? 0}</Badge>
 			</div>
 			<div class="rounded-lg border p-3">
-				<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_file_descriptors()}</div>
+				<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{m.docker_info_file_descriptors()}</div>
 				<Badge variant="outline" class="text-sm font-semibold">{info.NFd ?? 0}</Badge>
 			</div>
 		</div>
@@ -163,7 +163,7 @@
 
 {#snippet systemSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_system_section()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -183,7 +183,7 @@
 
 {#snippet versionSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_version_section()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -191,9 +191,9 @@
 			{@render infoRow(m.docker_info_api_version_label(), info.apiVersion)}
 			{@render infoRow(m.docker_info_go_version_label(), info.goVersion)}
 			<div class="grid grid-cols-[minmax(112px,38%)_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
-				<span class="text-muted-foreground text-[10px] tracking-tight uppercase">{m.docker_info_git_commit_label()}</span>
+				<span class="text-[10px] tracking-tight text-muted-foreground uppercase">{m.docker_info_git_commit_label()}</span>
 				<div class="flex items-center justify-end gap-2">
-					<code class="bg-muted rounded px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
+					<code class="rounded bg-muted px-1.5 py-0.5 text-xs">{info.gitCommit?.slice(0, 8) ?? '-'}</code>
 					{#if info.gitCommit}
 						<CopyButton text={info.gitCommit} size="icon" class="size-6" title={m.docker_copy_commit_hash()} />
 					{/if}
@@ -213,7 +213,7 @@
 
 {#snippet configurationSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.common_configuration()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -233,7 +233,7 @@
 
 {#snippet capabilitiesSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_capabilities_section()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -252,7 +252,7 @@
 
 {#snippet storageDetailsSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_storage_details_section()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -265,7 +265,7 @@
 
 {#snippet networkSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.resource_networks_cap()} & {m.docker_info_proxy_label()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -275,7 +275,7 @@
 			{@render infoRow(m.docker_info_no_proxy(), info.NoProxy)}
 			{#if info.DefaultAddressPools && info.DefaultAddressPools.length > 0}
 				<div>
-					<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{m.docker_info_address_pools_label()}</div>
+					<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{m.docker_info_address_pools_label()}</div>
 					<div class="flex flex-wrap gap-1">
 						{#each info.DefaultAddressPools as pool, i (i)}
 							<Badge variant="outline" size="sm" class="font-mono">{pool.Base}/{pool.Size}</Badge>
@@ -289,7 +289,7 @@
 
 {#snippet securitySection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.security_title()} & {m.docker_info_runtimes()}
 		</h3>
 		<div class="space-y-2 rounded-lg border p-2.5">
@@ -301,7 +301,7 @@
 
 {#snippet pluginsSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_plugins_section()}
 		</h3>
 		<div class="space-y-2 rounded-lg border p-2.5">
@@ -322,7 +322,7 @@
 		Nodes?: number;
 	}}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_swarm_section()}
 		</h3>
 		<div class="space-y-1 rounded-lg border p-2.5">
@@ -337,7 +337,7 @@
 
 {#snippet labelsSection(info: DockerInfo)}
 	<div class="space-y-2">
-		<h3 class="text-muted-foreground text-xs font-semibold tracking-wider uppercase">
+		<h3 class="text-xs font-semibold tracking-wider text-muted-foreground uppercase">
 			{m.docker_info_labels_section()}
 		</h3>
 		<div class="rounded-lg border p-3">
@@ -374,7 +374,7 @@
 		}
 	}}
 	<div class="rounded-lg border p-3 {colors[color].bg}">
-		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
+		<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{label}</div>
 		<Badge variant="outline" class="{colors[color].badge} text-base font-semibold tabular-nums">
 			{value}
 		</Badge>
@@ -383,12 +383,12 @@
 
 {#snippet tagGroup(label: string, items: string[] | undefined)}
 	<div>
-		<div class="text-muted-foreground mb-1 text-[10px] tracking-tight uppercase">{label}</div>
+		<div class="mb-1 text-[10px] tracking-tight text-muted-foreground uppercase">{label}</div>
 		<div class="flex flex-wrap gap-1">
 			{#each items ?? [] as item, i (i)}
 				<Badge variant="outline" size="sm">{item}</Badge>
 			{:else}
-				<span class="text-muted-foreground text-xs">-</span>
+				<span class="text-xs text-muted-foreground">-</span>
 			{/each}
 		</div>
 	</div>
@@ -396,7 +396,7 @@
 
 {#snippet capRow(label: string, value: boolean | undefined)}
 	<div class="flex items-center justify-between gap-2">
-		<span class="text-muted-foreground text-[10px] tracking-tight uppercase [overflow-wrap:anywhere]">{label}</span>
+		<span class="text-[10px] tracking-tight [overflow-wrap:anywhere] text-muted-foreground uppercase">{label}</span>
 		<span class="text-[10px] font-medium {value ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}">
 			{value ? m.common_yes() : m.common_no()}
 		</span>
@@ -405,7 +405,7 @@
 
 {#snippet infoRow(label: string, value: string | number | undefined | null, mono: boolean = true)}
 	<div class="grid grid-cols-[minmax(112px,38%)_minmax(0,1fr)] items-start gap-x-4 gap-y-1">
-		<span class="text-muted-foreground text-[10px] tracking-tight uppercase">{label}</span>
+		<span class="text-[10px] tracking-tight text-muted-foreground uppercase">{label}</span>
 		<span class="text-right text-xs [overflow-wrap:anywhere] {mono ? 'font-mono' : ''}">
 			{value === undefined || value === null || value === '' ? '-' : value}
 		</span>

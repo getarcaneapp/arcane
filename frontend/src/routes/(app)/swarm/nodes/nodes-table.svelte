@@ -355,7 +355,7 @@
 		{/each}
 		{#if canManageNodes}
 			<button
-				class="border-border hover:border-primary hover:text-primary inline-flex items-center gap-1 rounded border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors"
+				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-[11px] font-medium transition-colors hover:border-primary hover:text-primary"
 				onclick={() => openAddLabelDialog(item)}
 			>
 				<AddIcon class="size-3" />

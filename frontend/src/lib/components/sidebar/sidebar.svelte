@@ -143,7 +143,7 @@
 			<button
 				type="button"
 				onclick={() => (showVersionDialog = true)}
-				class="text-muted-foreground/60 hover:text-muted-foreground cursor-pointer text-xs font-medium transition-colors"
+				class="cursor-pointer text-xs font-medium text-muted-foreground/60 transition-colors hover:text-muted-foreground"
 			>
 				{m.sidebar_version({
 					version: versionInformation?.displayVersion ?? versionInformation?.currentVersion ?? m.common_unknown()

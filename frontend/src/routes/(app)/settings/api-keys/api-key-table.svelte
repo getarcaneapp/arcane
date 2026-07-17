@@ -183,7 +183,7 @@
 
 {#snippet KeyPrefixCell({ item }: { item: ApiKey })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.keyPrefix}...</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.keyPrefix}...</code>
 		<CopyButton text={item.keyPrefix} class="size-6" />
 	</div>
 {/snippet}

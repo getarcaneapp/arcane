@@ -49,5 +49,5 @@
 		aria-label={m.font_size()}
 		class="w-40 sm:w-44"
 	/>
-	<span class="text-muted-foreground w-10 text-right text-sm tabular-nums">{currentSize}px</span>
+	<span class="w-10 text-right text-sm text-muted-foreground tabular-nums">{currentSize}px</span>
 </div>

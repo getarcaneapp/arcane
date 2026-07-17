@@ -83,7 +83,7 @@
 		style="--sidebar-width: {SIDEBAR_WIDTH}; --sidebar-width-icon: {SIDEBAR_WIDTH_ICON}; --sidebar-gap-width: {open
 			? SIDEBAR_WIDTH
 			: SIDEBAR_WIDTH_ICON}; {style}"
-		class={cn('group/sidebar-wrapper has-data-[variant=inset]:bg-sidebar flex h-dvh w-full', className)}
+		class={cn('group/sidebar-wrapper flex h-dvh w-full has-data-[variant=inset]:bg-sidebar', className)}
 		bind:this={ref}
 		{...restProps}
 	>

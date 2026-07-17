@@ -31,7 +31,7 @@
 		bind:value={$inputs.provider.value}
 	/>
 
-	<div class="bg-border hidden h-6 w-px lg:block"></div>
+	<div class="hidden h-6 w-px bg-border lg:block"></div>
 
 	<div class="flex items-center gap-2">
 		<Switch id="build-push" checked={$inputs.push.value} onCheckedChange={(v) => ($inputs.push.value = v === true)} />

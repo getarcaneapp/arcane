@@ -14,15 +14,15 @@
 	let { busy, busyTitle, busyDescription, error, children }: Props = $props();
 </script>
 
-<div class="bg-background flex min-h-screen items-center justify-center">
+<div class="flex min-h-screen items-center justify-center bg-background">
 	<div class="w-full max-w-md space-y-8">
 		<div class="flex flex-col items-center text-center">
 			{#if busy}
-				<Spinner class="text-primary size-12" />
+				<Spinner class="size-12 text-primary" />
 				<h2 class="mt-6 text-2xl font-semibold">{busyTitle}</h2>
-				<p class="text-muted-foreground mt-2 text-sm">{busyDescription}</p>
+				<p class="mt-2 text-sm text-muted-foreground">{busyDescription}</p>
 			{:else if error}
-				<div class="text-destructive flex flex-col items-center">
+				<div class="flex flex-col items-center text-destructive">
 					<svg class="h-12 w-12" fill="none" viewBox="0 0 24 24" stroke="currentColor">
 						<path
 							stroke-linecap="round"
@@ -33,7 +33,7 @@
 					</svg>
 					<h2 class="mt-6 text-2xl font-semibold">{m.auth_authentication_error_title()}</h2>
 					<p class="mt-2 text-sm">{error}</p>
-					<p class="text-muted-foreground mt-4 text-xs">{m.auth_redirecting_to_login()}</p>
+					<p class="mt-4 text-xs text-muted-foreground">{m.auth_redirecting_to_login()}</p>
 				</div>
 			{:else}
 				{@render children?.()}

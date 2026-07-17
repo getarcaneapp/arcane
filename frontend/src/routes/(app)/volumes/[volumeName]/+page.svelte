@@ -180,7 +180,7 @@
 									class="col-span-1 flex items-start gap-3 sm:col-span-2 lg:col-span-3 xl:col-span-4 2xl:col-span-6"
 								>
 									<div
-										class="bg-muted/50 mt-2 cursor-pointer rounded-lg border p-3 select-all"
+										class="mt-2 cursor-pointer rounded-lg border bg-muted/50 p-3 select-all"
 										title={m.common_click_to_select()}
 									>
 										<code class="font-mono text-sm break-all">{volume.mountpoint}</code>
@@ -204,14 +204,14 @@
 										{#each containersDetailed as c (c.id)}
 											<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 												<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-													<a href="/containers/{c.id}" class="text-primary flex items-center hover:underline">
-														<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
+													<a href="/containers/{c.id}" class="flex items-center text-primary hover:underline">
+														<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 														{c.name}
 													</a>
 												</div>
 												<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 													<code
-														class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+														class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 														title={m.common_click_to_select()}
 													>
 														{truncateString(c.id, 48)}
@@ -228,7 +228,7 @@
 										{#each volume.containers as id (id)}
 											<div class="flex items-center justify-between gap-3 p-3">
 												<code class="font-mono text-sm break-all">{truncateString(id, 48)}</code>
-												<a href={`/containers/${id}`} class="text-primary text-sm hover:underline">{m.common_view()}</a>
+												<a href={`/containers/${id}`} class="text-sm text-primary hover:underline">{m.common_view()}</a>
 											</div>
 										{/each}
 									</Card.Content>
@@ -258,11 +258,11 @@
 					{/if}
 
 					{#if (!volume.labels || Object.keys(volume.labels).length === 0) && (!volume.options || Object.keys(volume.options).length === 0)}
-						<Card.Root class="bg-muted/10 border shadow-sm">
+						<Card.Root class="border bg-muted/10 shadow-sm">
 							<Card.Content class="pt-6 pb-6 text-center">
 								<div class="flex flex-col items-center justify-center">
-									<div class="bg-muted/30 mb-4 rounded-full p-3">
-										<TagIcon class="text-muted-foreground size-5 opacity-50" />
+									<div class="mb-4 rounded-full bg-muted/30 p-3">
+										<TagIcon class="size-5 text-muted-foreground opacity-50" />
 									</div>
 									<p class="text-muted-foreground">{m.volumes_no_labels_or_options()}</p>
 								</div>
@@ -280,11 +280,11 @@
 {:else}
 	<ResourceDetailLayout backUrl="/volumes" backLabel={m.volumes_title()} title={m.volumes_volume()} {actions}>
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
-			<div class="bg-muted/30 mb-4 rounded-full p-4">
-				<BoxIcon class="text-muted-foreground size-10 opacity-70" />
+			<div class="mb-4 rounded-full bg-muted/30 p-4">
+				<BoxIcon class="size-10 text-muted-foreground opacity-70" />
 			</div>
 			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.volumes_title() })}</h2>
-			<p class="text-muted-foreground mb-6">
+			<p class="mb-6 text-muted-foreground">
 				{m.common_not_found_description({ resource: m.volumes_title().toLowerCase() })}
 			</p>
 

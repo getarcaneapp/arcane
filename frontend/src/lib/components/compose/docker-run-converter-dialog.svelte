@@ -75,7 +75,7 @@
 			</div>
 
 			<div class="space-y-2">
-				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
+				<Label class="text-xs text-muted-foreground">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
 					{#each exampleCommands as command (command)}
 						<ArcaneButton

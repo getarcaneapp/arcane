@@ -49,7 +49,7 @@
 	});
 </script>
 
-<div class={cn('bg-background flex h-full min-h-0 flex-col', className)}>
+<div class={cn('flex h-full min-h-0 flex-col bg-background', className)}>
 	<Tabs.Root value={selectedTab} class="flex min-h-0 w-full flex-1 flex-col">
 		<div
 			class="sticky top-0 border-b transition-all duration-300"
@@ -88,14 +88,14 @@
 				class="fixed top-4 left-1/2 z-[var(--arcane-z-page-floating)] -translate-x-1/2 transition-all duration-300 ease-in-out"
 			>
 				<div
-					class="bg-popover/90 supports-backdrop-filter:bg-popover/80 bubble-shadow-lg border-border/50 rounded-lg border px-4 py-3 backdrop-blur-md"
+					class="bubble-shadow-lg rounded-lg border border-border/50 bg-popover/90 px-4 py-3 backdrop-blur-md supports-backdrop-filter:bg-popover/80"
 				>
 					<div class="flex items-center gap-4">
 						<div class="min-w-0">
 							{@render headerInfo()}
 						</div>
 						{#if headerActions}
-							<div class="bg-border h-4 w-px"></div>
+							<div class="h-4 w-px bg-border"></div>
 							{@render headerActions()}
 						{/if}
 					</div>

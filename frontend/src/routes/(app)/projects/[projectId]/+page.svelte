@@ -1380,7 +1380,7 @@
 						<div class="mt-1 flex min-w-0 flex-wrap items-center gap-1.5">
 							{#each project.urls as url, i (i)}
 								<a
-									class="ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 px-2.5 text-[12px] font-semibold transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
+									class="inline-flex h-6 max-w-[10rem] min-w-0 items-center gap-1.5 rounded-[var(--radius)] border border-sky-700/20 bg-background/70 px-2.5 text-[12px] font-semibold ring-offset-background transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none sm:max-w-[14rem] md:max-w-[18rem] dark:border-sky-400/40 dark:bg-sky-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30"
 									href={toSafeHref(url)}
 									target="_blank"
 									rel="noopener noreferrer"
@@ -1397,19 +1397,19 @@
 						{@const commitUrl = project.gitRepositoryURL
 							? toGitCommitUrl(project.gitRepositoryURL, project.lastSyncCommit)
 							: null}
-						<div class="text-muted-foreground mt-1 flex flex-wrap items-center gap-4 text-xs">
+						<div class="mt-1 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
 							<div class="flex items-center gap-1.5">
 								<span class="hidden sm:inline">{m.git_sync_commit()}:</span>
 								{#if commitUrl}
 									<a
 										href={commitUrl}
 										target="_blank"
-										class="hover:text-primary sm:bg-muted font-mono transition-colors sm:rounded sm:px-1.5 sm:py-0.5"
+										class="font-mono transition-colors hover:text-primary sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5"
 									>
 										{project.lastSyncCommit}
 									</a>
 								{:else}
-									<span class="sm:bg-muted font-mono sm:rounded sm:px-1.5 sm:py-0.5">
+									<span class="font-mono sm:rounded sm:bg-muted sm:px-1.5 sm:py-0.5">
 										{project.lastSyncCommit}
 									</span>
 								{/if}
@@ -1496,19 +1496,19 @@
 														<a
 															href={commitUrl}
 															target="_blank"
-															class="bg-muted hover:text-primary rounded px-1.5 py-0.5 transition-colors"
+															class="rounded bg-muted px-1.5 py-0.5 transition-colors hover:text-primary"
 														>
 															{project.lastSyncCommit}
 														</a>
 													{:else}
-														<span class="bg-muted rounded px-1.5 py-0.5">{project.lastSyncCommit}</span>
+														<span class="rounded bg-muted px-1.5 py-0.5">{project.lastSyncCommit}</span>
 													{/if}
 												</div>
 											{/if}
 											{#if hasLifecycleHook && lifecycleSync?.preDeployScriptPath}
 												<div class="flex items-center gap-1.5 font-mono text-xs">
 													<span class="text-muted-foreground">{m.git_sync_pre_deploy_title()}:</span>
-													<span class="bg-muted rounded px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
+													<span class="rounded bg-muted px-1.5 py-0.5">{lifecycleSync.preDeployScriptPath}</span>
 													<span class="text-muted-foreground">
 														{m.lifecycle_inline_runner_summary({
 															image: lifecycleSync.preDeployRunnerImage || 'alpine:latest',
@@ -1517,7 +1517,7 @@
 													</span>
 												</div>
 											{/if}
-											<span class="text-muted-foreground text-xs">
+											<span class="text-xs text-muted-foreground">
 												{m.git_managed_env_note()}
 											</span>
 										</div>
@@ -1541,7 +1541,7 @@
 					<div class="mb-2 flex shrink-0 items-center justify-end gap-2">
 						<label
 							for="layout-mode-toggle"
-							class="text-muted-foreground cursor-pointer text-xs"
+							class="cursor-pointer text-xs text-muted-foreground"
 							title={m.project_view_description()}
 						>
 							{m.workspace()}
@@ -1563,7 +1563,7 @@
 
 					<div class="min-h-0 flex-1">
 						{#if layoutMode === 'tree'}
-							<div class="bg-card border-border flex h-full min-h-0 flex-col overflow-hidden rounded-lg border">
+							<div class="flex h-full min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card">
 								<ResizableSplit
 									class="h-full min-h-0 flex-1"
 									{...composeTreeSplitProps}
@@ -1624,12 +1624,12 @@
 														/>
 													{:else if activeTreeTab === 'override'}
 														<div class="flex min-h-0 flex-1 flex-col">
-															<div class="border-border flex shrink-0 items-center justify-between gap-2 border-b px-3 py-2">
-																<p class="text-muted-foreground text-xs">{m.compose_override_hint()}</p>
+															<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
+																<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
 																{#if canEditOverride}
 																	<button
 																		type="button"
-																		class="text-muted-foreground hover:text-destructive flex shrink-0 items-center gap-1 text-xs font-medium"
+																		class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
 																		onclick={handleRemoveOverride}
 																	>
 																		<TrashIcon class="size-3.5 shrink-0" />
@@ -1664,11 +1664,11 @@
 													{:else if activeTreeTab.startsWith('file:')}
 														{@const relativePath = activeTreeTab.slice(5)}
 														{#if managedProjectFileLoadErrors[relativePath]}
-															<div class="text-destructive flex h-full min-h-0 items-center justify-center px-4 text-sm">
+															<div class="flex h-full min-h-0 items-center justify-center px-4 text-sm text-destructive">
 																{managedProjectFileLoadErrors[relativePath]}
 															</div>
 														{:else if managedProjectFileContents[relativePath] === undefined}
-															<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center">
+															<div class="flex h-full min-h-0 items-center justify-center text-muted-foreground">
 																{m.common_loading()}
 															</div>
 														{:else}
@@ -1701,8 +1701,8 @@
 						{:else}
 							<div class="flex h-full min-h-0 flex-col gap-4">
 								{#if (project?.includeFiles && project.includeFiles.length > 0) || (hasLifecycleHook && lifecycleSync?.preDeployScriptPath && directoryFilePaths.has(lifecycleSync.preDeployScriptPath))}
-									<div class="border-border bg-card rounded-lg border">
-										<div class="border-border scrollbar-hide flex gap-2 overflow-x-auto border-b p-2">
+									<div class="rounded-lg border border-border bg-card">
+										<div class="scrollbar-hide flex gap-2 overflow-x-auto border-b border-border p-2">
 											{#each project?.includeFiles ?? [] as includeFile (includeFile.relativePath)}
 												<ArcaneButton
 													action="base"
@@ -1737,7 +1737,7 @@
 										: undefined}
 									{@const fileKind = includeFile ? 'include' : 'directory'}
 									{#await getProjectFileResource(fileKind, selectedIncludeTab)}
-										<div class="text-muted-foreground flex h-full min-h-0 items-center justify-center rounded-lg border">
+										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border text-muted-foreground">
 											{m.common_loading()}
 										</div>
 									{:then loaded}
@@ -1765,7 +1765,7 @@
 											/>
 										{/if}
 									{:catch error}
-										<div class="text-destructive flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm">
+										<div class="flex h-full min-h-0 items-center justify-center rounded-lg border px-4 text-sm text-destructive">
 											{error instanceof Error ? error.message : String(error)}
 										</div>
 									{/await}
@@ -1789,16 +1789,16 @@
 												{#if overrideExpanded}
 													<button
 														type="button"
-														class="border-border bg-card hover:text-foreground flex shrink-0 items-center gap-2 rounded-lg border px-2 py-2 text-sm font-medium"
+														class="flex shrink-0 items-center gap-2 rounded-lg border border-border bg-card px-2 py-2 text-sm font-medium hover:text-foreground"
 														aria-expanded="false"
 														onclick={() => (overrideOpen = false)}
 													>
-														<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
-														<CodeIcon class="text-muted-foreground size-4 shrink-0" />
+														<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
+														<CodeIcon class="size-4 shrink-0 text-muted-foreground" />
 														<span class="truncate">{composeFileName}</span>
 														{#if composeHasChanges}
 															<span
-																class="bg-primary size-1.5 shrink-0 rounded-full"
+																class="size-1.5 shrink-0 rounded-full bg-primary"
 																role="img"
 																aria-label={m.common_unsaved_changes()}
 															></span>
@@ -1817,37 +1817,37 @@
 												{/if}
 												{#if overrideActive}
 													<div
-														class="border-border bg-card flex min-h-0 flex-col overflow-hidden rounded-lg border {overrideExpanded
+														class="flex min-h-0 flex-col overflow-hidden rounded-lg border border-border bg-card {overrideExpanded
 															? 'flex-1'
 															: 'shrink-0'}"
 													>
 														<div
 															class="flex shrink-0 items-center gap-1 px-2 py-1 {overrideExpanded
-																? 'border-border border-b'
+																? 'border-b border-border'
 																: ''}"
 														>
 															<button
 																type="button"
-																class="hover:text-foreground flex min-w-0 flex-1 items-center gap-2 py-1 text-sm font-medium"
+																class="flex min-w-0 flex-1 items-center gap-2 py-1 text-sm font-medium hover:text-foreground"
 																aria-expanded={overrideOpen}
 																onclick={() => (overrideOpen = !overrideOpen)}
 															>
 																{#if overrideOpen}
-																	<ArrowDownIcon class="text-muted-foreground size-4 shrink-0" />
+																	<ArrowDownIcon class="size-4 shrink-0 text-muted-foreground" />
 																{:else}
-																	<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
+																	<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
 																{/if}
-																<FileTextIcon class="text-muted-foreground size-4 shrink-0" />
+																<FileTextIcon class="size-4 shrink-0 text-muted-foreground" />
 																<span class="truncate">{overrideFileName}</span>
 																{#if overrideHasChanges}
 																	<span
-																		class="bg-primary size-1.5 shrink-0 rounded-full"
+																		class="size-1.5 shrink-0 rounded-full bg-primary"
 																		role="img"
 																		aria-label={m.common_unsaved_changes()}
 																	></span>
 																{/if}
 																{#if !overrideOpen}
-																	<span class="text-muted-foreground hidden truncate text-xs font-normal sm:inline"
+																	<span class="hidden truncate text-xs font-normal text-muted-foreground sm:inline"
 																		>{m.compose_override_hint()}</span
 																	>
 																{/if}
@@ -1884,7 +1884,7 @@
 															{#if canEditOverride}
 																<button
 																	type="button"
-																	class="text-muted-foreground hover:text-destructive flex shrink-0 items-center p-1.5"
+																	class="flex shrink-0 items-center p-1.5 text-muted-foreground hover:text-destructive"
 																	onclick={handleRemoveOverride}
 																	aria-label={m.compose_override_remove()}
 																>
@@ -1910,7 +1910,7 @@
 												{:else if canEditOverride}
 													<button
 														type="button"
-														class="border-border text-muted-foreground hover:text-foreground hover:bg-card flex shrink-0 items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-sm font-medium transition-colors"
+														class="flex shrink-0 items-center gap-2 rounded-lg border border-dashed border-border px-3 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-card hover:text-foreground"
 														onclick={handleAddOverride}
 													>
 														<CreateFileIcon class="size-4 shrink-0" />
@@ -1943,7 +1943,7 @@
 				{#if project.status == 'running'}
 					<ProjectsLogsPanel projectId={project.id} bind:autoScroll={autoScrollStackLogs} />
 				{:else}
-					<div class="text-muted-foreground py-12 text-center">{m.compose_logs_title()} {m.common_disabled()}</div>
+					<div class="py-12 text-center text-muted-foreground">{m.compose_logs_title()} {m.common_disabled()}</div>
 				{/if}
 			</Tabs.Content>
 		{/snippet}
@@ -1951,13 +1951,13 @@
 {:else}
 	<div class="flex min-h-screen items-center justify-center">
 		<div class="text-center">
-			<div class="bg-muted/50 mb-6 inline-flex rounded-full p-6">
-				<ProjectsIcon class="text-muted-foreground size-10" />
+			<div class="mb-6 inline-flex rounded-full bg-muted/50 p-6">
+				<ProjectsIcon class="size-10 text-muted-foreground" />
 			</div>
 			<h2 class="mb-3 text-2xl font-medium">
 				{data.error ? m.common_action_failed() : m.common_not_found_title({ resource: m.project() })}
 			</h2>
-			<p class="text-muted-foreground mb-8 max-w-md text-center">
+			<p class="mb-8 max-w-md text-center text-muted-foreground">
 				{data.error || m.common_not_found_description({ resource: m.project().toLowerCase() })}
 			</p>
 			<ArcaneButton

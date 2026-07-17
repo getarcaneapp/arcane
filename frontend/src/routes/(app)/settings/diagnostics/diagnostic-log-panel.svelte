@@ -85,18 +85,18 @@
 	onDestroy(() => ws?.close());
 </script>
 
-<div class="border-border/60 overflow-hidden rounded-xl border">
-	<div class="border-border/60 bg-muted/30 flex flex-wrap items-center gap-2 border-b px-3 py-2">
+<div class="overflow-hidden rounded-xl border border-border/60">
+	<div class="flex flex-wrap items-center gap-2 border-b border-border/60 bg-muted/30 px-3 py-2">
 		<span class="flex items-center gap-1.5 text-xs font-medium">
 			<span class={cn('size-2 rounded-full', connected ? 'bg-emerald-500' : 'bg-zinc-500')}></span>
 			{connected ? m.diagnostics_logs_streaming() : m.diagnostics_logs_disconnected()}
 		</span>
-		<span class="text-muted-foreground text-xs tabular-nums">{m.diagnostics_logs_count({ count: filtered.length })}</span>
+		<span class="text-xs text-muted-foreground tabular-nums">{m.diagnostics_logs_count({ count: filtered.length })}</span>
 
 		<div class="ml-auto flex items-center gap-2">
 			<select
 				bind:value={levelFilter}
-				class="border-border/60 bg-background h-7 rounded-md border px-2 text-xs"
+				class="h-7 rounded-md border border-border/60 bg-background px-2 text-xs"
 				aria-label={m.diagnostics_logs_all_levels()}
 			>
 				<option value="all">{m.diagnostics_logs_all_levels()}</option>
@@ -108,9 +108,9 @@
 			<input
 				bind:value={filterText}
 				placeholder={m.diagnostics_logs_filter_placeholder()}
-				class="border-border/60 bg-background h-7 w-32 rounded-md border px-2 text-xs"
+				class="h-7 w-32 rounded-md border border-border/60 bg-background px-2 text-xs"
 			/>
-			<label class="text-muted-foreground flex items-center gap-1 text-xs">
+			<label class="flex items-center gap-1 text-xs text-muted-foreground">
 				<input type="checkbox" bind:checked={autoScroll} class="size-3.5" />
 				{m.diagnostics_logs_auto_scroll()}
 			</label>
@@ -127,21 +127,21 @@
 
 	<div
 		bind:this={viewport}
-		class="bg-background overflow-y-auto px-3 py-2 font-mono text-xs leading-relaxed"
+		class="overflow-y-auto bg-background px-3 py-2 font-mono text-xs leading-relaxed"
 		style="height: {height};"
 		role="log"
 		aria-live={connected ? 'polite' : 'off'}
 	>
 		{#if filtered.length === 0}
-			<div class="text-muted-foreground py-6 text-center">{m.diagnostics_logs_empty()}</div>
+			<div class="py-6 text-center text-muted-foreground">{m.diagnostics_logs_empty()}</div>
 		{:else}
 			{#each filtered as entry (logKey(entry))}
-				<div class="hover:bg-foreground/5 flex gap-2 rounded px-1 py-0.5">
-					<span class="text-muted-foreground shrink-0 tabular-nums">{fmtTime(entry.time)}</span>
+				<div class="flex gap-2 rounded px-1 py-0.5 hover:bg-foreground/5">
+					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>
 					<span class="min-w-0 break-words whitespace-pre-wrap">
 						{entry.message}
-						{#if entry.attrs}<span class="text-muted-foreground ml-2">{attrsText(entry.attrs)}</span>{/if}
+						{#if entry.attrs}<span class="ml-2 text-muted-foreground">{attrsText(entry.attrs)}</span>{/if}
 					</span>
 				</div>
 			{/each}

@@ -86,7 +86,7 @@
 {#snippet badgeTile(label: string, text: string, variant: BadgeVariant)}
 	<Card.Root variant="subtle">
 		<Card.Content class="flex flex-col gap-1.5 p-4">
-			<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
+			<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
 			<div><Badge {variant} minWidth="20">{text}</Badge></div>
 		</Card.Content>
 	</Card.Root>
@@ -95,12 +95,12 @@
 {#snippet tile(label: string, value: string, opts?: { mono?: boolean; subtext?: string })}
 	<Card.Root variant="subtle">
 		<Card.Content class="flex flex-col gap-1 p-4">
-			<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-			<div class={cn('text-foreground text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
+			<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+			<div class={cn('text-sm font-medium text-foreground', opts?.mono && 'font-mono break-all select-all')}>
 				{value}
 			</div>
 			{#if opts?.subtext}
-				<div class="text-muted-foreground text-xs">{opts.subtext}</div>
+				<div class="text-xs text-muted-foreground">{opts.subtext}</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -126,7 +126,7 @@
 		<div class="space-y-4 border-t pt-6">
 			<div class="space-y-1">
 				<h3 class="text-sm font-medium">{m.environments_agent_mtls_section_title()}</h3>
-				<p class="text-muted-foreground text-xs">{m.environments_agent_mtls_description()}</p>
+				<p class="text-xs text-muted-foreground">{m.environments_agent_mtls_description()}</p>
 			</div>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

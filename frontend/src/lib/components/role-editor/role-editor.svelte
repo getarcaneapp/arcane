@@ -82,7 +82,7 @@
 				/>
 
 				<div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
 					</div>
 					{#if $inputs.permissions?.error}
@@ -91,7 +91,7 @@
 				</div>
 
 				{#if isBuiltIn}
-					<p class="text-muted-foreground text-xs">{m.roles_built_in_note()}</p>
+					<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
 				{/if}
 
 				{#if isBuiltIn && onClone}

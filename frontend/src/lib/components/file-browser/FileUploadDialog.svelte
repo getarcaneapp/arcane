@@ -71,10 +71,10 @@
 			{#if files.length > 0}
 				<div class="flex max-h-[200px] flex-col gap-2 overflow-y-auto pr-1">
 					{#each files as file, i (file.name + i)}
-						<div class="border-border bg-muted/50 flex items-center justify-between gap-2 rounded-lg border p-2">
+						<div class="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/50 p-2">
 							<div class="flex flex-col overflow-hidden">
 								<span class="truncate text-xs font-medium">{file.name}</span>
-								<span class="text-muted-foreground text-[10px]">{displaySize(file.size)}</span>
+								<span class="text-[10px] text-muted-foreground">{displaySize(file.size)}</span>
 							</div>
 							<ArcaneButton
 								action="base"

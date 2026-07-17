@@ -245,7 +245,7 @@
 				<div class="hidden" use:openSession aria-hidden="true"></div>
 			{/if}
 			<div class="relative">
-				<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2" />
+				<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
 				<Input
 					type="text"
 					placeholder={m.common_search()}
@@ -260,7 +260,7 @@
 					<button
 						type="button"
 						onclick={clearSearch}
-						class="text-muted-foreground hover:text-foreground hover:bg-muted absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 transition-colors"
+						class="absolute top-1/2 right-3 -translate-y-1/2 rounded-sm p-0.5 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
 						title={m.common_clear_search()}
 					>
 						<CloseIcon class="size-4" />
@@ -274,11 +274,11 @@
 						<Spinner class="size-6" />
 					</div>
 				{:else if loadError}
-					<div class="text-destructive py-10 text-center">
+					<div class="py-10 text-center text-destructive">
 						<p>{m.error_generic()}</p>
 					</div>
 				{:else if environments.length === 0}
-					<div class="text-muted-foreground py-10 text-center">
+					<div class="py-10 text-center text-muted-foreground">
 						<EnvironmentsIcon class="mx-auto mb-4 size-12 opacity-50" />
 						<p>{m.sidebar_no_environments()}</p>
 					</div>
@@ -290,7 +290,7 @@
 							<div
 								class={cn(
 									'flex items-center gap-2 rounded-lg border p-1 transition-colors',
-									isActive && 'bg-primary/10 border-primary font-medium',
+									isActive && 'border-primary bg-primary/10 font-medium',
 									!isActive && !isDisabled && 'hover:bg-muted/50',
 									!isActive && isDisabled && 'opacity-50'
 								)}
@@ -307,7 +307,7 @@
 									<div
 										class={cn(
 											'flex size-8 shrink-0 items-center justify-center rounded-md border',
-											isActive ? 'bg-primary border-primary' : 'border-border'
+											isActive ? 'border-primary bg-primary' : 'border-border'
 										)}
 									>
 										{#if env.id === '0'}
@@ -325,7 +325,7 @@
 								</button>
 								<div class="flex shrink-0 items-center gap-2 pr-2">
 									{#if isActive}
-										<span class="text-primary hidden text-xs font-medium sm:inline">
+										<span class="hidden text-xs font-medium text-primary sm:inline">
 											{m.environments_current_environment()}
 										</span>
 									{/if}

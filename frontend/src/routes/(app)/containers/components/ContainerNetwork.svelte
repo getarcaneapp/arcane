@@ -29,7 +29,7 @@
 				<!-- fallow-ignore-next-line code-duplication container vs swarm-service network; typed props diverge across the boundary -->
 				<PortBadge ports={container.ports} />
 			{:else}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					<div class="text-sm">{m.containers_no_ports()}</div>
 				</div>
 			{/if}
@@ -54,26 +54,26 @@
 					{#each Object.entries(container.networkSettings.networks) as [networkName, rawNetworkConfig] (networkName)}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
-								<div class="border-border mb-4 flex items-center gap-3 border-b pb-4">
+								<div class="mb-4 flex items-center gap-3 border-b border-border pb-4">
 									<div class="rounded-lg bg-blue-500/10 p-2">
 										<NetworksIcon class="size-5 text-blue-500" />
 									</div>
 									<div class="min-w-0 flex-1">
-										<div class="text-foreground text-base font-semibold break-all">
+										<div class="text-base font-semibold break-all text-foreground">
 											{networkName}
 										</div>
-										<div class="text-muted-foreground text-xs">{m.network_interface()}</div>
+										<div class="text-xs text-muted-foreground">{m.network_interface()}</div>
 									</div>
 								</div>
 
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<Card.Root variant="outlined">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_ip_address()}
 											</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.ipAddress || m.common_na()}
@@ -83,9 +83,9 @@
 
 									<Card.Root variant="outlined">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.common_gateway()}</div>
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_gateway()}</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.gateway || m.common_na()}
@@ -95,11 +95,11 @@
 
 									<Card.Root variant="outlined">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mac_address()}
 											</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.macAddress || m.common_na()}
@@ -109,9 +109,9 @@
 
 									<Card.Root variant="outlined">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.common_subnet()}</div>
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_subnet()}</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{rawNetworkConfig.ipPrefixLen
@@ -124,9 +124,9 @@
 									{#if rawNetworkConfig.networkId}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_network_id()}</div>
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_network_id()}</div>
 												<div
-													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 													title={m.common_click_to_select()}
 												>
 													{rawNetworkConfig.networkId}
@@ -138,9 +138,9 @@
 									{#if rawNetworkConfig.endpointId}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_endpoint_id()}</div>
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_endpoint_id()}</div>
 												<div
-													class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+													class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 													title={m.common_click_to_select()}
 												>
 													{rawNetworkConfig.endpointId}
@@ -152,10 +152,10 @@
 									{#if rawNetworkConfig.aliases && rawNetworkConfig.aliases.length > 0}
 										<Card.Root variant="outlined" class="sm:col-span-2">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{m.containers_aliases()}
 												</div>
-												<div class="text-foreground space-y-1 text-sm font-medium">
+												<div class="space-y-1 text-sm font-medium text-foreground">
 													{#each rawNetworkConfig.aliases as alias, index (index)}
 														<div class="cursor-pointer font-mono break-all select-all" title={m.common_click_to_select()}>
 															{alias}
@@ -172,7 +172,7 @@
 					{/each}
 				</div>
 			{:else}
-				<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+				<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 					<div class="text-sm">{m.containers_no_networks_connected()}</div>
 				</div>
 			{/if}

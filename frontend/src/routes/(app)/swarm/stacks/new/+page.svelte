@@ -151,7 +151,7 @@
 	);
 </script>
 
-<div class="bg-background flex h-full min-h-0 flex-col">
+<div class="flex h-full min-h-0 flex-col bg-background">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex items-center gap-4">
@@ -164,7 +164,7 @@
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}
 				/>
-				<div class="bg-border hidden h-4 w-px sm:block"></div>
+				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
 						bind:value={$inputs.name.value}
@@ -224,7 +224,7 @@
 				</div>
 
 				<form class="flex h-full min-h-0 flex-1 flex-col px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
-					<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
 						<ResizableSplit
 							class="min-h-0 flex-1"
 							variant="flush"

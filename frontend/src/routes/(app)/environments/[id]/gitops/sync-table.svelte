@@ -205,15 +205,15 @@
 
 {#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
-		<GitBranchIcon class="text-muted-foreground size-3.5" />
-		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
+		<GitBranchIcon class="size-3.5 text-muted-foreground" />
+		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{value}</code>
 	</div>
 {/snippet}
 
 {#snippet PathCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
-		<FolderIcon class="text-muted-foreground size-3.5" />
-		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
+		<FolderIcon class="size-3.5 text-muted-foreground" />
+		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{value}</code>
 	</div>
 {/snippet}
 
@@ -237,23 +237,23 @@
 	{#if value}
 		{@const commitUrl = item.repository?.url ? toGitCommitUrl(item.repository.url, String(value)) : null}
 		<div class="flex items-center gap-1.5">
-			<HashIcon class="text-muted-foreground size-3.5" />
+			<HashIcon class="size-3.5 text-muted-foreground" />
 			{#if commitUrl}
 				<a
 					href={commitUrl}
 					target="_blank"
-					class="hover:text-primary bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs transition-colors"
+					class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
 					{value}
 				</a>
 			{:else}
-				<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs">
+				<code class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 					{value}
 				</code>
 			{/if}
 		</div>
 	{:else}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{/if}
 {/snippet}
 

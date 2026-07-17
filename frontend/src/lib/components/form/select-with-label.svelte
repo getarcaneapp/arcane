@@ -44,7 +44,7 @@
 			<div class="flex flex-col items-start gap-1">
 				<span class="font-medium">{option.label}</span>
 				{#if option.description}
-					<span class="text-muted-foreground text-xs">{option.description}</span>
+					<span class="text-xs text-muted-foreground">{option.description}</span>
 				{/if}
 			</div>
 		</Select.Item>
@@ -62,7 +62,7 @@
 				{label}
 			</Label>
 			{#if description}
-				<p class="text-muted-foreground mt-0.5 text-xs">{description}</p>
+				<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 			{/if}
 		</div>
 	{/if}
@@ -85,6 +85,6 @@
 	</Select.Root>
 
 	{#if error}
-		<p class="text-destructive text-xs font-medium">{error}</p>
+		<p class="text-xs font-medium text-destructive">{error}</p>
 	{/if}
 </div>

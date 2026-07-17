@@ -109,9 +109,9 @@
 				rows={field.rows ?? 2}
 			/>
 			{#if getFieldError(field)}
-				<p class="text-destructive text-sm">{getFieldError(field)}</p>
+				<p class="text-sm text-destructive">{getFieldError(field)}</p>
 			{:else if field.helpText}
-				<p class="text-muted-foreground text-sm">{field.helpText}</p>
+				<p class="text-sm text-muted-foreground">{field.helpText}</p>
 			{/if}
 		</div>
 	{:else if field.kind === 'switch'}
@@ -144,16 +144,16 @@
 				value={getStringValue(field.key)}
 				onchange={(event) => setSelectValue(field, (event.target as HTMLSelectElement).value)}
 				{disabled}
-				class="border-input bg-background ring-offset-background placeholder:text-muted-foreground focus-visible:ring-ring flex h-10 rounded-md border px-3 py-2 text-base focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
+				class="flex h-10 rounded-md border border-input bg-background px-3 py-2 text-base ring-offset-background placeholder:text-muted-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none disabled:cursor-not-allowed disabled:opacity-50 md:text-sm"
 			>
 				{#each field.options as option (option.value)}
 					<option value={option.value}>{option.label}</option>
 				{/each}
 			</select>
 			{#if getFieldError(field)}
-				<p class="text-destructive text-sm">{getFieldError(field)}</p>
+				<p class="text-sm text-destructive">{getFieldError(field)}</p>
 			{:else if field.description}
-				<p class="text-muted-foreground text-sm">{field.description}</p>
+				<p class="text-sm text-muted-foreground">{field.description}</p>
 			{/if}
 		</div>
 	{/if}

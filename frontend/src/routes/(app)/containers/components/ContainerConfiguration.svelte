@@ -37,7 +37,7 @@
 						valueTitle={m.common_click_to_select()}
 					/>
 				{:else}
-					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+					<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 						<div class="text-sm">{m.containers_no_env_vars()}</div>
 					</div>
 				{/if}
@@ -66,7 +66,7 @@
 						{/each}
 					</KeyValueGrid>
 				{:else}
-					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+					<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 						<div class="text-sm">{m.containers_no_labels_defined()}</div>
 					</div>
 				{/if}

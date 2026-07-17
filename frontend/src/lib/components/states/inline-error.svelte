@@ -19,14 +19,14 @@
 
 <div
 	role="alert"
-	class={cn('border-destructive/30 bg-destructive/5 flex items-start gap-3 rounded-lg border p-4 text-sm', className)}
+	class={cn('flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4 text-sm', className)}
 >
-	<AlertIcon class="text-destructive mt-0.5 size-4 shrink-0" aria-hidden="true" />
+	<AlertIcon class="mt-0.5 size-4 shrink-0 text-destructive" aria-hidden="true" />
 	<div class="min-w-0 flex-1 space-y-1">
 		{#if title}
 			<p class="font-medium">{title}</p>
 		{/if}
-		<p class="text-muted-foreground break-words">{message}</p>
+		<p class="break-words text-muted-foreground">{message}</p>
 	</div>
 	{#if onRetry}
 		<ArcaneButton

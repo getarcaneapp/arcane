@@ -113,7 +113,7 @@
 </script>
 
 <RadioGroup.Root class="space-y-3" value={selectedTheme} onValueChange={handleThemeChange}>
-	<div class="bg-background/30 overflow-hidden rounded-xl border border-dashed p-2 sm:p-3">
+	<div class="overflow-hidden rounded-xl border border-dashed bg-background/30 p-2 sm:p-3">
 		<Carousel.Root
 			class="w-full"
 			opts={{ align: 'center', loop: true }}
@@ -136,10 +136,10 @@
 								<Card.Root
 									variant="outlined"
 									class={[
-										'border-border/70 bg-card h-full transition-[border-color,background-color,opacity,filter] duration-200',
+										'h-full border-border/70 bg-card transition-[border-color,background-color,opacity,filter] duration-200',
 										selectedTheme === theme.value
 											? 'border-primary bg-primary/5 shadow-sm'
-											: 'hover:border-primary/40 opacity-85 saturate-75'
+											: 'opacity-85 saturate-75 hover:border-primary/40'
 									]}
 								>
 									<Card.Content class="flex h-full flex-col gap-4 p-4">
@@ -186,7 +186,7 @@
 												<div class="size-2 rounded-full" style={`background-color: ${previewAccentColor};`}></div>
 												<div class="text-sm font-medium">{option.label}</div>
 											</div>
-											<p class="text-muted-foreground text-xs leading-5">{option.description}</p>
+											<p class="text-xs leading-5 text-muted-foreground">{option.description}</p>
 										</div>
 									</Card.Content>
 								</Card.Root>
@@ -196,10 +196,10 @@
 				{/each}
 			</Carousel.Content>
 			<div
-				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 start-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-r to-transparent backdrop-blur-[2px] sm:w-14"
+				class="pointer-events-none absolute inset-y-2 start-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-r from-background/95 via-background/55 to-transparent backdrop-blur-[2px] sm:w-14"
 			></div>
 			<div
-				class="from-background/95 via-background/55 pointer-events-none absolute inset-y-2 end-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-l to-transparent backdrop-blur-[2px] sm:w-14"
+				class="pointer-events-none absolute inset-y-2 end-0 z-[var(--arcane-z-raised)] w-10 bg-gradient-to-l from-background/95 via-background/55 to-transparent backdrop-blur-[2px] sm:w-14"
 			></div>
 			<Carousel.Previous class="start-3 z-[var(--arcane-z-sticky)] hidden md:inline-flex" />
 			<Carousel.Next class="end-3 z-[var(--arcane-z-sticky)] hidden md:inline-flex" />

@@ -113,7 +113,7 @@
 					<div class="flex flex-col gap-0.5">
 						<span class="text-sm leading-none font-medium">{preset.label}</span>
 						{#if preset.description}
-							<span class="text-muted-foreground text-xs">{preset.description}</span>
+							<span class="text-xs text-muted-foreground">{preset.description}</span>
 						{/if}
 					</div>
 				</label>
@@ -126,7 +126,7 @@
 	{/if}
 
 	{#if filteredGroups.length === 0}
-		<p class="text-muted-foreground py-6 text-center text-sm">{m.permissions_no_matches()}</p>
+		<p class="py-6 text-center text-sm text-muted-foreground">{m.permissions_no_matches()}</p>
 	{:else}
 		<Accordion.Root type="multiple" value={openValues} class="w-full">
 			{#each filteredGroups as group (group.resource.key)}
@@ -175,9 +175,9 @@
 									/>
 									<div class="flex flex-col gap-0.5">
 										<span class="text-sm leading-none font-medium">{action.label}</span>
-										<code class="text-muted-foreground text-xs">{action.permission}</code>
+										<code class="text-xs text-muted-foreground">{action.permission}</code>
 										{#if action.description}
-											<span class="text-muted-foreground text-xs">{action.description}</span>
+											<span class="text-xs text-muted-foreground">{action.description}</span>
 										{/if}
 									</div>
 								</label>

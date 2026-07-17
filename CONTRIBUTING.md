@@ -195,7 +195,7 @@ just gomod tidy all
 
 Both services include development-time linting and formatting:
 
-- **Frontend**: ESLint + Prettier (configured in VS Code)
+- **Frontend**: Svelte/TypeScript checks + Oxfmt (configured in VS Code)
 - **Backend**: Go fmt + Go vet (built into Air hot reload)
 
 ### Manual Commands

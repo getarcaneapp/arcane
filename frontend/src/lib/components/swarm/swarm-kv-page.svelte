@@ -219,7 +219,7 @@
 					</Card.Header>
 					<Card.Content class="space-y-3 pb-6">
 						{#if items.length === 0}
-							<div class="text-muted-foreground py-8 text-center text-sm">{messages.empty}</div>
+							<div class="py-8 text-center text-sm text-muted-foreground">{messages.empty}</div>
 						{:else}
 							{#each items as item (item.id)}
 								<Card.Root class="overflow-hidden border py-0">
@@ -231,19 +231,19 @@
 										<div class="flex items-center justify-between gap-2">
 											<div class="min-w-0">
 												<div class="truncate font-medium">{getSwarmSpecName(item.spec, item.id)}</div>
-												<div class="text-muted-foreground font-mono text-xs">{item.id}</div>
+												<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
 											</div>
-											<div class="text-muted-foreground shrink-0 text-xs">{formatSwarmTimestamp(item.updatedAt)}</div>
+											<div class="shrink-0 text-xs text-muted-foreground">{formatSwarmTimestamp(item.updatedAt)}</div>
 										</div>
 									</button>
 
 									{#if selectedId === item.id}
 										<div class="space-y-3 border-t px-4 pt-4 pb-5">
 											<div class="flex items-center gap-2">
-												<div class="text-muted-foreground font-mono text-xs">{item.id}</div>
+												<div class="font-mono text-xs text-muted-foreground">{item.id}</div>
 												<CopyButton text={item.id} />
 											</div>
-											<p class="text-muted-foreground text-sm">{messages.immutableNotice}</p>
+											<p class="text-sm text-muted-foreground">{messages.immutableNotice}</p>
 											<Input placeholder={messages.namePlaceholder} bind:value={editName} readonly />
 											<Textarea
 												rows={12}

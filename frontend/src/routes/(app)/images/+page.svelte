@@ -335,10 +335,10 @@
 					{#if uploadedFiles.length > 0}
 						<div class="flex flex-col gap-2">
 							{#each uploadedFiles as file, i (file.name)}
-								<div class="border-border bg-muted/50 flex items-center justify-between gap-2 rounded-lg border p-3">
+								<div class="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/50 p-3">
 									<div class="flex flex-col">
 										<span class="text-sm font-medium">{file.name}</span>
-										<span class="text-muted-foreground text-xs">{displaySize(file.size)}</span>
+										<span class="text-xs text-muted-foreground">{displaySize(file.size)}</span>
 									</div>
 									<ArcaneButton
 										action="base"
@@ -353,7 +353,7 @@
 						</div>
 					{/if}
 					{#if isUploading}
-						<div class="text-muted-foreground flex items-center gap-2 text-sm">
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
 							<Spinner class="size-4" />{m.images_uploading()}
 						</div>
 					{/if}

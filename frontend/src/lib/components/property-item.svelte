@@ -43,7 +43,7 @@
 		<Icon class="size-5 {colorClasses[color].text}" />
 	</div>
 	<div class="min-w-0 flex-1">
-		<p class="text-muted-foreground text-sm font-medium">{label}</p>
+		<p class="text-sm font-medium text-muted-foreground">{label}</p>
 		{#if children}
 			{@render children()}
 		{:else}

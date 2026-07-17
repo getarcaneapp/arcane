@@ -118,7 +118,7 @@
 							options={providerOptions}
 						/>
 						{#if !depotCredentialsPresent && !depotConfigured}
-							<p class="text-muted-foreground mt-2 text-xs">{m.build_settings_depot_enable_hint()}</p>
+							<p class="mt-2 text-xs text-muted-foreground">{m.build_settings_depot_enable_hint()}</p>
 						{/if}
 					</div>
 					<TextInputWithLabel

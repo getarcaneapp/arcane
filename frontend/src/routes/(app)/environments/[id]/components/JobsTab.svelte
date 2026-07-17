@@ -225,7 +225,7 @@
 					: allItems}
 
 				{#if filteredItems.length === 0}
-					<p class="text-muted-foreground py-4 text-center text-sm">
+					<p class="py-4 text-center text-sm text-muted-foreground">
 						{m.common_no_results_found()}
 					</p>
 				{:else}
@@ -250,7 +250,7 @@
 					{/each}
 				{/if}
 			{:catch error}
-				<div class="text-destructive p-2 text-sm">
+				<div class="p-2 text-sm text-destructive">
 					{(error instanceof Error ? error.message : '') || 'Failed to load containers'}
 				</div>
 			{/await}
@@ -280,7 +280,7 @@
 							{@const categoryJobs = getJobsByCategory(category.id, jobsResponse.jobs)}
 							{#if categoryJobs.length > 0}
 								<div class="space-y-4">
-									<h3 class="text-muted-foreground text-sm font-semibold tracking-tight uppercase">
+									<h3 class="text-sm font-semibold tracking-tight text-muted-foreground uppercase">
 										{category.label}
 									</h3>
 									<div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-2">
@@ -307,17 +307,17 @@
 												{/snippet}
 
 												{#if job.id === 'auto-update' && $formInputs.autoUpdate.value}
-													<div class="border-border/20 space-y-3 border-t pt-3">
+													<div class="space-y-3 border-t border-border/20 pt-3">
 														<div class="space-y-1">
 															<Label class="text-sm font-medium">
 																{m.auto_update_excluded_containers()}
 																{#await containersPromise then containers}
-																	<span class="text-muted-foreground ml-1 font-normal">
+																	<span class="ml-1 font-normal text-muted-foreground">
 																		({containers.filter((c) => excludedContainers.has(getContainerName(c))).length})
 																	</span>
 																{/await}
 															</Label>
-															<p class="text-muted-foreground text-xs">{m.auto_update_exclude_description()}</p>
+															<p class="text-xs text-muted-foreground">{m.auto_update_exclude_description()}</p>
 														</div>
 
 														<div class="space-y-2">
@@ -333,13 +333,13 @@
 												{/if}
 
 												{#if job.id === 'auto-heal' && $formInputs.autoHealEnabled.value}
-													<div class="border-border/20 space-y-3 border-t pt-3">
+													<div class="space-y-3 border-t border-border/20 pt-3">
 														<div class="grid gap-3 sm:grid-cols-2">
 															<div class="space-y-1">
 																<Label for="auto-heal-max-restarts" class="text-sm font-medium"
 																	>{m.auto_heal_max_restarts_label()}</Label
 																>
-																<p class="text-muted-foreground text-xs">{m.auto_heal_max_restarts_description()}</p>
+																<p class="text-xs text-muted-foreground">{m.auto_heal_max_restarts_description()}</p>
 																<Input
 																	id="auto-heal-max-restarts"
 																	type="number"
@@ -352,7 +352,7 @@
 																<Label for="auto-heal-restart-window" class="text-sm font-medium"
 																	>{m.auto_heal_restart_window_label()}</Label
 																>
-																<p class="text-muted-foreground text-xs">{m.auto_heal_restart_window_description()}</p>
+																<p class="text-xs text-muted-foreground">{m.auto_heal_restart_window_description()}</p>
 																<Input
 																	id="auto-heal-restart-window"
 																	type="number"
@@ -367,12 +367,12 @@
 															<Label class="text-sm font-medium">
 																{m.auto_heal_excluded_containers()}
 																{#await containersPromise then containers}
-																	<span class="text-muted-foreground ml-1 font-normal">
+																	<span class="ml-1 font-normal text-muted-foreground">
 																		({containers.filter((c) => autoHealExcludedContainers.has(getContainerName(c))).length})
 																	</span>
 																{/await}
 															</Label>
-															<p class="text-muted-foreground text-xs">{m.auto_heal_exclude_description()}</p>
+															<p class="text-xs text-muted-foreground">{m.auto_heal_exclude_description()}</p>
 														</div>
 
 														<div class="space-y-2">
@@ -400,7 +400,7 @@
 					</div>
 				{/if}
 			{:catch error}
-				<div class="border-destructive/50 bg-destructive/10 text-destructive rounded-lg border p-4">
+				<div class="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-destructive">
 					{(error instanceof Error ? error.message : '') || String(error)}
 				</div>
 			{/await}

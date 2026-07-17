@@ -22,5 +22,5 @@
 		<ArcaneTooltip.Content>{formatDateTime(date, { includeSeconds: true })}</ArcaneTooltip.Content>
 	</ArcaneTooltip.Root>
 {:else}
-	<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+	<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 {/if}

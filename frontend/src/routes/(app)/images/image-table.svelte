@@ -463,7 +463,7 @@
 				<a class="inline-flex" href={`/projects/${encodeURIComponent(usage.id)}`}>
 					<Badge
 						variant="outline"
-						class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+						class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
 					>
 						<ProjectsIcon class="size-3" />
 						<span>{usage.name}</span>
@@ -472,7 +472,7 @@
 			{:else}
 				<Badge
 					variant="outline"
-					class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+					class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
 				>
 					<ProjectsIcon class="size-3" />
 					<span>{usage.name}</span>
@@ -482,7 +482,7 @@
 			<a class="inline-flex" href={`/containers/${encodeURIComponent(usage.id)}`}>
 				<Badge
 					variant="outline"
-					class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+					class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
 				>
 					<ContainersIcon class="size-3" />
 					<span>{usage.name}</span>
@@ -491,7 +491,7 @@
 		{:else}
 			<Badge
 				variant="outline"
-				class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center gap-1 rounded-md text-xs transition-colors focus-visible:ring-2"
+				class="inline-flex items-center gap-1 rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
 			>
 				<ContainersIcon class="size-3" />
 				<span>{usage.name}</span>
@@ -514,7 +514,7 @@
 						<Tooltip.Trigger>
 							<Badge
 								variant="outline"
-								class="hover:bg-accent/40 focus-visible:ring-primary/40 bg-background/80 inline-flex items-center rounded-md text-xs transition-colors focus-visible:ring-2"
+								class="inline-flex items-center rounded-md bg-background/80 text-xs transition-colors hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-primary/40"
 							>
 								+{overflowUsage.length}
 							</Badge>

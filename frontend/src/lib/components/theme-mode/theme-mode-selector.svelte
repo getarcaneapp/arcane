@@ -20,7 +20,7 @@
 	const current = $derived(userPrefersMode.current);
 </script>
 
-<div class={cn('bg-muted/40 inline-flex rounded-lg p-0.5', className)} role="group" aria-label={m.common_toggle_theme()}>
+<div class={cn('inline-flex rounded-lg bg-muted/40 p-0.5', className)} role="group" aria-label={m.common_toggle_theme()}>
 	{#each options as option (option.value)}
 		{@const Icon = option.icon}
 		<button

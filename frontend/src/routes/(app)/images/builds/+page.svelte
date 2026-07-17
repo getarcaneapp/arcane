@@ -888,7 +888,7 @@
 {#snippet BuildHistoryTagsCell({ item }: { item: ImageBuildRecord })}
 	<div class="space-y-1">
 		<div class="text-sm font-medium">{getBuildTitle(item)}</div>
-		<div class="text-muted-foreground truncate text-xs">{item.contextDir}</div>
+		<div class="truncate text-xs text-muted-foreground">{item.contextDir}</div>
 	</div>
 {/snippet}
 
@@ -1024,7 +1024,7 @@
 						</IfPermitted>
 					</div>
 					{#if buildHistorySelected.errorMessage}
-						<div class="border-destructive/20 bg-destructive/10 text-destructive rounded-lg border p-3 text-sm">
+						<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-3 text-sm text-destructive">
 							{buildHistorySelected.errorMessage}
 						</div>
 					{/if}
@@ -1034,46 +1034,46 @@
 					<div class="min-h-0 space-y-3 lg:overflow-auto lg:overscroll-contain lg:pr-1">
 						{#if buildHistorySelected}
 							<div class="grid gap-3">
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_context()}
 									</div>
 									<div class="mt-2 font-mono text-xs break-all">{buildHistorySelected.contextDir}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.common_tags()}
 									</div>
 									<div class="mt-2 text-xs">
 										{buildHistorySelected.tags?.join(', ') || '-'}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.dockerfile()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.dockerfile || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.target_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.target || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.platforms_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.platforms?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_provider()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.provider || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.push()} / {m.load()}
 									</div>
 									<div class="mt-2 text-xs">
@@ -1082,8 +1082,8 @@
 											: m.common_no()}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_no_cache_pull_base_label()}
 									</div>
 									<div class="mt-2 text-xs">
@@ -1092,14 +1092,14 @@
 											: m.common_no()}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_network_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.network || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_args()}
 									</div>
 									{#if buildHistorySelected.buildArgs && Object.keys(buildHistorySelected.buildArgs).length > 0}
@@ -1110,8 +1110,8 @@
 										<div class="mt-2 text-xs">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.common_labels()}
 									</div>
 									{#if buildHistorySelected.labels && Object.keys(buildHistorySelected.labels).length > 0}
@@ -1122,34 +1122,34 @@
 										<div class="mt-2 text-xs">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_cache_from_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.cacheFrom?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_cache_to_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.cacheTo?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_isolation_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.isolation || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_shm_size_short_label()}
 									</div>
 									<div class="mt-2 text-xs">
 										{buildHistorySelected.shmSize ? m.build_bytes({ size: String(buildHistorySelected.shmSize) }) : '-'}
 									</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_ulimits_label()}
 									</div>
 									{#if buildHistorySelected.ulimits && Object.keys(buildHistorySelected.ulimits).length > 0}
@@ -1160,20 +1160,20 @@
 										<div class="mt-2 text-xs">-</div>
 									{/if}
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_entitlements_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.entitlements?.join(', ') || '-'}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_privileged_heading_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.privileged ? m.common_yes() : m.common_no()}</div>
 								</div>
-								<div class="border-border/60 rounded-lg border bg-zinc-950/40 p-3">
-									<div class="text-muted-foreground text-[10px] font-semibold tracking-[0.12em] uppercase">
+								<div class="rounded-lg border border-border/60 bg-zinc-950/40 p-3">
+									<div class="text-[10px] font-semibold tracking-[0.12em] text-muted-foreground uppercase">
 										{m.build_extra_hosts_label()}
 									</div>
 									<div class="mt-2 text-xs">{buildHistorySelected.extraHosts?.join(', ') || '-'}</div>
@@ -1181,8 +1181,8 @@
 							</div>
 						{/if}
 					</div>
-					<div class="border-border/60 bg-card/30 flex min-h-0 flex-col overflow-hidden rounded-xl border">
-						<div class="border-border/60 flex items-center justify-between border-b px-4 py-3">
+					<div class="flex min-h-0 flex-col overflow-hidden rounded-xl border border-border/60 bg-card/30">
+						<div class="flex items-center justify-between border-b border-border/60 px-4 py-3">
 							<div class="text-sm font-medium">{m.build_output()}</div>
 							{#if buildHistorySelected?.outputTruncated}
 								<span class="text-xs text-amber-400">{m.build_output_truncated()}</span>
@@ -1191,21 +1191,21 @@
 						<div class="max-h-[60vh] min-h-[260px] overflow-auto overscroll-contain p-4 lg:max-h-none lg:min-h-0 lg:flex-1">
 							{#if buildHistoryDetailsLoading}
 								<div class="flex h-full items-center justify-center">
-									<Spinner class="text-muted-foreground size-6" />
+									<Spinner class="size-6 text-muted-foreground" />
 								</div>
 							{:else if buildHistorySelected?.output}
 								{#if buildHistoryOutputEntries.length > 0}
 									<div class="space-y-2">
 										{#each buildHistoryOutputEntries as entry, entryIndex (entry.raw + entryIndex)}
 											<div
-												class={`border-border/50 rounded-lg border px-3 py-2 ${
-													entry.error ? 'bg-destructive/10 border-destructive/40' : 'bg-zinc-950/40'
+												class={`rounded-lg border border-border/50 px-3 py-2 ${
+													entry.error ? 'border-destructive/40 bg-destructive/10' : 'bg-zinc-950/40'
 												}`}
 											>
 												<div class="flex items-start justify-between gap-3">
 													<div class="min-w-0">
 														<div
-															class="text-muted-foreground flex flex-wrap items-center gap-2 text-[10px] tracking-wide uppercase"
+															class="flex flex-wrap items-center gap-2 text-[10px] tracking-wide text-muted-foreground uppercase"
 														>
 															{#if entry.type}
 																<span class="rounded bg-zinc-800/60 px-1.5 py-0.5">{entry.type}</span>
@@ -1223,7 +1223,7 @@
 													</div>
 													{#if entry.progress?.total}
 														<div class="flex shrink-0 flex-col items-end gap-1">
-															<span class="text-muted-foreground text-[10px] tabular-nums">
+															<span class="text-[10px] text-muted-foreground tabular-nums">
 																{formatProgress(entry.progress.current, entry.progress.total)}
 															</span>
 															<div class="h-1 w-24 overflow-hidden rounded-full bg-zinc-800/70">
@@ -1239,10 +1239,10 @@
 										{/each}
 									</div>
 								{:else}
-									<div class="text-muted-foreground text-sm">{m.build_output_placeholder()}</div>
+									<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
 								{/if}
 							{:else}
-								<div class="text-muted-foreground text-sm">{m.build_output_placeholder()}</div>
+								<div class="text-sm text-muted-foreground">{m.build_output_placeholder()}</div>
 							{/if}
 						</div>
 					</div>
@@ -1257,24 +1257,24 @@
 	<div class="flex h-full flex-col">
 		<Tabs.Root bind:value={rightPanelTab} class="flex h-full flex-col">
 			<!-- Tabs header with refined styling -->
-			<div class="border-border/50 bg-muted/40 flex shrink-0 items-center justify-between border-b px-3 py-2">
-				<Tabs.List class="border-border/60 bg-muted/60 flex items-center gap-1 rounded-lg border p-1">
+			<div class="flex shrink-0 items-center justify-between border-b border-border/50 bg-muted/40 px-3 py-2">
+				<Tabs.List class="flex items-center gap-1 rounded-lg border border-border/60 bg-muted/60 p-1">
 					<Tabs.Trigger
 						value="config"
-						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+						class="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
 					>
 						<CodeIcon class="mr-2 size-3.5" />
 						{m.build_configuration()}
 					</Tabs.Trigger>
 					<Tabs.Trigger
 						value="output"
-						class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-xs font-medium transition-colors"
+						class="rounded-md px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
 					>
 						<TerminalIcon class="mr-2 size-3.5" />
 						{m.build_output()}
 						{#if logLines.length > 0}
 							<span
-								class="bg-primary/15 text-primary ring-primary/20 ml-1.5 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ring-1"
+								class="ml-1.5 rounded-full bg-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-primary ring-1 ring-primary/20"
 							>
 								{logLines.length}
 							</span>
@@ -1284,7 +1284,7 @@
 
 				<div class="flex items-center gap-3 pr-2">
 					<BuildControls {inputs} {providerOptions} {isBuilding} onBuild={handleSubmit} />
-					<div class="bg-border hidden h-4 w-px xl:block"></div>
+					<div class="hidden h-4 w-px bg-border xl:block"></div>
 					<div class="flex items-center gap-2">
 						<div class="relative flex items-center">
 							<div
@@ -1302,7 +1302,7 @@
 								<div class="absolute inset-0 size-2 animate-ping rounded-full bg-blue-500 opacity-75"></div>
 							{/if}
 						</div>
-						<span class="text-muted-foreground text-xs font-medium">{statusLabel}</span>
+						<span class="text-xs font-medium text-muted-foreground">{statusLabel}</span>
 					</div>
 				</div>
 			</div>
@@ -1331,16 +1331,16 @@
 {#if isDesktop}
 	<ResourceDetailLayout title={m.manual_build_workspace()} subtitle={m.manual_build_workspace_subtitle()}>
 		<Tabs.Root value={mainTab} onValueChange={mainUrlTab.select} class="flex h-[calc(100vh-12rem)] flex-col">
-			<Tabs.List class="border-border/60 bg-muted/60 mb-3 flex w-fit gap-2 rounded-lg border p-1">
+			<Tabs.List class="mb-3 flex w-fit gap-2 rounded-lg border border-border/60 bg-muted/60 p-1">
 				<Tabs.Trigger
 					value="build"
-					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-sm font-medium"
+					class="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
 				>
 					{m.manual_build_workspace()}
 				</Tabs.Trigger>
 				<Tabs.Trigger
 					value="history"
-					class="data-[state=active]:text-foreground text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 rounded-md px-3 py-1.5 text-sm font-medium"
+					class="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground hover:text-foreground data-[state=active]:bg-primary/10 data-[state=active]:text-foreground"
 				>
 					{m.build_history()}
 				</Tabs.Trigger>
@@ -1385,10 +1385,10 @@
 			<div class="flex flex-col gap-1">
 				{#if mainTab === 'history'}
 					<h1 class="text-2xl font-semibold tracking-tight">{m.builds()}</h1>
-					<p class="text-muted-foreground text-sm">{m.build_output()}</p>
+					<p class="text-sm text-muted-foreground">{m.build_output()}</p>
 				{:else}
 					<h1 class="text-2xl font-semibold tracking-tight">{m.manual_build_workspace()}</h1>
-					<p class="text-muted-foreground text-sm">{m.manual_build_workspace_subtitle()}</p>
+					<p class="text-sm text-muted-foreground">{m.manual_build_workspace_subtitle()}</p>
 				{/if}
 			</div>
 		{/snippet}
@@ -1411,7 +1411,7 @@
 						{#snippet headerInfo()}
 							<div class="flex flex-col gap-1">
 								<h2 class="text-lg font-semibold">{m.manual_build_workspace()}</h2>
-								<p class="text-muted-foreground text-xs">{m.manual_build_workspace_subtitle()}</p>
+								<p class="text-xs text-muted-foreground">{m.manual_build_workspace_subtitle()}</p>
 							</div>
 						{/snippet}
 						{#snippet headerActions()}

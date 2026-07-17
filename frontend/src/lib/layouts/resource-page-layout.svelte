@@ -52,7 +52,7 @@
 		<div class="flex min-w-0 flex-1 items-start gap-3 sm:gap-4">
 			{#if Icon}
 				<div
-					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+					class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
 				>
 					<Icon class="size-4 sm:size-5" />
 				</div>
@@ -60,7 +60,7 @@
 			<div class="min-w-0">
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{title}</h1>
 				{#if subtitle}
-					<p class="text-muted-foreground mt-1 text-sm">{subtitle}</p>
+					<p class="mt-1 text-sm text-muted-foreground">{subtitle}</p>
 				{/if}
 				{#if statCards && statCards.length > 0}
 					<div class="mt-2 flex flex-wrap items-center gap-x-4 gap-y-1">

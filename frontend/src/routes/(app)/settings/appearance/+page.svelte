@@ -161,7 +161,7 @@
 			<!-- Appearance Section -->
 			<div class="space-y-4">
 				<h3 class="text-base font-semibold">{m.appearance_title()}</h3>
-				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+				<div class="divide-y divide-border/40 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 					<!-- Application Theme -->
 					<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
 						<ApplicationThemePicker
@@ -226,7 +226,7 @@
 								aria-invalid={Boolean($formInputs.avatarMaxUploadSizeMb.error)}
 							/>
 							{#if $formInputs.avatarMaxUploadSizeMb.error}
-								<p class="text-destructive text-xs font-medium">{$formInputs.avatarMaxUploadSizeMb.error}</p>
+								<p class="text-xs font-medium text-destructive">{$formInputs.avatarMaxUploadSizeMb.error}</p>
 							{/if}
 						</div>
 					</SettingsRow>
@@ -236,7 +236,7 @@
 						<LocalePicker
 							inline={true}
 							id="appearanceLocalePicker"
-							class="border-border/30 text-foreground h-9 w-32 text-sm font-medium"
+							class="h-9 w-32 border-border/30 text-sm font-medium text-foreground"
 						/>
 					</SettingsRow>
 
@@ -258,9 +258,9 @@
 					<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
 						{#snippet helpText()}
 							{#if !isDefaultApplicationTheme}
-								<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_default_theme()}</p>
+								<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_default_theme()}</p>
 							{:else if !isDarkMode}
-								<p class="text-muted-foreground/70 mt-1 text-xs italic">{m.oled_mode_requires_dark()}</p>
+								<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_dark()}</p>
 							{/if}
 						{/snippet}
 						<Switch
@@ -294,7 +294,7 @@
 			<!-- Desktop Sidebar Section -->
 			<div class="space-y-4">
 				<h3 class="text-base font-semibold">{m.navigation_desktop_sidebar_title()}</h3>
-				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+				<div class="divide-y divide-border/40 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 					<SettingsRow
 						label={m.navigation_sidebar_hover_expansion_label()}
 						description={m.navigation_sidebar_hover_expansion_description()}
@@ -334,10 +334,10 @@
 			<!-- Mobile Appearance Section -->
 			<div class="space-y-4">
 				<h3 class="text-base font-semibold">{m.navigation_mobile_appearance_title()}</h3>
-				<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+				<div class="divide-y divide-border/40 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 					<!-- Navigation Mode -->
 					<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()}>
-						<div class="bg-muted/40 inline-flex rounded-lg p-0.5">
+						<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
 							<button
 								type="button"
 								disabled={isReadOnly && modeSegment !== 'default'}
@@ -384,7 +384,7 @@
 
 					<!-- Show Labels -->
 					<SettingsRow label={m.navigation_show_labels_label()} description={m.navigation_show_labels_description()}>
-						<div class="bg-muted/40 inline-flex rounded-lg p-0.5">
+						<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
 							<button
 								type="button"
 								disabled={isReadOnly && labelsSegment !== 'default'}

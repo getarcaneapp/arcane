@@ -9,9 +9,9 @@
 <Empty.Root class={className} role="status" aria-live="polite">
 	<Empty.Header>
 		<Empty.Media variant="icon">
-			<FolderXIcon class="text-muted-foreground/60 size-10" />
+			<FolderXIcon class="size-10 text-muted-foreground/60" />
 		</Empty.Media>
 		<Empty.Title class="text-lg font-semibold">{m.common_no_results_found()}</Empty.Title>
-		<Empty.Description class="text-muted-foreground text-sm">{m.common_no_results_hint()}</Empty.Description>
+		<Empty.Description class="text-sm text-muted-foreground">{m.common_no_results_hint()}</Empty.Description>
 	</Empty.Header>
 </Empty.Root>

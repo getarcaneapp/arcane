@@ -251,7 +251,7 @@
 				/>
 			</div>
 		</div>
-		<div class="bg-card/90 min-h-0 flex-1 overflow-hidden rounded-lg border p-0 backdrop-blur-sm">
+		<div class="min-h-0 flex-1 overflow-hidden rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
 				bind:this={viewer}
 				bind:autoScroll

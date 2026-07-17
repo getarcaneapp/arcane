@@ -357,12 +357,12 @@
 			<ScrollArea class="h-64 rounded-md border">
 				{#if backupFilesLoading}
 					<div class="flex items-center justify-center py-8">
-						<LoadingSpinnerIcon class="text-muted-foreground size-5" />
+						<LoadingSpinnerIcon class="size-5 text-muted-foreground" />
 					</div>
 				{:else if filteredBackupFiles.length === 0}
-					<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">{m.volume_backup_no_files()}</div>
+					<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.volume_backup_no_files()}</div>
 				{:else}
-					<div class="divide-border/40 divide-y">
+					<div class="divide-y divide-border/40">
 						{#each filteredBackupFiles as filePath (filePath)}
 							<div class="flex items-center gap-3 px-3 py-2">
 								<Checkbox.Root

@@ -415,7 +415,7 @@
 		{#if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
-				<span class="text-muted-foreground text-xs font-medium">
+				<span class="text-xs font-medium text-muted-foreground">
 					{getActionStatusMessage(status)}
 				</span>
 			</div>
@@ -594,7 +594,7 @@
 							<NetworksIcon class="size-3.5 text-sky-500" />
 						</div>
 						<div class="min-w-0 flex-1">
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+							<div class="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
@@ -606,7 +606,7 @@
 				{#if mobileFieldVisibility['updates'] ?? true}
 					<div class="flex min-w-0 flex-1 items-start gap-2.5">
 						<div class="flex min-w-0 flex-col">
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+							<div class="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
 								{m.images_updates()}
 							</div>
 							<div class="mt-1">

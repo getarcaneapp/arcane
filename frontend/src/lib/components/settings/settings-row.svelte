@@ -20,12 +20,12 @@
 	<div class={wrapperClass}>
 		<Label class="text-sm font-medium">{label}</Label>
 		{#if description}
-			<p class="text-muted-foreground mt-0.5 text-xs">{description}</p>
+			<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 		{/if}
 		{#if typeof helpText === 'function'}
 			{@render helpText()}
 		{:else if helpText}
-			<p class="text-muted-foreground mt-1 text-xs">{helpText}</p>
+			<p class="mt-1 text-xs text-muted-foreground">{helpText}</p>
 		{/if}
 		{#if labelExtra}
 			{@render labelExtra()}

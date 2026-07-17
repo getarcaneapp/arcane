@@ -92,8 +92,8 @@
 		>
 			{#snippet children()}
 				<div class="space-y-4 py-4">
-					<div class="bg-muted rounded-lg p-4">
-						<p class="text-muted-foreground mb-2 text-sm font-medium">{m.webhook_token_label()}</p>
+					<div class="rounded-lg bg-muted p-4">
+						<p class="mb-2 text-sm font-medium text-muted-foreground">{m.webhook_token_label()}</p>
 						<Snippet
 							text={newlyCreatedWebhookUrl}
 							onCopy={(status) => {

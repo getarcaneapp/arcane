@@ -48,7 +48,7 @@
 
 <div
 	class={cn(
-		'group border-border/40 hover:bg-muted/30 relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0',
+		'group relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b border-border/40 px-4 py-3 text-left transition-colors last:border-b-0 hover:bg-muted/30',
 		expanded && 'bg-muted/40'
 	)}
 >
@@ -63,7 +63,7 @@
 
 	<div
 		class={cn(
-			'bg-muted/80 text-muted-foreground mt-0.5 flex size-8 items-center justify-center rounded-md',
+			'mt-0.5 flex size-8 items-center justify-center rounded-md bg-muted/80 text-muted-foreground',
 			isActive && 'bg-primary/10 text-primary',
 			expanded && 'bg-primary/10 text-primary'
 		)}
@@ -74,13 +74,13 @@
 		<div class="flex min-w-0 items-start justify-between gap-3">
 			<div class="min-w-0 flex-1">
 				<div class="flex min-w-0 items-center gap-2">
-					<span class="text-foreground truncate text-sm font-semibold">{activityTypeLabel(activity.type)}</span>
+					<span class="truncate text-sm font-semibold text-foreground">{activityTypeLabel(activity.type)}</span>
 					{#if relativeTime}
-						<span class="text-muted-foreground/70 shrink-0 text-[11px]">· {relativeTime}</span>
+						<span class="shrink-0 text-[11px] text-muted-foreground/70">· {relativeTime}</span>
 					{/if}
 				</div>
-				<div class="text-muted-foreground truncate text-xs">{targetName}</div>
-				<div class="text-muted-foreground/80 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
+				<div class="truncate text-xs text-muted-foreground">{targetName}</div>
+				<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
 					{#if sourceEnvironmentName}
 						<span class="truncate">{sourceEnvironmentName}</span>
 					{/if}
@@ -94,11 +94,11 @@
 		</div>
 
 		<div class="space-y-1.5">
-			<div class="text-muted-foreground line-clamp-2 text-xs leading-relaxed">{subtitle}</div>
+			<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
 			{#if isActive && !expanded}
 				<div class="flex items-center gap-2">
 					<Progress value={hasProgress ? progressValue : 100} indeterminate={!hasProgress} class="h-1.5 rounded-full" />
-					<span class="text-muted-foreground w-9 shrink-0 text-right text-[11px] tabular-nums">
+					<span class="w-9 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
 						{#if hasProgress}
 							{m.activity_progress_percent({ progress: progressValue })}
 						{:else}
@@ -110,7 +110,7 @@
 		</div>
 	</div>
 
-	<div class="text-muted-foreground mt-1 flex size-6 shrink-0 items-center justify-center">
+	<div class="mt-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground">
 		<ArrowDownIcon class={cn('size-4 transition-transform duration-200', expanded && 'rotate-180')} aria-hidden="true" />
 	</div>
 </div>

@@ -23,7 +23,7 @@
 
 <div
 	class={cn(
-		'bg-muted/40 flex items-center justify-center overflow-hidden rounded-lg ring-1 ring-white/5 ring-inset',
+		'flex items-center justify-center overflow-hidden rounded-lg bg-muted/40 ring-1 ring-white/5 ring-inset',
 		containerClass
 	)}
 >

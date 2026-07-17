@@ -95,7 +95,7 @@
 </script>
 
 {#if allPorts.length === 0}
-	<span class="text-muted-foreground text-xs">{m.containers_no_ports()}</span>
+	<span class="text-xs text-muted-foreground">{m.containers_no_ports()}</span>
 {:else}
 	<div class="flex gap-1.5 {wrap ? 'flex-wrap' : 'flex-nowrap'}">
 		{#each published as p, i (i)}

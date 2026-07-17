@@ -125,7 +125,7 @@
 		</Card.Content>
 		{#if tableLimit.shouldShowFooter(containers.data.length)}
 			<Card.Footer class="border-t px-6 py-3">
-				<span class="text-muted-foreground text-xs">
+				<span class="text-xs text-muted-foreground">
 					{m.containers_showing_of_total({ shown: tableLimit.displayLimit, total: containers.pagination.totalItems })}
 				</span>
 			</Card.Footer>

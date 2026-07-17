@@ -40,19 +40,19 @@
 	}
 </script>
 
-<div class={`bg-muted/30 border-border dark:border-border/20 overflow-hidden rounded-3xl border-2 ${className}`}>
+<div class={`overflow-hidden rounded-3xl border-2 border-border bg-muted/30 dark:border-border/20 ${className}`}>
 	<button
-		class="hover:bg-muted/40 flex w-full items-center gap-4 p-5 text-left transition-all duration-200"
+		class="flex w-full items-center gap-4 p-5 text-left transition-all duration-200 hover:bg-muted/40"
 		onclick={() => (userCardExpanded = !userCardExpanded)}
 	>
-		<div class="bg-muted/50 flex h-14 w-14 items-center justify-center rounded-2xl">
-			<span class="text-foreground text-xl font-semibold">
+		<div class="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted/50">
+			<span class="text-xl font-semibold text-foreground">
 				{(effectiveUser.displayName || effectiveUser.username)?.charAt(0).toUpperCase() || 'U'}
 			</span>
 		</div>
 		<div class="flex-1">
-			<h3 class="text-foreground text-lg font-semibold">{effectiveUser.displayName || effectiveUser.username}</h3>
-			<p class="text-muted-foreground/80 text-sm">
+			<h3 class="text-lg font-semibold text-foreground">{effectiveUser.displayName || effectiveUser.username}</h3>
+			<p class="text-sm text-muted-foreground/80">
 				{userStore.isGlobalAdmin() ? m.common_admin() : m.common_user()}
 			</p>
 		</div>
@@ -72,7 +72,7 @@
 						size="icon"
 						type="submit"
 						title={m.common_logout()}
-						class="text-muted-foreground hover:text-destructive hover:bg-destructive/10 h-10 w-10 rounded-xl transition-all duration-200 hover:scale-105"
+						class="h-10 w-10 rounded-xl text-muted-foreground transition-all duration-200 hover:scale-105 hover:bg-destructive/10 hover:text-destructive"
 						onclick={(e) => e.stopPropagation()}
 					>
 						<LogoutIcon class="size-5" />
@@ -83,13 +83,13 @@
 	</button>
 
 	{#if userCardExpanded}
-		<div class="border-border/20 bg-muted/10 space-y-4 border-t p-4">
+		<div class="space-y-4 border-t border-border/20 bg-muted/10 p-4">
 			<IfPermitted adminOnly>
 				<button
-					class="bg-background/50 border-border/20 hover:bg-muted/30 flex w-full items-center gap-3 rounded-2xl border p-4 text-left transition-colors"
+					class="flex w-full items-center gap-3 rounded-2xl border border-border/20 bg-background/50 p-4 text-left transition-colors hover:bg-muted/30"
 					onclick={() => (envDialogOpen = true)}
 				>
-					<div class="bg-primary/10 text-primary flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg">
+					<div class="flex aspect-square size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
 						{#if environmentStore.selected?.id === '0'}
 							<EnvironmentsIcon class="size-4" />
 						{:else}
@@ -97,45 +97,45 @@
 						{/if}
 					</div>
 					<div class="min-w-0 flex-1">
-						<div class="text-muted-foreground/70 text-xs font-medium tracking-widest uppercase">
+						<div class="text-xs font-medium tracking-widest text-muted-foreground/70 uppercase">
 							{m.sidebar_environment_label()}
 						</div>
-						<div class="text-foreground text-sm font-medium">
+						<div class="text-sm font-medium text-foreground">
 							{environmentStore.selected ? environmentStore.selected.name : m.sidebar_no_environment()}
 						</div>
 						{#if environmentStore.selected}
-							<div class="text-muted-foreground/60 truncate text-xs">
+							<div class="truncate text-xs text-muted-foreground/60">
 								{getConnectionString()}
 							</div>
 						{/if}
 					</div>
-					<ArrowRightIcon class="text-muted-foreground/60 size-5 shrink-0" />
+					<ArrowRightIcon class="size-5 shrink-0 text-muted-foreground/60" />
 				</button>
 			</IfPermitted>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-				<div class="bg-background/50 border-border/20 rounded-2xl border p-4">
+				<div class="rounded-2xl border border-border/20 bg-background/50 p-4">
 					<div class="flex h-full items-center gap-3">
-						<div class="bg-primary/10 text-primary flex aspect-square size-8 items-center justify-center rounded-lg">
+						<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary/10 text-primary">
 							<LanguageIcon class="size-4" />
 						</div>
 						<div class="min-w-0 flex-1">
-							<div class="text-muted-foreground/70 mb-1 text-xs font-medium tracking-widest uppercase">
+							<div class="mb-1 text-xs font-medium tracking-widest text-muted-foreground/70 uppercase">
 								{m.common_select_locale()}
 							</div>
-							<div class="text-foreground text-sm font-medium"></div>
+							<div class="text-sm font-medium text-foreground"></div>
 						</div>
 						<LocalePicker
 							inline={true}
 							id="mobileLocalePicker"
-							class="bg-background/50 border-border/30 text-foreground h-9 w-32 text-sm font-medium"
+							class="h-9 w-32 border-border/30 bg-background/50 text-sm font-medium text-foreground"
 						/>
 					</div>
 				</div>
 
-				<div class="bg-background/50 border-border/20 rounded-2xl border p-4">
+				<div class="rounded-2xl border border-border/20 bg-background/50 p-4">
 					<div class="flex h-full flex-col justify-center gap-2">
-						<div class="text-muted-foreground/70 text-xs font-medium tracking-widest uppercase">
+						<div class="text-xs font-medium tracking-widest text-muted-foreground/70 uppercase">
 							{m.common_toggle_theme()}
 						</div>
 						<ThemeModeSelector class="grid w-full grid-cols-3" />

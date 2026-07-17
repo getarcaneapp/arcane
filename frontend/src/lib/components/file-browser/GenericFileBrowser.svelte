@@ -202,10 +202,10 @@
 
 	{#if loading}
 		<div class="flex justify-center p-12">
-			<Spinner class="text-muted-foreground size-8" />
+			<Spinner class="size-8 text-muted-foreground" />
 		</div>
 	{:else if error}
-		<div class="border-destructive/20 bg-destructive/10 text-destructive rounded-lg border p-8 text-center">
+		<div class="rounded-lg border border-destructive/20 bg-destructive/10 p-8 text-center text-destructive">
 			{error}
 		</div>
 	{:else}
@@ -270,18 +270,18 @@
 			</Alert.Root>
 
 			{#if restoreTarget}
-				<div class="text-muted-foreground text-xs">
-					File: <code class="bg-muted/40 rounded px-1.5 py-0.5 font-mono">{restoreTarget.path}</code>
+				<div class="text-xs text-muted-foreground">
+					File: <code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{restoreTarget.path}</code>
 				</div>
 			{/if}
 
 			{#if loadingBackups}
-				<div class="text-muted-foreground flex items-center gap-2 text-sm">
+				<div class="flex items-center gap-2 text-sm text-muted-foreground">
 					<Spinner class="size-4" />
 					Loading backups...
 				</div>
 			{:else if backups.length === 0}
-				<div class="text-muted-foreground text-sm">{m.file_browser_no_backups()}</div>
+				<div class="text-sm text-muted-foreground">{m.file_browser_no_backups()}</div>
 			{:else}
 				<div class="space-y-2">
 					<Label for="restore-backup-select">{m.file_browser_backup()}</Label>
@@ -308,12 +308,12 @@
 				</div>
 				{#if requiresBackupCheck}
 					{#if checkingBackup}
-						<div class="text-muted-foreground flex items-center gap-2 text-xs">
+						<div class="flex items-center gap-2 text-xs text-muted-foreground">
 							<Spinner class="size-3" />
 							Checking backup contents...
 						</div>
 					{:else if backupHasFile === false}
-						<div class="text-destructive text-xs">{m.file_browser_backup_missing_file()}</div>
+						<div class="text-xs text-destructive">{m.file_browser_backup_missing_file()}</div>
 					{/if}
 				{/if}
 			{/if}

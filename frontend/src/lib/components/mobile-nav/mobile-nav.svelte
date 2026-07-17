@@ -162,8 +162,8 @@
 			mode === 'floating'
 				? 'fixed left-1/2 z-[var(--arcane-z-app-chrome)] -translate-x-1/2 transform'
 				: 'fixed right-0 bottom-0 left-0 z-[var(--arcane-z-app-chrome)] gap-2',
-			'bg-background/60 border-border/30 backdrop-blur-xl',
-			'shadow-sm select-none transition-all duration-300 ease-out',
+			'border-border/30 bg-background/60 backdrop-blur-xl',
+			'shadow-sm transition-all duration-300 ease-out select-none',
 			'flex items-center',
 			mode === 'floating'
 				? cn(
@@ -171,7 +171,7 @@
 						// On very small screens, tighten spacing so labeled items + center action fit.
 						showLabels ? 'gap-1.5 px-2.5 py-1.5 sm:gap-2 sm:px-3 sm:py-2' : 'gap-2.5 px-3.5 py-2 sm:gap-3 sm:px-4 sm:py-2.5'
 					)
-				: cn('border-t border-border/50 justify-around', showLabels ? 'px-4 pt-2 pb-4' : 'px-4 pt-2.5 pb-4'),
+				: cn('justify-around border-t border-border/50', showLabels ? 'px-4 pt-2 pb-4' : 'px-4 pt-2.5 pb-4'),
 			visible
 				? mode === 'floating'
 					? 'translate-y-0 scale-100 opacity-100'

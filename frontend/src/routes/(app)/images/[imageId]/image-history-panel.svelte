@@ -44,18 +44,18 @@
 	</Card.Header>
 	<Card.Content>
 		{#if loading}
-			<div class="text-muted-foreground flex items-center gap-2 py-8 text-sm">
+			<div class="flex items-center gap-2 py-8 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 				{m.images_history_loading()}
 			</div>
 		{:else if error}
-			<p class="text-destructive py-8 text-sm">{error}</p>
+			<p class="py-8 text-sm text-destructive">{error}</p>
 		{:else if history.length === 0}
-			<p class="text-muted-foreground py-8 text-sm">{m.images_history_empty()}</p>
+			<p class="py-8 text-sm text-muted-foreground">{m.images_history_empty()}</p>
 		{:else}
 			<div class="overflow-x-auto">
 				<table class="w-full min-w-[720px] text-sm">
-					<thead class="text-muted-foreground border-b text-left text-xs uppercase">
+					<thead class="border-b text-left text-xs text-muted-foreground uppercase">
 						<tr>
 							<th class="py-2 pr-4 font-medium">{m.common_id()}</th>
 							<th class="py-2 pr-4 font-medium">{m.common_created()}</th>

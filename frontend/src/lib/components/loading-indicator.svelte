@@ -45,7 +45,7 @@
 		aria-label={m.common_loading()}
 	>
 		<div class="relative h-full w-full overflow-hidden">
-			<div class="bg-primary/25 absolute inset-0"></div>
+			<div class="absolute inset-0 bg-primary/25"></div>
 
 			<div class="bar absolute inset-y-0 left-0 w-1/3">
 				<div class="peg absolute top-0 right-0 h-full w-3"></div>

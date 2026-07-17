@@ -42,7 +42,7 @@
 </script>
 
 <div class="flex w-full flex-col gap-4 px-2 sm:flex-row sm:items-center sm:justify-between">
-	<div class="text-muted-foreground order-2 text-sm sm:order-1">
+	<div class="order-2 text-sm text-muted-foreground sm:order-1">
 		{m.common_showing_of_total({ shown: items.data.length, total: totalItems })}
 	</div>
 	<div class="order-1 flex flex-col gap-4 sm:order-2 sm:flex-row sm:items-center sm:space-x-6 lg:space-x-8">

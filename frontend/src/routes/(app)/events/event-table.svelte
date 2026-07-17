@@ -137,7 +137,7 @@
 	{@const type = String(value ?? '')}
 	{@const TypeIcon = eventTypeIcon(type)}
 	<div class="flex min-w-0 items-center gap-2">
-		<TypeIcon class="text-muted-foreground size-4 shrink-0" aria-hidden="true" />
+		<TypeIcon class="size-4 shrink-0 text-muted-foreground" aria-hidden="true" />
 		<span class="truncate text-sm" title={type}>{eventTypeLabel(type)}</span>
 	</div>
 {/snippet}
@@ -147,7 +147,7 @@
 		<div class="min-w-0">
 			<p class="truncate text-sm" title={item.resourceName}>{item.resourceName ?? '—'}</p>
 			{#if item.resourceType}
-				<p class="text-muted-foreground text-xs capitalize">{item.resourceType}</p>
+				<p class="text-xs text-muted-foreground capitalize">{item.resourceType}</p>
 			{/if}
 		</div>
 	{:else}
@@ -165,7 +165,7 @@
 
 {#snippet UserCell({ value }: { value: unknown })}
 	{#if String(value ?? '') === 'System'}
-		<span class="text-muted-foreground text-sm italic">System</span>
+		<span class="text-sm text-muted-foreground italic">System</span>
 	{:else}
 		<span class="text-sm">{String(value ?? '—')}</span>
 	{/if}

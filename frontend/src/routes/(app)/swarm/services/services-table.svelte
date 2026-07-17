@@ -124,7 +124,7 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmServiceSummary })}
-	<a href="/swarm/services/{item.id}" class="text-primary text-sm font-medium hover:underline">
+	<a href="/swarm/services/{item.id}" class="text-sm font-medium text-primary hover:underline">
 		{getShortName(item.name, item.stackName)}
 	</a>
 {/snippet}
@@ -139,7 +139,7 @@
 	{#if value}
 		<span class="text-sm">{String(value)}</span>
 	{:else}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{/if}
 {/snippet}
 
@@ -149,14 +149,14 @@
 
 {#snippet OverflowCell({ items }: { items: string[] })}
 	{#if !items || items.length === 0}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{:else}
 		<div class="flex flex-col gap-0.5">
 			{#each items.slice(0, MAX_OVERFLOW_ITEMS) as item (item)}
 				<span class="max-w-45 truncate font-mono text-sm">{item}</span>
 			{/each}
 			{#if items.length > MAX_OVERFLOW_ITEMS}
-				<span class="text-muted-foreground text-xs font-medium">
+				<span class="text-xs font-medium text-muted-foreground">
 					{m.swarm_n_more({ count: items.length - MAX_OVERFLOW_ITEMS })}
 				</span>
 			{/if}

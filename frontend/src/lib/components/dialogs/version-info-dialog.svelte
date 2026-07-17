@@ -44,7 +44,7 @@
 			<img src={logoUrl} alt="Arcane" class="size-7" />
 			<div class="flex flex-col gap-0.5">
 				<span class="text-xl leading-none">{m.version_info_title()}</span>
-				<span class="text-muted-foreground text-sm font-normal"
+				<span class="text-sm font-normal text-muted-foreground"
 					>{(displayInfo.displayVersion || displayInfo.currentVersion).replace(/^v/, '')}</span
 				>
 			</div>
@@ -108,20 +108,20 @@
 </ResponsiveDialog>
 
 {#snippet infoRow(label: string, value: string | undefined | null, mono: boolean = true)}
-	<div class="border-border/50 flex flex-col items-start gap-1 border-b py-3 last:border-0">
-		<span class="text-foreground text-sm font-medium">{label}</span>
+	<div class="flex flex-col items-start gap-1 border-b border-border/50 py-3 last:border-0">
+		<span class="text-sm font-medium text-foreground">{label}</span>
 		<span
-			class="text-sm break-all {mono ? 'text-muted-foreground font-mono text-xs' : 'text-muted-foreground'}"
+			class="text-sm break-all {mono ? 'font-mono text-xs text-muted-foreground' : 'text-muted-foreground'}"
 			title={value ?? ''}>{value || '-'}</span
 		>
 	</div>
 {/snippet}
 
 {#snippet infoRowWithCopy(label: string, displayValue: string, fullValue: string | undefined | null)}
-	<div class="border-border/50 flex flex-col items-start gap-1 border-b py-3 last:border-0">
-		<span class="text-foreground text-sm font-medium">{label}</span>
+	<div class="flex flex-col items-start gap-1 border-b border-border/50 py-3 last:border-0">
+		<span class="text-sm font-medium text-foreground">{label}</span>
 		<div class="flex w-full items-start justify-between gap-2">
-			<span class="text-muted-foreground mt-0.5 font-mono text-xs break-all" title={fullValue ?? ''}
+			<span class="mt-0.5 font-mono text-xs break-all text-muted-foreground" title={fullValue ?? ''}
 				>{fullValue || displayValue}</span
 			>
 			{#if fullValue && fullValue !== 'unknown'}

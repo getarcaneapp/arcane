@@ -31,7 +31,7 @@
 	<div class="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
 		<div>
 			<h3 class="text-lg font-semibold">{m.templates_registries_section_title()}</h3>
-			<p class="text-muted-foreground text-sm">{m.templates_registries_section_description()}</p>
+			<p class="text-sm text-muted-foreground">{m.templates_registries_section_description()}</p>
 		</div>
 		<ArcaneButton
 			action="create"
@@ -72,14 +72,14 @@
 									{registry.enabled ? m.common_enabled() : m.common_disabled()}
 								</Badge>
 							</div>
-							<p class="text-muted-foreground text-sm break-all">{registry.url}</p>
+							<p class="text-sm break-all text-muted-foreground">{registry.url}</p>
 							{#if registry.description}
-								<p class="text-muted-foreground mt-1 text-sm">{registry.description}</p>
+								<p class="mt-1 text-sm text-muted-foreground">{registry.description}</p>
 							{/if}
 							{#if registry.lastFetchError}
-								<div class="border-destructive/30 bg-destructive/10 mt-2 flex items-start gap-1.5 rounded-md border px-2 py-1.5">
-									<AlertTriangleIcon class="text-destructive mt-0.5 size-3.5 shrink-0" />
-									<p class="text-destructive text-xs break-all">{registry.lastFetchError}</p>
+								<div class="mt-2 flex items-start gap-1.5 rounded-md border border-destructive/30 bg-destructive/10 px-2 py-1.5">
+									<AlertTriangleIcon class="mt-0.5 size-3.5 shrink-0 text-destructive" />
+									<p class="text-xs break-all text-destructive">{registry.lastFetchError}</p>
 								</div>
 							{/if}
 						</div>

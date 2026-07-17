@@ -156,9 +156,9 @@
 					class={$inputs.networkName.error ? 'border-destructive' : ''}
 				/>
 				{#if $inputs.networkName.error}
-					<p class="text-destructive text-xs">{$inputs.networkName.error}</p>
+					<p class="text-xs text-destructive">{$inputs.networkName.error}</p>
 				{/if}
-				<p class="text-muted-foreground text-xs">{m.network_name_description()}</p>
+				<p class="text-xs text-muted-foreground">{m.network_name_description()}</p>
 			</div>
 
 			<SelectWithLabel
@@ -227,9 +227,9 @@
 									class={$inputs.networkLabels.error ? 'border-destructive' : ''}
 								/>
 								{#if $inputs.networkLabels.error}
-									<p class="text-destructive text-xs">{$inputs.networkLabels.error}</p>
+									<p class="text-xs text-destructive">{$inputs.networkLabels.error}</p>
 								{/if}
-								<p class="text-muted-foreground text-xs">{m.network_labels_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.network_labels_description()}</p>
 							</div>
 						</div>
 					</Accordion.Content>
@@ -249,9 +249,9 @@
 								class={$inputs.driverOptions.error ? 'border-destructive' : ''}
 							/>
 							{#if $inputs.driverOptions.error}
-								<p class="text-destructive text-xs">{$inputs.driverOptions.error}</p>
+								<p class="text-xs text-destructive">{$inputs.driverOptions.error}</p>
 							{/if}
-							<p class="text-muted-foreground text-xs">{m.network_driver_options_description()}</p>
+							<p class="text-xs text-muted-foreground">{m.network_driver_options_description()}</p>
 						</div>
 					</Accordion.Content>
 				</Accordion.Item>
@@ -266,7 +266,7 @@
 							</div>
 
 							{#if $inputs.enableIpam.value}
-								<div class="border-muted space-y-4 border-l-2 pl-6">
+								<div class="space-y-4 border-l-2 border-muted pl-6">
 									<div class="space-y-2">
 										<Label for="subnet" class="text-sm font-medium">{m.common_subnet()}</Label>
 										<Input
@@ -278,9 +278,9 @@
 											class={$inputs.subnet.error ? 'border-destructive' : ''}
 										/>
 										{#if $inputs.subnet.error}
-											<p class="text-destructive text-xs">{$inputs.subnet.error}</p>
+											<p class="text-xs text-destructive">{$inputs.subnet.error}</p>
 										{/if}
-										<p class="text-muted-foreground text-xs">{m.network_subnet_description()}</p>
+										<p class="text-xs text-muted-foreground">{m.network_subnet_description()}</p>
 									</div>
 
 									<div class="space-y-2">
@@ -294,9 +294,9 @@
 											class={$inputs.gateway.error ? 'border-destructive' : ''}
 										/>
 										{#if $inputs.gateway.error}
-											<p class="text-destructive text-xs">{$inputs.gateway.error}</p>
+											<p class="text-xs text-destructive">{$inputs.gateway.error}</p>
 										{/if}
-										<p class="text-muted-foreground text-xs">{m.network_gateway_description()}</p>
+										<p class="text-xs text-muted-foreground">{m.network_gateway_description()}</p>
 									</div>
 								</div>
 							{/if}

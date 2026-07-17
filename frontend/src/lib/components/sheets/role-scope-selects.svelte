@@ -57,7 +57,7 @@
 						<div class="flex flex-col items-start gap-0.5">
 							<span class="font-medium">{role.name}</span>
 							{#if role.description}
-								<span class="text-muted-foreground text-xs">{role.description}</span>
+								<span class="text-xs text-muted-foreground">{role.description}</span>
 							{/if}
 						</div>
 					</Select.Item>
@@ -65,7 +65,7 @@
 			</Select.Content>
 		</Select.Root>
 		{#if roleError}
-			<p class="text-destructive text-xs font-medium">{roleError}</p>
+			<p class="text-xs font-medium text-destructive">{roleError}</p>
 		{/if}
 	</div>
 	<div class="space-y-2">

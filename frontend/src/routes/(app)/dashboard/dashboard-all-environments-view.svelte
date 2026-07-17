@@ -764,10 +764,10 @@
 </script>
 
 <div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden pt-2 md:gap-4 md:pt-3">
-	<header class="bg-card/60 backdrop-blur-md border-border/70 shrink-0 rounded-xl border p-3 shadow-xs sm:p-4">
+	<header class="shrink-0 rounded-xl border border-border/70 bg-card/60 p-3 shadow-xs backdrop-blur-md sm:p-4">
 		<div class="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
 			<div class="space-y-1">
-				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
+				<p class="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{m.dashboard_title()}</p>
 				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 			</div>
 
@@ -788,8 +788,8 @@
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
 				{#each [{ icon: EnvironmentsIcon, label: m.environments_title() }, { icon: ContainersIcon, label: m.containers_title() }, { icon: ImagesIcon, label: m.images_title() }, { icon: VolumesIcon, label: m.dashboard_all_storage_title() }] as tile (tile.label)}
-					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+					<div class="rounded-xl border border-border/50 bg-background/50 p-3">
+						<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 							<tile.icon class="size-3.5" />
 							<span>{tile.label}</span>
 						</div>
@@ -801,40 +801,40 @@
 		{:else}
 			{@const summary = boardState.summary}
 			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="rounded-xl border border-border/50 bg-background/50 p-3">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<EnvironmentsIcon class="size-3.5" />
 						<span>{m.environments_title()}</span>
 					</div>
 					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalEnvironments}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatEnvironmentOverviewLabel(summary)}</div>
+					<div class="mt-0.5 text-xs text-muted-foreground">{formatEnvironmentOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="rounded-xl border border-border/50 bg-background/50 p-3">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<ContainersIcon class="size-3.5" />
 						<span>{m.containers_title()}</span>
 					</div>
 					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatContainerOverviewLabel(summary)}</div>
+					<div class="mt-0.5 text-xs text-muted-foreground">{formatContainerOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="rounded-xl border border-border/50 bg-background/50 p-3">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<ImagesIcon class="size-3.5" />
 						<span>{m.images_title()}</span>
 					</div>
 					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatImageOverviewLabel(summary)}</div>
+					<div class="mt-0.5 text-xs text-muted-foreground">{formatImageOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="rounded-xl border border-border/50 bg-background/50 p-3">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<VolumesIcon class="size-3.5" />
 						<span>{m.dashboard_all_storage_title()}</span>
 					</div>
 					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatStorageOverviewLabel(summary)}</div>
+					<div class="mt-0.5 text-xs text-muted-foreground">{formatStorageOverviewLabel(summary)}</div>
 				</div>
 			</div>
 		{/if}
@@ -846,8 +846,8 @@
 		</div>
 
 		{#if environmentCards.length === 0}
-			<div class="border-border/60 rounded-xl border border-dashed px-4 py-8 text-center">
-				<p class="text-muted-foreground text-sm">{m.dashboard_all_no_visible_environments()}</p>
+			<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
+				<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -873,10 +873,10 @@
 							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
 						>
 							<Card.Content class="space-y-5 p-5">
-								<div class="border-border/60 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
+								<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
 									<div class="min-w-0 space-y-2">
 										<div class="flex min-w-0 flex-wrap items-center gap-2">
-											<div class="min-w-0 max-w-full break-words text-base font-semibold tracking-tight">{environment.name}</div>
+											<div class="max-w-full min-w-0 text-base font-semibold tracking-tight break-words">{environment.name}</div>
 											{#if isCurrent}
 												<Badge variant="blue" size="sm">{m.common_current()}</Badge>
 											{/if}
@@ -895,7 +895,7 @@
 														{#if vInfo.updateAvailable || debugUpgrade}
 															<ArcaneTooltip.Root>
 																<ArcaneTooltip.Trigger
-																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:text-foreground font-mono')}
+																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
 																>
 																	v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
 																	<span class="relative ml-1.5 flex h-2 w-2">
@@ -944,7 +944,7 @@
 											{/if}
 										</div>
 
-										<div class="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+										<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/70">
 											<span class="font-mono">{environment.apiUrl}</span>
 											<span>•</span>
 											<span title={activity.title}>{activity.label}: {activity.value}</span>
@@ -983,8 +983,8 @@
 
 								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
 									<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										<div class="rounded-lg border border-border/50 bg-background/50 p-3">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 												{m.containers_title()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
@@ -997,15 +997,15 @@
 												<div class="mt-1 text-lg font-semibold">
 													{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
 												</div>
-												<div class="text-muted-foreground text-xs">
+												<div class="text-xs text-muted-foreground">
 													{loadedItem.containers.stoppedContainers}
 													{m.common_stopped()}
 												</div>
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										<div class="rounded-lg border border-border/50 bg-background/50 p-3">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 												{m.images_title()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
@@ -1016,7 +1016,7 @@
 											{:else}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 												<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
-												<div class="text-muted-foreground text-xs">
+												<div class="text-xs text-muted-foreground">
 													{loadedItem.imageUsageCounts.imagesInuse}
 													{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
 													{m.common_unused()}
@@ -1024,8 +1024,8 @@
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										<div class="rounded-lg border border-border/50 bg-background/50 p-3">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 												{m.dashboard_action_items_title()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
@@ -1036,14 +1036,14 @@
 											{:else}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 												<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
-												<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
+												<div class="text-xs text-muted-foreground">{getActionSummary(loadedItem)}</div>
 											{/if}
 										</div>
 									</div>
 								{:else}
-									<div class="border-border/50 bg-background/50 rounded-lg border px-4 py-3 text-sm">
+									<div class="rounded-lg border border-border/50 bg-background/50 px-4 py-3 text-sm">
 										<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
-										<p class="text-muted-foreground mt-1">{m.dashboard_all_environment_unavailable_description()}</p>
+										<p class="mt-1 text-muted-foreground">{m.dashboard_all_environment_unavailable_description()}</p>
 									</div>
 								{/if}
 

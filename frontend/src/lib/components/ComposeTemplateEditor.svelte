@@ -84,7 +84,7 @@
 			</Card.Content>
 			{#if composeError}
 				<Card.Footer class="pt-0">
-					<p class="text-destructive text-xs font-medium">{composeError}</p>
+					<p class="text-xs font-medium text-destructive">{composeError}</p>
 				</Card.Footer>
 			{/if}
 		</Card.Root>
@@ -122,7 +122,7 @@
 			</Card.Content>
 			{#if envError}
 				<Card.Footer class="pt-0">
-					<p class="text-destructive text-xs font-medium">{envError}</p>
+					<p class="text-xs font-medium text-destructive">{envError}</p>
 				</Card.Footer>
 			{/if}
 		</Card.Root>

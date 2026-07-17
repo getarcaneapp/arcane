@@ -260,11 +260,11 @@
 
 {#snippet recheckButton()}
 	{#if canCheckUpdate}
-		<div class="border-border/50 bg-muted/50 border-t p-3">
+		<div class="border-t border-border/50 bg-muted/50 p-3">
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
 					onclick={handleUpdateContainer}
-					class="group bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md"
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
 				>
 					<CircleArrowUpIcon class="size-3" />
 					{m.containers_update_container()}
@@ -273,7 +273,7 @@
 				<button
 					onclick={checkImageUpdate}
 					disabled={isChecking}
-					class="group bg-secondary/80 text-secondary-foreground hover:bg-secondary flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-secondary/80 px-3 py-2 text-xs font-medium text-secondary-foreground shadow-sm transition-all hover:bg-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{#if isChecking}
 						<Spinner class="size-3" />
@@ -330,11 +330,11 @@
 	</div>
 	<div class="bg-transparent p-4">
 		<div class="text-center">
-			<div class="text-muted-foreground mb-2 text-xs">
+			<div class="mb-2 text-xs text-muted-foreground">
 				{m.common_running()}
-				<span class="bg-muted rounded px-1.5 py-0.5 font-mono text-xs font-medium">{currentVersion}</span>
+				<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-medium">{currentVersion}</span>
 			</div>
-			<div class="text-muted-foreground text-xs leading-relaxed">
+			<div class="text-xs leading-relaxed text-muted-foreground">
 				{m.image_update_up_to_date_desc()}
 			</div>
 		</div>

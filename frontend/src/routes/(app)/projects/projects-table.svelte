@@ -238,13 +238,13 @@
 		/>
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 		{#if item.isArchived}
-			<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs font-medium">{m.projects_archived_badge()}</span>
+			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
 		{/if}
 	</div>
 {/snippet}
 
 {#snippet DirectoryCell({ item }: { item: Project })}
-	<span class="text-muted-foreground block max-w-[22rem] truncate">{item.relativePath ?? item.dirName ?? item.path}</span>
+	<span class="block max-w-[22rem] truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: Project })}
@@ -525,7 +525,7 @@
 
 {#snippet ArchivedToolbarAction()}
 	<div
-		class="bg-muted/30 border-border/60 flex min-h-9 w-full items-center gap-2 rounded-md border px-2.5 py-1.5 md:w-auto md:border-0 md:bg-transparent md:px-1 md:py-0"
+		class="flex min-h-9 w-full items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 md:w-auto md:border-0 md:bg-transparent md:px-1 md:py-0"
 	>
 		<Switch
 			id="projects-show-archived"
@@ -534,7 +534,7 @@
 				void onToggleArchived?.(checked === true);
 			}}
 		/>
-		<Label for="projects-show-archived" class="text-muted-foreground mb-0 min-w-0 text-sm font-medium">
+		<Label for="projects-show-archived" class="mb-0 min-w-0 text-sm font-medium text-muted-foreground">
 			{m.projects_show_archived()}
 		</Label>
 	</div>

@@ -167,13 +167,13 @@
 {/snippet}
 
 {#snippet IssuerCell({ item }: { item: FederatedCredential })}
-	<span class="text-muted-foreground max-w-[18rem] truncate">{item.issuerUrl}</span>
+	<span class="max-w-[18rem] truncate text-muted-foreground">{item.issuerUrl}</span>
 {/snippet}
 
 {#snippet SubjectCell({ item }: { item: FederatedCredential })}
 	<div class="flex flex-col gap-0.5">
 		<span class="font-mono text-xs">{item.subjectMatch}</span>
-		<span class="text-muted-foreground text-xs">{item.subjectClaim} / {item.matchType}</span>
+		<span class="text-xs text-muted-foreground">{item.subjectClaim} / {item.matchType}</span>
 	</div>
 {/snippet}
 

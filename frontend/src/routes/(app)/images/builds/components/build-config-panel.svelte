@@ -35,7 +35,7 @@
 
 			<Collapsible.Root bind:open={showAdvanced}>
 				<Collapsible.Trigger
-					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
+					class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 				>
 					{m.tabs_advanced()}
 					<ArrowDownIcon class={showAdvanced ? 'size-4 rotate-180 transition-transform' : 'size-4 transition-transform'} />

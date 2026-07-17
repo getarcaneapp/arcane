@@ -151,7 +151,7 @@
 
 {#snippet ClaimCell({ item }: { item: OidcRoleMapping })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.claimValue}</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.claimValue}</code>
 		{#if item.source === 'env'}
 			<Badge variant="amber" size="sm">ENV</Badge>
 		{/if}

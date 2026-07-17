@@ -1,26 +1,28 @@
 {
-  "name": "arcane-email-templates",
-  "version": "1.0.0",
-  "scripts": {
-    "preinstall": "npx only-allow pnpm",
-    "build": "tsx build.ts",
-    "build:watch": "tsx watch build.ts",
-    "check": "tsc --noEmit",
-    "dev": "email dev --port 3030",
-    "export": "email export"
-  },
-  "dependencies": {
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
-    "react-email": "6.8.1",
-    "tailwind-merge": "^3.6.0"
-  },
-  "devDependencies": {
-    "@types/node": "^26.1.0",
-    "@types/react": "^19.2.17",
-    "@types/react-dom": "^19.2.3",
-    "oxfmt": "^0.58.0",
-    "tsx": "^4.23.1",
+	"name": "arcane-email-templates",
+	"version": "1.0.0",
+	"scripts": {
+		"preinstall": "npx only-allow pnpm",
+		"build": "tsx build.ts",
+		"build:watch": "tsx watch build.ts",
+		"check": "tsc --noEmit",
+		"dev": "email dev --port 3030",
+		"export": "email export",
+		"format": "oxfmt",
+		"format:check": "oxfmt --check"
+	},
+	"dependencies": {
+		"react": "^19.2.7",
+		"react-dom": "^19.2.7",
+		"react-email": "6.8.1",
+		"tailwind-merge": "^3.6.0"
+	},
+	"devDependencies": {
+		"@types/node": "^26.1.0",
+		"@types/react": "^19.2.17",
+		"@types/react-dom": "^19.2.3",
+		"oxfmt": "^0.58.0",
+		"tsx": "^4.23.1",
 		"typescript": "^6.0.3"
-  }
+	}
 }

@@ -38,7 +38,7 @@
 		<span class="text-sm leading-none font-semibold tabular-nums">
 			{value}
 		</span>
-		<span class="text-muted-foreground text-[11px] leading-none font-medium tracking-[0.08em] whitespace-nowrap uppercase">
+		<span class="text-[11px] leading-none font-medium tracking-[0.08em] whitespace-nowrap text-muted-foreground uppercase">
 			{title}
 		</span>
 	</div>
@@ -51,8 +51,8 @@
 			{onclick}
 			aria-pressed={active}
 			class={cn(
-				'hover:bg-foreground/5 focus-visible:ring-primary/40 -mx-0.5 flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors focus-visible:ring-2 focus-visible:outline-none',
-				active && 'bg-primary/10 ring-primary/30 ring-1',
+				'-mx-0.5 flex cursor-pointer items-center gap-1.5 rounded-md px-1.5 py-0.5 transition-colors hover:bg-foreground/5 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none',
+				active && 'bg-primary/10 ring-1 ring-primary/30',
 				className
 			)}
 		>
@@ -66,21 +66,21 @@
 {:else}
 	<div
 		class={cn(
-			'bg-card/60 backdrop-blur-md border-border/70 group relative overflow-hidden rounded-xl border p-4 transition-colors',
+			'group relative overflow-hidden rounded-xl border border-border/70 bg-card/60 p-4 backdrop-blur-md transition-colors',
 			iconColor,
 			className
 		)}
 	>
 		<div class="relative flex items-start justify-between">
 			<div class="space-y-2">
-				<p class="text-muted-foreground text-sm font-medium tracking-wide">
+				<p class="text-sm font-medium tracking-wide text-muted-foreground">
 					{title}
 				</p>
 				<h3 class="text-2xl font-semibold tracking-tight tabular-nums">
 					{value}
 				</h3>
 				{#if subtitle}
-					<p class="text-muted-foreground text-xs">{subtitle}</p>
+					<p class="text-xs text-muted-foreground">{subtitle}</p>
 				{/if}
 			</div>
 
