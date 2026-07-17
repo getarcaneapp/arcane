@@ -1,4 +1,5 @@
 <script lang="ts">
+	// fallow-ignore-file code-duplication -- useUrlTab initialization is the hook's intended per-page integration surface
 	import * as Card from '$lib/components/ui/card/index.js';
 	import { VolumesIcon, ClockIcon, TagIcon, LayersIcon, InfoIcon, GlobeIcon, ContainersIcon, BoxIcon } from '$lib/icons';
 	import { goto } from '$app/navigation';
@@ -22,6 +23,7 @@
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import PropertyItem from '$lib/components/property-item.svelte';
 	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
+	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
 	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
@@ -102,11 +104,7 @@
 			<div class="flex flex-col gap-1">
 				<h1 class="text-2xl font-semibold tracking-tight break-all sm:text-3xl">{volume.name}</h1>
 				<div class="flex flex-wrap items-center gap-2 pt-1">
-					{#if volume.inUse}
-						<Badge variant="green" minWidth="20">{m.common_in_use()}</Badge>
-					{:else}
-						<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
-					{/if}
+					<InUseStatus inUse={volume.inUse} />
 					{#if volume.driver}
 						<Badge variant="blue" minWidth="20">{volume.driver}</Badge>
 					{/if}
@@ -165,11 +163,7 @@
 
 								<PropertyItem icon={InfoIcon} color="amber" label={m.common_status()}>
 									<p class="mt-1 text-base font-semibold">
-										{#if volume.inUse}
-											<Badge variant="green" minWidth="20">{m.common_in_use()}</Badge>
-										{:else}
-											<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
-										{/if}
+										<InUseStatus inUse={volume.inUse} />
 									</p>
 								</PropertyItem>
 

@@ -16,6 +16,7 @@
 	import ReleaseNotes from '$lib/components/release-notes.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import { formatDistanceToNow } from 'date-fns';
+	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
 	// binding undefined to a $bindable with a fallback throws props_invalid_value.
@@ -65,6 +66,18 @@
 		pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
 	}
 
+	function finishTerminalJob(terminalJob: UpdateAllJob) {
+		const managerUpdated =
+			terminalJob.status === 'completed' &&
+			(terminalJob.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
+		if (managerUpdated) {
+			window.location.reload();
+			return;
+		}
+		BaseAPIService.setUpgradeInProgress(false);
+		phase = 'finished';
+	}
+
 	async function poll() {
 		if (!pollActive) return;
 		try {
@@ -73,15 +86,7 @@
 			job = next;
 			if (next.status === 'completed' || next.status === 'failed') {
 				stopPolling();
-				const managerUpdated =
-					next.status === 'completed' &&
-					(next.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
-				if (managerUpdated) {
-					window.location.reload();
-					return;
-				}
-				BaseAPIService.setUpgradeInProgress(false);
-				phase = 'finished';
+				finishTerminalJob(next);
 				return;
 			}
 		} catch {
@@ -107,15 +112,7 @@
 		if (phase !== 'running') return;
 
 		if (job && (job.status === 'completed' || job.status === 'failed')) {
-			const managerUpdated =
-				job.status === 'completed' &&
-				(job.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
-			if (managerUpdated) {
-				window.location.reload();
-				return;
-			}
-			BaseAPIService.setUpgradeInProgress(false);
-			phase = 'finished';
+			finishTerminalJob(job);
 			return;
 		}
 
@@ -136,12 +133,6 @@
 
 	// Version/release presentation for the confirm step, rendered when the caller
 	// has the manager's version information at hand (sidebar / mobile nav).
-	const isSemver = $derived(!!versionInformation?.isSemverVersion);
-	const trackingTag = $derived(versionInformation?.currentTag ?? '');
-	const currentDigest = $derived(versionInformation?.currentDigest ?? '');
-	const newDigest = $derived(versionInformation?.newestDigest ?? '');
-	const semverCurrent = $derived(versionInformation?.displayVersion || versionInformation?.currentVersion || '');
-	const semverNew = $derived(versionInformation?.newestVersion ?? '');
 	const releaseNotes = $derived(versionInformation?.releaseNotes?.trim() ?? '');
 	const releaseUrl = $derived(versionInformation?.releaseUrl ?? '');
 	const releasedAgo = $derived.by(() => {
@@ -208,64 +199,7 @@
 
 		{#if phase === 'confirm' && versionInformation}
 			<div class="space-y-4">
-				{#if isSemver && (semverCurrent || semverNew)}
-					<div class="flex flex-wrap items-center gap-2 text-sm">
-						{#if semverCurrent}
-							<span class="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
-								{semverCurrent}
-							</span>
-						{/if}
-						{#if semverCurrent && semverNew}
-							<span class="text-muted-foreground/60">→</span>
-						{/if}
-						{#if semverNew}
-							<span
-								class="inline-flex items-center rounded-md bg-primary/10 px-2 py-0.5 font-mono text-xs font-medium text-primary"
-							>
-								{semverNew}
-							</span>
-						{/if}
-						{#if releasedAgo}
-							<span class="text-xs text-muted-foreground/70">· {m.update_center_released_at({ date: releasedAgo })}</span>
-						{/if}
-					</div>
-				{:else if !isSemver && (trackingTag || currentDigest || newDigest)}
-					<div class="space-y-1.5 text-xs">
-						{#if trackingTag}
-							<div class="flex items-baseline gap-2">
-								<span class="w-16 shrink-0 tracking-wide text-muted-foreground/70 uppercase">{m.update_center_tag_label()}</span>
-								<span class="inline-flex items-center rounded-md bg-muted px-2 py-0.5 font-mono text-foreground">
-									{trackingTag}
-								</span>
-							</div>
-						{/if}
-						{#if currentDigest}
-							<div class="flex items-baseline gap-2">
-								<span class="w-16 shrink-0 tracking-wide text-muted-foreground/70 uppercase"
-									>{m.update_center_current_label()}</span
-								>
-								<code
-									class="min-w-0 flex-1 rounded-md bg-muted/50 px-2 py-1 font-mono text-[11px] break-all text-muted-foreground"
-								>
-									{currentDigest}
-								</code>
-							</div>
-						{/if}
-						{#if newDigest}
-							<div class="flex items-baseline gap-2">
-								<span class="w-16 shrink-0 tracking-wide text-primary/80 uppercase">{m.update_center_new_label()}</span>
-								<code
-									class="min-w-0 flex-1 rounded-md bg-primary/10 px-2 py-1 font-mono text-[11px] font-medium break-all text-primary"
-								>
-									{newDigest}
-								</code>
-							</div>
-						{/if}
-						{#if releasedAgo}
-							<p class="pt-1 text-muted-foreground/70">{m.update_center_released_at({ date: releasedAgo })}</p>
-						{/if}
-					</div>
-				{/if}
+				<VersionUpdateSummary {versionInformation} {releasedAgo} />
 
 				<div class="border-t border-border/60 pt-3">
 					<div class="flex items-center justify-between pb-2">

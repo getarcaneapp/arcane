@@ -404,7 +404,3 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		}
 	};
 }
-
-export type EnvStreamCore<TState extends StreamEnvStateBase, TEvent extends StreamEventBase> = ReturnType<
-	typeof createEnvironmentStreamStore<TState, TEvent>
->;

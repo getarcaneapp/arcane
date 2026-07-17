@@ -428,7 +428,7 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
-				<!-- fallow-ignore-next-line code-duplication mobile vs desktop row-action menus; items already share ContainerActionMenuItem/RemoveMenuItem, the menu shells differ -->
+				<!-- fallow-ignore-next-line code-duplication -- mobile vs desktop row-action menus; items already share ContainerActionMenuItem/RemoveMenuItem, the menu shells differ -->
 				{#if canDeleteContainer}
 					<DropdownMenu.Separator />
 					<ContainerActionMenuItem

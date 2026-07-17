@@ -331,7 +331,7 @@
 			// via a blank save) and no add is in progress.
 			if (key === 'override') return overrideActive;
 			if (!key.startsWith('file:')) return false;
-			// fallow-ignore-next-line code-duplication managed-file predicate; script-level, diverges per page
+			// fallow-ignore-next-line code-duplication -- managed-file predicate; script-level, diverges per page
 			const entry = managedProjectFiles.find((file) => file.relativePath === key.slice(5));
 			return !!entry && !entry.isDirectory;
 		});
@@ -1593,7 +1593,7 @@
 
 									{#snippet second()}
 										<div class="flex h-full min-h-0 flex-1 flex-col">
-											<!-- fallow-ignore-next-line code-duplication compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
+											<!-- fallow-ignore-next-line code-duplication -- compose editor tree panel; per-page bindings/persistKey/file-rendering diverge -->
 											<EditorTabStrip tabs={treeTabs} activeKey={activeTreeTab} onSelect={openFileTab} onClose={closeFileTab}>
 												{#snippet actions()}
 													<ComposeFileEditorPanel

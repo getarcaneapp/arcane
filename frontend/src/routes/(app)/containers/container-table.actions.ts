@@ -1,3 +1,4 @@
+// fallow-ignore-file code-duplication -- project and global tables already delegate removal to confirmAndRemoveContainer; only state callbacks differ
 import { openConfirmDialog } from '$lib/components/confirm-dialog';
 import { m } from '$lib/paraglide/messages';
 import { containerService, type ContainersPaginatedResponse } from '$lib/services/container-service';

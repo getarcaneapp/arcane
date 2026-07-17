@@ -1,4 +1,5 @@
 <script lang="ts">
+	// fallow-ignore-file code-duplication -- volume and network pages share ResourceListPageState lifecycle wiring but retain domain-specific queries and mutations
 	import { VolumesIcon, VolumeUnusedIcon } from '$lib/icons';
 	import { toast } from 'svelte-sonner';
 	import CreateVolumeSheet from '$lib/components/sheets/create-volume-sheet.svelte';

@@ -191,7 +191,7 @@
 					bind:checked={$inputs.insecure.value}
 				/>
 			{/if}
-			<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}
 

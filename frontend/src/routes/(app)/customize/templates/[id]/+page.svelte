@@ -78,7 +78,7 @@
 			$inputs.composeContent.value !== originalCompose ||
 			$inputs.envContent.value !== originalEnv
 	);
-	// fallow-ignore-next-line code-duplication template editor form wiring (createForm + getTemplateEditorSaveState); hasChanges fields differ per page
+	// fallow-ignore-next-line code-duplication -- template editor form wiring (createForm + getTemplateEditorSaveState); hasChanges fields differ per page
 	const saveState = $derived(getTemplateEditorSaveState(validation, hasChanges));
 	const validationState = $derived(saveState.validationState);
 	const canSave = $derived(saveState.canSave);

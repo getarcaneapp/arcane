@@ -190,7 +190,7 @@
 					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
 					activityToastOptions(extractActivityId(project))
 				);
-				// fallow-ignore-next-line code-duplication create-success handler; navigation target diverges per page
+				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
 				goto(`/projects/${project.id}`, { invalidateAll: true });
 			}
 		});
@@ -357,7 +357,7 @@
 					itemsDisabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
 					useTemplateLabel={m.common_use_template()}
 					onUseTemplate={() => {
-						// fallow-ignore-next-line code-duplication shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
+						// fallow-ignore-next-line code-duplication -- shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
 						ui.showTemplateDialog = true;
 					}}
 					convertLabel={m.compose_convert_from_docker_run()}
@@ -536,7 +536,7 @@
 						{/snippet}
 					</ComposeEditorSplit>
 				{/if}
-				<!-- fallow-ignore-next-line code-duplication compose editor panel closing structure; ResizableSplit bindings/persistKey diverge per page -->
+				<!-- fallow-ignore-next-line code-duplication -- compose editor panel closing structure; ResizableSplit bindings/persistKey diverge per page -->
 			</div>
 		</div>
 	</div>

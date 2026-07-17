@@ -82,7 +82,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
-					// fallow-ignore-next-line code-duplication refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
+					// fallow-ignore-next-line code-duplication -- refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
 					repositories = await gitRepositoryService.getRepositories(requestOptions);
 				}
 			},
@@ -167,7 +167,7 @@
 	];
 </script>
 
-<!-- fallow-ignore-next-line code-duplication cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
+<!-- fallow-ignore-next-line code-duplication -- cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
 {#snippet enabledStatusCol({ value }: { value: unknown })}
 	<EnabledStatusCell {value} />
 {/snippet}

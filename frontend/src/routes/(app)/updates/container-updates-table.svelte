@@ -100,7 +100,7 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerUpdateRow })}
-	<!-- fallow-ignore-next-line code-duplication parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
+	<!-- fallow-ignore-next-line code-duplication -- parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
 	<code class="text-xs">{item.imageRef}</code>
 {/snippet}
 
