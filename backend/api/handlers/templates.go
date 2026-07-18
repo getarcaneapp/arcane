@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	json "encoding/json/v2"
-	"net/http"
 	"net/url"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -14,14 +13,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/base"
-	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/getarcaneapp/arcane/types/v2/template"
 )
 
 // TemplateHandler handles template management endpoints.
 type TemplateHandler struct {
-	templateService    *services.TemplateService
-	environmentService *services.EnvironmentService
+	templateService *services.TemplateService
 }
 
 // ============================================================================
@@ -156,30 +153,13 @@ type FetchTemplateRegistryOutput struct {
 	Body base.ApiResponse[template.RemoteRegistry]
 }
 
-type GetGlobalVariablesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-}
-
-type GetGlobalVariablesOutput struct {
-	Body base.ApiResponse[[]env.Variable]
-}
-
-type UpdateGlobalVariablesInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	Body          env.Summary
-}
-
-type UpdateGlobalVariablesOutput struct {
-	Body base.ApiResponse[base.MessageResponse]
-}
-
 // ============================================================================
 // Registration
 // ============================================================================
 
 // RegisterTemplates registers all template management endpoints.
-func RegisterTemplates(api huma.API, templateService *services.TemplateService, environmentService *services.EnvironmentService) {
-	h := &TemplateHandler{templateService: templateService, environmentService: environmentService}
+func RegisterTemplates(api huma.API, templateService *services.TemplateService) {
+	h := &TemplateHandler{templateService: templateService}
 
 	// Template registry endpoint.
 	huma.Register(api, huma.Operation{
@@ -376,32 +356,6 @@ func RegisterTemplates(api huma.API, templateService *services.TemplateService, 
 		},
 		Middlewares: humamw.RequirePermission(api, authz.PermTemplatesDelete),
 	}, h.DeleteRegistry)
-
-	humamw.RegisterWithPermission(api, huma.Operation{
-		OperationID: "getGlobalVariables",
-		Method:      "GET",
-		Path:        "/environments/{id}/templates/variables",
-		Summary:     "Get global variables",
-		Description: "Get global template variables for an environment",
-		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesRead, h.GetGlobalVariables)
-
-	humamw.RegisterWithPermission(api, huma.Operation{
-		OperationID: "updateGlobalVariables",
-		Method:      "PUT",
-		Path:        "/environments/{id}/templates/variables",
-		Summary:     "Update global variables",
-		Description: "Update global template variables for an environment",
-		Tags:        []string{"Templates"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.UpdateGlobalVariables)
 }
 
 // ============================================================================
@@ -888,80 +842,4 @@ func (h *TemplateHandler) FetchRegistry(ctx context.Context, input *FetchTemplat
 			Data:    registry,
 		},
 	}, nil
-}
-
-// GetGlobalVariables returns global template variables.
-func (h *TemplateHandler) GetGlobalVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if input.EnvironmentID != "0" {
-		return h.getGlobalVariablesForRemoteEnvironmentInternal(ctx, input)
-	}
-
-	vars, err := h.templateService.GetGlobalVariables(ctx)
-	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.GlobalVariablesRetrievalError{Err: err}).Error())
-	}
-
-	return &GetGlobalVariablesOutput{
-		Body: base.ApiResponse[[]env.Variable]{
-			Success: true,
-			Data:    vars,
-		},
-	}, nil
-}
-
-func (h *TemplateHandler) getGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
-
-	response, err := proxyRemoteJSONInternal[base.ApiResponse[[]env.Variable]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &GetGlobalVariablesOutput{Body: *response}, nil
-}
-
-// UpdateGlobalVariables updates global template variables.
-func (h *TemplateHandler) UpdateGlobalVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
-	if h.templateService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	if input.EnvironmentID != "0" {
-		return h.updateGlobalVariablesForRemoteEnvironmentInternal(ctx, input)
-	}
-
-	if err := h.templateService.UpdateGlobalVariables(ctx, input.Body.Variables); err != nil {
-		if common.IsInvalidEnvKeyError(err) {
-			return nil, huma.Error400BadRequest(err.Error())
-		}
-		return nil, huma.Error500InternalServerError((&common.GlobalVariablesUpdateError{Err: err}).Error())
-	}
-
-	return &UpdateGlobalVariablesOutput{
-		Body: base.ApiResponse[base.MessageResponse]{
-			Success: true,
-			Data: base.MessageResponse{
-				Message: "Global variables updated successfully",
-			},
-		},
-	}, nil
-}
-
-func (h *TemplateHandler) updateGlobalVariablesForRemoteEnvironmentInternal(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
-
-	response, err := proxyRemoteJSONInternal[base.ApiResponse[base.MessageResponse]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	return &UpdateGlobalVariablesOutput{Body: *response}, nil
 }

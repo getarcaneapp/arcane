@@ -1,17 +1,17 @@
-import { templateService } from '$lib/services/template-service';
+import { variableService } from '$lib/services/variable-service';
 import { queryKeys } from '$lib/query/query-keys';
-import type { Variable } from '$lib/types/shared';
+import type { GlobalVariable } from '$lib/types/variable';
 import type { PageLoad } from './$types';
 
-export const load: PageLoad = async ({ parent }): Promise<{ globalVariables: Variable[] }> => {
+export const load: PageLoad = async ({ parent }): Promise<{ globalVariables: GlobalVariable[] }> => {
 	const { queryClient } = await parent();
 
 	const globalVariables = await queryClient
 		.fetchQuery({
-			queryKey: queryKeys.templates.globalVariables(),
-			queryFn: () => templateService.getGlobalVariables()
+			queryKey: queryKeys.variables.list(),
+			queryFn: () => variableService.list()
 		})
-		.catch(() => [] as Variable[]);
+		.catch(() => [] as GlobalVariable[]);
 
 	return { globalVariables };
 };

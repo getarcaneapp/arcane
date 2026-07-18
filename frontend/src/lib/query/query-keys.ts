@@ -62,8 +62,11 @@ export const queryKeys = {
 		defaults: () => ['templates', 'defaults'] as const,
 		list: (options: SearchPaginationSortRequest) => ['templates', stableSerialize(options)] as const,
 		content: (templateId: string) => ['template-content', templateId] as const,
-		registries: () => ['template-registries'] as const,
-		globalVariables: () => ['templates', 'global-variables'] as const
+		registries: () => ['template-registries'] as const
+	},
+	variables: {
+		all: ['variables'] as const,
+		list: () => ['variables', 'list'] as const
 	},
 	notifications: {
 		settings: () => ['notification-settings'] as const

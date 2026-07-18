@@ -1313,6 +1313,52 @@ func IsInvalidEnvKeyError(err error) bool {
 	return isErrorTypeInternal[*InvalidEnvKeyError](err)
 }
 
+type GlobalVariableNotFoundError struct{}
+
+func (e *GlobalVariableNotFoundError) Error() string {
+	return "Global variable not found"
+}
+
+func IsGlobalVariableNotFoundError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableNotFoundError](err)
+}
+
+type GlobalVariableConflictError struct {
+	Key string
+}
+
+func (e *GlobalVariableConflictError) Error() string {
+	return fmt.Sprintf("A variable named %q already exists for an overlapping environment scope", e.Key)
+}
+
+func IsGlobalVariableConflictError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableConflictError](err)
+}
+
+// GlobalVariableScopeRequiredError is returned when a variable is scoped to
+// specific environments but no environment IDs were provided.
+type GlobalVariableScopeRequiredError struct{}
+
+func (e *GlobalVariableScopeRequiredError) Error() string {
+	return "At least one environment is required when a variable is not scoped to all environments"
+}
+
+func IsGlobalVariableScopeRequiredError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableScopeRequiredError](err)
+}
+
+// GlobalVariableSecretValueRequiredError is returned when a secret variable is
+// switched to readable without providing a replacement value.
+type GlobalVariableSecretValueRequiredError struct{}
+
+func (e *GlobalVariableSecretValueRequiredError) Error() string {
+	return "A new value is required when making a secret variable readable"
+}
+
+func IsGlobalVariableSecretValueRequiredError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableSecretValueRequiredError](err)
+}
+
 type UpdaterRunError struct {
 	Err error
 }

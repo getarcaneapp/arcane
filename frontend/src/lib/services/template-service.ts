@@ -1,9 +1,7 @@
 import BaseAPIService from './api-service';
 import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '$lib/types/swarm';
-import type { Variable } from '$lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
 
 class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {
@@ -122,17 +120,6 @@ class TemplateService extends BaseAPIService {
 			envContent: template.envContent || ''
 		});
 		return response.data?.data;
-	}
-
-	async getGlobalVariables(): Promise<Variable[]> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const response = await this.api.get(`/environments/${envId}/templates/variables`);
-		return response.data?.data ?? [];
-	}
-
-	async updateGlobalVariables(variables: Variable[]): Promise<void> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		await this.api.put(`/environments/${envId}/templates/variables`, { variables });
 	}
 }
 
