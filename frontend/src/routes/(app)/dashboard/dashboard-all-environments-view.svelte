@@ -17,7 +17,7 @@
 	import { systemService } from '$lib/services/system-service';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import { formatDateTime } from '$lib/utils/formatting';
@@ -34,9 +34,8 @@
 	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
 	import type { Settings } from '$lib/types/settings';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { tryCatch } from '$lib/utils/api';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { bytes } from '$lib/utils/formatting';
@@ -427,21 +426,10 @@
 		}
 	}
 
-	function getTransportBadge(environment: Environment): { text: string; variant: 'blue' | 'purple' | 'gray' } {
-		if (!environment.isEdge) {
-			return { text: m.dashboard_all_transport_http(), variant: 'gray' };
-		}
-
-		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected or poll-only agents still show what they connect with.
-		const transport = (environment.connected ? environment.edgeTransport : undefined) ?? environment.lastEdgeTransport;
-		if (!transport) {
-			return { text: m.dashboard_all_transport_edge(), variant: 'gray' };
-		}
-
-		return transport === 'websocket'
-			? { text: m.dashboard_all_transport_websocket(), variant: 'purple' }
-			: { text: m.dashboard_all_transport_grpc(), variant: 'blue' };
+	function getRoleBadge(environment: Environment): { text: string; variant: 'primary' | 'gray' } {
+		return environment.id === LOCAL_DOCKER_ENVIRONMENT_ID
+			? { text: m.dashboard_all_role_manager(), variant: 'primary' }
+			: { text: m.dashboard_all_role_agent(), variant: 'gray' };
 	}
 
 	function getResolvedStatusLabel(environment: Environment): string {
@@ -855,9 +843,7 @@
 					{#each environmentCards as item (item.environment.id)}
 						{@const baseItem = createBaseEnvironmentOverview(item.environment)}
 						{@const environment = baseItem.environment}
-						{@const resolvedStatus = resolveEnvironmentStatus(environment)}
-						{@const statusVariant = getEnvironmentStatusVariant(resolvedStatus)}
-						{@const transportBadge = getTransportBadge(environment)}
+						{@const roleBadge = getRoleBadge(environment)}
 						{@const activity = getActivityMeta(environment)}
 						{@const isCurrent = currentEnvironmentId === environment.id}
 						{@const liveStatsState = getLiveStatsState(environment.id)}
@@ -870,19 +856,14 @@
 
 						<Card.Root
 							variant="outlined"
-							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
+							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60'}`}
 						>
 							<Card.Content class="space-y-5 p-5">
 								<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
 									<div class="min-w-0 space-y-2">
 										<div class="flex min-w-0 flex-wrap items-center gap-2">
 											<div class="max-w-full min-w-0 text-base font-semibold tracking-tight break-words">{environment.name}</div>
-											{#if isCurrent}
-												<Badge variant="blue" size="sm">{m.common_current()}</Badge>
-											{/if}
-											<Badge variant={statusVariant} size="sm">{capitalizeFirstLetter(getResolvedStatusLabel(environment))}</Badge
-											>
-											<Badge variant={transportBadge.variant} size="sm">{transportBadge.text}</Badge>
+											<Badge variant={roleBadge.variant} size="sm">{roleBadge.text}</Badge>
 											{#if boardState}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 												{@const vInfo =
@@ -970,7 +951,7 @@
 															class={cn(
 																'size-8',
 																btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
-																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-blue-600! dark:[&_svg]:text-blue-500!'
+																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-primary!'
 															)}
 														/>
 													{/snippet}

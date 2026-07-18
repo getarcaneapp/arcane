@@ -11,6 +11,7 @@
 					'bg-destructive [a&]:hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 dark:bg-destructive/70 border-transparent text-white',
 				outline:
 					'backdrop-blur-sm bg-card/60 text-foreground [a&]:hover:backdrop-blur-sm [a&]:hover:bg-card/90 [a&]:hover:text-accent-foreground',
+				primary: 'text-primary bg-primary/10 border-primary/20',
 				red: 'text-red-600 bg-red-500/10 border-red-500/20 dark:text-red-400 dark:bg-red-500/10 dark:border-red-500/30',
 				orange:
 					'text-orange-600 bg-orange-500/10 border-orange-500/20 dark:text-orange-400 dark:bg-orange-500/10 dark:border-orange-500/30',

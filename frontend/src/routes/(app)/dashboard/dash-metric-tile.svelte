@@ -14,10 +14,14 @@
 
 	let { title, value, label, icon: Icon, meterValue = null, labelClass }: Props = $props();
 
+	const HIGH_USAGE_THRESHOLD = 90;
+
 	const meterPercent = $derived.by(() => {
 		if (meterValue === null) return 0;
 		return Math.max(0, Math.min(100, meterValue));
 	});
+
+	const meterIsHigh = $derived(meterPercent >= HIGH_USAGE_THRESHOLD);
 
 	const meterWidth = $derived.by(() => {
 		return `width: ${meterPercent}%`;
@@ -47,12 +51,18 @@
 					{/each}
 				</div>
 				<div
-					class="absolute inset-y-0 left-0 rounded-full bg-gradient-to-r from-primary/65 via-primary to-violet-500/85 transition-[width] duration-700 ease-out motion-reduce:transition-none"
+					class={cn(
+						'absolute inset-y-0 left-0 rounded-full bg-gradient-to-r transition-[width] duration-700 ease-out motion-reduce:transition-none',
+						meterIsHigh ? 'from-primary/65 via-primary to-red-500' : 'from-primary/65 to-primary'
+					)}
 					style={meterWidth}
 				></div>
 				{#if meterPercent > 0}
 					<div
-						class="absolute top-1/2 size-2 -translate-y-1/2 rounded-full bg-primary shadow-[0_0_0_2px_hsl(var(--background))] transition-[left] duration-700 ease-out motion-reduce:transition-none"
+						class={cn(
+							'absolute top-1/2 size-2 -translate-y-1/2 rounded-full shadow-[0_0_0_2px_hsl(var(--background))] transition-[left] duration-700 ease-out motion-reduce:transition-none',
+							meterIsHigh ? 'bg-red-500' : 'bg-primary'
+						)}
 						style={meterDotStyle}
 					></div>
 				{/if}
