@@ -66,7 +66,7 @@
   "common_environment_variables": "Medivariabloj",
   "common_always": "Ĉiam",
   "common_working_directory": "Labordosierujo",
-  "common_remove_selected": "Forigi elektitajn ({count})",
+  "common_remove_selected": "Forigi elektitajn",
   "sync_environment_success": "Medio sukcese sinkronigite",
   "sync_environment_failed": "Fiaskis sinkronigi medion",
   "common_gateway": "Kluzo",
