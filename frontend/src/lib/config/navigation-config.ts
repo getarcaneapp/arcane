@@ -26,7 +26,8 @@ import {
 	GlobeIcon,
 	UpdateIcon,
 	VariableIcon,
-	ActivityIcon
+	ActivityIcon,
+	RemoteEnvironmentIcon
 } from '$lib/icons';
 import { m } from '$lib/paraglide/messages';
 import type { ShortcutKey } from '$lib/utils/navigation';
@@ -228,6 +229,12 @@ export const navigationItems: NavigationSections = {
 					url: '/settings/activity',
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.activity'
+				},
+				{
+					title: m.s3_destinations_title(),
+					url: '/settings/s3-destinations',
+					icon: RemoteEnvironmentIcon,
+					accessSurfaceId: 'settings.category.s3destinations'
 				},
 				{
 					title: m.builds(),

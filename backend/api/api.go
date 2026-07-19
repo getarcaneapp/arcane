@@ -315,6 +315,7 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 	handlers.RegisterBuildWorkspaces(api, svc.BuildWorkspace)
 	handlers.RegisterImageUpdates(api, svc.ImageUpdate, svc.Image, handlerAppCtx)
 	handlers.RegisterSettings(api, svc.Settings, svc.SettingsSearch, svc.Environment, cfg)
+	handlers.RegisterS3Destinations(api, svc.S3Destination)
 	handlers.RegisterJobSchedules(api, svc.JobSchedule, svc.Environment)
 	handlers.RegisterVolumes(api, svc.Docker, svc.Volume, svc.Activity, handlerAppCtx)
 	handlers.RegisterContainers(api, svc.Container, svc.Docker, svc.Settings, svc.Activity, handlerAppCtx)

@@ -50,6 +50,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	customizeSearchService := services.NewCustomizeSearchService()
 	containerService := services.NewContainerService(ctx, db, eventService, dockerClientService, imageService, settingsService, projectService)
 	buildWorkspaceService := services.NewBuildWorkspaceService(settingsService)
+	s3DestinationService := services.NewS3DestinationService(db)
 	volumeService := provideVolumeServiceInternal(db, dockerClientService, eventService, settingsService, containerService, imageService, cfg)
 	networkService := services.NewNetworkService(db, dockerClientService, eventService)
 	portService := services.NewPortService(dockerClientService)
@@ -108,6 +109,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 		GitOpsSync:        gitOpsSyncService,
 		Webhook:           webhookService,
 		Vulnerability:     vulnerabilityService,
+		S3Destination:     s3DestinationService,
 		Dashboard:         dashboardService,
 		Role:              roleService,
 		AuthMiddleware:    authMiddleware,
@@ -168,7 +170,7 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 // no longer maintained by hand. wire.Struct assembles the aggregate Services.
 var ServiceSet = wire.NewSet(
 
-	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, services.NewLifecycleService, provideProjectServiceInternal, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, provideVersionServiceInternal,
+	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, services.NewLifecycleService, provideProjectServiceInternal, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, services.NewS3DestinationService, provideVersionServiceInternal,
 	provideGitRepositoryServiceInternal,
 	provideVolumeServiceInternal,
 	provideAuthServiceInternal,

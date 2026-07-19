@@ -61,6 +61,7 @@ type Services struct {
 	GitOpsSync        *services.GitOpsSyncService
 	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
+	S3Destination     *services.S3DestinationService
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
 	// AuthMiddleware is the shared Echo auth middleware. It's wired here so the
