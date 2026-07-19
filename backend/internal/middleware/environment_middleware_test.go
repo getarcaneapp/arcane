@@ -397,3 +397,10 @@ func TestIsCentralSwarmManagementPathInternal_IsMethodAware(t *testing.T) {
 	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodPut, "/swarm/nodes/node-1/agent/binding"))
 	assert.True(t, isCentralSwarmManagementPathInternal(http.MethodDelete, "/swarm/nodes/node-1/agent/binding"))
 }
+
+func TestIsCentralVolumeBackupPolicyPathInternal_IsMethodAware(t *testing.T) {
+	assert.True(t, isCentralVolumeBackupPolicyPathInternal(http.MethodGet, "/volumes/app-data/backup-policy"))
+	assert.True(t, isCentralVolumeBackupPolicyPathInternal(http.MethodPut, "/volumes/app-data/backup-policy"))
+	assert.False(t, isCentralVolumeBackupPolicyPathInternal(http.MethodPost, "/volumes/app-data/backup-policy"))
+	assert.False(t, isCentralVolumeBackupPolicyPathInternal(http.MethodGet, "/volumes/app-data/backups"))
+}

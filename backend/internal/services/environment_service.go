@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
@@ -235,7 +236,7 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 		return
 	}
 
-	// Local environment (ID "0") has no registries/repositories to push.
+	// Local environment (ID "0") has no manager-owned resources to push.
 	if envID == "0" {
 		return
 	}
@@ -244,6 +245,9 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	defer cancel()
 	if err := s.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync registries during health check", "environment_id", envID, "error", err)
+	}
+	if err := s.SyncS3DestinationsToEnvironment(syncCtx, envID); err != nil {
+		slog.WarnContext(syncCtx, "failed to sync S3 destinations during health check", "environment_id", envID, "error", err)
 	}
 	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
@@ -1067,6 +1071,31 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 		return fmt.Errorf("failed to sync registries to %d remote environment(s)", failedCount)
 	}
 
+	return nil
+}
+
+// SyncS3DestinationsToRemoteEnvironments refreshes the destination cache on every enabled remote environment.
+func (s *EnvironmentService) SyncS3DestinationsToRemoteEnvironments(ctx context.Context) error {
+	envs, err := s.ListRemoteEnvironments(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to list remote environments for S3 destination sync: %w", err)
+	}
+
+	var failedCount int
+	for _, env := range envs {
+		if env.AccessToken == nil || strings.TrimSpace(*env.AccessToken) == "" {
+			slog.DebugContext(ctx, "Skipping S3 destination sync for environment without access token", "environmentID", env.ID, "environmentName", env.Name)
+			continue
+		}
+		if err := s.SyncS3DestinationsToEnvironment(ctx, env.ID); err != nil {
+			failedCount++
+			slog.WarnContext(ctx, "Failed to sync S3 destinations to remote environment", "environmentID", env.ID, "environmentName", env.Name, "error", err)
+		}
+	}
+
+	if failedCount > 0 {
+		return fmt.Errorf("failed to sync S3 destinations to %d remote environment(s)", failedCount)
+	}
 	return nil
 }
 
@@ -2016,6 +2045,65 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 
 	slog.InfoContext(ctx, "Successfully synced registries to environment", "environmentID", environmentID, "environmentName", target.Name)
 
+	return nil
+}
+
+// SyncS3DestinationsToEnvironment sends manager-owned destinations to one remote environment.
+func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context, environmentID string) error {
+	target, err := s.resolveRemoteEnvironmentTargetInternal(ctx, environmentID)
+	if err != nil {
+		return err
+	}
+
+	var destinations []models.S3Destination
+	if err := s.db.WithContext(ctx).Find(&destinations).Error; err != nil {
+		return fmt.Errorf("failed to get S3 destinations: %w", err)
+	}
+
+	syncItems := make([]backuptypes.S3DestinationSync, 0, len(destinations))
+	for i := range destinations {
+		secret, decryptErr := crypto.Decrypt(destinations[i].SecretAccessKey)
+		if decryptErr != nil {
+			return fmt.Errorf("failed to decrypt S3 destination %s for sync: %w", destinations[i].ID, decryptErr)
+		}
+		syncItems = append(syncItems, backuptypes.S3DestinationSync{
+			ID:              destinations[i].ID,
+			Name:            destinations[i].Name,
+			Endpoint:        destinations[i].Endpoint,
+			Bucket:          destinations[i].Bucket,
+			Region:          destinations[i].Region,
+			AccessKeyID:     destinations[i].AccessKeyID,
+			SecretAccessKey: secret,
+			Prefix:          destinations[i].Prefix,
+			UseSSL:          destinations[i].UseSSL,
+			ForcePathStyle:  destinations[i].ForcePathStyle,
+			CreatedAt:       destinations[i].CreatedAt,
+			UpdatedAt:       destinations[i].UpdatedAt,
+		})
+	}
+
+	body, err := json.Marshal(backuptypes.S3DestinationSyncRequest{Destinations: syncItems})
+	if err != nil {
+		return fmt.Errorf("failed to marshal S3 destination sync request: %w", err)
+	}
+
+	reqCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+
+	var result struct {
+		Success bool `json:"success"`
+		Data    struct {
+			Message string `json:"message"`
+		} `json:"data"`
+	}
+	if err := s.proxyJSONRequestForTargetInternal(reqCtx, target, http.MethodPost, "/api/s3-destinations/sync", body, &result); err != nil {
+		return fmt.Errorf("failed to send S3 destination sync request: %w", err)
+	}
+	if !result.Success {
+		return fmt.Errorf("S3 destination sync failed: %s", result.Data.Message)
+	}
+
+	slog.InfoContext(ctx, "Successfully synced S3 destinations to environment", "environmentID", environmentID, "environmentName", target.Name)
 	return nil
 }
 

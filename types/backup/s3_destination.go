@@ -40,3 +40,22 @@ type UpdateS3Destination struct {
 	UseSSL          bool   `json:"useSsl"`
 	ForcePathStyle  bool   `json:"forcePathStyle"`
 }
+
+type S3DestinationSync struct {
+	ID              string     `json:"id"`
+	Name            string     `json:"name"`
+	Endpoint        string     `json:"endpoint,omitempty"`
+	Bucket          string     `json:"bucket"`
+	Region          string     `json:"region"`
+	AccessKeyID     string     `json:"accessKeyId"`
+	SecretAccessKey string     `json:"secretAccessKey"`
+	Prefix          string     `json:"prefix,omitempty"`
+	UseSSL          bool       `json:"useSsl"`
+	ForcePathStyle  bool       `json:"forcePathStyle"`
+	CreatedAt       time.Time  `json:"createdAt"`
+	UpdatedAt       *time.Time `json:"updatedAt,omitempty"`
+}
+
+type S3DestinationSyncRequest struct {
+	Destinations []S3DestinationSync `json:"destinations"`
+}

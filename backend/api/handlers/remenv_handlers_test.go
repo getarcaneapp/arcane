@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -34,7 +35,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.Environment{}))
+	require.NoError(t, db.AutoMigrate(&models.Environment{}, &models.S3Destination{}))
 
 	now := time.Now()
 	env := &models.Environment{
@@ -107,6 +108,55 @@ func TestJobSchedulesHandler_ListJobs_RemoteSuccess(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, output.Body.Jobs, 1)
 	require.Equal(t, "job-1", output.Body.Jobs[0].ID)
+}
+
+func TestVolumeHandler_UpdateBackupPolicy_SyncsS3BeforeRemoteUpdate(t *testing.T) {
+	var requestPaths []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestPaths = append(requestPaths, r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/s3-destinations/sync":
+			require.Equal(t, http.MethodPost, r.Method)
+			_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
+		case "/api/environments/0/volumes/app-data/backup-policy":
+			require.Equal(t, http.MethodPut, r.Method)
+			var policy volumetypes.UpdateBackupPolicy
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&policy))
+			require.True(t, policy.S3Enabled)
+			require.Equal(t, "s3-1", policy.S3DestinationID)
+			require.NoError(t, json.NewEncoder(w).Encode(base.ApiResponse[volumetypes.BackupPolicy]{
+				Success: true,
+				Data: volumetypes.BackupPolicy{
+					VolumeName:      "app-data",
+					S3Enabled:       true,
+					S3DestinationID: "s3-1",
+				},
+			}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	handler := &VolumeHandler{environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server)}
+	output, err := handler.UpdateBackupPolicy(context.Background(), &UpdateVolumeBackupPolicyInput{
+		EnvironmentID: "env-remote",
+		VolumeName:    "app-data",
+		Body: volumetypes.UpdateBackupPolicy{
+			Schedule:        "0 0 2 * * *",
+			RetentionCount:  7,
+			LocalEnabled:    true,
+			S3Enabled:       true,
+			S3DestinationID: "s3-1",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/api/s3-destinations/sync",
+		"/api/environments/0/volumes/app-data/backup-policy",
+	}, requestPaths)
+	require.Equal(t, "s3-1", output.Body.Data.S3DestinationID)
 }
 
 func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {

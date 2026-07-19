@@ -235,6 +235,70 @@ func (s *S3DestinationService) S3DestinationExists(ctx context.Context, id strin
 	return s.db.WithContext(ctx).Model(&models.S3Destination{}).Where("id = ?", id).Count(&count).Error == nil && count == 1
 }
 
+// SyncS3Destinations replaces an agent's destination cache with the manager-owned destinations.
+func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinations []backuptypes.S3DestinationSync) error {
+	var existing []models.S3Destination
+	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
+		return fmt.Errorf("failed to load existing S3 destinations: %w", err)
+	}
+
+	existingByID := make(map[string]*models.S3Destination, len(existing))
+	for i := range existing {
+		existingByID[existing[i].ID] = &existing[i]
+	}
+
+	syncedIDs := make(map[string]struct{}, len(destinations))
+	for _, item := range destinations {
+		if strings.TrimSpace(item.ID) == "" {
+			return errors.New("S3 destination ID is required")
+		}
+		if err := validateS3DestinationInputInternal(item.Name, item.Bucket, item.Region, item.AccessKeyID, item.SecretAccessKey, true); err != nil {
+			return fmt.Errorf("invalid S3 destination %s: %w", item.ID, err)
+		}
+		syncedIDs[item.ID] = struct{}{}
+
+		encryptedSecret, err := crypto.Encrypt(strings.TrimSpace(item.SecretAccessKey))
+		if err != nil {
+			return fmt.Errorf("failed to encrypt S3 secret access key for %s: %w", item.ID, err)
+		}
+
+		destination, exists := existingByID[item.ID]
+		if !exists {
+			destination = &models.S3Destination{BaseModel: models.BaseModel{ID: item.ID}}
+		}
+		destination.Name = strings.TrimSpace(item.Name)
+		destination.Endpoint = strings.TrimSpace(item.Endpoint)
+		destination.Bucket = strings.TrimSpace(item.Bucket)
+		destination.Region = strings.TrimSpace(item.Region)
+		destination.AccessKeyID = strings.TrimSpace(item.AccessKeyID)
+		destination.SecretAccessKey = encryptedSecret
+		destination.Prefix = strings.Trim(strings.TrimSpace(item.Prefix), "/")
+		destination.UseSSL = item.UseSSL
+		destination.ForcePathStyle = item.ForcePathStyle
+		if !item.CreatedAt.IsZero() {
+			destination.CreatedAt = item.CreatedAt
+		}
+		if item.UpdatedAt != nil {
+			destination.UpdatedAt = item.UpdatedAt
+		}
+
+		if err := s.db.WithContext(ctx).Save(destination).Error; err != nil {
+			return fmt.Errorf("failed to sync S3 destination %s: %w", item.ID, err)
+		}
+	}
+
+	for i := range existing {
+		if _, ok := syncedIDs[existing[i].ID]; ok {
+			continue
+		}
+		if err := s.DeleteS3Destination(ctx, existing[i].ID); err != nil {
+			return fmt.Errorf("failed to remove unsynced S3 destination %s: %w", existing[i].ID, err)
+		}
+	}
+
+	return nil
+}
+
 func (s *S3DestinationService) configurationInternal(ctx context.Context, id string) (s3DestinationConfiguration, error) {
 	destination, err := s.getS3DestinationModelInternal(ctx, id)
 	if err != nil {

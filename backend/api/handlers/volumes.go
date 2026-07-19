@@ -2,9 +2,11 @@ package handlers
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"path"
 	"strconv"
 
@@ -24,10 +26,11 @@ import (
 
 // VolumeHandler provides Huma-based volume management endpoints.
 type VolumeHandler struct {
-	volumeService   *services.VolumeService
-	dockerService   *services.DockerClientService
-	activityService *services.ActivityService
-	appCtx          context.Context
+	volumeService      *services.VolumeService
+	dockerService      *services.DockerClientService
+	activityService    *services.ActivityService
+	environmentService *services.EnvironmentService
+	appCtx             context.Context
 }
 
 // --- Huma Input/Output Wrappers ---
@@ -330,12 +333,13 @@ type UploadAndRestoreOutput struct {
 // RegisterVolumes registers volume management routes using Huma.
 //
 //nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
-func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
+func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, environmentService *services.EnvironmentService, appCtx ActivityAppContext) {
 	h := &VolumeHandler{
-		volumeService:   volumeService,
-		dockerService:   dockerService,
-		activityService: activityService,
-		appCtx:          appCtx.contextInternal(),
+		volumeService:      volumeService,
+		dockerService:      dockerService,
+		activityService:    activityService,
+		environmentService: environmentService,
+		appCtx:             appCtx.contextInternal(),
 	}
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -699,6 +703,18 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 }
 
 func (h *VolumeHandler) GetBackupPolicy(ctx context.Context, input *GetVolumeBackupPolicyInput) (*GetVolumeBackupPolicyOutput, error) {
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+		response, err := proxyRemoteJSONInternal[base.ApiResponse[volumetypes.BackupPolicy]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, remotePath, nil)
+		if err != nil {
+			return nil, err
+		}
+		return &GetVolumeBackupPolicyOutput{Body: *response}, nil
+	}
+
 	policy, err := h.volumeService.GetBackupPolicy(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -707,6 +723,23 @@ func (h *VolumeHandler) GetBackupPolicy(ctx context.Context, input *GetVolumeBac
 }
 
 func (h *VolumeHandler) UpdateBackupPolicy(ctx context.Context, input *UpdateVolumeBackupPolicyInput) (*UpdateVolumeBackupPolicyOutput, error) {
+	if input.EnvironmentID != "0" {
+		if h.environmentService == nil {
+			return nil, huma.Error500InternalServerError("environment service not available")
+		}
+		if input.Body.S3Enabled {
+			if err := h.environmentService.SyncS3DestinationsToEnvironment(ctx, input.EnvironmentID); err != nil {
+				return nil, huma.Error502BadGateway("failed to synchronize S3 destinations to environment: " + err.Error())
+			}
+		}
+		remotePath := fmt.Sprintf("/api/environments/0/volumes/%s/backup-policy", url.PathEscape(input.VolumeName))
+		response, err := proxyRemoteJSONInternal[base.ApiResponse[volumetypes.BackupPolicy]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, remotePath, input.Body)
+		if err != nil {
+			return nil, err
+		}
+		return &UpdateVolumeBackupPolicyOutput{Body: *response}, nil
+	}
+
 	policy, err := h.volumeService.UpdateBackupPolicy(ctx, input.VolumeName, input.Body)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())

@@ -3,6 +3,7 @@ package handlers
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -14,7 +15,8 @@ import (
 )
 
 type S3DestinationHandler struct {
-	service *services.S3DestinationService
+	service            *services.S3DestinationService
+	environmentService *services.EnvironmentService
 }
 
 type ListS3DestinationsInput struct {
@@ -57,8 +59,16 @@ type DeleteS3DestinationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
-func RegisterS3Destinations(api huma.API, service *services.S3DestinationService) {
-	handler := &S3DestinationHandler{service: service}
+type SyncS3DestinationsInput struct {
+	Body backuptypes.S3DestinationSyncRequest
+}
+
+type SyncS3DestinationsOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+func RegisterS3Destinations(api huma.API, service *services.S3DestinationService, environmentService *services.EnvironmentService) {
+	handler := &S3DestinationHandler{service: service, environmentService: environmentService}
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "list-s3-destinations",
@@ -77,6 +87,15 @@ func RegisterS3Destinations(api huma.API, service *services.S3DestinationService
 		Description: "List saved S3-compatible destinations for backup configuration selectors",
 		Tags:        []string{"S3 Destinations"},
 	}, authz.PermSettingsRead, handler.ListAll)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "sync-s3-destinations",
+		Method:      http.MethodPost,
+		Path:        "/s3-destinations/sync",
+		Summary:     "Sync S3 destinations",
+		Description: "Synchronize manager-owned S3 destinations to an agent",
+		Tags:        []string{"S3 Destinations"},
+	}, authz.PermSettingsWrite, handler.Sync)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "get-s3-destination",
@@ -147,6 +166,7 @@ func (h *S3DestinationHandler) Create(ctx context.Context, input *CreateS3Destin
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	h.triggerRemoteSyncInternal(ctx, "S3 destination creation")
 	return &S3DestinationOutput{Body: *destination}, nil
 }
 
@@ -158,6 +178,7 @@ func (h *S3DestinationHandler) Update(ctx context.Context, input *UpdateS3Destin
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
+	h.triggerRemoteSyncInternal(ctx, "S3 destination update")
 	return &S3DestinationOutput{Body: *destination}, nil
 }
 
@@ -172,8 +193,31 @@ func (h *S3DestinationHandler) Delete(ctx context.Context, input *S3DestinationI
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
+	h.triggerRemoteSyncInternal(ctx, "S3 destination deletion")
 	return &DeleteS3DestinationOutput{Body: base.ApiResponse[base.MessageResponse]{
 		Success: true,
 		Data:    base.MessageResponse{Message: "S3 destination deleted successfully"},
 	}}, nil
+}
+
+func (h *S3DestinationHandler) Sync(ctx context.Context, input *SyncS3DestinationsInput) (*SyncS3DestinationsOutput, error) {
+	if err := h.service.SyncS3Destinations(ctx, input.Body.Destinations); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &SyncS3DestinationsOutput{Body: base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "S3 destinations synced successfully"},
+	}}, nil
+}
+
+func (h *S3DestinationHandler) triggerRemoteSyncInternal(ctx context.Context, reason string) {
+	if h.environmentService == nil {
+		return
+	}
+	detachedCtx := context.WithoutCancel(ctx)
+	go func(syncCtx context.Context) {
+		if err := h.environmentService.SyncS3DestinationsToRemoteEnvironments(syncCtx); err != nil {
+			slog.WarnContext(syncCtx, "Failed to fan out S3 destination sync to remote environments", "reason", reason, "error", err)
+		}
+	}(detachedCtx)
 }

@@ -270,6 +270,9 @@ func isManagementPathInternal(method, suffix string) bool {
 	if isCentralSwarmManagementPathInternal(method, suffix) {
 		return true
 	}
+	if isCentralVolumeBackupPolicyPathInternal(method, suffix) {
+		return true
+	}
 	if suffix == "/activities" || strings.HasPrefix(suffix, "/activities/") {
 		return true
 	}
@@ -290,6 +293,14 @@ func isManagementPathInternal(method, suffix string) bool {
 
 	_, isManagement := managementEndpointSet[suffix]
 	return isManagement
+}
+
+func isCentralVolumeBackupPolicyPathInternal(method, suffix string) bool {
+	if method != http.MethodGet && method != http.MethodPut {
+		return false
+	}
+	parts := strings.Split(strings.Trim(suffix, "/"), "/")
+	return len(parts) == 3 && parts[0] == "volumes" && parts[1] != "" && parts[2] == "backup-policy"
 }
 
 func isCentralSwarmManagementPathInternal(method, suffix string) bool {

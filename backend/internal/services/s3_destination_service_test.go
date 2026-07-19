@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -103,4 +104,67 @@ func TestS3DestinationService_DeleteRejectsConfiguredDestination(t *testing.T) {
 
 	err = service.DeleteS3Destination(ctx, destination.ID)
 	require.ErrorIs(t, err, ErrS3DestinationInUse)
+}
+
+func TestS3DestinationService_SyncS3Destinations(t *testing.T) {
+	service, gormDB := setupS3DestinationServiceTestInternal(t)
+	ctx := context.Background()
+
+	legacy, err := service.CreateS3Destination(ctx, backuptypes.CreateS3Destination{
+		Name:            "Legacy",
+		Bucket:          "legacy-bucket",
+		Region:          "us-east-1",
+		AccessKeyID:     "legacy-access-key",
+		SecretAccessKey: "legacy-secret",
+		UseSSL:          true,
+	})
+	require.NoError(t, err)
+
+	createdAt := time.Now().Add(-time.Hour).UTC().Truncate(time.Second)
+	require.NoError(t, service.SyncS3Destinations(ctx, []backuptypes.S3DestinationSync{
+		{
+			ID:              "destination-1",
+			Name:            "Remote primary",
+			Endpoint:        "https://s3.example.com",
+			Bucket:          "volume-backups",
+			Region:          "eu-central-1",
+			AccessKeyID:     "remote-access-key",
+			SecretAccessKey: "remote-secret",
+			Prefix:          "/agents/",
+			UseSSL:          true,
+			ForcePathStyle:  true,
+			CreatedAt:       createdAt,
+		},
+	}))
+
+	var synced models.S3Destination
+	require.NoError(t, gormDB.First(&synced, "id = ?", "destination-1").Error)
+	require.Equal(t, "Remote primary", synced.Name)
+	require.Equal(t, "agents", synced.Prefix)
+	require.NotEqual(t, "remote-secret", synced.SecretAccessKey)
+	secret, err := crypto.Decrypt(synced.SecretAccessKey)
+	require.NoError(t, err)
+	require.Equal(t, "remote-secret", secret)
+
+	_, err = service.GetS3Destination(ctx, legacy.ID)
+	require.ErrorIs(t, err, ErrS3DestinationNotFound)
+
+	require.NoError(t, service.SyncS3Destinations(ctx, []backuptypes.S3DestinationSync{
+		{
+			ID:              "destination-1",
+			Name:            "Remote primary updated",
+			Bucket:          "updated-volume-backups",
+			Region:          "eu-west-1",
+			AccessKeyID:     "updated-access-key",
+			SecretAccessKey: "updated-secret",
+			UseSSL:          true,
+		},
+	}))
+
+	require.NoError(t, gormDB.First(&synced, "id = ?", "destination-1").Error)
+	require.Equal(t, "Remote primary updated", synced.Name)
+	require.Equal(t, "updated-volume-backups", synced.Bucket)
+	secret, err = crypto.Decrypt(synced.SecretAccessKey)
+	require.NoError(t, err)
+	require.Equal(t, "updated-secret", secret)
 }
