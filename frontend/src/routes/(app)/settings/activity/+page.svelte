@@ -15,14 +15,16 @@
 
 	const formSchema = z.object({
 		activityHistoryRetentionDays: z.coerce.number().int().min(0).max(3650),
-		activityHistoryMaxEntries: z.coerce.number().int().min(0).max(100000)
+		activityHistoryMaxEntries: z.coerce.number().int().min(0).max(100000),
+		maxConcurrentActivities: z.coerce.number().int().min(0).max(1000)
 	});
 
 	const getFormDefaults = () => {
 		const settings = $settingsStore || data.settings!;
 		return {
 			activityHistoryRetentionDays: settings.activityHistoryRetentionDays,
-			activityHistoryMaxEntries: settings.activityHistoryMaxEntries
+			activityHistoryMaxEntries: settings.activityHistoryMaxEntries,
+			maxConcurrentActivities: settings.maxConcurrentActivities
 		};
 	};
 
@@ -79,6 +81,25 @@
 										label={m.activity_history_max_entries()}
 										placeholder={m.activity_history_max_entries_placeholder()}
 										helpText={m.activity_history_max_entries_help()}
+										type="number"
+									/>
+								</div>
+							</div>
+						</div>
+
+						<div class="border-t pt-6">
+							<div class="grid gap-4 md:grid-cols-[1fr_1.5fr] md:gap-8">
+								<div>
+									<Label class="text-base">{m.activity_max_concurrent()}</Label>
+									<p class="mt-1 text-sm text-muted-foreground">{m.activity_max_concurrent_description()}</p>
+								</div>
+								<div class="max-w-xs">
+									<TextInputWithLabel
+										bind:value={$formInputs.maxConcurrentActivities.value}
+										error={$formInputs.maxConcurrentActivities.error}
+										label={m.activity_max_concurrent()}
+										placeholder={m.activity_max_concurrent_placeholder()}
+										helpText={m.activity_max_concurrent_help()}
 										type="number"
 									/>
 								</div>

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -36,10 +37,24 @@ func setupActivityHandlerTestDBInternal(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func TestActivitySnapshotFingerprintDetectsChangesInternal(t *testing.T) {
+	progress := 10
+	items := []activity.Activity{
+		{ID: "a-1", Status: activity.StatusRunning, Progress: &progress, Step: "pull"},
+		{ID: "a-2", Status: activity.StatusSuccess},
+	}
+	base := activitySnapshotFingerprintInternal(items)
+	require.Equal(t, base, activitySnapshotFingerprintInternal(items))
+
+	bumped := 20
+	items[0].Progress = &bumped
+	require.NotEqual(t, base, activitySnapshotFingerprintInternal(items))
+}
+
 func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, nil)
 	handler := &ActivityHandler{activityService: activityService}
 
 	completed, err := activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
@@ -173,7 +188,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 	limitStreamTestDBToSingleConnInternal(t, db)
 	settingsService, err := services.NewSettingsService(ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	local, err := activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
 	require.NoError(t, err)
@@ -219,7 +234,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	limitStreamTestDBToSingleConnInternal(t, db)
 	settingsService, err := services.NewSettingsService(ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	var countEnvironmentQueries atomic.Bool
 	var environmentQueryCount atomic.Int64
@@ -230,9 +245,13 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	}))
 
 	token := "remote-token"
+	// Vary the payload per poll so snapshot fingerprint suppression does not
+	// swallow the follow-up snapshots this test waits for.
+	var pollCount atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"success":true,"data":[{"id":"remote-activity-1"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`))
+		payload := fmt.Sprintf(`{"success":true,"data":[{"id":"remote-activity-1","latestMessage":"poll-%d"}],"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":50}}`, pollCount.Add(1))
+		_, _ = w.Write([]byte(payload))
 	}))
 	defer server.Close()
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
@@ -281,7 +300,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 	limitStreamTestDBToSingleConnInternal(t, db)
 	settingsService, err := services.NewSettingsService(ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -318,7 +337,7 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 	limitStreamTestDBToSingleConnInternal(t, db)
 	settingsService, err := services.NewSettingsService(ctx, db)
 	require.NoError(t, err)
-	activityService := services.NewActivityService(db)
+	activityService := services.NewActivityService(db, settingsService)
 	_, err = activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})
 	require.NoError(t, err)
 

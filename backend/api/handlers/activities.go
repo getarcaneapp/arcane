@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"hash/fnv"
 	"io"
 	"net/http"
 	"net/url"
@@ -438,9 +439,38 @@ func activityStreamEnvironmentVersionInternal(environment models.Environment) st
 	return environment.ID + ":" + environment.UpdatedAt.UTC().Format(time.RFC3339Nano)
 }
 
+// activitySnapshotFingerprintInternal hashes the fields that affect what the
+// client renders, so a poller can skip re-sending a snapshot identical to the
+// previous one.
+func activitySnapshotFingerprintInternal(items []activity.Activity) string {
+	hash := fnv.New64a()
+	writeField := func(value string) {
+		_, _ = hash.Write([]byte(value))
+		_, _ = hash.Write([]byte{0})
+	}
+	for _, item := range items {
+		writeField(item.ID)
+		writeField(string(item.Status))
+		if item.Progress != nil {
+			writeField(strconv.Itoa(*item.Progress))
+		}
+		writeField(item.Step)
+		writeField(item.LatestMessage)
+		if item.UpdatedAt != nil {
+			writeField(item.UpdatedAt.UTC().Format(time.RFC3339Nano))
+		}
+		if item.EndedAt != nil {
+			writeField(item.EndedAt.UTC().Format(time.RFC3339Nano))
+		}
+		writeField("|")
+	}
+	return strconv.FormatUint(hash.Sum64(), 16)
+}
+
 func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Context, environment models.Environment, limit int, events chan<- activity.StreamEvent) {
 	environmentID := environment.ID
 	lastError := ""
+	lastFingerprint := ""
 
 	poll := func() {
 		pollCtx, cancelPoll := context.WithTimeout(ctx, activityStreamRemotePollTimeout)
@@ -475,15 +505,23 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 					Timestamp:     time.Now(),
 				})
 			}
+			// Force a resync once the environment recovers.
+			lastFingerprint = ""
 			return
 		}
 		lastError = ""
-		agg.Send(ctx, events, activity.StreamEvent{
+		fingerprint := activitySnapshotFingerprintInternal(output.Body.Data)
+		if fingerprint == lastFingerprint {
+			return
+		}
+		if agg.Send(ctx, events, activity.StreamEvent{
 			Type:          "snapshot",
 			EnvironmentID: environmentID,
 			Activities:    output.Body.Data,
 			Timestamp:     time.Now(),
-		})
+		}) {
+			lastFingerprint = fingerprint
+		}
 	}
 
 	poll()

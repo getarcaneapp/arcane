@@ -122,6 +122,7 @@ func DefaultSettingsConfig() *models.Settings {
 		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
 		ActivityHistoryRetentionDays:    models.SettingVariable{Value: "30"},
 		ActivityHistoryMaxEntries:       models.SettingVariable{Value: "1000"},
+		MaxConcurrentActivities:         models.SettingVariable{Value: "5"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
 		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
 		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},

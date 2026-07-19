@@ -1,5 +1,5 @@
 import { m } from '$lib/paraglide/messages';
-import type { ActivityFilter, ActivityStatus, ActivityType } from '$lib/types/activity.type';
+import type { ActivityStatus, ActivityType } from '$lib/types/activity.type';
 import type { IconType } from '$lib/icons';
 import {
 	ActivityIcon,
@@ -125,16 +125,5 @@ export function activityTypeIcon(type: ActivityType): IconType {
 			return ActivityIcon;
 		default:
 			return ActivityIcon;
-	}
-}
-
-export function activityFilterLabel(filter: ActivityFilter): string {
-	switch (filter) {
-		case 'running':
-			return m.common_running();
-		case 'failed':
-			return m.common_failed();
-		case 'completed':
-			return m.completed();
 	}
 }

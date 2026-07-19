@@ -151,6 +151,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: utils.StringPtrFromTrimmed(activityID)}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -365,6 +366,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: utils.StringPtrFromTrimmed(activityID)}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -759,6 +761,7 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
+		Queue:         true,
 		ResourceType:  utils.StringPtrFromTrimmed("system"),
 		ResourceName:  utils.StringPtrFromTrimmed("Auto update"),
 		Step:          "Planning updates",
@@ -779,6 +782,7 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
+		Queue:         true,
 		ResourceType:  utils.StringPtrFromTrimmed("container"),
 		ResourceID:    &containerID,
 		ResourceName:  utils.StringPtrFromTrimmed(containerID),

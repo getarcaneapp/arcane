@@ -811,7 +811,8 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
 	redeployCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)

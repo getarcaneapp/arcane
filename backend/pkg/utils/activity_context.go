@@ -2,10 +2,43 @@ package utils
 
 import (
 	"context"
+	"regexp"
 	"time"
 )
 
 type appLifecycleContextKey struct{}
+
+type activityBatchIDContextKey struct{}
+
+var activityBatchIDPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{1,64}$`)
+
+// ValidActivityBatchID reports whether id is safe to persist as a batch ID.
+func ValidActivityBatchID(id string) bool {
+	return activityBatchIDPattern.MatchString(id)
+}
+
+// WithActivityBatchID attaches a client-supplied batch ID that groups the
+// activities spawned by one logical user action (e.g. a bulk container
+// update). Invalid IDs are ignored.
+func WithActivityBatchID(ctx context.Context, batchID string) context.Context {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	if !ValidActivityBatchID(batchID) {
+		return ctx
+	}
+	return context.WithValue(ctx, activityBatchIDContextKey{}, batchID)
+}
+
+// ActivityBatchIDFromContext returns the batch ID attached by
+// WithActivityBatchID, or "" when none is set.
+func ActivityBatchIDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	batchID, _ := ctx.Value(activityBatchIDContextKey{}).(string)
+	return batchID
+}
 
 type activityRuntimeContext struct {
 	valueCtx     context.Context

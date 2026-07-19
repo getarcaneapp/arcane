@@ -137,6 +137,7 @@ func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Contex
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeImageUpdateCheck,
+		Queue:         true,
 		ResourceType:  &resourceType,
 		ResourceName:  utils.StringPtrFromTrimmed(resourceName),
 		Step:          "Checking image updates",
@@ -197,6 +198,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	startTime := time.Now()
 	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
 	ctx = s.activityService.Track(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.activityService, activityID, "0")
 
 	if result, ok := digestPinnedImageUpdateResultInternal(imageRef); ok {
 		result.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
@@ -1323,6 +1325,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
 	ctx = s.activityService.Track(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.activityService, activityID, "0")
 	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 

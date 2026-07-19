@@ -796,7 +796,7 @@ func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestConte
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
 
-	activityService := NewActivityService(db)
+	activityService := NewActivityService(db, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, activityService)
 
 	for range 5 {
@@ -844,7 +844,7 @@ func TestImageUpdateService_CheckMultipleImagesTimesOutStalledRegistryCheckInter
 	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
 
 	settingsService := newImageUpdateTestSettingsServiceInternal("1", "30")
-	activityService := NewActivityService(db)
+	activityService := NewActivityService(db, nil)
 	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
 	defer dockerServer.Close()
 	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {

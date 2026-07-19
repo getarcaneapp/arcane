@@ -192,64 +192,67 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 			slog.DebugContext(ctx, "Skipping manager-only job reschedule in agent mode", "job", jobID)
 			continue
 		}
-
-		// environment-health fans out to per-environment dynamic jobs; delegate the
-		// reschedule to EnvironmentService instead of looking up a single job.
-		if jobID == "environment-health" {
-			if s.OnEnvironmentHealthReschedule != nil {
-				reschedCtx := ctx //nolint:contextcheck // lifecycle context preferred so jobs outlive the request
-				if s.lifecycleCtx != nil {
-					reschedCtx = s.lifecycleCtx
-				}
-				s.OnEnvironmentHealthReschedule(reschedCtx)
-			} else {
-				rescheduleErrors = append(rescheduleErrors, errors.New("environment-health rescheduler not initialized"))
-			}
-			continue
-		}
-
-		// Continuous bus watchers have no cron entry to reschedule; notify the
-		// watcher so it re-reads its poll schedule instead.
-		if jobMeta.IsContinuous {
-			if jobID == "image-polling" && s.settings != nil && s.settings.OnImagePollingSettingsChanged != nil {
-				notifyCtx := ctx //nolint:contextcheck // lifecycle context preferred so the watcher outlives the request
-				if s.lifecycleCtx != nil {
-					notifyCtx = s.lifecycleCtx
-				}
-				s.settings.OnImagePollingSettingsChanged(notifyCtx)
-			}
-			continue
-		}
-
-		job, ok := s.scheduler.GetJob(jobID)
-		if !ok {
-			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s not found in scheduler", jobID))
-			continue
-		}
-
-		slog.DebugContext(ctx, "Processing job setting change", "job", jobID, "settingsKey", jobMeta.SettingsKey, "enabledKey", jobMeta.EnabledKey)
-		rescheduleCtx := ctx //nolint:contextcheck // fallback only; lifecycle context is preferred so cron jobs outlive HTTP requests
-		if s.lifecycleCtx != nil {
-			rescheduleCtx = s.lifecycleCtx
-		}
-		if err := s.scheduler.RescheduleJob(rescheduleCtx, job); err != nil {
-			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("reschedule job %s: %w", jobID, err))
-			continue
-		}
-
-		runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID)
-		if !ok {
-			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s has no runtime scheduler state", jobID))
-			continue
-		}
-
-		expectedSchedule := job.Schedule(rescheduleCtx)
-		if runtimeState.Schedule != expectedSchedule {
-			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule))
+		if err := s.rescheduleAffectedJobInternal(ctx, jobID, jobMeta); err != nil {
+			rescheduleErrors = append(rescheduleErrors, err)
 		}
 	}
 
 	return errors.Join(rescheduleErrors...)
+}
+
+// jobRescheduleContextInternal prefers the app lifecycle context so cron jobs
+// and watchers outlive the HTTP request that triggered the reschedule.
+func (s *JobService) jobRescheduleContextInternal(ctx context.Context) context.Context {
+	if s.lifecycleCtx != nil {
+		return s.lifecycleCtx
+	}
+	return ctx
+}
+
+// rescheduleAffectedJobInternal applies a settings change to one job:
+// delegated fan-out jobs and continuous bus watchers are notified, cron jobs
+// are rescheduled and their runtime schedule verified.
+func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID string, jobMeta meta.JobMetadata) error {
+	// environment-health fans out to per-environment dynamic jobs; delegate the
+	// reschedule to EnvironmentService instead of looking up a single job.
+	if jobID == "environment-health" {
+		if s.OnEnvironmentHealthReschedule == nil {
+			return errors.New("environment-health rescheduler not initialized")
+		}
+		s.OnEnvironmentHealthReschedule(s.jobRescheduleContextInternal(ctx))
+		return nil
+	}
+
+	// Continuous bus watchers have no cron entry to reschedule; notify the
+	// watcher so it re-reads its poll schedule instead.
+	if jobMeta.IsContinuous {
+		if jobID == "image-polling" && s.settings != nil && s.settings.OnImagePollingSettingsChanged != nil {
+			s.settings.OnImagePollingSettingsChanged(s.jobRescheduleContextInternal(ctx))
+		}
+		return nil
+	}
+
+	job, ok := s.scheduler.GetJob(jobID)
+	if !ok {
+		return fmt.Errorf("job %s not found in scheduler", jobID)
+	}
+
+	slog.DebugContext(ctx, "Processing job setting change", "job", jobID, "settingsKey", jobMeta.SettingsKey, "enabledKey", jobMeta.EnabledKey)
+	rescheduleCtx := s.jobRescheduleContextInternal(ctx)
+	if err := s.scheduler.RescheduleJob(rescheduleCtx, job); err != nil {
+		return fmt.Errorf("reschedule job %s: %w", jobID, err)
+	}
+
+	runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID)
+	if !ok {
+		return fmt.Errorf("job %s has no runtime scheduler state", jobID)
+	}
+
+	expectedSchedule := job.Schedule(rescheduleCtx)
+	if runtimeState.Schedule != expectedSchedule {
+		return fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule)
+	}
+	return nil
 }
 
 func (s *JobService) restoreJobSchedulesInternal(ctx context.Context, previousValues map[string]string, changedKeys []string) error {

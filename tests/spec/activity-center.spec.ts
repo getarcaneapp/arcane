@@ -340,7 +340,6 @@ test.describe('Activity Center', () => {
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
 		await expect(activityRow(activityCenter, 'local-network')).toHaveCount(0);
 		await expect.poll(() => activityReads).toContain('remote-activity-test');
@@ -417,14 +416,12 @@ test.describe('Activity Center', () => {
 
 		await page.goto('/dashboard');
 		let activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'user-a-private-activity')).toBeVisible();
 
 		await page.goto('/logout');
 		await page.waitForURL('/dashboard');
 		await expect.poll(() => streamedUsers).toContain('user-b');
 		activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 		await expect(activityRow(activityCenter, 'user-b-activity')).toBeVisible();
 		await expect(activityRow(activityCenter, 'user-a-private-activity')).toHaveCount(0);
 	});
@@ -445,7 +442,6 @@ test.describe('Activity Center', () => {
 		await page.waitForLoadState('load');
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 
 		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
 		await expect(activityRow(activityCenter, 'remote-network')).toBeVisible();
@@ -481,7 +477,6 @@ test.describe('Activity Center', () => {
 		});
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Completed' }).click();
 
 		await expect(activityRow(activityCenter, 'local-network')).toBeVisible();
 		await expect(activityCenter.getByText('Could not load activity from Remote Lab')).toBeVisible();
@@ -528,7 +523,8 @@ test.describe('Activity Center', () => {
 		await page.waitForLoadState('load');
 
 		const activityCenter = await openActivityCenter(page);
-		await activityCenter.getByRole('button', { name: 'Clear history' }).click();
+		await activityCenter.getByRole('button', { name: 'More options' }).click();
+		await page.getByRole('menuitem', { name: 'Clear history' }).click();
 		await page.getByRole('button', { name: 'Clear History', exact: true }).last().click();
 
 		await expect.poll(() => deletedEnvironments.sort()).toEqual(['0', 'remote-activity-test']);
@@ -547,9 +543,9 @@ test.describe('Activity Center', () => {
 			expect(created.activityId).toBeTruthy();
 
 			const activityCenter = await openActivityCenter(page);
-			await expect(activityCenter.getByRole('button', { name: 'Running' })).toBeVisible();
-			await expect(activityCenter.getByRole('button', { name: 'Failed' })).toBeVisible();
-			await activityCenter.getByRole('button', { name: 'Completed' }).click();
+			await expect(activityCenter.getByPlaceholder('Search activity…')).toBeVisible();
+			await expect(activityCenter.getByRole('button', { name: 'Filter' })).toBeVisible();
+			await expect(activityCenter.getByText('History', { exact: true })).toBeVisible();
 
 			const activityItem = activityCenter
 				.locator('button[aria-label="Activity Center"]')
@@ -562,11 +558,14 @@ test.describe('Activity Center', () => {
 			await expect(activityItem).toContainText('Started by');
 
 			await activityItem.click();
-			await expect(activityCenter.getByText('Output', { exact: true })).toBeVisible();
-			await expect(activityCenter.getByText('Creating network').first()).toBeVisible();
-			await expect(activityCenter.getByText('Network created successfully').first()).toBeVisible();
-			await expect(activityCenter.getByText('Source environment')).toBeVisible();
-			await expect(activityCenter.getByText('Started by', { exact: true })).toBeVisible();
+			// Collapsed rows keep their (hidden) detail panels mounted, so scope
+			// the assertions to the expanded panel.
+			const detailPanel = activityCenter.locator('[data-collapsible-content][data-state="open"]');
+			await expect(detailPanel.getByText('Output', { exact: true })).toBeVisible();
+			await expect(detailPanel.getByText('Creating network').first()).toBeVisible();
+			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
+			await expect(detailPanel.getByText('Source environment')).toBeVisible();
+			await expect(detailPanel.getByText('Started by', { exact: true })).toBeVisible();
 		} finally {
 			await removeNetworkViaApi(page, networkId);
 		}

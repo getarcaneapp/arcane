@@ -31,6 +31,13 @@ func registerJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, 
 		} else if resolved > 0 {
 			slog.InfoContext(appCtx, "Resolved stale auto-update activities", "count", resolved)
 		}
+
+		orphaned, err := appServices.Activity.ResolveOrphanedQueuedActivities(appCtx)
+		if err != nil {
+			slog.WarnContext(appCtx, "Failed to resolve orphaned queued activities", "count", orphaned, "error", err)
+		} else if orphaned > 0 {
+			slog.InfoContext(appCtx, "Resolved orphaned queued activities", "count", orphaned)
+		}
 	}
 
 	// Finalize a fleet-wide update-all job whose manager self-upgrade restarted the

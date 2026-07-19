@@ -20,6 +20,7 @@ export type Settings = {
 	environmentHealthInterval: number;
 	activityHistoryRetentionDays: number;
 	activityHistoryMaxEntries: number;
+	maxConcurrentActivities: number;
 	defaultDeployPullPolicy: 'missing' | 'always' | 'never';
 	scheduledPruneEnabled?: boolean;
 	scheduledPruneInterval?: number;

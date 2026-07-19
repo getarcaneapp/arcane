@@ -703,7 +703,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -720,6 +720,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
 			}
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling image")
 			if err := h.imageService.PullImage(runtimeCtx, fullImageName, writer, *user, credentials); err != nil {
@@ -759,7 +760,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if strings.TrimSpace(resourceName) == "" {
 				resourceName = input.Body.ContextDir
 			}
-			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -776,6 +777,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
 			}
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Building image")
 			if _, err := h.buildService.BuildImage(runtimeCtx, input.EnvironmentID, input.Body, writer, "", user); err != nil {

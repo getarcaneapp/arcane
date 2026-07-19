@@ -79,6 +79,22 @@ function extractServerMessage(data: any, includeErrors = false): string | undefi
 	return undefined;
 }
 
+// Batch id applied to mutating requests STARTED synchronously inside
+// runWithActivityBatchId, so the backend groups the resulting activities under
+// one Activity Center row. The scope never spans an await: fn must kick off
+// its requests synchronously and return their promises, so an unrelated action
+// started from any other task can never inherit the batch id.
+let activeActivityBatchIdInternal: string | null = null;
+
+export function runWithActivityBatchId<T>(batchId: string, fn: () => T): T {
+	activeActivityBatchIdInternal = batchId;
+	try {
+		return fn();
+	} finally {
+		activeActivityBatchIdInternal = null;
+	}
+}
+
 function isBodyInit(value: unknown): value is BodyInit {
 	return (
 		value instanceof FormData ||
@@ -274,9 +290,14 @@ class APIClient {
 		};
 
 		try {
+			const headers = new Headers(config.headers);
+			const isMutation = !['GET', 'HEAD'].includes(method.toUpperCase());
+			if (activeActivityBatchIdInternal && isMutation && !headers.has('X-Arcane-Batch-Id')) {
+				headers.set('X-Arcane-Batch-Id', activeActivityBatchIdInternal);
+			}
 			const options: KyOptions = {
 				method,
-				headers: config.headers,
+				headers,
 				retry: config.retry ?? 0,
 				searchParams: config.params,
 				timeout: config.timeout ?? false

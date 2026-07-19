@@ -202,6 +202,7 @@ func SetupAPI(e *echo.Echo, apiGroup *echo.Group, appCtx handlers.ActivityAppCon
 
 	// Add authentication middleware
 	api.UseMiddleware(middleware.NewAuthBridge(api, svc.Auth, svc.ApiKey, svc.Role, svc.Environment, cfg))
+	api.UseMiddleware(middleware.NewActivityBatchID())
 
 	// Register all Huma handlers
 	registerHandlersInternal(api, svc, appCtx, cfg)

@@ -588,7 +588,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -605,6 +605,7 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 			if f, ok := rawWriter.(http.Flusher); ok {
 				f.Flush()
 			}
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Deploying project")
 			_, _ = writer.Write([]byte(`{"type":"deploy","phase":"begin"}` + "\n"))
@@ -1088,8 +1089,11 @@ type projectActivityActionConfigInternal struct {
 	FailureMessage  string
 	SuccessComplete string
 	SuccessMessage  string
-	Action          func(context.Context, string, models.User) error
-	Error           func(error) error
+	// Queue routes the activity through the per-environment concurrency
+	// limiter; set for long-running deploy-like actions, not quick restarts.
+	Queue  bool
+	Action func(context.Context, string, models.User) error
+	Error  func(error) error
 }
 
 func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.DeployOptions) projectActivityActionConfigInternal {
@@ -1101,6 +1105,7 @@ func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.
 		FailureMessage:  "Project redeploy failed",
 		SuccessComplete: "Project redeploy completed",
 		SuccessMessage:  "Project redeployed successfully",
+		Queue:           true,
 		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
 			return h.projectService.RedeployProject(runtimeCtx, projectID, user, options)
 		},
@@ -1119,6 +1124,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 		FailureMessage:  "Project services update failed",
 		SuccessComplete: "Project services updated",
 		SuccessMessage:  "Project services updated successfully",
+		Queue:           true,
 		Action: func(runtimeCtx context.Context, projectID string, user models.User) error {
 			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user)
 		},
@@ -1187,7 +1193,13 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, models.JSON{"projectID": projectID})
+	var activityID string
+	if cfg.Queue {
+		activityID, runtimeCtx = activitylib.StartQueuedHandlerActivityForUser(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, models.JSON{"projectID": projectID})
+		activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, environmentID)
+	} else {
+		activityID, runtimeCtx = activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, environmentID, cfg.ActivityType, "project", projectID, projectID, user, cfg.Step, cfg.StartMessage, models.JSON{"projectID": projectID})
+	}
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, cfg.WriterStep)
 	actionCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	if err := cfg.Action(actionCtx, projectID, *user); err != nil {
@@ -1280,7 +1292,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -1294,6 +1306,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 				models.JSON{"projectID": input.ProjectID},
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Pulling project images")
 			_, _ = writer.Write([]byte(`{"status":"starting project image pull"}` + "\n"))
@@ -1349,7 +1362,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -1363,6 +1376,7 @@ func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildPro
 				models.JSON{"projectID": input.ProjectID, "services": options.Services},
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)
+			activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 
 			writer := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, rawWriter, "Building project images")
 			_, _ = writer.Write([]byte(`{"type":"build","phase":"begin"}` + "\n"))
