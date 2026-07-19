@@ -2938,6 +2938,8 @@
   "volume_backup_policy_enabled": "Enable scheduled backups",
   "volume_backup_policy_enabled_description": "Create a backup of this volume according to the cron schedule.",
   "volume_backup_retention_invalid": "Backups to keep must be a whole number between 0 and 3650.",
+  "volume_backup_stop_containers": "Stop containers during backup",
+  "volume_backup_stop_containers_description": "Stop running containers that use this volume while its archive is created, then start them again.",
   "volume_backup_destination_label": "Backup destination",
   "volume_backup_destination_description": "Keep backups locally, remotely in a saved S3 destination, or in both places.",
   "volume_backup_destination_local": "Local only",

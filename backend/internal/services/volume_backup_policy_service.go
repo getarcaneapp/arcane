@@ -133,6 +133,7 @@ func (s *VolumeService) UpdateBackupPolicy(ctx context.Context, volumeName strin
 	policy.Enabled = update.Enabled
 	policy.Schedule = update.Schedule
 	policy.RetentionCount = update.RetentionCount
+	policy.StopContainers = update.StopContainers
 	policy.LocalEnabled = update.LocalEnabled
 	policy.S3Enabled = update.S3Enabled
 	policy.S3DestinationID = update.S3DestinationID

@@ -124,6 +124,7 @@ func TestVolumeHandler_UpdateBackupPolicy_SyncsS3BeforeRemoteUpdate(t *testing.T
 			var policy volumetypes.UpdateBackupPolicy
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&policy))
 			require.True(t, policy.S3Enabled)
+			require.True(t, policy.StopContainers)
 			require.Equal(t, "s3-1", policy.S3DestinationID)
 			require.NoError(t, json.NewEncoder(w).Encode(base.ApiResponse[volumetypes.BackupPolicy]{
 				Success: true,
@@ -146,6 +147,7 @@ func TestVolumeHandler_UpdateBackupPolicy_SyncsS3BeforeRemoteUpdate(t *testing.T
 		Body: volumetypes.UpdateBackupPolicy{
 			Schedule:        "0 0 2 * * *",
 			RetentionCount:  7,
+			StopContainers:  true,
 			LocalEnabled:    true,
 			S3Enabled:       true,
 			S3DestinationID: "s3-1",

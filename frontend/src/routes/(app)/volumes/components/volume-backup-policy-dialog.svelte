@@ -32,6 +32,7 @@
 		enabled: false,
 		schedule: '0 0 2 * * *',
 		retentionCount: 7,
+		stopContainers: false,
 		localEnabled: true,
 		s3Enabled: false,
 		s3DestinationId: ''
@@ -100,6 +101,7 @@
 			enabled: policy.enabled,
 			schedule: policy.schedule || '0 0 2 * * *',
 			retentionCount: policy.retentionCount ?? 7,
+			stopContainers: policy.stopContainers ?? false,
 			localEnabled: policy.localEnabled,
 			s3Enabled: policy.s3Enabled,
 			s3DestinationId: policy.s3DestinationId || ''
@@ -173,6 +175,12 @@
 						type="number"
 					/>
 				</div>
+				<LabeledSwitch
+					id="volume-backup-policy-stop-containers my-2"
+					bind:checked={form.stopContainers}
+					label={m.volume_backup_stop_containers()}
+					description={m.volume_backup_stop_containers_description()}
+				/>
 			</div>
 
 			<div class="border-t pt-5">

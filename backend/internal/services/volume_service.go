@@ -1176,6 +1176,46 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	return nil
 }
 
+func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user models.User) ([]string, error) {
+	if s.containerService == nil {
+		return nil, errors.New("container service is unavailable")
+	}
+	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list running containers before volume backup: %w", err)
+	}
+
+	eligible := make([]container.Summary, 0, len(containers.Items))
+	for _, candidate := range containers.Items {
+		if strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane"], "true") || strings.EqualFold(candidate.Labels["com.getarcaneapp.arcane.agent"], "true") {
+			continue
+		}
+		eligible = append(eligible, candidate)
+	}
+	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)
+	stopped := make([]string, 0, len(containerIDs))
+	for _, containerID := range containerIDs {
+		if err := s.containerService.StopContainer(ctx, containerID, user); err != nil {
+			stillStopped, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stopped, user)
+			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", containerID, err), restartErr)
+		}
+		stopped = append(stopped, containerID)
+	}
+	return stopped, nil
+}
+
+func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, containerIDs []string, user models.User) ([]string, error) {
+	var restartErr error
+	stillStopped := make([]string, 0, len(containerIDs))
+	for _, containerID := range containerIDs {
+		if err := s.containerService.StartContainer(ctx, containerID, user); err != nil {
+			stillStopped = append(stillStopped, containerID)
+			restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: %w", containerID, err))
+		}
+	}
+	return stillStopped, restartErr
+}
+
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger) (_ *models.VolumeBackup, err error) {
 	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID, "trigger", trigger)
 	if _, loaded := s.runningBackups.LoadOrStore(volumeName, struct{}{}); loaded {
@@ -1228,6 +1268,31 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		return backup, err
 	}
 
+	var policy *models.VolumeBackupPolicy
+	if trigger != models.VolumeBackupTriggerSafety {
+		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName)
+		if err != nil {
+			return backup, err
+		}
+	}
+
+	var stoppedContainerIDs []string
+	containersStopped := false
+	if policy != nil && policy.StopContainers {
+		var stopErr error
+		stoppedContainerIDs, stopErr = s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+		containersStopped = len(stoppedContainerIDs) > 0
+		defer func() {
+			if containersStopped {
+				_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stoppedContainerIDs, user)
+				err = errors.Join(err, restartErr)
+			}
+		}()
+		if stopErr != nil {
+			return backup, stopErr
+		}
+	}
+
 	config := &container.Config{
 		Image:  helperImage,
 		Cmd:    []string{"sh", "-c", fmt.Sprintf("tar -czf /backups/%s -C /volume .", filename)},
@@ -1263,6 +1328,15 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		}
 	}
 
+	if containersStopped {
+		var restartErr error
+		stoppedContainerIDs, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stoppedContainerIDs, user)
+		containersStopped = len(stoppedContainerIDs) > 0
+		if restartErr != nil {
+			return backup, restartErr
+		}
+	}
+
 	sizeCheckMount := backupStorage.mount
 	sizeCheckMount.Target = "/volume"
 	sizeCheckMount.ReadOnly = true
@@ -1284,10 +1358,6 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	backup.Size = size
 
 	if trigger != models.VolumeBackupTriggerSafety {
-		policy, policyErr := s.loadVolumeBackupPolicyInternal(ctx, volumeName)
-		if policyErr != nil {
-			return backup, policyErr
-		}
 		if policy != nil && policy.S3Enabled {
 			backup.S3DestinationID = policy.S3DestinationID
 			if err := s.uploadVolumeBackupToS3Internal(ctx, backup); err != nil {

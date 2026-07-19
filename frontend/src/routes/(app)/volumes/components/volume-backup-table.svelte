@@ -58,6 +58,7 @@
 		enabled: false,
 		schedule: '0 0 2 * * *',
 		retentionCount: 7,
+		stopContainers: false,
 		localEnabled: true,
 		s3Enabled: false,
 		s3DestinationId: '',

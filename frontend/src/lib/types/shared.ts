@@ -128,6 +128,7 @@ export interface VolumeBackupPolicy {
 	enabled: boolean;
 	schedule: string;
 	retentionCount: number;
+	stopContainers: boolean;
 	localEnabled: boolean;
 	s3Enabled: boolean;
 	s3DestinationId: string;
@@ -138,7 +139,7 @@ export interface VolumeBackupPolicy {
 
 export type UpdateVolumeBackupPolicy = Pick<
 	VolumeBackupPolicy,
-	'enabled' | 'schedule' | 'retentionCount' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
+	'enabled' | 'schedule' | 'retentionCount' | 'stopContainers' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
 >;
 
 // --- Customize search ---

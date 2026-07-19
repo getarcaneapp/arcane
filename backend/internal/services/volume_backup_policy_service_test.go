@@ -45,17 +45,20 @@ func TestVolumeBackupPolicy_UpdateRegistersAndRemovesJob(t *testing.T) {
 		Enabled:        true,
 		Schedule:       "0 */15 * * * *",
 		RetentionCount: 5,
+		StopContainers: true,
 		LocalEnabled:   true,
 	})
 	require.NoError(t, err)
 	require.True(t, policy.Enabled)
 	require.Equal(t, "0 */15 * * * *", policy.Schedule)
+	require.True(t, policy.StopContainers)
 	require.Len(t, scheduler.jobs, 1)
 
 	policy, err = service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{
 		Enabled:        false,
 		Schedule:       policy.Schedule,
 		RetentionCount: policy.RetentionCount,
+		StopContainers: policy.StopContainers,
 		LocalEnabled:   true,
 	})
 	require.NoError(t, err)

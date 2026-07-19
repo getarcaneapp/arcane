@@ -17,6 +17,7 @@ type BackupPolicy struct {
 	Enabled         bool         `json:"enabled"`
 	Schedule        string       `json:"schedule"`
 	RetentionCount  int          `json:"retentionCount"`
+	StopContainers  bool         `json:"stopContainers"`
 	LocalEnabled    bool         `json:"localEnabled"`
 	S3Enabled       bool         `json:"s3Enabled"`
 	S3DestinationID string       `json:"s3DestinationId,omitempty"`
@@ -29,6 +30,7 @@ type UpdateBackupPolicy struct {
 	Enabled         bool   `json:"enabled"`
 	Schedule        string `json:"schedule"`
 	RetentionCount  int    `json:"retentionCount"`
+	StopContainers  bool   `json:"stopContainers"`
 	LocalEnabled    bool   `json:"localEnabled"`
 	S3Enabled       bool   `json:"s3Enabled"`
 	S3DestinationID string `json:"s3DestinationId,omitempty"`
