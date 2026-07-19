@@ -72,6 +72,8 @@ const (
 
 const backupMountMissingWarning = "No volume is mounted at /backups in the Arcane container. Backups will only live inside Docker unless you mount a host path."
 const trivyCacheVolumePruneFilterValue = libarcane.InternalResourceLabel + "=true"
+const volumeBackupContainerRecoveryTimeout = 30 * time.Second
+const volumeBackupContainerRecoveryInterval = 500 * time.Millisecond
 
 type backupStorageMountInternal struct {
 	mode           backupStorageMode
@@ -1176,7 +1178,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 	return nil
 }
 
-func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user models.User) ([]string, error) {
+func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Context, dockerClient *client.Client, volumeName string, user models.User) ([]container.Summary, error) {
 	if s.containerService == nil {
 		return nil, errors.New("container service is unavailable")
 	}
@@ -1193,27 +1195,111 @@ func (s *VolumeService) stopRunningContainersForBackupInternal(ctx context.Conte
 		eligible = append(eligible, candidate)
 	}
 	containerIDs := docker.FilterContainersUsingVolume(eligible, volumeName)
-	stopped := make([]string, 0, len(containerIDs))
+	containersByID := make(map[string]container.Summary, len(eligible))
+	for _, candidate := range eligible {
+		containersByID[candidate.ID] = candidate
+	}
+	stopped := make([]container.Summary, 0, len(containerIDs))
 	for _, containerID := range containerIDs {
+		candidate := containersByID[containerID]
 		if err := s.containerService.StopContainer(ctx, containerID, user); err != nil {
-			stillStopped, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stopped, user)
+			stillStopped, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stopped, user)
 			return stillStopped, errors.Join(fmt.Errorf("failed to stop container %s before volume backup: %w", containerID, err), restartErr)
 		}
-		stopped = append(stopped, containerID)
+		stopped = append(stopped, candidate)
 	}
 	return stopped, nil
 }
 
-func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, containerIDs []string, user models.User) ([]string, error) {
-	var restartErr error
-	stillStopped := make([]string, 0, len(containerIDs))
-	for _, containerID := range containerIDs {
-		if err := s.containerService.StartContainer(ctx, containerID, user); err != nil {
-			stillStopped = append(stillStopped, containerID)
-			restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: %w", containerID, err))
+func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, dockerClient *client.Client, stoppedContainers []container.Summary, user models.User) ([]container.Summary, error) {
+	recoveryCtx, cancel := context.WithTimeout(ctx, volumeBackupContainerRecoveryTimeout)
+	defer cancel()
+
+	remaining := append([]container.Summary(nil), stoppedContainers...)
+	lastErrors := make(map[string]error, len(stoppedContainers))
+	for len(remaining) > 0 {
+		currentContainers, listErr := dockerClient.ContainerList(recoveryCtx, client.ContainerListOptions{All: true})
+		if listErr == nil {
+			currentByID := make(map[string]container.Summary, len(currentContainers.Items))
+			currentByName := make(map[string]container.Summary, len(currentContainers.Items))
+			for _, current := range currentContainers.Items {
+				currentByID[current.ID] = current
+				if name := docker.ContainerNameFromNames(current.Names); name != "" {
+					currentByName[name] = current
+				}
+			}
+
+			nextRemaining := make([]container.Summary, 0, len(remaining))
+			for _, stopped := range remaining {
+				current, found := currentByID[stopped.ID]
+				if !found {
+					name := docker.ContainerNameFromNames(stopped.Names)
+					current, found = currentByName[name]
+				}
+				if !found {
+					projectName := docker.ComposeProjectLabel(stopped.Labels)
+					serviceName := docker.ComposeServiceLabel(stopped.Labels)
+					containerNumber := strings.TrimSpace(stopped.Labels["com.docker.compose.container-number"])
+					if projectName != "" && serviceName != "" {
+						for _, candidate := range currentContainers.Items {
+							if docker.ComposeProjectLabel(candidate.Labels) != projectName || docker.ComposeServiceLabel(candidate.Labels) != serviceName {
+								continue
+							}
+							if containerNumber != "" && strings.TrimSpace(candidate.Labels["com.docker.compose.container-number"]) != containerNumber {
+								continue
+							}
+							current = candidate
+							found = true
+							break
+						}
+					}
+				}
+				if !found {
+					nextRemaining = append(nextRemaining, stopped)
+					continue
+				}
+				if current.State == container.StateRunning || current.State == container.StateRestarting {
+					if current.ID != stopped.ID {
+						slog.InfoContext(ctx, "volume service: container was replaced during backup and is already running", "previous_container", stopped.ID, "current_container", current.ID)
+					}
+					continue
+				}
+				if startErr := s.containerService.StartContainer(recoveryCtx, current.ID, user); startErr != nil {
+					lastErrors[stopped.ID] = startErr
+					nextRemaining = append(nextRemaining, stopped)
+					continue
+				}
+				if current.ID != stopped.ID {
+					slog.InfoContext(ctx, "volume service: restarted replacement container after backup", "previous_container", stopped.ID, "current_container", current.ID)
+				}
+			}
+			remaining = nextRemaining
+		} else {
+			for _, stopped := range remaining {
+				lastErrors[stopped.ID] = listErr
+			}
+		}
+
+		if len(remaining) == 0 {
+			return nil, nil
+		}
+		timer := time.NewTimer(volumeBackupContainerRecoveryInterval)
+		select {
+		case <-recoveryCtx.Done():
+			timer.Stop()
+			var restartErr error
+			for _, stopped := range remaining {
+				if lastErr := lastErrors[stopped.ID]; lastErr != nil {
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: %w", stopped.ID, lastErr))
+				} else {
+					restartErr = errors.Join(restartErr, fmt.Errorf("failed to restart container %s after volume backup: replacement did not appear within %s", stopped.ID, volumeBackupContainerRecoveryTimeout))
+				}
+			}
+			return remaining, restartErr
+		case <-timer.C:
 		}
 	}
-	return stillStopped, restartErr
+	return nil, nil
 }
 
 func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, destination volumetypes.BackupDestination) (_ *models.VolumeBackup, err error) {
@@ -1313,15 +1399,15 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		return backup, err
 	}
 
-	var stoppedContainerIDs []string
+	var stoppedContainers []container.Summary
 	containersStopped := false
 	if policy != nil && policy.StopContainers {
 		var stopErr error
-		stoppedContainerIDs, stopErr = s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
-		containersStopped = len(stoppedContainerIDs) > 0
+		stoppedContainers, stopErr = s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+		containersStopped = len(stoppedContainers) > 0
 		defer func() {
 			if containersStopped {
-				_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stoppedContainerIDs, user)
+				_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
 				err = errors.Join(err, restartErr)
 			}
 		}()
@@ -1367,8 +1453,8 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 
 	if containersStopped {
 		var restartErr error
-		stoppedContainerIDs, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), stoppedContainerIDs, user)
-		containersStopped = len(stoppedContainerIDs) > 0
+		stoppedContainers, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+		containersStopped = false
 		if restartErr != nil {
 			return backup, restartErr
 		}

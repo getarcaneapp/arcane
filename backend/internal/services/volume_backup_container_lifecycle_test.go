@@ -70,9 +70,10 @@ func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsin
 	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
 	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
 	require.NoError(t, err)
-	require.Equal(t, []string{"uses-volume"}, stopped)
+	require.Len(t, stopped, 1)
+	require.Equal(t, "uses-volume", stopped[0].ID)
 
-	remaining, err := service.startContainersAfterBackupInternal(context.Background(), stopped, actor)
+	remaining, err := service.startContainersAfterBackupInternal(context.Background(), dockerClient, stopped, actor)
 	require.NoError(t, err)
 	require.Empty(t, remaining)
 	require.Equal(t, []string{"stop:uses-volume", "start:uses-volume"}, operations)
@@ -115,4 +116,69 @@ func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t
 	require.ErrorContains(t, err, "failed to stop container second")
 	require.Empty(t, stillStopped)
 	require.Equal(t, []string{"stop:first", "stop:second", "start:first"}, operations)
+}
+
+func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *testing.T) {
+	var mu sync.Mutex
+	var operations []string
+	listCalls := 0
+	serverHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			mu.Lock()
+			listCalls++
+			call := listCalls
+			mu.Unlock()
+			if call == 1 {
+				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+					{
+						ID:     "old-id",
+						Names:  []string{"/old-name"},
+						State:  container.StateRunning,
+						Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
+						Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+					},
+				}))
+				return
+			}
+			if call == 2 {
+				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:     "new-id",
+					Names:  []string{"/new-name"},
+					State:  container.StateRunning,
+					Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
+					Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+				},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/old-id/stop"):
+			mu.Lock()
+			operations = append(operations, "stop:old-id")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/start"):
+			mu.Lock()
+			operations = append(operations, "unexpected:"+r.URL.Path)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	require.NoError(t, err)
+	require.Len(t, stopped, 1)
+	require.Equal(t, "old-id", stopped[0].ID)
+
+	remaining, err := service.startContainersAfterBackupInternal(context.Background(), dockerClient, stopped, actor)
+	require.NoError(t, err)
+	require.Empty(t, remaining)
+	require.Equal(t, []string{"stop:old-id"}, operations)
 }
