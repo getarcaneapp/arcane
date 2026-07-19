@@ -111,6 +111,8 @@ export interface FileContentResponse {
 	mimeType: string;
 }
 
+export type VolumeBackupDestination = 'local' | 's3' | 'local_s3';
+
 export interface BackupEntry {
 	id: string;
 	volumeName: string;
@@ -118,8 +120,10 @@ export interface BackupEntry {
 	createdAt: string;
 	status: 'running' | 'succeeded' | 'failed';
 	trigger: 'manual' | 'scheduled' | 'safety';
+	destination: VolumeBackupDestination;
 	remoteKey?: string;
 	s3DestinationId?: string;
+	s3DestinationName?: string;
 	error?: string;
 }
 
@@ -132,6 +136,7 @@ export interface VolumeBackupPolicy {
 	localEnabled: boolean;
 	s3Enabled: boolean;
 	s3DestinationId: string;
+	s3DestinationName?: string;
 	s3Available: boolean;
 	s3Bucket: string;
 	lastRun?: BackupEntry;

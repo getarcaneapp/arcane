@@ -6,6 +6,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	sqlite "github.com/libtnb/sqlite"
@@ -116,6 +117,7 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.True(t, policy.S3Enabled)
 	require.True(t, policy.S3Available)
 	require.Equal(t, destination.ID, policy.S3DestinationID)
+	require.Equal(t, "Offsite", policy.S3DestinationName)
 	require.Equal(t, "volume-backups", policy.S3Bucket)
 
 	var stored models.VolumeBackupPolicy
@@ -123,4 +125,45 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 	require.False(t, stored.LocalEnabled)
 	require.True(t, stored.S3Enabled)
 	require.Equal(t, destination.ID, stored.S3DestinationID)
+}
+
+func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.CreateBackup(
+		context.Background(),
+		"app-data",
+		models.User{},
+		models.VolumeBackupTriggerManual,
+		volumetypes.BackupDestination("invalid"),
+	)
+	require.EqualError(t, err, "invalid volume backup destination")
+}
+
+func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-destination-name?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}, &models.S3Destination{}))
+	db := &database.DB{DB: gormDB}
+	destination := &models.S3Destination{
+		Name:            "Offsite",
+		Bucket:          "volume-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "encrypted-secret",
+	}
+	require.NoError(t, gormDB.Create(destination).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName:      "app-data",
+		Status:          models.VolumeBackupStatusSucceeded,
+		Trigger:         models.VolumeBackupTriggerManual,
+		Destination:     volumetypes.BackupDestinationLocalS3,
+		S3DestinationID: destination.ID,
+	}).Error)
+
+	service := &VolumeService{db: db, s3Destinations: NewS3DestinationService(db)}
+	backups, _, err := service.ListBackupsPaginated(context.Background(), "app-data", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	require.Equal(t, volumetypes.BackupDestinationLocalS3, backups[0].Destination)
+	require.Equal(t, "Offsite", backups[0].S3DestinationName)
 }

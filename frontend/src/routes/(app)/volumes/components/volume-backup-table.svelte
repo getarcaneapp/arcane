@@ -2,7 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry, VolumeBackupPolicy } from '$lib/types/shared';
+	import type { BackupEntry, VolumeBackupDestination, VolumeBackupPolicy } from '$lib/types/shared';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -15,9 +15,11 @@
 		RestartIcon,
 		FileTextIcon,
 		AlertIcon,
-		UploadIcon
+		UploadIcon,
+		ArrowDownIcon
 	} from '$lib/icons';
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	import { ArcaneButton, arcaneButtonVariants } from '$lib/components/arcane-button';
+	import * as ButtonGroup from '$lib/components/ui/button-group';
 	import { toast } from 'svelte-sonner';
 	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
@@ -37,6 +39,7 @@
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
+	import { cn } from '$lib/utils';
 
 	let { volumeName }: { volumeName: string } = $props();
 
@@ -62,6 +65,7 @@
 		localEnabled: true,
 		s3Enabled: false,
 		s3DestinationId: '',
+		s3DestinationName: '',
 		s3Available: false,
 		s3Bucket: ''
 	});
@@ -99,10 +103,10 @@
 		}
 	}
 
-	async function handleCreate() {
+	async function handleCreate(destination?: VolumeBackupDestination) {
 		creating = true;
 		try {
-			const result = await volumeBackupService.createBackup(volumeName);
+			const result = await volumeBackupService.createBackup(volumeName, destination);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
 		} catch (error) {
@@ -258,6 +262,26 @@
 		return m.backups_trigger_manual();
 	}
 
+	function backupDestinationLabel(destination: BackupEntry['destination']) {
+		if (destination === 'local_s3') return m.backups_destination_local_s3();
+		if (destination === 's3') return m.backups_destination_s3();
+		return m.backups_destination_local();
+	}
+
+	function backupDestinationName(backup: BackupEntry) {
+		return backup.s3DestinationName || backup.s3DestinationId || '';
+	}
+
+	function backupDestinationDisplay(backup: BackupEntry) {
+		const label = backupDestinationLabel(backup.destination);
+		const name = backupDestinationName(backup);
+		return name && backup.destination !== 'local' ? `${label} · ${name}` : label;
+	}
+
+	const configuredS3DestinationName = $derived(
+		backupPolicy.s3DestinationName || backupPolicy.s3Bucket || backupPolicy.s3DestinationId
+	);
+
 	onMount(async () => {
 		const [policy] = await Promise.all([volumeBackupService.getPolicy(volumeName), loadData(requestOptions)]);
 		backupPolicy = policy;
@@ -267,6 +291,7 @@
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
+		{ accessorKey: 'destination', title: m.volume_backup_destination_label(), sortable: true, cell: DestinationCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'remoteKey', title: m.volume_backup_remote_key(), sortable: true, cell: RemoteKeyCell, hidden: true },
@@ -276,6 +301,7 @@
 	const mobileFields = [
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
+		{ id: 'destination', label: m.volume_backup_destination_label(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'remoteKey', label: m.volume_backup_remote_key(), defaultVisible: false }
 	];
@@ -293,6 +319,15 @@
 
 {#snippet TriggerCell({ item }: { item: BackupEntry })}
 	{backupTriggerLabel(item.trigger)}
+{/snippet}
+
+{#snippet DestinationCell({ item }: { item: BackupEntry })}
+	<div class="flex items-center gap-2">
+		<Badge variant={item.destination === 'local' ? 'gray' : 'blue'}>{backupDestinationLabel(item.destination)}</Badge>
+		{#if item.destination !== 'local' && backupDestinationName(item)}
+			<span class="max-w-48 truncate text-xs text-muted-foreground">{backupDestinationName(item)}</span>
+		{/if}
+	</div>
 {/snippet}
 
 {#snippet SizeCell({ item }: { item: BackupEntry })}
@@ -355,15 +390,46 @@
 			size="sm"
 			icon={ClockIcon}
 		/>
-		<ArcaneButton
-			action="create"
-			customLabel={m.volumes_backup_create()}
-			loading={creating}
-			disabled={creating}
-			onclick={handleCreate}
-			size="sm"
-			icon={AddIcon}
-		/>
+		<ButtonGroup.Root>
+			<ArcaneButton
+				action="create"
+				customLabel={m.volumes_backup_create()}
+				loading={creating}
+				disabled={creating}
+				onclick={() => handleCreate()}
+				size="sm"
+				icon={AddIcon}
+			/>
+			<DropdownMenu.Root>
+				<DropdownMenu.Trigger
+					class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
+					aria-label={m.common_open_menu()}
+					disabled={creating}
+				>
+					<ArrowDownIcon class="size-4" />
+				</DropdownMenu.Trigger>
+				<DropdownMenu.Content align="end" class="w-64">
+					<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
+					<DropdownMenu.Item onclick={() => handleCreate('local')}>
+						{m.volume_backup_destination_local()}
+					</DropdownMenu.Item>
+					{#if backupPolicy.s3Enabled && backupPolicy.s3DestinationId}
+						<DropdownMenu.Item onclick={() => handleCreate('local_s3')}>
+							<div class="flex flex-col gap-0.5">
+								<span>{m.volume_backup_destination_local_s3()}</span>
+								<span class="text-xs text-muted-foreground">{configuredS3DestinationName}</span>
+							</div>
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => handleCreate('s3')}>
+							<div class="flex flex-col gap-0.5">
+								<span>{m.volume_backup_destination_s3()}</span>
+								<span class="text-xs text-muted-foreground">{configuredS3DestinationName}</span>
+							</div>
+						</DropdownMenu.Item>
+					{/if}
+				</DropdownMenu.Content>
+			</DropdownMenu.Root>
+		</ButtonGroup.Root>
 	{/if}
 {/snippet}
 
@@ -392,6 +458,13 @@
 				icon: InfoIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['size'] ?? true
+			},
+			{
+				label: m.volume_backup_destination_label(),
+				getValue: (item) => backupDestinationDisplay(item),
+				icon: DownloadIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['destination'] ?? true
 			},
 			{
 				label: m.volume_backup_remote_key(),

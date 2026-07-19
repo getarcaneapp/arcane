@@ -25,15 +25,17 @@ const (
 type VolumeBackup struct {
 	BaseModel
 
-	VolumeName      string              `json:"volumeName" gorm:"column:volume_name;index"`
-	Size            int64               `json:"size" gorm:"column:size"`
-	CreatedAt       time.Time           `json:"createdAt" gorm:"column:created_at"`
-	Status          VolumeBackupStatus  `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
-	Trigger         VolumeBackupTrigger `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
-	RemoteKey       string              `json:"remoteKey,omitempty" gorm:"column:remote_key;type:text"`
-	S3DestinationID string              `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
-	Error           string              `json:"error,omitempty" gorm:"column:error;type:text"`
-	ActivityID      *string             `json:"activityId,omitempty" gorm:"-"`
+	VolumeName        string                   `json:"volumeName" gorm:"column:volume_name;index"`
+	Size              int64                    `json:"size" gorm:"column:size"`
+	CreatedAt         time.Time                `json:"createdAt" gorm:"column:created_at"`
+	Status            VolumeBackupStatus       `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
+	Trigger           VolumeBackupTrigger      `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
+	Destination       volume.BackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
+	RemoteKey         string                   `json:"remoteKey,omitempty" gorm:"column:remote_key;type:text"`
+	S3DestinationID   string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
+	S3DestinationName string                   `json:"s3DestinationName,omitempty" gorm:"-"`
+	Error             string                   `json:"error,omitempty" gorm:"column:error;type:text"`
+	ActivityID        *string                  `json:"activityId,omitempty" gorm:"-"`
 }
 
 func (*VolumeBackup) TableName() string {
@@ -42,15 +44,17 @@ func (*VolumeBackup) TableName() string {
 
 func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 	return volume.BackupEntry{
-		ID:              b.ID,
-		VolumeName:      b.VolumeName,
-		Size:            b.Size,
-		CreatedAt:       b.CreatedAt.Format(time.RFC3339),
-		Status:          string(b.Status),
-		Trigger:         string(b.Trigger),
-		RemoteKey:       b.RemoteKey,
-		S3DestinationID: b.S3DestinationID,
-		Error:           b.Error,
+		ID:                b.ID,
+		VolumeName:        b.VolumeName,
+		Size:              b.Size,
+		CreatedAt:         b.CreatedAt.Format(time.RFC3339),
+		Status:            string(b.Status),
+		Trigger:           string(b.Trigger),
+		Destination:       b.Destination,
+		RemoteKey:         b.RemoteKey,
+		S3DestinationID:   b.S3DestinationID,
+		S3DestinationName: b.S3DestinationName,
+		Error:             b.Error,
 	}
 }
 

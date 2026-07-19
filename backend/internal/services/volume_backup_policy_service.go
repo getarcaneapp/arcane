@@ -86,7 +86,10 @@ func (s *VolumeService) GetBackupPolicy(ctx context.Context, volumeName string) 
 			for _, destination := range destinations {
 				if destination.ID == policy.S3DestinationID {
 					dto.S3Bucket = destination.Bucket
-					break
+					dto.S3DestinationName = destination.Name
+				}
+				if dto.LastRun != nil && dto.LastRun.S3DestinationID == destination.ID {
+					dto.LastRun.S3DestinationName = destination.Name
 				}
 			}
 		}
@@ -174,6 +177,7 @@ func (s *VolumeService) uploadVolumeBackupToS3Internal(ctx context.Context, back
 		return err
 	}
 	backup.RemoteKey = remoteKey
+	backup.S3DestinationName = backupCfg.S3DestinationName
 	return nil
 }
 
@@ -203,6 +207,7 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*mod
 		return nil, errors.New("select an S3 destination in the volume backup configuration first")
 	}
 	backup.S3DestinationID = policy.S3DestinationID
+	backup.Destination = volumetypes.BackupDestinationLocalS3
 	if err := s.uploadVolumeBackupToS3Internal(ctx, &backup); err != nil {
 		return nil, err
 	}
@@ -281,7 +286,7 @@ func (s *VolumeService) buildVolumeBackupJobInternal(policyID string) *scheduler
 			if err := s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
 				return
 			}
-			backup, err := s.CreateBackup(ctx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled)
+			backup, err := s.CreateBackup(ctx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled, "")
 			if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
 				slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
 				return

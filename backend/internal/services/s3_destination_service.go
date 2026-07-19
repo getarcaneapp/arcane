@@ -25,6 +25,7 @@ type S3DestinationService struct {
 
 type s3DestinationConfiguration struct {
 	S3DestinationID   string
+	S3DestinationName string
 	S3Endpoint        string
 	S3Bucket          string
 	S3Region          string
@@ -310,6 +311,7 @@ func (s *S3DestinationService) configurationInternal(ctx context.Context, id str
 	}
 	return s3DestinationConfiguration{
 		S3DestinationID:   destination.ID,
+		S3DestinationName: destination.Name,
 		S3Endpoint:        destination.Endpoint,
 		S3Bucket:          destination.Bucket,
 		S3Region:          destination.Region,

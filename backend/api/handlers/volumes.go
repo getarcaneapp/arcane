@@ -224,8 +224,9 @@ type ListBackupsOutput struct {
 }
 
 type CreateBackupInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	EnvironmentID string                           `path:"id" doc:"Environment ID"`
+	VolumeName    string                           `path:"volumeName" doc:"Volume name"`
+	Body          *volumetypes.CreateBackupRequest `json:"body,omitempty"`
 }
 
 type CreateBackupOutput struct {
@@ -1237,6 +1238,10 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	}
 
 	var backup *models.VolumeBackup
+	destination := volumetypes.BackupDestination("")
+	if input.Body != nil {
+		destination = input.Body.Destination
+	}
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -1248,10 +1253,10 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		Step:           "Creating backup",
 		Message:        "Creating volume backup",
 		SuccessMessage: "Volume backup created successfully",
-		Metadata:       models.JSON{"action": "create_volume_backup"},
+		Metadata:       models.JSON{"action": "create_volume_backup", "destination": destination},
 	}, func(runtimeCtx context.Context) error {
 		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual)
+		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual, destination)
 		return backupErr
 	})
 	if err != nil {

@@ -1216,8 +1216,8 @@ func (s *VolumeService) startContainersAfterBackupInternal(ctx context.Context, 
 	return stillStopped, restartErr
 }
 
-func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger) (_ *models.VolumeBackup, err error) {
-	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID, "trigger", trigger)
+func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, destination volumetypes.BackupDestination) (_ *models.VolumeBackup, err error) {
+	slog.DebugContext(ctx, "volume service: create backup", "volume", volumeName, "user", user.ID, "trigger", trigger, "destination", destination)
 	if _, loaded := s.runningBackups.LoadOrStore(volumeName, struct{}{}); loaded {
 		return nil, ErrVolumeBackupAlreadyRunning
 	}
@@ -1225,16 +1225,61 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	if trigger == "" {
 		trigger = models.VolumeBackupTriggerManual
 	}
+	if destination != "" && destination != volumetypes.BackupDestinationLocal && destination != volumetypes.BackupDestinationS3 && destination != volumetypes.BackupDestinationLocalS3 {
+		return nil, errors.New("invalid volume backup destination")
+	}
+
+	var policy *models.VolumeBackupPolicy
+	if trigger != models.VolumeBackupTriggerSafety {
+		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	localEnabled := true
+	s3Enabled := false
+	s3DestinationID := ""
+	if policy != nil {
+		localEnabled = policy.LocalEnabled
+		s3Enabled = policy.S3Enabled
+		s3DestinationID = policy.S3DestinationID
+	}
+	if trigger == models.VolumeBackupTriggerSafety {
+		destination = volumetypes.BackupDestinationLocal
+		localEnabled = true
+		s3Enabled = false
+	} else if destination != "" {
+		localEnabled = destination != volumetypes.BackupDestinationS3
+		s3Enabled = destination != volumetypes.BackupDestinationLocal
+	}
+	if localEnabled && s3Enabled {
+		destination = volumetypes.BackupDestinationLocalS3
+	} else if s3Enabled {
+		destination = volumetypes.BackupDestinationS3
+	} else {
+		destination = volumetypes.BackupDestinationLocal
+	}
+	if s3Enabled {
+		if s.s3Destinations == nil || strings.TrimSpace(s3DestinationID) == "" {
+			return nil, errors.New("select an S3 destination in the volume backup configuration first")
+		}
+		if _, err := s.s3Destinations.configurationInternal(ctx, s3DestinationID); err != nil {
+			return nil, errors.New("the selected S3 backup destination is not configured")
+		}
+	}
+
 	backupID := fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
 	filename, err := s.backupArchiveFilenameInternal(backupID)
 	if err != nil {
 		return nil, err
 	}
 	backup := &models.VolumeBackup{
-		VolumeName: volumeName,
-		CreatedAt:  time.Now(),
-		Status:     models.VolumeBackupStatusRunning,
-		Trigger:    trigger,
+		VolumeName:  volumeName,
+		CreatedAt:   time.Now(),
+		Status:      models.VolumeBackupStatusRunning,
+		Trigger:     trigger,
+		Destination: destination,
 	}
 	backup.ID = backupID
 	if err := s.db.WithContext(ctx).Create(backup).Error; err != nil {
@@ -1266,14 +1311,6 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	backupStorage, err := s.resolveUsableBackupStorageMountInternal(ctx, dockerClient, "/backups", false)
 	if err != nil {
 		return backup, err
-	}
-
-	var policy *models.VolumeBackupPolicy
-	if trigger != models.VolumeBackupTriggerSafety {
-		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName)
-		if err != nil {
-			return backup, err
-		}
 	}
 
 	var stoppedContainerIDs []string
@@ -1358,13 +1395,13 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	backup.Size = size
 
 	if trigger != models.VolumeBackupTriggerSafety {
-		if policy != nil && policy.S3Enabled {
-			backup.S3DestinationID = policy.S3DestinationID
+		if s3Enabled {
+			backup.S3DestinationID = s3DestinationID
 			if err := s.uploadVolumeBackupToS3Internal(ctx, backup); err != nil {
 				return backup, fmt.Errorf("failed to upload volume backup to S3: %w", err)
 			}
 		}
-		if policy != nil && !policy.LocalEnabled {
+		if !localEnabled {
 			if strings.TrimSpace(backup.RemoteKey) == "" {
 				return backup, errors.New("remote-only volume backup was not uploaded")
 			}
@@ -1402,7 +1439,7 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 
 	if params.Search != "" {
 		pattern := "%" + params.Search + "%"
-		query = query.Where("id LIKE ? OR status LIKE ? OR trigger LIKE ? OR COALESCE(remote_key, '') LIKE ? OR COALESCE(error, '') LIKE ?", pattern, pattern, pattern, pattern, pattern)
+		query = query.Where("id LIKE ? OR status LIKE ? OR trigger LIKE ? OR destination LIKE ? OR COALESCE(remote_key, '') LIKE ? OR COALESCE(error, '') LIKE ?", pattern, pattern, pattern, pattern, pattern, pattern)
 	}
 
 	var totalItems int64
@@ -1424,6 +1461,8 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 			sortCol = "status"
 		case "trigger":
 			sortCol = "trigger"
+		case "destination":
+			sortCol = "destination"
 		case "remoteKey", "remote_key":
 			sortCol = "remote_key"
 		default:
@@ -1444,6 +1483,26 @@ func (s *VolumeService) ListBackupsPaginated(ctx context.Context, volumeName str
 
 	if err := query.Find(&backups).Error; err != nil {
 		return nil, pagination.Response{}, err
+	}
+	hasS3Destination := false
+	for i := range backups {
+		if strings.TrimSpace(backups[i].S3DestinationID) != "" {
+			hasS3Destination = true
+			break
+		}
+	}
+	if s.s3Destinations != nil && hasS3Destination {
+		destinations, destinationErr := s.s3Destinations.ListAllS3Destinations(ctx)
+		if destinationErr != nil {
+			return nil, pagination.Response{}, fmt.Errorf("failed to resolve volume backup S3 destinations: %w", destinationErr)
+		}
+		destinationNames := make(map[string]string, len(destinations))
+		for _, destination := range destinations {
+			destinationNames[destination.ID] = destination.Name
+		}
+		for i := range backups {
+			backups[i].S3DestinationName = destinationNames[backups[i].S3DestinationID]
+		}
 	}
 
 	paginationResp := s.buildPaginationResponseFromCountsInternal(totalItems, totalItems, params)
@@ -1564,7 +1623,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		return errors.New("the local backup archive is missing")
 	}
 
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety)
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
@@ -1878,7 +1937,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	}
 	_ = gzr.Close()
 
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety)
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
@@ -1992,7 +2051,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	}
 	_ = gzr.Close()
 
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety)
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
