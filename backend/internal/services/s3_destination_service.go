@@ -39,15 +39,15 @@ func NewS3DestinationService(db *database.DB) *S3DestinationService {
 	return &S3DestinationService{db: db}
 }
 
-func validateS3DestinationInputInternal(name, bucket, region, accessKeyID, secretAccessKey string, requireSecret bool) error {
+func validateS3DestinationInputInternal(name, endpoint, bucket, region, accessKeyID, secretAccessKey string, requireSecret bool) error {
 	if strings.TrimSpace(name) == "" {
 		return errors.New("name is required")
 	}
 	if strings.TrimSpace(bucket) == "" {
 		return errors.New("bucket is required")
 	}
-	if strings.TrimSpace(region) == "" {
-		return errors.New("region is required")
+	if strings.TrimSpace(endpoint) == "" && strings.TrimSpace(region) == "" {
+		return errors.New("region is required for AWS S3")
 	}
 	if strings.TrimSpace(accessKeyID) == "" {
 		return errors.New("access key ID is required")
@@ -126,7 +126,7 @@ func (s *S3DestinationService) GetS3Destination(ctx context.Context, id string) 
 }
 
 func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input backuptypes.CreateS3Destination) (*backuptypes.S3Destination, error) {
-	if err := validateS3DestinationInputInternal(input.Name, input.Bucket, input.Region, input.AccessKeyID, input.SecretAccessKey, true); err != nil {
+	if err := validateS3DestinationInputInternal(input.Name, input.Endpoint, input.Bucket, input.Region, input.AccessKeyID, input.SecretAccessKey, true); err != nil {
 		return nil, err
 	}
 	encryptedSecret, err := crypto.Encrypt(strings.TrimSpace(input.SecretAccessKey))
@@ -152,7 +152,7 @@ func (s *S3DestinationService) CreateS3Destination(ctx context.Context, input ba
 }
 
 func (s *S3DestinationService) UpdateS3Destination(ctx context.Context, id string, input backuptypes.UpdateS3Destination) (*backuptypes.S3Destination, error) {
-	if err := validateS3DestinationInputInternal(input.Name, input.Bucket, input.Region, input.AccessKeyID, input.SecretAccessKey, false); err != nil {
+	if err := validateS3DestinationInputInternal(input.Name, input.Endpoint, input.Bucket, input.Region, input.AccessKeyID, input.SecretAccessKey, false); err != nil {
 		return nil, err
 	}
 	destination, err := s.getS3DestinationModelInternal(ctx, id)
@@ -252,7 +252,7 @@ func (s *S3DestinationService) SyncS3Destinations(ctx context.Context, destinati
 		if strings.TrimSpace(item.ID) == "" {
 			return errors.New("S3 destination ID is required")
 		}
-		if err := validateS3DestinationInputInternal(item.Name, item.Bucket, item.Region, item.AccessKeyID, item.SecretAccessKey, true); err != nil {
+		if err := validateS3DestinationInputInternal(item.Name, item.Endpoint, item.Bucket, item.Region, item.AccessKeyID, item.SecretAccessKey, true); err != nil {
 			return fmt.Errorf("invalid S3 destination %s: %w", item.ID, err)
 		}
 		syncedIDs[item.ID] = struct{}{}

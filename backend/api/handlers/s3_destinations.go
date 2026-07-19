@@ -59,6 +59,15 @@ type DeleteS3DestinationOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type TestS3DestinationOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
+}
+
+type TestS3DestinationInput struct {
+	ID   string                           `path:"id" doc:"S3 destination ID"`
+	Body *backuptypes.UpdateS3Destination `json:"body,omitempty"`
+}
+
 type SyncS3DestinationsInput struct {
 	Body backuptypes.S3DestinationSyncRequest
 }
@@ -120,6 +129,15 @@ func RegisterS3Destinations(api huma.API, service *services.S3DestinationService
 		Summary:     "Update S3 destination",
 		Tags:        []string{"S3 Destinations"},
 	}, authz.PermSettingsWrite, handler.Update)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "test-s3-destination",
+		Method:      http.MethodPost,
+		Path:        "/s3-destinations/{id}/test",
+		Summary:     "Test S3 destination",
+		Description: "Verify upload, download, and delete access using the saved or supplied S3 destination configuration",
+		Tags:        []string{"S3 Destinations"},
+	}, authz.PermSettingsWrite, handler.Test)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "delete-s3-destination",
@@ -197,6 +215,19 @@ func (h *S3DestinationHandler) Delete(ctx context.Context, input *S3DestinationI
 	return &DeleteS3DestinationOutput{Body: base.ApiResponse[base.MessageResponse]{
 		Success: true,
 		Data:    base.MessageResponse{Message: "S3 destination deleted successfully"},
+	}}, nil
+}
+
+func (h *S3DestinationHandler) Test(ctx context.Context, input *TestS3DestinationInput) (*TestS3DestinationOutput, error) {
+	if err := h.service.TestS3Destination(ctx, input.ID, input.Body); err != nil {
+		if errors.Is(err, services.ErrS3DestinationNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &TestS3DestinationOutput{Body: base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "S3 connection test succeeded"},
 	}}, nil
 }
 

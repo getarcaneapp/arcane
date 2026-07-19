@@ -3,8 +3,12 @@
 	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
 	import FormInput from '$lib/components/form/form-input.svelte';
 	import LabeledSwitch from '$lib/components/form/labeled-switch.svelte';
+	import { ArcaneButton } from '$lib/components/arcane-button';
 	import type { CreateS3Destination, S3Destination } from '$lib/types/s3-destination';
 	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { s3DestinationService } from '$lib/services/s3-destination-service';
+	import { TestIcon } from '$lib/icons';
+	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
 	import * as m from '$lib/paraglide/messages.js';
 
@@ -25,7 +29,7 @@
 			name: z.string().trim().min(1, m.s3_destination_name_required()),
 			endpoint: z.string(),
 			bucket: z.string().trim().min(1, m.backups_s3_bucket_required()),
-			region: z.string().trim().min(1, m.backups_s3_region_required()),
+			region: z.string(),
 			accessKeyId: z.string().trim().min(1, m.backups_s3_access_key_required()),
 			secretAccessKey: z.string(),
 			prefix: z.string(),
@@ -33,6 +37,13 @@
 			forcePathStyle: z.boolean()
 		})
 		.superRefine((data, ctx) => {
+			if (!data.endpoint.trim() && !data.region.trim()) {
+				ctx.addIssue({
+					code: z.ZodIssueCode.custom,
+					message: m.backups_s3_region_required(),
+					path: ['region']
+				});
+			}
 			if (!destination?.secretConfigured && !data.secretAccessKey.trim()) {
 				ctx.addIssue({
 					code: z.ZodIssueCode.custom,
@@ -55,11 +66,27 @@
 	});
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
+	let testing = $state(false);
 
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
 		onSubmit(data);
+	}
+
+	async function handleTest() {
+		if (!destination) return;
+		const data = form.validate();
+		if (!data) return;
+		testing = true;
+		try {
+			await s3DestinationService.test(destination.id, data);
+			toast.success(m.s3_destination_test_success({ name: data.name }));
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.s3_destination_test_failed({ name: data.name }));
+		} finally {
+			testing = false;
+		}
 	}
 </script>
 
@@ -79,7 +106,11 @@
 				description={m.backups_s3_endpoint_description()}
 			/>
 			<FormInput bind:input={$inputs.bucket} label={m.backups_s3_bucket_label()} />
-			<FormInput bind:input={$inputs.region} label={m.backups_s3_region_label()} />
+			<FormInput
+				bind:input={$inputs.region}
+				label={m.backups_s3_region_label()}
+				description={m.backups_s3_region_description()}
+			/>
 			<FormInput bind:input={$inputs.accessKeyId} label={m.backups_s3_access_key_label()} autocomplete="off" />
 			<FormInput
 				bind:input={$inputs.secretAccessKey}
@@ -110,14 +141,28 @@
 		</form>
 	{/snippet}
 	{#snippet footer()}
-		<SheetFooterActions
-			bind:open
-			cancelDisabled={saving}
-			submitAction={destination ? 'save' : 'create'}
-			submitDisabled={saving}
-			submitLoading={saving}
-			onSubmit={handleSubmit}
-			submitLabel={destination ? m.common_save_changes() : m.s3_destination_add_title()}
-		/>
+		<div class="flex w-full flex-col gap-2">
+			{#if destination}
+				<ArcaneButton
+					action="base"
+					type="button"
+					class="w-full"
+					icon={TestIcon}
+					customLabel={m.test_connection()}
+					disabled={saving || testing}
+					loading={testing}
+					onclick={handleTest}
+				/>
+			{/if}
+			<SheetFooterActions
+				bind:open
+				cancelDisabled={saving || testing}
+				submitAction={destination ? 'save' : 'create'}
+				submitDisabled={saving || testing}
+				submitLoading={saving}
+				onSubmit={handleSubmit}
+				submitLabel={destination ? m.common_save_changes() : m.s3_destination_add_title()}
+			/>
+		</div>
 	{/snippet}
 </ResponsiveDialog>

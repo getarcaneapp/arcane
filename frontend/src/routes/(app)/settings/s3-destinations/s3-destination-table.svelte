@@ -6,10 +6,13 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import type { S3Destination } from '$lib/types/s3-destination';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { EditIcon, RemoteEnvironmentIcon, TrashIcon, ClockIcon, GlobeIcon } from '$lib/icons';
+	import { EditIcon, RemoteEnvironmentIcon, TrashIcon, ClockIcon, GlobeIcon, TestIcon } from '$lib/icons';
 	import { formatOptionalDateTime } from '$lib/utils/formatting';
 	import * as m from '$lib/paraglide/messages.js';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { Spinner } from '$lib/components/ui/spinner';
+	import { toast } from 'svelte-sonner';
+	import { s3DestinationService } from '$lib/services/s3-destination-service';
 
 	let {
 		destinations = $bindable(),
@@ -41,6 +44,19 @@
 		{ id: 'prefix', label: m.backups_s3_prefix_label(), defaultVisible: false }
 	];
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
+	let testingId = $state<string | null>(null);
+
+	async function testDestination(destination: S3Destination) {
+		testingId = destination.id;
+		try {
+			await s3DestinationService.test(destination.id);
+			toast.success(m.s3_destination_test_success({ name: destination.name }));
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.s3_destination_test_failed({ name: destination.name }));
+		} finally {
+			testingId = null;
+		}
+	}
 </script>
 
 {#snippet NameCell({ item }: { item: S3Destination })}
@@ -62,6 +78,14 @@
 {#snippet RowActions({ item }: { item: S3Destination })}
 	<RowActionsMenu>
 		<IfPermitted perm="settings:write">
+			<DropdownMenu.Item onclick={() => testDestination(item)} disabled={testingId === item.id}>
+				{#if testingId === item.id}
+					<Spinner class="size-4" />
+				{:else}
+					<TestIcon class="size-4" />
+				{/if}
+				{m.test_connection()}
+			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={() => onEdit(item)}>
 				<EditIcon class="size-4" />
 				{m.common_edit()}
