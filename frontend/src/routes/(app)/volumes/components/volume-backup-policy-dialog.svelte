@@ -155,7 +155,7 @@
 					description={m.volume_backup_policy_enabled_description()}
 				/>
 				<div
-					class="grid gap-5 sm:grid-cols-2 sm:[&>div]:grid sm:[&>div]:grid-rows-[3.5rem_2.25rem_1rem] sm:[&>div]:gap-2.5 sm:[&>div]:space-y-0"
+					class="mb-0 grid gap-5 sm:mb-6 sm:grid-cols-2 md:mb-8 sm:[&>div]:grid sm:[&>div]:grid-rows-[3.5rem_2.25rem_1rem] sm:[&>div]:gap-2.5 sm:[&>div]:space-y-0"
 				>
 					<TextInputWithLabel
 						bind:value={form.schedule}
@@ -176,7 +176,7 @@
 					/>
 				</div>
 				<LabeledSwitch
-					id="volume-backup-policy-stop-containers my-2"
+					id="volume-backup-policy-stop-containers"
 					bind:checked={form.stopContainers}
 					label={m.volume_backup_stop_containers()}
 					description={m.volume_backup_stop_containers_description()}
