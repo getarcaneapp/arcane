@@ -2,7 +2,7 @@
 	import { m } from '$lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
 	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry } from '$lib/types/shared';
+	import type { BackupEntry, VolumeBackupPolicy } from '$lib/types/shared';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -14,7 +14,8 @@
 		DownloadIcon,
 		RestartIcon,
 		FileTextIcon,
-		AlertIcon
+		AlertIcon,
+		UploadIcon
 	} from '$lib/icons';
 	import { ArcaneButton } from '$lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
@@ -34,6 +35,8 @@
 	import { hasPermission } from '$lib/utils/auth';
 	import IfPermitted from '$lib/components/if-permitted.svelte';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 
 	let { volumeName }: { volumeName: string } = $props();
 
@@ -50,6 +53,18 @@
 		}
 	});
 	let backupWarnings = $state<string[]>([]);
+	let backupPolicy = $state<VolumeBackupPolicy>({
+		volumeName: '',
+		enabled: false,
+		schedule: '0 0 2 * * *',
+		retentionCount: 7,
+		localEnabled: true,
+		s3Enabled: false,
+		s3DestinationId: '',
+		s3Available: false,
+		s3Bucket: ''
+	});
+	let showBackupPolicy = $state(false);
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },
@@ -57,6 +72,7 @@
 	});
 
 	let creating = $state(false);
+	let uploadingBackupId = $state<string | null>(null);
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
 	let restoreTarget = $state<BackupEntry | null>(null);
@@ -76,8 +92,8 @@
 			backupsPaginated = result;
 			backupWarnings = result.warnings ?? [];
 			return result;
-		} catch (e: any) {
-			toast.error(e.message || 'Failed to load backups');
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.volumes_backup_load_failed());
 			return backupsPaginated;
 		}
 	}
@@ -88,8 +104,8 @@
 			const result = await volumeBackupService.createBackup(volumeName);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
 		} finally {
 			creating = false;
 		}
@@ -97,7 +113,7 @@
 
 	async function handleDelete(backup: BackupEntry) {
 		openConfirmDialog({
-			title: m.common_remove_title({ resource: 'Backup' }),
+			title: m.common_remove_title({ resource: m.file_browser_backup() }),
 			message: m.volumes_backup_delete_confirm(),
 			confirm: {
 				label: m.common_remove(),
@@ -105,14 +121,30 @@
 				action: async () => {
 					try {
 						const result = await volumeBackupService.deleteBackup(backup.id);
-						toast.success(m.common_delete_success({ resource: 'Backup' }), activityToastOptions(extractActivityId(result)));
+						toast.success(
+							m.common_delete_success({ resource: m.file_browser_backup() }),
+							activityToastOptions(extractActivityId(result))
+						);
 						await loadData(requestOptions);
-					} catch (e: any) {
-						toast.error(e.message || m.common_delete_failed({ resource: 'Backup' }));
+					} catch (error) {
+						toast.error(error instanceof Error ? error.message : m.common_delete_failed({ resource: m.file_browser_backup() }));
 					}
 				}
 			}
 		});
+	}
+
+	async function handleUpload(backup: BackupEntry) {
+		uploadingBackupId = backup.id;
+		try {
+			const result = await volumeBackupService.uploadBackup(backup.id);
+			toast.success(m.backups_upload_s3_success(), activityToastOptions(extractActivityId(result)));
+			await loadData(requestOptions);
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.backups_upload_s3_failed());
+		} finally {
+			uploadingBackupId = null;
+		}
 	}
 
 	async function openRestoreFilesDialog(backup: BackupEntry) {
@@ -124,8 +156,8 @@
 		backupFilesLoading = true;
 		try {
 			backupFiles = await volumeBackupService.listBackupFiles(backup.id);
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
 		} finally {
 			backupFilesLoading = false;
 		}
@@ -176,8 +208,8 @@
 						const result = await volumeBackupService.restoreBackup(volumeName, backup.id);
 						toast.success(m.volumes_backup_restore_success(), activityToastOptions(extractActivityId(result)));
 						await loadData(requestOptions);
-					} catch (e: any) {
-						toast.error(e.message || m.common_failed());
+					} catch (error) {
+						toast.error(error instanceof Error ? error.message : m.common_failed());
 					}
 				}
 			}
@@ -196,8 +228,8 @@
 				activityToastOptions(extractActivityId(result))
 			);
 			showRestoreFiles = false;
-		} catch (e: any) {
-			toast.error(e.message || m.common_failed());
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_failed());
 		} finally {
 			restoringFiles = false;
 		}
@@ -207,31 +239,75 @@
 		return bytes.format(value, { unitSeparator: ' ' }) ?? '-';
 	}
 
+	function backupStatusLabel(status: BackupEntry['status']) {
+		if (status === 'succeeded') return m.volume_backup_status_succeeded();
+		if (status === 'failed') return m.volume_backup_status_failed();
+		return m.volume_backup_status_running();
+	}
+
+	function backupStatusVariant(status: BackupEntry['status']): 'green' | 'red' | 'blue' {
+		if (status === 'succeeded') return 'green';
+		if (status === 'failed') return 'red';
+		return 'blue';
+	}
+
+	function backupTriggerLabel(trigger: BackupEntry['trigger']) {
+		if (trigger === 'scheduled') return m.backups_trigger_scheduled();
+		if (trigger === 'safety') return m.backups_trigger_safety();
+		return m.backups_trigger_manual();
+	}
+
 	onMount(async () => {
-		await loadData(requestOptions);
+		const [policy] = await Promise.all([volumeBackupService.getPolicy(volumeName), loadData(requestOptions)]);
+		backupPolicy = policy;
 	});
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
+		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
-		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell }
+		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
+		{ accessorKey: 'remoteKey', title: m.volume_backup_remote_key(), sortable: true, cell: RemoteKeyCell, hidden: true },
+		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell, hidden: true }
 	] satisfies ColumnSpec<BackupEntry>[];
 
-	const mobileFields = [{ id: 'size', label: m.common_size(), defaultVisible: true }];
+	const mobileFields = [
+		{ id: 'status', label: m.common_status(), defaultVisible: true },
+		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
+		{ id: 'size', label: m.common_size(), defaultVisible: true },
+		{ id: 'remoteKey', label: m.volume_backup_remote_key(), defaultVisible: false }
+	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
 
-{#snippet IdCell({ value }: { value: any })}
-	<code class="font-mono text-xs font-medium">{value}</code>
+{#snippet IdCell({ item }: { item: BackupEntry })}
+	<code class="font-mono text-xs font-medium">{item.id}</code>
 {/snippet}
 
-{#snippet SizeCell({ value }: { value: any })}
-	{formatBytes(Number(value))}
+{#snippet StatusCell({ item }: { item: BackupEntry })}
+	<Badge variant={backupStatusVariant(item.status)}>{backupStatusLabel(item.status)}</Badge>
 {/snippet}
 
-{#snippet CreatedCell({ value }: { value: any })}
-	{formatDateTimeShort(String(value))}
+{#snippet TriggerCell({ item }: { item: BackupEntry })}
+	{backupTriggerLabel(item.trigger)}
+{/snippet}
+
+{#snippet SizeCell({ item }: { item: BackupEntry })}
+	{formatBytes(item.size)}
+{/snippet}
+
+{#snippet CreatedCell({ item }: { item: BackupEntry })}
+	{formatDateTimeShort(item.createdAt)}
+{/snippet}
+
+{#snippet RemoteKeyCell({ item }: { item: BackupEntry })}
+	<code class="text-xs">{item.remoteKey || m.volume_backup_not_uploaded()}</code>
+{/snippet}
+
+{#snippet ErrorCell({ item }: { item: BackupEntry })}
+	<span class="line-clamp-2 max-w-80 text-xs text-destructive">{item.error || '-'}</span>
 {/snippet}
 
 {#snippet RowActions({ item }: { item: BackupEntry })}
@@ -239,17 +315,26 @@
 		{#if canBackupVolume}
 			<DropdownMenu.Item onclick={() => handleRestore(item)}>
 				<RestartIcon class="size-4" />
-				Restore
+				{m.volumes_backups_restore()}
 			</DropdownMenu.Item>
 			<DropdownMenu.Item onclick={() => openRestoreFilesDialog(item)}>
 				<FileTextIcon class="size-4" />
-				Restore files
+				{m.volume_restore_files()}
 			</DropdownMenu.Item>
 		{/if}
 		<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
 			<DownloadIcon class="size-4" />
 			{m.templates_download()}
 		</DropdownMenu.Item>
+		{#if canBackupVolume && backupPolicy.s3Enabled && backupPolicy.s3DestinationId}
+			<DropdownMenu.Item
+				disabled={item.status !== 'succeeded' || Boolean(item.remoteKey) || uploadingBackupId === item.id}
+				onclick={() => handleUpload(item)}
+			>
+				<UploadIcon class="size-4" />
+				{m.backups_upload_s3()}
+			</DropdownMenu.Item>
+		{/if}
 		<IfPermitted perm="volumes:delete">
 			<DropdownMenu.Separator />
 			<DropdownMenu.Item variant="destructive" onclick={() => handleDelete(item)}>
@@ -262,6 +347,13 @@
 
 {#snippet ToolbarActions()}
 	{#if canBackupVolume}
+		<ArcaneButton
+			action="base"
+			customLabel={m.volume_backup_policy_configure()}
+			onclick={() => (showBackupPolicy = true)}
+			size="sm"
+			icon={ClockIcon}
+		/>
 		<ArcaneButton
 			action="create"
 			customLabel={m.volumes_backup_create()}
@@ -287,11 +379,25 @@
 		title={(item) => item.id}
 		fields={[
 			{
+				label: m.volume_backup_trigger(),
+				getValue: (item) => backupTriggerLabel(item.trigger),
+				icon: ClockIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['trigger'] ?? true
+			},
+			{
 				label: m.common_size(),
 				getValue: (item) => formatBytes(item.size),
 				icon: InfoIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['size'] ?? true
+			},
+			{
+				label: m.volume_backup_remote_key(),
+				getValue: (item) => item.remoteKey || m.volume_backup_not_uploaded(),
+				icon: DownloadIcon,
+				iconVariant: 'gray',
+				show: mobileFieldVisibility['remoteKey'] ?? false
 			}
 		]}
 		footer={{
@@ -306,6 +412,19 @@
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
+	</div>
+	<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+		<Badge variant={backupPolicy.enabled ? 'green' : 'gray'}>
+			{backupPolicy.enabled ? m.common_enabled() : m.common_disabled()}
+		</Badge>
+		{#if backupPolicy.enabled}<code>{backupPolicy.schedule}</code>{/if}
+		<Badge variant="blue">
+			{backupPolicy.s3Enabled
+				? backupPolicy.localEnabled
+					? m.backups_destination_local_s3()
+					: m.backups_destination_s3()
+				: m.backups_destination_local()}
+		</Badge>
 	</div>
 
 	{#if backupWarnings.length > 0}
@@ -405,3 +524,10 @@
 		{/if}
 	{/snippet}
 </ResponsiveDialog>
+
+<VolumeBackupPolicyDialog
+	bind:open={showBackupPolicy}
+	{volumeName}
+	policy={backupPolicy}
+	onSaved={(policy) => (backupPolicy = policy)}
+/>

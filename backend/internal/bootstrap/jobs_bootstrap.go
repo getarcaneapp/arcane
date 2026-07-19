@@ -66,6 +66,14 @@ func registerJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, 
 // jobs and registers the jobs for already-existing entities at startup. AddJob is
 // an idempotent upsert, so these run safely before the scheduler is started.
 func registerDynamicJobs(appCtx context.Context, newScheduler *scheduler.JobScheduler, appServices *di.Services, appConfig *config.Config) {
+	// Volume backups run on the environment that owns the Docker volume. This is
+	// registered on managers and agents; environment proxying persists each policy
+	// in the correct Arcane database.
+	if appServices.Volume != nil {
+		appServices.Volume.SetScheduler(appCtx, newScheduler)
+		appServices.Volume.RegisterBackupJobsOnStartup(appCtx)
+	}
+
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if appServices.GitOpsSync != nil {
 		appServices.GitOpsSync.SetScheduler(appCtx, newScheduler)

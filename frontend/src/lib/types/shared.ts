@@ -116,7 +116,30 @@ export interface BackupEntry {
 	volumeName: string;
 	size: number;
 	createdAt: string;
+	status: 'running' | 'succeeded' | 'failed';
+	trigger: 'manual' | 'scheduled' | 'safety';
+	remoteKey?: string;
+	s3DestinationId?: string;
+	error?: string;
 }
+
+export interface VolumeBackupPolicy {
+	volumeName: string;
+	enabled: boolean;
+	schedule: string;
+	retentionCount: number;
+	localEnabled: boolean;
+	s3Enabled: boolean;
+	s3DestinationId: string;
+	s3Available: boolean;
+	s3Bucket: string;
+	lastRun?: BackupEntry;
+}
+
+export type UpdateVolumeBackupPolicy = Pick<
+	VolumeBackupPolicy,
+	'enabled' | 'schedule' | 'retentionCount' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
+>;
 
 // --- Customize search ---
 
