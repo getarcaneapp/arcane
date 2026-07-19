@@ -37,7 +37,7 @@ export interface RunBulkOperationOptions<T> {
 	/** Clears the table selection after completion. Always called when there were ids. */
 	clearSelection?: () => void;
 	/** Optional per-item failure side effect, such as an item-specific toast. */
-	onItemFailure?: (id: string) => void;
+	onItemFailure?: (id: string, error: Error) => void;
 	/** Run operations one at a time instead of concurrently. Defaults to concurrent. */
 	sequential?: boolean;
 }
@@ -65,7 +65,7 @@ async function runBulkOperation<T>({
 	const tally = (id: string, outcome: Result<T>) => {
 		if (outcome.error) {
 			result.failed += 1;
-			onItemFailure?.(id);
+			onItemFailure?.(id, outcome.error);
 		} else {
 			result.success += 1;
 			if (!firstActivityId) firstActivityId = extractActivityId(outcome.data);

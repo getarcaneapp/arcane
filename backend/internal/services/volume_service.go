@@ -1629,26 +1629,62 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
 		return err
 	}
-	if backup.RemoteKey != "" && s.s3Destinations != nil {
-		backupCfg, cfgErr := s.s3Destinations.configurationInternal(ctx, backup.S3DestinationID)
-		if cfgErr != nil {
-			slog.WarnContext(ctx, "failed to resolve S3 destination while deleting volume backup", "backup_id", backupID, "error", cfgErr)
-		} else if deleteErr := s.s3Destinations.deleteObjectInternal(ctx, backupCfg, backup.RemoteKey); deleteErr != nil {
-			slog.WarnContext(ctx, "failed to delete remote volume backup object", "backup_id", backupID, "remote_key", backup.RemoteKey, "error", deleteErr)
+
+	localAvailable := backup.Destination != volumetypes.BackupDestinationS3 || strings.TrimSpace(backup.RemoteKey) == ""
+	remoteAvailable := strings.TrimSpace(backup.RemoteKey) != ""
+	var deleteErr error
+
+	if localAvailable {
+		if err := s.deleteVolumeBackupArchiveInternal(ctx, backupID); err != nil {
+			deleteErr = errors.Join(deleteErr, fmt.Errorf("failed to delete local volume backup: %w", err))
+		} else {
+			localAvailable = false
 		}
 	}
 
-	// Delete from DB first - if this fails, no changes are made.
-	// If file deletion fails afterward, we just have an orphan file (easier to clean up)
-	// rather than an orphan DB record pointing to a non-existent file.
-	volumeName := backup.VolumeName // Save before deletion
-	if err := s.db.WithContext(ctx).Delete(&backup).Error; err != nil {
-		return err
+	if remoteAvailable {
+		var err error
+		if s.s3Destinations == nil {
+			err = errors.New("S3 destination service is unavailable")
+		} else {
+			var backupCfg s3DestinationConfiguration
+			backupCfg, err = s.s3Destinations.configurationInternal(ctx, backup.S3DestinationID)
+			if err == nil {
+				err = s.s3Destinations.deleteObjectInternal(ctx, backupCfg, backup.RemoteKey)
+			}
+		}
+		if err != nil {
+			deleteErr = errors.Join(deleteErr, fmt.Errorf("failed to delete S3 volume backup: %w", err))
+		} else {
+			remoteAvailable = false
+		}
 	}
 
-	// Now delete the actual file - best effort since DB record is already gone.
-	if err := s.deleteVolumeBackupArchiveInternal(ctx, backupID); err != nil {
-		slog.WarnContext(ctx, "failed to delete backup file (orphan file may remain)", "backup_id", backupID, "error", err.Error())
+	if deleteErr != nil {
+		destination := volumetypes.BackupDestinationLocalS3
+		if localAvailable && !remoteAvailable {
+			destination = volumetypes.BackupDestinationLocal
+		} else if remoteAvailable && !localAvailable {
+			destination = volumetypes.BackupDestinationS3
+		}
+
+		updates := map[string]any{
+			"destination": destination,
+			"error":       deleteErr.Error(),
+		}
+		if !remoteAvailable {
+			updates["remote_key"] = ""
+			updates["s3_destination_id"] = ""
+		}
+		if err := s.db.WithContext(ctx).Model(&backup).Updates(updates).Error; err != nil {
+			deleteErr = errors.Join(deleteErr, fmt.Errorf("failed to update remaining backup locations: %w", err))
+		}
+		return deleteErr
+	}
+
+	volumeName := backup.VolumeName
+	if err := s.db.WithContext(ctx).Delete(&backup).Error; err != nil {
+		return fmt.Errorf("failed to delete volume backup record: %w", err)
 	}
 
 	actingUser := user

@@ -785,6 +785,8 @@
   "volumes_nav_browser": "Browser",
   "volumes_nav_backups": "Backups",
   "volumes_backups_title": "Volume Backups",
+  "volume_backups_remove_selected_title": "Remove {count} Volume Backup(s)",
+  "volume_backups_remove_selected_message": "Are you sure you want to remove the selected volume backup(s)? Arcane will also attempt to remove their local and S3 copies. This action cannot be undone.",
   "volumes_backups_restore": "Restore",
   "volumes_remove_in_use_warning": "Warning: This volume is currently in use by containers. Forcing removal may cause data loss or container issues.",
   "volumes_containers_using_title": "Containers Using This Volume",

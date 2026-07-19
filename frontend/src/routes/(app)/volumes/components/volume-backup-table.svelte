@@ -24,7 +24,12 @@
 	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
+	import {
+		UniversalMobileCard,
+		type BulkAction,
+		type ColumnSpec,
+		type MobileFieldVisibility
+	} from '$lib/components/arcane-table';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import RowActionsMenu from '$lib/components/file-browser/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -40,11 +45,14 @@
 	import VolumeBackupPolicyDialog from './volume-backup-policy-dialog.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
+	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+	import { extractApiErrorMessage } from '$lib/utils/api';
 
 	let { volumeName }: { volumeName: string } = $props();
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
 	const canBackupVolume = $derived(hasPermission('volumes:backup', currentEnvId));
+	const canDeleteBackup = $derived(hasPermission('volumes:delete', currentEnvId));
 
 	let backupsPaginated = $state<VolumeBackupListResponse>({
 		data: [],
@@ -77,6 +85,8 @@
 	});
 
 	let creating = $state(false);
+	let deletingSelected = $state(false);
+	let selectedIds = $state<string[]>([]);
 	let uploadingBackupId = $state<string | null>(null);
 	let restoringFiles = $state(false);
 	let showRestoreFiles = $state(false);
@@ -132,10 +142,32 @@
 						);
 						await loadData(requestOptions);
 					} catch (error) {
-						toast.error(error instanceof Error ? error.message : m.common_delete_failed({ resource: m.file_browser_backup() }));
+						toast.error(extractApiErrorMessage(error));
+						await loadData(requestOptions);
 					}
 				}
 			}
+		});
+	}
+
+	function handleDeleteSelected(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
+			title: m.volume_backups_remove_selected_title({ count: ids.length }),
+			message: m.volume_backups_remove_selected_message({ count: ids.length }),
+			confirmLabel: m.common_remove(),
+			destructive: true,
+			run: (id) => volumeBackupService.deleteBackup(id),
+			messages: {
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_backups_title() }),
+				partial: (success, total, failed) =>
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.volumes_backups_title() }),
+				failure: () => m.common_bulk_remove_failed({ count: ids.length, resource: m.volumes_backups_title() })
+			},
+			setLoading: (loading) => (deletingSelected = loading),
+			onItemFailure: (_id, error) => toast.error(extractApiErrorMessage(error)),
+			onComplete: () => loadData(requestOptions),
+			clearSelection: () => (selectedIds = [])
 		});
 	}
 
@@ -305,6 +337,18 @@
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'remoteKey', label: m.volume_backup_remote_key(), defaultVisible: false }
 	];
+
+	const bulkActions = $derived.by<BulkAction[]>(() => [
+		{
+			id: 'remove',
+			label: m.common_remove_selected_count({ count: selectedIds.length }),
+			action: 'remove',
+			onClick: handleDeleteSelected,
+			loading: deletingSelected,
+			disabled: !canDeleteBackup || deletingSelected || selectedIds.length === 0,
+			icon: TrashIcon
+		}
+	]);
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 </script>
@@ -513,11 +557,13 @@
 	<ArcaneTable
 		persistKey="arcane-volume-backup-table"
 		items={backupsPaginated}
+		bind:selectedIds
 		bind:requestOptions
 		bind:mobileFieldVisibility
 		onRefresh={loadData}
 		{columns}
 		{mobileFields}
+		{bulkActions}
 		rowActions={RowActions}
 		mobileCard={BackupMobileCardSnippet}
 		customToolbarActions={ToolbarActions}
