@@ -22,8 +22,6 @@ jobs:
     name: Go Tests (${{ matrix.module.name }})
     runs-on: depot-ubuntu-latest
     timeout-minutes: 30
-    env:
-      GOMODCACHE: /tmp/arcane-ci-cache/go-tests/${{ matrix.module.name }}/go-mod
     strategy:
       fail-fast: false
       matrix:
@@ -58,14 +56,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
-          cache: false
-
-      - name: Mount Go module cache
-        uses: depot/cache-mount@v1
-        with:
-          path: /tmp/arcane-ci-cache
-          name: getarcaneapp-arcane-main-ci-go-tests-${{ matrix.module.name }}
-          write-lock: /tmp/arcane-ci-cache
+          cache: true
+          cache-dependency-path: ${{ matrix.module.path }}/go.sum
 
       - name: Install GCC
         if: matrix.module.gcc
@@ -74,7 +66,7 @@ jobs:
           sudo apt-get install -y gcc
 
       - name: Download modules
-        run: just deps install go
+        run: just deps install ${{ matrix.module.name }}
 
       - name: Run unit tests
         env:
@@ -98,8 +90,6 @@ jobs:
   go-linter:
     name: Go Linter (${{ matrix.module.name }})
     runs-on: depot-ubuntu-latest
-    env:
-      GOMODCACHE: /tmp/arcane-ci-cache/go-linter/${{ matrix.module.name }}/go-mod
     strategy:
       fail-fast: false
       matrix:
@@ -118,14 +108,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
-          cache: false
-
-      - name: Mount Go module cache
-        uses: depot/cache-mount@v1
-        with:
-          path: /tmp/arcane-ci-cache
-          name: getarcaneapp-arcane-main-ci-go-linter-${{ matrix.module.name }}
-          write-lock: /tmp/arcane-ci-cache
+          cache: true
+          cache-dependency-path: ${{ matrix.module.name }}/go.sum
 
       - name: Run Golangci-lint
         uses: golangci/golangci-lint-action@v9.3.0
@@ -270,7 +254,6 @@ jobs:
     name: CLI E2E Tests (proxy)
     runs-on: depot-ubuntu-24.04-4
     env:
-      GOMODCACHE: /tmp/arcane-ci-cache/cli-e2e/go-mod
       PNPM_STORE_DIR: /tmp/arcane-ci-cache/cli-e2e/pnpm-store
     permissions:
       contents: read
@@ -294,7 +277,8 @@ jobs:
         uses: actions/setup-go@v6
         with:
           go-version-file: cli/go.mod
-          cache: false
+          cache: true
+          cache-dependency-path: cli/go.sum
 
       - name: Mount dependency cache
         uses: depot/cache-mount@v1
