@@ -4,18 +4,17 @@ env:
   GOEXPERIMENT: jsonv2
 
 on:
-  pull_request:
-    branches: [main, "release/**", "breaking/**"]
+  push:
+    branches: [main]
 
 permissions:
   contents: read
   actions: read
   checks: write
-  pull-requests: write
   id-token: write
 
 concurrency:
-  group: "${{ github.workflow }}-${{ github.event.pull_request.number }}"
+  group: "${{ github.workflow }}-${{ github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -119,84 +118,6 @@ jobs:
           working-directory: ${{ matrix.module.name }}
           only-new-issues: false
 
-  deadcode:
-    name: Go Deadcode Analysis
-    if: github.event.pull_request.head.repo.owner.login == 'getarcaneapp'
-    runs-on: depot-ubuntu-latest
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v7.0.0
-
-      - name: Setup Go
-        uses: actions/setup-go@v6
-        with:
-          go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
-
-      - name: Install deadcode
-        run: go install golang.org/x/tools/cmd/deadcode@latest
-
-      - name: Add deadcode problem matcher
-        run: echo "::add-matcher::.github/matchers/deadcode-matcher.json"
-
-      - name: Run deadcode analysis
-        id: deadcode
-        working-directory: backend
-        continue-on-error: true
-        run: |
-          OUTPUT=$(deadcode ./... 2>&1 || true)
-          echo "$OUTPUT"
-          COUNT=$(echo "$OUTPUT" | grep -c "unreachable func" || true)
-          if [ -z "$COUNT" ]; then COUNT=0; fi
-          echo "count=$COUNT" >> $GITHUB_OUTPUT
-          echo "output<<EOF" >> $GITHUB_OUTPUT
-          echo "$OUTPUT" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
-      - name: Find Comment
-        uses: peter-evans/find-comment@v4
-        id: fc
-        with:
-          issue-number: ${{ github.event.pull_request.number }}
-          comment-author: "github-actions[bot]"
-          body-includes: "## 🔍 Deadcode Analysis"
-
-      - name: Delete comment if no deadcode found
-        if: steps.deadcode.outputs.count == '0' && steps.fc.outputs.comment-id != ''
-        uses: actions/github-script@v9
-        with:
-          script: |
-            github.rest.issues.deleteComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              comment_id: ${{ steps.fc.outputs.comment-id }}
-            })
-
-      - name: Comment deadcode results
-        if: steps.deadcode.outputs.count != '0'
-        uses: peter-evans/create-or-update-comment@v5
-        with:
-          comment-id: ${{ steps.fc.outputs.comment-id }}
-          issue-number: ${{ github.event.pull_request.number }}
-          body: |
-            ## 🔍 Deadcode Analysis
-
-            Found **${{ steps.deadcode.outputs.count }}** unreachable functions in the backend.
-
-            <details>
-            <summary>View details</summary>
-
-            ```
-            ${{ steps.deadcode.outputs.output }}
-            ```
-
-            Only remove deadcode that you know is 100% no longer used.
-
-            </details>
-
-            > Analysis from commit ${{ github.sha }}
-          edit-mode: replace
-
   type-check:
     name: Type Check
     runs-on: depot-ubuntu-latest
@@ -230,7 +151,6 @@ jobs:
 
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
-    if: ${{ github.head_ref != 'l10n_crowdin' }}
     runs-on: depot-ubuntu-24.04-4
     permissions:
       contents: read
@@ -315,7 +235,6 @@ jobs:
 
   cli-e2e-tests:
     name: CLI E2E Tests (proxy)
-    if: ${{ github.head_ref != 'l10n_crowdin' }}
     runs-on: depot-ubuntu-24.04-4
     permissions:
       contents: read
@@ -356,7 +275,6 @@ jobs:
         env:
           COMPOSE_FILE: setup/compose-proxy.yaml
           BASE_URL: http://localhost:3002
-          E2E_ADMIN_STATIC_API_KEY: ${{ secrets.E2E_ADMIN_STATIC_API_KEY }}
           PLAYWRIGHT_JUNIT_OUTPUT_FILE: test-results/playwright-cli.xml
 
       - name: Upload Playwright HTML report
