@@ -204,7 +204,7 @@
   "common_token_placeholder": "Dein Zugriffstoken",
   "common_keep_placeholder": "Leer lassen, um den aktuellen Wert beizubehalten",
   "common_toggle_theme": "Theme umschalten",
-  "common_unpin_sidebar": "Seitenleiste abheften",
+  "common_unpin_sidebar": "Seitenleiste lösen",
   "common_pin_sidebar": "Seitenleiste anheften",
   "log_auto_scroll_tooltip": "Hält die Ansicht auf die neuesten Protokollzeilen fixiert, während neue Einträge eintreffen.",
   "log_auto_start_tooltip": "Startet automatisch das Streaming von Protokollen, wenn Sie dieses Panel öffnen.",
