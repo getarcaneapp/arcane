@@ -581,7 +581,7 @@
 			<Alert.Root class="py-2 [&>svg]:top-2">
 				<InfoIcon class="size-4" />
 				<Alert.Description class="text-xs">
-					{m.volumes_backup_safety_info()}
+					{m.volume_backup_restore_files_lifecycle_info()}
 				</Alert.Description>
 			</Alert.Root>
 

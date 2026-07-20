@@ -1702,7 +1702,7 @@ func (s *VolumeService) DeleteBackup(ctx context.Context, backupID string, user 
 	return nil
 }
 
-func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID string, user models.User) error {
+func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID string, user models.User) (err error) {
 	slog.DebugContext(ctx, "volume service: restore backup", "volume", volumeName, "backup_id", backupID, "user", user.ID)
 	var backup models.VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
@@ -1714,18 +1714,11 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		return fmt.Errorf("backup does not belong to volume %s", volumeName)
 	}
 
-	// Check if volume is in use by running containers
-	inUse, containerIDs, err := s.GetVolumeUsage(ctx, volumeName)
-	if err != nil {
-		slog.WarnContext(ctx, "could not check volume usage", "volume", volumeName, "error", err.Error())
-	} else if inUse {
-		return fmt.Errorf("volume is in use by %d container(s): restoring while containers are running may cause data corruption. Stop the containers first or use selective file restore", len(containerIDs))
-	}
-
 	localAvailable, err := s.volumeBackupArchiveAvailableInternal(ctx, backupID)
 	if err != nil {
 		return err
 	}
+	var remoteArchive io.ReadCloser
 	if !localAvailable && backup.RemoteKey != "" {
 		if s.s3Destinations == nil {
 			return errors.New("the local backup archive is missing and its S3 destination is not configured")
@@ -1734,25 +1727,41 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		if cfgErr != nil {
 			return errors.New("the local backup archive is missing and its S3 destination is not configured")
 		}
-		archive, err := s.s3Destinations.getObjectInternal(ctx, backupCfg, backup.RemoteKey)
+		remoteArchive, err = s.s3Destinations.getObjectInternal(ctx, backupCfg, backup.RemoteKey)
 		if err != nil {
 			return fmt.Errorf("failed to download volume backup from S3: %w", err)
 		}
-		defer func() { _ = archive.Close() }()
-		return s.UploadAndRestore(ctx, volumeName, archive, backup.ID+".tar.gz", user)
+		defer func() { _ = remoteArchive.Close() }()
 	}
 	if !localAvailable {
-		return errors.New("the local backup archive is missing")
-	}
-
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
-	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
+		if remoteArchive == nil {
+			return errors.New("the local backup archive is missing")
+		}
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
+	}
+	stoppedContainers, stopErr := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+	containersStopped := len(stoppedContainers) > 0
+	defer func() {
+		if containersStopped {
+			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+			err = errors.Join(err, restartErr)
+		}
+	}()
+	if stopErr != nil {
+		return stopErr
+	}
+
+	if remoteArchive != nil {
+		return s.UploadAndRestore(ctx, volumeName, remoteArchive, backup.ID+".tar.gz", user)
+	}
+
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
+	if err != nil {
+		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
 
 	filename, err := s.backupArchiveFilenameInternal(backupID)
@@ -1809,6 +1818,15 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 
 	if waitBody.StatusCode != 0 {
 		return fmt.Errorf("restore container exited with code %d (volume may be partially wiped)", waitBody.StatusCode)
+	}
+
+	if containersStopped {
+		var restartErr error
+		stoppedContainers, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+		containersStopped = len(stoppedContainers) > 0
+		if restartErr != nil {
+			return restartErr
+		}
 	}
 
 	metadata := models.JSON{
@@ -2006,7 +2024,7 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 	return files, nil
 }
 
-func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, paths []string, user models.User) error {
+func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, backupID string, paths []string, user models.User) (err error) {
 	slog.DebugContext(ctx, "volume service: restore backup files", "volume", volumeName, "backup_id", backupID, "paths_count", len(paths), "user", user.ID)
 	if len(paths) == 0 {
 		return errors.New("no paths provided")
@@ -2049,15 +2067,84 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
 		return fmt.Errorf("failed to read staged volume backup archive: %w", err)
 	}
+	selectedArchive, err := os.CreateTemp("", "arcane-volume-selected-restore-*.tar")
+	if err != nil {
+		return fmt.Errorf("failed to stage selected volume backup files: %w", err)
+	}
+	defer func() {
+		_ = selectedArchive.Close()
+		_ = os.Remove(selectedArchive.Name())
+	}()
+
 	gzr, err := gzip.NewReader(tmpFile)
 	if err != nil {
 		return fmt.Errorf("invalid volume backup archive: %w", err)
 	}
-	if _, err := tar.NewReader(gzr).Next(); err != nil {
+	tr := tar.NewReader(gzr)
+	tw := tar.NewWriter(selectedArchive)
+	remaining := make(map[string]struct{}, len(cleanedPaths))
+	for _, cleaned := range cleanedPaths {
+		remaining[cleaned] = struct{}{}
+	}
+	for {
+		header, readErr := tr.Next()
+		if errors.Is(readErr, io.EOF) {
+			break
+		}
+		if readErr != nil {
+			_ = tw.Close()
+			_ = gzr.Close()
+			return fmt.Errorf("invalid volume backup archive: %w", readErr)
+		}
+		cleaned, cleanErr := s.sanitizeBackupPathInternal(header.Name)
+		if cleanErr != nil {
+			continue
+		}
+		if _, selected := remaining[cleaned]; !selected {
+			continue
+		}
+		header.Name = cleaned
+		if err := tw.WriteHeader(header); err != nil {
+			_ = tw.Close()
+			_ = gzr.Close()
+			return fmt.Errorf("failed to stage selected volume backup files: %w", err)
+		}
+		if _, err := io.Copy(tw, tr); err != nil {
+			_ = tw.Close()
+			_ = gzr.Close()
+			return fmt.Errorf("failed to stage selected volume backup files: %w", err)
+		}
+		delete(remaining, cleaned)
+	}
+	if err := tw.Close(); err != nil {
 		_ = gzr.Close()
+		return fmt.Errorf("failed to stage selected volume backup files: %w", err)
+	}
+	if err := gzr.Close(); err != nil {
 		return fmt.Errorf("invalid volume backup archive: %w", err)
 	}
-	_ = gzr.Close()
+	if len(remaining) > 0 {
+		return errors.New("one or more selected files are missing from the volume backup")
+	}
+	if _, err := selectedArchive.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to read selected volume backup files: %w", err)
+	}
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return err
+	}
+	stoppedContainers, stopErr := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+	containersStopped := len(stoppedContainers) > 0
+	defer func() {
+		if containersStopped {
+			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+			err = errors.Join(err, restartErr)
+		}
+	}()
+	if stopErr != nil {
+		return stopErr
+	}
 
 	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
 	if err != nil {
@@ -2065,37 +2152,24 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	}
 	slog.DebugContext(ctx, "created pre-restore backup", "volume", volumeName, "pre_backup_id", preBackup.ID)
 
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return err
-	}
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
 	if err != nil {
 		return err
 	}
 	defer cleanup()
-	restoreDir := fmt.Sprintf("/tmp/arcane_restore_%d", time.Now().UnixNano())
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", restoreDir}); err != nil {
-		return fmt.Errorf("failed to prepare selective restore: %w", err)
-	}
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to read staged volume backup archive: %w", err)
-	}
 	if _, err := dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
-		DestinationPath: restoreDir,
-		Content:         tmpFile,
+		DestinationPath: "/volume",
+		Content:         selectedArchive,
 	}); err != nil {
-		return fmt.Errorf("failed to extract volume backup archive: %w", err)
+		return fmt.Errorf("failed to restore selected volume backup files: %w", err)
 	}
-	for _, cleaned := range cleanedPaths {
-		source := path.Join(restoreDir, cleaned)
-		destination := path.Join("/volume", cleaned)
-		command := fmt.Sprintf(
-			"set -e; if [ ! -e %s ] && [ ! -L %s ]; then exit 3; fi; mkdir -p %s; rm -rf -- %s; cp -a -- %s %s",
-			strconv.Quote(source), strconv.Quote(source), strconv.Quote(path.Dir(destination)), strconv.Quote(destination), strconv.Quote(source), strconv.Quote(destination),
-		)
-		if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", command}); err != nil {
-			return fmt.Errorf("failed to restore %s: %w", cleaned, err)
+
+	if containersStopped {
+		var restartErr error
+		stoppedContainers, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+		containersStopped = len(stoppedContainers) > 0
+		if restartErr != nil {
+			return restartErr
 		}
 	}
 
@@ -2146,7 +2220,7 @@ func (s *VolumeService) DownloadBackup(ctx context.Context, backupID string, use
 	return reader, size, nil
 }
 
-func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.Reader, filename string, user models.User) error {
+func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string, archive io.Reader, filename string, user models.User) (err error) {
 	slog.DebugContext(ctx, "volume service: upload and restore", "volume", volumeName, "filename", filename, "user", user.ID)
 
 	tmpFile, err := os.CreateTemp("", "arcane-restore-*.tar.gz")
@@ -2173,14 +2247,25 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	}
 	_ = gzr.Close()
 
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
-	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
-	}
-
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
+	}
+	stoppedContainers, stopErr := s.stopRunningContainersForBackupInternal(ctx, dockerClient, volumeName, user)
+	containersStopped := len(stoppedContainers) > 0
+	defer func() {
+		if containersStopped {
+			_, restartErr := s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+			err = errors.Join(err, restartErr)
+		}
+	}()
+	if stopErr != nil {
+		return stopErr
+	}
+
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
+	if err != nil {
+		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
@@ -2209,14 +2294,6 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
 	}
 
-	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
-	if err != nil {
-		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
-	}
-	if strings.TrimSpace(stderr) != "" {
-		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
-	}
-
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
 	if err != nil {
 		return fmt.Errorf("failed to clear volume before restore: %w", err)
@@ -2232,6 +2309,15 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
+	}
+
+	if containersStopped {
+		var restartErr error
+		stoppedContainers, restartErr = s.startContainersAfterBackupInternal(context.WithoutCancel(ctx), dockerClient, stoppedContainers, user)
+		containersStopped = len(stoppedContainers) > 0
+		if restartErr != nil {
+			return restartErr
+		}
 	}
 
 	metadata := models.JSON{
