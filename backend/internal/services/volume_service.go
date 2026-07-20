@@ -35,6 +35,7 @@ type VolumeService struct {
 	db               *database.DB
 	dockerService    *DockerClientService
 	eventService     *EventService
+	activityService  *ActivityService
 	settingsService  *SettingsService
 	containerService *ContainerService
 	imageService     *ImageService
@@ -81,7 +82,7 @@ type backupStorageMountInternal struct {
 	requiresEnsure bool
 }
 
-func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, s3Destinations *S3DestinationService, backupVolumeName, encryptionKey string) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, activityService *ActivityService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, s3Destinations *S3DestinationService, backupVolumeName, encryptionKey string) *VolumeService {
 	slog.Debug("volume service: new")
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
@@ -90,6 +91,7 @@ func NewVolumeService(db *database.DB, dockerService *DockerClientService, event
 		db:               db,
 		dockerService:    dockerService,
 		eventService:     eventService,
+		activityService:  activityService,
 		settingsService:  settingsService,
 		containerService: containerService,
 		imageService:     imageService,

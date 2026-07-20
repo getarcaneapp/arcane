@@ -1,27 +1,32 @@
 import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { BackupEntry, UpdateVolumeBackupPolicy, VolumeBackupDestination, VolumeBackupPolicy } from '$lib/types/shared';
+import type {
+	BackupEntry,
+	UpdateVolumeBackupPolicy,
+	VolumeBackupDestination,
+	VolumeBackupPolicyCollection
+} from '$lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
 import { transformPaginationParams } from '$lib/utils/tables';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 
 class VolumeBackupService extends BaseAPIService {
-	async getPolicy(volumeName: string): Promise<VolumeBackupPolicy> {
+	async getPolicies(volumeName: string): Promise<VolumeBackupPolicyCollection> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		return this.handleResponse(this.api.get(`/environments/${envId}/volumes/${volumeName}/backup-policy`));
 	}
 
-	async updatePolicy(volumeName: string, policy: UpdateVolumeBackupPolicy): Promise<VolumeBackupPolicy> {
+	async updatePolicies(volumeName: string, policies: UpdateVolumeBackupPolicy[]): Promise<VolumeBackupPolicyCollection> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, policy));
+		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, { policies }));
 	}
 
-	async createBackup(volumeName: string, destination?: VolumeBackupDestination): Promise<BackupEntry> {
+	async createBackup(volumeName: string, destination?: VolumeBackupDestination, policyId?: string): Promise<BackupEntry> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
 		const res = await this.api.post(
 			`/environments/${envId}/volumes/${volumeName}/backups`,
-			destination ? { destination } : undefined
+			destination || policyId ? { destination, policyId } : undefined
 		);
 		return res.data.data;
 	}
@@ -66,9 +71,9 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.delete(`/environments/${envId}/volumes/backups/${backupId}`));
 	}
 
-	async uploadBackup(backupId: string): Promise<BackupEntry> {
+	async uploadBackup(backupId: string, s3DestinationId: string): Promise<BackupEntry> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/${backupId}/upload`));
+		return this.handleResponse(this.api.post(`/environments/${envId}/volumes/backups/${backupId}/upload`, { s3DestinationId }));
 	}
 }
 

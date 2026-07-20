@@ -121,18 +121,19 @@ func TestVolumeHandler_UpdateBackupPolicy_SyncsS3BeforeRemoteUpdate(t *testing.T
 			_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
 		case "/api/environments/0/volumes/app-data/backup-policy":
 			require.Equal(t, http.MethodPut, r.Method)
-			var policy volumetypes.UpdateBackupPolicy
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&policy))
+			var request volumetypes.UpdateBackupPolicies
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&request))
+			require.Len(t, request.Policies, 2)
+			policy := request.Policies[0]
 			require.True(t, policy.S3Enabled)
 			require.True(t, policy.StopContainers)
 			require.Equal(t, "s3-1", policy.S3DestinationID)
-			require.NoError(t, json.NewEncoder(w).Encode(base.ApiResponse[volumetypes.BackupPolicy]{
+			require.NoError(t, json.NewEncoder(w).Encode(base.ApiResponse[volumetypes.BackupPolicyCollection]{
 				Success: true,
-				Data: volumetypes.BackupPolicy{
-					VolumeName:      "app-data",
-					S3Enabled:       true,
-					S3DestinationID: "s3-1",
-				},
+				Data: volumetypes.BackupPolicyCollection{Policies: []volumetypes.BackupPolicy{
+					{VolumeName: "app-data", S3Enabled: true, S3DestinationID: "s3-1"},
+					{VolumeName: "app-data", LocalEnabled: true},
+				}},
 			}))
 		default:
 			http.NotFound(w, r)
@@ -144,21 +145,45 @@ func TestVolumeHandler_UpdateBackupPolicy_SyncsS3BeforeRemoteUpdate(t *testing.T
 	output, err := handler.UpdateBackupPolicy(context.Background(), &UpdateVolumeBackupPolicyInput{
 		EnvironmentID: "env-remote",
 		VolumeName:    "app-data",
-		Body: volumetypes.UpdateBackupPolicy{
+		Body: volumetypes.UpdateBackupPolicies{Policies: []volumetypes.UpdateBackupPolicy{{
 			Schedule:        "0 0 2 * * *",
 			RetentionCount:  7,
 			StopContainers:  true,
 			LocalEnabled:    true,
 			S3Enabled:       true,
 			S3DestinationID: "s3-1",
-		},
+		}, {Schedule: "0 0 14 * * *", RetentionCount: 2, LocalEnabled: true}}},
 	})
 	require.NoError(t, err)
 	require.Equal(t, []string{
 		"/api/s3-destinations/sync",
 		"/api/environments/0/volumes/app-data/backup-policy",
 	}, requestPaths)
-	require.Equal(t, "s3-1", output.Body.Data.S3DestinationID)
+	require.Equal(t, "s3-1", output.Body.Data.Policies[0].S3DestinationID)
+}
+
+func TestVolumeHandler_UpdateBackupPolicyCreatesActivity(t *testing.T) {
+	db := setupActivityHandlerTestDBInternal(t)
+	require.NoError(t, db.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
+	activityService := services.NewActivityService(db)
+	volumeService := services.NewVolumeService(db, nil, nil, activityService, nil, nil, nil, nil, "", "test-encryption-key")
+	handler := &VolumeHandler{volumeService: volumeService, activityService: activityService}
+
+	output, err := handler.UpdateBackupPolicy(context.Background(), &UpdateVolumeBackupPolicyInput{
+		EnvironmentID: "0",
+		VolumeName:    "app-data",
+		Body: volumetypes.UpdateBackupPolicies{Policies: []volumetypes.UpdateBackupPolicy{
+			{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true},
+			{Enabled: true, Schedule: "0 0 14 * * *", RetentionCount: 2, LocalEnabled: true},
+		}},
+	})
+	require.NoError(t, err)
+	require.Len(t, output.Body.Data.Policies, 2)
+
+	var activity models.Activity
+	require.NoError(t, db.Where("resource_type = ?", "volume_backup_policy").First(&activity).Error)
+	require.Equal(t, models.ActivityStatusSuccess, activity.Status)
+	require.Equal(t, "update_volume_backup_policy", activity.Metadata["action"])
 }
 
 func TestSettingsHandler_GetPublicSettings_RemoteSuccess(t *testing.T) {

@@ -33,7 +33,7 @@ func (s *volumeBackupPolicySchedulerInternal) HasJob(name string) bool {
 	return ok
 }
 
-func TestVolumeBackupPolicy_UpdateRegistersAndRemovesJob(t *testing.T) {
+func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing.T) {
 	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-schedule?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
@@ -42,43 +42,82 @@ func TestVolumeBackupPolicy_UpdateRegistersAndRemovesJob(t *testing.T) {
 	service := &VolumeService{db: db}
 	service.SetScheduler(context.Background(), scheduler)
 
-	policy, err := service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{
-		Enabled:        true,
-		Schedule:       "0 */15 * * * *",
-		RetentionCount: 5,
-		StopContainers: true,
-		LocalEnabled:   true,
+	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{
+		{Enabled: true, Schedule: "0 */15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
+		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 30, LocalEnabled: true},
 	})
 	require.NoError(t, err)
-	require.True(t, policy.Enabled)
-	require.Equal(t, "0 */15 * * * *", policy.Schedule)
-	require.True(t, policy.StopContainers)
-	require.Len(t, scheduler.jobs, 1)
+	require.Len(t, collection.Policies, 2)
+	require.Equal(t, 5, collection.Policies[0].RetentionCount)
+	require.True(t, collection.Policies[0].StopContainers)
+	require.Equal(t, 30, collection.Policies[1].RetentionCount)
+	require.Len(t, scheduler.jobs, 2)
 
-	policy, err = service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{
-		Enabled:        false,
-		Schedule:       policy.Schedule,
-		RetentionCount: policy.RetentionCount,
-		StopContainers: policy.StopContainers,
-		LocalEnabled:   true,
-	})
+	firstID := collection.Policies[0].ID
+	collection, err = service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
+		ID: firstID, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
+	}})
 	require.NoError(t, err)
-	require.False(t, policy.Enabled)
+	require.Len(t, collection.Policies, 1)
+	require.Equal(t, firstID, collection.Policies[0].ID)
+	require.Equal(t, 9, collection.Policies[0].RetentionCount)
 	require.Empty(t, scheduler.jobs)
+}
+
+func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
+	first := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", LocalEnabled: true}
+	second := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
+	require.NoError(t, gormDB.Create(first).Error)
+	require.NoError(t, gormDB.Create(second).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: first.ID, Status: models.VolumeBackupStatusSucceeded}).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: second.ID, Status: models.VolumeBackupStatusFailed}).Error)
+
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	collection, err := service.GetBackupPolicies(context.Background(), "app-data")
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 2)
+	require.Equal(t, "succeeded", collection.Policies[0].LastRun.Status)
+	require.Equal(t, "failed", collection.Policies[1].LastRun.Status)
 }
 
 func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {
 	service := &VolumeService{}
-	_, err := service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{Schedule: "not a cron"})
+	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
 	require.ErrorContains(t, err, "invalid volume backup schedule")
+}
+
+func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-scheduled-activity?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}, &models.Activity{}))
+	db := &database.DB{DB: gormDB}
+	policy := &models.VolumeBackupPolicy{
+		VolumeName:     "app-data",
+		Enabled:        true,
+		Schedule:       "0 0 2 * * *",
+		RetentionCount: 7,
+		LocalEnabled:   true,
+	}
+	require.NoError(t, gormDB.Create(policy).Error)
+	service := &VolumeService{db: db, activityService: NewActivityService(db)}
+	service.runningBackups.Store(policy.VolumeName, struct{}{})
+	defer service.runningBackups.Delete(policy.VolumeName)
+
+	service.buildVolumeBackupJobInternal(policy.ID, policy.Schedule).Run(context.Background())
+
+	var activity models.Activity
+	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&activity).Error)
+	require.Equal(t, models.ActivityStatusFailed, activity.Status)
+	require.Equal(t, "scheduled_volume_backup", activity.Metadata["action"])
+	require.Equal(t, policy.Schedule, activity.Metadata["schedule"])
 }
 
 func TestVolumeBackupPolicy_UpdateRejectsMissingDestination(t *testing.T) {
 	service := &VolumeService{}
-	_, err := service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{
-		Schedule:       "0 0 2 * * *",
-		RetentionCount: 7,
-	})
+	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
 	require.ErrorContains(t, err, "select at least one volume backup destination")
 }
 
@@ -106,13 +145,15 @@ func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
 		db:             db,
 		s3Destinations: NewS3DestinationService(db),
 	}
-	policy, err := service.UpdateBackupPolicy(context.Background(), "app-data", volumetypes.UpdateBackupPolicy{
+	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
 		Schedule:        "0 0 2 * * *",
 		RetentionCount:  7,
 		S3Enabled:       true,
 		S3DestinationID: destination.ID,
-	})
+	}})
 	require.NoError(t, err)
+	require.Len(t, collection.Policies, 1)
+	policy := collection.Policies[0]
 	require.False(t, policy.LocalEnabled)
 	require.True(t, policy.S3Enabled)
 	require.True(t, policy.S3Available)
@@ -135,6 +176,7 @@ func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
 		models.User{},
 		models.VolumeBackupTriggerManual,
 		volumetypes.BackupDestination("invalid"),
+		"",
 	)
 	require.EqualError(t, err, "invalid volume backup destination")
 }

@@ -10,6 +10,11 @@ const (
 
 type CreateBackupRequest struct {
 	Destination BackupDestination `json:"destination,omitempty" doc:"Optional destination override for this manual backup"`
+	PolicyID    string            `json:"policyId,omitempty" doc:"Optional backup policy whose settings should be used"`
+}
+
+type UploadBackupRequest struct {
+	S3DestinationID string `json:"s3DestinationId" doc:"S3 destination for the uploaded backup"`
 }
 
 type BackupEntry struct {
@@ -24,10 +29,12 @@ type BackupEntry struct {
 	RemoteSnapshotID  string            `json:"remoteSnapshotId,omitempty" doc:"Snapshot ID in the S3 Rustic repository"`
 	S3DestinationID   string            `json:"s3DestinationId,omitempty" doc:"S3 destination used by the backup"`
 	S3DestinationName string            `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
+	PolicyID          string            `json:"policyId,omitempty" doc:"Backup policy that created the backup"`
 	Error             string            `json:"error,omitempty" doc:"Backup error when the run failed"`
 }
 
 type BackupPolicy struct {
+	ID                string       `json:"id"`
 	VolumeName        string       `json:"volumeName"`
 	Enabled           bool         `json:"enabled"`
 	Schedule          string       `json:"schedule"`
@@ -43,6 +50,7 @@ type BackupPolicy struct {
 }
 
 type UpdateBackupPolicy struct {
+	ID              string `json:"id,omitempty"`
 	Enabled         bool   `json:"enabled"`
 	Schedule        string `json:"schedule"`
 	RetentionCount  int    `json:"retentionCount"`
@@ -50,4 +58,13 @@ type UpdateBackupPolicy struct {
 	LocalEnabled    bool   `json:"localEnabled"`
 	S3Enabled       bool   `json:"s3Enabled"`
 	S3DestinationID string `json:"s3DestinationId,omitempty"`
+}
+
+type BackupPolicyCollection struct {
+	Policies    []BackupPolicy `json:"policies"`
+	S3Available bool           `json:"s3Available"`
+}
+
+type UpdateBackupPolicies struct {
+	Policies []UpdateBackupPolicy `json:"policies"`
 }

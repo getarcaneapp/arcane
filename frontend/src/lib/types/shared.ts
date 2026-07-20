@@ -125,10 +125,12 @@ export interface BackupEntry {
 	remoteSnapshotId?: string;
 	s3DestinationId?: string;
 	s3DestinationName?: string;
+	policyId?: string;
 	error?: string;
 }
 
 export interface VolumeBackupPolicy {
+	id: string;
 	volumeName: string;
 	enabled: boolean;
 	schedule: string;
@@ -145,8 +147,13 @@ export interface VolumeBackupPolicy {
 
 export type UpdateVolumeBackupPolicy = Pick<
 	VolumeBackupPolicy,
-	'enabled' | 'schedule' | 'retentionCount' | 'stopContainers' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
+	'id' | 'enabled' | 'schedule' | 'retentionCount' | 'stopContainers' | 'localEnabled' | 's3Enabled' | 's3DestinationId'
 >;
+
+export interface VolumeBackupPolicyCollection {
+	policies: VolumeBackupPolicy[];
+	s3Available: boolean;
+}
 
 // --- Customize search ---
 

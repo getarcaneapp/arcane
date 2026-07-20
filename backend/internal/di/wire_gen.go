@@ -51,7 +51,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	containerService := services.NewContainerService(ctx, db, eventService, dockerClientService, imageService, settingsService, projectService)
 	buildWorkspaceService := services.NewBuildWorkspaceService(settingsService)
 	s3DestinationService := services.NewS3DestinationService(db)
-	volumeService := provideVolumeServiceInternal(db, dockerClientService, eventService, settingsService, containerService, imageService, s3DestinationService, cfg)
+	volumeService := provideVolumeServiceInternal(db, dockerClientService, eventService, activityService, settingsService, containerService, imageService, s3DestinationService, cfg)
 	networkService := services.NewNetworkService(db, dockerClientService, eventService)
 	portService := services.NewPortService(dockerClientService)
 	swarmService := services.NewSwarmService(dockerClientService, settingsService, kvService, containerRegistryService, environmentService)

@@ -16,7 +16,8 @@
 		FileTextIcon,
 		AlertIcon,
 		UploadIcon,
-		ArrowDownIcon
+		ArrowDownIcon,
+		EditIcon
 	} from '$lib/icons';
 	import { ArcaneButton, arcaneButtonVariants } from '$lib/components/arcane-button';
 	import * as ButtonGroup from '$lib/components/ui/button-group';
@@ -64,20 +65,9 @@
 		}
 	});
 	let backupWarnings = $state<string[]>([]);
-	let backupPolicy = $state<VolumeBackupPolicy>({
-		volumeName: '',
-		enabled: false,
-		schedule: '0 0 2 * * *',
-		retentionCount: 7,
-		stopContainers: false,
-		localEnabled: true,
-		s3Enabled: false,
-		s3DestinationId: '',
-		s3DestinationName: '',
-		s3Available: false,
-		s3Bucket: ''
-	});
+	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
 	let showBackupPolicy = $state(false);
+	let editingBackupPolicyId = $state<string | undefined>();
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },
@@ -113,10 +103,10 @@
 		}
 	}
 
-	async function handleCreate(destination?: VolumeBackupDestination) {
+	async function handleCreate(destination?: VolumeBackupDestination, policyId?: string) {
 		creating = true;
 		try {
-			const result = await volumeBackupService.createBackup(volumeName, destination);
+			const result = await volumeBackupService.createBackup(volumeName, destination, policyId);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
 		} catch (error) {
@@ -171,10 +161,10 @@
 		});
 	}
 
-	async function handleUpload(backup: BackupEntry) {
+	async function handleUpload(backup: BackupEntry, s3DestinationId: string) {
 		uploadingBackupId = backup.id;
 		try {
-			const result = await volumeBackupService.uploadBackup(backup.id);
+			const result = await volumeBackupService.uploadBackup(backup.id, s3DestinationId);
 			toast.success(m.backups_upload_s3_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
 		} catch (error) {
@@ -310,13 +300,19 @@
 		return name && backup.destination !== 'local' ? `${label} · ${name}` : label;
 	}
 
-	const configuredS3DestinationName = $derived(
-		backupPolicy.s3DestinationName || backupPolicy.s3Bucket || backupPolicy.s3DestinationId
-	);
+	const s3Policies = $derived.by(() => {
+		const destinations = new Map<string, VolumeBackupPolicy>();
+		for (const policy of backupPolicies) {
+			if (policy.s3Enabled && policy.s3DestinationId && !destinations.has(policy.s3DestinationId)) {
+				destinations.set(policy.s3DestinationId, policy);
+			}
+		}
+		return [...destinations.values()];
+	});
 
 	onMount(async () => {
-		const [policy] = await Promise.all([volumeBackupService.getPolicy(volumeName), loadData(requestOptions)]);
-		backupPolicy = policy;
+		const [collection] = await Promise.all([volumeBackupService.getPolicies(volumeName), loadData(requestOptions)]);
+		backupPolicies = collection.policies;
 	});
 
 	const columns = [
@@ -408,14 +404,16 @@
 				{m.volume_restore_files()}
 			</DropdownMenu.Item>
 		{/if}
-		{#if canBackupVolume && backupPolicy.s3Enabled && backupPolicy.s3DestinationId}
-			<DropdownMenu.Item
-				disabled={item.status !== 'succeeded' || Boolean(item.remoteSnapshotId) || uploadingBackupId === item.id}
-				onclick={() => handleUpload(item)}
-			>
-				<UploadIcon class="size-4" />
-				{m.backups_upload_s3()}
-			</DropdownMenu.Item>
+		{#if canBackupVolume && s3Policies.length}
+			{#each s3Policies as policy (policy.s3DestinationId)}
+				<DropdownMenu.Item
+					disabled={item.status !== 'succeeded' || Boolean(item.remoteSnapshotId) || uploadingBackupId === item.id}
+					onclick={() => handleUpload(item, policy.s3DestinationId)}
+				>
+					<UploadIcon class="size-4" />
+					{m.backups_upload_s3()} · {policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+				</DropdownMenu.Item>
+			{/each}
 		{/if}
 		<IfPermitted perm="volumes:delete">
 			<DropdownMenu.Separator />
@@ -429,53 +427,58 @@
 
 {#snippet ToolbarActions()}
 	{#if canBackupVolume}
-		<ArcaneButton
-			action="base"
-			customLabel={m.volume_backup_policy_configure()}
-			onclick={() => (showBackupPolicy = true)}
-			size="sm"
-			icon={ClockIcon}
-		/>
-		<ButtonGroup.Root>
+		<div class="flex items-center gap-2">
 			<ArcaneButton
 				action="create"
-				customLabel={m.volumes_backup_create()}
-				loading={creating}
-				disabled={creating}
-				onclick={() => handleCreate()}
+				customLabel={m.volume_backup_add_schedule()}
+				onclick={() => {
+					editingBackupPolicyId = undefined;
+					showBackupPolicy = true;
+				}}
 				size="sm"
 				icon={AddIcon}
 			/>
-			<DropdownMenu.Root>
-				<DropdownMenu.Trigger
-					class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
-					aria-label={m.common_open_menu()}
+			<ButtonGroup.Root>
+				<ArcaneButton
+					action="create"
+					customLabel={m.volumes_backup_create()}
+					loading={creating}
 					disabled={creating}
-				>
-					<ArrowDownIcon class="size-4" />
-				</DropdownMenu.Trigger>
-				<DropdownMenu.Content align="end" class="w-64">
-					<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
-					<DropdownMenu.Item onclick={() => handleCreate('local')}>
-						{m.volume_backup_destination_local()}
-					</DropdownMenu.Item>
-					{#if backupPolicy.s3Enabled && backupPolicy.s3DestinationId}
-						<DropdownMenu.Item onclick={() => handleCreate('local_s3')}>
-							<div class="flex flex-col gap-0.5">
-								<span>{m.volume_backup_destination_local_s3()}</span>
-								<span class="text-xs text-muted-foreground">{configuredS3DestinationName}</span>
-							</div>
+					onclick={() => handleCreate()}
+					size="sm"
+					icon={AddIcon}
+				/>
+				<DropdownMenu.Root>
+					<DropdownMenu.Trigger
+						class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), 'size-8 rounded-md')}
+						aria-label={m.common_open_menu()}
+						disabled={creating}
+					>
+						<ArrowDownIcon class="size-4" />
+					</DropdownMenu.Trigger>
+					<DropdownMenu.Content align="end" class="w-64">
+						<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
+						<DropdownMenu.Item onclick={() => handleCreate('local')}>
+							{m.volume_backup_destination_local()}
 						</DropdownMenu.Item>
-						<DropdownMenu.Item onclick={() => handleCreate('s3')}>
-							<div class="flex flex-col gap-0.5">
-								<span>{m.volume_backup_destination_s3()}</span>
-								<span class="text-xs text-muted-foreground">{configuredS3DestinationName}</span>
-							</div>
-						</DropdownMenu.Item>
-					{/if}
-				</DropdownMenu.Content>
-			</DropdownMenu.Root>
-		</ButtonGroup.Root>
+						{#each backupPolicies as policy (policy.id)}
+							<DropdownMenu.Item onclick={() => handleCreate(undefined, policy.id)}>
+								<div class="flex flex-col gap-0.5">
+									<span>{policy.schedule}</span>
+									<span class="text-xs text-muted-foreground"
+										>{policy.s3Enabled
+											? policy.localEnabled
+												? m.backups_destination_local_s3()
+												: m.backups_destination_s3()
+											: m.backups_destination_local()}</span
+									>
+								</div>
+							</DropdownMenu.Item>
+						{/each}
+					</DropdownMenu.Content>
+				</DropdownMenu.Root>
+			</ButtonGroup.Root>
+		</div>
 	{/if}
 {/snippet}
 
@@ -533,18 +536,59 @@
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
 	</div>
-	<div class="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-		<Badge variant={backupPolicy.enabled ? 'green' : 'gray'}>
-			{backupPolicy.enabled ? m.common_enabled() : m.common_disabled()}
-		</Badge>
-		{#if backupPolicy.enabled}<code>{backupPolicy.schedule}</code>{/if}
-		<Badge variant="blue">
-			{backupPolicy.s3Enabled
-				? backupPolicy.localEnabled
-					? m.backups_destination_local_s3()
-					: m.backups_destination_s3()
-				: m.backups_destination_local()}
-		</Badge>
+	<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
+		{#each backupPolicies as policy (policy.id)}
+			<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
+				<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
+				<code class="truncate">{policy.schedule}</code>
+				<div class="flex items-center gap-1.5 justify-self-end">
+					<Badge variant="blue"
+						>{policy.s3Enabled
+							? policy.localEnabled
+								? m.backups_destination_local_s3()
+								: m.backups_destination_s3()
+							: m.backups_destination_local()}</Badge
+					>
+					{#if canBackupVolume}
+						<ArcaneButton
+							action="edit"
+							size="icon"
+							icon={EditIcon}
+							showLabel={false}
+							customLabel={m.volume_backup_edit_schedule()}
+							onclick={() => {
+								editingBackupPolicyId = policy.id;
+								showBackupPolicy = true;
+							}}
+							class="size-7"
+						/>
+					{/if}
+				</div>
+				<div class="col-span-2 flex min-w-0 items-center gap-1.5">
+					<span
+						>{policy.retentionCount === 0
+							? m.volume_backup_retention_all()
+							: m.volume_backup_retention_summary({ count: policy.retentionCount })}</span
+					>
+					<span>·</span>
+					<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
+					{#if policy.lastRun}
+						<span>·</span>
+						<span class="truncate"
+							>{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span
+						>
+					{/if}
+				</div>
+				{#if policy.s3Enabled && (policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId)}
+					<span
+						class="max-w-28 justify-self-end truncate"
+						title={policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+					>
+						{policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+					</span>
+				{/if}
+			</div>
+		{/each}
 	</div>
 
 	{#if backupWarnings.length > 0}
@@ -650,6 +694,7 @@
 <VolumeBackupPolicyDialog
 	bind:open={showBackupPolicy}
 	{volumeName}
-	policy={backupPolicy}
-	onSaved={(policy) => (backupPolicy = policy)}
+	policies={backupPolicies}
+	policyId={editingBackupPolicyId}
+	onSaved={(policies) => (backupPolicies = policies)}
 />

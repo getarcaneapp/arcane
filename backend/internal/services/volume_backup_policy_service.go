@@ -2,12 +2,14 @@ package services
 
 import (
 	"context"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/robfig/cron/v3"
@@ -39,13 +41,41 @@ func (s *VolumeService) backupSchedulerContextInternal(ctx context.Context) cont
 	return context.Background()
 }
 
-func volumeBackupJobNameInternal(policyID string) string {
-	return volumeBackupJobPrefix + policyID
+func volumeBackupJobNameInternal(policyID, schedule string) string {
+	sum := sha256.Sum256([]byte(schedule))
+	return fmt.Sprintf("%s%s:%x", volumeBackupJobPrefix, policyID, sum[:6])
 }
 
-func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volumeName string) (*models.VolumeBackupPolicy, error) {
+func normalizeVolumeBackupScheduleInternal(schedule string) (string, error) {
+	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	fields := strings.Fields(schedule)
+	if len(fields) == 0 {
+		return "", errors.New("volume backup schedule is required")
+	}
+	if len(fields) != 6 {
+		return "", fmt.Errorf("invalid volume backup schedule %q: expected six fields", strings.TrimSpace(schedule))
+	}
+	schedule = strings.Join(fields, " ")
+	if _, err := parser.Parse(schedule); err != nil {
+		return "", fmt.Errorf("invalid volume backup schedule %q: %w", schedule, err)
+	}
+	return schedule, nil
+}
+
+func (s *VolumeService) loadVolumeBackupPoliciesInternal(ctx context.Context, volumeName string) ([]models.VolumeBackupPolicy, error) {
+	var policies []models.VolumeBackupPolicy
+	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at ASC").Find(&policies).Error; err != nil {
+		return nil, fmt.Errorf("failed to load volume backup policies: %w", err)
+	}
+	return policies, nil
+}
+
+func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volumeName, policyID string) (*models.VolumeBackupPolicy, error) {
+	if strings.TrimSpace(policyID) == "" {
+		return nil, nil
+	}
 	var policy models.VolumeBackupPolicy
-	err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).First(&policy).Error
+	err := s.db.WithContext(ctx).Where("id = ? AND volume_name = ?", policyID, volumeName).First(&policy).Error
 	if errors.Is(err, gorm.ErrRecordNotFound) {
 		return nil, nil
 	}
@@ -55,99 +85,130 @@ func (s *VolumeService) loadVolumeBackupPolicyInternal(ctx context.Context, volu
 	return &policy, nil
 }
 
-func (s *VolumeService) GetBackupPolicy(ctx context.Context, volumeName string) (*volumetypes.BackupPolicy, error) {
-	policy, err := s.loadVolumeBackupPolicyInternal(ctx, volumeName)
+func (s *VolumeService) GetBackupPolicies(ctx context.Context, volumeName string) (*volumetypes.BackupPolicyCollection, error) {
+	policies, err := s.loadVolumeBackupPoliciesInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
-	if policy == nil {
-		policy = &models.VolumeBackupPolicy{
-			VolumeName:     volumeName,
-			Schedule:       defaultVolumeBackupSchedule,
-			RetentionCount: 7,
-			LocalEnabled:   true,
-		}
-	}
-	var lastRun *models.VolumeBackup
-	var backup models.VolumeBackup
-	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Order("created_at DESC").First(&backup).Error; err == nil {
-		lastRun = &backup
-	} else if !errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, fmt.Errorf("failed to load latest volume backup: %w", err)
-	}
-	dto := policy.ToDTO(lastRun)
+	result := &volumetypes.BackupPolicyCollection{Policies: make([]volumetypes.BackupPolicy, 0, len(policies))}
+	destinations := make(map[string]models.S3Destination)
 	if s.s3Destinations != nil {
-		destinations, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
-		if listErr == nil && len(destinations) > 0 {
-			dto.S3Available = true
-			for _, destination := range destinations {
-				if destination.ID == policy.S3DestinationID {
-					dto.S3Bucket = destination.Bucket
-					dto.S3DestinationName = destination.Name
-				}
-				if dto.LastRun != nil && dto.LastRun.S3DestinationID == destination.ID {
-					dto.LastRun.S3DestinationName = destination.Name
-				}
+		available, listErr := s.s3Destinations.ListAllS3Destinations(ctx)
+		if listErr == nil {
+			result.S3Available = len(available) > 0
+			for _, destination := range available {
+				destinations[destination.ID] = models.S3Destination{BaseModel: models.BaseModel{ID: destination.ID}, Name: destination.Name, Bucket: destination.Bucket}
 			}
 		}
 	}
-	return &dto, nil
+	for i := range policies {
+		var lastRun *models.VolumeBackup
+		var backup models.VolumeBackup
+		if runErr := s.db.WithContext(ctx).Where("policy_id = ?", policies[i].ID).Order("created_at DESC").First(&backup).Error; runErr == nil {
+			if destination, ok := destinations[backup.S3DestinationID]; ok {
+				backup.S3DestinationName = destination.Name
+			}
+			lastRun = &backup
+		} else if !errors.Is(runErr, gorm.ErrRecordNotFound) {
+			return nil, fmt.Errorf("failed to load latest volume backup: %w", runErr)
+		}
+		dto := policies[i].ToDTO(lastRun)
+		dto.S3Available = result.S3Available
+		if destination, ok := destinations[policies[i].S3DestinationID]; ok {
+			dto.S3Bucket = destination.Bucket
+			dto.S3DestinationName = destination.Name
+		}
+		result.Policies = append(result.Policies, dto)
+	}
+	return result, nil
 }
 
-func (s *VolumeService) UpdateBackupPolicy(ctx context.Context, volumeName string, update volumetypes.UpdateBackupPolicy) (*volumetypes.BackupPolicy, error) {
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
-	update.Schedule = strings.TrimSpace(update.Schedule)
-	if update.Schedule == "" {
-		update.Schedule = defaultVolumeBackupSchedule
-	}
-	if _, err := parser.Parse(update.Schedule); err != nil {
-		return nil, fmt.Errorf("invalid volume backup schedule: %w", err)
-	}
-	if update.RetentionCount < 0 || update.RetentionCount > 3650 {
-		return nil, errors.New("retentionCount must be between 0 and 3650")
-	}
-	if !update.LocalEnabled && !update.S3Enabled {
-		return nil, errors.New("select at least one volume backup destination")
-	}
-	if update.S3Enabled {
-		if s.s3Destinations == nil {
-			return nil, errors.New("S3 backup destinations are unavailable")
+func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName string, updates []volumetypes.UpdateBackupPolicy) (*volumetypes.BackupPolicyCollection, error) {
+	for i := range updates {
+		schedule, err := normalizeVolumeBackupScheduleInternal(updates[i].Schedule)
+		if err != nil {
+			return nil, err
 		}
-		if strings.TrimSpace(update.S3DestinationID) == "" {
-			return nil, errors.New("select an S3 destination for volume backups")
+		updates[i].Schedule = schedule
+		if updates[i].RetentionCount < 0 || updates[i].RetentionCount > 3650 {
+			return nil, errors.New("retentionCount must be between 0 and 3650")
 		}
-		if _, err := s.s3Destinations.configurationInternal(ctx, update.S3DestinationID); err != nil {
-			return nil, errors.New("select a valid S3 destination for volume backups")
+		if !updates[i].LocalEnabled && !updates[i].S3Enabled {
+			return nil, errors.New("select at least one volume backup destination")
 		}
-	} else {
-		update.S3DestinationID = ""
+		if updates[i].S3Enabled {
+			if s.s3Destinations == nil {
+				return nil, errors.New("S3 backup destinations are unavailable")
+			}
+			if strings.TrimSpace(updates[i].S3DestinationID) == "" {
+				return nil, errors.New("select an S3 destination for volume backups")
+			}
+			if _, err := s.s3Destinations.configurationInternal(ctx, updates[i].S3DestinationID); err != nil {
+				return nil, errors.New("select a valid S3 destination for volume backups")
+			}
+		} else {
+			updates[i].S3DestinationID = ""
+		}
 	}
-
-	policy, err := s.loadVolumeBackupPolicyInternal(ctx, volumeName)
+	existing, err := s.loadVolumeBackupPoliciesInternal(ctx, volumeName)
 	if err != nil {
 		return nil, err
 	}
-	if policy == nil {
-		policy = &models.VolumeBackupPolicy{VolumeName: volumeName}
+	byID := make(map[string]models.VolumeBackupPolicy, len(existing))
+	for i := range existing {
+		byID[existing[i].ID] = existing[i]
 	}
-	policy.Enabled = update.Enabled
-	policy.Schedule = update.Schedule
-	policy.RetentionCount = update.RetentionCount
-	policy.StopContainers = update.StopContainers
-	policy.LocalEnabled = update.LocalEnabled
-	policy.S3Enabled = update.S3Enabled
-	policy.S3DestinationID = update.S3DestinationID
-	if err := s.db.WithContext(ctx).Save(policy).Error; err != nil {
-		return nil, fmt.Errorf("failed to save volume backup policy: %w", err)
+	policies := make([]models.VolumeBackupPolicy, 0, len(updates))
+	kept := make(map[string]struct{}, len(updates))
+	for _, update := range updates {
+		policy := models.VolumeBackupPolicy{VolumeName: volumeName}
+		if update.ID != "" {
+			var ok bool
+			policy, ok = byID[update.ID]
+			if !ok {
+				return nil, errors.New("volume backup policy not found")
+			}
+			if _, duplicate := kept[update.ID]; duplicate {
+				return nil, errors.New("duplicate volume backup policy")
+			}
+			kept[update.ID] = struct{}{}
+		}
+		policy.Enabled, policy.Schedule, policy.RetentionCount = update.Enabled, update.Schedule, update.RetentionCount
+		policy.StopContainers, policy.LocalEnabled, policy.S3Enabled = update.StopContainers, update.LocalEnabled, update.S3Enabled
+		policy.S3DestinationID = update.S3DestinationID
+		policies = append(policies, policy)
 	}
-	s.rescheduleVolumeBackupPolicyInternal(ctx, policy)
-	return s.GetBackupPolicy(ctx, volumeName)
+	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for i := range policies {
+			if saveErr := tx.Save(&policies[i]).Error; saveErr != nil {
+				return saveErr
+			}
+		}
+		for i := range existing {
+			if _, ok := kept[existing[i].ID]; !ok {
+				if deleteErr := tx.Delete(&existing[i]).Error; deleteErr != nil {
+					return deleteErr
+				}
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to save volume backup policies: %w", err)
+	}
+	for i := range existing {
+		s.removeVolumeBackupPolicyJobsInternal(ctx, existing[i].ID, existing[i].Schedule)
+	}
+	for i := range policies {
+		s.rescheduleVolumeBackupPolicyInternal(ctx, &policies[i])
+	}
+	return s.GetBackupPolicies(ctx, volumeName)
 }
 
-func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, volumeName string, retentionCount int) error {
+func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, policyID string, retentionCount int) error {
 	var expired []models.VolumeBackup
 	if err := s.db.WithContext(ctx).
-		Where("volume_name = ?", volumeName).
+		Where("policy_id = ?", policyID).
 		Order("created_at DESC").
 		Offset(retentionCount).
 		Find(&expired).Error; err != nil {
@@ -161,37 +222,74 @@ func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, 
 	return nil
 }
 
-func (s *VolumeService) buildVolumeBackupJobInternal(policyID string) *schedulertypes.GenericJob {
+func (s *VolumeService) buildVolumeBackupJobInternal(policyID, schedule string) *schedulertypes.GenericJob {
 	return &schedulertypes.GenericJob{
-		JobName: volumeBackupJobNameInternal(policyID),
+		JobName: volumeBackupJobNameInternal(policyID, schedule),
 		ScheduleFn: func(ctx context.Context) string {
 			var policy models.VolumeBackupPolicy
-			if err := s.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil || strings.TrimSpace(policy.Schedule) == "" {
+			if err := s.db.WithContext(ctx).Where("id = ?", policyID).First(&policy).Error; err != nil {
 				return defaultVolumeBackupSchedule
 			}
 			return policy.Schedule
 		},
 		ShouldRunFn: func(ctx context.Context) bool {
 			var policy models.VolumeBackupPolicy
-			return s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error == nil
+			if s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error != nil {
+				return false
+			}
+			return policy.Schedule == schedule
 		},
 		RunFn: func(ctx context.Context) {
 			var policy models.VolumeBackupPolicy
 			if err := s.db.WithContext(ctx).Where("id = ? AND enabled = ?", policyID, true).First(&policy).Error; err != nil {
 				return
 			}
-			backup, err := s.CreateBackup(ctx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled, "")
+			var backup *models.VolumeBackup
+			_, err := activitylib.RunHandlerActivity(ctx, s.activityService, activitylib.HandlerOptions{
+				EnvironmentID:  "0",
+				Type:           models.ActivityTypeResourceAction,
+				ResourceType:   "volume_backup",
+				ResourceID:     policy.VolumeName,
+				ResourceName:   policy.VolumeName,
+				User:           &systemUser,
+				Step:           "Creating scheduled backup",
+				Message:        "Creating scheduled volume backup",
+				SuccessMessage: "Scheduled volume backup created successfully",
+				Metadata: models.JSON{
+					"action":          "scheduled_volume_backup",
+					"policyId":        policy.ID,
+					"schedule":        schedule,
+					"volumeName":      policy.VolumeName,
+					"retentionCount":  policy.RetentionCount,
+					"stopContainers":  policy.StopContainers,
+					"localEnabled":    policy.LocalEnabled,
+					"s3Enabled":       policy.S3Enabled,
+					"s3DestinationId": policy.S3DestinationID,
+				},
+			}, func(activityCtx context.Context) error {
+				var backupErr error
+				backup, backupErr = s.CreateBackup(activityCtx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled, "", policy.ID)
+				return backupErr
+			})
 			if errors.Is(err, ErrVolumeBackupAlreadyRunning) {
-				slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName)
+				slog.InfoContext(ctx, "Scheduled volume backup skipped; another backup is running", "volume", policy.VolumeName, "schedule", schedule)
 				return
 			}
 			if err != nil {
-				slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
+				slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "schedule", schedule, "error", err)
 				return
 			}
 			slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", backup.ID, "remote_snapshot_id", backup.RemoteSnapshotID)
 		},
 	}
+}
+
+func (s *VolumeService) removeVolumeBackupPolicyJobsInternal(ctx context.Context, policyID, schedule string) {
+	if s.scheduler == nil {
+		return
+	}
+	schedulerCtx := s.backupSchedulerContextInternal(ctx)
+	s.scheduler.RemoveJob(schedulerCtx, volumeBackupJobNameInternal(policyID, schedule))
 }
 
 func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context, policy *models.VolumeBackupPolicy) {
@@ -200,11 +298,11 @@ func (s *VolumeService) rescheduleVolumeBackupPolicyInternal(ctx context.Context
 	}
 	schedulerCtx := s.backupSchedulerContextInternal(ctx)
 	if !policy.Enabled {
-		s.scheduler.RemoveJob(schedulerCtx, volumeBackupJobNameInternal(policy.ID))
+		s.removeVolumeBackupPolicyJobsInternal(schedulerCtx, policy.ID, policy.Schedule)
 		return
 	}
-	if err := s.scheduler.AddJob(schedulerCtx, s.buildVolumeBackupJobInternal(policy.ID)); err != nil {
-		slog.ErrorContext(schedulerCtx, "Failed to register volume backup job", "volume", policy.VolumeName, "error", err)
+	if err := s.scheduler.AddJob(schedulerCtx, s.buildVolumeBackupJobInternal(policy.ID, policy.Schedule)); err != nil {
+		slog.ErrorContext(schedulerCtx, "Failed to register volume backup job", "volume", policy.VolumeName, "schedule", policy.Schedule, "error", err)
 	}
 }
 
@@ -224,14 +322,14 @@ func (s *VolumeService) RegisterBackupJobsOnStartup(ctx context.Context) {
 }
 
 func (s *VolumeService) removeVolumeBackupPolicyInternal(ctx context.Context, volumeName string) {
-	policy, err := s.loadVolumeBackupPolicyInternal(ctx, volumeName)
-	if err != nil || policy == nil {
+	policies, err := s.loadVolumeBackupPoliciesInternal(ctx, volumeName)
+	if err != nil {
 		return
 	}
-	if s.scheduler != nil {
-		s.scheduler.RemoveJob(s.backupSchedulerContextInternal(ctx), volumeBackupJobNameInternal(policy.ID))
+	for i := range policies {
+		s.removeVolumeBackupPolicyJobsInternal(ctx, policies[i].ID, policies[i].Schedule)
 	}
-	if err := s.db.WithContext(ctx).Delete(policy).Error; err != nil {
+	if err := s.db.WithContext(ctx).Where("volume_name = ?", volumeName).Delete(&models.VolumeBackupPolicy{}).Error; err != nil {
 		slog.WarnContext(ctx, "Failed to delete volume backup policy", "volume", volumeName, "error", err)
 	}
 }

@@ -35,6 +35,7 @@ type VolumeBackup struct {
 	RemoteSnapshotID  string                   `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
 	S3DestinationID   string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
 	S3DestinationName string                   `json:"s3DestinationName,omitempty" gorm:"-"`
+	PolicyID          string                   `json:"policyId,omitempty" gorm:"column:policy_id;type:text;index"`
 	Error             string                   `json:"error,omitempty" gorm:"column:error;type:text"`
 	ActivityID        *string                  `json:"activityId,omitempty" gorm:"-"`
 }
@@ -56,6 +57,7 @@ func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 		RemoteSnapshotID:  b.RemoteSnapshotID,
 		S3DestinationID:   b.S3DestinationID,
 		S3DestinationName: b.S3DestinationName,
+		PolicyID:          b.PolicyID,
 		Error:             b.Error,
 	}
 }
@@ -63,7 +65,7 @@ func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 type VolumeBackupPolicy struct {
 	BaseModel
 
-	VolumeName      string `json:"volumeName" gorm:"column:volume_name;not null;uniqueIndex"`
+	VolumeName      string `json:"volumeName" gorm:"column:volume_name;not null;index"`
 	Enabled         bool   `json:"enabled" gorm:"column:enabled;not null;default:false"`
 	Schedule        string `json:"schedule" gorm:"column:schedule;type:text;not null"`
 	RetentionCount  int    `json:"retentionCount" gorm:"column:retention_count;not null;default:7"`
@@ -79,6 +81,7 @@ func (VolumeBackupPolicy) TableName() string {
 
 func (p *VolumeBackupPolicy) ToDTO(lastRun *VolumeBackup) volume.BackupPolicy {
 	dto := volume.BackupPolicy{
+		ID:              p.ID,
 		VolumeName:      p.VolumeName,
 		Enabled:         p.Enabled,
 		Schedule:        p.Schedule,

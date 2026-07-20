@@ -231,7 +231,7 @@ func (s *VolumeService) forgetRusticSnapshotInternal(ctx context.Context, docker
 	return err
 }
 
-func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, destination volumetypes.BackupDestination) (_ *models.VolumeBackup, err error) {
+func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, user models.User, trigger models.VolumeBackupTrigger, destination volumetypes.BackupDestination, policyID string) (_ *models.VolumeBackup, err error) {
 	if _, loaded := s.runningBackups.LoadOrStore(volumeName, struct{}{}); loaded {
 		return nil, ErrVolumeBackupAlreadyRunning
 	}
@@ -244,9 +244,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	}
 	var policy *models.VolumeBackupPolicy
 	if trigger != models.VolumeBackupTriggerSafety {
-		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName)
+		policy, err = s.loadVolumeBackupPolicyInternal(ctx, volumeName, policyID)
 		if err != nil {
 			return nil, err
+		}
+		if policyID != "" && policy == nil {
+			return nil, errors.New("volume backup policy not found")
 		}
 	}
 	localEnabled, s3Enabled, s3DestinationID := true, false, ""
@@ -271,7 +274,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	}
 	backup := &models.VolumeBackup{
 		VolumeName: volumeName, CreatedAt: time.Now(), Status: models.VolumeBackupStatusRunning,
-		Trigger: trigger, Destination: destination, S3DestinationID: s3DestinationID,
+		Trigger: trigger, Destination: destination, S3DestinationID: s3DestinationID, PolicyID: policyID,
 	}
 	backup.ID = fmt.Sprintf("%s-%d-%s", volumeName, time.Now().UnixNano(), uuid.NewString()[:8])
 	if err := s.db.WithContext(ctx).Create(backup).Error; err != nil {
@@ -343,7 +346,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		}
 	}
 	if trigger != models.VolumeBackupTriggerSafety && policy != nil && policy.RetentionCount > 0 {
-		if err := s.applyVolumeBackupRetentionInternal(ctx, volumeName, policy.RetentionCount); err != nil {
+		if err := s.applyVolumeBackupRetentionInternal(ctx, policy.ID, policy.RetentionCount); err != nil {
 			return backup, fmt.Errorf("failed to apply volume backup retention: %w", err)
 		}
 	}
@@ -354,7 +357,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 	return backup, nil
 }
 
-func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*models.VolumeBackup, error) {
+func (s *VolumeService) UploadBackup(ctx context.Context, backupID, s3DestinationID string) (*models.VolumeBackup, error) {
 	var backup models.VolumeBackup
 	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
 		return nil, err
@@ -365,12 +368,14 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*mod
 	if backup.RemoteSnapshotID != "" {
 		return nil, errors.New("volume backup has already been uploaded")
 	}
-	policy, err := s.loadVolumeBackupPolicyInternal(ctx, backup.VolumeName)
-	if err != nil {
-		return nil, err
+	if strings.TrimSpace(s3DestinationID) == "" {
+		return nil, errors.New("select an S3 destination for the upload")
 	}
-	if policy == nil || !policy.S3Enabled || strings.TrimSpace(policy.S3DestinationID) == "" {
-		return nil, errors.New("select an S3 destination in the volume backup configuration first")
+	if s.s3Destinations == nil {
+		return nil, errors.New("S3 backup destinations are unavailable")
+	}
+	if _, err := s.s3Destinations.configurationInternal(ctx, s3DestinationID); err != nil {
+		return nil, errors.New("select a valid S3 destination for the upload")
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -390,7 +395,7 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*mod
 	if err := s.restoreRusticSnapshotInternal(ctx, dockerClient, localRepository, backup.LocalSnapshotID, temporaryVolume, true, "", ""); err != nil {
 		return nil, fmt.Errorf("failed to load local Rustic snapshot for upload: %w", err)
 	}
-	remoteRepository, err := s.remoteRusticRepositoryInternal(ctx, policy.S3DestinationID)
+	remoteRepository, err := s.remoteRusticRepositoryInternal(ctx, s3DestinationID)
 	if err != nil {
 		return nil, err
 	}
@@ -399,7 +404,7 @@ func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*mod
 		return nil, fmt.Errorf("failed to upload Rustic snapshot to S3: %w", err)
 	}
 	backup.RemoteSnapshotID = snapshot.ID
-	backup.S3DestinationID = policy.S3DestinationID
+	backup.S3DestinationID = s3DestinationID
 	backup.Destination = volumetypes.BackupDestinationLocalS3
 	if err := s.db.WithContext(ctx).Save(&backup).Error; err != nil {
 		return nil, fmt.Errorf("failed to save uploaded volume backup: %w", err)
@@ -495,7 +500,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if err != nil {
 		return err
 	}
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal, "")
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
@@ -595,7 +600,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	if err != nil {
 		return err
 	}
-	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal)
+	preBackup, err := s.CreateBackup(ctx, volumeName, user, models.VolumeBackupTriggerSafety, volumetypes.BackupDestinationLocal, "")
 	if err != nil {
 		return fmt.Errorf("failed to create pre-restore backup: %w", err)
 	}
