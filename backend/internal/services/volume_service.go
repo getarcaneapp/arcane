@@ -105,7 +105,10 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	if usageVolumes, duErr := docker.GetVolumeUsageData(ctx, dockerClient); duErr == nil {
+	settings := s.settingsService.GetSettingsConfig()
+	usageCtx, usageCancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer usageCancel()
+	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient); ok {
 		for _, uv := range usageVolumes {
 			if uv.Name == vol.Name && uv.UsageData != nil {
 				vol.UsageData = uv.UsageData
@@ -113,8 +116,6 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 				break
 			}
 		}
-	} else {
-		slog.WarnContext(ctx, "failed to load volume usage data", "volume", vol.Name, "error", duErr.Error())
 	}
 
 	v := volumetypes.NewSummary(vol)
@@ -161,7 +162,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
-	docker.InvalidateVolumeUsageCache()
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
@@ -196,6 +197,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 
 	s.removeHelperEntry(name)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
 
@@ -237,7 +239,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		s.removeHelperEntry(volumeName)
 	}
 
-	docker.InvalidateVolumeUsageCache()
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return &volumetypes.PruneReport{
 		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
@@ -1959,12 +1961,16 @@ type VolumeSizeData struct {
 // This is a slow operation as it calls Docker's DiskUsage API.
 func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
 	slog.DebugContext(ctx, "volume service: get volume sizes")
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	dockerClient, err := s.dockerService.GetClient(apiCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	usageVolumes, err := docker.GetVolumeUsageData(ctx, dockerClient)
+	usageVolumes, err := docker.GetVolumeUsageData(apiCtx, dockerClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}
@@ -1983,7 +1989,6 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 }
 
 func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
-	slog.Debug("volume service: enrich volumes with usage data", "volumes", len(volumes), "usage_volumes", len(usageVolumes))
 	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
 	for _, uv := range usageVolumes {
 		if uv.Name == "" || uv.UsageData == nil {
@@ -2007,7 +2012,6 @@ func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volu
 }
 
 func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
-	slog.DebugContext(ctx, "volume service: build volume container map")
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
@@ -2026,7 +2030,6 @@ func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, doc
 }
 
 func (s *VolumeService) buildVolumePaginationConfigInternal() pagination.Config[volumetypes.Volume] {
-	slog.Debug("volume service: build volume pagination config")
 	return pagination.Config[volumetypes.Volume]{
 		SearchAccessors: []pagination.SearchAccessor[volumetypes.Volume]{
 			func(v volumetypes.Volume) (string, error) { return v.Name, nil },
@@ -2040,7 +2043,6 @@ func (s *VolumeService) buildVolumePaginationConfigInternal() pagination.Config[
 }
 
 func (s *VolumeService) buildVolumeSortBindingsInternal() []pagination.SortBinding[volumetypes.Volume] {
-	slog.Debug("volume service: build volume sort bindings")
 	createdSortFn := s.compareVolumeCreatedInternal
 
 	return []pagination.SortBinding[volumetypes.Volume]{
@@ -2088,7 +2090,6 @@ func (s *VolumeService) buildVolumeSortBindingsInternal() []pagination.SortBindi
 }
 
 func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int {
-	slog.Debug("volume service: compare volume sizes")
 	aSize := a.Size
 	bSize := b.Size
 
@@ -2100,7 +2101,7 @@ func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int 
 	}
 
 	if aSize == bSize {
-		return 0
+		return strings.Compare(a.Name, b.Name)
 	}
 	if aSize < bSize {
 		return -1
@@ -2109,7 +2110,6 @@ func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int 
 }
 
 func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) int {
-	slog.Debug("volume service: compare volume created time")
 	aTime, aOk := s.parseVolumeCreatedAtInternal(a.CreatedAt)
 	bTime, bOk := s.parseVolumeCreatedAtInternal(b.CreatedAt)
 	if aOk && bOk {
@@ -2138,7 +2138,6 @@ func (s *VolumeService) parseVolumeCreatedAtInternal(createdAt string) (time.Tim
 }
 
 func (s *VolumeService) buildVolumeFilterAccessorsInternal() []pagination.FilterAccessor[volumetypes.Volume] {
-	slog.Debug("volume service: build volume filter accessors")
 	return []pagination.FilterAccessor[volumetypes.Volume]{
 		{
 			Key: "inUse",
@@ -2156,7 +2155,6 @@ func (s *VolumeService) buildVolumeFilterAccessorsInternal() []pagination.Filter
 }
 
 func (s *VolumeService) calculateVolumeUsageCountsInternal(items []volumetypes.Volume) volumetypes.UsageCounts {
-	slog.Debug("volume service: calculate volume usage counts", "items", len(items))
 	counts := volumetypes.UsageCounts{
 		Total: len(items),
 	}
@@ -2179,6 +2177,7 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 }
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
+	startedAt := time.Now()
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit, "include_internal", includeInternal)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2225,13 +2224,20 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		volumeContainerMap = make(map[string][]string)
 	}
 
-	// Fetch usage data if sorting by size is requested
+	effectiveParams := params
+	usageCacheSnapshot := "not_requested"
+
+	// Size sorting consumes the current cache snapshot and refreshes it in the
+	// background so this list request never waits for Docker's DiskUsage call.
 	var usageVolumes []volume.Volume
 	if params.Sort == "size" {
-		if uv, err := docker.GetVolumeUsageData(apiCtx, dockerClient); err == nil {
+		if uv, found := docker.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
 			usageVolumes = uv
+			usageCacheSnapshot = "available"
 		} else {
-			slog.WarnContext(ctx, "failed to get volume usage data for sorting", "error", err.Error())
+			usageCacheSnapshot = "missing"
+			effectiveParams.Sort = "name"
+			effectiveParams.Order = pagination.SortAsc
 		}
 	}
 
@@ -2253,9 +2259,27 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	config := s.buildVolumePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := pagination.SearchOrderAndPaginate(items, effectiveParams, config)
 	counts := s.calculateVolumeUsageCountsInternal(items)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, effectiveParams)
+	slog.DebugContext(ctx, "volume service: listed volumes",
+		"docker_host", dockerClient.DaemonHost(),
+		"requested_sort", params.Sort,
+		"requested_order", params.Order,
+		"effective_sort", effectiveParams.Sort,
+		"effective_order", effectiveParams.Order,
+		"usage_cache_snapshot", usageCacheSnapshot,
+		"docker_volumes", len(volResult.volumes),
+		"usage_volumes", len(usageVolumes),
+		"included_volumes", len(items),
+		"matched_volumes", result.TotalCount,
+		"returned_volumes", len(result.Items),
+		"container_volume_count", len(volumeContainerMap),
+		"filter_count", len(params.Filters),
+		"current_page", paginationResp.CurrentPage,
+		"total_pages", paginationResp.TotalPages,
+		"duration", time.Since(startedAt),
+	)
 
 	return result.Items, paginationResp, counts, nil
 }
