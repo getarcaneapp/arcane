@@ -343,7 +343,7 @@
   "resource_container": "contenedor",
   "resource_image": "imagen",
   "resource_template": "plantilla",
-  "welcome_back": "Bienvenida de nuevo",
+  "welcome_back": "Bienvenido de nuevo",
   "auth_login_subtitle": "Inicia sesión para administrar tus contenedores",
   "auth_tagline_line1": "Gestión moderna de Docker,",
   "auth_tagline_line2": "Diseñado para todos.",
