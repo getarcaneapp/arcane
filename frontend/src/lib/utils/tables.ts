@@ -64,7 +64,8 @@ function normalizeSearch(value: unknown): string | undefined {
 
 export function resolveInitialTableRequest(
 	persistKey: string,
-	defaults: SearchPaginationSortRequest
+	defaults: SearchPaginationSortRequest,
+	options: { deferredSortColumns?: readonly string[] } = {}
 ): SearchPaginationSortRequest {
 	const base = cloneRequest(defaults);
 	const fallbackLimit = base.pagination?.limit ?? DEFAULT_LIMIT;
@@ -106,7 +107,7 @@ export function resolveInitialTableRequest(
 		}
 
 		const sort = decodeSort(current.s);
-		if (sort) {
+		if (sort && !options.deferredSortColumns?.includes(sort.column)) {
 			base.sort = sort;
 		}
 	} catch (error) {

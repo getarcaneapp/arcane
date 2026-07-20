@@ -15,6 +15,7 @@
 		type FieldSpec,
 		type GroupedData,
 		type GroupSelectionState,
+		type SortState,
 		encodeHidden,
 		applyHiddenPatch,
 		encodeFilters,
@@ -54,6 +55,8 @@
 		customTableView,
 		customSettings = $bindable<Record<string, unknown>>({}),
 		columnVisibility = $bindable<ColumnVisibilityState>({}),
+		preferencesReady = $bindable(false),
+		hiddenSortFallback,
 		groupedRows = null,
 		// Grouping props
 		groupBy,
@@ -96,6 +99,8 @@
 		>;
 		customSettings?: Record<string, unknown>;
 		columnVisibility?: ColumnVisibilityState;
+		preferencesReady?: boolean;
+		hiddenSortFallback?: SortState;
 		groupedRows?: GroupedData<TData>[] | null;
 		// Grouping props
 		groupBy?: (item: TData) => string;
@@ -156,7 +161,10 @@
 		}
 
 		// Then restore preferences
-		if (!enablePersist) return;
+		if (!enablePersist) {
+			preferencesReady = true;
+			return;
+		}
 		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
 
 		const patchedVisibility = { ...columnVisibility };
@@ -212,10 +220,15 @@
 		const persistedSort = snapshot.sort;
 		const currentSort = requestOptions?.sort;
 		if (persistedSort) {
-			if (currentSort?.column !== persistedSort.column || currentSort?.direction !== persistedSort.direction) {
+			const restoredSort =
+				patchedVisibility[persistedSort.column] === false && hiddenSortFallback ? hiddenSortFallback : persistedSort;
+			if (restoredSort !== persistedSort && prefs) {
+				prefs.current = { ...prefs.current, s: encodeSort(restoredSort) };
+			}
+			if (currentSort?.column !== restoredSort.column || currentSort?.direction !== restoredSort.direction) {
 				requestOptions = {
 					...requestOptions,
-					sort: persistedSort,
+					sort: restoredSort,
 					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
@@ -230,6 +243,8 @@
 		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
 			customSettings = { ...snapshot.customSettings };
 		}
+
+		preferencesReady = true;
 	});
 
 	function updatePagination(patch: Partial<{ page: number; limit: number }>) {
@@ -489,10 +504,28 @@
 			onRefresh(requestOptions);
 		},
 		onColumnVisibilityChange: (updater) => {
-			columnVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
+			const nextVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
+			columnVisibility = nextVisibility;
 			// Persist visibility
 			if (enablePersist && prefs) {
 				prefs.current = { ...prefs.current, v: encodeHidden(columnVisibility) };
+			}
+
+			const activeSort = requestOptions?.sort;
+			if (activeSort && nextVisibility[activeSort.column] === false && hiddenSortFallback) {
+				sorting = [{ id: hiddenSortFallback.column, desc: hiddenSortFallback.direction === 'desc' }];
+				requestOptions = {
+					...requestOptions,
+					sort: hiddenSortFallback,
+					pagination: {
+						page: 1,
+						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
+					}
+				};
+				if (enablePersist && prefs) {
+					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
+				}
+				onRefresh(requestOptions);
 			}
 		},
 		onGlobalFilterChange: (value) => {

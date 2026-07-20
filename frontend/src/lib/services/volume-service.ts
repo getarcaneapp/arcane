@@ -52,9 +52,8 @@ class VolumeService extends BaseAPIService {
 		return res.data.data;
 	}
 
-	async getVolumeSizes(): Promise<VolumeSizeInfo[]> {
-		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.get(`/environments/${envId}/volumes/sizes`);
+	async getVolumeSizes(environmentId: string): Promise<VolumeSizeInfo[]> {
+		const res = await this.api.get(`/environments/${environmentId}/volumes/sizes`);
 		return res.data.data;
 	}
 

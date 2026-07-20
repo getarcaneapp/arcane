@@ -181,7 +181,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Apply(ctx context.Context) 
 		}
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
+	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	slog.InfoContext(ctx, "copied project compose volumes for rename", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
 	return nil
 }
@@ -207,7 +207,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Commit(ctx context.Context)
 		m.removedOld = append(m.removedOld, entry)
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
+	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	slog.InfoContext(ctx, "renamed project compose volumes", "oldProject", m.oldComposeName, "newProject", m.newComposeName, "count", len(m.entries))
 	return nil
 }
@@ -290,7 +290,7 @@ func (m *dockerProjectVolumeRenameMigrationInternal) Rollback(ctx context.Contex
 
 	rollbackErr = errors.Join(rollbackErr, m.rollbackCreatedTargetsPreserving(ctx, dockerClient, preservedTargets))
 	if rollbackErr == nil {
-		dockerutil.InvalidateVolumeUsageCache()
+		dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	}
 	return rollbackErr
 }
@@ -584,7 +584,7 @@ func RemoveSourceVolumes(ctx context.Context, dockerClient *client.Client, volum
 			return NewSourceCleanupError(vol.OldName, err)
 		}
 	}
-	dockerutil.InvalidateVolumeUsageCache()
+	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
 
@@ -594,6 +594,9 @@ func RollbackVolumes(ctx context.Context, dockerClient *client.Client, volumes [
 		if err := RollbackVolume(ctx, dockerClient, vol); err != nil {
 			rollbackErr = errors.Join(rollbackErr, err)
 		}
+	}
+	if len(volumes) > 0 {
+		dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	}
 	return rollbackErr
 }

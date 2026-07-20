@@ -5333,7 +5333,6 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 		}
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
 	return directoryErr
 }
 
@@ -5398,7 +5397,7 @@ func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context
 		return err
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
+	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
 }
 
