@@ -2,8 +2,6 @@ package services
 
 import (
 	"context"
-	"net/http"
-	"net/http/httptest"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -168,51 +166,4 @@ func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
 	require.Len(t, backups, 1)
 	require.Equal(t, volumetypes.BackupDestinationLocalS3, backups[0].Destination)
 	require.Equal(t, "Offsite", backups[0].S3DestinationName)
-}
-
-func TestVolumeBackup_DeleteKeepsRemoteBackupWhenS3DeleteFails(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodDelete, r.Method)
-		http.Error(w, "delete denied", http.StatusForbidden)
-	}))
-	defer server.Close()
-
-	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-delete-s3-failure?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}, &models.S3Destination{}))
-	db := &database.DB{DB: gormDB}
-	crypto.InitEncryption(&crypto.Config{
-		EncryptionKey: "test-encryption-key-for-delete-backup-32bytes",
-		Environment:   "test",
-	})
-	encryptedSecret, err := crypto.Encrypt("secret-key")
-	require.NoError(t, err)
-	destination := &models.S3Destination{
-		Name:            "Offsite",
-		Endpoint:        server.URL,
-		Bucket:          "volume-backups",
-		AccessKeyID:     "access-key",
-		SecretAccessKey: encryptedSecret,
-		ForcePathStyle:  true,
-	}
-	require.NoError(t, gormDB.Create(destination).Error)
-	backup := &models.VolumeBackup{
-		VolumeName:      "app-data",
-		Status:          models.VolumeBackupStatusSucceeded,
-		Trigger:         models.VolumeBackupTriggerManual,
-		Destination:     volumetypes.BackupDestinationS3,
-		RemoteKey:       "app-data/backup.tar.gz",
-		S3DestinationID: destination.ID,
-	}
-	require.NoError(t, gormDB.Create(backup).Error)
-
-	service := &VolumeService{db: db, s3Destinations: NewS3DestinationService(db)}
-	err = service.DeleteBackup(context.Background(), backup.ID, nil)
-	require.ErrorContains(t, err, "failed to delete S3 volume backup")
-
-	var persisted models.VolumeBackup
-	require.NoError(t, gormDB.First(&persisted, "id = ?", backup.ID).Error)
-	require.Equal(t, volumetypes.BackupDestinationS3, persisted.Destination)
-	require.Equal(t, backup.RemoteKey, persisted.RemoteKey)
-	require.Contains(t, persisted.Error, "failed to delete S3 volume backup")
 }

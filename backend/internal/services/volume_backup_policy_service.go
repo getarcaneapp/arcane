@@ -5,12 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"path"
-	"strconv"
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/robfig/cron/v3"
@@ -147,109 +144,6 @@ func (s *VolumeService) UpdateBackupPolicy(ctx context.Context, volumeName strin
 	return s.GetBackupPolicy(ctx, volumeName)
 }
 
-func (s *VolumeService) uploadVolumeBackupToS3Internal(ctx context.Context, backup *models.VolumeBackup) error {
-	if s.s3Destinations == nil {
-		return errors.New("S3 backup service is unavailable")
-	}
-	backupCfg, err := s.s3Destinations.configurationInternal(ctx, backup.S3DestinationID)
-	if err != nil {
-		return errors.New("the selected S3 backup destination is not configured")
-	}
-	filename, err := s.backupArchiveFilenameInternal(backup.ID)
-	if err != nil {
-		return err
-	}
-	dockerClient, err := s.dockerService.GetClient(ctx)
-	if err != nil {
-		return err
-	}
-	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, dockerClient, "/volume", true)
-	if err != nil {
-		return err
-	}
-	reader, size, err := s.downloadFileFromContainerInternal(ctx, dockerClient, containerID, path.Join("/volume", filename), cleanup)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = reader.Close() }()
-	remoteKey := path.Join(backupCfg.S3Prefix, "volumes", projects.SanitizeProjectName(backup.VolumeName), filename)
-	if err := s.s3Destinations.putObjectInternal(ctx, backupCfg, reader, remoteKey, size); err != nil {
-		return err
-	}
-	backup.RemoteKey = remoteKey
-	backup.S3DestinationName = backupCfg.S3DestinationName
-	return nil
-}
-
-func (s *VolumeService) UploadBackup(ctx context.Context, backupID string) (*models.VolumeBackup, error) {
-	var backup models.VolumeBackup
-	if err := s.db.WithContext(ctx).Where("id = ?", backupID).First(&backup).Error; err != nil {
-		return nil, err
-	}
-	if backup.Status != models.VolumeBackupStatusSucceeded {
-		return nil, errors.New("only successful volume backups can be uploaded")
-	}
-	if strings.TrimSpace(backup.RemoteKey) != "" {
-		return nil, errors.New("volume backup has already been uploaded")
-	}
-	localAvailable, err := s.volumeBackupArchiveAvailableInternal(ctx, backup.ID)
-	if err != nil {
-		return nil, err
-	}
-	if !localAvailable {
-		return nil, errors.New("the local volume backup archive is missing")
-	}
-	policy, err := s.loadVolumeBackupPolicyInternal(ctx, backup.VolumeName)
-	if err != nil {
-		return nil, err
-	}
-	if policy == nil || !policy.S3Enabled || strings.TrimSpace(policy.S3DestinationID) == "" {
-		return nil, errors.New("select an S3 destination in the volume backup configuration first")
-	}
-	backup.S3DestinationID = policy.S3DestinationID
-	backup.Destination = volumetypes.BackupDestinationLocalS3
-	if err := s.uploadVolumeBackupToS3Internal(ctx, &backup); err != nil {
-		return nil, err
-	}
-	if err := s.db.WithContext(ctx).Save(&backup).Error; err != nil {
-		return nil, fmt.Errorf("failed to save uploaded volume backup: %w", err)
-	}
-	return &backup, nil
-}
-
-func (s *VolumeService) volumeBackupArchiveAvailableInternal(ctx context.Context, backupID string) (bool, error) {
-	filename, err := s.backupArchiveFilenameInternal(backupID)
-	if err != nil {
-		return false, err
-	}
-	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", true)
-	if err != nil {
-		return false, err
-	}
-	defer cleanup()
-	stdout, _, err := s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "if test -f " + strconv.Quote(path.Join("/volume", filename)) + "; then printf yes; else printf no; fi"})
-	if err != nil {
-		return false, err
-	}
-	return strings.TrimSpace(stdout) == "yes", nil
-}
-
-func (s *VolumeService) deleteVolumeBackupArchiveInternal(ctx context.Context, backupID string) error {
-	filename, err := s.backupArchiveFilenameInternal(backupID)
-	if err != nil {
-		return err
-	}
-	containerID, cleanup, err := s.createBackupTempContainerInternal(ctx, nil, "/volume", false)
-	if err != nil {
-		return err
-	}
-	defer cleanup()
-	if _, _, err := s.execInContainerInternal(ctx, containerID, []string{"rm", "-f", path.Join("/volume", filename)}); err != nil {
-		return err
-	}
-	return nil
-}
-
 func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, volumeName string, retentionCount int) error {
 	var expired []models.VolumeBackup
 	if err := s.db.WithContext(ctx).
@@ -295,7 +189,7 @@ func (s *VolumeService) buildVolumeBackupJobInternal(policyID string) *scheduler
 				slog.ErrorContext(ctx, "Scheduled volume backup failed", "volume", policy.VolumeName, "error", err)
 				return
 			}
-			slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", backup.ID, "remote_key", backup.RemoteKey)
+			slog.InfoContext(ctx, "Scheduled volume backup completed", "volume", policy.VolumeName, "backup_id", backup.ID, "remote_snapshot_id", backup.RemoteSnapshotID)
 		},
 	}
 }

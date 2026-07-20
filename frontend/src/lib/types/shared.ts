@@ -121,7 +121,8 @@ export interface BackupEntry {
 	status: 'running' | 'succeeded' | 'failed';
 	trigger: 'manual' | 'scheduled' | 'safety';
 	destination: VolumeBackupDestination;
-	remoteKey?: string;
+	localSnapshotId?: string;
+	remoteSnapshotId?: string;
 	s3DestinationId?: string;
 	s3DestinationName?: string;
 	error?: string;

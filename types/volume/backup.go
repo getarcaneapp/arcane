@@ -15,12 +15,13 @@ type CreateBackupRequest struct {
 type BackupEntry struct {
 	ID                string            `json:"id" doc:"Unique identifier of the backup"`
 	VolumeName        string            `json:"volumeName" doc:"Name of the volume"`
-	Size              int64             `json:"size" doc:"Size of the backup archive in bytes"`
+	Size              int64             `json:"size" doc:"Total size of files in the Rustic snapshot"`
 	CreatedAt         string            `json:"createdAt" doc:"When the backup was created"`
 	Status            string            `json:"status" doc:"Backup result status"`
 	Trigger           string            `json:"trigger" doc:"How the backup was started"`
 	Destination       BackupDestination `json:"destination" doc:"Requested backup storage target"`
-	RemoteKey         string            `json:"remoteKey,omitempty" doc:"S3 object key when uploaded"`
+	LocalSnapshotID   string            `json:"localSnapshotId,omitempty" doc:"Snapshot ID in the local Rustic repository"`
+	RemoteSnapshotID  string            `json:"remoteSnapshotId,omitempty" doc:"Snapshot ID in the S3 Rustic repository"`
 	S3DestinationID   string            `json:"s3DestinationId,omitempty" doc:"S3 destination used by the backup"`
 	S3DestinationName string            `json:"s3DestinationName,omitempty" doc:"Name of the S3 destination used by the backup"`
 	Error             string            `json:"error,omitempty" doc:"Backup error when the run failed"`

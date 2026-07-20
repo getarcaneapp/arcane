@@ -670,7 +670,6 @@ var eventDefinitions = map[models.EventType]struct {
 	models.EventTypeVolumeBackupDelete:       {"Volume backup deleted: %s", "A backup was deleted for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupRestore:      {"Volume backup restored: %s", "A backup was restored for volume '%s'", models.EventSeverityWarning},
 	models.EventTypeVolumeBackupRestoreFiles: {"Volume backup files restored: %s", "Selected files were restored for volume '%s'", models.EventSeverityWarning},
-	models.EventTypeVolumeBackupDownload:     {"Volume backup downloaded: %s", "A backup was downloaded for volume '%s'", models.EventSeverityInfo},
 
 	models.EventTypeNetworkCreate: {"Network created: %s", "Network '%s' has been created", models.EventSeveritySuccess},
 	models.EventTypeNetworkDelete: {"Network deleted: %s", "Network '%s' has been deleted", models.EventSeverityWarning},

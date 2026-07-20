@@ -100,7 +100,7 @@ func provideGitRepositoryServiceInternal(db *database.DB, cfg *config.Config, ev
 
 // provideVolumeServiceInternal supplies cfg.BackupVolumeName (bare string).
 func provideVolumeServiceInternal(db *database.DB, docker *services.DockerClientService, event *services.EventService, settings *services.SettingsService, container *services.ContainerService, image *services.ImageService, s3Destination *services.S3DestinationService, cfg *config.Config) *services.VolumeService {
-	return services.NewVolumeService(db, docker, event, settings, container, image, s3Destination, cfg.BackupVolumeName)
+	return services.NewVolumeService(db, docker, event, settings, container, image, s3Destination, cfg.BackupVolumeName, cfg.EncryptionKey)
 }
 
 // provideAuthServiceInternal supplies cfg.JWTSecret (bare string).

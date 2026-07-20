@@ -326,7 +326,13 @@
 		{ accessorKey: 'destination', title: m.volume_backup_destination_label(), sortable: true, cell: DestinationCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
-		{ accessorKey: 'remoteKey', title: m.volume_backup_remote_key(), sortable: true, cell: RemoteKeyCell, hidden: true },
+		{
+			accessorKey: 'remoteSnapshotId',
+			title: m.volume_backup_remote_snapshot(),
+			sortable: true,
+			cell: RemoteSnapshotCell,
+			hidden: true
+		},
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell, hidden: true }
 	] satisfies ColumnSpec<BackupEntry>[];
 
@@ -335,7 +341,7 @@
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
 		{ id: 'destination', label: m.volume_backup_destination_label(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
-		{ id: 'remoteKey', label: m.volume_backup_remote_key(), defaultVisible: false }
+		{ id: 'remoteSnapshotId', label: m.volume_backup_remote_snapshot(), defaultVisible: false }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -382,8 +388,8 @@
 	{formatDateTimeShort(item.createdAt)}
 {/snippet}
 
-{#snippet RemoteKeyCell({ item }: { item: BackupEntry })}
-	<code class="text-xs">{item.remoteKey || m.volume_backup_not_uploaded()}</code>
+{#snippet RemoteSnapshotCell({ item }: { item: BackupEntry })}
+	<code class="text-xs">{item.remoteSnapshotId || m.volume_backup_not_uploaded()}</code>
 {/snippet}
 
 {#snippet ErrorCell({ item }: { item: BackupEntry })}
@@ -402,13 +408,9 @@
 				{m.volume_restore_files()}
 			</DropdownMenu.Item>
 		{/if}
-		<DropdownMenu.Item onclick={() => volumeBackupService.downloadBackup(item.id)}>
-			<DownloadIcon class="size-4" />
-			{m.templates_download()}
-		</DropdownMenu.Item>
 		{#if canBackupVolume && backupPolicy.s3Enabled && backupPolicy.s3DestinationId}
 			<DropdownMenu.Item
-				disabled={item.status !== 'succeeded' || Boolean(item.remoteKey) || uploadingBackupId === item.id}
+				disabled={item.status !== 'succeeded' || Boolean(item.remoteSnapshotId) || uploadingBackupId === item.id}
 				onclick={() => handleUpload(item)}
 			>
 				<UploadIcon class="size-4" />
@@ -511,11 +513,11 @@
 				show: mobileFieldVisibility['destination'] ?? true
 			},
 			{
-				label: m.volume_backup_remote_key(),
-				getValue: (item) => item.remoteKey || m.volume_backup_not_uploaded(),
+				label: m.volume_backup_remote_snapshot(),
+				getValue: (item) => item.remoteSnapshotId || m.volume_backup_not_uploaded(),
 				icon: DownloadIcon,
 				iconVariant: 'gray',
-				show: mobileFieldVisibility['remoteKey'] ?? false
+				show: mobileFieldVisibility['remoteSnapshotId'] ?? false
 			}
 		]}
 		footer={{

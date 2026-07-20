@@ -366,51 +366,6 @@ func TestBackupMountWarningFromArcaneMountsInternal(t *testing.T) {
 	}
 }
 
-func TestBackupArchiveFilenameInternal(t *testing.T) {
-	svc := &VolumeService{}
-
-	tests := []struct {
-		name     string
-		backupID string
-		want     string
-		wantErr  bool
-	}{
-		{
-			name:     "valid backup id",
-			backupID: "volume-123-abc",
-			want:     "volume-123-abc.tar.gz",
-		},
-		{
-			name:     "trims surrounding whitespace",
-			backupID: "  volume-123-abc  ",
-			want:     "volume-123-abc.tar.gz",
-		},
-		{
-			name:     "rejects traversal attempts",
-			backupID: "../../bin/busybox",
-			wantErr:  true,
-		},
-		{
-			name:     "rejects path separators",
-			backupID: "nested/path",
-			wantErr:  true,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := svc.backupArchiveFilenameInternal(tt.backupID)
-			if tt.wantErr {
-				require.Error(t, err)
-				return
-			}
-
-			require.NoError(t, err)
-			require.Equal(t, tt.want, got)
-		})
-	}
-}
-
 func TestCollectStaleHelperIDsInternal(t *testing.T) {
 	now := time.Now()
 	s := &VolumeService{

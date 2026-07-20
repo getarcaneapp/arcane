@@ -31,7 +31,8 @@ type VolumeBackup struct {
 	Status            VolumeBackupStatus       `json:"status" gorm:"column:status;type:text;not null;default:succeeded"`
 	Trigger           VolumeBackupTrigger      `json:"trigger" gorm:"column:trigger;type:text;not null;default:manual"`
 	Destination       volume.BackupDestination `json:"destination" gorm:"column:destination;type:text;not null;default:local"`
-	RemoteKey         string                   `json:"remoteKey,omitempty" gorm:"column:remote_key;type:text"`
+	LocalSnapshotID   string                   `json:"localSnapshotId,omitempty" gorm:"column:local_snapshot_id;type:text"`
+	RemoteSnapshotID  string                   `json:"remoteSnapshotId,omitempty" gorm:"column:remote_snapshot_id;type:text"`
 	S3DestinationID   string                   `json:"s3DestinationId,omitempty" gorm:"column:s3_destination_id;type:text;index"`
 	S3DestinationName string                   `json:"s3DestinationName,omitempty" gorm:"-"`
 	Error             string                   `json:"error,omitempty" gorm:"column:error;type:text"`
@@ -51,7 +52,8 @@ func (b *VolumeBackup) ToDTO() volume.BackupEntry {
 		Status:            string(b.Status),
 		Trigger:           string(b.Trigger),
 		Destination:       b.Destination,
-		RemoteKey:         b.RemoteKey,
+		LocalSnapshotID:   b.LocalSnapshotID,
+		RemoteSnapshotID:  b.RemoteSnapshotID,
 		S3DestinationID:   b.S3DestinationID,
 		S3DestinationName: b.S3DestinationName,
 		Error:             b.Error,
