@@ -433,6 +433,89 @@ func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvid
 	assert.Equal(t, originalToken, updated.Token)
 }
 
+func TestContainerRegistryService_UpdateRegistry_RejectsTargetChangeWhenStoredTokenWouldBeReused(t *testing.T) {
+	tests := []struct {
+		name  string
+		token *string
+	}{
+		{name: "omitted token"},
+		{name: "empty token", token: new("")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, db := setupImageServiceAuthTest(t)
+			svc := NewContainerRegistryService(db, nil, nil)
+
+			registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+				URL:      "https://registry.example.com",
+				Username: "my-user",
+				Token:    "my-token",
+			})
+			require.NoError(t, err)
+			originalToken := registry.Token
+
+			_, err = svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+				URL:   new("https://attacker.example.com"),
+				Token: tt.token,
+			})
+			require.Error(t, err)
+
+			var validationErr *models.ValidationError
+			require.ErrorAs(t, err, &validationErr)
+			assert.Equal(t, "token", validationErr.Field)
+
+			stored, loadErr := svc.GetRegistryByID(context.Background(), registry.ID)
+			require.NoError(t, loadErr)
+			assert.Equal(t, "https://registry.example.com", stored.URL)
+			assert.Equal(t, originalToken, stored.Token)
+		})
+	}
+}
+
+func TestContainerRegistryService_UpdateRegistry_AllowsPathChangeOnSameHostWithoutToken(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil, nil)
+
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com/one",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+	originalToken := registry.Token
+
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL: new("REGISTRY.EXAMPLE.COM/two"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "REGISTRY.EXAMPLE.COM/two", updated.URL)
+	assert.Equal(t, originalToken, updated.Token)
+}
+
+func TestContainerRegistryService_UpdateRegistry_AllowsTargetChangeWhenTokenIsResupplied(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil, nil)
+
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL:   new("https://registry.example.net"),
+		Token: new("new-token"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://registry.example.net", updated.URL)
+
+	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
+	require.NoError(t, decryptErr)
+	assert.Equal(t, "new-token", decryptedToken)
+}
+
 func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	svc := NewContainerRegistryService(db, nil, nil)

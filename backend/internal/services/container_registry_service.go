@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
@@ -188,15 +189,28 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		return nil, err
 	}
 
+	if err := s.applyRegistryTypeUpdateInternal(registry, req.RegistryType); err != nil {
+		return nil, err
+	}
+
+	if registry.RegistryType != registryTypeECR {
+		if err := validation.ValidateCredentialTargetChange(
+			"registry URL",
+			registry.URL,
+			req.URL,
+			normalizeRegistryServerAddressInternal,
+			map[string]bool{"token": registry.Token != ""},
+			map[string]bool{"token": req.Token != nil && *req.Token != ""},
+		); err != nil {
+			return nil, err
+		}
+	}
+
 	// Update common fields
 	utils.UpdateIfChanged(&registry.URL, req.URL)
 	utils.UpdateIfChanged(&registry.Description, req.Description)
 	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
 	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
-
-	if err := s.applyRegistryTypeUpdateInternal(registry, req.RegistryType); err != nil {
-		return nil, err
-	}
 
 	if registry.RegistryType == registryTypeECR {
 		if err := s.updateECRRegistryFieldsInternal(registry, req); err != nil {

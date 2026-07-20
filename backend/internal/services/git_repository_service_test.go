@@ -78,7 +78,7 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 	var validationErr *models.ValidationError
 	require.ErrorAs(t, err, &validationErr)
 	assert.Equal(t, "token", validationErr.Field)
-	assert.Contains(t, validationErr.Message, "re-supplying or clearing the token")
+	assert.Contains(t, validationErr.Message, "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)
 	require.NoError(t, loadErr)
@@ -103,7 +103,7 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 	var validationErr *models.ValidationError
 	require.ErrorAs(t, err, &validationErr)
 	assert.Equal(t, "sshKey", validationErr.Field)
-	assert.Contains(t, validationErr.Message, "re-supplying or clearing the SSH key")
+	assert.Contains(t, validationErr.Message, "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)
 	require.NoError(t, loadErr)
@@ -130,8 +130,8 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenAn
 	var apiErr *models.APIError
 	require.ErrorAs(t, err, &apiErr)
 	assert.Equal(t, models.APIErrorCodeValidationError, apiErr.Code)
-	assert.Contains(t, apiErr.Message, "token and SSH key")
-	assert.Equal(t, map[string]any{"fields": []string{"token", "sshKey"}}, apiErr.Details)
+	assert.Contains(t, apiErr.Message, "repository URL")
+	assert.Equal(t, map[string]any{"fields": []string{"sshKey", "token"}}, apiErr.Details)
 }
 
 func TestGitRepositoryService_UpdateRepository_AllowsURLChangeWhenTokenIsResupplied(t *testing.T) {

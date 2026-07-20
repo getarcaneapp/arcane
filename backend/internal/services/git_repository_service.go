@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
 	"go.getarcane.app/sys/crypto"
@@ -170,7 +171,20 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		return nil, err
 	}
 
-	if err := validateGitRepositoryCredentialChangeInternal(repository, req); err != nil {
+	if err := validation.ValidateCredentialTargetChange(
+		"repository URL",
+		repository.URL,
+		req.URL,
+		nil,
+		map[string]bool{
+			"sshKey": repository.SSHKey != "",
+			"token":  repository.Token != "",
+		},
+		map[string]bool{
+			"sshKey": req.SSHKey != nil,
+			"token":  req.Token != nil,
+		},
+	); err != nil {
 		return nil, err
 	}
 
@@ -242,39 +256,6 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	}
 
 	return s.GetRepositoryByID(ctx, id)
-}
-
-func validateGitRepositoryCredentialChangeInternal(repository *models.GitRepository, req models.UpdateGitRepositoryRequest) error {
-	if repository == nil || req.URL == nil || *req.URL == repository.URL {
-		return nil
-	}
-
-	missingFields := make([]string, 0, 2)
-	missingCredentialLabels := make([]string, 0, 2)
-
-	if repository.Token != "" && req.Token == nil {
-		missingFields = append(missingFields, "token")
-		missingCredentialLabels = append(missingCredentialLabels, "token")
-	}
-
-	if repository.SSHKey != "" && req.SSHKey == nil {
-		missingFields = append(missingFields, "sshKey")
-		missingCredentialLabels = append(missingCredentialLabels, "SSH key")
-	}
-
-	if len(missingFields) == 0 {
-		return nil
-	}
-
-	if len(missingFields) == 1 {
-		field := missingFields[0]
-		return &models.ValidationError{Field: field, Message: "Changing repository URL requires re-supplying or clearing the " + missingCredentialLabels[0]}
-	}
-
-	return models.NewValidationError(
-		"Changing repository URL requires re-supplying or clearing all stored credentials: "+strings.Join(missingCredentialLabels, " and "),
-		map[string]any{"fields": missingFields},
-	)
 }
 
 func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor models.User) error {
