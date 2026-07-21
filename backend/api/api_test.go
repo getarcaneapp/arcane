@@ -11,7 +11,6 @@ import (
 	humav2 "github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	basetypes "github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
@@ -103,6 +102,13 @@ func TestCustomSchemaNamer_DisambiguatesGenericDomainTypes(t *testing.T) {
 	if mixedPackages != "BasePaginatedWithCountsSummaryImageSummary" {
 		t.Fatalf("expected only the Arcane argument to be qualified in place, got %q", mixedPackages)
 	}
+}
+
+func TestHandlerDeps_ZeroValue(t *testing.T) {
+	var deps HandlerDeps
+
+	require.Nil(t, deps.Auth)
+	require.Nil(t, deps.Docker)
 }
 
 func TestSetupAPIForSpec_DefaultSecurity(t *testing.T) {
@@ -280,7 +286,7 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 		router.Group("/api"),
 		handlers.NewActivityAppContext(context.Background()),
 		&config.Config{AgentMode: true},
-		&di.Services{},
+		HandlerDeps{},
 	)
 	require.Nil(t, agentAPI.OpenAPI().Paths["/variables"])
 	materialized := agentAPI.OpenAPI().Paths["/environments/{id}/templates/variables"]

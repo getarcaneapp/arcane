@@ -2,7 +2,6 @@
 	import { onMount, onDestroy } from 'svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { createBackendLogsWebSocket, ReconnectingWebSocket } from '$lib/utils/ws';
-	import { diagnosticsService } from '$lib/services/diagnostics-service';
 	import type { LogEntry } from '$lib/types/diagnostics';
 	import { cn } from '$lib/utils';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
@@ -60,20 +59,13 @@
 		return formatTime(t) || t;
 	}
 
-	function logKey(entry: LogEntry): string {
-		return `${entry.time}-${entry.level}-${entry.message}-${attrsText(entry.attrs)}`;
-	}
-
 	onMount(async () => {
-		try {
-			const recent = await diagnosticsService.getRecentLogs();
-			logs = recent.slice(-maxLines);
-		} catch {
-			// initial backlog is best-effort; the live stream fills in
-		}
 		ws = createBackendLogsWebSocket({
 			onMessage: (e) => push(e),
-			onOpen: () => (connected = true),
+			onOpen: () => {
+				logs = [];
+				connected = true;
+			},
 			onClose: () => (connected = false)
 		});
 		await ws.connect();
@@ -135,7 +127,7 @@
 		{#if filtered.length === 0}
 			<div class="py-6 text-center text-muted-foreground">{m.diagnostics_logs_empty()}</div>
 		{:else}
-			{#each filtered as entry (logKey(entry))}
+			{#each filtered as entry (entry)}
 				<div class="flex gap-2 rounded px-1 py-0.5 hover:bg-foreground/5">
 					<span class="shrink-0 text-muted-foreground tabular-nums">{fmtTime(entry.time)}</span>
 					<span class={cn('w-12 shrink-0 font-semibold uppercase', levelClass(entry.level))}>{entry.level}</span>
