@@ -509,12 +509,7 @@ gomod action="tidy" target="all":
 _generate-proto:
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
 
-# Generate Wire dependency injection code.
-[group('codegen')]
-_generate-wire:
-    cd backend && go tool wire ./...
-
-# Generate targets. Valid: "proto", "wire".
+# Generate targets. Valid: "proto".
 [group('codegen')]
 generate target:
     @just "_generate-{{ target }}"

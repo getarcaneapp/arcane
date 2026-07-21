@@ -196,15 +196,28 @@ func (js *JobScheduler) GetLocation() *time.Location {
 	return js.location
 }
 
-func (js *JobScheduler) Run(ctx context.Context) error {
-	js.StartScheduler()
-	<-ctx.Done()
-	// Running jobs may still own Docker or database resources. Wait for them here
-	// so Bootstrap cannot close shared services underneath them; the process-level
-	// signal handler owns the hard shutdown deadline for non-cooperative jobs.
-	<-js.cron.Stop().Done()
-	js.watcherWG.Wait()
-	return nil
+// Stop stops the scheduler and waits for running jobs and bus watchers to finish.
+// If ctx is canceled or reaches its deadline first, Stop returns ctx.Err().
+func (js *JobScheduler) Stop(ctx context.Context) error {
+	cronDone := js.cron.Stop().Done()
+	watchersDone := make(chan struct{})
+	go func() {
+		js.watcherWG.Wait()
+		close(watchersDone)
+	}()
+
+	select {
+	case <-cronDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case <-watchersDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // upsertJobInternal records the job and (re)schedules it. A replacement expression

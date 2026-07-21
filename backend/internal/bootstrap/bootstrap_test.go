@@ -3,46 +3,44 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
-	"sync/atomic"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxtest"
 	"golang.org/x/net/http2"
 )
 
-type blockingServiceSchedulerInternal struct {
-	runCalls             atomic.Int32
-	started              chan struct{}
-	cancellationObserved chan struct{}
-	release              <-chan struct{}
+type blockingBusWatcherInternal struct {
+	started chan struct{}
+	stopped chan struct{}
 }
 
-func (s *blockingServiceSchedulerInternal) Run(ctx context.Context) error {
-	s.runCalls.Add(1)
-	if s.started != nil {
-		s.started <- struct{}{}
-	}
+func (w *blockingBusWatcherInternal) Name() string { return "blocking" }
+
+func (w *blockingBusWatcherInternal) Start(ctx context.Context) error {
+	close(w.started)
 	<-ctx.Done()
-	if s.cancellationObserved != nil {
-		s.cancellationObserved <- struct{}{}
-	}
-	if s.release != nil {
-		<-s.release
-	}
+	close(w.stopped)
 	return nil
 }
+
+func (w *blockingBusWatcherInternal) RunNow(context.Context) error { return nil }
 
 func TestNormalizeTunnelGRPCRequestPathInternal(t *testing.T) {
 	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
@@ -175,10 +173,14 @@ func TestConfigureHTTPProtocolsInternal(t *testing.T) {
 
 func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 	cfg := &config.Config{
+		AgentMode:   true,
 		AppUrl:      "http://localhost:3552",
 		Environment: config.AppEnvironmentTest,
 	}
-	router, _ := setupRouter(context.Background(), cfg, &di.Services{
+	router, _ := newRouter(RouterParams{
+		Context:        context.Background(),
+		Config:         cfg,
+		HandlerDeps:    api.HandlerDeps{},
 		AuthMiddleware: middleware.NewAuthMiddleware(nil, cfg),
 	})
 	handler, protocols := configureHTTPProtocolsInternal(false, router)
@@ -235,123 +237,145 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 	}
 }
 
-func TestShutdownCancelsStreamingRequestContextsInternal(t *testing.T) {
-	baseCtx, cancelBase := context.WithCancel(context.Background())
-	defer cancelBase()
+func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
 
 	handlerEntered := make(chan struct{})
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/x-json-stream")
-		w.WriteHeader(http.StatusOK)
-		if f, ok := w.(http.Flusher); ok {
-			f.Flush()
-		}
+	router := echo.New()
+	router.GET("/stream", func(c echo.Context) error {
+		c.Response().Header().Set("Content-Type", "application/x-json-stream")
+		c.Response().WriteHeader(http.StatusOK)
+		c.Response().Flush()
 		close(handlerEntered)
-		// Streaming handlers block until their request context ends; Shutdown
-		// alone never cancels it, so this models an open activity stream.
-		<-r.Context().Done()
+		<-c.Request().Context().Done()
+		return nil
 	})
 
-	srv, err := newHTTPServerInternal(baseCtx, "127.0.0.1:0", handler, nil, false, nil)
+	cfg := &config.Config{
+		AgentMode: true,
+		Listen:    "127.0.0.1",
+		Port:      "0",
+	}
+	lifecycle := fxtest.NewLifecycle(t)
+	srv, err := NewHTTPServer(lifecycle, HTTPServerParams{
+		AppCtx: appCtx,
+		Config: cfg,
+		Router: router,
+	})
 	require.NoError(t, err)
+	require.NoError(t, lifecycle.Start(context.Background()))
 
-	listener, err := net.Listen("tcp", "127.0.0.1:0")
-	require.NoError(t, err)
-
-	errCh := make(chan error, 1)
-	go func() { errCh <- srv.Serve(listener) }()
-
-	resp, err := http.Get("http://" + listener.Addr().String() + "/stream")
+	resp, err := http.Get("http://" + srv.Addr + "/stream")
 	require.NoError(t, err)
 	defer func() { _ = resp.Body.Close() }()
 	<-handlerEntered
 
-	cancelBase()
-
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
+	shutdownCtx, cancelShutdown := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancelShutdown()
 	start := time.Now()
-	require.NoError(t, srv.Shutdown(shutdownCtx))
+	require.NoError(t, lifecycle.Stop(shutdownCtx))
 	require.Less(t, time.Since(start), time.Second)
-	require.ErrorIs(t, <-errCh, http.ErrServerClosed)
 }
 
-func TestRunServicesInternalDoesNotStartSchedulersBeforeServerInitialization(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	scheduler := &blockingServiceSchedulerInternal{}
-	cfg := &config.Config{
-		AgentMode:  true,
-		TLSEnabled: true,
-	}
-
-	err := runServicesInternal(appCtx, cancelApp, cfg, http.NewServeMux(), nil, scheduler)
-	require.ErrorContains(t, err, "TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
-	require.Zero(t, scheduler.runCalls.Load())
-	require.ErrorIs(t, appCtx.Err(), context.Canceled)
-}
-
-func TestRunServicesInternalWaitsForSchedulersBeforeReleasingDependencies(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	started := make(chan struct{}, 1)
-	cancellationObserved := make(chan struct{}, 1)
-	releaseScheduler := make(chan struct{}, 1)
-	scheduler := &blockingServiceSchedulerInternal{
-		started:              started,
-		cancellationObserved: cancellationObserved,
-		release:              releaseScheduler,
-	}
+func TestNewHTTPServerRejectsInvalidTLSCertificateInternal(t *testing.T) {
 	cfg := &config.Config{
 		AgentMode:   true,
-		Environment: config.AppEnvironmentTest,
-		Listen:      "127.0.0.1",
-		Port:        "0",
+		TLSEnabled:  true,
+		TLSCertFile: t.TempDir() + "/missing.crt",
+		TLSKeyFile:  t.TempDir() + "/missing.key",
 	}
 
-	runDone := make(chan error, 1)
-	dependenciesReleased := make(chan struct{})
-	go func() {
-		err := runServicesInternal(appCtx, cancelApp, cfg, http.NewServeMux(), nil, scheduler)
-		close(dependenciesReleased)
-		runDone <- err
-	}()
-	t.Cleanup(func() {
-		cancelApp()
-		select {
-		case releaseScheduler <- struct{}{}:
-		default:
-		}
+	_, err := NewHTTPServer(fxtest.NewLifecycle(t), HTTPServerParams{
+		AppCtx: context.Background(),
+		Config: cfg,
+		Router: echo.New(),
 	})
+	require.Error(t, err)
+}
 
-	select {
-	case <-started:
-	case <-time.After(time.Second):
-		t.Fatal("scheduler did not start")
-	}
-	cancelApp()
-	select {
-	case <-cancellationObserved:
-	case <-time.After(time.Second):
-		t.Fatal("scheduler did not observe lifecycle cancellation")
-	}
+func TestRegisterAppCancelHookRunsBeforeEarlierStopHooks(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	lifecycle := fxtest.NewLifecycle(t)
+	appCanceledBeforeDependencyStop := false
+	lifecycle.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			appCanceledBeforeDependencyStop = errors.Is(appCtx.Err(), context.Canceled)
+			return nil
+		},
+	})
+	registerAppCancelHook(lifecycle, cancelApp)
 
-	select {
-	case <-dependenciesReleased:
-		t.Fatal("service runner released dependencies before the scheduler stopped")
-	case <-time.After(100 * time.Millisecond):
-	}
+	lifecycle.RequireStart()
+	lifecycle.RequireStop()
+	require.True(t, appCanceledBeforeDependencyStop)
+}
 
-	releaseScheduler <- struct{}{}
-	select {
-	case <-dependenciesReleased:
-	case <-time.After(time.Second):
-		t.Fatal("service runner did not release dependencies after the scheduler stopped")
+func TestRollbackCancelHookRunsBeforeEarlierStopsInternal(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	appCanceledBeforeDependencyStop := false
+	app := fxtest.New(t,
+		fx.Supply(cancelApp),
+		fx.Invoke(func(lc fx.Lifecycle) {
+			lc.Append(fx.Hook{
+				OnStop: func(context.Context) error {
+					appCanceledBeforeDependencyStop = errors.Is(appCtx.Err(), context.Canceled)
+					return nil
+				},
+			})
+		}),
+		fx.Invoke(registerAppRollbackCancelHook),
+		fx.Invoke(func(lc fx.Lifecycle) {
+			lc.Append(fx.Hook{
+				OnStart: func(context.Context) error {
+					return errors.New("listen failed")
+				},
+			})
+		}),
+	)
+
+	require.Error(t, app.Start(context.Background()))
+	require.True(t, appCanceledBeforeDependencyStop)
+}
+
+func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
+
+	lifecycle := fxtest.NewLifecycle(t)
+	jobScheduler := newJobScheduler(appCtx, lifecycle, &config.Config{}, nil, nil, nil)
+	watcher := &blockingBusWatcherInternal{
+		started: make(chan struct{}),
+		stopped: make(chan struct{}),
 	}
+	jobScheduler.RegisterBusWatcher(watcher, false)
+
+	lifecycle.RequireStart()
 	select {
-	case err := <-runDone:
-		require.NoError(t, err)
+	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("service runner did not return")
+		t.Fatal("watcher did not start")
 	}
+	lifecycle.RequireStop()
+	select {
+	case <-watcher.stopped:
+	case <-time.After(time.Second):
+		t.Fatal("watcher did not stop")
+	}
+	require.NoError(t, appCtx.Err())
+}
+
+func TestApplicationOptionsValidate(t *testing.T) {
+	appCtx, cancelApp := context.WithCancel(context.Background())
+	defer cancelApp()
+
+	err := fx.ValidateApp(applicationOptions(
+		appCtx,
+		&config.Config{},
+		(*database.DB)(nil),
+		cancelApp,
+	))
+	require.NoError(t, err)
 }
 
 func TestPrepareServerTLSInternal_AgentModeSkipsManagerMTLSValidation(t *testing.T) {
