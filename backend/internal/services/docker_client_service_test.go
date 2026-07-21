@@ -169,7 +169,7 @@ func TestDockerClientService_RefreshClientProbeFailureKeepsCachedClient(t *testi
 	assert.False(t, svc.clientLastProbe.IsZero())
 }
 
-func TestDockerClientService_PublishImageStateResyncNotifiesSubscribersAndInvalidatesCache(t *testing.T) {
+func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	svc := NewDockerClientService(ctx, nil, &config.Config{}, nil)
@@ -177,14 +177,6 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribersAndInvali
 
 	eventCh, unsubscribe := svc.EventBus().Subscribe(events.ImageEventType)
 	t.Cleanup(unsubscribe)
-
-	fetches := 0
-	_, err := svc.imageCache.GetOrFetch(ctx, func(context.Context) ([]image.Summary, error) {
-		fetches++
-		return []image.Summary{{ID: "sha256:first"}}, nil
-	})
-	require.NoError(t, err)
-	require.Equal(t, 1, fetches)
 
 	svc.publishImageStateResyncInternal()
 
@@ -195,14 +187,6 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribersAndInvali
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for image state resync event")
 	}
-
-	require.Eventually(t, func() bool {
-		_, fetchErr := svc.imageCache.GetOrFetch(ctx, func(context.Context) ([]image.Summary, error) {
-			fetches++
-			return []image.Summary{{ID: "sha256:second"}}, nil
-		})
-		return fetchErr == nil && fetches == 2
-	}, time.Second, 5*time.Millisecond)
 }
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {

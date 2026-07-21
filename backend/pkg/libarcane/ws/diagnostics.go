@@ -3,39 +3,28 @@ package ws
 import (
 	"runtime"
 	"strings"
-	"sync"
 	"time"
+
+	"github.com/samber/hot"
 )
 
 const wsPkgPath = "internal/utils/ws"
 
 const workerGoroutineCountTTL = 5 * time.Second
 
-var workerGoroutineCountCache struct {
-	sync.Mutex
-
-	value int
-	at    time.Time
-}
+var workerGoroutineCountCache = hot.NewHotCache[struct{}, int](hot.LRU, 1).
+	WithTTL(workerGoroutineCountTTL).
+	Build()
 
 // CountWorkerGoroutines returns a best-effort count of websocket worker goroutines
 // belonging to this package. Intended for diagnostics endpoints only.
 func CountWorkerGoroutines() int {
-	workerGoroutineCountCache.Lock()
-	if !workerGoroutineCountCache.at.IsZero() && time.Since(workerGoroutineCountCache.at) < workerGoroutineCountTTL {
-		value := workerGoroutineCountCache.value
-		workerGoroutineCountCache.Unlock()
-		return value
+	count, found, err := workerGoroutineCountCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]int, error) {
+		return map[struct{}]int{{}: countWorkerGoroutinesInternal()}, nil
+	})
+	if err != nil || !found {
+		return countWorkerGoroutinesInternal()
 	}
-	workerGoroutineCountCache.Unlock()
-
-	count := countWorkerGoroutinesInternal()
-
-	workerGoroutineCountCache.Lock()
-	workerGoroutineCountCache.value = count
-	workerGoroutineCountCache.at = time.Now()
-	workerGoroutineCountCache.Unlock()
-
 	return count
 }
 

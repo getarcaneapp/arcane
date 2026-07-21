@@ -8,10 +8,10 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 
@@ -19,9 +19,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -77,8 +77,7 @@ func (f rateLimitRoundTripFuncInternal) RoundTrip(req *http.Request) (*http.Resp
 type ContainerRegistryService struct {
 	db                     *database.DB
 	dockerClient           registryDaemonGetter
-	cache                  map[string]*cache.Cache[string] // imageRef -> digest cache
-	cacheMu                sync.RWMutex
+	cache                  *hot.HotCache[string, string]
 	ecrRefreshGroup        singleflight.Group
 	distributionHTTPClient *http.Client
 	kvService              *KVService
@@ -87,13 +86,32 @@ type ContainerRegistryService struct {
 // NewContainerRegistryService creates a registry service. kvService may be nil
 // in tests that do not need pull tracking or rate-limit caching.
 func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGetter, kvService *KVService) *ContainerRegistryService {
-	return &ContainerRegistryService{
+	service := &ContainerRegistryService{
 		db:                     db,
 		dockerClient:           dockerClient,
 		distributionHTTPClient: updaterregistry.NewRegistryHTTPClient(),
-		cache:                  make(map[string]*cache.Cache[string]),
 		kvService:              kvService,
 	}
+	backgroundLoader := func(imageRefs []string) (map[string]string, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry)
+		defer cancel()
+		digests := make(map[string]string, len(imageRefs))
+		for _, imageRef := range imageRefs {
+			result, err := service.inspectImageDigestInternal(ctx, imageRef, nil)
+			if err != nil {
+				return nil, err
+			}
+			digests[imageRef] = result.Digest
+		}
+		return digests, nil
+	}
+	service.cache = hot.NewHotCache[string, string](hot.LRU, 4096).
+		WithTTL(registryCacheTTL).
+		WithRevalidation(registryCacheTTL, backgroundLoader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		WithJanitor().
+		Build()
+	return service
 }
 
 func (s *ContainerRegistryService) GetAllRegistries(ctx context.Context) ([]models.ContainerRegistry, error) {
@@ -752,37 +770,22 @@ func (s *ContainerRegistryService) GetImageDigest(ctx context.Context, imageRef 
 		return "", err
 	}
 
-	// Build a cache key from the full image reference
-	cacheKey := normalizedRef
+	digest, found, err := s.cache.GetWithLoaders(normalizedRef, func(_ []string) (map[string]string, error) {
+		loadCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultRegistry)
+		defer cancel()
 
-	// Get or create a cache for this specific image reference
-	s.cacheMu.RLock()
-	imageCache, exists := s.cache[cacheKey]
-	s.cacheMu.RUnlock()
-
-	if !exists {
-		s.cacheMu.Lock()
-		if imageCache, exists = s.cache[cacheKey]; !exists {
-			imageCache = cache.New[string](registryCacheTTL)
-			s.cache[cacheKey] = imageCache
+		result, loadErr := s.inspectImageDigestInternal(loadCtx, normalizedRef, nil)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-		s.cacheMu.Unlock()
-	}
-
-	digest, err := imageCache.GetOrFetch(ctx, func(ctx context.Context) (string, error) {
-		// Pass the original imageRef; inspectImageDigestInternal normalizes internally.
-		result, fetchErr := s.inspectImageDigestInternal(ctx, imageRef, nil)
-		if fetchErr != nil {
-			return "", fetchErr
-		}
-		return result.Digest, nil
+		return map[string]string{normalizedRef: result.Digest}, nil
 	})
-
-	var staleErr *cache.StaleError
-	if err != nil && !errors.As(err, &staleErr) {
+	if err != nil {
 		return "", err
 	}
-
+	if !found {
+		return "", errors.New("registry digest cache loader returned no digest")
+	}
 	return digest, nil
 }
 

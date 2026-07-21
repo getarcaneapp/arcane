@@ -324,24 +324,17 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(context.Background()).Create(&localTemplates).Error)
 
-	service := &TemplateService{
-		db:                db,
-		httpClient:        http.DefaultClient,
-		registryFetchMeta: make(map[string]*registryFetchMeta),
-		remoteCache: remoteCache{
-			templates: []models.ComposeTemplate{
-				{
-					BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
-					Name:        "Remote One",
-					Description: "Remote template",
-					Content:     "services: {}",
-					IsRemote:    true,
-					RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
-				},
-			},
-			lastFetch: now,
+	service := NewTemplateService(context.Background(), db, http.DefaultClient, nil)
+	service.remoteCache.Set(struct{}{}, []models.ComposeTemplate{
+		{
+			BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
+			Name:        "Remote One",
+			Description: "Remote template",
+			Content:     "services: {}",
+			IsRemote:    true,
+			RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
 		},
-	}
+	})
 
 	tests := []struct {
 		name       string
@@ -468,13 +461,9 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "templatesDirectory", filepath.Join(tempDir, "templates")))
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", filepath.Join(tempDir, "projects")))
 
-	service := &TemplateService{
-		db:                db,
-		httpClient:        client,
-		lookupIP:          lookupIP,
-		settingsService:   settingsSvc,
-		registryFetchMeta: make(map[string]*registryFetchMeta),
-	}
+	service := NewTemplateService(context.Background(), db, client, settingsSvc)
+	service.lookupIP = lookupIP
+	service.safeHTTPClient = service.newSafeHTTPClientInternal()
 
 	// Cache starts empty; GetTemplate for a remote ID should force a refresh and find the template.
 	got, err := service.GetTemplate(context.Background(), "remote:reg-1:affine")

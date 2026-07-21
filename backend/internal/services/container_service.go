@@ -9,7 +9,6 @@ import (
 	"io"
 	"log/slog"
 	"maps"
-	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -19,7 +18,6 @@ import (
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
-	"golang.org/x/sync/singleflight"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -29,11 +27,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
+	"github.com/samber/hot"
 	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
@@ -48,9 +46,8 @@ type ContainerService struct {
 	settingsService *SettingsService
 	projectService  *ProjectService
 	statsHistory    containerstats.Store
-	updateInfoCache *cache.KeyedCache[string, *imagetypes.UpdateInfo]
-	updateInfoSF    singleflight.Group
-	iconMetaCache   *cache.TTL[projects.ArcaneComposeMetadata]
+	updateInfoCache *hot.HotCache[string, *imagetypes.UpdateInfo]
+	iconMetaCache   *hot.HotCache[string, projects.ArcaneComposeMetadata]
 }
 
 const (
@@ -74,8 +71,11 @@ func NewContainerService(ctx context.Context, db *database.DB, eventService *Eve
 		imageService:    imageService,
 		settingsService: settingsService,
 		projectService:  projectService,
-		updateInfoCache: cache.NewKeyed[string, *imagetypes.UpdateInfo](),
-		iconMetaCache:   cache.NewTTL[projects.ArcaneComposeMetadata](containerIconMetadataTTL),
+		updateInfoCache: hot.NewHotCache[string, *imagetypes.UpdateInfo](hot.LRU, 4096).Build(),
+		iconMetaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
+			WithTTL(containerIconMetadataTTL).
+			WithJanitor().
+			Build(),
 	}
 	svc.subscribeUpdateInfoCacheInvalidationInternal(ctx)
 	return svc
@@ -96,7 +96,7 @@ func (s *ContainerService) subscribeUpdateInfoCacheInvalidationInternal(ctx cont
 				if !ok {
 					return
 				}
-				s.updateInfoCache.InvalidateAll()
+				s.updateInfoCache.Purge()
 			}
 		}
 	}()
@@ -1185,43 +1185,27 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 		return updateInfoMap
 	}
 
-	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
-	var uncachedIDs []string
-	for _, imageID := range imageIDs {
-		info, ok := s.updateInfoCache.Get(imageID).Get()
-		if !ok {
-			uncachedIDs = append(uncachedIDs, imageID)
-			continue
+	infos, _, err := s.updateInfoCache.GetManyWithLoaders(imageIDs, func(missingIDs []string) (map[string]*imagetypes.UpdateInfo, error) {
+		loaded, loadErr := s.imageService.GetUpdateInfoByImageIDs(ctx, missingIDs)
+		if loadErr != nil {
+			return nil, loadErr
 		}
-		if info != nil {
-			updateInfoMap[imageID] = info
+		for _, imageID := range missingIDs {
+			if _, ok := loaded[imageID]; !ok {
+				loaded[imageID] = nil
+			}
 		}
+		return loaded, nil
+	})
+	if err != nil {
+		slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(imageIDs), "error", err)
+		infos, _ = s.updateInfoCache.PeekMany(imageIDs)
 	}
 
-	if len(uncachedIDs) > 0 {
-		// Singleflight keyed by the uncached set so concurrent list requests
-		// that miss on the same images share one batch query.
-		slices.Sort(uncachedIDs)
-		res, err, _ := s.updateInfoSF.Do(strings.Join(uncachedIDs, ","), func() (any, error) {
-			infos, fetchErr := s.imageService.GetUpdateInfoByImageIDs(ctx, uncachedIDs)
-			if fetchErr != nil {
-				return nil, fetchErr
-			}
-			for _, imageID := range uncachedIDs {
-				// Cache nil results too so absent rows don't refetch until invalidation.
-				s.updateInfoCache.Set(imageID, infos[imageID])
-			}
-			return infos, nil
-		})
-		if err != nil {
-			slog.WarnContext(ctx, "Failed to fetch image update info for container images", "imageIDs", len(uncachedIDs), "error", err)
-			return updateInfoMap
-		}
-		infos, _ := res.(map[string]*imagetypes.UpdateInfo)
-		for _, imageID := range uncachedIDs {
-			if info := infos[imageID]; info != nil {
-				updateInfoMap[imageID] = info
-			}
+	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(infos))
+	for imageID, info := range infos {
+		if info != nil {
+			updateInfoMap[imageID] = info
 		}
 	}
 	return updateInfoMap
@@ -1299,7 +1283,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	}
 
 	if s.iconMetaCache != nil {
-		if meta, ok := s.iconMetaCache.Get(projectName).Get(); ok {
+		if meta, ok, _ := s.iconMetaCache.Get(projectName); ok {
 			if metadataByProject != nil {
 				metadataByProject[projectName] = meta
 			}
@@ -1313,7 +1297,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
 	}
 	if s.iconMetaCache != nil {
-		s.iconMetaCache.Put(projectName, meta)
+		s.iconMetaCache.Set(projectName, meta)
 	}
 	if metadataByProject != nil {
 		metadataByProject[projectName] = meta

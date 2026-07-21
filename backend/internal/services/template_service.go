@@ -28,16 +28,11 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/google/uuid"
+	"github.com/samber/hot"
 	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
-
-type remoteCache struct {
-	templates  []models.ComposeTemplate
-	lastFetch  time.Time
-	refreshing bool
-}
 
 type registryFetchMeta struct {
 	LastModified string
@@ -51,8 +46,7 @@ type TemplateService struct {
 	lookupIP        httputils.LookupIPFunc
 	settingsService *SettingsService
 
-	remoteMu    sync.RWMutex
-	remoteCache remoteCache
+	remoteCache *hot.HotCache[struct{}, []models.ComposeTemplate]
 
 	registryMu        sync.RWMutex
 	registryFetchMeta map[string]*registryFetchMeta
@@ -73,6 +67,8 @@ const (
 
 const remoteIDPrefix = "remote"
 
+var errNoRemoteTemplates = errors.New("remote template registries returned no templates")
+
 func makeRemoteID(registryID, slug string) string {
 	return fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registryID, slug)
 }
@@ -87,11 +83,29 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		httpClient:        httpClient,
 		lookupIP:          httputils.DefaultLookupIP,
 		settingsService:   settingsService,
-		remoteCache:       remoteCache{},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 		registryErrors:    make(map[string]string),
 	}
 	service.safeHTTPClient = service.newSafeHTTPClientInternal()
+	revalidationCtx := context.WithoutCancel(ctx)
+	loader := func(_ []struct{}) (map[struct{}][]models.ComposeTemplate, error) {
+		loadCtx, cancel := context.WithTimeout(revalidationCtx, 2*time.Minute)
+		defer cancel()
+		templates, err := service.loadRemoteTemplates(loadCtx)
+		if err != nil {
+			return nil, err
+		}
+		if len(templates) == 0 {
+			return nil, errNoRemoteTemplates
+		}
+		return map[struct{}][]models.ComposeTemplate{{}: templates}, nil
+	}
+	service.remoteCache = hot.NewHotCache[struct{}, []models.ComposeTemplate](hot.LRU, 1).
+		WithTTL(remoteCacheDuration).
+		WithLoaders(loader).
+		WithRevalidation(24*time.Hour, loader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		Build()
 
 	if err := projects.EnsureDefaultTemplates(ctx, service.configuredTemplatesDirSettingInternal(ctx)); err != nil {
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
@@ -117,50 +131,18 @@ func (s *TemplateService) getTemplatesDirectoryInternal(ctx context.Context) (st
 	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.configuredTemplatesDirSettingInternal(ctx)))
 }
 
-func (s *TemplateService) ensureRemoteTemplatesLoaded(ctx context.Context) error {
-	s.remoteMu.Lock()
-
-	// If cache has entries and is fresh, return.
-	// An empty slice is treated as "no cache" so callers always trigger a blocking
-	// refresh — otherwise a single failed/empty refresh would poison the cache.
-	if len(s.remoteCache.templates) > 0 && time.Since(s.remoteCache.lastFetch) < remoteCacheDuration {
-		s.remoteMu.Unlock()
-		return nil
+func (s *TemplateService) ensureRemoteTemplatesLoaded(_ context.Context) error {
+	if s.remoteCache == nil {
+		return errors.New("remote template cache is not initialized")
 	}
-
-	// If we have a non-empty stale cache and nobody is refreshing, trigger background refresh.
-	if len(s.remoteCache.templates) > 0 {
-		if !s.remoteCache.refreshing {
-			s.remoteCache.refreshing = true
-			s.remoteMu.Unlock()
-
-			// Use a closure that accepts context to satisfy linter, though we create a new one
-			go func(parentCtx context.Context) {
-				// Create a detached context with timeout for background fetch
-				// We use context.WithoutCancel(parentCtx) to ensure it outlives the request
-				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 2*time.Minute)
-				defer cancel()
-
-				defer func() {
-					s.remoteMu.Lock()
-					s.remoteCache.refreshing = false
-					s.remoteMu.Unlock()
-				}()
-
-				if err := s.refreshRemoteTemplates(bgCtx); err != nil {
-					slog.WarnContext(bgCtx, "background remote template refresh failed", "error", err)
-				}
-			}(ctx)
-			return nil // Return stale cache
-		}
-		s.remoteMu.Unlock()
-		return nil // Return stale cache while someone else refreshes
+	templates, found, err := s.remoteCache.Get(struct{}{})
+	if err != nil {
+		return fmt.Errorf("failed to load remote templates: %w", err)
 	}
-
-	s.remoteMu.Unlock()
-
-	// No cache at all, must block
-	return s.refreshRemoteTemplates(ctx)
+	if !found || len(templates) == 0 {
+		return errNoRemoteTemplates
+	}
+	return nil
 }
 
 func (s *TemplateService) refreshRemoteTemplates(ctx context.Context) error {
@@ -169,10 +151,13 @@ func (s *TemplateService) refreshRemoteTemplates(ctx context.Context) error {
 		return fmt.Errorf("failed to load remote templates: %w", err)
 	}
 
-	s.remoteMu.Lock()
-	defer s.remoteMu.Unlock()
-	s.remoteCache.templates = templates
-	s.remoteCache.lastFetch = time.Now()
+	if len(templates) == 0 {
+		return errNoRemoteTemplates
+	}
+	if s.remoteCache == nil {
+		return errors.New("remote template cache is not initialized")
+	}
+	s.remoteCache.Set(struct{}{}, templates)
 	return nil
 }
 
@@ -267,7 +252,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 		return nil, fmt.Errorf("failed to query local template: %w", err)
 	}
 
-	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil {
+	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil && !errors.Is(err, errNoRemoteTemplates) {
 		return nil, fmt.Errorf("template %q lookup failed: registry refresh error: %w", id, err)
 	}
 
@@ -280,7 +265,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 	// silently returned empty.
 	if strings.HasPrefix(id, remoteIDPrefix+":") {
 		slog.InfoContext(ctx, "remote template not in cache, forcing registry refresh", "templateID", id, "cacheSize", s.remoteCacheSizeInternal())
-		if refreshErr := s.refreshRemoteTemplates(ctx); refreshErr != nil {
+		if refreshErr := s.refreshRemoteTemplates(ctx); refreshErr != nil && !errors.Is(refreshErr, errNoRemoteTemplates) {
 			return nil, fmt.Errorf("template %q not found and registry refresh failed: %w", id, refreshErr)
 		}
 		if found := s.lookupRemoteFromCacheInternal(id); found != nil {
@@ -295,11 +280,16 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 }
 
 func (s *TemplateService) lookupRemoteFromCacheInternal(id string) *models.ComposeTemplate {
-	s.remoteMu.RLock()
-	defer s.remoteMu.RUnlock()
-	for i := range s.remoteCache.templates {
-		if s.remoteCache.templates[i].ID == id {
-			cloned := cloneRemoteTemplates(s.remoteCache.templates[i : i+1])
+	if s.remoteCache == nil {
+		return nil
+	}
+	templates, found := s.remoteCache.Peek(struct{}{})
+	if !found {
+		return nil
+	}
+	for i := range templates {
+		if templates[i].ID == id {
+			cloned := cloneRemoteTemplates(templates[i : i+1])
 			return &cloned[0]
 		}
 	}
@@ -307,9 +297,11 @@ func (s *TemplateService) lookupRemoteFromCacheInternal(id string) *models.Compo
 }
 
 func (s *TemplateService) remoteCacheSizeInternal() int {
-	s.remoteMu.RLock()
-	defer s.remoteMu.RUnlock()
-	return len(s.remoteCache.templates)
+	if s.remoteCache == nil {
+		return 0
+	}
+	templates, _ := s.remoteCache.Peek(struct{}{})
+	return len(templates)
 }
 
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.ComposeTemplate) error {
@@ -984,9 +976,9 @@ func cloneRegistry(registry *models.TemplateRegistry) *models.TemplateRegistry {
 }
 
 func (s *TemplateService) invalidateRemoteCache() {
-	s.remoteMu.Lock()
-	s.remoteCache = remoteCache{}
-	s.remoteMu.Unlock()
+	if s.remoteCache != nil {
+		s.remoteCache.Purge()
+	}
 
 	s.registryMu.Lock()
 	s.registryFetchMeta = make(map[string]*registryFetchMeta)
@@ -1284,9 +1276,8 @@ func (s *TemplateService) getMergedTemplates(ctx context.Context) ([]models.Comp
 	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil {
 		slog.WarnContext(ctx, "failed to load remote templates", "error", err)
 	} else {
-		s.remoteMu.RLock()
-		copied := cloneRemoteTemplates(s.remoteCache.templates)
-		s.remoteMu.RUnlock()
+		remoteTemplates, _ := s.remoteCache.Peek(struct{}{})
+		copied := cloneRemoteTemplates(remoteTemplates)
 
 		if len(copied) > 0 {
 			templates = append(templates, copied...)

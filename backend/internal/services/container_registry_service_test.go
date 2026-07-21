@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -659,6 +660,45 @@ func TestContainerRegistryService_InspectImageDigest_AnonymousSuccess(t *testing
 	assert.Equal(t, wantDigest, result.Digest)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Equal(t, "registry.example.com:5443", result.AuthRegistry)
+}
+
+func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *testing.T) {
+	started := make(chan struct{}, 1)
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, _ string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+				<-ctx.Done()
+				return client.DistributionInspectResult{}, ctx.Err()
+			},
+		}, nil
+	}, nil)
+	t.Cleanup(svc.cache.StopJanitor)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := svc.GetImageDigest(ctx, "registry.example.com/team/app:latest")
+		result <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("registry lookup did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("registry lookup did not honor caller cancellation")
+	}
 }
 
 func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredentialsOnFirstAttempt(t *testing.T) {

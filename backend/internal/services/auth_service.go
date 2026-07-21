@@ -13,11 +13,11 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/jwtclaims"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/google/uuid"
+	"github.com/samber/hot"
 )
 
 var (
@@ -82,7 +82,7 @@ type AuthService struct {
 	// deployments, RevokeSession / ChangePassword / InvalidateUserTokenCache
 	// only purge the local instance; peers continue to accept the token until
 	// their own TTL expires. The TTL is kept short to bound this window.
-	tokenCache *cache.TTL[verifiedTokenEntry]
+	tokenCache *hot.HotCache[string, verifiedTokenEntry]
 }
 
 func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, roleService *RoleService, jwtSecret string, cfg *config.Config) *AuthService {
@@ -98,7 +98,10 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret, requireExplicitSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
-		tokenCache:      cache.NewTTL[verifiedTokenEntry](15 * time.Second),
+		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
+			WithTTL(15 * time.Second).
+			WithJanitor().
+			Build(),
 	}
 }
 
@@ -728,7 +731,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	}
 
 	tokenHash := hashTokenInternal(accessToken)
-	if cached, ok := s.tokenCache.Get(tokenHash).Get(); ok {
+	if cached, ok, _ := s.tokenCache.Get(tokenHash); ok {
 		return new(cached.User), cached.SessionID, nil
 	}
 
@@ -754,7 +757,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		return nil, "", err
 	}
 
-	s.tokenCache.Put(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: session.ID})
+	s.tokenCache.Set(tokenHash, verifiedTokenEntry{User: *dbUser, SessionID: session.ID})
 
 	return dbUser, session.ID, nil
 }
@@ -790,9 +793,14 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 	if _, err = s.userService.UpdateUser(ctx, user); err != nil {
 		return err
 	}
-	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
-		return e.User.ID == userID && e.SessionID != currentSessionID
+	keys := make([]string, 0)
+	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
+		if entry.User.ID == userID && entry.SessionID != currentSessionID {
+			keys = append(keys, key)
+		}
+		return true
 	})
+	s.tokenCache.DeleteMany(keys)
 	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
 }
 
@@ -803,16 +811,28 @@ func (s *AuthService) InvalidateUserTokenCache(userID string) {
 	if s.tokenCache == nil || strings.TrimSpace(userID) == "" {
 		return
 	}
-	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
-		return e.User.ID == userID
+	keys := make([]string, 0)
+	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
+		if entry.User.ID == userID {
+			keys = append(keys, key)
+		}
+		return true
 	})
+	s.tokenCache.DeleteMany(keys)
 }
 
 func (s *AuthService) RevokeSession(ctx context.Context, sessionID string) error {
 	if s.sessionService == nil {
 		return nil
 	}
-	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool { return e.SessionID == sessionID })
+	keys := make([]string, 0)
+	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
+		if entry.SessionID == sessionID {
+			keys = append(keys, key)
+		}
+		return true
+	})
+	s.tokenCache.DeleteMany(keys)
 	return s.sessionService.RevokeSession(ctx, sessionID)
 }
 
@@ -822,9 +842,14 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 	if s.sessionService == nil {
 		return nil
 	}
-	s.tokenCache.DeleteFunc(func(_ string, e verifiedTokenEntry) bool {
-		return e.User.ID == userID && e.SessionID != currentSessionID
+	keys := make([]string, 0)
+	s.tokenCache.Range(func(key string, entry verifiedTokenEntry) bool {
+		if entry.User.ID == userID && entry.SessionID != currentSessionID {
+			keys = append(keys, key)
+		}
+		return true
 	})
+	s.tokenCache.DeleteMany(keys)
 	return s.sessionService.RevokeAllUserSessionsExcept(ctx, userID, currentSessionID)
 }
 

@@ -16,6 +16,7 @@ import (
 
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
 	"github.com/shirou/gopsutil/v4/host"
@@ -78,12 +79,7 @@ type WebSocketHandler struct {
 	cgroupCache        *cgroup.Cache
 	gpuMonitor         *system.GPUMonitor
 
-	diskUsagePathCache struct {
-		sync.RWMutex
-
-		value     string
-		timestamp time.Time
-	}
+	diskUsagePathCache   *hot.HotCache[struct{}, string]
 	projectLogStreamer   func(ctx context.Context, projectID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	containerLogStreamer func(ctx context.Context, containerID string, logsChan chan<- string, follow bool, tail, since string, timestamps bool) error
 	systemStatsCollector func(ctx context.Context) systemtypes.SystemStats
@@ -233,6 +229,9 @@ func NewWebSocketHandler(
 		logStreams:         make(map[string]*wsLogStream),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
 		gpuMonitor:         system.NewGPUMonitor(cfg.GPUMonitoringEnabled, cfg.GPUType),
+		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
+			WithTTL(5 * time.Minute).
+			Build(),
 		wsUpgrader: websocket.Upgrader{
 			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 			ReadBufferSize:    32 * 1024,
@@ -1345,26 +1344,20 @@ func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, canc
 }
 
 func (h *WebSocketHandler) getDiskUsagePath(ctx context.Context) string {
-	h.diskUsagePathCache.RLock()
-	if h.diskUsagePathCache.value != "" && time.Since(h.diskUsagePathCache.timestamp) < 5*time.Minute {
-		path := h.diskUsagePathCache.value
-		h.diskUsagePathCache.RUnlock()
-		return path
+	if h.diskUsagePathCache == nil {
+		h.diskUsagePathCache = hot.NewHotCache[struct{}, string](hot.LRU, 1).
+			WithTTL(5 * time.Minute).
+			Build()
 	}
-	h.diskUsagePathCache.RUnlock()
-
-	// Default path
-	path := "/"
-
-	// Try to get Docker root from system service
-	if h.systemService != nil {
-		path = h.systemService.GetDiskUsagePath(ctx)
+	path, found, err := h.diskUsagePathCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]string, error) {
+		path := "/"
+		if h.systemService != nil {
+			path = h.systemService.GetDiskUsagePath(ctx)
+		}
+		return map[struct{}]string{{}: path}, nil
+	})
+	if err != nil || !found {
+		return "/"
 	}
-
-	h.diskUsagePathCache.Lock()
-	h.diskUsagePathCache.value = path
-	h.diskUsagePathCache.timestamp = time.Now()
-	h.diskUsagePathCache.Unlock()
-
 	return path
 }

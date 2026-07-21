@@ -86,9 +86,10 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		require.NoError(t, err)
 
 		key := volumeUsageCacheKeyInternal(dockerClient)
-		volumeUsageCacheMutex.Lock()
-		volumeUsageCacheEntries[key].refreshedAt = time.Now().Add(-volumeUsageCacheTTL)
-		volumeUsageCacheMutex.Unlock()
+		cached, found := volumeUsageCache.Peek(key)
+		require.True(t, found)
+		volumeUsageCache.SetWithTTL(key, cached, time.Nanosecond)
+		time.Sleep(time.Millisecond)
 
 		startedAt := time.Now()
 		stale, found := GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient).Get()
@@ -129,16 +130,16 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		_, err = GetVolumeUsageData(ctx, clientB)
 		require.NoError(t, err)
 
-		cachedA, foundA, _ := volumeUsageCacheSnapshotInternal(volumeUsageCacheKeyInternal(clientA))
-		cachedB, foundB, _ := volumeUsageCacheSnapshotInternal(volumeUsageCacheKeyInternal(clientB))
+		cachedA, foundA := volumeUsageCache.Peek(volumeUsageCacheKeyInternal(clientA))
+		cachedB, foundB := volumeUsageCache.Peek(volumeUsageCacheKeyInternal(clientB))
 		require.True(t, foundA)
 		require.True(t, foundB)
 		require.Equal(t, "host-a", cachedA[0].Name)
 		require.Equal(t, "host-b", cachedB[0].Name)
 
 		InvalidateVolumeUsageCache(clientA)
-		_, foundA, _ = volumeUsageCacheSnapshotInternal(volumeUsageCacheKeyInternal(clientA))
-		cachedB, foundB, _ = volumeUsageCacheSnapshotInternal(volumeUsageCacheKeyInternal(clientB))
+		_, foundA = volumeUsageCache.Peek(volumeUsageCacheKeyInternal(clientA))
+		cachedB, foundB = volumeUsageCache.Peek(volumeUsageCacheKeyInternal(clientB))
 		require.False(t, foundA)
 		require.True(t, foundB)
 		require.Equal(t, "host-b", cachedB[0].Name)
@@ -168,8 +169,5 @@ func writeVolumeUsageResponseInternal(t *testing.T, w http.ResponseWriter, name 
 }
 
 func resetVolumeUsageCacheForTestInternal() {
-	volumeUsageCacheMutex.Lock()
-	volumeUsageCacheEntries = make(map[string]*volumeUsageCacheEntryInternal)
-	volumeUsageCacheGenerations = make(map[string]uint64)
-	volumeUsageCacheMutex.Unlock()
+	volumeUsageCache.Purge()
 }
