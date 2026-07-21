@@ -29,6 +29,7 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -42,7 +43,7 @@ type EnvironmentService struct {
 	apiKeyService   *ApiKeyService
 	remoteClient    *remenv.Client
 	tokenCacheMu    sync.RWMutex
-	tokenCache      map[string]edgeTokenCacheEntry
+	tokenCache      *hot.HotCache[string, string]
 	tokenByEnvID    map[string]string
 	remoteEnvMu     sync.RWMutex
 	remoteEnvs      map[string]models.Environment
@@ -72,11 +73,6 @@ const (
 	environmentHealthCheckTimeout    = 90 * time.Second
 )
 
-type edgeTokenCacheEntry struct {
-	EnvironmentID string
-	ExpiresAt     time.Time
-}
-
 const edgeTokenCacheTTL = time.Minute
 
 var (
@@ -99,7 +95,10 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 			EnsureAvailableFunc: ensureRemoteEnvironmentTunnelAvailableInternal,
 			DoFunc:              doRemoteEnvironmentTunnelRequestInternal,
 		}),
-		tokenCache:   make(map[string]edgeTokenCacheEntry),
+		tokenCache: hot.NewHotCache[string, string](hot.LRU, 1024).
+			WithTTL(edgeTokenCacheTTL).
+			WithJanitor().
+			Build(),
 		tokenByEnvID: make(map[string]string),
 		remoteEnvs:   make(map[string]models.Environment),
 	}
@@ -280,7 +279,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		return "", errors.New("agent token required")
 	}
 
-	if envID, ok := s.getCachedEnvironmentIDForTokenInternal(token, time.Now()).Get(); ok {
+	if envID, ok := s.getCachedEnvironmentIDForTokenInternal(token).Get(); ok {
 		return envID, nil
 	}
 
@@ -297,7 +296,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
 	}
 
-	s.cacheEnvironmentTokenInternal(env.ID, token, time.Now())
+	s.cacheEnvironmentTokenInternal(env.ID, token)
 	return env.ID, nil
 }
 
@@ -337,62 +336,40 @@ func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context
 	slog.DebugContext(ctx, "Edge agent token did not match any environment", args...)
 }
 
-func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string, now time.Time) mo.Option[string] {
-	if s == nil || token == "" {
+func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string) mo.Option[string] {
+	if s == nil || s.tokenCache == nil || token == "" {
 		return mo.None[string]()
 	}
-	if now.IsZero() {
-		now = time.Now()
-	}
 
-	s.tokenCacheMu.RLock()
-	entry, ok := s.tokenCache[token]
-	s.tokenCacheMu.RUnlock()
-	if !ok {
-		return mo.None[string]()
+	staleEnvironmentID, wasCached := s.tokenCache.Peek(token)
+	environmentID, ok, _ := s.tokenCache.Get(token)
+	if ok {
+		return mo.Some(environmentID)
 	}
-	if entry.ExpiresAt.After(now) {
-		return mo.Some(entry.EnvironmentID)
-	}
-
-	s.tokenCacheMu.Lock()
-	defer s.tokenCacheMu.Unlock()
-
-	entry, ok = s.tokenCache[token]
-	if !ok {
-		return mo.None[string]()
-	}
-	if !entry.ExpiresAt.After(now) {
-		delete(s.tokenCache, token)
-		if currentToken, ok := s.tokenByEnvID[entry.EnvironmentID]; ok && currentToken == token {
-			delete(s.tokenByEnvID, entry.EnvironmentID)
+	if wasCached {
+		s.tokenCacheMu.Lock()
+		if currentToken, indexed := s.tokenByEnvID[staleEnvironmentID]; indexed && currentToken == token {
+			delete(s.tokenByEnvID, staleEnvironmentID)
 		}
-		return mo.None[string]()
+		s.tokenCacheMu.Unlock()
 	}
-
-	return mo.Some(entry.EnvironmentID)
+	return mo.None[string]()
 }
 
-func (s *EnvironmentService) cacheEnvironmentTokenInternal(envID string, token string, now time.Time) {
-	if s == nil || envID == "" || token == "" {
+func (s *EnvironmentService) cacheEnvironmentTokenInternal(envID string, token string) {
+	if s == nil || s.tokenCache == nil || envID == "" || token == "" {
 		return
-	}
-	if now.IsZero() {
-		now = time.Now()
 	}
 
 	s.tokenCacheMu.Lock()
 	defer s.tokenCacheMu.Unlock()
 
 	if previousToken, ok := s.tokenByEnvID[envID]; ok && previousToken != token {
-		delete(s.tokenCache, previousToken)
+		s.tokenCache.Delete(previousToken)
 	}
 
 	s.tokenByEnvID[envID] = token
-	s.tokenCache[token] = edgeTokenCacheEntry{
-		EnvironmentID: envID,
-		ExpiresAt:     now.Add(edgeTokenCacheTTL),
-	}
+	s.tokenCache.Set(token, envID)
 }
 
 func (s *EnvironmentService) invalidateEnvironmentTokenInternal(envID string) {
@@ -405,7 +382,9 @@ func (s *EnvironmentService) invalidateEnvironmentTokenInternal(envID string) {
 
 	if token, ok := s.tokenByEnvID[envID]; ok {
 		delete(s.tokenByEnvID, envID)
-		delete(s.tokenCache, token)
+		if s.tokenCache != nil {
+			s.tokenCache.Delete(token)
+		}
 	}
 }
 
@@ -419,7 +398,7 @@ func (s *EnvironmentService) syncEnvironmentTokenCacheInternal(envID string, tok
 	resolvedToken := strings.TrimSpace(token)
 
 	if resolvedToken != "" {
-		s.cacheEnvironmentTokenInternal(envID, resolvedToken, time.Now())
+		s.cacheEnvironmentTokenInternal(envID, resolvedToken)
 	}
 }
 

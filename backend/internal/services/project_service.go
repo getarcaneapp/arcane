@@ -37,13 +37,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/samber/hot"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
@@ -64,7 +64,7 @@ type ProjectService struct {
 
 	composeNameCacheMu  sync.RWMutex
 	composeNameToProjID map[string]string
-	composeCache        *cache.KeyedCache[string, composeCacheEntry]
+	composeCache        *hot.HotCache[string, composeCacheEntry]
 }
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
@@ -87,7 +87,7 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		lifecycleService:         lifecycleService,
 		containerRegistryService: containerRegistryService,
 		config:                   cfg,
-		composeCache:             cache.NewKeyed[string, composeCacheEntry](),
+		composeCache:             hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build(),
 	}
 }
 
@@ -508,13 +508,20 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		return nil, errors.New("project is nil")
 	}
 	if s.composeCache == nil {
-		s.composeCache = cache.NewKeyed[string, composeCacheEntry]()
+		s.composeCache = hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build()
 	}
 
-	entry, err := s.composeCache.GetOrFetch(ctx, proj.ID, validComposeCacheEntryInternal, func(ctx context.Context) (composeCacheEntry, error) {
+	if cached, ok := s.composeCache.Peek(proj.ID); ok {
+		if validComposeCacheEntryInternal(cached) {
+			return cached.project, nil
+		}
+		s.composeCache.Delete(proj.ID)
+	}
+
+	entry, found, err := s.composeCache.GetWithLoaders(proj.ID, func(_ []string) (map[string]composeCacheEntry, error) {
 		composeProject, composePath, err := s.loadComposeProjectForProjectInternal(ctx, proj, cfg)
 		if err != nil {
-			return composeCacheEntry{}, err
+			return nil, err
 		}
 
 		entry := composeCacheEntry{
@@ -525,7 +532,7 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		if info, statErr := os.Stat(composePath); statErr == nil {
 			entry.composeMtime = info.ModTime()
 		} else {
-			return composeCacheEntry{}, fmt.Errorf("stat compose file: %w", statErr)
+			return nil, fmt.Errorf("stat compose file: %w", statErr)
 		}
 		if composeProject != nil {
 			for _, composeFile := range composeProject.ComposeFiles {
@@ -534,16 +541,19 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 				}
 				info, statErr := os.Stat(composeFile)
 				if statErr != nil {
-					return composeCacheEntry{}, fmt.Errorf("stat compose include %s: %w", composeFile, statErr)
+					return nil, fmt.Errorf("stat compose include %s: %w", composeFile, statErr)
 				}
 				entry.includeMtimes[composeFile] = info.ModTime()
 			}
 		}
 
-		return entry, nil
+		return map[string]composeCacheEntry{proj.ID: entry}, nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, errors.New("compose cache loader returned no project")
 	}
 
 	return entry.project, nil
@@ -571,7 +581,7 @@ func (s *ProjectService) invalidateComposeCacheInternal(projectID string) {
 	if s.composeCache == nil || strings.TrimSpace(projectID) == "" {
 		return
 	}
-	s.composeCache.Invalidate(projectID)
+	s.composeCache.Delete(projectID)
 }
 
 func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, proj *models.Project) {

@@ -542,12 +542,12 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 	_, err = svc.UpdateEnvironment(ctx, "edge-auth-clear", map[string]any{"access_token": nil}, nil, nil)
 	require.NoError(t, err)
 
-	cachedEnvID, ok := svc.getCachedEnvironmentIDForTokenInternal(oldToken, time.Now()).Get()
+	cachedEnvID, ok := svc.getCachedEnvironmentIDForTokenInternal(oldToken).Get()
 	require.False(t, ok)
 	require.Empty(t, cachedEnvID)
 
+	_, tokenStillCached := svc.tokenCache.Peek(oldToken)
 	svc.tokenCacheMu.RLock()
-	_, tokenStillCached := svc.tokenCache[oldToken]
 	_, reverseIndexStillCached := svc.tokenByEnvID["edge-auth-clear"]
 	svc.tokenCacheMu.RUnlock()
 
@@ -561,16 +561,18 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 
 func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCleansReverseIndex(t *testing.T) {
 	svc := NewEnvironmentService(nil, nil, nil, nil, nil, nil)
-	now := time.Now()
+	svc.tokenCacheMu.Lock()
+	svc.tokenByEnvID["env-expired"] = "expired-token"
+	svc.tokenCache.SetWithTTL("expired-token", "env-expired", time.Nanosecond)
+	time.Sleep(time.Millisecond)
+	svc.tokenCacheMu.Unlock()
 
-	svc.cacheEnvironmentTokenInternal("env-expired", "expired-token", now.Add(-2*edgeTokenCacheTTL))
-
-	envID, ok := svc.getCachedEnvironmentIDForTokenInternal("expired-token", now).Get()
+	envID, ok := svc.getCachedEnvironmentIDForTokenInternal("expired-token").Get()
 	require.False(t, ok)
 	require.Empty(t, envID)
 
+	_, tokenStillCached := svc.tokenCache.Peek("expired-token")
 	svc.tokenCacheMu.RLock()
-	_, tokenStillCached := svc.tokenCache["expired-token"]
 	_, reverseIndexStillCached := svc.tokenByEnvID["env-expired"]
 	svc.tokenCacheMu.RUnlock()
 

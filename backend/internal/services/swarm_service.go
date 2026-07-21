@@ -32,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
 	dockerclient "github.com/moby/moby/client"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/atomic"
 	"golang.org/x/sync/errgroup"
 )
@@ -50,8 +51,7 @@ type SwarmService struct {
 	kvService          *KVService
 	registryService    *ContainerRegistryService
 	environmentService *EnvironmentService
-	identityCacheMu    sync.RWMutex
-	identityCache      map[string]swarmNodeIdentityCacheEntry
+	identityCache      *hot.HotCache[string, SwarmNodeIdentity]
 }
 
 func NewSwarmService(
@@ -67,7 +67,10 @@ func NewSwarmService(
 		kvService:          kvService,
 		registryService:    registryService,
 		environmentService: environmentService,
-		identityCache:      make(map[string]swarmNodeIdentityCacheEntry),
+		identityCache: hot.NewHotCache[string, SwarmNodeIdentity](hot.LRU, 512).
+			WithTTL(swarmNodeIdentityCacheTTL).
+			WithJanitor().
+			Build(),
 	}
 }
 
@@ -84,11 +87,6 @@ type swarmNodeAgentRuntime struct {
 	lastHeartbeat *time.Time
 	lastPollAt    *time.Time
 	identity      *SwarmNodeIdentity
-}
-
-type swarmNodeIdentityCacheEntry struct {
-	identity  SwarmNodeIdentity
-	expiresAt time.Time
 }
 
 type swarmNodeAgentCoverage struct {
@@ -830,7 +828,7 @@ func (s *SwarmService) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context,
 		runtime.lastPollAt = pollState.LastPollAt
 	}
 
-	if identity := s.cachedSwarmNodeIdentityInternal(env.ID, time.Now()); identity != nil {
+	if identity := s.cachedSwarmNodeIdentityInternal(env.ID); identity != nil {
 		runtime.connected = true
 		runtime.identity = identity
 		return runtime
@@ -844,31 +842,31 @@ func (s *SwarmService) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context,
 
 	runtime.connected = true
 	runtime.identity = identity
-	s.cacheSwarmNodeIdentityInternal(env.ID, *identity, time.Now())
+	s.cacheSwarmNodeIdentityInternal(env.ID, *identity)
 	return runtime
 }
 
-func (s *SwarmService) cachedSwarmNodeIdentityInternal(environmentID string, now time.Time) *SwarmNodeIdentity {
-	s.identityCacheMu.RLock()
-	entry, ok := s.identityCache[environmentID]
-	s.identityCacheMu.RUnlock()
-	if !ok || !now.Before(entry.expiresAt) {
+func (s *SwarmService) cachedSwarmNodeIdentityInternal(environmentID string) *SwarmNodeIdentity {
+	if s.identityCache == nil {
 		return nil
 	}
-	identity := entry.identity
+	identity, ok, _ := s.identityCache.Get(environmentID)
+	if !ok {
+		return nil
+	}
 	return &identity
 }
 
-func (s *SwarmService) cacheSwarmNodeIdentityInternal(environmentID string, identity SwarmNodeIdentity, now time.Time) {
-	s.identityCacheMu.Lock()
-	s.identityCache[environmentID] = swarmNodeIdentityCacheEntry{identity: identity, expiresAt: now.Add(swarmNodeIdentityCacheTTL)}
-	s.identityCacheMu.Unlock()
+func (s *SwarmService) cacheSwarmNodeIdentityInternal(environmentID string, identity SwarmNodeIdentity) {
+	if s.identityCache != nil {
+		s.identityCache.Set(environmentID, identity)
+	}
 }
 
 func (s *SwarmService) invalidateSwarmNodeIdentityInternal(environmentID string) {
-	s.identityCacheMu.Lock()
-	delete(s.identityCache, environmentID)
-	s.identityCacheMu.Unlock()
+	if s.identityCache != nil {
+		s.identityCache.Delete(environmentID)
+	}
 }
 
 // JoinEnvironments joins visible remote environments to the selected swarm

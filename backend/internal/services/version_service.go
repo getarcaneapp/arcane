@@ -19,8 +19,8 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 )
@@ -39,7 +39,7 @@ type latestRelease struct {
 
 type VersionService struct {
 	httpClient               *http.Client
-	cache                    *cache.Cache[latestRelease]
+	cache                    *hot.HotCache[struct{}, latestRelease]
 	disabled                 bool
 	version                  string
 	revision                 string
@@ -52,9 +52,8 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 	if httpClient == nil {
 		httpClient = http.DefaultClient
 	}
-	return &VersionService{
+	service := &VersionService{
 		httpClient:               httpClient,
-		cache:                    cache.New[latestRelease](versionTTL),
 		disabled:                 disabled,
 		version:                  version,
 		revision:                 revision,
@@ -62,53 +61,68 @@ func NewVersionService(httpClient *http.Client, disabled bool, version string, r
 		dockerService:            dockerService,
 		imageUpdateService:       imageUpdateService,
 	}
+	loader := func(_ []struct{}) (map[struct{}]latestRelease, error) {
+		ctx, cancel := context.WithTimeout(context.Background(), defaultRequestTimeout)
+		defer cancel()
+		release, err := service.fetchLatestReleaseInternal(ctx)
+		if err != nil {
+			return nil, err
+		}
+		return map[struct{}]latestRelease{{}: release}, nil
+	}
+	service.cache = hot.NewHotCache[struct{}, latestRelease](hot.LRU, 1).
+		WithTTL(versionTTL).
+		WithLoaders(loader).
+		WithRevalidation(24*time.Hour, loader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		Build()
+	return service
 }
 
-func (s *VersionService) getLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
-	rel, err := s.cache.GetOrFetch(ctx, func(ctx context.Context) (latestRelease, error) {
-		reqCtx, cancel := context.WithTimeout(ctx, defaultRequestTimeout)
-		defer cancel()
+func (s *VersionService) getLatestReleaseInternal(_ context.Context) (latestRelease, error) {
+	release, found, err := s.cache.Get(struct{}{})
+	if err != nil {
+		return latestRelease{}, err
+	}
+	if !found {
+		return latestRelease{}, errors.New("latest release cache loader returned no release")
+	}
+	return release, nil
+}
 
-		req, err := http.NewRequestWithContext(reqCtx, http.MethodGet, versionCheckURL, nil)
-		if err != nil {
-			return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
-		}
-
-		resp, err := s.httpClient.Do(req)
-		if err != nil {
-			return latestRelease{}, fmt.Errorf("get latest release: %w", err)
-		}
-		defer func() { _ = resp.Body.Close() }()
-
-		if resp.StatusCode != http.StatusOK {
-			return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
-		}
-
-		var payload struct {
-			TagName     string `json:"tag_name"`
-			Body        string `json:"body"`
-			PublishedAt string `json:"published_at"`
-		}
-		if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
-			return latestRelease{}, fmt.Errorf("decode payload: %w", err)
-		}
-		if payload.TagName == "" {
-			return latestRelease{}, errors.New("GitHub API returned empty tag name")
-		}
-
-		return latestRelease{
-			TagName:     payload.TagName,
-			Body:        payload.Body,
-			PublishedAt: payload.PublishedAt,
-		}, nil
-	})
-
-	if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
-		slog.Warn("Failed to fetch latest release, returning stale cache", "error", staleErr.Err)
-		return rel, nil
+func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionCheckURL, nil)
+	if err != nil {
+		return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
 	}
 
-	return rel, err
+	resp, err := s.httpClient.Do(req)
+	if err != nil {
+		return latestRelease{}, fmt.Errorf("get latest release: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+	}
+
+	var payload struct {
+		TagName     string `json:"tag_name"`
+		Body        string `json:"body"`
+		PublishedAt string `json:"published_at"`
+	}
+	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
+		return latestRelease{}, fmt.Errorf("decode payload: %w", err)
+	}
+	if payload.TagName == "" {
+		return latestRelease{}, errors.New("GitHub API returned empty tag name")
+	}
+
+	return latestRelease{
+		TagName:     payload.TagName,
+		Body:        payload.Body,
+		PublishedAt: payload.PublishedAt,
+	}, nil
 }
 
 func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
@@ -184,11 +198,7 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 	latest, err := s.GetLatestVersion(ctx)
 	if err != nil {
-		if staleErr, ok := errors.AsType[*cache.StaleError](err); ok {
-			slog.Warn("Failed to refresh latest version; using stale cache", "error", staleErr.Err)
-		} else {
-			return check, err
-		}
+		return check, err
 	}
 
 	if latest != "" {
@@ -254,8 +264,7 @@ func (s *VersionService) GetAppVersionInfo(ctx context.Context) *version.Info {
 	// For semver versions, check GitHub releases
 	if isSemver {
 		rel, err := s.getLatestReleaseInternal(ctx)
-		var staleErr *cache.StaleError
-		if err == nil || errors.As(err, &staleErr) {
+		if err == nil {
 			if rel.TagName != "" {
 				info.NewestVersion = rel.TagName
 				semverUpdateAvailable = s.IsNewer(rel.TagName, ver)
