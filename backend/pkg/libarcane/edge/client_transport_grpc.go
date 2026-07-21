@@ -27,6 +27,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	}
 
 	dialOpts := []grpc.DialOption{
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(maxGRPCTunnelMessageSize)),
 		grpc.WithConnectParams(grpc.ConnectParams{
 			Backoff: backoff.Config{
 				BaseDelay:  1 * time.Second,
@@ -36,6 +37,9 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 			},
 			MinConnectTimeout: 10 * time.Second,
 		}),
+		// The manager currently serves gRPC through grpc.Server.ServeHTTP, so
+		// net/http owns HTTP/2 ping handling. A future native grpc.Serve listener
+		// must add an enforcement policy whose MinTime permits this interval.
 		grpc.WithKeepaliveParams(keepalive.ClientParameters{
 			Time:                30 * time.Second,
 			Timeout:             10 * time.Second,

@@ -6,7 +6,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -98,79 +97,6 @@ func TestTunnelConn(t *testing.T) {
 	err = tunnelConn.Send(msg)
 	require.Error(t, err)
 	assert.Equal(t, websocket.ErrCloseSent, err)
-}
-
-func TestTunnelConn_SendRequest(t *testing.T) {
-	// Start a test server that responds to requests
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
-		if err != nil {
-			return
-		}
-		defer func() { _ = conn.Close() }()
-
-		for {
-			_, message, err := conn.ReadMessage()
-			if err != nil {
-				break
-			}
-
-			var msg TunnelMessage
-			_ = json.Unmarshal(message, &msg)
-
-			// Respond
-			resp := &TunnelMessage{
-				ID:   msg.ID,
-				Type: MessageTypeResponse,
-				Body: []byte("response"),
-			}
-			data, _ := json.Marshal(resp)
-			_ = conn.WriteMessage(websocket.TextMessage, data)
-		}
-	}))
-	defer server.Close()
-
-	// Connect
-	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, dialResp, err := websocket.DefaultDialer.Dial(url, nil)
-	require.NoError(t, err)
-	if dialResp != nil {
-		defer func() { _ = dialResp.Body.Close() }()
-	}
-
-	tunnelConn := NewTunnelConn(conn)
-	defer func() { _ = tunnelConn.Close() }()
-
-	// Setup background receiver
-	pending := &sync.Map{}
-	go func() {
-		for {
-			msg, err := tunnelConn.Receive()
-			if err != nil {
-				return
-			}
-			if req, ok := pending.Load(msg.ID); ok {
-				pendingReq := req.(*PendingRequest)
-				pendingReq.ResponseCh <- msg
-			}
-		}
-	}()
-
-	// Test SendRequest
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
-	defer cancel()
-
-	req := &TunnelMessage{
-		ID:   "req-1",
-		Type: MessageTypeRequest,
-	}
-
-	resp, err := tunnelConn.SendRequest(ctx, req, pending)
-	require.NoError(t, err)
-	assert.Equal(t, "req-1", resp.ID)
-	assert.Equal(t, MessageTypeResponse, resp.Type)
-	assert.Equal(t, []byte("response"), resp.Body)
 }
 
 func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {

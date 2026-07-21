@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -186,10 +185,6 @@ func (u *unknownTunnelConn) Close() error { return nil }
 
 func (u *unknownTunnelConn) IsClosed() bool { return false }
 
-func (u *unknownTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, nil
-}
-
 func BenchmarkEdgeTunnelProxyRequest(b *testing.B) {
 	previousLogger := slog.Default()
 	slog.SetDefault(slog.New(slog.NewTextHandler(io.Discard, nil)))
@@ -265,7 +260,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	}
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	if err != nil {
 		_ = conn.Close()
 		cancel()

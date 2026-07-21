@@ -74,6 +74,10 @@ jobs:
           CGO_ENABLED: ${{ matrix.module.cgo_enabled }}
         run: just test ${{ matrix.module.name }}
 
+      - name: Lint protobuf definitions
+        if: matrix.module.name == 'backend'
+        run: just lint proto
+
       - name: Upload coverage artifact
         if: always()
         uses: actions/upload-artifact@v7

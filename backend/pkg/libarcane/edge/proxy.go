@@ -46,71 +46,96 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 	return result.Status, result.Headers, result.Body, nil
 }
 
-func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (<-chan *TunnelMessage, error) {
+func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (*PendingRequest, error) {
 	if requestID == "" {
 		return nil, errors.New("request ID is required")
 	}
 
-	respCh := make(chan *TunnelMessage, 256)
-	tunnel.Pending.Store(requestID, &PendingRequest{
-		ResponseCh: respCh,
-		CreatedAt:  time.Now(),
-	})
-	return respCh, nil
+	pending := &PendingRequest{
+		ResponseCh: make(chan *TunnelMessage, 256),
+		failureCh:  make(chan error, 1),
+	}
+	tunnel.Pending.Store(requestID, pending)
+	return pending, nil
 }
 
-func collectCommandResponseInternal(ctx context.Context, respCh <-chan *TunnelMessage, method string) (int, map[string]string, []byte, error) {
+func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pending *PendingRequest, method string) (int, map[string]string, []byte, error) {
 	state := &grpcResponseState{}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, nil, nil, ctx.Err()
-		case incoming := <-respCh:
-			if incoming == nil {
-				continue
-			}
-
-			switch incoming.Type {
-			case MessageTypeResponse:
-				if done, status, headers, body := state.handleResponse(method, incoming); done {
-					return status, headers, body, nil
-				}
-			case MessageTypeCommandAck:
-				continue
-			case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
-				state.handleStreamData(incoming)
-			case MessageTypeCommandComplete:
-				status, headers, body, err := state.handleCommandComplete(incoming)
+		case <-tunnel.done:
+			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
 				return status, headers, body, err
-			case MessageTypeStreamEnd:
-				if done, status, headers, body := state.handleStreamEnd(); done {
-					return status, headers, body, nil
-				}
-			case MessageTypeRequest,
-				MessageTypeCommandRequest,
-				MessageTypeHeartbeat,
-				MessageTypeHeartbeatAck,
-				MessageTypeWebSocketStart,
-				MessageTypeWebSocketData,
-				MessageTypeWebSocketClose,
-				MessageTypeStreamOpen,
-				MessageTypeStreamClose,
-				MessageTypeCancelRequest,
-				MessageTypeRegister,
-				MessageTypeRegisterResponse,
-				MessageTypeEvent:
-				continue
+			}
+			return 0, nil, nil, errors.New("edge tunnel closed while waiting for response")
+		case err := <-pending.failureCh:
+			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
+				return status, headers, body, err
+			}
+			return 0, nil, nil, err
+		case incoming, ok := <-pending.ResponseCh:
+			if !ok {
+				return 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+			}
+			if done, status, headers, body, err := state.handleTunnelMessageInternal(method, incoming); done {
+				return status, headers, body, err
 			}
 		}
 	}
 }
 
-type grpcResponseState struct {
-	status      int
-	respHeaders map[string]string
-	respBody    bytes.Buffer
-	gotResponse bool
+func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
+	if incoming == nil {
+		return false, 0, nil, nil, nil
+	}
+
+	switch incoming.Type {
+	case MessageTypeResponse:
+		done, status, headers, body := s.handleResponse(method, incoming)
+		return done, status, headers, body, nil
+	case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
+		s.handleStreamData(incoming)
+	case MessageTypeCommandComplete:
+		status, headers, body, err := s.handleCommandComplete(incoming)
+		return true, status, headers, body, err
+	case MessageTypeStreamEnd:
+		done, status, headers, body := s.handleStreamEnd()
+		return done, status, headers, body, nil
+	case MessageTypeRequest,
+		MessageTypeHeartbeat,
+		MessageTypeHeartbeatAck,
+		MessageTypeWebSocketStart,
+		MessageTypeWebSocketData,
+		MessageTypeWebSocketClose,
+		MessageTypeRegister,
+		MessageTypeRegisterResponse,
+		MessageTypeEvent,
+		MessageTypeCommandRequest,
+		MessageTypeCommandAck,
+		MessageTypeStreamOpen,
+		MessageTypeStreamClose,
+		MessageTypeCancelRequest:
+	}
+	return false, 0, nil, nil, nil
+}
+
+func (s *grpcResponseState) drainTerminalResponseInternal(respCh <-chan *TunnelMessage, method string) (bool, int, map[string]string, []byte, error) {
+	for {
+		select {
+		case incoming, ok := <-respCh:
+			if !ok {
+				return true, 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+			}
+			if done, status, headers, body, err := s.handleTunnelMessageInternal(method, incoming); done {
+				return true, status, headers, body, err
+			}
+		default:
+			return false, 0, nil, nil, nil
+		}
+	}
 }
 
 func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
@@ -327,6 +352,15 @@ func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout 
 // This is for service-level calls that need to route through the tunnel.
 // Returns (statusCode, responseBody, error)
 func DoRequest(ctx context.Context, envID, method, path string, body []byte) (int, []byte, error) {
+	if ctx == nil {
+		return 0, nil, errors.New("context is required")
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultProxyTimeout)
+		defer cancel()
+	}
+
 	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok {
 		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)

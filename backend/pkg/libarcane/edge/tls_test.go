@@ -330,6 +330,18 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 	require.NoError(t, server.requireRequestCertificateIdentityInternal(req, "env-a"))
 }
 
+func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertificate(t *testing.T) {
+	server := NewTunnelServer(nil, nil)
+	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
+
+	req := httptest.NewRequest(http.MethodGet, "https://manager.example.com/api/tunnel/connect", nil)
+	req.TLS = &tls.ConnectionState{}
+	require.ErrorContains(t, server.requireRequestCertificateIdentityInternal(req, "env-a"), "verified edge mTLS client certificate is required")
+
+	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeOptional})
+	require.NoError(t, server.requireRequestCertificateIdentityInternal(req, "env-a"))
+}
+
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
 	server := NewTunnelServer(nil, nil)
 	server.SetConfig(&Config{
@@ -385,6 +397,11 @@ func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *te
 	t.Run("non tls peer", func(t *testing.T) {
 		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: testAuthInfo{}})
 		require.NoError(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-a"))
+	})
+
+	t.Run("direct tls without verified client certificate", func(t *testing.T) {
+		ctx := peer.NewContext(context.Background(), &peer.Peer{AuthInfo: credentials.TLSInfo{}})
+		require.ErrorContains(t, server.requireCertificateIdentityFromContextInternal(ctx, "env-a"), "verified edge mTLS client certificate is required")
 	})
 
 	t.Run("verified tls peer checks identity", func(t *testing.T) {

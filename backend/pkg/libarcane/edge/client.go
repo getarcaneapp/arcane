@@ -10,8 +10,6 @@ import (
 	"net"
 	"net/http"
 	"strings"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,49 +34,15 @@ const (
 	defaultCommandChunkSize       = 256 * 1024
 )
 
-// activeWSStream tracks an active WebSocket stream on the agent side.
-type activeWSStream struct {
-	ws     *websocket.Conn
-	conn   TunnelConnection // tunnel connection the stream was opened on
-	cancel context.CancelFunc
-	dataCh chan wsPayload
-	mu     sync.Mutex
-	closed bool
-}
-
-type wsPayload struct {
-	messageType int
-	data        []byte
-}
-
-// TunnelClient represents the agent-side tunnel client
-type TunnelClient struct {
-	cfg                     *Config
-	handler                 http.Handler
-	reconnectInterval       time.Duration
-	heartbeatInterval       time.Duration
-	grpcRegistrationTimeout time.Duration
-	websocketPreferenceTTL  time.Duration
-	managerURL              string
-	managerGRPCAddr         string
-	localPort               string // Port the agent is running on locally
-	httpClient              *http.Client
-	conn                    atomic.Pointer[connBox]
-	stopCh                  chan struct{}
-	requestTimeout          time.Duration
-	activeStreams           sync.Map // map[string]*activeWSStream
-	transportPreferenceMu   sync.RWMutex
-	preferWebSocketUntil    time.Time
-	agentInstanceID         string
-	sessionID               string
-}
-
-// connBox wraps the active TunnelConnection so it can be swapped atomically on
-// reconnect. The wrapper is required because the gRPC and WebSocket connections
-// are different concrete types; a bare atomic.Value would panic on the type
-// change, whereas an atomic.Pointer to a fixed box type does not.
-type connBox struct {
-	conn TunnelConnection
+func (t *commandRequestTransfer) stopInternal() {
+	if t == nil {
+		return
+	}
+	t.timerMu.Lock()
+	defer t.timerMu.Unlock()
+	if t.timer != nil {
+		t.timer.Stop()
+	}
 }
 
 // setConn stores the active tunnel connection. The connection is reassigned on
@@ -272,11 +236,6 @@ func (c *TunnelClient) shouldAttemptWebSocketTunnelInternal() bool {
 	return transports.websocket
 }
 
-type managedTunnelTransportsInternal struct {
-	grpc      bool
-	websocket bool
-}
-
 func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransportsInternal {
 	if c == nil || c.cfg == nil {
 		return managedTunnelTransportsInternal{}
@@ -334,6 +293,13 @@ func (c *TunnelClient) grpcRegistrationTimeoutInternal() time.Duration {
 	return c.grpcRegistrationTimeout
 }
 
+func (c *TunnelClient) requestTimeoutInternal() time.Duration {
+	if c == nil || c.requestTimeout <= 0 {
+		return DefaultRequestTimeout
+	}
+	return c.requestTimeout
+}
+
 func (c *TunnelClient) websocketPreferenceTTLInternal() time.Duration {
 	if c == nil || c.websocketPreferenceTTL <= 0 {
 		return DefaultWebSocketPreferenceTTL
@@ -375,11 +341,13 @@ func (c *TunnelClient) markTransportConnectedInternal(transport string) {
 }
 
 func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
+	capabilities := AdvertisedEdgeCommands()
+	capabilities = append(capabilities, tunnelCapabilityChunkedRequest)
 	return &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
-		Capabilities:  AdvertisedEdgeCommands(),
+		Capabilities:  capabilities,
 		ResumeSession: c.sessionID,
 	}
 }
@@ -473,6 +441,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 	defer c.closeAllStreams()
 
 	conn := c.getConn()
+	defer c.clearCommandRequestTransfersInternal(conn)
 	for {
 		select {
 		case <-ctx.Done():
@@ -487,7 +456,13 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 			case MessageTypeRequest:
 				go c.handleRequest(ctx, conn, msg)
 			case MessageTypeCommandRequest:
-				go c.handleCommandRequest(ctx, conn, msg)
+				if transferID := strings.TrimSpace(msg.Metadata[bodyTransferMetadataKey]); transferID != "" {
+					c.beginCommandRequestTransferInternal(ctx, conn, transferID, msg)
+				} else {
+					go c.handleCommandRequest(ctx, conn, msg)
+				}
+			case MessageTypeFileChunk:
+				c.handleCommandRequestChunkInternal(ctx, msg)
 			case MessageTypeWebSocketStart:
 				c.handleWebSocketStart(ctx, conn, msg)
 			case MessageTypeStreamOpen:
@@ -502,7 +477,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 				c.handleStreamClose(ctx, msg)
 			case MessageTypeCancelRequest:
 				slog.DebugContext(ctx, "Ignoring edge cancel request on agent", "id", msg.ID)
-			case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamEnd, MessageTypeEvent, MessageTypeCommandAck, MessageTypeCommandOutput, MessageTypeCommandComplete, MessageTypeFileChunk:
+			case MessageTypeResponse, MessageTypeHeartbeat, MessageTypeStreamEnd, MessageTypeEvent, MessageTypeCommandAck, MessageTypeCommandOutput, MessageTypeCommandComplete:
 				slog.DebugContext(ctx, "Ignoring message type on agent", "type", msg.Type)
 			case MessageTypeHeartbeatAck:
 				slog.DebugContext(ctx, "Received heartbeat ack")
@@ -523,9 +498,91 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 	}
 }
 
+func (c *TunnelClient) beginCommandRequestTransferInternal(ctx context.Context, conn TunnelConnection, transferID string, msg *TunnelMessage) {
+	if c == nil || conn == nil || msg == nil {
+		return
+	}
+
+	timeout := c.requestTimeoutInternal()
+	transfer := &commandRequestTransfer{request: msg, conn: conn}
+	transfer.timerMu.Lock()
+	previous, loaded := c.requestTransfers.Swap(transferID, transfer)
+	transfer.timer = time.AfterFunc(timeout, func() {
+		if c.requestTransfers.CompareAndDelete(transferID, transfer) {
+			slog.WarnContext(ctx, "Command body transfer expired", "transfer_id", transferID, "command_id", msg.ID)
+			c.sendCommandCompleteInternal(conn, msg.ID, http.StatusRequestTimeout, "command body transfer timed out")
+		}
+	})
+	transfer.timerMu.Unlock()
+	if loaded {
+		if previous, ok := previous.(*commandRequestTransfer); ok {
+			previous.stopInternal()
+			c.sendCommandCompleteInternal(previous.conn, previous.request.ID, http.StatusBadRequest, "duplicate command body transfer ID")
+		}
+	}
+}
+
+func (c *TunnelClient) handleCommandRequestChunkInternal(ctx context.Context, msg *TunnelMessage) {
+	if c == nil || msg == nil {
+		return
+	}
+
+	value, ok := c.requestTransfers.Load(msg.ID)
+	if !ok {
+		slog.WarnContext(ctx, "Received command body chunk for unknown transfer", "transfer_id", msg.ID)
+		return
+	}
+	transfer, ok := value.(*commandRequestTransfer)
+	if !ok {
+		c.requestTransfers.Delete(msg.ID)
+		slog.WarnContext(ctx, "Discarded invalid command body transfer state", "transfer_id", msg.ID)
+		return
+	}
+	if msg.Sequence != transfer.nextSequence {
+		if c.requestTransfers.CompareAndDelete(msg.ID, transfer) {
+			transfer.stopInternal()
+			c.sendCommandCompleteInternal(transfer.conn, transfer.request.ID, http.StatusBadRequest, "command body chunks arrived out of order")
+		}
+		return
+	}
+
+	_, _ = transfer.body.Write(msg.Body)
+	transfer.nextSequence++
+	if !msg.EOF {
+		return
+	}
+
+	if c.requestTransfers.CompareAndDelete(msg.ID, transfer) {
+		transfer.stopInternal()
+		transfer.request.Body = append([]byte(nil), transfer.body.Bytes()...)
+		go c.handleCommandRequest(ctx, transfer.conn, transfer.request)
+	}
+}
+
+func (c *TunnelClient) clearCommandRequestTransfersInternal(conn TunnelConnection) {
+	if c == nil {
+		return
+	}
+
+	c.requestTransfers.Range(func(transferID, value any) bool {
+		transfer, ok := value.(*commandRequestTransfer)
+		if !ok {
+			c.requestTransfers.Delete(transferID)
+			return true
+		}
+		if transfer.conn != conn {
+			return true
+		}
+		if c.requestTransfers.CompareAndDelete(transferID, transfer) {
+			transfer.stopInternal()
+		}
+		return true
+	})
+}
+
 func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
 	if !ValidateEdgeCommand(msg.Command, msg.Method, msg.Path, false) {
-		c.sendCommandComplete(conn, msg.ID, http.StatusBadRequest, nil, nil, "unsupported edge command", false)
+		c.sendCommandCompleteInternal(conn, msg.ID, http.StatusBadRequest, "unsupported edge command")
 		return
 	}
 	if conn == nil {
@@ -536,12 +593,12 @@ func (c *TunnelClient) handleCommandRequest(ctx context.Context, conn TunnelConn
 		return
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeoutInternal())
 	defer cancel()
 
 	req, err := c.buildLocalHTTPRequest(reqCtx, msg)
 	if err != nil {
-		c.sendCommandComplete(conn, msg.ID, http.StatusInternalServerError, nil, nil, fmt.Sprintf("failed to create request: %v", err), false)
+		c.sendCommandCompleteInternal(conn, msg.ID, http.StatusInternalServerError, fmt.Sprintf("failed to create request: %v", err))
 		return
 	}
 
@@ -1058,40 +1115,16 @@ func (c *TunnelClient) sendErrorResponse(conn TunnelConnection, requestID string
 	_ = conn.Send(resp)
 }
 
-func (c *TunnelClient) sendCommandComplete(conn TunnelConnection, commandID string, status int, headers map[string]string, body []byte, message string, streaming bool) {
+func (c *TunnelClient) sendCommandCompleteInternal(conn TunnelConnection, commandID string, status int, message string) {
 	if conn == nil {
 		return
 	}
 	_ = conn.Send(&TunnelMessage{
-		ID:        commandID,
-		Type:      MessageTypeCommandComplete,
-		Status:    status,
-		Headers:   headers,
-		Body:      body,
-		Error:     message,
-		Streaming: streaming,
+		ID:     commandID,
+		Type:   MessageTypeCommandComplete,
+		Status: status,
+		Error:  message,
 	})
-}
-
-// responseRecorder captures HTTP responses
-type responseRecorder struct {
-	headers    http.Header
-	body       bytes.Buffer
-	statusCode int
-}
-
-type commandResponseRecorder struct {
-	conn        TunnelConnection
-	headers     http.Header
-	commandID   string
-	commandName string
-	buffer      bytes.Buffer
-	statusCode  int
-	sequence    int64
-	mu          sync.Mutex
-	wroteHeader bool
-	streaming   bool
-	closed      bool
 }
 
 func newCommandResponseRecorderInternal(commandID, commandName string, conn TunnelConnection) *commandResponseRecorder {
@@ -1246,16 +1279,6 @@ func (r *responseRecorder) WriteHeader(statusCode int) {
 	r.statusCode = statusCode
 }
 
-type streamingResponseRecorder struct {
-	requestID   string
-	conn        TunnelConnection
-	headers     http.Header
-	statusCode  int
-	wroteHeader bool
-	closed      bool
-	mu          sync.Mutex
-}
-
 func newStreamingResponseRecorder(requestID string, conn TunnelConnection) *streamingResponseRecorder {
 	return &streamingResponseRecorder{
 		requestID:  requestID,
@@ -1283,14 +1306,22 @@ func (r *streamingResponseRecorder) Write(b []byte) (int, error) {
 		return 0, nil
 	}
 
-	if err := r.conn.Send(&TunnelMessage{
-		ID:   r.requestID,
-		Type: MessageTypeStreamData,
-		Body: append([]byte(nil), b...),
-	}); err != nil {
-		return 0, err
+	originalLen := len(b)
+	for len(b) > 0 {
+		chunk := b
+		if len(chunk) > defaultCommandChunkSize {
+			chunk = chunk[:defaultCommandChunkSize]
+		}
+		if err := r.conn.Send(&TunnelMessage{
+			ID:   r.requestID,
+			Type: MessageTypeStreamData,
+			Body: append([]byte(nil), chunk...),
+		}); err != nil {
+			return 0, err
+		}
+		b = b[len(chunk):]
 	}
-	return len(b), nil
+	return originalLen, nil
 }
 
 func (r *streamingResponseRecorder) WriteHeader(statusCode int) {
