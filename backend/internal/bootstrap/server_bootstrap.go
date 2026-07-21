@@ -150,7 +150,8 @@ func configureTunnelServerInternal(appCtx context.Context, cfg *config.Config, r
 	var grpcServer *grpc.Server
 
 	if !cfg.AgentMode && tunnelServer != nil {
-		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
+		//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
+		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions()...)
 		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
 
 		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

@@ -376,7 +376,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	clientAPI := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := clientAPI.Connect(ctx)
+	stream, err := clientAPI.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})

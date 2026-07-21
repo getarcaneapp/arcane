@@ -67,12 +67,17 @@ func TestBuildCommandRouteIndexInternalPanicsOnDuplicateRoute(t *testing.T) {
 func TestCollectCommandResponse(t *testing.T) {
 	t.Parallel()
 
-	respCh := make(chan *TunnelMessage, 4)
-	respCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandAck}
-	respCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandOutput, Body: []byte("hello ")}
-	respCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandComplete, Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: []byte("world")}
+	tunnel := NewAgentTunnelWithConn("env-1", &fakeServerTunnelConn{})
+	pending := &PendingRequest{
+		ResponseCh: make(chan *TunnelMessage, 4),
+		failureCh:  make(chan error, 1),
+	}
+	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandAck}
+	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandOutput, Body: []byte("hello ")}
+	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandComplete, Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: []byte("world")}
+	require.NoError(t, tunnel.Close())
 
-	status, headers, body, err := collectCommandResponseInternal(context.Background(), respCh, "")
+	status, headers, body, err := collectCommandResponseInternal(context.Background(), tunnel, pending, "")
 	require.NoError(t, err)
 	require.Equal(t, 200, status)
 	require.Equal(t, "text/plain", headers["Content-Type"])

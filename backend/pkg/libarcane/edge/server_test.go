@@ -11,7 +11,6 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -602,10 +601,6 @@ func (f *fakeServerTunnelConn) Close() error { return nil }
 
 func (f *fakeServerTunnelConn) IsClosed() bool { return false }
 
-func (f *fakeServerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
-}
-
 type registerResponseOrderConn struct {
 	sendHook func(*TunnelMessage) error
 	recvErr  error
@@ -630,10 +625,6 @@ func (f *registerResponseOrderConn) IsExpectedReceiveError(error) bool { return 
 func (f *registerResponseOrderConn) Close() error { return nil }
 
 func (f *registerResponseOrderConn) IsClosed() bool { return false }
-
-func (f *registerResponseOrderConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
-}
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
 	server := NewTunnelServer(nil, nil)

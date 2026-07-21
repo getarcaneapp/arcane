@@ -17,11 +17,6 @@ const defaultTunnelPollRequestTimeout = 15 * time.Second
 
 var defaultPollManagedSessionStopTimeout = 5 * time.Second
 
-type pollManagedTunnelSession struct {
-	cancel context.CancelFunc
-	done   chan error
-}
-
 func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 	managerBaseURL := strings.TrimRight(strings.TrimSpace(c.cfg.GetManagerBaseURL()), "/")
 	if managerBaseURL == "" {

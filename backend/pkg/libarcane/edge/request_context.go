@@ -2,8 +2,6 @@ package edge
 
 import "context"
 
-type internalTunnelRequestContextKey struct{}
-
 // IsInternalTunnelRequest reports whether a request is being dispatched by the
 // in-process edge tunnel client instead of a real network listener.
 func IsInternalTunnelRequest(ctx context.Context) bool {

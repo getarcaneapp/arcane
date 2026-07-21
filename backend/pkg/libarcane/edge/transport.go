@@ -5,26 +5,7 @@ import (
 
 	"net/url"
 	"strings"
-	"time"
 )
-
-// Config contains the public edge-tunnel runtime settings needed by pkg/libarcane/edge.
-type Config struct {
-	EdgeAgent             bool
-	EdgeTransport         string
-	EdgeReconnectInterval int
-	EdgeMTLSMode          string
-	EdgeMTLSCAFile        string
-	EdgeMTLSCertFile      string
-	EdgeMTLSKeyFile       string
-	EdgeMTLSServerName    string
-	EdgeMTLSAssetsDir     string
-	AppURL                string
-	ManagerApiUrl         string
-	AgentToken            string
-	Port                  string
-	Listen                string
-}
 
 // GetManagerBaseURL returns the base URL of the manager application.
 // It strips any trailing slashes or /api suffix from MANAGER_API_URL.
@@ -64,18 +45,6 @@ func (c *Config) GetManagerGRPCAddr() string {
 	}
 
 	return host + ":" + port
-}
-
-// TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
-type TunnelRuntimeState struct {
-	Transport     string
-	ConnectedAt   *time.Time
-	LastHeartbeat *time.Time
-	SessionID     string
-	AgentInstance string
-	SecurityMode  string
-	Capabilities  []string
-	State         string
 }
 
 const (

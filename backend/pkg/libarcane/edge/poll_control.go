@@ -9,7 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -33,39 +32,6 @@ const (
 	// TunnelStatusActive indicates that the manager still needs the tunnel and it is already open.
 	TunnelStatusActive = "ACTIVE"
 )
-
-// TunnelPollRequest is a forward-compatible control-plane check-in request.
-type TunnelPollRequest struct {
-	Transport string `json:"transport,omitempty"`
-	Connected bool   `json:"connected,omitempty"`
-}
-
-// TunnelPollResponse is a forward-compatible control-plane response.
-type TunnelPollResponse struct {
-	Status              string `json:"status"`
-	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
-	ActiveTransport     string `json:"activeTransport,omitempty"`
-	Connected           bool   `json:"connected,omitempty"`
-}
-
-// PollRuntimeState describes the most recent poll-based control-plane activity
-// observed for an edge environment.
-type PollRuntimeState struct {
-	LastPollAt          *time.Time
-	PollIntervalSeconds int
-}
-
-// TunnelDemandRegistry tracks short-lived tunnel demand on the manager side.
-type TunnelDemandRegistry struct {
-	demands map[string]time.Time
-	mu      sync.RWMutex
-}
-
-// PollRuntimeRegistry tracks recent poll check-ins from edge agents.
-type PollRuntimeRegistry struct {
-	states map[string]PollRuntimeState
-	mu     sync.RWMutex
-}
 
 func pollRuntimeTTLInternal(state PollRuntimeState) time.Duration {
 	ttl := DefaultPollRuntimeTTL

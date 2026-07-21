@@ -5,29 +5,16 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-type CommandRequest struct {
-	ID            string
-	Command       string
-	Method        string
-	Path          string
-	Query         string
-	Headers       map[string]string
-	Body          []byte
-	TimeoutMillis int64
-}
-
-type CommandResult struct {
-	Status  int
-	Headers map[string]string
-	Body    []byte
-}
-
-type CommandClient struct{}
+const (
+	tunnelCapabilityChunkedRequest = "chunked-request"
+	bodyTransferMetadataKey        = "body_transfer_id"
+)
 
 func NewCommandClient() *CommandClient {
 	return &CommandClient{}
@@ -77,17 +64,40 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		AgentInstance: tunnel.AgentInstance,
 	}
 
-	respCh, err := registerPendingRequestInternal(tunnel, requestID)
+	pending, err := registerPendingRequestInternal(tunnel, requestID)
 	if err != nil {
 		return nil, err
 	}
 	defer tunnel.Pending.Delete(requestID)
 
+	chunkRequestBody := len(req.Body) > defaultCommandChunkSize && slices.Contains(tunnel.Capabilities, tunnelCapabilityChunkedRequest)
+	if chunkRequestBody {
+		transferID := uuid.NewString()
+		msg.Body = nil
+		msg.Metadata = map[string]string{bodyTransferMetadataKey: transferID}
+	}
+
 	if err := tunnel.Conn.Send(msg); err != nil {
 		return nil, fmt.Errorf("tunnel request failed: %w", err)
 	}
+	if chunkRequestBody {
+		transferID := msg.Metadata[bodyTransferMetadataKey]
+		for sequence, offset := int64(0), 0; offset < len(req.Body); sequence++ {
+			end := min(offset+defaultCommandChunkSize, len(req.Body))
+			if err := tunnel.Conn.Send(&TunnelMessage{
+				ID:       transferID,
+				Type:     MessageTypeFileChunk,
+				Body:     req.Body[offset:end],
+				Sequence: sequence,
+				EOF:      end == len(req.Body),
+			}); err != nil {
+				return nil, fmt.Errorf("tunnel request body transfer failed: %w", err)
+			}
+			offset = end
+		}
+	}
 
-	status, headers, body, err := collectCommandResponseInternal(ctx, respCh, req.Method)
+	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method)
 	if err != nil {
 		return nil, err
 	}

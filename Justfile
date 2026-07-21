@@ -331,6 +331,11 @@ _lint-cli:
 _lint-types:
     cd types && golangci-lint run -c ../.github/.golangci.yml ./...
 
+# Lint edge tunnel protobuf definitions.
+[group('quality')]
+_lint-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
+
 # Lint all Go code
 [group('quality')]
 _lint-go: _lint-backend _lint-cli _lint-types
@@ -339,8 +344,9 @@ _lint-go: _lint-backend _lint-cli _lint-types
 _lint-all:
     @just _lint-js
     @just _lint-go
+    @just _lint-proto
 
-# Lint targets. Valid: "backend", "frontend", "tests", "email-templates", "js", "cli", "types", "go", "all".
+# Lint targets. Valid: "backend", "frontend", "tests", "email-templates", "js", "cli", "types", "go", "proto", "all".
 [group('quality')]
 lint target="all":
     @just "_lint-{{ target }}"
@@ -507,6 +513,7 @@ gomod action="tidy" target="all":
 # Generate edge tunnel protobuf/gRPC code.
 [group('codegen')]
 _generate-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
 
 # Generate targets. Valid: "proto".

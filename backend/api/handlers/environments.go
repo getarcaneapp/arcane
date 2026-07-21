@@ -823,6 +823,8 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 	detachedCtx := context.WithoutCancel(ctx)
 
 	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
+		defer cancel()
 		if err := h.environmentService.SyncRegistriesToEnvironment(syncCtx, envID); err != nil {
 			slog.WarnContext(syncCtx, "Failed to sync registries to environment",
 				"environmentID", envID,
@@ -833,6 +835,8 @@ func (h *EnvironmentHandler) triggerEnvironmentResourceSyncInternal(ctx context.
 	}(detachedCtx, environmentID, environmentName, reason)
 
 	go func(syncCtx context.Context, envID string, envName string, syncReason string) {
+		syncCtx, cancel := context.WithTimeout(syncCtx, edge.DefaultProxyTimeout)
+		defer cancel()
 		if err := h.environmentService.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 			slog.WarnContext(syncCtx, "Failed to sync git repositories to environment",
 				"environmentID", envID,

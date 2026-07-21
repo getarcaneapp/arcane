@@ -7,14 +7,6 @@ import (
 	"strings"
 )
 
-type commandRoute struct {
-	Method      string
-	PathPattern string
-	CommandName string
-	Stream      bool
-	LocalOnly   bool
-}
-
 var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/health", CommandName: "system.health"},
 	{Method: http.MethodHead, PathPattern: "/api/health", CommandName: "system.health"},
@@ -232,21 +224,6 @@ var commandRoutes = []commandRoute{
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/stats", CommandName: "container.stats.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/terminal", CommandName: "container.exec.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/system/stats", CommandName: "system.stats.stream", Stream: true},
-}
-
-type commandRouteKey struct {
-	Method string
-	Stream bool
-}
-
-type commandRouteNode struct {
-	static map[string]*commandRouteNode
-	param  *commandRouteNode
-	route  *commandRoute
-}
-
-type commandRouteIndexInternal struct {
-	roots map[commandRouteKey]*commandRouteNode
 }
 
 var commandRoutesIndex = buildCommandRouteIndexInternal(commandRoutes)

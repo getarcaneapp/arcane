@@ -159,7 +159,8 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 
 	// Cleanup
 	removed := r.CleanupStale(5 * time.Minute)
-	assert.Equal(t, 1, removed)
+	require.Len(t, removed, 1)
+	assert.Same(t, tunnel, removed[0])
 
 	_, ok := r.Get(envID).Get()
 	assert.False(t, ok)

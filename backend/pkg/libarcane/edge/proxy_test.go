@@ -153,7 +153,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -270,6 +270,36 @@ func TestDoRequest_NoTunnel(t *testing.T) {
 	_, _, err := DoRequest(context.Background(), "non-existent", "GET", "/", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "no active tunnel")
+}
+
+func TestCommandRequestFailsWhenTunnelCloses(t *testing.T) {
+	tunnel := NewAgentTunnelWithConn("env-closing", &fakeTunnelConn{})
+	errCh := make(chan error, 1)
+
+	go func() {
+		_, err := DefaultCommandClient.Execute(context.Background(), tunnel, &CommandRequest{
+			Method: http.MethodGet,
+			Path:   "/api/health",
+		})
+		errCh <- err
+	}()
+
+	require.Eventually(t, func() bool {
+		found := false
+		tunnel.Pending.Range(func(_, _ any) bool {
+			found = true
+			return false
+		})
+		return found
+	}, time.Second, 10*time.Millisecond)
+
+	require.NoError(t, tunnel.CloseWithReason("test disconnect"))
+	select {
+	case err := <-errCh:
+		require.ErrorContains(t, err, "edge tunnel closed while waiting for response")
+	case <-time.After(time.Second):
+		t.Fatal("pending command did not fail after tunnel close")
+	}
 }
 
 func TestHasActiveTunnel(t *testing.T) {

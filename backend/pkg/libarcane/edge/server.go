@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -60,18 +61,6 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 // assets again after the enrollment cooldown.
 type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool)
 
-// TunnelServer handles incoming edge agent connections on the manager side.
-type TunnelServer struct {
-	registry           *TunnelRegistry
-	resolver           EnvironmentResolver
-	nameResolver       EnvironmentNameResolver
-	statusCallback     StatusUpdateCallback
-	eventCallback      EventCallback
-	enrollmentCallback EnrollmentCallback
-	cleanupDone        chan struct{}
-	cfg                *Config
-}
-
 // NewTunnelServer creates a new tunnel server.
 func NewTunnelServer(resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
 	return NewTunnelServerWithRegistry(GetRegistry(), resolver, statusCallback)
@@ -99,16 +88,17 @@ func (s *TunnelServer) SetEnvironmentNameResolver(resolver EnvironmentNameResolv
 	s.nameResolver = resolver
 }
 
-type resolvedEnvironmentIDKey struct{}
-
-// GRPCServerOptions returns the stream interceptor chain used by the tunnel service.
-func (s *TunnelServer) GRPCServerOptions(ctx context.Context) []grpc.ServerOption {
-	_ = ctx
+// GRPCServerOptions returns the receive guardrail and stream interceptor chain
+// used by the tunnel service. Arcane serves this server through ServeHTTP, so
+// transport-level server keepalive and MaxConcurrentStreams options would be
+// inert here; those belong on net/http unless the server moves to grpc.Serve.
+func (s *TunnelServer) GRPCServerOptions() []grpc.ServerOption {
 	return []grpc.ServerOption{
+		grpc.MaxRecvMsgSize(maxGRPCTunnelMessageSize),
 		grpc.ChainStreamInterceptor(
-			s.recoveryStreamInterceptorInternal(ctx),
-			s.loggingStreamInterceptorInternal(ctx),
-			s.authStreamInterceptorInternal(ctx),
+			s.recoveryStreamInterceptorInternal(),
+			s.loggingStreamInterceptorInternal(),
+			s.authStreamInterceptorInternal(),
 		),
 	}
 }
@@ -293,21 +283,7 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 
 	envID, ok := resolvedEnvironmentIDFromContextInternal(ctx).Get()
 	if !ok || envID == "" {
-		token := strings.TrimSpace(register.GetAgentToken())
-		if token == "" {
-			token = tokenFromMetadataInternal(ctx)
-		}
-
-		var resolveErr error
-		envID, resolveErr = s.resolveEnvironment(ctx, token)
-		if resolveErr != nil {
-			slog.WarnContext(ctx, "Failed to resolve gRPC agent token", "error", resolveErr)
-			_ = stream.Send(&tunnelpb.ManagerMessage{Payload: &tunnelpb.ManagerMessage_RegisterResponse{RegisterResponse: &tunnelpb.RegisterResponse{
-				Accepted: false,
-				Error:    "invalid agent token",
-			}}})
-			return status.Error(codes.Unauthenticated, "invalid agent token")
-		}
+		return status.Error(codes.Unauthenticated, "authenticated environment is missing from stream context")
 	}
 	if err := s.requireCertificateIdentityFromContextInternal(ctx, envID); err != nil {
 		return status.Error(codes.Unauthenticated, err.Error())
@@ -441,13 +417,14 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
 		_ = tunnel.Close()
-		_, _ = s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		if removed && !active {
+			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
+		}
 		return
 	}
 
-	if s.statusCallback != nil {
-		s.statusCallback(callbackCtx, tunnel.EnvironmentID, true)
-	}
+	s.updateConnectionStatusInternal(callbackCtx, tunnel, true)
 
 	defer func() {
 		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
@@ -455,8 +432,8 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 			return
 		}
 		slog.InfoContext(ctx, "Edge agent disconnected", "environment_id", tunnel.EnvironmentID, "session_id", tunnel.SessionID)
-		if s.statusCallback != nil && !active {
-			s.statusCallback(callbackCtx, tunnel.EnvironmentID, false)
+		if !active {
+			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
 		}
 	}()
 
@@ -524,7 +501,10 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 		select {
 		case pending.ResponseCh <- msg:
 		default:
-			slog.WarnContext(ctx, "Response channel full, dropping response", "id", msg.ID)
+			err := fmt.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
+			tunnel.Pending.Delete(msg.ID)
+			pending.failureCh <- err
+			slog.WarnContext(ctx, "Failed pending request with full response channel", "id", msg.ID)
 		}
 		return
 	}
@@ -542,13 +522,21 @@ func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, m
 		case <-ctx.Done():
 			return
 		case <-time.After(streamDeliveryTimeout):
-			slog.WarnContext(ctx, "Timed out delivering stream message to pending consumer",
+			err := fmt.Errorf("stream delivery timed out for pending request %s", msg.ID)
+			tunnel.Pending.Delete(msg.ID)
+			pending.failureCh <- err
+			slog.WarnContext(ctx, "Failed slow pending stream consumer",
 				"id", msg.ID,
 				"type", msg.Type,
 				"timeout", streamDeliveryTimeout,
 			)
+			if sendErr := tunnel.Conn.Send(&TunnelMessage{ID: msg.ID, Type: MessageTypeStreamClose, Error: err.Error()}); sendErr != nil {
+				slog.DebugContext(ctx, "Failed to close slow edge stream", "id", msg.ID, "error", sendErr)
+			}
 		}
+		return
 	}
+	slog.DebugContext(ctx, "Received stream message for unknown request", "id", msg.ID, "type", msg.Type)
 }
 
 func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
@@ -581,12 +569,30 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			count := s.registry.CleanupStale(TunnelStaleTimeout)
-			if count > 0 {
-				slog.InfoContext(ctx, "Cleaned up stale tunnels", "count", count)
+			removed := s.registry.CleanupStale(TunnelStaleTimeout)
+			for _, tunnel := range removed {
+				s.updateConnectionStatusInternal(context.WithoutCancel(ctx), tunnel, false)
+			}
+			if len(removed) > 0 {
+				slog.InfoContext(ctx, "Cleaned up stale tunnels", "count", len(removed))
 			}
 		}
 	}
+}
+
+func (s *TunnelServer) updateConnectionStatusInternal(ctx context.Context, tunnel *AgentTunnel, connected bool) {
+	if s == nil || s.statusCallback == nil || tunnel == nil {
+		return
+	}
+
+	s.statusMu.Lock()
+	defer s.statusMu.Unlock()
+	if !connected {
+		if active, ok := s.registry.Get(tunnel.EnvironmentID).Get(); ok && active != tunnel && active.Conn != nil && !active.Conn.IsClosed() {
+			return
+		}
+	}
+	s.statusCallback(ctx, tunnel.EnvironmentID, connected)
 }
 
 // WaitForCleanupDone blocks until the cleanup loop has stopped.
@@ -594,11 +600,9 @@ func (s *TunnelServer) WaitForCleanupDone() {
 	<-s.cleanupDone
 }
 
-func (s *TunnelServer) authStreamInterceptorInternal(ctx context.Context) grpc.StreamServerInterceptor {
-	_ = ctx
+func (s *TunnelServer) authStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	// TunnelService currently exposes only Connect. Keep this explicit method
 	// gate aligned with tunnel.proto if new RPCs are added.
-	//nolint:contextcheck // Stream interceptors receive request-scoped context from grpc.ServerStream.
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		if info == nil || info.FullMethod != tunnelpb.TunnelService_Connect_FullMethodName {
 			return handler(srv, ss)
@@ -618,8 +622,7 @@ func (s *TunnelServer) authStreamInterceptorInternal(ctx context.Context) grpc.S
 	}
 }
 
-func (s *TunnelServer) loggingStreamInterceptorInternal(ctx context.Context) grpc.StreamServerInterceptor {
-	_ = ctx
+func (s *TunnelServer) loggingStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
 		start := time.Now()
 		err := handler(srv, ss)
@@ -639,8 +642,7 @@ func (s *TunnelServer) loggingStreamInterceptorInternal(ctx context.Context) grp
 	}
 }
 
-func (s *TunnelServer) recoveryStreamInterceptorInternal(ctx context.Context) grpc.StreamServerInterceptor {
-	_ = ctx
+func (s *TunnelServer) recoveryStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
 			if recovered := recover(); recovered != nil {
@@ -655,12 +657,6 @@ func (s *TunnelServer) recoveryStreamInterceptorInternal(ctx context.Context) gr
 
 		return handler(srv, ss)
 	}
-}
-
-type contextualServerStream struct {
-	grpc.ServerStream
-
-	ctx context.Context
 }
 
 func (s *contextualServerStream) Context() context.Context {
@@ -688,7 +684,13 @@ func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionS
 }
 
 func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Request, envID string) error {
-	if req == nil || req.TLS == nil || !hasVerifiedPeerCertificateInternal(req.TLS) {
+	if req == nil || req.TLS == nil {
+		return nil
+	}
+	if !hasVerifiedPeerCertificateInternal(req.TLS) {
+		if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeRequired {
+			return errors.New("verified edge mTLS client certificate is required")
+		}
 		return nil
 	}
 	return s.requireCertificateIdentityInternal(req.TLS, envID)
@@ -704,6 +706,12 @@ func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context
 	}
 	tlsInfo, ok := p.AuthInfo.(credentials.TLSInfo)
 	if !ok {
+		return nil
+	}
+	if !hasVerifiedPeerCertificateInternal(&tlsInfo.State) {
+		if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeRequired {
+			return errors.New("verified edge mTLS client certificate is required")
+		}
 		return nil
 	}
 	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, edgeMTLSTrustDomainInternal(s.cfg))

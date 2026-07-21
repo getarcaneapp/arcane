@@ -6,6 +6,11 @@ modules:
 lint:
   use:
     - STANDARD
+  # Connect is a bidirectional transport envelope, so directional names are
+  # clearer than unary-style ConnectRequest and ConnectResponse names.
+  except:
+    - RPC_REQUEST_STANDARD_NAME
+    - RPC_RESPONSE_STANDARD_NAME
 
 breaking:
   use:
