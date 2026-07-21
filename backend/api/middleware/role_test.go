@@ -145,6 +145,52 @@ func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 	require.True(t, handlerRan)
 }
 
+func TestRequireSudoRejectsHumanAdminAndAllowsAgent(t *testing.T) {
+	tests := []struct {
+		name       string
+		permission *authz.PermissionSet
+		wantStatus int
+		wantRan    bool
+	}{
+		{name: "human admin", permission: func() *authz.PermissionSet {
+			ps := authz.NewPermissionSet()
+			ps.AddGlobal(authz.AllPermissions()...)
+			return ps
+		}(), wantStatus: http.StatusForbidden},
+		{name: "agent sudo", permission: authz.SudoPermissionSet(), wantStatus: http.StatusNoContent, wantRan: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			router := echo.New()
+			api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+			api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+				next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, tt.permission)))
+			})
+
+			handlerRan := false
+			huma.Register(api, huma.Operation{
+				OperationID: "materialized-variables-" + tt.name,
+				Method:      http.MethodGet,
+				Path:        "/environments/{id}/templates/variables",
+				Middlewares: RequireSudo(api),
+			}, func(_ context.Context, _ *struct {
+				ID string `path:"id"`
+			}) (*struct{}, error) {
+				handlerRan = true
+				return &struct{}{}, nil
+			})
+
+			req := httptest.NewRequest(http.MethodGet, "/api/environments/0/templates/variables", nil)
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			require.Equal(t, tt.wantStatus, rec.Code)
+			require.Equal(t, tt.wantRan, handlerRan)
+		})
+	}
+}
+
 func TestRequireAnyEnvironmentPermission(t *testing.T) {
 	tests := []struct {
 		name       string

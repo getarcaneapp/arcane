@@ -205,6 +205,71 @@ func TestBuiltInRolesOnlyReferenceKnownPermissions(t *testing.T) {
 	}
 }
 
+func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.T) {
+	variablePermissions := []string{
+		PermVariablesRead,
+		PermVariablesCreate,
+		PermVariablesUpdate,
+		PermVariablesDelete,
+		PermVariablesSync,
+	}
+
+	for _, permission := range variablePermissions {
+		if !IsKnownPermission(permission) {
+			t.Fatalf("variable permission %q must be known", permission)
+		}
+		if !IsOrgLevel(permission) {
+			t.Fatalf("variable permission %q must be global", permission)
+		}
+		if permissionSliceContainsInternal(BuiltInMonitorPermissions(), permission) {
+			t.Fatalf("Monitor must not receive %q", permission)
+		}
+	}
+
+	for name, permissions := range map[string][]string{
+		"Admin":           AllPermissions(),
+		"Editor":          BuiltInEditorPermissions(),
+		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
+	} {
+		for _, permission := range variablePermissions {
+			if !permissionSliceContainsInternal(permissions, permission) {
+				t.Fatalf("%s must receive %q", name, permission)
+			}
+		}
+	}
+
+	for name, permissions := range map[string][]string{
+		"Viewer":   BuiltInViewerPermissions(),
+		"Deployer": BuiltInDeployerPermissions(),
+	} {
+		if !permissionSliceContainsInternal(permissions, PermVariablesRead) {
+			t.Fatalf("%s must receive %q", name, PermVariablesRead)
+		}
+		for _, permission := range variablePermissions[1:] {
+			if permissionSliceContainsInternal(permissions, permission) {
+				t.Fatalf("%s must not receive %q", name, permission)
+			}
+		}
+	}
+
+	templatesOnly := NewPermissionSet()
+	templatesOnly.AddGlobal(PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete)
+	for _, permission := range variablePermissions {
+		if templatesOnly.Allows(permission, "") {
+			t.Fatalf("template grants must not satisfy %q", permission)
+		}
+	}
+}
+
+func permissionSliceContainsInternal(permissions []string, permission string) bool {
+	for _, candidate := range permissions {
+		if candidate == permission {
+			return true
+		}
+	}
+	return false
+}
+
 func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 	catalog := PermissionCatalog()
 	if len(catalog) == 0 {

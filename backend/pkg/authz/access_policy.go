@@ -87,6 +87,8 @@ var accessSurfacesInternal = []AccessSurface{
 	routeSurfaceInternal("route.swarm.configs", "/swarm/configs", "Configs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmConfigs}, 0),
 	routeSurfaceInternal("route.swarm.secrets", "/swarm/secrets", "Secrets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSwarmSecrets}, 0),
 	routeSurfaceInternal("route.events", "/events", "Events", AccessScopeModeGlobalOnly, []string{PermEventsRead}, 110),
+	routeSurfaceInternal("route.activities", "", "Activities", AccessScopeModeAnyEffectiveScope, []string{PermActivitiesRead}, 0),
+	globalAdminRouteSurfaceInternal("route.oidc-role-mappings", "", "OIDC Role Mappings"),
 	routeSurfaceInternal("route.customize.templates.create", "/customize/templates/create", "Create template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
 	routeSurfaceInternal("route.customize.templates.default", "/customize/templates/default", "Default template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
 	routeSurfaceInternal("route.customize.templates.detail", "/customize/templates/{id}", "Template", AccessScopeModeGlobalOnly, []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}, 0),
@@ -108,7 +110,7 @@ var accessSurfacesInternal = []AccessSurface{
 
 	customizeCategorySurfaceInternal("templates", "/customize/templates", "Templates", []string{PermCustomizeManage, PermTemplatesList, PermTemplatesRead}),
 	customizeCategorySurfaceInternal("registries", "/customize/registries", "Container Registries", []string{PermCustomizeManage, PermRegistriesList, PermRegistriesRead}),
-	customizeCategorySurfaceInternal("variables", "/customize/variables", "Variables", []string{PermCustomizeManage, PermTemplatesRead}),
+	customizeCategorySurfaceInternal("variables", "/customize/variables", "Variables", []string{PermVariablesRead}),
 	customizeCategorySurfaceInternal("git-repositories", "/customize/git-repositories", "Git Repositories", []string{PermCustomizeManage, PermGitReposList, PermGitReposRead}),
 }
 
@@ -235,6 +237,12 @@ func routeSurfaceInternal(id, url, label, scopeMode string, permissions []string
 		Permissions:   append([]string(nil), permissions...),
 		FallbackOrder: fallbackOrder,
 	}
+}
+
+func globalAdminRouteSurfaceInternal(id, url, label string) AccessSurface {
+	surface := routeSurfaceInternal(id, url, label, AccessScopeModeGlobalOnly, AllPermissions(), 0)
+	surface.MatchMode = AccessMatchModeAllOf
+	return surface
 }
 
 func settingsCategorySurfaceInternal(categoryID, url, label, scopeMode string, permissions []string) AccessSurface {

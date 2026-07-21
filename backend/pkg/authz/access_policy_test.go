@@ -36,6 +36,26 @@ func TestAccessSurfaceRegistryDefinesSettingsCustomizeAndLandingSemantics(t *tes
 	require.Equal(t, authz.AccessScopeModeGlobalOnly, templates.ScopeMode)
 	require.ElementsMatch(t, []string{authz.PermCustomizeManage, authz.PermTemplatesList, authz.PermTemplatesRead}, templates.Permissions)
 
+	variables := requireAccessSurfaceInternal(t, "customize.category.variables")
+	require.Equal(t, authz.AccessSurfaceKindCustomizeCategory, variables.Kind)
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, variables.ScopeMode)
+	require.Equal(t, authz.AccessMatchModeAnyOf, variables.MatchMode)
+	require.ElementsMatch(t, []string{authz.PermVariablesRead}, variables.Permissions)
+	require.NotContains(t, variables.Permissions, authz.PermTemplatesRead)
+
+	activities := requireAccessSurfaceInternal(t, "route.activities")
+	require.Equal(t, authz.AccessSurfaceKindRoute, activities.Kind)
+	require.Empty(t, activities.URL)
+	require.Equal(t, authz.AccessScopeModeAnyEffectiveScope, activities.ScopeMode)
+	require.ElementsMatch(t, []string{authz.PermActivitiesRead}, activities.Permissions)
+
+	oidcRoleMappings := requireAccessSurfaceInternal(t, "route.oidc-role-mappings")
+	require.Equal(t, authz.AccessSurfaceKindRoute, oidcRoleMappings.Kind)
+	require.Empty(t, oidcRoleMappings.URL)
+	require.Equal(t, authz.AccessScopeModeGlobalOnly, oidcRoleMappings.ScopeMode)
+	require.Equal(t, authz.AccessMatchModeAllOf, oidcRoleMappings.MatchMode)
+	require.ElementsMatch(t, authz.AllPermissions(), oidcRoleMappings.Permissions)
+
 	settingsLanding := requireAccessSurfaceInternal(t, "landing.settings")
 	require.Equal(t, authz.AccessSurfaceKindLanding, settingsLanding.Kind)
 	require.Equal(t, "/settings", settingsLanding.URL)
@@ -73,6 +93,32 @@ func TestCanAccessSurfaceEvaluatesScopeModesAndLandingChildren(t *testing.T) {
 	customizePS.AddGlobal(authz.PermCustomizeManage)
 	require.True(t, authz.CanAccessSurface(customizePS, "customize.category.registries", "env-a"))
 	require.True(t, authz.CanAccessSurface(customizePS, "landing.customize", "env-a"))
+
+	variablePS := authz.NewPermissionSet()
+	variablePS.AddGlobal(authz.PermVariablesRead)
+	require.True(t, authz.CanAccessSurface(variablePS, "customize.category.variables", "env-a"))
+	require.True(t, authz.CanAccessSurface(variablePS, "landing.customize", "env-a"))
+	templatePS := authz.NewPermissionSet()
+	templatePS.AddGlobal(authz.PermTemplatesRead)
+	require.False(t, authz.CanAccessSurface(templatePS, "customize.category.variables", "env-a"))
+
+	activitiesPS := authz.NewPermissionSet()
+	activitiesPS.AddEnv("env-a", authz.PermActivitiesRead)
+	require.True(t, authz.CanAccessSurface(activitiesPS, "route.activities", "env-b"))
+	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "route.activities", "env-a"))
+
+	globalAdminPS := authz.NewPermissionSet()
+	globalAdminPS.AddGlobal(authz.AllPermissions()...)
+	require.True(t, authz.CanAccessSurface(globalAdminPS, "route.oidc-role-mappings", "env-a"))
+	require.True(t, authz.CanAccessSurface(authz.SudoPermissionSet(), "route.oidc-role-mappings", "env-a"))
+
+	nonAdminPS := authz.NewPermissionSet()
+	nonAdminPS.AddGlobal(authz.BuiltInEditorPermissions()...)
+	require.False(t, authz.CanAccessSurface(nonAdminPS, "route.oidc-role-mappings", "env-a"))
+
+	environmentAdminPS := authz.NewPermissionSet()
+	environmentAdminPS.AddEnv("env-a", authz.AllPermissions()...)
+	require.False(t, authz.CanAccessSurface(environmentAdminPS, "route.oidc-role-mappings", "env-a"))
 
 	require.False(t, authz.CanAccessSurface(authz.NewPermissionSet(), "missing.surface", "env-a"))
 }

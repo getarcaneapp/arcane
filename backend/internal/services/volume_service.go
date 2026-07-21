@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -304,7 +305,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 		return nil, err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(dirPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
@@ -391,7 +392,7 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 		return nil, "", err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid path: %w", err)
 	}
@@ -422,7 +423,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 		return nil, 0, err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid path: %w", err)
 	}
@@ -1009,7 +1010,7 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: delete file", "volume", volumeName, "path", filePath)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1050,7 +1051,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: create directory", "volume", volumeName, "path", dirPath)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(dirPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1087,7 +1088,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath string, content io.Reader, filename string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: upload file", "volume", volumeName, "dest_path", destPath, "filename", filename)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(destPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(destPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1526,29 +1527,6 @@ func (s *VolumeService) backupArchiveFilenameInternal(backupID string) (string, 
 	}
 
 	return sanitizedBackupID + ".tar.gz", nil
-}
-
-// sanitizeBrowsePath validates and cleans a path for file browser operations.
-// It ensures the path stays within the volume boundary.
-func (s *VolumeService) sanitizeBrowsePathInternal(input string) (string, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" || trimmed == "/" {
-		return "/", nil // Root is valid for browse
-	}
-	cleaned := path.Clean(trimmed)
-	// Ensure path starts with /
-	if !path.IsAbs(cleaned) {
-		cleaned = "/" + cleaned
-	}
-	// Check for path traversal attempts
-	if strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") || cleaned == "/.." {
-		return "", errors.New("invalid path: path traversal not allowed")
-	}
-	// After cleaning, the path should not escape root
-	if !strings.HasPrefix(cleaned, "/") {
-		return "", errors.New("invalid path: must be absolute")
-	}
-	return cleaned, nil
 }
 
 func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, filePath string) (bool, error) {

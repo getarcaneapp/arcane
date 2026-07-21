@@ -63,10 +63,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Summary:     "Get dashboard snapshot",
 		Description: "Returns the dashboard first-paint snapshot in a single response",
 		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermDashboardRead, h.GetDashboard)
 
 	huma.Register(api, huma.Operation{
@@ -76,19 +73,12 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Summary:     "Stream dashboard snapshots across all environments",
 		Description: "Stream dashboard snapshot updates for the local environment and all enabled remote environments as JSON lines",
 		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermDashboardRead),
 	}, h.StreamAllDashboards)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
-	if h.dashboardService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
 	_ = input.EnvironmentID
 
@@ -112,10 +102,6 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 }
 
 func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *StreamAllDashboardsInput) (*huma.StreamResponse, error) {
-	if h.dashboardService == nil || h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)

@@ -13,7 +13,8 @@ import (
 	"go.getarcane.app/sys/cgroup"
 )
 
-func getCurrentContainerInspectTargetInternal(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
+// CurrentContainerInspectTarget resolves the identifier used to inspect Arcane's current container.
+func CurrentContainerInspectTarget(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
 	if currentContainerID != nil {
 		if containerID, err := currentContainerID(); err == nil {
 			if containerID = strings.TrimSpace(containerID); containerID != "" {
@@ -44,7 +45,7 @@ func MountForCurrentContainerSubpath(ctx context.Context, dockerCli *client.Clie
 	if dockerCli == nil {
 		return nil, nil
 	}
-	inspectTarget, err := getCurrentContainerInspectTargetInternal(cgroup.CurrentContainerID, os.Hostname)
+	inspectTarget, err := CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}

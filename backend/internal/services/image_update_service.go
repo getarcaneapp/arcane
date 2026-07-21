@@ -859,13 +859,6 @@ func stringToPtr(s string) *string {
 	return new(s)
 }
 
-func stringPtrToString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *models.ImageUpdateRecord {
 	currentVersion := result.CurrentVersion
 	if currentVersion == "" {
@@ -916,7 +909,7 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	if hasExisting &&
 		strings.TrimSpace(result.Error) != "" &&
 		isRateLimitErrorStringInternal(result.Error) &&
-		strings.TrimSpace(stringPtrToString(existingRecord.LastError)) == "" {
+		strings.TrimSpace(utils.DerefString(existingRecord.LastError)) == "" {
 		slog.Debug("Preserving previous image update result; check hit a registry rate limit",
 			"imageID", imageID, "repository", repo, "tag", tag, "error", result.Error)
 		return nil
@@ -925,8 +918,8 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	if hasExisting {
 		// Existing record found - check if we need to reset notification_sent
 		stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-		digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
-		versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
+		digestChanged := utils.DerefString(existingRecord.LatestDigest) != utils.DerefString(updateRecord.LatestDigest)
+		versionChanged := utils.DerefString(existingRecord.LatestVersion) != utils.DerefString(updateRecord.LatestVersion)
 
 		// Reset notification_sent if the update state changed in any way
 		if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
@@ -1432,15 +1425,15 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
 				CurrentVersion: record.CurrentVersion,
-				LatestVersion:  stringPtrToString(record.LatestVersion),
-				CurrentDigest:  stringPtrToString(record.CurrentDigest),
-				LatestDigest:   stringPtrToString(record.LatestDigest),
+				LatestVersion:  utils.DerefString(record.LatestVersion),
+				CurrentDigest:  utils.DerefString(record.CurrentDigest),
+				LatestDigest:   utils.DerefString(record.LatestDigest),
 				CheckTime:      record.CheckTime,
 				ResponseTimeMs: record.ResponseTimeMs,
-				Error:          stringPtrToString(record.LastError),
-				AuthMethod:     stringPtrToString(record.AuthMethod),
-				AuthUsername:   stringPtrToString(record.AuthUsername),
-				AuthRegistry:   stringPtrToString(record.AuthRegistry),
+				Error:          utils.DerefString(record.LastError),
+				AuthMethod:     utils.DerefString(record.AuthMethod),
+				AuthUsername:   utils.DerefString(record.AuthUsername),
+				AuthRegistry:   utils.DerefString(record.AuthRegistry),
 				UsedCredential: record.UsedCredential,
 			}
 			imageIDsToMark = append(imageIDsToMark, imageID)

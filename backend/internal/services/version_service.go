@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"go.getarcane.app/sys/cgroup"
@@ -292,7 +293,7 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageID", currentImageID, "error", err)
 		} else if found {
-			return record.HasUpdate, stringPtrToString(record.LatestDigest)
+			return record.HasUpdate, utils.DerefString(record.LatestDigest)
 		}
 	}
 

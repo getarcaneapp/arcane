@@ -317,7 +317,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.C
 	}
 	template.IsCustom = true
 	template.IsRemote = false
-	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, derefString(template.EnvContent)))
+	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, utils.DerefString(template.EnvContent)))
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
@@ -344,7 +344,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		existing.Description = updates.Description
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
-		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, derefString(existing.EnvContent)))
+		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, utils.DerefString(existing.EnvContent)))
 
 		if err := tx.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update template: %w", err)
@@ -604,7 +604,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			defer mu.Unlock()
 			for _, template := range remoteTemplates {
 				template.Registry = cloneRegistry(&reg)
-				template.RegistryID = stringPtr(reg.ID)
+				template.RegistryID = utils.StringPtrFromTrimmed(reg.ID)
 				templates = append(templates, template)
 			}
 			return nil
@@ -729,15 +729,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 		EnvContent:  nil,
 		IsCustom:    false,
 		IsRemote:    true,
-		RegistryID:  stringPtr(registry.ID),
+		RegistryID:  utils.StringPtrFromTrimmed(registry.ID),
 		Registry:    cloneRegistry(registry),
 		Metadata: &models.ComposeTemplateMetadata{
-			Version:          stringPtr(remote.Version),
-			Author:           stringPtr(remote.Author),
+			Version:          utils.StringPtrFromTrimmed(remote.Version),
+			Author:           utils.StringPtrFromTrimmed(remote.Author),
 			Tags:             remote.Tags,
-			RemoteURL:        stringPtr(remote.ComposeURL),
-			EnvURL:           stringPtr(remote.EnvURL),
-			DocumentationURL: stringPtr(remote.DocumentationURL),
+			RemoteURL:        utils.StringPtrFromTrimmed(remote.ComposeURL),
+			EnvURL:           utils.StringPtrFromTrimmed(remote.EnvURL),
+			DocumentationURL: utils.StringPtrFromTrimmed(remote.DocumentationURL),
 		},
 	}
 }
@@ -949,13 +949,13 @@ func cloneTemplateMetadata(meta *models.ComposeTemplateMetadata) *models.Compose
 		return nil
 	}
 	return &models.ComposeTemplateMetadata{
-		Version:          stringPtr(derefString(meta.Version)),
-		Author:           stringPtr(derefString(meta.Author)),
+		Version:          utils.StringPtrFromTrimmed(utils.DerefString(meta.Version)),
+		Author:           utils.StringPtrFromTrimmed(utils.DerefString(meta.Author)),
 		Tags:             append([]string(nil), meta.Tags...),
-		RemoteURL:        stringPtr(derefString(meta.RemoteURL)),
-		EnvURL:           stringPtr(derefString(meta.EnvURL)),
-		DocumentationURL: stringPtr(derefString(meta.DocumentationURL)),
-		IconURL:          stringPtr(derefString(meta.IconURL)),
+		RemoteURL:        utils.StringPtrFromTrimmed(utils.DerefString(meta.RemoteURL)),
+		EnvURL:           utils.StringPtrFromTrimmed(utils.DerefString(meta.EnvURL)),
+		DocumentationURL: utils.StringPtrFromTrimmed(utils.DerefString(meta.DocumentationURL)),
+		IconURL:          utils.StringPtrFromTrimmed(utils.DerefString(meta.IconURL)),
 	}
 }
 
@@ -967,7 +967,7 @@ func cloneRemoteTemplates(items []models.ComposeTemplate) []models.ComposeTempla
 	cloned := make([]models.ComposeTemplate, len(items))
 	for i := range items {
 		cloned[i] = items[i]
-		cloned[i].RegistryID = stringPtr(derefString(items[i].RegistryID))
+		cloned[i].RegistryID = utils.StringPtrFromTrimmed(utils.DerefString(items[i].RegistryID))
 		cloned[i].Registry = cloneRegistry(items[i].Registry)
 		cloned[i].Metadata = cloneTemplateMetadata(items[i].Metadata)
 	}
@@ -997,7 +997,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 }
 
 func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, desc, compose string, envPtr *string) error {
-	iconURL := s.resolveTemplateIconURL(ctx, compose, derefString(envPtr))
+	iconURL := s.resolveTemplateIconURL(ctx, compose, utils.DerefString(envPtr))
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
@@ -1192,31 +1192,11 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 	}
 
 	icon := utils.FirstNonEmpty(
-		getFirstString(arcaneBlockMap[templateArcaneIconKey]),
-		getFirstString(arcaneBlockMap[templateArcaneIconsAliasKey]),
+		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconKey], utils.ToString)...),
+		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconsAliasKey], utils.ToString)...),
 	)
 
-	return stringPtr(icon)
-}
-
-func getFirstString(value any) string {
-	values := utils.Collect(value, utils.ToString)
-	return utils.FirstNonEmpty(values...)
-}
-
-func stringPtr(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return utils.StringPtrFromTrimmed(icon)
 }
 
 func setTemplateIconURL(template *models.ComposeTemplate, iconURL *string) {

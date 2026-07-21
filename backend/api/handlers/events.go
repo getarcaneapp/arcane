@@ -28,13 +28,6 @@ type EventHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// EventPaginatedResponse is the paginated response for events.
-type EventPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []event.Event           `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListEventsInput struct {
 	Search   string `query:"search" doc:"Search query"`
 	Sort     string `query:"sort" doc:"Column to sort by"`
@@ -46,19 +39,13 @@ type ListEventsInput struct {
 }
 
 type ListEventsOutput struct {
-	Body EventPaginatedResponse
+	Body base.Paginated[event.Event]
 }
 
 type GetEventStatsInput struct{}
 
-// EventStatsResponse is a dedicated response type to avoid schema name collision.
-type EventStatsResponse struct {
-	Success bool                         `json:"success"`
-	Data    services.EventSeverityCounts `json:"data"`
-}
-
 type GetEventStatsOutput struct {
-	Body EventStatsResponse
+	Body base.ApiResponse[services.EventSeverityCounts]
 }
 
 type GetEventsByEnvironmentInput struct {
@@ -73,7 +60,7 @@ type GetEventsByEnvironmentInput struct {
 }
 
 type GetEventsByEnvironmentOutput struct {
-	Body EventPaginatedResponse
+	Body base.Paginated[event.Event]
 }
 
 type DeleteEventInput struct {
@@ -162,10 +149,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "List events",
 		Description: "Get a paginated list of system events",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.ListEvents)
 
@@ -176,10 +160,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "Event severity counts",
 		Description: "Get global event counts grouped by severity",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventStats)
 
@@ -190,10 +171,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "Delete an event",
 		Description: "Delete a system event by ID",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsDelete),
 	}, h.DeleteEvent)
 
@@ -204,10 +182,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "Get events by environment",
 		Description: "Get a paginated list of events for a specific environment",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventsByEnvironment)
 }
@@ -218,10 +193,6 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 
 // ListEvents returns a paginated list of events.
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*ListEventsOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
@@ -237,7 +208,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 	}
 
 	return &ListEventsOutput{
-		Body: EventPaginatedResponse{
+		Body: base.Paginated[event.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -247,17 +218,13 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 
 // GetEventStats returns global event counts grouped by severity.
 func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*GetEventStatsOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.EventStatsError{Err: err}).Error())
 	}
 
 	return &GetEventStatsOutput{
-		Body: EventStatsResponse{
+		Body: base.ApiResponse[services.EventSeverityCounts]{
 			Success: true,
 			Data:    counts,
 		},
@@ -266,10 +233,6 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 
 // GetEventsByEnvironment returns events for a specific environment.
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
@@ -289,7 +252,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 	}
 
 	return &GetEventsByEnvironmentOutput{
-		Body: EventPaginatedResponse{
+		Body: base.Paginated[event.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -299,10 +262,6 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 
 // DeleteEvent deletes an event.
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest((&common.EventIDRequiredError{}).Error())
 	}

@@ -13,6 +13,7 @@ import (
 
 	"log/slog"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 )
 
@@ -34,7 +35,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 		return nil, err
 	}
 
-	cleaned, err := sanitizeBuildPath(dirPath)
+	cleaned, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
@@ -94,7 +95,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 		return nil, "", err
 	}
 
-	cleaned, err := sanitizeBuildPath(filePath)
+	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid path: %w", err)
 	}
@@ -138,7 +139,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 		return nil, 0, err
 	}
 
-	cleaned, err := sanitizeBuildPath(filePath)
+	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid path: %w", err)
 	}
@@ -176,7 +177,7 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 		return err
 	}
 
-	cleaned, err := sanitizeBuildPath(destPath)
+	cleaned, err := utils.SanitizeBrowsePath(destPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -211,7 +212,7 @@ func (s *BuildWorkspaceService) CreateDirectory(ctx context.Context, dirPath str
 		return err
 	}
 
-	cleaned, err := sanitizeBuildPath(dirPath)
+	cleaned, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -239,7 +240,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 		return err
 	}
 
-	cleaned, err := sanitizeBuildPath(filePath)
+	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -277,26 +278,6 @@ func (s *BuildWorkspaceService) resolveRoot() (string, error) {
 	cleaned := filepath.Clean(root)
 	if err := os.MkdirAll(cleaned, 0o755); err != nil {
 		return "", fmt.Errorf("failed to ensure builds directory: %w", err)
-	}
-
-	return cleaned, nil
-}
-
-func sanitizeBuildPath(input string) (string, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" || trimmed == "/" {
-		return "/", nil
-	}
-
-	cleaned := path.Clean(trimmed)
-	if !path.IsAbs(cleaned) {
-		cleaned = "/" + cleaned
-	}
-	if strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") || cleaned == "/.." {
-		return "", errors.New("invalid path: path traversal not allowed")
-	}
-	if !strings.HasPrefix(cleaned, "/") {
-		return "", errors.New("invalid path: must be absolute")
 	}
 
 	return cleaned, nil

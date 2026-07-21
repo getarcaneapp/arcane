@@ -42,10 +42,7 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 		Summary:     "Get runtime diagnostics",
 		Description: "Returns Go runtime, memory, garbage-collector, and WebSocket connection statistics.",
 		Tags:        []string{"Diagnostics"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
 	}, h.GetDiagnostics)
 
@@ -56,10 +53,7 @@ func RegisterDiagnostics(api huma.API, diag *services.DiagnosticsService) {
 		Summary:     "Get recent backend logs",
 		Description: "Returns the most recent buffered backend log entries (oldest first).",
 		Tags:        []string{"Diagnostics"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermDiagnosticsRead),
 	}, h.GetRecentLogs)
 }

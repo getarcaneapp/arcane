@@ -2,15 +2,21 @@ package services
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
@@ -89,6 +95,57 @@ func TestCreateVariable_SecretEncryptedAtRestAndRedactedOnList(t *testing.T) {
 	require.Empty(t, listed[0].Value)
 }
 
+func TestUpdateVariable_OmittedSecretValuePreservesCiphertextAndRedactsResponse(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t)
+	ctx := context.Background()
+	created := createMaterializedSecretVariableInternal(t, service, "API_TOKEN", "super-secret")
+
+	var before models.GlobalVariable
+	require.NoError(t, db.WithContext(ctx).First(&before, "id = ?", created.ID).Error)
+	renamedKey := "RENAMED_API_TOKEN"
+	updated, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{Key: &renamedKey})
+	require.NoError(t, err)
+	require.True(t, updated.IsSecret)
+	require.Empty(t, updated.Value)
+
+	var after models.GlobalVariable
+	require.NoError(t, db.WithContext(ctx).First(&after, "id = ?", created.ID).Error)
+	require.Equal(t, before.Value, after.Value, "omitting value must preserve the stored ciphertext")
+	decrypted, err := crypto.Decrypt(after.Value)
+	require.NoError(t, err)
+	require.Equal(t, "super-secret", decrypted)
+
+	listed, err := service.ListVariables(ctx)
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Empty(t, listed[0].Value)
+}
+
+func TestUpdateVariable_SecretToPlainRequiresReplacementValue(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t)
+	ctx := context.Background()
+	created := createMaterializedSecretVariableInternal(t, service, "API_TOKEN", "super-secret")
+
+	plain := false
+	_, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{IsSecret: &plain})
+	require.Error(t, err)
+	require.True(t, common.IsGlobalVariableSecretValueRequiredError(err))
+
+	replacement := "public-value"
+	updated, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{
+		Value:    &replacement,
+		IsSecret: &plain,
+	})
+	require.NoError(t, err)
+	require.False(t, updated.IsSecret)
+	require.Equal(t, replacement, updated.Value)
+
+	var stored models.GlobalVariable
+	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", created.ID).Error)
+	require.False(t, stored.IsSecret)
+	require.Equal(t, replacement, stored.Value)
+}
+
 func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
 	service, db, _ := setupVariableServiceTest(t)
 	ctx := context.Background()
@@ -155,4 +212,137 @@ func TestSyncEnvironment_LocalWritesEnvGlobalFile(t *testing.T) {
 	statuses := service.SyncStatuses()
 	require.Len(t, statuses, 1)
 	require.Equal(t, "synced", statuses[0].Status)
+}
+
+type capturedVariableSyncRequestInternal struct {
+	Method  string
+	Path    string
+	Headers map[string]string
+	Body    []byte
+}
+
+func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t)
+	token := "direct-agent-token"
+
+	var requestMu sync.Mutex
+	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
+		body, err := io.ReadAll(request.Body)
+		require.NoError(t, err)
+		requestMu.Lock()
+		requests = append(requests, capturedVariableSyncRequestInternal{
+			Method: request.Method,
+			Path:   request.URL.Path,
+			Headers: map[string]string{
+				remenv.HeaderAPIKey:     request.Header.Get(remenv.HeaderAPIKey),
+				remenv.HeaderAgentToken: request.Header.Get(remenv.HeaderAgentToken),
+			},
+			Body: body,
+		})
+		requestMu.Unlock()
+
+		writer.Header().Set("Content-Type", "application/json")
+		if request.Method == http.MethodGet {
+			_, _ = writer.Write([]byte(`{"success":true,"data":[]}`))
+			return
+		}
+		_, _ = writer.Write([]byte(`{"success":true,"data":{"message":"updated"}}`))
+	}))
+	defer server.Close()
+
+	require.NoError(t, db.Create(&models.Environment{
+		BaseModel:   models.BaseModel{ID: "env-direct"},
+		Name:        "Direct",
+		ApiUrl:      server.URL,
+		Status:      string(models.EnvironmentStatusOnline),
+		Enabled:     true,
+		AccessToken: &token,
+	}).Error)
+	service.environmentService = NewEnvironmentService(db, nil, nil, nil, service.settingsService, nil)
+	createMaterializedSecretVariableInternal(t, service, "API_TOKEN", "super-secret")
+
+	require.NoError(t, service.SyncEnvironment(context.Background(), "env-direct"))
+	requestMu.Lock()
+	captured := append([]capturedVariableSyncRequestInternal(nil), requests...)
+	requestMu.Unlock()
+	requireMaterializationRequestsInternal(t, captured, token)
+}
+
+func TestSyncEnvironment_EdgeMaterializesSecretsThroughAgentRoute(t *testing.T) {
+	service, db, _ := setupVariableServiceTest(t)
+	token := "edge-agent-token"
+	require.NoError(t, db.Create(&models.Environment{
+		BaseModel:   models.BaseModel{ID: "env-edge"},
+		Name:        "Edge",
+		ApiUrl:      "http://edge.invalid",
+		Status:      string(models.EnvironmentStatusOnline),
+		Enabled:     true,
+		IsEdge:      true,
+		AccessToken: &token,
+	}).Error)
+
+	environmentService := NewEnvironmentService(db, nil, nil, nil, service.settingsService, nil)
+	var requestMu sync.Mutex
+	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
+	environmentService.remoteClient = remenv.NewClient(nil, remenv.TunnelTransportFuncs{
+		EnsureAvailableFunc: func(_ context.Context, environmentID string) error {
+			require.Equal(t, "env-edge", environmentID)
+			return nil
+		},
+		DoFunc: func(_ context.Context, environmentID, method, path string, headers map[string]string, body []byte) (*remenv.Response, error) {
+			require.Equal(t, "env-edge", environmentID)
+			requestMu.Lock()
+			requests = append(requests, capturedVariableSyncRequestInternal{
+				Method:  method,
+				Path:    path,
+				Headers: headers,
+				Body:    append([]byte(nil), body...),
+			})
+			requestMu.Unlock()
+			if method == http.MethodGet {
+				return &remenv.Response{StatusCode: http.StatusOK, Body: []byte(`{"success":true,"data":[]}`)}, nil
+			}
+			return &remenv.Response{StatusCode: http.StatusOK, Body: []byte(`{"success":true,"data":{"message":"updated"}}`)}, nil
+		},
+	})
+	service.environmentService = environmentService
+	createMaterializedSecretVariableInternal(t, service, "API_TOKEN", "super-secret")
+
+	require.NoError(t, service.SyncEnvironment(context.Background(), "env-edge"))
+	requestMu.Lock()
+	captured := append([]capturedVariableSyncRequestInternal(nil), requests...)
+	requestMu.Unlock()
+	requireMaterializationRequestsInternal(t, captured, token)
+}
+
+func createMaterializedSecretVariableInternal(t *testing.T, service *VariableService, key, value string) *envtypes.GlobalVariable {
+	t.Helper()
+	created, err := service.CreateVariable(context.Background(), envtypes.CreateGlobalVariableRequest{
+		Key:             key,
+		Value:           value,
+		IsSecret:        true,
+		AllEnvironments: true,
+	})
+	require.NoError(t, err)
+	return created
+}
+
+func requireMaterializationRequestsInternal(t *testing.T, requests []capturedVariableSyncRequestInternal, token string) {
+	t.Helper()
+	require.Len(t, requests, 2)
+
+	require.Equal(t, http.MethodGet, requests[0].Method)
+	require.Equal(t, agentVariablesPath, requests[0].Path)
+	require.Empty(t, requests[0].Body)
+	require.Equal(t, token, requests[0].Headers[remenv.HeaderAPIKey])
+	require.Equal(t, token, requests[0].Headers[remenv.HeaderAgentToken])
+
+	require.Equal(t, http.MethodPut, requests[1].Method)
+	require.Equal(t, agentVariablesPath, requests[1].Path)
+	require.Equal(t, token, requests[1].Headers[remenv.HeaderAPIKey])
+	require.Equal(t, token, requests[1].Headers[remenv.HeaderAgentToken])
+	var materialized envtypes.Summary
+	require.NoError(t, json.Unmarshal(requests[1].Body, &materialized))
+	require.Equal(t, []envtypes.Variable{{Key: "API_TOKEN", Value: "super-secret"}}, materialized.Variables)
 }

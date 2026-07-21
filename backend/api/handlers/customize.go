@@ -48,10 +48,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 		Summary:     "Search customization options",
 		Description: "Search customization categories and options by query",
 		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.Search)
 
 	huma.Register(api, huma.Operation{
@@ -61,10 +58,7 @@ func RegisterCustomize(api huma.API, customizeSearchService *services.CustomizeS
 		Summary:     "Get customization categories",
 		Description: "Get all available customization categories with metadata",
 		Tags:        []string{"Customize"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.GetCategories)
 }
 
@@ -83,10 +77,6 @@ func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []cat
 
 // Search searches customization options by query.
 func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInput) (*SearchCustomizeOutput, error) {
-	if h.customizeSearchService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if strings.TrimSpace(input.Body.Query) == "" {
 		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
 	}
@@ -103,10 +93,6 @@ func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInp
 
 // GetCategories returns all available customization categories.
 func (h *CustomizeHandler) GetCategories(ctx context.Context, input *GetCustomizeCategoriesInput) (*GetCustomizeCategoriesOutput, error) {
-	if h.customizeSearchService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	ps, _ := humamw.PermissionsFromContext(ctx)
 	categories := filterCustomizeCategoriesInternal(ps, h.customizeSearchService.GetCustomizeCategories())
 

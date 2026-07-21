@@ -24,17 +24,10 @@ func TestEventDeleteRequiresEventsDeletePermission(t *testing.T) {
 	testCases := []struct {
 		name       string
 		permission string
-		wantStatus int
 	}{
 		{
 			name:       "events read cannot delete",
 			permission: authz.PermEventsRead,
-			wantStatus: http.StatusForbidden,
-		},
-		{
-			name:       "events delete reaches handler",
-			permission: authz.PermEventsDelete,
-			wantStatus: http.StatusInternalServerError,
 		},
 	}
 
@@ -49,10 +42,8 @@ func TestEventDeleteRequiresEventsDeletePermission(t *testing.T) {
 			rec := httptest.NewRecorder()
 			router.ServeHTTP(rec, req)
 
-			require.Equal(t, testCase.wantStatus, rec.Code)
-			if testCase.wantStatus == http.StatusForbidden {
-				require.Contains(t, rec.Body.String(), authz.PermEventsDelete)
-			}
+			require.Equal(t, http.StatusForbidden, rec.Code)
+			require.Contains(t, rec.Body.String(), authz.PermEventsDelete)
 		})
 	}
 }

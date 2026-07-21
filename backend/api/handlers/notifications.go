@@ -111,7 +111,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Get all notification settings",
 		Tags:        []string{"Notifications"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNotificationsManage, h.GetAllNotificationSettings)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -120,7 +120,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Get notification settings by provider",
 		Tags:        []string{"Notifications"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNotificationsManage, h.GetNotificationSettings)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -129,7 +129,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings",
 		Summary:     "Create or update notification settings",
 		Tags:        []string{"Notifications"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNotificationsManage, h.CreateOrUpdateNotificationSettings)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -138,7 +138,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/settings/{provider}",
 		Summary:     "Delete notification settings",
 		Tags:        []string{"Notifications"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNotificationsManage, h.DeleteNotificationSettings)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -147,7 +147,7 @@ func RegisterNotifications(api huma.API, notificationSvc *services.NotificationS
 		Path:        "/environments/{id}/notifications/test/{provider}",
 		Summary:     "Test notification",
 		Tags:        []string{"Notifications"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNotificationsManage, h.TestNotification)
 
 	// Environment tokens are authenticated by ApiKeyAuth and revalidated by the

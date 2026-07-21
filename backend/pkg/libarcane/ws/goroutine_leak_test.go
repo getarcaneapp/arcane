@@ -279,7 +279,7 @@ func TestLeak_RepeatedConnectDisconnect(t *testing.T) {
 
 // TestLeak_HubWithForwardLinesLifecycle tests the full pipeline:
 // Hub.Run + ForwardLines + ServeClient, all cleaned up when client disconnects.
-// This mirrors startContainerLogHub() with format="text".
+// This mirrors the container text path through startLogHubInternal.
 func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 	baseline := goroutineCount()
 
@@ -339,7 +339,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 
 // TestLeak_HubWithForwardLogJSONBatchedLifecycle tests the batched JSON pipeline:
 // Hub.Run + stream producer + normalizer + ForwardLogJSONBatched + ServeClient.
-// This mirrors startContainerLogHub() with format="json" and batched=true.
+// This mirrors the batched container JSON path through startLogHubInternal.
 func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 	baseline := goroutineCount()
 
