@@ -269,9 +269,9 @@ func TestVariableMaterializationRoutesAreAgentOnly(t *testing.T) {
 
 	managerMatcher := authz.NewPermissionMatcher()
 	managerMatcher.CollectFromHumaAPI(managerAPI)
-	_, found := managerMatcher.Lookup("GET", "/templates/variables")
+	_, found := managerMatcher.Lookup("GET", "/templates/variables").Get()
 	require.False(t, found)
-	_, found = managerMatcher.Lookup("PUT", "/templates/variables")
+	_, found = managerMatcher.Lookup("PUT", "/templates/variables").Get()
 	require.False(t, found)
 
 	router := echo.New()
@@ -316,7 +316,7 @@ func TestEasyJoinRoutesDeclareSwarmJoinPermission(t *testing.T) {
 			require.Equal(t, authz.PermSwarmJoin, operation.Metadata[authz.MetaRequiredPermission])
 
 			suffix := strings.TrimPrefix(tt.path, "/environments/{id}")
-			permission, found := matcher.Lookup(tt.method, suffix)
+			permission, found := matcher.Lookup(tt.method, suffix).Get()
 			require.True(t, found)
 			require.Equal(t, authz.PermSwarmJoin, permission)
 		})

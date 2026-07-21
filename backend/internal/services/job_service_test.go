@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -346,14 +347,14 @@ func newFakeJobSchedulerInternal(jobIDs ...string) *fakeJobSchedulerInternal {
 	}
 }
 
-func (s *fakeJobSchedulerInternal) GetJob(jobID string) (schedulertypes.Job, bool) {
+func (s *fakeJobSchedulerInternal) GetJob(jobID string) mo.Option[schedulertypes.Job] {
 	job, ok := s.jobs[jobID]
-	return job, ok
+	return mo.TupleToOption(job, ok)
 }
 
-func (s *fakeJobSchedulerInternal) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
+func (s *fakeJobSchedulerInternal) GetJobRuntimeState(jobID string) mo.Option[schedulertypes.JobRuntimeState] {
 	state, ok := s.runtimeStates[jobID]
-	return state, ok
+	return mo.TupleToOption(state, ok)
 }
 
 func (s *fakeJobSchedulerInternal) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {

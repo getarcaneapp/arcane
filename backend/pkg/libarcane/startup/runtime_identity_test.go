@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 )
 
@@ -294,9 +295,9 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("maps default docker socket group when docker host unset", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroupsInternal(
 			"",
-			func(socketPath string) (uint32, bool) {
+			func(socketPath string) mo.Option[uint32] {
 				require.Equal(t, defaultDockerSocketPath, socketPath)
-				return 997, true
+				return mo.Some(uint32(997))
 			},
 		)
 
@@ -306,9 +307,9 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("maps custom unix docker host socket group", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroupsInternal(
 			"unix:///tmp/docker.sock",
-			func(socketPath string) (uint32, bool) {
+			func(socketPath string) mo.Option[uint32] {
 				require.Equal(t, "/tmp/docker.sock", socketPath)
-				return 998, true
+				return mo.Some(uint32(998))
 			},
 		)
 
@@ -320,9 +321,9 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 
 		groups := runtimeIdentitySupplementaryGroupsInternal(
 			"tcp://docker:2375",
-			func(string) (uint32, bool) {
+			func(string) mo.Option[uint32] {
 				called = true
-				return 0, false
+				return mo.None[uint32]()
 			},
 		)
 
@@ -333,7 +334,7 @@ func TestRuntimeIdentitySupplementaryGroups(t *testing.T) {
 	t.Run("skips socket group when socket lookup fails", func(t *testing.T) {
 		groups := runtimeIdentitySupplementaryGroupsInternal(
 			"unix:///tmp/missing.sock",
-			func(string) (uint32, bool) { return 0, false },
+			func(string) mo.Option[uint32] { return mo.None[uint32]() },
 		)
 
 		require.Nil(t, groups)

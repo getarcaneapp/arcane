@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/samber/mo"
 	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -497,19 +498,19 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 }
 
 func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *models.GitRepository) bool {
-	needsUpdate := utils.UpdateIfChanged(&existing.Name, item.Name)
-	needsUpdate = utils.UpdateIfChanged(&existing.URL, item.URL) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.AuthType, item.AuthType) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.SSHHostKeyVerification, item.SSHHostKeyVerification) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
+	needsUpdate := utils.ApplyChanged(&existing.Name, mo.Some(item.Name))
+	needsUpdate = utils.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
+	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
 	// Handle Token update
 	if item.Token != "" {
 		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err == nil {
-			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
 		}
 	} else if existing.Token != "" {
 		existing.Token = ""
@@ -520,7 +521,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 	if item.SSHKey != "" {
 		encryptedSSHKey, err := crypto.Encrypt(item.SSHKey)
 		if err == nil {
-			needsUpdate = utils.UpdateIfChanged(&existing.SSHKey, encryptedSSHKey) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.SSHKey, mo.Some(encryptedSSHKey)) || needsUpdate
 		}
 	} else if existing.SSHKey != "" {
 		existing.SSHKey = ""

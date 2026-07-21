@@ -12,6 +12,7 @@ import (
 	"sync"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	"github.com/samber/mo"
 )
 
 type Writer struct {
@@ -87,7 +88,7 @@ func (w *Writer) Write(p []byte) (int, error) {
 		}
 		line := strings.TrimSpace(string(w.buffer[:idx]))
 		w.buffer = w.buffer[idx+1:]
-		if message, ok := w.processLineInternal(line); ok {
+		if message, ok := w.processLineInternal(line).Get(); ok {
 			messages = append(messages, message)
 		}
 	}
@@ -119,31 +120,31 @@ func (w *Writer) Flush() {
 	}
 }
 
-func (w *Writer) processLineInternal(line string) (writerAppendMessage, bool) {
+func (w *Writer) processLineInternal(line string) mo.Option[writerAppendMessage] {
 	if line == "" || w.activityService == nil || w.activityID == "" {
-		return writerAppendMessage{}, false
+		return mo.None[writerAppendMessage]()
 	}
 
 	var payload map[string]any
 	if err := json.Unmarshal([]byte(line), &payload); err != nil {
-		return writerAppendMessage{
+		return mo.Some(writerAppendMessage{
 			level:   models.ActivityMessageLevelInfo,
 			message: line,
 			step:    w.defaultStep,
-		}, true
+		})
 	}
 
 	message, level, step, progress := w.describePayloadInternal(payload)
 	if message == "" {
-		return writerAppendMessage{}, false
+		return mo.None[writerAppendMessage]()
 	}
-	return writerAppendMessage{
+	return mo.Some(writerAppendMessage{
 		level:    level,
 		message:  message,
 		payload:  models.JSON(payload),
 		progress: progress,
 		step:     step,
-	}, true
+	})
 }
 
 func (w *Writer) describePayloadInternal(payload map[string]any) (string, models.ActivityMessageLevel, string, *int) {

@@ -9,11 +9,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	sqlite "github.com/libtnb/sqlite"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -21,7 +23,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 )
@@ -274,11 +275,11 @@ services:
 		Description: "Remote template",
 		IsRemote:    true,
 		IsCustom:    false,
-		RegistryID:  utils.StringPtrFromTrimmed("reg-1"),
+		RegistryID:  mo.EmptyableToOption(strings.TrimSpace("reg-1")).ToPointer(),
 		Metadata: &models.ComposeTemplateMetadata{
-			RemoteURL: utils.StringPtrFromTrimmed(baseURL + "/compose.yaml"),
-			EnvURL:    utils.StringPtrFromTrimmed(baseURL + "/template.env"),
-			IconURL:   utils.StringPtrFromTrimmed("https://cdn.example/download.png"),
+			RemoteURL: mo.EmptyableToOption(strings.TrimSpace(baseURL + "/compose.yaml")).ToPointer(),
+			EnvURL:    mo.EmptyableToOption(strings.TrimSpace(baseURL + "/template.env")).ToPointer(),
+			IconURL:   mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
 		},
 	}
 
@@ -335,7 +336,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 					Description: "Remote template",
 					Content:     "services: {}",
 					IsRemote:    true,
-					RegistryID:  utils.StringPtrFromTrimmed("registry-one"),
+					RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
 				},
 			},
 			lastFetch: now,

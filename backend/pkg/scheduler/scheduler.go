@@ -9,6 +9,7 @@ import (
 
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
+	"github.com/samber/mo"
 )
 
 // cronScheduleParser is the shared parser for all cron settings: six fields
@@ -95,31 +96,31 @@ func (js *JobScheduler) RunBusWatcherNow(ctx context.Context, watcherID string) 
 	return watcher.RunNow(ctx)
 }
 
-func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
+func (js *JobScheduler) GetJob(jobID string) mo.Option[schedulertypes.Job] {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	job, ok := js.jobsByID[jobID]
-	return job, ok
+	return mo.TupleToOption(job, ok)
 }
 
 // GetJobRuntimeState returns the schedule currently installed for a registered job.
-func (js *JobScheduler) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
+func (js *JobScheduler) GetJobRuntimeState(jobID string) mo.Option[schedulertypes.JobRuntimeState] {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
 	if _, ok := js.jobsByID[jobID]; !ok {
-		return schedulertypes.JobRuntimeState{}, false
+		return mo.None[schedulertypes.JobRuntimeState]()
 	}
 
 	state := schedulertypes.JobRuntimeState{Schedule: js.schedules[jobID]}
 	entryID, ok := js.entryIDs[jobID]
 	if !ok {
-		return state, true
+		return mo.Some(state)
 	}
 
 	entry := js.cron.Entry(entryID)
 	if entry.ID == 0 {
-		return state, true
+		return mo.Some(state)
 	}
 
 	state.Scheduled = true
@@ -131,7 +132,7 @@ func (js *JobScheduler) GetJobRuntimeState(jobID string) (schedulertypes.JobRunt
 		state.NextRun = new(nextRun)
 	}
 
-	return state, true
+	return mo.Some(state)
 }
 
 // HasJob reports whether a job with the given name is currently registered.

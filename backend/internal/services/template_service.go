@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/google/uuid"
+	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -317,7 +318,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.C
 	}
 	template.IsCustom = true
 	template.IsRemote = false
-	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, utils.DerefString(template.EnvContent)))
+	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, mo.PointerToOption(template.EnvContent).OrEmpty()))
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
@@ -344,7 +345,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		existing.Description = updates.Description
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
-		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, utils.DerefString(existing.EnvContent)))
+		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
 
 		if err := tx.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update template: %w", err)
@@ -604,7 +605,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			defer mu.Unlock()
 			for _, template := range remoteTemplates {
 				template.Registry = cloneRegistry(&reg)
-				template.RegistryID = utils.StringPtrFromTrimmed(reg.ID)
+				template.RegistryID = mo.EmptyableToOption(strings.TrimSpace(reg.ID)).ToPointer()
 				templates = append(templates, template)
 			}
 			return nil
@@ -729,15 +730,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 		EnvContent:  nil,
 		IsCustom:    false,
 		IsRemote:    true,
-		RegistryID:  utils.StringPtrFromTrimmed(registry.ID),
+		RegistryID:  mo.EmptyableToOption(strings.TrimSpace(registry.ID)).ToPointer(),
 		Registry:    cloneRegistry(registry),
 		Metadata: &models.ComposeTemplateMetadata{
-			Version:          utils.StringPtrFromTrimmed(remote.Version),
-			Author:           utils.StringPtrFromTrimmed(remote.Author),
+			Version:          mo.EmptyableToOption(strings.TrimSpace(remote.Version)).ToPointer(),
+			Author:           mo.EmptyableToOption(strings.TrimSpace(remote.Author)).ToPointer(),
 			Tags:             remote.Tags,
-			RemoteURL:        utils.StringPtrFromTrimmed(remote.ComposeURL),
-			EnvURL:           utils.StringPtrFromTrimmed(remote.EnvURL),
-			DocumentationURL: utils.StringPtrFromTrimmed(remote.DocumentationURL),
+			RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(remote.ComposeURL)).ToPointer(),
+			EnvURL:           mo.EmptyableToOption(strings.TrimSpace(remote.EnvURL)).ToPointer(),
+			DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(remote.DocumentationURL)).ToPointer(),
 		},
 	}
 }
@@ -949,13 +950,13 @@ func cloneTemplateMetadata(meta *models.ComposeTemplateMetadata) *models.Compose
 		return nil
 	}
 	return &models.ComposeTemplateMetadata{
-		Version:          utils.StringPtrFromTrimmed(utils.DerefString(meta.Version)),
-		Author:           utils.StringPtrFromTrimmed(utils.DerefString(meta.Author)),
+		Version:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Version).OrEmpty())).ToPointer(),
+		Author:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Author).OrEmpty())).ToPointer(),
 		Tags:             append([]string(nil), meta.Tags...),
-		RemoteURL:        utils.StringPtrFromTrimmed(utils.DerefString(meta.RemoteURL)),
-		EnvURL:           utils.StringPtrFromTrimmed(utils.DerefString(meta.EnvURL)),
-		DocumentationURL: utils.StringPtrFromTrimmed(utils.DerefString(meta.DocumentationURL)),
-		IconURL:          utils.StringPtrFromTrimmed(utils.DerefString(meta.IconURL)),
+		RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.RemoteURL).OrEmpty())).ToPointer(),
+		EnvURL:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.EnvURL).OrEmpty())).ToPointer(),
+		DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.DocumentationURL).OrEmpty())).ToPointer(),
+		IconURL:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.IconURL).OrEmpty())).ToPointer(),
 	}
 }
 
@@ -967,7 +968,7 @@ func cloneRemoteTemplates(items []models.ComposeTemplate) []models.ComposeTempla
 	cloned := make([]models.ComposeTemplate, len(items))
 	for i := range items {
 		cloned[i] = items[i]
-		cloned[i].RegistryID = utils.StringPtrFromTrimmed(utils.DerefString(items[i].RegistryID))
+		cloned[i].RegistryID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(items[i].RegistryID).OrEmpty())).ToPointer()
 		cloned[i].Registry = cloneRegistry(items[i].Registry)
 		cloned[i].Metadata = cloneTemplateMetadata(items[i].Metadata)
 	}
@@ -997,7 +998,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 }
 
 func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, desc, compose string, envPtr *string) error {
-	iconURL := s.resolveTemplateIconURL(ctx, compose, utils.DerefString(envPtr))
+	iconURL := s.resolveTemplateIconURL(ctx, compose, mo.PointerToOption(envPtr).OrEmpty())
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
@@ -1186,7 +1187,7 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 		return nil
 	}
 
-	arcaneBlockMap, ok := utils.AsStringMap(arcaneBlock)
+	arcaneBlockMap, ok := utils.AsStringMap(arcaneBlock).Get()
 	if !ok {
 		return nil
 	}
@@ -1196,7 +1197,7 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconsAliasKey], utils.ToString)...),
 	)
 
-	return utils.StringPtrFromTrimmed(icon)
+	return mo.EmptyableToOption(strings.TrimSpace(icon)).ToPointer()
 }
 
 func setTemplateIconURL(template *models.ComposeTemplate, iconURL *string) {

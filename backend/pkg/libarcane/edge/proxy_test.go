@@ -221,7 +221,7 @@ func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 

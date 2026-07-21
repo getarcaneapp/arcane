@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -307,20 +308,20 @@ func lookupProjectContainers(p models.Project, containersByProject map[string][]
 	return nil
 }
 
-func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
+func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) mo.Option[string] {
 	if normalizedName == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	s.composeNameCacheMu.RLock()
 	defer s.composeNameCacheMu.RUnlock()
 
 	if s.composeNameToProjID == nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	projectID, ok := s.composeNameToProjID[normalizedName]
-	return projectID, ok
+	return mo.TupleToOption(projectID, ok)
 }
 
 func (s *ProjectService) cacheComposeProjectIDInternal(normalizedName, projectID string) {
@@ -349,7 +350,7 @@ func (s *ProjectService) invalidateCachedComposeProjectIDInternal(normalizedName
 }
 
 func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
-	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName)
+	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName).Get()
 	if !ok {
 		return nil, false, nil
 	}
@@ -1029,7 +1030,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.IsArchived = proj.IsArchived
 	resp.ArchivedAt = proj.ArchivedAt
 	resp.HasBuildDirective = false
-	resp.DirName = utils.DerefString(proj.DirName)
+	resp.DirName = mo.PointerToOption(proj.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, *proj)
@@ -1608,7 +1609,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	} else if serviceCountErr != nil {
 		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
-	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeMetadata.composeProjectName) {
+	if serviceCountErr == nil && mo.PointerToOption(existing.ComposeProjectName) != mo.PointerToOption(composeMetadata.composeProjectName) {
 		updates["compose_project_name"] = composeMetadata.composeProjectName
 	}
 	if serviceCountErr == nil {
@@ -1742,7 +1743,7 @@ func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map
 			continue
 		}
 		candidates++
-		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth); remove {
+		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth).Get(); remove {
 			pendingDeletions = append(pendingDeletions, decision)
 		}
 	}
@@ -1812,9 +1813,9 @@ func isInternalScratchProjectInternal(p models.Project) bool {
 // the current filesystem pass should be pruned. It performs only read-only checks
 // (warning in place for the "keep" cases); the actual deletion is deferred to the
 // caller so the mass-wipe guard can veto an entire suspicious pass.
-func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) mo.Option[projectCleanupDecision] {
 	if s.projectExceedsScanDepthInternal(p, projectsDir, maxDepth) {
-		return projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"})
 	}
 
 	validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
@@ -1822,7 +1823,7 @@ func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p m
 		return s.evaluateProjectPathErrorInternal(ctx, p, err)
 	}
 	if !validDir {
-		return projectCleanupDecision{project: p, reason: "removed project: path is no longer a valid project directory"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: path is no longer a valid project directory"})
 	}
 
 	return s.evaluateProjectComposeFileInternal(ctx, p)
@@ -1842,19 +1843,19 @@ func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, proje
 	return rel != "" && strings.Count(rel, "/")+1 > maxDepth
 }
 
-func (s *ProjectService) evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) mo.Option[projectCleanupDecision] {
 	if os.IsNotExist(err) {
-		return projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"})
 	}
 
 	slog.WarnContext(ctx, "stat error during cleanup; keeping DB record", "path", p.Path, "error", err)
-	return projectCleanupDecision{}, false
+	return mo.None[projectCleanupDecision]()
 }
 
-func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) mo.Option[projectCleanupDecision] {
 	_, err := s.resolveProjectComposeFileInternal(ctx, &p)
 	if err == nil {
-		return projectCleanupDecision{}, false
+		return mo.None[projectCleanupDecision]()
 	}
 
 	// The project directory still exists here (it passed the directory-validity
@@ -1867,10 +1868,10 @@ func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context,
 	if _, ok := errors.AsType[*common.ComposeFileNotFoundError](err); !ok {
 		slog.WarnContext(ctx, "project directory present but compose file unresolved during cleanup; keeping DB record",
 			"projectID", p.ID, "path", p.Path, "error", err)
-		return projectCleanupDecision{}, false
+		return mo.None[projectCleanupDecision]()
 	}
 
-	return projectCleanupDecision{project: p, reason: "removed orphaned project: directory present but contains no compose file"}, true
+	return mo.Some(projectCleanupDecision{project: p, reason: "removed orphaned project: directory present but contains no compose file"})
 }
 
 // deleteProjectDuringCleanupInternal removes a project record discovered to be
@@ -4139,7 +4140,7 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 	}
 
 	// Attempt to repair using known directory name or sanitized project name
-	dirName := utils.DerefString(proj.DirName)
+	dirName := mo.PointerToOption(proj.DirName).OrEmpty()
 	if strings.TrimSpace(dirName) == "" {
 		dirName = projects.SanitizeProjectName(proj.Name)
 	}
@@ -4722,7 +4723,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			_ = mapper.MapStruct(p, &results[i])
 			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
 			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
-			results[i].DirName = utils.DerefString(p.DirName)
+			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
 			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
 			meta := s.getProjectMetadataForProject(ctx, p)
@@ -4754,7 +4755,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.IsArchived = p.IsArchived
 	resp.ArchivedAt = p.ArchivedAt
-	resp.DirName = utils.DerefString(p.DirName)
+	resp.DirName = mo.PointerToOption(p.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, p)
@@ -4990,7 +4991,7 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
 		updates["name"] = meta.resolvedProjectName
 	}
-	if !utils.StringPtrEqual(proj.ComposeProjectName, meta.composeProjectName) {
+	if mo.PointerToOption(proj.ComposeProjectName) != mo.PointerToOption(meta.composeProjectName) {
 		updates["compose_project_name"] = meta.composeProjectName
 	}
 	if len(updates) == 0 {

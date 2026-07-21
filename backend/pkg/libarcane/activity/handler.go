@@ -11,6 +11,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/samber/mo"
 )
 
 // ErrCanceled is the cancellation cause set on an activity's work context when a
@@ -130,9 +131,9 @@ func startHandlerActivityInternal(
 		EnvironmentID: environmentID,
 		Type:          activityType,
 		Queue:         queue,
-		ResourceType:  utils.StringPtrFromTrimmed(resourceType),
-		ResourceID:    utils.StringPtrFromTrimmed(resourceID),
-		ResourceName:  utils.StringPtrFromTrimmed(resourceName),
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace(resourceType)).ToPointer(),
+		ResourceID:    mo.EmptyableToOption(strings.TrimSpace(resourceID)).ToPointer(),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(resourceName)).ToPointer(),
 		StartedBy:     user,
 		Step:          step,
 		LatestMessage: message,

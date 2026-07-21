@@ -11,6 +11,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 const NetworkScopedMacAddressMinAPIVersion = "1.44"
@@ -73,12 +74,12 @@ func SupportsDockerCreatePerNetworkMACAddress(apiVersion string) bool {
 // API versions (e.g. "1.43", "1.44.1"). Returns false when either version
 // cannot be parsed.
 func IsDockerAPIVersionAtLeast(current, minimum string) bool {
-	cur, ok := parseAPIVersionInternal(current)
+	cur, ok := parseAPIVersionInternal(current).Get()
 	if !ok {
 		return false
 	}
 
-	minV, ok := parseAPIVersionInternal(minimum)
+	minV, ok := parseAPIVersionInternal(minimum).Get()
 	if !ok {
 		return false
 	}
@@ -250,33 +251,33 @@ func ContainerCreateWithCompatibilityForAPIVersion(ctx context.Context, dockerCl
 	return result, nil
 }
 
-func parseAPIVersionInternal(version string) ([3]int, bool) {
+func parseAPIVersionInternal(version string) mo.Option[[3]int] {
 	parsed := [3]int{}
 
 	version = strings.TrimSpace(strings.TrimPrefix(version, "v"))
 	if version == "" {
-		return parsed, false
+		return mo.None[[3]int]()
 	}
 
 	parts := strings.Split(version, ".")
 	if len(parts) < 2 {
-		return parsed, false
+		return mo.None[[3]int]()
 	}
 
 	for i := 0; i < len(parsed) && i < len(parts); i++ {
 		part := strings.TrimSpace(parts[i])
 		if part == "" {
-			return [3]int{}, false
+			return mo.None[[3]int]()
 		}
 
 		n, err := strconv.Atoi(part)
 		if err != nil {
-			return [3]int{}, false
+			return mo.None[[3]int]()
 		}
 		parsed[i] = n
 	}
 
-	return parsed, true
+	return mo.Some(parsed)
 }
 
 func resolvePrimaryContainerCreateNetworkInternal(hostConfig *container.HostConfig, endpoints map[string]*network.EndpointSettings) string {

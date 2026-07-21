@@ -822,11 +822,11 @@ func (s *SwarmService) resolveSwarmNodeAgentRuntimeInternal(ctx context.Context,
 		connected: edge.HasActiveTunnel(env.ID),
 	}
 
-	if tunnelState, ok := edge.GetTunnelRuntimeState(env.ID); ok {
+	if tunnelState, ok := edge.GetTunnelRuntimeState(env.ID).Get(); ok {
 		runtime.lastHeartbeat = tunnelState.LastHeartbeat
 	}
 
-	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()); ok {
+	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).Get(); ok {
 		runtime.lastPollAt = pollState.LastPollAt
 	}
 

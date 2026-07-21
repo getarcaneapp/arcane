@@ -3,6 +3,8 @@ package cache
 import (
 	"sync"
 	"time"
+
+	"github.com/samber/mo"
 )
 
 type entry[V any] struct {
@@ -25,15 +27,15 @@ func NewTTL[V any](ttl time.Duration) *TTL[V] {
 	}
 }
 
-func (c *TTL[V]) Get(key string) (V, bool) {
+func (c *TTL[V]) Get(key string) mo.Option[V] {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	e, ok := c.entries[key]
+	e, exists := c.entries[key]
+	e, ok := mo.TupleToOption(e, exists).Get()
 	if !ok || time.Now().After(e.expiresAt) {
-		var zero V
-		return zero, false
+		return mo.None[V]()
 	}
-	return e.value, true
+	return mo.Some(e.value)
 }
 
 func (c *TTL[V]) Put(key string, value V) {

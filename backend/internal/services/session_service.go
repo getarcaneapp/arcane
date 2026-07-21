@@ -12,10 +12,10 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/google/uuid"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
 
@@ -35,8 +35,8 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	session := &models.UserSession{
 		UserID:           userID,
 		RefreshTokenHash: refreshHash,
-		UserAgent:        pkgutils.StringPtrFromTrimmed(meta.UserAgent),
-		IPAddress:        pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+		UserAgent:        mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
+		IPAddress:        mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
 		Source:           models.UserSessionSourceLocal,
 		LastUsedAt:       now,
 		ExpiresAt:        expiresAt,
@@ -57,7 +57,7 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 		UserID:                userID,
 		RefreshTokenHash:      refreshHash,
 		Source:                models.UserSessionSourceFederated,
-		FederatedCredentialID: pkgutils.StringPtrFromTrimmed(credentialID),
+		FederatedCredentialID: mo.EmptyableToOption(strings.TrimSpace(credentialID)).ToPointer(),
 		LastUsedAt:            now,
 		ExpiresAt:             expiresAt,
 	}
@@ -114,8 +114,8 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			"refresh_token_hash": newHash,
 			"last_used_at":       now,
 			"updated_at":         now,
-			"user_agent":         pkgutils.StringPtrFromTrimmed(meta.UserAgent),
-			"ip_address":         pkgutils.StringPtrFromTrimmed(meta.IPAddress),
+			"user_agent":         mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer(),
+			"ip_address":         mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer(),
 		}
 		result := tx.Model(&models.UserSession{}).
 			Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL", session.ID, session.RefreshTokenHash).
@@ -136,8 +136,8 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 	rotated.RefreshTokenHash = newHash
 	rotated.LastUsedAt = now
 	rotated.UpdatedAt = &now
-	rotated.UserAgent = pkgutils.StringPtrFromTrimmed(meta.UserAgent)
-	rotated.IPAddress = pkgutils.StringPtrFromTrimmed(meta.IPAddress)
+	rotated.UserAgent = mo.EmptyableToOption(strings.TrimSpace(meta.UserAgent)).ToPointer()
+	rotated.IPAddress = mo.EmptyableToOption(strings.TrimSpace(meta.IPAddress)).ToPointer()
 
 	return &rotated, newRefreshJTI, nil
 }

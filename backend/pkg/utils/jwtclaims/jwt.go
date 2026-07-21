@@ -4,8 +4,12 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/samber/mo"
+	"github.com/samber/mo/result"
 )
 
 // GetStringClaim extracts a string claim from a map
@@ -126,38 +130,43 @@ func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
 
 // ParseJWTClaims decodes and unmarshals the payload part of a JWT
 func ParseJWTClaims(idToken string) map[string]any {
-	parts := strings.Split(idToken, ".")
-	if len(parts) < 2 {
-		return nil
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil
-	}
-	return claims
+	return result.Pipe3(
+		mo.Ok(idToken),
+		result.FlatMap(func(token string) mo.Result[[]string] {
+			parts := strings.Split(token, ".")
+			if len(parts) < 2 {
+				return mo.Err[[]string](errors.New("JWT has no payload"))
+			}
+			return mo.Ok(parts)
+		}),
+		result.FlatMap(func(parts []string) mo.Result[[]byte] {
+			return mo.TupleToResult(base64.RawURLEncoding.DecodeString(parts[1]))
+		}),
+		result.FlatMap(func(payload []byte) mo.Result[map[string]any] {
+			var claims map[string]any
+			err := json.Unmarshal(payload, &claims)
+			return mo.TupleToResult(claims, err)
+		}),
+	).OrElse(nil)
 }
 
 // GetByPath extracts a value from a nested map using a dot-separated path
-func GetByPath(m map[string]any, path string) (any, bool) {
+func GetByPath(m map[string]any, path string) mo.Option[any] {
 	if m == nil {
-		return nil, false
+		return mo.None[any]()
 	}
 	keys := strings.Split(path, ".")
 	var cur any = m
 	for _, k := range keys {
 		obj, ok := cur.(map[string]any)
 		if !ok {
-			return nil, false
+			return mo.None[any]()
 		}
 		v, ok := obj[k]
 		if !ok {
-			return nil, false
+			return mo.None[any]()
 		}
 		cur = v
 	}
-	return cur, true
+	return mo.Some(cur)
 }

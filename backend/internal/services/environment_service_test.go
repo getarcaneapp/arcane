@@ -542,7 +542,7 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 	_, err = svc.UpdateEnvironment(ctx, "edge-auth-clear", map[string]any{"access_token": nil}, nil, nil)
 	require.NoError(t, err)
 
-	cachedEnvID, ok := svc.getCachedEnvironmentIDForTokenInternal(oldToken, time.Now())
+	cachedEnvID, ok := svc.getCachedEnvironmentIDForTokenInternal(oldToken, time.Now()).Get()
 	require.False(t, ok)
 	require.Empty(t, cachedEnvID)
 
@@ -565,7 +565,7 @@ func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCle
 
 	svc.cacheEnvironmentTokenInternal("env-expired", "expired-token", now.Add(-2*edgeTokenCacheTTL))
 
-	envID, ok := svc.getCachedEnvironmentIDForTokenInternal("expired-token", now)
+	envID, ok := svc.getCachedEnvironmentIDForTokenInternal("expired-token", now).Get()
 	require.False(t, ok)
 	require.Empty(t, envID)
 

@@ -10,6 +10,8 @@ import (
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"github.com/samber/mo"
 )
 
 func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityRequest) error {
@@ -73,16 +75,16 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	}
 }
 
-func resolveSocketGroupInternal(socketPath string) (uint32, bool) {
+func resolveSocketGroupInternal(socketPath string) mo.Option[uint32] {
 	info, err := os.Stat(socketPath)
 	if err != nil {
-		return 0, false
+		return mo.None[uint32]()
 	}
 
 	stat, ok := info.Sys().(*syscall.Stat_t)
 	if !ok {
-		return 0, false
+		return mo.None[uint32]()
 	}
 
-	return stat.Gid, true
+	return mo.Some(stat.Gid)
 }

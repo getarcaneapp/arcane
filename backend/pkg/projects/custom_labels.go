@@ -149,7 +149,7 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 }
 
 func parseArcaneBlockInternal(block any) (IconSet, []string) {
-	arcaneBlock, ok := utils.AsStringMap(block)
+	arcaneBlock, ok := utils.AsStringMap(block).Get()
 	if !ok {
 		return IconSet{}, nil
 	}
@@ -344,7 +344,7 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 // It supports both map[string]string and []string label formats.
 func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
-	if labelMap, ok := utils.AsStringMap(labels); ok {
+	if labelMap, ok := utils.AsStringMap(labels).Get(); ok {
 		for key, value := range labelMap {
 			assignArcaneIconValueInternal(&iconSet, key, utils.ToString(value))
 		}

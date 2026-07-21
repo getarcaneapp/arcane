@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"path"
 	"strconv"
+	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -20,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 // VolumeHandler provides Huma-based volume management endpoints.
@@ -641,7 +643,7 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeCreationError{Err: err}).Error())
 	}
-	response.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &CreateVolumeOutput{
 		Body: base.ApiResponse[*volumetypes.Volume]{
@@ -685,7 +687,7 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 			Success: true,
 			Data: base.MessageResponse{
 				Message:    "Volume removed successfully",
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
@@ -718,7 +720,7 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 			Data: VolumePruneReportData{
 				VolumesDeleted: report.VolumesDeleted,
 				SpaceReclaimed: report.SpaceReclaimed,
-				ActivityID:     utils.StringPtrFromTrimmed(activityID),
+				ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
@@ -869,7 +871,7 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: "File uploaded successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		Data:    base.MessageResponse{Message: "File uploaded successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 	}, nil
 }
 
@@ -930,7 +932,7 @@ func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, envir
 	}
 	return &base.ApiResponse[base.MessageResponse]{
 		Success: true,
-		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+		Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 	}, nil
 }
 
@@ -1004,7 +1006,7 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
-	backup.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	backup.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &CreateBackupOutput{
 		Body: base.ApiResponse[*models.VolumeBackup]{
 			Success: true,
@@ -1043,7 +1045,7 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 	return &RestoreBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
@@ -1084,7 +1086,7 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 	return &RestoreBackupFilesOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Restore initiated successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
@@ -1147,7 +1149,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 	return &DeleteBackupOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Backup deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
@@ -1209,7 +1211,7 @@ func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRe
 	return &UploadAndRestoreOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Backup uploaded and restored successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }

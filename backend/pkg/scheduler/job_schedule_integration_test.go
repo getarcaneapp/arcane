@@ -29,7 +29,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
 	jobScheduler.StartScheduler()
 
-	_, ok := jobScheduler.GetJobRuntimeState("image-polling")
+	_, ok := jobScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, jobScheduler.cron.Entries())
 
@@ -45,7 +45,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.Equal(t, requestedSchedule, persisted.Value)
 	require.Equal(t, requestedSchedule, settingsService.GetStringSetting(ctx, "pollingInterval", ""))
 
-	_, ok = jobScheduler.GetJobRuntimeState("image-polling")
+	_, ok = jobScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, jobScheduler.cron.Entries())
 
@@ -73,7 +73,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 		closeJobScheduleTestDatabaseInternal(t, restartDB)
 	})
 
-	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
+	_, ok = restartScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, restartScheduler.cron.Entries())
 	require.Equal(t, requestedSchedule, restartSettingsService.GetStringSetting(ctx, "pollingInterval", ""))
@@ -87,7 +87,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	_, err = restartJobService.UpdateJobSchedules(ctx, jobschedule.Update{PollingInterval: &disabledSchedule})
 	require.NoError(t, err)
 
-	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
+	_, ok = restartScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, restartScheduler.cron.Entries())
 

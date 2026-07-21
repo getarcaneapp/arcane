@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/samber/mo"
 )
 
 const (
@@ -232,13 +233,13 @@ func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv 
 	return configDir, nil
 }
 
-func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocketGroup func(string) (uint32, bool)) []uint32 {
-	socketPath, ok := dockerSocketPathInternal(dockerHost)
+func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocketGroup func(string) mo.Option[uint32]) []uint32 {
+	socketPath, ok := dockerSocketPathInternal(dockerHost).Get()
 	if !ok {
 		return nil
 	}
 
-	socketGID, ok := resolveSocketGroup(socketPath)
+	socketGID, ok := resolveSocketGroup(socketPath).Get()
 	if !ok {
 		return nil
 	}
@@ -246,15 +247,15 @@ func runtimeIdentitySupplementaryGroupsInternal(dockerHost string, resolveSocket
 	return []uint32{socketGID}
 }
 
-func dockerSocketPathInternal(raw string) (string, bool) {
+func dockerSocketPathInternal(raw string) mo.Option[string] {
 	value := strings.TrimSpace(raw)
 	if value == "" {
-		return defaultDockerSocketPath, true
+		return mo.Some(defaultDockerSocketPath)
 	}
 
 	parsed, err := url.Parse(value)
 	if err != nil || parsed.Scheme != "unix" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	if parsed.Host != "" || parsed.Path != "" {
@@ -262,11 +263,11 @@ func dockerSocketPathInternal(raw string) (string, bool) {
 		if !strings.HasPrefix(socketPath, "/") {
 			socketPath = "/" + socketPath
 		}
-		return filepath.Clean(socketPath), true
+		return mo.Some(filepath.Clean(socketPath))
 	}
 
 	if parsed.Opaque == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	socketPath := strings.TrimPrefix(parsed.Opaque, "//")
@@ -274,7 +275,7 @@ func dockerSocketPathInternal(raw string) (string, bool) {
 		socketPath = "/" + socketPath
 	}
 
-	return filepath.Clean(socketPath), true
+	return mo.Some(filepath.Clean(socketPath))
 }
 
 func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {

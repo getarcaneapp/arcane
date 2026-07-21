@@ -19,6 +19,7 @@ import (
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -27,7 +28,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	buildapi "go.getarcane.app/builds/api"
 )
 
@@ -192,7 +192,7 @@ func (s *LifecycleService) executePreDeployInternal(ctx context.Context, project
 
 func (s *LifecycleService) resolveRunnerImageInternal(ctx context.Context, sync *models.GitOpsSync) string {
 	if sync != nil {
-		runnerImage := strings.TrimSpace(utils.DerefString(sync.PreDeployRunnerImage))
+		runnerImage := strings.TrimSpace(mo.PointerToOption(sync.PreDeployRunnerImage).OrEmpty())
 		if runnerImage != "" {
 			return runnerImage
 		}
@@ -416,7 +416,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 ) {
 	severity := models.EventSeveritySuccess
 	title := "Pre-deploy lifecycle hook succeeded: " + project.Name
-	description := fmt.Sprintf("Script %s exited with code %d in %dms", utils.DerefString(sync.PreDeployScriptPath), exitCode, durationMs)
+	description := fmt.Sprintf("Script %s exited with code %d in %dms", mo.PointerToOption(sync.PreDeployScriptPath).OrEmpty(), exitCode, durationMs)
 	if status != lifecycleStatusSuccess {
 		severity = models.EventSeverityWarning
 		title = fmt.Sprintf("Pre-deploy lifecycle hook %s: %s", status, project.Name)
@@ -426,7 +426,7 @@ func (s *LifecycleService) emitLifecycleEventInternal(
 	}
 
 	metadata := models.JSON{
-		"scriptPath":   utils.DerefString(sync.PreDeployScriptPath),
+		"scriptPath":   mo.PointerToOption(sync.PreDeployScriptPath).OrEmpty(),
 		"runnerImage":  runnerImage,
 		"exitCode":     exitCode,
 		"durationMs":   durationMs,

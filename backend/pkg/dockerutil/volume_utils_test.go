@@ -91,7 +91,7 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		volumeUsageCacheMutex.Unlock()
 
 		startedAt := time.Now()
-		stale, found := GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient)
+		stale, found := GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient).Get()
 		require.True(t, found)
 		require.Len(t, stale, 1)
 		require.Equal(t, "stale", stale[0].Name)
@@ -102,7 +102,7 @@ func TestVolumeUsageCacheBehaviorInternal(t *testing.T) {
 		case <-time.After(time.Second):
 			t.Fatal("background volume usage refresh did not start")
 		}
-		_, _ = GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient)
+		_, _ = GetVolumeUsageDataStaleWhileRevalidate(ctx, dockerClient).Get()
 		require.Equal(t, int32(2), requests.Load())
 
 		close(releaseSecond)

@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"github.com/samber/mo"
+
 	"bytes"
 	"context"
 	"errors"
@@ -194,7 +196,7 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c echo.Context, ps *authz.
 
 	method := c.Request().Method
 	suffix := m.buildResourceSuffix(c.Request().URL.Path, envID)
-	perm, ok := m.matcher.Lookup(method, suffix)
+	perm, ok := m.matcher.Lookup(method, suffix).Get()
 	if !ok {
 		slog.WarnContext(c.Request().Context(), "Denying proxied request with no known permission mapping",
 			"method", method, "path", suffix, "environment_id", envID)
@@ -219,7 +221,7 @@ func (m *EnvironmentMiddleware) proxyPermissionDenied(c echo.Context, ps *authz.
 }
 
 func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {
-	tunnel, ok := m.getActiveEdgeTunnelInternal(envID)
+	tunnel, ok := m.getActiveEdgeTunnelInternal(envID).Get()
 	if !ok {
 		return false, nil
 	}
@@ -232,7 +234,7 @@ func (m *EnvironmentMiddleware) proxyActiveEdgeTunnelInternal(c echo.Context, en
 func (m *EnvironmentMiddleware) proxyRecoveredEdgeTunnelInternal(c echo.Context, envID string, accessToken *string) (bool, error) {
 	edge.TouchTunnelDemand(envID, edge.DefaultTunnelDemandTTL)
 
-	tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request().Context(), envID, edge.DefaultTunnelAcquireTimeout())
+	tunnel, ok := m.waitForActiveEdgeTunnelInternal(c.Request().Context(), envID, edge.DefaultTunnelAcquireTimeout()).Get()
 	if !ok {
 		return false, nil
 	}
@@ -372,25 +374,25 @@ func isEdgeEnvironmentURLInternal(apiURL string) bool {
 	return strings.HasPrefix(normalized, "edge://")
 }
 
-func (m *EnvironmentMiddleware) getActiveEdgeTunnelInternal(envID string) (*edge.AgentTunnel, bool) {
+func (m *EnvironmentMiddleware) getActiveEdgeTunnelInternal(envID string) mo.Option[*edge.AgentTunnel] {
 	if m.registry == nil {
-		return nil, false
+		return mo.None[*edge.AgentTunnel]()
 	}
 
-	tunnel, ok := m.registry.Get(envID)
+	tunnel, ok := m.registry.Get(envID).Get()
 	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return nil, false
+		return mo.None[*edge.AgentTunnel]()
 	}
-	return tunnel, true
+	return mo.Some(tunnel)
 }
 
-func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Context, envID string, timeout time.Duration) (*edge.AgentTunnel, bool) {
+func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Context, envID string, timeout time.Duration) mo.Option[*edge.AgentTunnel] {
 	if timeout <= 0 {
 		return m.getActiveEdgeTunnelInternal(envID)
 	}
 
-	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
-		return tunnel, true
+	if tunnel, ok := m.getActiveEdgeTunnelInternal(envID).Get(); ok {
+		return mo.Some(tunnel)
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -402,10 +404,10 @@ func (m *EnvironmentMiddleware) waitForActiveEdgeTunnelInternal(ctx context.Cont
 	for {
 		select {
 		case <-waitCtx.Done():
-			return nil, false
+			return mo.None[*edge.AgentTunnel]()
 		case <-ticker.C:
-			if tunnel, ok := m.getActiveEdgeTunnelInternal(envID); ok {
-				return tunnel, true
+			if tunnel, ok := m.getActiveEdgeTunnelInternal(envID).Get(); ok {
+				return mo.Some(tunnel)
 			}
 		}
 	}

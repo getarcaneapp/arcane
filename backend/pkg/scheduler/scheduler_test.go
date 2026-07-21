@@ -281,7 +281,7 @@ func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 	require.Len(t, js.cron.Entries(), 1)
 	require.NotEqual(t, firstEntry, js.entryIDs[job.Name()])
 
-	state, ok := js.GetJobRuntimeState(job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name()).Get()
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/10 * * * * *", state.Schedule)
@@ -303,7 +303,7 @@ func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
 	require.Equal(t, firstEntry, js.entryIDs[job.Name()])
 	require.Len(t, js.cron.Entries(), 1)
 
-	state, ok := js.GetJobRuntimeState(job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name()).Get()
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/5 * * * * *", state.Schedule)

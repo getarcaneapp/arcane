@@ -16,6 +16,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
+	"github.com/samber/mo"
 )
 
 const (
@@ -223,7 +224,7 @@ func (c *TunnelClient) connectAndServe(ctx context.Context) error {
 
 func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context) error {
 	if c.shouldAttemptGRPCTunnelInternal() {
-		if preferredUntil, ok := c.preferredWebSocketUntilInternal(time.Now()); ok {
+		if preferredUntil, ok := c.preferredWebSocketUntilInternal(time.Now()).Get(); ok {
 			slog.InfoContext(ctx, "Temporarily preferring websocket edge tunnel transport after recent websocket success",
 				"preferred_until", preferredUntil,
 				"manager_ws_url", c.managerWebSocketURLInternal(),
@@ -340,19 +341,19 @@ func (c *TunnelClient) websocketPreferenceTTLInternal() time.Duration {
 	return c.websocketPreferenceTTL
 }
 
-func (c *TunnelClient) preferredWebSocketUntilInternal(now time.Time) (time.Time, bool) {
+func (c *TunnelClient) preferredWebSocketUntilInternal(now time.Time) mo.Option[time.Time] {
 	if c == nil || !c.shouldAttemptGRPCTunnelInternal() || !c.shouldAttemptWebSocketTunnelInternal() {
-		return time.Time{}, false
+		return mo.None[time.Time]()
 	}
 
 	c.transportPreferenceMu.RLock()
 	defer c.transportPreferenceMu.RUnlock()
 
 	if c.preferWebSocketUntil.IsZero() || !now.Before(c.preferWebSocketUntil) {
-		return time.Time{}, false
+		return mo.None[time.Time]()
 	}
 
-	return c.preferWebSocketUntil, true
+	return mo.Some(c.preferWebSocketUntil)
 }
 
 func (c *TunnelClient) markTransportConnectedInternal(transport string) {
@@ -726,7 +727,7 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelCo
 // handleWebSocketStart handles a WebSocket stream start request from the manager.
 func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
 	if msg.Command == "" {
-		if commandName, ok := ResolveEdgeCommandName(http.MethodGet, msg.Path, true); ok {
+		if commandName, ok := ResolveEdgeCommandName(http.MethodGet, msg.Path, true).Get(); ok {
 			msg.Command = commandName
 		}
 	}

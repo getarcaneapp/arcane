@@ -1188,7 +1188,7 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 	updateInfoMap := make(map[string]*imagetypes.UpdateInfo, len(imageIDs))
 	var uncachedIDs []string
 	for _, imageID := range imageIDs {
-		info, ok := s.updateInfoCache.Get(imageID)
+		info, ok := s.updateInfoCache.Get(imageID).Get()
 		if !ok {
 			uncachedIDs = append(uncachedIDs, imageID)
 			continue
@@ -1299,7 +1299,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	}
 
 	if s.iconMetaCache != nil {
-		if meta, ok := s.iconMetaCache.Get(projectName); ok {
+		if meta, ok := s.iconMetaCache.Get(projectName).Get(); ok {
 			if metadataByProject != nil {
 				metadataByProject[projectName] = meta
 			}

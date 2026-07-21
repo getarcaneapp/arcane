@@ -1,6 +1,8 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	json "encoding/json/v2"
 	"errors"
 	"io"
@@ -183,9 +185,9 @@ func (r *PollRuntimeRegistry) Update(envID string, interval time.Duration, now t
 }
 
 // Get returns the most recent poll runtime state if it is still fresh.
-func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState, bool) {
+func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRuntimeState] {
 	if r == nil || strings.TrimSpace(envID) == "" {
-		return PollRuntimeState{}, false
+		return mo.None[PollRuntimeState]()
 	}
 	if now.IsZero() {
 		now = time.Now()
@@ -195,7 +197,7 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState
 	state, ok := r.states[envID]
 	r.mu.RUnlock()
 	if !ok || state.LastPollAt == nil {
-		return PollRuntimeState{}, false
+		return mo.None[PollRuntimeState]()
 	}
 
 	ttl := pollRuntimeTTLInternal(state)
@@ -205,18 +207,18 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState
 		state, ok = r.states[envID]
 		if !ok || state.LastPollAt == nil {
 			r.mu.Unlock()
-			return PollRuntimeState{}, false
+			return mo.None[PollRuntimeState]()
 		}
 		ttl = pollRuntimeTTLInternal(state)
 		if now.Sub(*state.LastPollAt) > ttl {
 			delete(r.states, envID)
 			r.mu.Unlock()
-			return PollRuntimeState{}, false
+			return mo.None[PollRuntimeState]()
 		}
 		r.mu.Unlock()
 	}
 
-	return state, true
+	return mo.Some(state)
 }
 
 func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error) {
@@ -245,7 +247,7 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 	hasActiveTunnel := false
 	activeTransport := ""
 
-	if tunnel, ok := s.registry.Get(envID); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
+	if tunnel, ok := s.registry.Get(envID).Get(); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		hasActiveTunnel = true
 		switch tunnel.Conn.(type) {
 		case *GRPCManagerTunnelConn:

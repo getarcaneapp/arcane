@@ -46,7 +46,7 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 
 	commandName := req.Command
 	if commandName == "" {
-		resolved, ok := ResolveEdgeCommandName(req.Method, req.Path, false)
+		resolved, ok := ResolveEdgeCommandName(req.Method, req.Path, false).Get()
 		if !ok {
 			return nil, fmt.Errorf("unsupported edge command for %s %s", req.Method, req.Path)
 		}
@@ -115,7 +115,7 @@ func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req
 
 	commandName := req.Command
 	if commandName == "" {
-		resolved, ok := ResolveEdgeCommandName(http.MethodGet, req.Path, true)
+		resolved, ok := ResolveEdgeCommandName(http.MethodGet, req.Path, true).Get()
 		if !ok {
 			return fmt.Errorf("unsupported edge stream target %q", req.Path)
 		}

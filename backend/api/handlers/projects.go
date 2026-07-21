@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -23,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/samber/mo"
 )
 
 // ProjectHandler provides Huma-based project management endpoints.
@@ -576,7 +578,7 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 			Success: true,
 			Data: base.MessageResponse{
 				Message:    "Project brought down successfully",
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
@@ -650,12 +652,12 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 	response.StatusReason = proj.StatusReason
 	response.CreatedAt = proj.CreatedAt.Format(time.RFC3339)
 	response.UpdatedAt = proj.UpdatedAt.Format(time.RFC3339)
-	response.DirName = utils.DerefString(proj.DirName)
+	response.DirName = mo.PointerToOption(proj.DirName).OrEmpty()
 	response.RelativePath = h.projectService.GetProjectRelativePath(ctx, proj.Path)
 	response.GitOpsManagedBy = proj.GitOpsManagedBy
 	response.IsArchived = proj.IsArchived
 	response.ArchivedAt = proj.ArchivedAt
-	response.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	response.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &CreateProjectOutput{
 		Body: base.ApiResponse[project.CreateReponse]{
@@ -817,7 +819,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 			Success: true,
 			Data: base.MessageResponse{
 				Message:    "Project destroyed successfully",
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
@@ -840,7 +842,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		Type:           models.ActivityTypeResourceAction,
 		ResourceType:   "project",
 		ResourceID:     input.ProjectID,
-		ResourceName:   utils.DerefString(input.Body.Name),
+		ResourceName:   mo.PointerToOption(input.Body.Name).OrEmpty(),
 		User:           user,
 		Step:           "Updating project",
 		Message:        "Updating project",
@@ -872,7 +874,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
-	details.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &UpdateProjectOutput{
 		Body: base.ApiResponse[project.Details]{
@@ -927,7 +929,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
 	}
-	details.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &UpdateProjectIncludeOutput{
 		Body: base.ApiResponse[project.Details]{
@@ -1094,7 +1096,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 
 	return base.MessageResponse{
 		Message:    cfg.SuccessMessage,
-		ActivityID: utils.StringPtrFromTrimmed(activityID),
+		ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 	}, nil
 }
 

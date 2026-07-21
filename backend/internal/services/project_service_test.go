@@ -26,7 +26,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -37,6 +36,7 @@ import (
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/opencontainers/go-digest"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	buildtypes "go.getarcane.app/builds/types"
@@ -563,7 +563,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject")
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -580,7 +580,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, replacement.ID, found.ID)
 
-		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject")
+		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, replacement.ID, cachedProjectID)
 	})
@@ -600,7 +600,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp")
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -613,7 +613,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project not found")
 
-		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
+		_, cached = svc.getCachedComposeProjectIDInternal("myapp").Get()
 		assert.False(t, cached)
 	})
 }
@@ -715,8 +715,8 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.CurrentDigest))
-	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -768,7 +768,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -817,7 +817,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
@@ -932,12 +932,12 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	var privateCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", privateImageID).First(&privateCurrentRecord).Error)
 	assert.False(t, privateCurrentRecord.HasUpdate)
-	assert.Equal(t, privateImageDigest, utils.DerefString(privateCurrentRecord.LatestDigest))
+	assert.Equal(t, privateImageDigest, mo.PointerToOption(privateCurrentRecord.LatestDigest).OrEmpty())
 
 	var publicCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", publicImageID).First(&publicCurrentRecord).Error)
 	assert.False(t, publicCurrentRecord.HasUpdate)
-	assert.Equal(t, publicImageDigest, utils.DerefString(publicCurrentRecord.LatestDigest))
+	assert.Equal(t, publicImageDigest, mo.PointerToOption(publicCurrentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {
