@@ -175,10 +175,21 @@ func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
 		"app-data",
 		models.User{},
 		models.VolumeBackupTriggerManual,
-		volumetypes.BackupDestination("invalid"),
-		"",
+		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")},
 	)
 	require.EqualError(t, err, "invalid volume backup destination")
+}
+
+func TestVolumeBackup_CreateRemoteRequiresDestination(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.CreateBackup(
+		context.Background(),
+		"app-data",
+		models.User{},
+		models.VolumeBackupTriggerManual,
+		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3},
+	)
+	require.EqualError(t, err, "select an S3 destination for the volume backup")
 }
 
 func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {

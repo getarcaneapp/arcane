@@ -1,8 +1,10 @@
 <script lang="ts">
 	import { m } from '$lib/paraglide/messages';
 	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
+	import { s3DestinationService } from '$lib/services/s3-destination-service';
 	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry, VolumeBackupDestination, VolumeBackupPolicy } from '$lib/types/shared';
+	import type { BackupEntry, CreateVolumeBackupRequest, VolumeBackupPolicy } from '$lib/types/shared';
+	import type { S3Destination } from '$lib/types/s3-destination';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -66,6 +68,7 @@
 	});
 	let backupWarnings = $state<string[]>([]);
 	let backupPolicies = $state<VolumeBackupPolicy[]>([]);
+	let s3Destinations = $state<S3Destination[]>([]);
 	let showBackupPolicy = $state(false);
 	let editingBackupPolicyId = $state<string | undefined>();
 
@@ -103,10 +106,10 @@
 		}
 	}
 
-	async function handleCreate(destination?: VolumeBackupDestination, policyId?: string) {
+	async function handleCreate(request?: CreateVolumeBackupRequest) {
 		creating = true;
 		try {
-			const result = await volumeBackupService.createBackup(volumeName, destination, policyId);
+			const result = await volumeBackupService.createBackup(volumeName, request);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
 		} catch (error) {
@@ -300,19 +303,14 @@
 		return name && backup.destination !== 'local' ? `${label} · ${name}` : label;
 	}
 
-	const s3Policies = $derived.by(() => {
-		const destinations = new Map<string, VolumeBackupPolicy>();
-		for (const policy of backupPolicies) {
-			if (policy.s3Enabled && policy.s3DestinationId && !destinations.has(policy.s3DestinationId)) {
-				destinations.set(policy.s3DestinationId, policy);
-			}
-		}
-		return [...destinations.values()];
-	});
-
 	onMount(async () => {
-		const [collection] = await Promise.all([volumeBackupService.getPolicies(volumeName), loadData(requestOptions)]);
+		const [collection, destinations] = await Promise.all([
+			volumeBackupService.getPolicies(volumeName),
+			canBackupVolume ? s3DestinationService.listAll().catch(() => []) : Promise.resolve([]),
+			loadData(requestOptions)
+		]);
 		backupPolicies = collection.policies;
+		s3Destinations = destinations;
 	});
 
 	const columns = [
@@ -404,14 +402,14 @@
 				{m.volume_restore_files()}
 			</DropdownMenu.Item>
 		{/if}
-		{#if canBackupVolume && s3Policies.length}
-			{#each s3Policies as policy (policy.s3DestinationId)}
+		{#if canBackupVolume && s3Destinations.length}
+			{#each s3Destinations as destination (destination.id)}
 				<DropdownMenu.Item
 					disabled={item.status !== 'succeeded' || Boolean(item.remoteSnapshotId) || uploadingBackupId === item.id}
-					onclick={() => handleUpload(item, policy.s3DestinationId)}
+					onclick={() => handleUpload(item, destination.id)}
 				>
 					<UploadIcon class="size-4" />
-					{m.backups_upload_s3()} · {policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+					{m.backups_upload_s3()} · {destination.name}
 				</DropdownMenu.Item>
 			{/each}
 		{/if}
@@ -458,11 +456,19 @@
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-64">
 						<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
-						<DropdownMenu.Item onclick={() => handleCreate('local')}>
+						<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
 							{m.volume_backup_destination_local()}
 						</DropdownMenu.Item>
+						{#each s3Destinations as s3Destination (s3Destination.id)}
+							<DropdownMenu.Item onclick={() => handleCreate({ destination: 's3', s3DestinationId: s3Destination.id })}>
+								{m.volume_backup_destination_s3()} · {s3Destination.name}
+							</DropdownMenu.Item>
+							<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local_s3', s3DestinationId: s3Destination.id })}>
+								{m.volume_backup_destination_local_s3()} · {s3Destination.name}
+							</DropdownMenu.Item>
+						{/each}
 						{#each backupPolicies as policy (policy.id)}
-							<DropdownMenu.Item onclick={() => handleCreate(undefined, policy.id)}>
+							<DropdownMenu.Item onclick={() => handleCreate({ policyId: policy.id })}>
 								<div class="flex flex-col gap-0.5">
 									<span>{policy.schedule}</span>
 									<span class="text-xs text-muted-foreground"
@@ -590,6 +596,13 @@
 			</div>
 		{/each}
 	</div>
+
+	<Alert.Root class="py-2 [&>svg]:top-2">
+		<InfoIcon class="size-4" />
+		<Alert.Description class="text-xs">
+			{m.volume_backup_encryption_note()}
+		</Alert.Description>
+	</Alert.Root>
 
 	{#if backupWarnings.length > 0}
 		<Alert.Root variant="warning" class="py-2 [&>svg]:top-2">

@@ -1228,9 +1228,11 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 	var backup *models.VolumeBackup
 	destination := volumetypes.BackupDestination("")
 	policyID := ""
+	s3DestinationID := ""
 	if input.Body != nil {
 		destination = input.Body.Destination
 		policyID = input.Body.PolicyID
+		s3DestinationID = input.Body.S3DestinationID
 	}
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -1243,10 +1245,12 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 		Step:           "Creating backup",
 		Message:        "Creating volume backup",
 		SuccessMessage: "Volume backup created successfully",
-		Metadata:       models.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID},
+		Metadata:       models.JSON{"action": "create_volume_backup", "destination": destination, "policyId": policyID, "s3DestinationId": s3DestinationID},
 	}, func(runtimeCtx context.Context) error {
 		var backupErr error
-		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual, destination, policyID)
+		backup, backupErr = h.volumeService.CreateBackup(runtimeCtx, input.VolumeName, *user, models.VolumeBackupTriggerManual, volumetypes.CreateBackupRequest{
+			Destination: destination, PolicyID: policyID, S3DestinationID: s3DestinationID,
+		})
 		return backupErr
 	})
 	if err != nil {

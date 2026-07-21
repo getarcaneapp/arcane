@@ -9,8 +9,9 @@ const (
 )
 
 type CreateBackupRequest struct {
-	Destination BackupDestination `json:"destination,omitempty" doc:"Optional destination override for this manual backup"`
-	PolicyID    string            `json:"policyId,omitempty" doc:"Optional backup policy whose settings should be used"`
+	Destination     BackupDestination `json:"destination,omitempty" doc:"Optional destination override for this manual backup"`
+	PolicyID        string            `json:"policyId,omitempty" doc:"Optional backup policy whose settings should be used"`
+	S3DestinationID string            `json:"s3DestinationId,omitempty" doc:"Saved S3 destination for a manual remote backup"`
 }
 
 type UploadBackupRequest struct {

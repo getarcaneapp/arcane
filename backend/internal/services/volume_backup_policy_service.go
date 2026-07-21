@@ -268,7 +268,7 @@ func (s *VolumeService) buildVolumeBackupJobInternal(policyID, schedule string) 
 				},
 			}, func(activityCtx context.Context) error {
 				var backupErr error
-				backup, backupErr = s.CreateBackup(activityCtx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled, "", policy.ID)
+				backup, backupErr = s.CreateBackup(activityCtx, policy.VolumeName, systemUser, models.VolumeBackupTriggerScheduled, volumetypes.CreateBackupRequest{PolicyID: policy.ID})
 				return backupErr
 			})
 			if errors.Is(err, ErrVolumeBackupAlreadyRunning) {

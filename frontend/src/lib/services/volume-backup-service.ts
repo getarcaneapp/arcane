@@ -2,8 +2,8 @@ import BaseAPIService from './api-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import type {
 	BackupEntry,
+	CreateVolumeBackupRequest,
 	UpdateVolumeBackupPolicy,
-	VolumeBackupDestination,
 	VolumeBackupPolicyCollection
 } from '$lib/types/shared';
 import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
@@ -22,12 +22,9 @@ class VolumeBackupService extends BaseAPIService {
 		return this.handleResponse(this.api.put(`/environments/${envId}/volumes/${volumeName}/backup-policy`, { policies }));
 	}
 
-	async createBackup(volumeName: string, destination?: VolumeBackupDestination, policyId?: string): Promise<BackupEntry> {
+	async createBackup(volumeName: string, request?: CreateVolumeBackupRequest): Promise<BackupEntry> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		const res = await this.api.post(
-			`/environments/${envId}/volumes/${volumeName}/backups`,
-			destination || policyId ? { destination, policyId } : undefined
-		);
+		const res = await this.api.post(`/environments/${envId}/volumes/${volumeName}/backups`, request);
 		return res.data.data;
 	}
 

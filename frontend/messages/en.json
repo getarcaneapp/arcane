@@ -2938,6 +2938,7 @@
   "s3_destination_delete_failed": "Failed to delete S3 destination",
   "volume_backup_policy_title": "Automatic volume backups",
   "volume_backup_policy_description": "Add independent schedules with their own destination, retention, and container shutdown settings.",
+  "volume_backup_encryption_note": "Volume backups are encrypted automatically with Arcane's internal encryption key; no separate recovery key is required. Keep the original encryption key to restore these backups on another Arcane instance.",
   "volume_backup_policy_configure": "Configure schedules",
   "volume_backup_policy_saved": "Volume backup schedules saved",
   "volume_backup_policy_save_failed": "Failed to save volume backup policy",

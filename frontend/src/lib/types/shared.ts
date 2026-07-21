@@ -113,6 +113,12 @@ export interface FileContentResponse {
 
 export type VolumeBackupDestination = 'local' | 's3' | 'local_s3';
 
+export interface CreateVolumeBackupRequest {
+	destination?: VolumeBackupDestination;
+	policyId?: string;
+	s3DestinationId?: string;
+}
+
 export interface BackupEntry {
 	id: string;
 	volumeName: string;
