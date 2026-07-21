@@ -23,6 +23,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/samber/mo"
 )
 
 type ContainerHandler struct {
@@ -724,7 +725,7 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 	return &ContainerActionOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
@@ -775,7 +776,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	// Fetch full container details to return (consistent with other endpoints)
 	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
 	if inspectErr == nil {
-		details.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 		return &GetContainerOutput{
 			Body: base.ApiResponse[containertypes.Details]{
@@ -792,7 +793,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 			Success: true,
 			Data: containertypes.Details{
 				ID:         newContainerID,
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
@@ -815,7 +816,7 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	return &DeleteContainerOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }

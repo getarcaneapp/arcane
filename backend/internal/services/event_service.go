@@ -21,6 +21,8 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/event"
+	"github.com/samber/mo"
+	"github.com/samber/mo/option"
 	"golang.org/x/text/cases"
 	"golang.org/x/text/language"
 	"gorm.io/gorm"
@@ -632,11 +634,13 @@ func cloneEventMetadataValueInternal(value any) any {
 	}
 }
 
-var eventDefinitions = map[models.EventType]struct {
+type eventDefinition struct {
 	TitleFormat       string
 	DescriptionFormat string
 	Severity          models.EventSeverity
-}{
+}
+
+var eventDefinitions = map[models.EventType]eventDefinition{
 	models.EventTypeContainerStart:   {"Container started: %s", "Container '%s' has been started", models.EventSeveritySuccess},
 	models.EventTypeContainerStop:    {"Container stopped: %s", "Container '%s' has been stopped", models.EventSeverityInfo},
 	models.EventTypeContainerRestart: {"Container restarted: %s", "Container '%s' has been restarted", models.EventSeverityInfo},
@@ -686,22 +690,24 @@ var eventDefinitions = map[models.EventType]struct {
 }
 
 func (s *EventService) generateEventTitle(eventType models.EventType, resourceName string) string {
-	if def, ok := eventDefinitions[eventType]; ok {
+	definition, ok := eventDefinitions[eventType]
+	return option.Map(func(def eventDefinition) string {
 		return fmt.Sprintf(def.TitleFormat, resourceName)
-	}
-	return "Event: " + string(eventType)
+	})(mo.TupleToOption(definition, ok)).OrElse("Event: " + string(eventType))
 }
 
 func (s *EventService) generateEventDescription(eventType models.EventType, resourceType, resourceName string) string {
-	if def, ok := eventDefinitions[eventType]; ok {
+	definition, ok := eventDefinitions[eventType]
+	return option.Map(func(def eventDefinition) string {
 		return fmt.Sprintf(def.DescriptionFormat, resourceName)
-	}
-	return fmt.Sprintf("%s operation performed on %s '%s'", string(eventType), resourceType, resourceName)
+	})(mo.TupleToOption(definition, ok)).OrElse(
+		fmt.Sprintf("%s operation performed on %s '%s'", string(eventType), resourceType, resourceName),
+	)
 }
 
 func (s *EventService) getEventSeverity(eventType models.EventType) models.EventSeverity {
-	if def, ok := eventDefinitions[eventType]; ok {
+	definition, ok := eventDefinitions[eventType]
+	return option.Map(func(def eventDefinition) models.EventSeverity {
 		return def.Severity
-	}
-	return models.EventSeverityInfo
+	})(mo.TupleToOption(definition, ok)).OrElse(models.EventSeverityInfo)
 }

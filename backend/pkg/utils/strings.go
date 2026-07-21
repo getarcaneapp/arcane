@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/samber/mo"
 )
 
 // ToString converts any value to a trimmed string.
@@ -50,19 +52,19 @@ func Collect[T any](value any, mapper func(any) T) []T {
 }
 
 // AsStringMap attempts to convert any map-like interface to map[string]any.
-func AsStringMap(value any) (map[string]any, bool) {
+func AsStringMap(value any) mo.Option[map[string]any] {
 	if value == nil {
-		return nil, false
+		return mo.None[map[string]any]()
 	}
 	switch v := value.(type) {
 	case map[string]any:
-		return v, true
+		return mo.Some(v)
 	case map[string]string:
 		res := make(map[string]any, len(v))
 		for k, val := range v {
 			res[k] = val
 		}
-		return res, true
+		return mo.Some(res)
 	case map[any]any:
 		res := make(map[string]any, len(v))
 		for k, val := range v {
@@ -70,7 +72,10 @@ func AsStringMap(value any) (map[string]any, bool) {
 				res[s] = val
 			}
 		}
-		return res, len(res) > 0
+		if len(res) > 0 {
+			return mo.Some(res)
+		}
+		return mo.None[map[string]any]()
 	}
 	// Named map types (e.g. compose-go's types.Labels) don't match the cases above.
 	rv := reflect.ValueOf(value)
@@ -79,9 +84,9 @@ func AsStringMap(value any) (map[string]any, bool) {
 		for iter := rv.MapRange(); iter.Next(); {
 			res[iter.Key().String()] = iter.Value().Interface()
 		}
-		return res, true
+		return mo.Some(res)
 	}
-	return nil, false
+	return mo.None[map[string]any]()
 }
 
 // UniqueNonEmptyStrings returns unique, non-empty, trimmed strings.

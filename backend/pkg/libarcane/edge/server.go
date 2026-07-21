@@ -16,6 +16,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
+	"github.com/samber/mo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
@@ -290,7 +291,7 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 		return status.Error(codes.Unauthenticated, "first message must be register")
 	}
 
-	envID, ok := resolvedEnvironmentIDFromContextInternal(ctx)
+	envID, ok := resolvedEnvironmentIDFromContextInternal(ctx).Get()
 	if !ok || envID == "" {
 		token := strings.TrimSpace(register.GetAgentToken())
 		if token == "" {
@@ -666,17 +667,17 @@ func (s *contextualServerStream) Context() context.Context {
 	return s.ctx
 }
 
-func resolvedEnvironmentIDFromContextInternal(ctx context.Context) (string, bool) {
+func resolvedEnvironmentIDFromContextInternal(ctx context.Context) mo.Option[string] {
 	if ctx == nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	envID, ok := ctx.Value(resolvedEnvironmentIDKey{}).(string)
 	if !ok || strings.TrimSpace(envID) == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
-	return envID, true
+	return mo.Some(envID)
 }
 
 func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionState, envID string) error {

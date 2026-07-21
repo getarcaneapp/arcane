@@ -16,6 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"go.getarcane.app/updater/pkg/labels"
 	"golang.org/x/sync/errgroup"
 )
@@ -69,9 +70,10 @@ func (s *SystemService) PruneAll(ctx context.Context, environmentID string, req 
 		"build_cache", req.BuildCache,
 	)
 
-	activityID, started := s.beginSystemPruneInternal(ctx, environmentID, req)
-	result := &system.PruneAllResult{Success: true, ActivityID: utils.StringPtrFromTrimmed(activityID)}
-	if !started {
+	prune := s.beginSystemPruneInternal(ctx, environmentID, req)
+	activityID := prune.activityID
+	result := &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+	if prune.started.IsAbsent() {
 		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", activityID)
 		return result, false, nil
 	}
@@ -85,10 +87,11 @@ func (s *SystemService) PruneAll(ctx context.Context, environmentID string, req 
 }
 
 func (s *SystemService) StartPruneAll(ctx context.Context, environmentID string, req system.PruneAllRequest) *system.PruneAllResult {
-	activityID, started := s.beginSystemPruneInternal(ctx, environmentID, req)
-	if !started {
+	prune := s.beginSystemPruneInternal(ctx, environmentID, req)
+	activityID := prune.activityID
+	if prune.started.IsAbsent() {
 		slog.InfoContext(ctx, "System prune already running", "environmentId", environmentID, "activityId", activityID)
-		return &system.PruneAllResult{Success: true, ActivityID: utils.StringPtrFromTrimmed(activityID)}
+		return &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	}
 
 	backgroundCtx := utils.ActivityRuntimeContext(ctx, nil)
@@ -97,24 +100,29 @@ func (s *SystemService) StartPruneAll(ctx context.Context, environmentID string,
 	go func() {
 		defer s.finishSystemPruneInternal(environmentID)
 
-		result := &system.PruneAllResult{Success: true, ActivityID: utils.StringPtrFromTrimmed(activityID)}
+		result := &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 		s.runSystemPruneInternal(backgroundCtx, req, activityID, result)
 	}()
 
-	return &system.PruneAllResult{Success: true, ActivityID: utils.StringPtrFromTrimmed(activityID)}
+	return &system.PruneAllResult{Success: true, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 }
 
-func (s *SystemService) beginSystemPruneInternal(ctx context.Context, environmentID string, req system.PruneAllRequest) (string, bool) {
+type systemPruneBeginResult struct {
+	activityID string
+	started    mo.Option[struct{}]
+}
+
+func (s *SystemService) beginSystemPruneInternal(ctx context.Context, environmentID string, req system.PruneAllRequest) systemPruneBeginResult {
 	s.pruneMu.Lock()
 	defer s.pruneMu.Unlock()
 
 	if activityID, ok := s.runningPrunes[environmentID]; ok {
-		return activityID, false
+		return systemPruneBeginResult{activityID: activityID, started: mo.None[struct{}]()}
 	}
 
 	activityID := s.startSystemPruneActivityInternal(ctx, environmentID, req)
 	s.runningPrunes[environmentID] = activityID
-	return activityID, true
+	return systemPruneBeginResult{activityID: activityID, started: mo.Some(struct{}{})}
 }
 
 func (s *SystemService) finishSystemPruneInternal(environmentID string) {
@@ -369,7 +377,7 @@ func (s *SystemService) startMatchingContainersInternal(ctx context.Context, env
 		result := &containertypes.ActionResult{
 			Success:    false,
 			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
-			ActivityID: utils.StringPtrFromTrimmed(activityID),
+			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
 		s.completeSystemContainerActivityInternal(ctx, activityID, opts.FailureMessage, result)
 		return result, err
@@ -378,7 +386,7 @@ func (s *SystemService) startMatchingContainersInternal(ctx context.Context, env
 	result := s.performBatchContainerAction(ctx, containers, "start", opts.ShouldStart, func(ctx context.Context, id string) error {
 		return s.containerService.StartContainer(ctx, id, systemUser)
 	})
-	result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	s.completeSystemContainerActivityInternal(ctx, activityID, opts.SuccessMessage, result)
 	return result, nil
 }
@@ -390,7 +398,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 		result := &containertypes.ActionResult{
 			Success:    false,
 			Errors:     []string{fmt.Sprintf("Failed to list containers: %v", err)},
-			ActivityID: utils.StringPtrFromTrimmed(activityID),
+			ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
 		s.completeSystemContainerActivityInternal(ctx, activityID, "Stopping all containers failed", result)
 		return result, err
@@ -404,7 +412,7 @@ func (s *SystemService) StopAllContainers(ctx context.Context, environmentID str
 		func(ctx context.Context, id string) error {
 			return s.containerService.StopContainer(ctx, id, systemUser)
 		})
-	result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	s.completeSystemContainerActivityInternal(ctx, activityID, "Stopped all containers", result)
 	return result, nil
 }

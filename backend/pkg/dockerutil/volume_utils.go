@@ -12,6 +12,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 var (
@@ -79,9 +80,9 @@ func GetVolumeUsageData(ctx context.Context, dockerClient *client.Client) ([]vol
 
 // GetVolumeUsageDataStaleWhileRevalidate returns immediately with any cached
 // snapshot and starts a bounded refresh when the snapshot is stale or missing.
-func GetVolumeUsageDataStaleWhileRevalidate(ctx context.Context, dockerClient *client.Client) ([]volume.Volume, bool) {
+func GetVolumeUsageDataStaleWhileRevalidate(ctx context.Context, dockerClient *client.Client) mo.Option[[]volume.Volume] {
 	if dockerClient == nil {
-		return nil, false
+		return mo.None[[]volume.Volume]()
 	}
 
 	key := volumeUsageCacheKeyInternal(dockerClient)
@@ -102,7 +103,10 @@ func GetVolumeUsageDataStaleWhileRevalidate(ctx context.Context, dockerClient *c
 	if !fresh {
 		startVolumeUsageRefreshInternal(ctx, key, dockerClient)
 	}
-	return cached, found
+	if !found {
+		return mo.None[[]volume.Volume]()
+	}
+	return mo.Some(cached)
 }
 
 // InvalidateVolumeUsageCache invalidates usage data for the Docker daemon used by dockerClient.

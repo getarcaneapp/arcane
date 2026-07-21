@@ -17,7 +17,6 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -25,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -767,7 +767,7 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	seen := make(map[string]struct{}, len(imageRefs))
 
 	for _, rawRef := range imageRefs {
-		lookup, ok := parseImageRefUpdateLookupInternal(rawRef)
+		lookup, ok := parseImageRefUpdateLookupInternal(rawRef).Get()
 		if !ok {
 			continue
 		}
@@ -781,15 +781,15 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	return lookups
 }
 
-func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, bool) {
+func parseImageRefUpdateLookupInternal(imageRef string) mo.Option[imageRefUpdateLookup] {
 	trimmedRef := strings.TrimSpace(imageRef)
 	if trimmedRef == "" {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	named, err := ref.ParseNormalizedNamed(trimmedRef)
 	if err != nil {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	tag := "latest"
@@ -821,11 +821,11 @@ func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, b
 		repositoryCandidates[strings.TrimPrefix(repositoryPath, "library/")] = struct{}{}
 	}
 
-	return imageRefUpdateLookup{
+	return mo.Some(imageRefUpdateLookup{
 		originalRef:          trimmedRef,
 		tag:                  tag,
 		repositoryCandidates: repositoryCandidates,
-	}, true
+	})
 }
 
 func selectLatestMatchingImageUpdateRecordInternal(
@@ -1053,7 +1053,7 @@ func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 	return repoTag, "latest"
 }
 
-func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
+func parseRepoFromDigests(repoDigests []string) mo.Option[string] {
 	for _, rd := range repoDigests {
 		if rd == "<none>@<none>" {
 			continue
@@ -1061,11 +1061,11 @@ func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
 		if at := strings.LastIndex(rd, "@"); at != -1 {
 			candidateRepo := rd[:at]
 			if candidateRepo != "" {
-				return candidateRepo, true
+				return mo.Some(candidateRepo)
 			}
 		}
 	}
-	return "", false
+	return mo.None[string]()
 }
 
 func determineRepoAndTag(di image.Summary) (repo, tag string) {
@@ -1074,8 +1074,8 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	}
 
 	if len(di.RepoDigests) > 0 {
-		if r, found := parseRepoFromDigests(di.RepoDigests); found {
-			return r, "<none>"
+		if repo, found := parseRepoFromDigests(di.RepoDigests).Get(); found {
+			return repo, "<none>"
 		}
 	}
 
@@ -1087,15 +1087,15 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
 		CurrentVersion: updateRecord.CurrentVersion,
-		LatestVersion:  utils.DerefString(updateRecord.LatestVersion),
-		CurrentDigest:  utils.DerefString(updateRecord.CurrentDigest),
-		LatestDigest:   utils.DerefString(updateRecord.LatestDigest),
+		LatestVersion:  mo.PointerToOption(updateRecord.LatestVersion).OrEmpty(),
+		CurrentDigest:  mo.PointerToOption(updateRecord.CurrentDigest).OrEmpty(),
+		LatestDigest:   mo.PointerToOption(updateRecord.LatestDigest).OrEmpty(),
 		CheckTime:      updateRecord.CheckTime,
 		ResponseTimeMs: updateRecord.ResponseTimeMs,
-		Error:          utils.DerefString(updateRecord.LastError),
-		AuthMethod:     utils.DerefString(updateRecord.AuthMethod),
-		AuthUsername:   utils.DerefString(updateRecord.AuthUsername),
-		AuthRegistry:   utils.DerefString(updateRecord.AuthRegistry),
+		Error:          mo.PointerToOption(updateRecord.LastError).OrEmpty(),
+		AuthMethod:     mo.PointerToOption(updateRecord.AuthMethod).OrEmpty(),
+		AuthUsername:   mo.PointerToOption(updateRecord.AuthUsername).OrEmpty(),
+		AuthRegistry:   mo.PointerToOption(updateRecord.AuthRegistry).OrEmpty(),
 		UsedCredential: updateRecord.UsedCredential,
 	}
 }

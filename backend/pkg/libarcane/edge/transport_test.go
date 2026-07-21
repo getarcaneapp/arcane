@@ -65,7 +65,7 @@ func TestUsePollEdgeTransport(t *testing.T) {
 
 func TestGetActiveTunnelTransport(t *testing.T) {
 	t.Run("returns false when tunnel is missing", func(t *testing.T) {
-		transport, ok := GetActiveTunnelTransport("env-missing")
+		transport, ok := GetActiveTunnelTransport("env-missing").Get()
 		assert.False(t, ok)
 		assert.Equal(t, "", transport)
 	})
@@ -78,7 +78,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(nil))
 		GetRegistry().Register(envID, tunnel)
 
-		transport, ok := GetActiveTunnelTransport(envID)
+		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.True(t, ok)
 		assert.Equal(t, EdgeTransportGRPC, transport)
 	})
@@ -94,7 +94,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		tunnel := newWebSocketAgentTunnel(envID, conn)
 		GetRegistry().Register(envID, tunnel)
 
-		transport, ok := GetActiveTunnelTransport(envID)
+		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.True(t, ok)
 		assert.Equal(t, EdgeTransportWebSocket, transport)
 	})
@@ -108,7 +108,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		_ = tunnel.Conn.Close()
 		GetRegistry().Register(envID, tunnel)
 
-		transport, ok := GetActiveTunnelTransport(envID)
+		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.False(t, ok)
 		assert.Equal(t, "", transport)
 	})
@@ -121,7 +121,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		tunnel := NewAgentTunnelWithConn(envID, &unknownTunnelConn{})
 		GetRegistry().Register(envID, tunnel)
 
-		transport, ok := GetActiveTunnelTransport(envID)
+		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.False(t, ok)
 		assert.Equal(t, "", transport)
 	})
@@ -129,7 +129,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 
 func TestGetTunnelRuntimeState(t *testing.T) {
 	t.Run("returns false when tunnel is missing", func(t *testing.T) {
-		state, ok := GetTunnelRuntimeState("env-missing-runtime")
+		state, ok := GetTunnelRuntimeState("env-missing-runtime").Get()
 		assert.False(t, ok)
 		assert.Nil(t, state)
 	})
@@ -146,7 +146,7 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 		tunnel.Capabilities = []string{"container.list"}
 		GetRegistry().Register(envID, tunnel)
 
-		state, ok := GetTunnelRuntimeState(envID)
+		state, ok := GetTunnelRuntimeState(envID).Get()
 		assert.True(t, ok)
 		if assert.NotNil(t, state) {
 			assert.Equal(t, EdgeTransportGRPC, state.Transport)
@@ -168,7 +168,7 @@ func TestGetTunnelRuntimeState(t *testing.T) {
 		_ = tunnel.Conn.Close()
 		GetRegistry().Register(envID, tunnel)
 
-		state, ok := GetTunnelRuntimeState(envID)
+		state, ok := GetTunnelRuntimeState(envID).Get()
 		assert.False(t, ok)
 		assert.Nil(t, state)
 	})
@@ -405,7 +405,7 @@ func waitForBenchmarkTunnel(b *testing.B, envID string) *AgentTunnel {
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		if ok && tunnel != nil {
 			return tunnel
 		}

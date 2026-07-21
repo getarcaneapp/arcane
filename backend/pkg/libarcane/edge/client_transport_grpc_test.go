@@ -94,7 +94,7 @@ func TestGRPCTunnel_RequestResponse(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil
 	}, time.Second, 10*time.Millisecond)
 
@@ -200,7 +200,7 @@ func TestGRPCTunnel_RequestResponseStreamingChunks(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil
 	}, time.Second, 10*time.Millisecond)
 

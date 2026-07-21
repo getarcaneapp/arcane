@@ -903,7 +903,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, 5*time.Second, 20*time.Millisecond)
 
@@ -1228,13 +1228,13 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	go client.StartWithErrorChan(ctx, errCh)
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, 5*time.Second, 20*time.Millisecond)
 
 	router := echo.New()
 	router.GET("/proxy-ws", func(c echo.Context) error {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		if !ok || tunnel == nil {
 			return c.NoContent(http.StatusServiceUnavailable)
 		}
@@ -1491,7 +1491,7 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
 			return false
 		}
@@ -1691,7 +1691,7 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
 			return false
 		}

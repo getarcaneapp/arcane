@@ -1,6 +1,8 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"log/slog"
 	"sync"
 	"time"
@@ -79,11 +81,11 @@ func NewTunnelRegistry() *TunnelRegistry {
 }
 
 // Get retrieves a tunnel by environment ID
-func (r *TunnelRegistry) Get(envID string) (*AgentTunnel, bool) {
+func (r *TunnelRegistry) Get(envID string) mo.Option[*AgentTunnel] {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	tunnel, ok := r.tunnels[envID]
-	return tunnel, ok
+	return mo.TupleToOption(tunnel, ok)
 }
 
 // Register adds a tunnel to the registry, closing any existing tunnel for the same env

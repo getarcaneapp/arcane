@@ -21,6 +21,7 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/samber/mo"
 )
 
 // ProjectFileCandidates enumerates known project files: base compose names,
@@ -416,7 +417,7 @@ func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 		for i := range service.Volumes {
 			v := &service.Volumes[i]
 			if v.Type == composetypes.VolumeTypeBind {
-				if resolved, ok := resolvePathRelative(workdir, v.Source); ok {
+				if resolved, ok := resolvePathRelative(workdir, v.Source).Get(); ok {
 					v.Source = resolved
 					modified = true
 				}
@@ -428,23 +429,23 @@ func ResolveRelativeProjectPaths(project *composetypes.Project, workdir string) 
 	}
 
 	for name, secret := range project.Secrets {
-		if resolved, ok := resolvePathRelative(workdir, secret.File); ok {
+		if resolved, ok := resolvePathRelative(workdir, secret.File).Get(); ok {
 			secret.File = resolved
 			project.Secrets[name] = secret
 		}
 	}
 
 	for name, config := range project.Configs {
-		if resolved, ok := resolvePathRelative(workdir, config.File); ok {
+		if resolved, ok := resolvePathRelative(workdir, config.File).Get(); ok {
 			config.File = resolved
 			project.Configs[name] = config
 		}
 	}
 }
 
-func resolvePathRelative(workdir, candidate string) (string, bool) {
+func resolvePathRelative(workdir, candidate string) mo.Option[string] {
 	if candidate == "" || filepath.IsAbs(candidate) || workdir == "" {
-		return filepath.Clean(candidate), false
+		return mo.None[string]()
 	}
-	return filepath.Clean(filepath.Join(workdir, candidate)), true
+	return mo.Some(filepath.Clean(filepath.Join(workdir, candidate)))
 }

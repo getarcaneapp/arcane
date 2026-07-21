@@ -43,7 +43,7 @@ func TestResolveEdgeCommandName(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			command, ok := ResolveEdgeCommandName(tc.method, tc.path, tc.stream)
+			command, ok := ResolveEdgeCommandName(tc.method, tc.path, tc.stream).Get()
 			require.Equal(t, tc.shouldHit, ok)
 			if tc.shouldHit {
 				require.Equal(t, tc.command, command)

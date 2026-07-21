@@ -546,14 +546,14 @@ func (s *AuthService) extractOidcGroups(ctx context.Context, userInfo auth.OidcU
 	claim := s.oidcGroupsClaim(ctx)
 
 	if claim != "" {
-		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim); ok {
+		if v, ok := jwtclaims.GetByPath(userInfo.Extra, claim).Get(); ok {
 			if groups := stringValuesFromClaim(v); len(groups) > 0 {
 				return groups
 			}
 		}
 		if tokenResp != nil && tokenResp.IDToken != "" {
 			if parsed := jwtclaims.ParseJWTClaims(tokenResp.IDToken); parsed != nil {
-				if v, ok := jwtclaims.GetByPath(parsed, claim); ok {
+				if v, ok := jwtclaims.GetByPath(parsed, claim).Get(); ok {
 					if groups := stringValuesFromClaim(v); len(groups) > 0 {
 						return groups
 					}
@@ -728,7 +728,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	}
 
 	tokenHash := hashTokenInternal(accessToken)
-	if cached, ok := s.tokenCache.Get(tokenHash); ok {
+	if cached, ok := s.tokenCache.Get(tokenHash).Get(); ok {
 		return new(cached.User), cached.SessionID, nil
 	}
 

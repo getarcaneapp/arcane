@@ -261,7 +261,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 		currentEnvironment := environment
 		if h.environmentService != nil {
 			var ok bool
-			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID)
+			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID).Get()
 			if !ok {
 				return
 			}

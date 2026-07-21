@@ -32,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 type VolumeService struct {
@@ -109,7 +110,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	settings := s.settingsService.GetSettingsConfig()
 	usageCtx, usageCancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
 	defer usageCancel()
-	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient); ok {
+	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient).Get(); ok {
 		for _, uv := range usageVolumes {
 			if uv.Name == vol.Name && uv.UsageData != nil {
 				vol.UsageData = uv.UsageData
@@ -474,7 +475,7 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 		slog.WarnContext(ctx, "volume service: image service unavailable, attempting arcane fallback")
 	}
 
-	if fallback, ok := volumehelper.ResolveArcaneRuntimeImage(ctx, dockerClient); ok {
+	if fallback, ok := volumehelper.ResolveArcaneRuntimeImage(ctx, dockerClient).Get(); ok {
 		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "arcane-fallback", "source", fallback.Source, "image", fallback.Image)
 		return fallback.Image, nil
 	}
@@ -482,10 +483,10 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found (pull error: %w)", pullErr)
 }
 
-func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) (backupStorageMountInternal, bool) {
+func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) mo.Option[backupStorageMountInternal] {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
-		return backupStorageMountInternal{}, false
+		return mo.None[backupStorageMountInternal]()
 	}
 	// MountForDestination only returns non-nil for bind and named volume mounts.
 
@@ -494,10 +495,10 @@ func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, 
 	}
 	mirroredMount.ReadOnly = readOnly
 
-	return backupStorageMountInternal{
+	return mo.Some(backupStorageMountInternal{
 		mode:  backupStorageModeArcaneMount,
 		mount: *mirroredMount,
-	}, true
+	})
 }
 
 func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) backupStorageMountInternal {
@@ -507,7 +508,7 @@ func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, d
 			inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 			if err != nil {
 				slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "container_id", containerID, "error", err.Error())
-			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly); ok {
+			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly).Get(); ok {
 				return resolved
 			}
 		}
@@ -543,7 +544,7 @@ func backupMountWarningForStorageInternal(storage backupStorageMountInternal) st
 }
 
 func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) string {
-	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true)
+	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true).Get()
 	if ok {
 		return backupMountWarningForStorageInternal(backupStorage)
 	}
@@ -717,7 +718,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	}
 
 	if readOnly {
-		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName); ok {
+		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
 			return containerID, func() {}, nil
 		}
 	}
@@ -770,12 +771,12 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, bool) {
+func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
 	if helper == nil || helper.id == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
@@ -783,12 +784,12 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)
 		s.helperMu.Unlock()
-		return "", false
+		return mo.None[string]()
 	}
 
 	s.touchHelperInternal(volumeName)
 
-	return helper.id, true
+	return mo.Some(helper.id)
 }
 
 // touchHelperInternal records that the helper for volumeName just serviced a
@@ -2088,8 +2089,8 @@ func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int 
 }
 
 func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) int {
-	aTime, aOk := s.parseVolumeCreatedAtInternal(a.CreatedAt)
-	bTime, bOk := s.parseVolumeCreatedAtInternal(b.CreatedAt)
+	aTime, aOk := s.parseVolumeCreatedAtInternal(a.CreatedAt).Get()
+	bTime, bOk := s.parseVolumeCreatedAtInternal(b.CreatedAt).Get()
 	if aOk && bOk {
 		if aTime.Before(bTime) {
 			return -1
@@ -2102,17 +2103,17 @@ func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) in
 	return strings.Compare(a.CreatedAt, b.CreatedAt)
 }
 
-func (s *VolumeService) parseVolumeCreatedAtInternal(createdAt string) (time.Time, bool) {
+func (s *VolumeService) parseVolumeCreatedAtInternal(createdAt string) mo.Option[time.Time] {
 	if createdAt == "" {
-		return time.Time{}, false
+		return mo.None[time.Time]()
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
-		return parsed, true
+		return mo.Some(parsed)
 	}
 	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
-		return parsed, true
+		return mo.Some(parsed)
 	}
-	return time.Time{}, false
+	return mo.None[time.Time]()
 }
 
 func (s *VolumeService) buildVolumeFilterAccessorsInternal() []pagination.FilterAccessor[volumetypes.Volume] {
@@ -2209,7 +2210,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// background so this list request never waits for Docker's DiskUsage call.
 	var usageVolumes []volume.Volume
 	if params.Sort == "size" {
-		if uv, found := docker.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
+		if uv, found := docker.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient).Get(); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
 			usageVolumes = uv
 			usageCacheSnapshot = "available"
 		} else {

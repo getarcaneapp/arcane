@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 )
 
@@ -77,11 +78,11 @@ func retryInvalidatedFetchInternal(ctx context.Context, err error) (bool, error)
 }
 
 // Get returns the cached value for key, if present.
-func (c *KeyedCache[K, T]) Get(key K) (T, bool) {
+func (c *KeyedCache[K, T]) Get(key K) mo.Option[T] {
 	c.mu.RLock()
+	defer c.mu.RUnlock()
 	cached, ok := c.entries[key]
-	c.mu.RUnlock()
-	return cached, ok
+	return mo.TupleToOption(cached, ok)
 }
 
 // Set stores value for key, replacing any existing entry.

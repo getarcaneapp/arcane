@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
 
@@ -132,12 +133,12 @@ func (sub *activitySubscriber) dropOldestMessageLockedInternal() {
 	}
 }
 
-func (sub *activitySubscriber) nextInternal() (activitytypes.StreamEvent, bool) {
+func (sub *activitySubscriber) nextInternal() mo.Option[activitytypes.StreamEvent] {
 	sub.mu.Lock()
 	defer sub.mu.Unlock()
 
 	if len(sub.queue) == 0 {
-		return activitytypes.StreamEvent{}, false
+		return mo.None[activitytypes.StreamEvent]()
 	}
 	entry := sub.queue[0]
 	sub.queue = sub.queue[1:]
@@ -149,13 +150,13 @@ func (sub *activitySubscriber) nextInternal() (activitytypes.StreamEvent, bool) 
 	} else {
 		sub.messageCount--
 	}
-	return event, true
+	return mo.Some(event)
 }
 
 func (sub *activitySubscriber) pump() {
 	defer close(sub.ch)
 	for {
-		event, ok := sub.nextInternal()
+		event, ok := sub.nextInternal().Get()
 		if !ok {
 			select {
 			case <-sub.wake:
@@ -269,10 +270,10 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 
 	var startedByUserID, startedByUsername, startedByDisplayName *string
 	if req.StartedBy != nil {
-		startedByUserID = utils.StringPtrFromTrimmed(req.StartedBy.ID)
-		startedByUsername = utils.StringPtrFromTrimmed(req.StartedBy.Username)
+		startedByUserID = mo.EmptyableToOption(strings.TrimSpace(req.StartedBy.ID)).ToPointer()
+		startedByUsername = mo.EmptyableToOption(strings.TrimSpace(req.StartedBy.Username)).ToPointer()
 		if req.StartedBy.DisplayName != nil {
-			startedByDisplayName = utils.StringPtrFromTrimmed(*req.StartedBy.DisplayName)
+			startedByDisplayName = mo.EmptyableToOption(strings.TrimSpace(*req.StartedBy.DisplayName)).ToPointer()
 		}
 	}
 
@@ -289,7 +290,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 	status := models.ActivityStatusRunning
 	var slotRelease func()
 	if req.Queue {
-		if release, ok := s.limiter.tryAcquireInternal(ctx, environmentID); ok {
+		if release, ok := s.limiter.tryAcquireInternal(ctx, environmentID).Get(); ok {
 			slotRelease = release
 		} else {
 			status = models.ActivityStatusQueued

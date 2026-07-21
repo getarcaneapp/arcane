@@ -4,6 +4,8 @@ import (
 	"context"
 	"sync"
 	"time"
+
+	"github.com/samber/mo"
 )
 
 const (
@@ -55,13 +57,13 @@ func (l *activitySlotLimiter) stateForLockedInternal(environmentID string) *acti
 	return slots
 }
 
-// tryAcquireInternal grabs a slot without blocking; ok=false means the caller
+// tryAcquireInternal grabs a slot without blocking; None means the caller
 // should queue and block via acquireInternal. Held slots are counted even
 // while the limit is unlimited, so enabling a limit later still sees the work
 // already running.
-func (l *activitySlotLimiter) tryAcquireInternal(ctx context.Context, environmentID string) (func(), bool) {
+func (l *activitySlotLimiter) tryAcquireInternal(ctx context.Context, environmentID string) mo.Option[func()] {
 	if l == nil || l.settings == nil {
-		return func() {}, true
+		return mo.Some(func() {})
 	}
 	limit := l.limitInternal(ctx)
 
@@ -69,10 +71,10 @@ func (l *activitySlotLimiter) tryAcquireInternal(ctx context.Context, environmen
 	defer l.mu.Unlock()
 	slots := l.stateForLockedInternal(environmentID)
 	if limit > 0 && slots.held >= limit {
-		return nil, false
+		return mo.None[func()]()
 	}
 	slots.held++
-	return l.releaseOnceInternal(environmentID), true
+	return mo.Some(l.releaseOnceInternal(environmentID))
 }
 
 // acquireInternal blocks until a slot frees or ctx is cancelled. The limit is

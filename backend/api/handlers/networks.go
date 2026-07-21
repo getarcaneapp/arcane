@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	dockernetwork "github.com/moby/moby/api/types/network"
+	"github.com/samber/mo"
 )
 
 type NetworkHandler struct {
@@ -246,7 +247,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
-	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &CreateNetworkOutput{
 		Body: base.ApiResponse[networktypes.CreateResponse]{
@@ -388,7 +389,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	return &DeleteNetworkOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
@@ -417,7 +418,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
 	}
-	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 	return &PruneNetworksOutput{
 		Body: base.ApiResponse[networktypes.PruneReport]{

@@ -26,6 +26,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -294,38 +295,6 @@ func TestImageUpdateService_DockerReferenceCompatibility(t *testing.T) {
 			// Verify they produce the same results
 			assert.Equal(t, ref.Domain(named), parts.Registry)
 			assert.Equal(t, ref.Path(named), parts.Repository)
-		})
-	}
-}
-
-// TestDerefString tests the shared helper used for pointer comparison.
-func TestDerefString(t *testing.T) {
-	tests := []struct {
-		name string
-		ptr  *string
-		want string
-	}{
-		{
-			name: "nil pointer returns empty string",
-			ptr:  nil,
-			want: "",
-		},
-		{
-			name: "valid pointer returns value",
-			ptr:  stringToPtr("test-value"),
-			want: "test-value",
-		},
-		{
-			name: "empty string pointer returns empty string",
-			ptr:  stringToPtr(""),
-			want: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := utils.DerefString(tt.ptr)
-			assert.Equal(t, tt.want, result)
 		})
 	}
 }
@@ -663,8 +632,8 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", recordID).First(&saved).Error)
 	assert.False(t, saved.HasUpdate)
 	assert.Nil(t, saved.LastError)
-	assert.Equal(t, pinnedDigest, utils.DerefString(saved.CurrentDigest))
-	assert.Equal(t, pinnedDigest, utils.DerefString(saved.LatestDigest))
+	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.CurrentDigest).OrEmpty())
+	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImages_DigestPinnedTagPreservedWhenLocalImageHasNoRepoTags(t *testing.T) {
@@ -747,7 +716,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, utils.DerefString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.T) {
@@ -789,7 +758,7 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, utils.DerefString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestContextCanceledInternal(t *testing.T) {
@@ -1040,7 +1009,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	assert.True(t, saved.HasUpdate)
-	assert.Equal(t, remoteDigest, utils.DerefString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 	assert.Nil(t, saved.LastError)
 }
 
@@ -1121,8 +1090,8 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, localDigest, utils.DerefString(currentRecord.CurrentDigest))
-	assert.Equal(t, localDigest, utils.DerefString(currentRecord.LatestDigest))
+	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
+	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 	assert.Equal(t, "1.2.3", currentRecord.CurrentVersion)
 	require.NotNil(t, currentRecord.LatestVersion)
 	assert.Equal(t, "1.2.3", *currentRecord.LatestVersion)
@@ -1297,8 +1266,8 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 
 			// This is the logic we're testing - comparing string values not pointers
 			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-			digestChanged := utils.DerefString(existingRecord.LatestDigest) != utils.DerefString(updateRecord.LatestDigest)
-			versionChanged := utils.DerefString(existingRecord.LatestVersion) != utils.DerefString(updateRecord.LatestVersion)
+			digestChanged := mo.PointerToOption(existingRecord.LatestDigest).OrEmpty() != mo.PointerToOption(updateRecord.LatestDigest).OrEmpty()
+			versionChanged := mo.PointerToOption(existingRecord.LatestVersion).OrEmpty() != mo.PointerToOption(updateRecord.LatestVersion).OrEmpty()
 
 			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
 				updateRecord.NotificationSent = false
@@ -1376,10 +1345,10 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 
 			if tt.expectPreserved {
 				assert.Nil(t, saved.LastError, "previous good record should be preserved")
-				assert.Equal(t, "sha256:current", utils.DerefString(saved.LatestDigest))
+				assert.Equal(t, "sha256:current", mo.PointerToOption(saved.LatestDigest).OrEmpty())
 				assert.Equal(t, checkTime, saved.CheckTime.UTC())
 			} else {
-				assert.Equal(t, tt.resultError, utils.DerefString(saved.LastError))
+				assert.Equal(t, tt.resultError, mo.PointerToOption(saved.LastError).OrEmpty())
 				assert.Nil(t, saved.LatestDigest)
 			}
 		})

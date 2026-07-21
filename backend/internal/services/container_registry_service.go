@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 
 	cerrdefs "github.com/containerd/errdefs"
@@ -207,10 +208,10 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 	}
 
 	// Update common fields
-	utils.UpdateIfChanged(&registry.URL, req.URL)
-	utils.UpdateIfChanged(&registry.Description, req.Description)
-	utils.UpdateIfChanged(&registry.Insecure, req.Insecure)
-	utils.UpdateIfChanged(&registry.Enabled, req.Enabled)
+	utils.ApplyChanged(&registry.URL, mo.PointerToOption(req.URL))
+	utils.ApplyNullable(&registry.Description, mo.PointerToOption(req.Description))
+	utils.ApplyChanged(&registry.Insecure, mo.PointerToOption(req.Insecure))
+	utils.ApplyChanged(&registry.Enabled, mo.PointerToOption(req.Enabled))
 
 	if registry.RegistryType == registryTypeECR {
 		if err := s.updateECRRegistryFieldsInternal(registry, req); err != nil {
@@ -247,15 +248,15 @@ func (s *ContainerRegistryService) applyRegistryTypeUpdateInternal(registry *mod
 }
 
 func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.AWSAccessKeyID, req.AWSAccessKeyID)
-	utils.UpdateIfChanged(&registry.AWSRegion, req.AWSRegion)
+	utils.ApplyChanged(&registry.AWSAccessKeyID, mo.PointerToOption(req.AWSAccessKeyID))
+	utils.ApplyChanged(&registry.AWSRegion, mo.PointerToOption(req.AWSRegion))
 
 	if req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "" {
 		encryptedSecret, err := crypto.Encrypt(*req.AWSSecretAccessKey)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt AWS secret access key: %w", err)
 		}
-		utils.UpdateIfChanged(&registry.AWSSecretAccessKey, &encryptedSecret)
+		utils.ApplyChanged(&registry.AWSSecretAccessKey, mo.Some(encryptedSecret))
 	}
 
 	if strings.TrimSpace(registry.AWSAccessKeyID) == "" {
@@ -277,14 +278,14 @@ func (s *ContainerRegistryService) updateECRRegistryFieldsInternal(registry *mod
 }
 
 func (s *ContainerRegistryService) updateGenericRegistryFieldsInternal(registry *models.ContainerRegistry, req models.UpdateContainerRegistryRequest) error {
-	utils.UpdateIfChanged(&registry.Username, req.Username)
+	utils.ApplyChanged(&registry.Username, mo.PointerToOption(req.Username))
 
 	if req.Token != nil && *req.Token != "" {
 		encryptedToken, err := crypto.Encrypt(*req.Token)
 		if err != nil {
 			return fmt.Errorf("failed to encrypt token: %w", err)
 		}
-		utils.UpdateIfChanged(&registry.Token, &encryptedToken)
+		utils.ApplyChanged(&registry.Token, mo.Some(encryptedToken))
 	}
 
 	if strings.TrimSpace(registry.Username) == "" {
@@ -1151,10 +1152,10 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		return false, err
 	}
 
-	needsUpdate := utils.UpdateIfChanged(&existing.URL, item.URL)
-	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Insecure, item.Insecure) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
+	needsUpdate := utils.ApplyChanged(&existing.URL, mo.Some(item.URL))
+	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Insecure, mo.Some(item.Insecure)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
 	// Clear stale credentials when registry type changes during sync
 	if newType != existing.RegistryType {
@@ -1171,23 +1172,23 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		needsUpdate = true
 	}
 
-	needsUpdate = utils.UpdateIfChanged(&existing.RegistryType, newType) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.RegistryType, mo.Some(newType)) || needsUpdate
 
 	if newType == registryTypeGeneric {
-		needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
+		needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
 
 		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err != nil {
 			slog.Warn("failed to encrypt token during sync, skipping field", "registry", existing.ID, "error", err)
 		} else {
-			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
 		}
 
 		return needsUpdate, nil
 	}
 
-	credChanged := utils.UpdateIfChanged(&existing.AWSAccessKeyID, item.AWSAccessKeyID)
-	credChanged = utils.UpdateIfChanged(&existing.AWSRegion, item.AWSRegion) || credChanged
+	credChanged := utils.ApplyChanged(&existing.AWSAccessKeyID, mo.Some(item.AWSAccessKeyID))
+	credChanged = utils.ApplyChanged(&existing.AWSRegion, mo.Some(item.AWSRegion)) || credChanged
 
 	// Encrypt and update AWS secret if provided
 	if item.AWSSecretAccessKey != "" {
@@ -1195,7 +1196,7 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 		if err != nil {
 			slog.Warn("failed to encrypt AWS secret during sync, skipping field", "registry", existing.ID, "error", err)
 		} else {
-			credChanged = utils.UpdateIfChanged(&existing.AWSSecretAccessKey, encryptedSecret) || credChanged
+			credChanged = utils.ApplyChanged(&existing.AWSSecretAccessKey, mo.Some(encryptedSecret)) || credChanged
 		}
 	}
 

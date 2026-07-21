@@ -52,7 +52,7 @@ func TestTunnelServer_HandlePoll(t *testing.T) {
 	assert.Equal(t, TunnelStatusRequired, resp.Status)
 	assert.Equal(t, int(DefaultTunnelPollInterval/time.Second), resp.PollIntervalSeconds)
 	assert.False(t, resp.Connected)
-	if state, ok := GetPollRuntimeRegistry().Get("env-poll-1", time.Now()); assert.True(t, ok) {
+	if state, ok := GetPollRuntimeRegistry().Get("env-poll-1", time.Now()).Get(); assert.True(t, ok) {
 		assert.NotNil(t, state.LastPollAt)
 		assert.Equal(t, int(DefaultTunnelPollInterval/time.Second), state.PollIntervalSeconds)
 	}
@@ -203,7 +203,7 @@ func TestPollRuntimeRegistryGetExpiresStaleState(t *testing.T) {
 	now := time.Now()
 	r.Update("env-stale", DefaultTunnelPollInterval, now)
 
-	state, ok := r.Get("env-stale", now.Add(DefaultPollRuntimeTTL+time.Second))
+	state, ok := r.Get("env-stale", now.Add(DefaultPollRuntimeTTL+time.Second)).Get()
 	assert.False(t, ok)
 	assert.Nil(t, state.LastPollAt)
 }

@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/samber/mo"
 )
 
 // HostMount is one container→host mount (bind or named volume) from Arcane's own
@@ -62,8 +63,8 @@ func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 
 // ResolveHostPath returns the host-side path for containerPath by selecting the
 // longest-prefix mount whose Destination contains it and appending the trailing relative
-// segment to that mount's Source. ok is false when no mount contains the path.
-func ResolveHostPath(mounts []HostMount, containerPath string) (string, bool) {
+// segment to that mount's Source. It returns None when no mount contains the path.
+func ResolveHostPath(mounts []HostMount, containerPath string) mo.Option[string] {
 	cleaned := filepath.Clean(containerPath)
 
 	var (
@@ -84,7 +85,7 @@ func ResolveHostPath(mounts []HostMount, containerPath string) (string, bool) {
 		}
 	}
 	if bestLen < 0 {
-		return "", false
+		return mo.None[string]()
 	}
 
 	host := bestSource
@@ -101,7 +102,7 @@ func ResolveHostPath(mounts []HostMount, containerPath string) (string, bool) {
 		}
 		host += bestRel
 	}
-	return host, true
+	return mo.Some(host)
 }
 
 // ContainerToHost translates a container path to host path
@@ -113,7 +114,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	// Auto-discovery mode: resolve against Arcane's real mount table so nested,
 	// independently bind-mounted directories map to their own host path.
 	if len(pm.mounts) > 0 {
-		if host, ok := ResolveHostPath(pm.mounts, containerPath); ok {
+		if host, ok := ResolveHostPath(pm.mounts, containerPath).Get(); ok {
 			return host, nil
 		}
 		return filepath.Clean(containerPath), nil // outside all mounts: leave unchanged

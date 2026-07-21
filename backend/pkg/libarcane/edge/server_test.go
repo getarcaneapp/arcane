@@ -82,7 +82,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = reg.Get("env-connected")
+		tunnel, ok = reg.Get("env-connected").Get()
 		return ok && tunnel != nil && tunnel.SessionID != ""
 	}, time.Second, 10*time.Millisecond)
 	assert.Equal(t, "agent-connected", tunnel.AgentInstance)
@@ -644,7 +644,7 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 	conn := &registerResponseOrderConn{recvErr: io.EOF}
 	conn.sendHook = func(msg *TunnelMessage) error {
 		require.Equal(t, MessageTypeRegisterResponse, msg.Type)
-		_, ok := server.registry.Get(envID)
+		_, ok := server.registry.Get(envID).Get()
 		assert.True(t, ok, "gRPC tunnel should already be registered when the register response is sent")
 		return nil
 	}
@@ -652,6 +652,6 @@ func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterRe
 	tunnel := NewAgentTunnelWithConn(envID, conn)
 	server.manageConnectedTunnel(context.Background(), context.Background(), tunnel)
 
-	_, ok := server.registry.Get(envID)
+	_, ok := server.registry.Get(envID).Get()
 	assert.False(t, ok)
 }

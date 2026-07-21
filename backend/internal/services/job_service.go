@@ -15,12 +15,13 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/meta"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
 
 type JobRunner interface {
-	GetJob(jobID string) (schedulertypes.Job, bool)
-	GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool)
+	GetJob(jobID string) mo.Option[schedulertypes.Job]
+	GetJobRuntimeState(jobID string) mo.Option[schedulertypes.JobRuntimeState]
 	RescheduleJob(ctx context.Context, job schedulertypes.Job) error
 	RunBusWatcherNow(ctx context.Context, watcherID string) error
 }
@@ -232,7 +233,7 @@ func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID st
 		return nil
 	}
 
-	job, ok := s.scheduler.GetJob(jobID)
+	job, ok := s.scheduler.GetJob(jobID).Get()
 	if !ok {
 		return fmt.Errorf("job %s not found in scheduler", jobID)
 	}
@@ -243,7 +244,7 @@ func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID st
 		return fmt.Errorf("reschedule job %s: %w", jobID, err)
 	}
 
-	runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID)
+	runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID).Get()
 	if !ok {
 		return fmt.Errorf("job %s has no runtime scheduler state", jobID)
 	}
@@ -311,7 +312,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		prerequisites := s.evaluatePrerequisitesInternal(ctx, jobMeta)
 
 		if s.scheduler != nil && jobMeta.SettingsKey != "" && jobMeta.ID != "environment-health" {
-			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID); ok && runtimeState.Schedule != "" {
+			if runtimeState, ok := s.scheduler.GetJobRuntimeState(jobMeta.ID).Get(); ok && runtimeState.Schedule != "" {
 				schedule = runtimeState.Schedule
 				nextRun = runtimeState.NextRun
 			}
@@ -377,7 +378,7 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 		return nil, fmt.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
 	}
 
-	job, ok := s.scheduler.GetJob(jobID)
+	job, ok := s.scheduler.GetJob(jobID).Get()
 	if !ok {
 		return nil, fmt.Errorf("job %s not found in scheduler", jobID)
 	}

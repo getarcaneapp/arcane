@@ -977,7 +977,7 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 	// For edge environments, route through the tunnel
 	if env.IsEdge {
 		if !edge.HasActiveTunnel(input.ID) {
-			if _, ok := edge.RequestTunnelAndWait(reqCtx, input.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
+			if _, ok := edge.RequestTunnelAndWait(reqCtx, input.ID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
 				return nil, huma.Error503ServiceUnavailable("Edge agent is not connected")
 			}
 		}

@@ -13,25 +13,25 @@ import (
 func TestKeyedCacheGetSet(t *testing.T) {
 	c := NewKeyed[string, *int]()
 
-	if _, ok := c.Get("missing"); ok {
+	if _, ok := c.Get("missing").Get(); ok {
 		t.Fatal("expected miss for unset key")
 	}
 
 	c.Set("hit", new(42))
-	got, ok := c.Get("hit")
+	got, ok := c.Get("hit").Get()
 	if !ok || got == nil || *got != 42 {
 		t.Fatalf("expected cached value 42, got %v (ok=%v)", got, ok)
 	}
 
 	// Nil values are valid entries and must report as hits.
 	c.Set("nil-entry", nil)
-	got, ok = c.Get("nil-entry")
+	got, ok = c.Get("nil-entry").Get()
 	if !ok || got != nil {
 		t.Fatalf("expected nil hit, got %v (ok=%v)", got, ok)
 	}
 
 	c.Invalidate("hit")
-	if _, ok := c.Get("hit"); ok {
+	if _, ok := c.Get("hit").Get(); ok {
 		t.Fatal("expected miss after invalidate")
 	}
 }
@@ -297,11 +297,11 @@ func TestKeyedCacheInvalidationDoesNotPublishInFlightFetch(t *testing.T) {
 				t.Fatalf("expected two generation-specific keyed fetches, got %d", got)
 			}
 
-			value, ok := c.Get("target")
+			value, ok := c.Get("target").Get()
 			if !ok || value != "fresh" {
 				t.Fatalf("expected keyed cache to retain fresh value, got %q (ok=%v)", value, ok)
 			}
-			_, otherPresent := c.Get("other")
+			_, otherPresent := c.Get("other").Get()
 			if otherPresent != test.otherEntryPresent {
 				t.Fatalf("unexpected unrelated entry state: got present=%v, want %v", otherPresent, test.otherEntryPresent)
 			}

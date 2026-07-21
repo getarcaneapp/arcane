@@ -58,7 +58,7 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 		return "", err
 	}
 
-	if host, ok := ResolveHostPath(mounts, containerPath); ok {
+	if host, ok := ResolveHostPath(mounts, containerPath).Get(); ok {
 		return host, nil
 	}
 

@@ -1,6 +1,8 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"bytes"
 	"context"
 	"errors"
@@ -274,27 +276,26 @@ func stripInternalTunnelHeaders(headers map[string]string) map[string]string {
 
 // HasActiveTunnel checks if an environment has an active edge tunnel
 func HasActiveTunnel(envID string) bool {
-	_, ok := GetActiveTunnel(envID)
-	return ok
+	return GetActiveTunnel(envID).IsPresent()
 }
 
 // GetActiveTunnel returns the active tunnel for an environment, if one exists.
-func GetActiveTunnel(envID string) (*AgentTunnel, bool) {
-	tunnel, ok := GetRegistry().Get(envID)
+func GetActiveTunnel(envID string) mo.Option[*AgentTunnel] {
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return nil, false
+		return mo.None[*AgentTunnel]()
 	}
-	return tunnel, true
+	return mo.Some(tunnel)
 }
 
 // WaitForActiveTunnel waits for an environment to establish a live tunnel.
-func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) (*AgentTunnel, bool) {
+func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
 	if timeout <= 0 {
 		return GetActiveTunnel(envID)
 	}
 
-	if tunnel, ok := GetActiveTunnel(envID); ok {
-		return tunnel, true
+	if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
+		return mo.Some(tunnel)
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -306,10 +307,10 @@ func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duratio
 	for {
 		select {
 		case <-waitCtx.Done():
-			return nil, false
+			return mo.None[*AgentTunnel]()
 		case <-ticker.C:
-			if tunnel, ok := GetActiveTunnel(envID); ok {
-				return tunnel, true
+			if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
+				return mo.Some(tunnel)
 			}
 		}
 	}
@@ -317,7 +318,7 @@ func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duratio
 
 // RequestTunnelAndWait marks an edge environment as needed and waits for the
 // agent to establish a live tunnel.
-func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) (*AgentTunnel, bool) {
+func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) mo.Option[*AgentTunnel] {
 	TouchTunnelDemand(envID, demandTTL)
 	return WaitForActiveTunnel(ctx, envID, timeout)
 }
@@ -326,7 +327,7 @@ func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout 
 // This is for service-level calls that need to route through the tunnel.
 // Returns (statusCode, responseBody, error)
 func DoRequest(ctx context.Context, envID, method, path string, body []byte) (int, []byte, error) {
-	tunnel, ok := GetRegistry().Get(envID)
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok {
 		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
 	}

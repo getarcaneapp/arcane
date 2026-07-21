@@ -17,10 +17,10 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
-	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/dbutil"
 	roletypes "github.com/getarcaneapp/arcane/types/v2/role"
+	"github.com/samber/mo"
 )
 
 // permissionCacheTTL bounds how long a resolved PermissionSet is reused
@@ -605,7 +605,7 @@ func (s *RoleService) ResolvePermissions(ctx context.Context, user *models.User)
 	if user == nil {
 		return authz.NewPermissionSet(), nil
 	}
-	if ps, ok := s.userCache.Get(user.ID); ok {
+	if ps, ok := s.userCache.Get(user.ID).Get(); ok {
 		return ps, nil
 	}
 	ps, err := s.resolveUserPermissionsInternal(ctx, s.db.WithContext(ctx), user.ID)
@@ -663,7 +663,7 @@ func decodePermissionsJSONInternal(raw string) ([]string, error) {
 // ResolveApiKeyPermissions returns the PermissionSet for an API key. Caches
 // per-key. Falls back to an empty set (deny-all) if the key has no perms.
 func (s *RoleService) ResolveApiKeyPermissions(ctx context.Context, apiKeyID string) (*authz.PermissionSet, error) {
-	if ps, ok := s.apiKeyCache.Get(apiKeyID); ok {
+	if ps, ok := s.apiKeyCache.Get(apiKeyID).Get(); ok {
 		return ps, nil
 	}
 	var perms []models.ApiKeyPermission
@@ -992,7 +992,7 @@ func (s *RoleService) ValidateRoleAssignmentAgainstCaller(ctx context.Context, c
 	if err := validatePermissionsInternal(desired); err != nil {
 		return err
 	}
-	return validatePermissionSetAgainstCallerInternal(caller, desired, pkgutils.DerefString(environmentID))
+	return validatePermissionSetAgainstCallerInternal(caller, desired, mo.PointerToOption(environmentID).OrEmpty())
 }
 
 func validatePermissionSetAgainstCallerInternal(caller *authz.PermissionSet, desired []string, environmentID string) error {

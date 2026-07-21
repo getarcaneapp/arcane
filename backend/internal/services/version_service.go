@@ -13,12 +13,12 @@ import (
 	ref "github.com/distribution/reference"
 	containertypes "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"golang.org/x/mod/semver"
 
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"go.getarcane.app/sys/cgroup"
@@ -293,7 +293,7 @@ func (s *VersionService) storedOrDigestBasedUpdateInternal(ctx context.Context, 
 		if err != nil {
 			slog.WarnContext(ctx, "Failed to read stored Arcane image update state", "imageID", currentImageID, "error", err)
 		} else if found {
-			return record.HasUpdate, utils.DerefString(record.LatestDigest)
+			return record.HasUpdate, mo.PointerToOption(record.LatestDigest).OrEmpty()
 		}
 	}
 

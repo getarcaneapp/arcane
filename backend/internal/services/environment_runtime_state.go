@@ -26,11 +26,11 @@ func ApplyEnvironmentRuntimeState(env *environmenttypes.Environment) {
 	env.EdgeAgentInstance = nil
 	env.EdgeCapabilities = nil
 
-	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()); ok {
+	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).Get(); ok {
 		env.LastPollAt = pollState.LastPollAt
 	}
 
-	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID); ok {
+	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID).Get(); ok {
 		connected = true
 		env.Connected = &connected
 		env.Status = string(models.EnvironmentStatusOnline)
@@ -48,7 +48,7 @@ func ApplyEnvironmentRuntimeState(env *environmenttypes.Environment) {
 		if len(runtimeState.Capabilities) > 0 {
 			env.EdgeCapabilities = append([]string(nil), runtimeState.Capabilities...)
 		}
-		if transport, ok := edge.GetActiveTunnelTransport(env.ID); ok {
+		if transport, ok := edge.GetActiveTunnelTransport(env.ID).Get(); ok {
 			env.EdgeTransport = &transport
 		} else if runtimeState.Transport != "" {
 			env.EdgeTransport = &runtimeState.Transport
