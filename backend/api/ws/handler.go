@@ -367,7 +367,16 @@ func (h *WebSocketHandler) ProjectLogs(c echo.Context) error {
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindProjectLogs, projectID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startProjectLogHub(streamKey, projectID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			projectID,
+			"project",
+			params,
+			h.streamProjectLogsInternal,
+			normalizeProjectLogMessageInternal,
+			normalizeProjectLogTextInternal,
+			onEmpty,
+		)
 	})
 	return nil
 }
@@ -391,33 +400,6 @@ func newWSLogStreamInternal(key, format string) (*wsLogStream, context.Context) 
 	return ls, ctx
 }
 
-func (h *WebSocketHandler) startProjectLogSourceInternal(ctx context.Context, key, projectID, format string, follow bool, tail, since string, timestamps bool, ls *wsLogStream) <-chan string {
-	lines := make(chan string, 256)
-
-	go func() {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.streamProjectLogsInternal(ctx, projectID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastProjectLogStreamErrorInternal(projectID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}()
-
-	return lines
-}
-
 func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-chan struct{}) bool {
 	for {
 		select {
@@ -429,75 +411,142 @@ func waitForLogStreamSubscriberInternal(ctx context.Context, firstSubscriber <-c
 	}
 }
 
-func (h *WebSocketHandler) broadcastProjectLogStreamErrorInternal(projectID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("project log stream", "Failed to stream project logs: ", projectID, format, err, ls)
-}
-
-func startProjectLogForwardersInternal(ctx context.Context, format string, batched bool, lines <-chan string, ls *wsLogStream) {
-	if format == "json" {
-		startProjectJSONForwarderInternal(ctx, batched, lines, ls)
-		return
+func normalizeProjectLogMessageInternal(line string) wshub.LogMessage {
+	level, service, message, timestamp := wshub.NormalizeProjectLine(line)
+	return wshub.LogMessage{
+		Level:     level,
+		Message:   message,
+		Service:   service,
+		Timestamp: timestamp,
 	}
-
-	startProjectTextForwarderInternal(ctx, lines, ls)
 }
 
-func startProjectJSONForwarderInternal(ctx context.Context, batched bool, lines <-chan string, ls *wsLogStream) {
-	msgs := make(chan wshub.LogMessage, 256)
-	go func() {
-		defer close(msgs)
-		for line := range lines {
-			level, service, msg, ts := wshub.NormalizeProjectLine(line)
-			seq := ls.seq.Add(1)
-			timestamp := ts
-			if timestamp == "" {
-				timestamp = wshub.NowRFC3339()
-			}
-			msgs <- wshub.LogMessage{
-				Seq:       seq,
-				Level:     level,
-				Message:   msg,
-				Service:   service,
-				Timestamp: timestamp,
-			}
-		}
-	}()
-
-	if batched {
-		go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		return
+func normalizeContainerLogMessageInternal(line string) wshub.LogMessage {
+	level, message, timestamp := wshub.NormalizeContainerLine(line)
+	return wshub.LogMessage{
+		Level:     level,
+		Message:   message,
+		Timestamp: timestamp,
 	}
-
-	go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
 }
 
-func startProjectTextForwarderInternal(ctx context.Context, lines <-chan string, ls *wsLogStream) {
-	cleanChan := make(chan string, 256)
-	go func() {
-		defer close(cleanChan)
-		for line := range lines {
-			_, _, msg, _ := wshub.NormalizeProjectLine(line)
-			cleanChan <- msg
-		}
-	}()
-
-	go wshub.ForwardLines(ctx, ls.hub, cleanChan)
+func normalizeProjectLogTextInternal(line string) string {
+	_, _, message, _ := wshub.NormalizeProjectLine(line)
+	return message
 }
 
-func (h *WebSocketHandler) startProjectLogHub(key, projectID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
+func (h *WebSocketHandler) startLogHubInternal(
+	key, resourceID, label string,
+	params logStreamParams,
+	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	normalizeJSON func(string) wshub.LogMessage,
+	normalizeText func(string) string,
+	onEmptyHook func(*wsLogStream),
+) *wsLogStream {
+	ls, ctx := newWSLogStreamInternal(key, params.format)
 
 	ls.hub.SetOnEmpty(func() {
 		if onEmptyHook != nil {
 			onEmptyHook(ls)
 		}
-		slog.Debug("client disconnected, cleaning up project log hub", "projectID", projectID)
+		slog.Debug("client disconnected, cleaning up "+label+" log hub", label+"ID", resourceID)
 	})
 
-	lines := h.startProjectLogSourceInternal(ctx, key, projectID, format, follow, tail, since, timestamps, ls)
-	startProjectLogForwardersInternal(ctx, format, batched, lines, ls)
+	lines := h.startLogSourceInternal(ctx, key, resourceID, label, params, stream, ls)
+	startLogForwardersInternal(ctx, ls, lines, params, normalizeJSON, normalizeText)
 
 	return ls
+}
+
+func (h *WebSocketHandler) startLogSourceInternal(
+	ctx context.Context,
+	key, resourceID, label string,
+	params logStreamParams,
+	stream func(context.Context, string, chan<- string, bool, string, string, bool) error,
+	ls *wsLogStream,
+) <-chan string {
+	lines := make(chan string, 256)
+	go func() {
+		defer close(lines)
+		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
+			return
+		}
+
+		if err := stream(ctx, resourceID, lines, params.follow, params.tail, params.since, params.timestamps); err != nil {
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				return
+			}
+
+			h.markLogStreamDoneInternal(key, ls)
+			broadcastLogStreamErrorInternal(label+" log stream", "Failed to stream "+label+" logs: ", resourceID, params.format, err, ls)
+			return
+		}
+
+		if ctx.Err() == nil {
+			h.markLogStreamDoneInternal(key, ls)
+		}
+	}()
+
+	return lines
+}
+
+func startLogForwardersInternal(
+	ctx context.Context,
+	ls *wsLogStream,
+	lines <-chan string,
+	params logStreamParams,
+	normalizeJSON func(string) wshub.LogMessage,
+	normalizeText func(string) string,
+) {
+	if params.format == "json" {
+		messages := mapLogLinesInternal(ctx, lines, func(line string) wshub.LogMessage {
+			message := normalizeJSON(line)
+			message.Seq = ls.seq.Add(1)
+			if message.Timestamp == "" {
+				message.Timestamp = wshub.NowRFC3339()
+			}
+			return message
+		})
+
+		if params.batched {
+			go wshub.ForwardLogJSONBatched(ctx, ls.hub, messages, 50, 400*time.Millisecond)
+		} else {
+			go wshub.ForwardLogJSON(ctx, ls.hub, messages)
+		}
+
+		return
+	}
+
+	textLines := lines
+	if normalizeText != nil {
+		textLines = mapLogLinesInternal(ctx, lines, normalizeText)
+	}
+	go wshub.ForwardLines(ctx, ls.hub, textLines)
+}
+
+func mapLogLinesInternal[T any](ctx context.Context, lines <-chan string, transform func(string) T) <-chan T {
+	mapped := make(chan T, 256)
+	go func() {
+		defer close(mapped)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case line, ok := <-lines:
+				if !ok {
+					return
+				}
+
+				select {
+				case <-ctx.Done():
+					return
+				case mapped <- transform(line):
+				}
+			}
+		}
+	}()
+
+	return mapped
 }
 
 // ============================================================================
@@ -526,76 +575,18 @@ func (h *WebSocketHandler) ContainerLogs(c echo.Context) error {
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindContainerLogs, containerID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startContainerLogHub(streamKey, containerID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			containerID,
+			"container",
+			params,
+			h.streamContainerLogsInternal,
+			normalizeContainerLogMessageInternal,
+			nil,
+			onEmpty,
+		)
 	})
 	return nil
-}
-
-func (h *WebSocketHandler) startContainerLogHub(key, containerID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
-
-	ls.hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook(ls)
-		}
-		slog.Debug("client disconnected, cleaning up container log hub", "containerID", containerID)
-	})
-
-	lines := make(chan string, 256)
-	go func(ctx context.Context) {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.streamContainerLogsInternal(ctx, containerID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastContainerLogStreamErrorInternal(containerID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}(ctx)
-
-	if format == "json" {
-		msgs := make(chan wshub.LogMessage, 256)
-		go func() {
-			defer close(msgs)
-			for line := range lines {
-				level, msg, ts := wshub.NormalizeContainerLine(line)
-				seq := ls.seq.Add(1)
-				timestamp := ts
-				if timestamp == "" {
-					timestamp = wshub.NowRFC3339()
-				}
-				msgs <- wshub.LogMessage{
-					Seq:       seq,
-					Level:     level,
-					Message:   msg,
-					Timestamp: timestamp,
-				}
-			}
-		}()
-		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
-		}
-	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
-	}
-
-	return ls
-}
-
-func (h *WebSocketHandler) broadcastContainerLogStreamErrorInternal(containerID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", containerID, format, err, ls)
 }
 
 // ============================================================================
@@ -624,76 +615,18 @@ func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
 
 	params := parseLogStreamParamsInternal(c)
 	h.serveLogStreamInternal(c, systemtypes.WSKindServiceLogs, serviceID, params, func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream {
-		return h.startServiceLogHub(streamKey, serviceID, params.format, params.batched, params.follow, params.tail, params.since, params.timestamps, onEmpty)
+		return h.startLogHubInternal(
+			streamKey,
+			serviceID,
+			"service",
+			params,
+			h.swarmService.StreamServiceLogs,
+			normalizeContainerLogMessageInternal,
+			nil,
+			onEmpty,
+		)
 	})
 	return nil
-}
-
-func (h *WebSocketHandler) startServiceLogHub(key, serviceID, format string, batched, follow bool, tail, since string, timestamps bool, onEmptyHook func(*wsLogStream)) *wsLogStream {
-	ls, ctx := newWSLogStreamInternal(key, format)
-
-	ls.hub.SetOnEmpty(func() {
-		if onEmptyHook != nil {
-			onEmptyHook(ls)
-		}
-		slog.Debug("client disconnected, cleaning up service log hub", "serviceID", serviceID)
-	})
-
-	lines := make(chan string, 256)
-	go func() {
-		defer close(lines)
-		if !waitForLogStreamSubscriberInternal(ctx, ls.firstSubscriber) {
-			return
-		}
-
-		if err := h.swarmService.StreamServiceLogs(ctx, serviceID, lines, follow, tail, since, timestamps); err != nil {
-			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
-				return
-			}
-
-			h.markLogStreamDoneInternal(key, ls)
-			h.broadcastServiceLogStreamErrorInternal(serviceID, format, err, ls)
-			return
-		}
-
-		if ctx.Err() == nil {
-			h.markLogStreamDoneInternal(key, ls)
-		}
-	}()
-
-	if format == "json" {
-		msgs := make(chan wshub.LogMessage, 256)
-		go func() {
-			defer close(msgs)
-			for line := range lines {
-				level, msg, ts := wshub.NormalizeContainerLine(line)
-				seq := ls.seq.Add(1)
-				timestamp := ts
-				if timestamp == "" {
-					timestamp = wshub.NowRFC3339()
-				}
-				msgs <- wshub.LogMessage{
-					Seq:       seq,
-					Level:     level,
-					Message:   msg,
-					Timestamp: timestamp,
-				}
-			}
-		}()
-		if batched {
-			go wshub.ForwardLogJSONBatched(ctx, ls.hub, msgs, 50, 400*time.Millisecond)
-		} else {
-			go wshub.ForwardLogJSON(ctx, ls.hub, msgs)
-		}
-	} else {
-		go wshub.ForwardLines(ctx, ls.hub, lines)
-	}
-
-	return ls
-}
-
-func (h *WebSocketHandler) broadcastServiceLogStreamErrorInternal(serviceID, format string, err error, ls *wsLogStream) {
-	broadcastLogStreamErrorInternal("service log stream", "Failed to stream service logs: ", serviceID, format, err, ls)
 }
 
 // ContainerStats streams container stats over WebSocket.

@@ -95,3 +95,19 @@ func RequireGlobalAdmin(api huma.API) huma.Middlewares {
 		next(ctx)
 	}}
 }
+
+// RequireSudo restricts infrastructure-only operations to callers authenticated
+// through the agent-token path. Holding every user-facing permission is not
+// sufficient because these operations may expose materialized secret values.
+func RequireSudo(api huma.API) huma.Middlewares {
+	return huma.Middlewares{func(ctx huma.Context, next func(huma.Context)) {
+		ps, _ := PermissionsFromContext(ctx.Context())
+		if ps == nil || !ps.Sudo {
+			if err := huma.WriteErr(api, ctx, http.StatusForbidden, "permission denied: agent authentication required"); err != nil {
+				slog.WarnContext(ctx.Context(), "failed to write 403 response", "error", err)
+			}
+			return
+		}
+		next(ctx)
+	}}
+}

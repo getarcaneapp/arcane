@@ -62,11 +62,7 @@ func customSchemaNamer(t reflect.Type, hint string) string {
 	} else if dockerPrefix, ok := dockerSchemaPrefix(pkgPath, shortPkg); ok {
 		name = dockerPrefix + name
 	}
-	if innerPkg, ok := genericInnerPackageName(pkgPath, typeStr); ok {
-		return strings.Replace(name, "UsageCounts", innerPkg+"UsageCounts", 1)
-	}
-
-	return name
+	return qualifyGenericArcaneArgumentsInternal(pkgPath, typeStr, name)
 }
 
 func packagePathForType(t reflect.Type) string {
@@ -121,24 +117,54 @@ func dockerSchemaPrefix(pkgPath, shortPkg string) (string, bool) {
 	return prefix, true
 }
 
-func genericInnerPackageName(pkgPath, typeName string) (string, bool) {
-	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix+"base") {
-		return "", false
-	}
-	if !strings.Contains(typeName, "[") || !strings.Contains(typeName, arcaneTypesPrefix) {
-		return "", false
+func qualifyGenericArcaneArgumentsInternal(pkgPath, typeName, schemaName string) string {
+	openBracket := strings.IndexByte(typeName, '[')
+	if !strings.HasPrefix(pkgPath, arcaneTypesPrefix) || openBracket < 0 {
+		return schemaName
 	}
 
-	_, after, ok := strings.Cut(typeName, arcaneTypesPrefix)
+	outerPackage := strings.TrimPrefix(pkgPath, arcaneTypesPrefix)
+	if separator := strings.LastIndexByte(outerPackage, '/'); separator >= 0 {
+		outerPackage = outerPackage[separator+1:]
+	}
+
+	plainSchemaName := huma.DefaultSchemaNamer(reflect.TypeFor[struct{}](), typeName)
+	schemaPrefix, ok := strings.CutSuffix(schemaName, plainSchemaName)
 	if !ok {
-		return "", false
-	}
-	before, _, ok := strings.Cut(after, ".")
-	if !ok || before == "" {
-		return "", false
+		return schemaName
 	}
 
-	return capitalizeFirst(before), true
+	rewrittenTypeName := typeName
+	searchOffset := openBracket + 1
+	for {
+		prefixIndex := strings.Index(rewrittenTypeName[searchOffset:], arcaneTypesPrefix)
+		if prefixIndex == -1 {
+			break
+		}
+		prefixIndex += searchOffset
+
+		afterPrefix := rewrittenTypeName[prefixIndex+len(arcaneTypesPrefix):]
+		separator := strings.IndexByte(afterPrefix, '.')
+		if separator < 0 {
+			break
+		}
+
+		innerPackage := afterPrefix[:separator]
+		if nestedSeparator := strings.LastIndexByte(innerPackage, '/'); nestedSeparator >= 0 {
+			innerPackage = innerPackage[nestedSeparator+1:]
+		}
+
+		replacement := ""
+		if innerPackage != outerPackage {
+			replacement = capitalizeFirst(innerPackage)
+		}
+
+		argumentTypeIndex := prefixIndex + len(arcaneTypesPrefix) + separator + 1
+		rewrittenTypeName = rewrittenTypeName[:prefixIndex] + replacement + rewrittenTypeName[argumentTypeIndex:]
+		searchOffset = prefixIndex + len(replacement)
+	}
+
+	return schemaPrefix + huma.DefaultSchemaNamer(reflect.TypeFor[struct{}](), rewrittenTypeName)
 }
 
 func capitalizeFirst(s string) string {
@@ -293,7 +319,8 @@ func SetupAPIForSpec() huma.API {
 // Add new handlers here as they are migrated from Gin.
 func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx handlers.ActivityAppContext, cfg *config.Config) {
 	// svc is nil during OpenAPI spec generation (SetupAPIForSpec); an empty
-	// container keeps every field a true-nil pointer so handler nil-guards hold.
+	// container supplies typed nil dependencies because handlers are registered
+	// for schema discovery but are never invoked.
 	if svc == nil {
 		svc = &di.Services{}
 	}
@@ -312,7 +339,11 @@ func registerHandlersInternal(api huma.API, svc *di.Services, handlerAppCtx hand
 	handlers.RegisterEnvironments(api, svc.Environment, svc.Settings, svc.ApiKey, svc.Event, cfg)
 	handlers.RegisterContainerRegistries(api, svc.ContainerRegistry, svc.Environment)
 	handlers.RegisterTemplates(api, svc.Template)
-	handlers.RegisterVariables(api, svc.Variable, svc.Environment)
+	if cfg != nil && cfg.AgentMode {
+		handlers.RegisterMaterializedVariables(api, svc.Variable, svc.Environment)
+	} else {
+		handlers.RegisterVariables(api, svc.Variable, svc.Environment)
+	}
 	handlers.RegisterImages(api, svc.Docker, svc.Image, svc.ImageUpdate, svc.Settings, svc.Build, svc.Activity, handlerAppCtx)
 	handlers.RegisterBuildWorkspaces(api, svc.BuildWorkspace)
 	handlers.RegisterImageUpdates(api, svc.ImageUpdate, svc.Image, handlerAppCtx)

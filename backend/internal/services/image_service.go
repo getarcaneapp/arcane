@@ -17,6 +17,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -1081,27 +1082,20 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	return "<none>", "<none>"
 }
 
-func stringPtrValue(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
-}
-
 func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateInfo {
 	return &imagetypes.UpdateInfo{
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
 		CurrentVersion: updateRecord.CurrentVersion,
-		LatestVersion:  stringPtrValue(updateRecord.LatestVersion),
-		CurrentDigest:  stringPtrValue(updateRecord.CurrentDigest),
-		LatestDigest:   stringPtrValue(updateRecord.LatestDigest),
+		LatestVersion:  utils.DerefString(updateRecord.LatestVersion),
+		CurrentDigest:  utils.DerefString(updateRecord.CurrentDigest),
+		LatestDigest:   utils.DerefString(updateRecord.LatestDigest),
 		CheckTime:      updateRecord.CheckTime,
 		ResponseTimeMs: updateRecord.ResponseTimeMs,
-		Error:          stringPtrValue(updateRecord.LastError),
-		AuthMethod:     stringPtrValue(updateRecord.AuthMethod),
-		AuthUsername:   stringPtrValue(updateRecord.AuthUsername),
-		AuthRegistry:   stringPtrValue(updateRecord.AuthRegistry),
+		Error:          utils.DerefString(updateRecord.LastError),
+		AuthMethod:     utils.DerefString(updateRecord.AuthMethod),
+		AuthUsername:   utils.DerefString(updateRecord.AuthUsername),
+		AuthRegistry:   utils.DerefString(updateRecord.AuthRegistry),
 		UsedCredential: updateRecord.UsedCredential,
 	}
 }

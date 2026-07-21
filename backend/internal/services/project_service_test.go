@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumes"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -714,8 +715,8 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.CurrentDigest))
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.CurrentDigest))
+	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
 }
 
 func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -767,7 +768,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
 }
 
 func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -816,7 +817,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, utils.DerefString(currentRecord.LatestDigest))
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
@@ -931,12 +932,12 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	var privateCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", privateImageID).First(&privateCurrentRecord).Error)
 	assert.False(t, privateCurrentRecord.HasUpdate)
-	assert.Equal(t, privateImageDigest, stringPtrToString(privateCurrentRecord.LatestDigest))
+	assert.Equal(t, privateImageDigest, utils.DerefString(privateCurrentRecord.LatestDigest))
 
 	var publicCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", publicImageID).First(&publicCurrentRecord).Error)
 	assert.False(t, publicCurrentRecord.HasUpdate)
-	assert.Equal(t, publicImageDigest, stringPtrToString(publicCurrentRecord.LatestDigest))
+	assert.Equal(t, publicImageDigest, utils.DerefString(publicCurrentRecord.LatestDigest))
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {

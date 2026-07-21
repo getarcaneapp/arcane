@@ -137,10 +137,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Get current user",
 		Description: "Get the currently authenticated user's information",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.GetCurrentUser)
 
 	huma.Register(api, huma.Operation{
@@ -160,10 +157,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Change password",
 		Description: "Change the current user's password",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.ChangePassword)
 
 	huma.Register(api, huma.Operation{
@@ -173,10 +167,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Logout all other sessions",
 		Description: "Revoke every session for the current user except the one making this request",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.LogoutAllOtherSessions)
 
 	huma.Register(api, huma.Operation{
@@ -186,10 +177,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Update own profile",
 		Description: "Update the current user's display name and email. Forbidden for OIDC-managed accounts.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.UpdateMyProfile)
 
 	huma.Register(api, huma.Operation{
@@ -199,10 +187,7 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Upload own avatar",
 		Description: "Upload a custom profile picture (PNG, JPEG or WebP). Replaces any existing avatar.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		RequestBody: &huma.RequestBody{
 			Required: true,
 			Content: map[string]*huma.MediaType{
@@ -225,19 +210,12 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 		Summary:     "Delete own avatar",
 		Description: "Remove the current user's custom profile picture, reverting to the default avatar.",
 		Tags:        []string{"Auth"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, h.DeleteMyAvatar)
 }
 
 // Login authenticates a user and returns tokens.
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	localAuthEnabled, err := h.authService.IsLocalAuthEnabled(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.AuthSettingsCheckError{Err: err}).Error())
@@ -308,10 +286,6 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 // Uses ToUserResponseDto (not the generic struct mapper) so the RBAC fields
 // (RoleAssignments, PermissionsByEnv) are resolved via RoleService.
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userID, exists := humamw.GetUserIDFromContext(ctx)
 	if !exists {
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
@@ -337,10 +311,6 @@ func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*Get
 
 // RefreshToken obtains a new access token using a refresh token.
 func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput) (*RefreshTokenOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
@@ -376,10 +346,6 @@ func sessionMetaFromContextInternal(ctx context.Context, userAgent string) auth.
 
 // ChangePassword changes the current user's password.
 func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordInput) (*ChangePasswordOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userModel, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -413,10 +379,6 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 // LogoutAllOtherSessions revokes every active session for the current user
 // except the session making this request.
 func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{}) (*LogoutAllOtherSessionsOutput, error) {
-	if h.authService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	userModel, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -440,10 +402,6 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
 func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -501,10 +459,6 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 // UploadMyAvatar lets the current user upload a custom profile picture.
 // Accepts PNG, JPEG, or WebP images up to the configured avatar upload limit.
 func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarInput) (*UploadMyAvatarOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -584,10 +538,6 @@ func (h *AuthHandler) avatarMaxUploadSizeMbInternal(ctx context.Context) int {
 
 // DeleteMyAvatar removes the current user's custom profile picture.
 func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*DeleteMyAvatarOutput, error) {
-	if h.userService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	currentUser, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err

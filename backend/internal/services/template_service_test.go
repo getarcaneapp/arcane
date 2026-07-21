@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 )
@@ -273,11 +274,11 @@ services:
 		Description: "Remote template",
 		IsRemote:    true,
 		IsCustom:    false,
-		RegistryID:  stringPtr("reg-1"),
+		RegistryID:  utils.StringPtrFromTrimmed("reg-1"),
 		Metadata: &models.ComposeTemplateMetadata{
-			RemoteURL: stringPtr(baseURL + "/compose.yaml"),
-			EnvURL:    stringPtr(baseURL + "/template.env"),
-			IconURL:   stringPtr("https://cdn.example/download.png"),
+			RemoteURL: utils.StringPtrFromTrimmed(baseURL + "/compose.yaml"),
+			EnvURL:    utils.StringPtrFromTrimmed(baseURL + "/template.env"),
+			IconURL:   utils.StringPtrFromTrimmed("https://cdn.example/download.png"),
 		},
 	}
 
@@ -334,7 +335,7 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 					Description: "Remote template",
 					Content:     "services: {}",
 					IsRemote:    true,
-					RegistryID:  stringPtr("registry-one"),
+					RegistryID:  utils.StringPtrFromTrimmed("registry-one"),
 				},
 			},
 			lastFetch: now,

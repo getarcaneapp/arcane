@@ -34,13 +34,6 @@ type ProjectHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// ProjectPaginatedResponse is the paginated response for projects.
-type ProjectPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []project.Details       `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListProjectsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -54,7 +47,7 @@ type ListProjectsInput struct {
 }
 
 type ListProjectsOutput struct {
-	Body ProjectPaginatedResponse
+	Body base.Paginated[project.Details]
 }
 
 type GetProjectStatusCountsInput struct {
@@ -222,8 +215,6 @@ type PullProgressEvent struct {
 
 // RegisterProjects registers project management routes using Huma.
 // Note: WebSocket and streaming endpoints remain as Gin handlers.
-//
-//nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterProjects(api huma.API, projectService *services.ProjectService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &ProjectHandler{
 		projectService:  projectService,
@@ -238,10 +229,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "List projects",
 		Description: "Get a paginated list of Docker Compose projects",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsList, h.ListProjects)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -251,10 +239,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get project status counts",
 		Description: "Get counts of running, stopped, and total projects",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsList, h.GetProjectStatusCounts)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -264,10 +249,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Deploy a project",
 		Description: "Deploy a Docker Compose project (docker-compose up)",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDeploy, h.DeployProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -277,10 +259,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Bring down a project",
 		Description: "Bring down a Docker Compose project (docker-compose down)",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDown, h.DownProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -290,10 +269,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Create a project",
 		Description: "Create a new Docker Compose project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsCreate, h.CreateProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -303,10 +279,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get a project",
 		Description: "Get a Docker Compose project by ID",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -316,10 +289,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get project compose details",
 		Description: "Get compose content, includes, and service configs for a project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectCompose)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -329,10 +299,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get project files",
 		Description: "Get directory files for a project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectFiles)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -342,10 +309,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get project runtime",
 		Description: "Get runtime service state for a project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectRuntime)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -355,10 +319,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get project updates",
 		Description: "Get image update summary for a project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectUpdates)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -368,10 +329,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Get a project file",
 		Description: "Get the contents of a single project-related file by relative path",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRead, h.GetProjectFile)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -381,10 +339,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Redeploy a project",
 		Description: "Redeploy a Docker Compose project (down + up)",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDeploy, h.RedeployProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -394,10 +349,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Destroy a project",
 		Description: "Destroy a Docker Compose project and optionally remove files/volumes",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDelete, h.DestroyProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -407,10 +359,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Update a project",
 		Description: "Update a Docker Compose project configuration",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsUpdate, h.UpdateProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -420,10 +369,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Update project include file",
 		Description: "Update an include file within a Docker Compose project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsUpdate, h.UpdateProjectInclude)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -433,10 +379,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Restart a project",
 		Description: "Restart all containers in a Docker Compose project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsRestart, h.RestartProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -446,10 +389,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Update project services",
 		Description: "Pull latest images and recreate the given services (all services when none are specified)",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsUpdate, h.UpdateProjectServices)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -459,10 +399,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Archive a project",
 		Description: "Archive a stopped Docker Compose project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsArchive, h.ArchiveProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -472,10 +409,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Unarchive a project",
 		Description: "Unarchive a Docker Compose project",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsArchive, h.UnarchiveProject)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -485,10 +419,7 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Pull project images",
 		Description: "Pull all images for a Docker Compose project with streaming progress output",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDeploy, h.PullProjectImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -498,19 +429,12 @@ func RegisterProjects(api huma.API, projectService *services.ProjectService, act
 		Summary:     "Build project images",
 		Description: "Build Docker Compose services with build directives using BuildKit",
 		Tags:        []string{"Projects"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermProjectsDeploy, h.BuildProjectImages)
 }
 
 // ListProjects returns a paginated list of projects.
 func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsInput) (*ListProjectsOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Status != "" {
 		params.Filters["status"] = input.Status
@@ -535,7 +459,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 	}
 
 	return &ListProjectsOutput{
-		Body: ProjectPaginatedResponse{
+		Body: base.Paginated[project.Details]{
 			Success:    true,
 			Data:       projects,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -545,10 +469,6 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 
 // GetProjectStatusCounts returns counts of projects by status.
 func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*GetProjectStatusCountsOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ProjectStatusCountsError{Err: err}).Error())
@@ -569,10 +489,6 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 
 // DeployProject deploys a Docker Compose project.
 func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -635,10 +551,6 @@ func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProject
 
 // DownProject brings down a Docker Compose project.
 func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInput) (*DownProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -700,10 +612,6 @@ func projectFileHTTPError(err error) error {
 
 // CreateProject creates a new Docker Compose project.
 func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProjectInput) (*CreateProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -759,10 +667,6 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 
 // GetProject returns a project by ID.
 func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -781,9 +685,6 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 }
 
 func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -831,9 +732,6 @@ func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjec
 }
 
 func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -881,10 +779,6 @@ func (h *ProjectHandler) RedeployProject(ctx context.Context, input *RedeployPro
 
 // DestroyProject destroys a Docker Compose project.
 func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProjectInput) (*DestroyProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -931,10 +825,6 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 
 // UpdateProject updates a Docker Compose project.
 func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -994,10 +884,6 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 
 // UpdateProjectInclude updates an include file within a project.
 func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -1179,10 +1065,6 @@ func (h *ProjectHandler) runProjectActivityActionResponseInternal(
 }
 
 func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, environmentID, projectID string, cfg projectActivityActionConfigInternal) (base.MessageResponse, error) {
-	if h.projectService == nil {
-		return base.MessageResponse{}, huma.Error500InternalServerError("service not available")
-	}
-
 	if projectID == "" {
 		return base.MessageResponse{}, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -1217,10 +1099,6 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 }
 
 func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -1246,10 +1124,6 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 }
 
 func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -1273,10 +1147,6 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 
 // PullProjectImages pulls all images for a project with streaming progress.
 func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}
@@ -1335,10 +1205,6 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 
 // BuildProjectImages builds compose services with build directives.
 func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
-	if h.projectService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.ProjectID == "" {
 		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
 	}

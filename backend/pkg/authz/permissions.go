@@ -69,6 +69,12 @@ const (
 	PermTemplatesUpdate = "templates:update"
 	PermTemplatesDelete = "templates:delete"
 
+	PermVariablesRead   = "variables:read"
+	PermVariablesCreate = "variables:create"
+	PermVariablesUpdate = "variables:update"
+	PermVariablesDelete = "variables:delete"
+	PermVariablesSync   = "variables:sync"
+
 	PermGitReposList   = "git-repositories:list"
 	PermGitReposRead   = "git-repositories:read"
 	PermGitReposCreate = "git-repositories:create"
@@ -286,6 +292,7 @@ func BuiltInEditorPermissions() []string {
 		PermEnvironmentsList, PermEnvironmentsRead, PermEnvironmentsSync,
 		PermRegistriesList, PermRegistriesRead,
 		PermTemplatesList, PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete,
+		PermVariablesRead, PermVariablesCreate, PermVariablesUpdate, PermVariablesDelete, PermVariablesSync,
 		PermGitReposList, PermGitReposRead,
 		PermEventsRead,
 		// Full env-scoped Docker management
@@ -314,6 +321,7 @@ func BuiltInDeployerPermissions() []string {
 		PermEnvironmentsList, PermEnvironmentsRead,
 		PermRegistriesList, PermRegistriesRead,
 		PermTemplatesList, PermTemplatesRead,
+		PermVariablesRead,
 		PermEventsRead,
 		PermContainersList, PermContainersRead, PermContainersLogs, PermContainersStart, PermContainersStop, PermContainersRestart, PermContainersRedeploy, PermContainersKill, PermContainersPause,
 		PermProjectsList, PermProjectsRead, PermProjectsLogs, PermProjectsDeploy, PermProjectsDown, PermProjectsRestart,
@@ -342,6 +350,7 @@ func BuiltInViewerPermissions() []string {
 		PermEnvironmentsList, PermEnvironmentsRead,
 		PermRegistriesList, PermRegistriesRead,
 		PermTemplatesList, PermTemplatesRead,
+		PermVariablesRead,
 		PermGitReposList, PermGitReposRead,
 		PermEventsRead,
 		PermContainersList, PermContainersRead, PermContainersLogs,

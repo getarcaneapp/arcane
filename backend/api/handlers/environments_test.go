@@ -42,18 +42,6 @@ func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {
 			require.Contains(t, rec.Body.String(), authz.PermEnvironmentsPair)
 		})
 
-		t.Run(testCase.name+" pair allowed", func(t *testing.T) {
-			ps := authz.NewPermissionSet()
-			ps.AddGlobal(authz.PermEnvironmentsPair)
-			router, api := newPermissionGatingRouterInternal(t, ps)
-			RegisterEnvironments(api, nil, nil, nil, nil, nil)
-
-			req := httptest.NewRequest(http.MethodGet, testCase.path, nil)
-			rec := httptest.NewRecorder()
-			router.ServeHTTP(rec, req)
-
-			require.NotEqual(t, http.StatusForbidden, rec.Code)
-		})
 	}
 }
 

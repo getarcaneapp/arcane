@@ -99,10 +99,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Summary:     "List background activities",
 		Description: "Get current and recent background activities for an environment",
 		Tags:        []string{"Activities"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermActivitiesRead, h.ListActivities)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -112,10 +109,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Summary:     "Get background activity",
 		Description: "Get a background activity with its recent output messages",
 		Tags:        []string{"Activities"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermActivitiesRead, h.GetActivity)
 
 	huma.Register(api, huma.Operation{
@@ -125,10 +119,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Summary:     "Stream background activities across all environments",
 		Description: "Stream background activity updates for the local environment and all enabled remote environments as JSON lines",
 		Tags:        []string{"Activities"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermActivitiesRead),
 	}, h.StreamAllActivities)
 
@@ -139,10 +130,7 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Summary:     "Cancel a background activity",
 		Description: "Request cancellation of a running or queued background activity",
 		Tags:        []string{"Activities"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermActivitiesCancel, h.CancelActivity)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -152,19 +140,13 @@ func RegisterActivities(api huma.API, activityService *services.ActivityService,
 		Summary:     "Clear background activity history",
 		Description: "Delete completed background activity history for an environment",
 		Tags:        []string{"Activities"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermActivitiesDelete, h.ClearHistory)
 }
 
 func (h *ActivityHandler) ListActivities(ctx context.Context, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyListActivitiesInternal(ctx, input)
-	}
-	if h.activityService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
 	}
 
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
@@ -197,9 +179,6 @@ func (h *ActivityHandler) GetActivity(ctx context.Context, input *GetActivityInp
 	if input.EnvironmentID != "0" {
 		return h.proxyGetActivityInternal(ctx, input)
 	}
-	if h.activityService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
 	}
@@ -225,9 +204,6 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 	if input.EnvironmentID != "0" {
 		return h.proxyClearHistoryInternal(ctx, input)
 	}
-	if h.activityService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 
 	deleted, err := h.activityService.DeleteHistory(ctx, input.EnvironmentID)
 	if err != nil {
@@ -245,9 +221,6 @@ func (h *ActivityHandler) ClearHistory(ctx context.Context, input *ClearActivity
 func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
 	if input.EnvironmentID != "0" {
 		return h.proxyCancelActivityInternal(ctx, input)
-	}
-	if h.activityService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
 	}
 	if input.ActivityID == "" {
 		return nil, huma.Error400BadRequest("activity id is required")
@@ -276,9 +249,6 @@ func (h *ActivityHandler) CancelActivity(ctx context.Context, input *CancelActiv
 }
 
 func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input *CancelActivityInput) (*CancelActivityOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
 	path := fmt.Sprintf("/api/environments/0/activities/%s/cancel", url.PathEscape(input.ActivityID))
 	if requestedBy := h.cancelRequestedByInternal(ctx, input.RequestedBy); requestedBy != "" {
 		path += "?requestedBy=" + url.QueryEscape(requestedBy)
@@ -307,10 +277,6 @@ func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forward
 }
 
 func (h *ActivityHandler) StreamAllActivities(ctx context.Context, input *StreamAllActivitiesInput) (*huma.StreamResponse, error) {
-	if h.activityService == nil || h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
@@ -540,9 +506,6 @@ func (h *ActivityHandler) runRemoteActivityStreamPollerInternal(ctx context.Cont
 }
 
 func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
 	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
 	out, err := proxyRemoteJSONInternal[base.Paginated[activity.Activity]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, path, nil)
 	if err != nil {
@@ -553,9 +516,6 @@ func (h *ActivityHandler) proxyListActivitiesInternal(ctx context.Context, input
 }
 
 func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.Context, environment models.Environment, input *ListActivitiesInput) (*ListActivitiesOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
 	path := "/api/environments/0/activities?" + activityListQueryInternal(input).Encode()
 	var out base.Paginated[activity.Activity]
 	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, path, nil, &out); err != nil {
@@ -566,9 +526,6 @@ func (h *ActivityHandler) proxyListActivitiesForEnvironmentInternal(ctx context.
 }
 
 func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *GetActivityInput) (*GetActivityOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
 	path := fmt.Sprintf("/api/environments/0/activities/%s?limit=%d", url.PathEscape(input.ActivityID), input.Limit)
 	out, err := proxyRemoteJSONInternal[base.ApiResponse[activity.Detail]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, path, nil)
 	if err != nil {
@@ -579,9 +536,6 @@ func (h *ActivityHandler) proxyGetActivityInternal(ctx context.Context, input *G
 }
 
 func (h *ActivityHandler) proxyClearHistoryInternal(ctx context.Context, input *ClearActivityHistoryInput) (*ClearActivityHistoryOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("environment service not available")
-	}
 	out, err := proxyRemoteJSONInternal[base.ApiResponse[activity.ClearHistoryResult]](ctx, h.environmentService, input.EnvironmentID, http.MethodDelete, "/api/environments/0/activities/history", nil)
 	if err != nil {
 		return nil, err

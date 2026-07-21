@@ -91,6 +91,80 @@ func TestBackfillLegacyRoleAssignmentsIsNoOpWhenColumnAbsent(t *testing.T) {
 	require.NoError(t, roleSvc.BackfillLegacyRoleAssignments(ctx))
 }
 
+func TestEnsureBuiltInRolesMigratesVariablePermissionsWithoutBackfillingCustomGrants(t *testing.T) {
+	ctx := context.Background()
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+
+	customRole, err := roleSvc.CreateRole(ctx, "Template Reader", nil, []string{authz.PermTemplatesRead})
+	require.NoError(t, err)
+	owner := createTestUser(t, userSvc, "variable-migration-owner", "variable-migration-owner")
+	scopedKey := models.ApiKey{
+		Name:      "Custom scoped key",
+		KeyHash:   "variable-migration-hash",
+		KeyPrefix: "arc_vars",
+		Kind:      models.ApiKeyKindScoped,
+		UserID:    &owner.ID,
+	}
+	require.NoError(t, roleSvc.db.WithContext(ctx).Create(&scopedKey).Error)
+	require.NoError(t, roleSvc.db.WithContext(ctx).Create(&models.ApiKeyPermission{
+		ApiKeyID:   scopedKey.ID,
+		Permission: authz.PermTemplatesRead,
+	}).Error)
+
+	oldEditorPermissions := slices.DeleteFunc(authz.BuiltInEditorPermissions(), func(permission string) bool {
+		return slices.Contains([]string{
+			authz.PermVariablesRead,
+			authz.PermVariablesCreate,
+			authz.PermVariablesUpdate,
+			authz.PermVariablesDelete,
+			authz.PermVariablesSync,
+		}, permission)
+	})
+	require.NoError(t, roleSvc.db.WithContext(ctx).Model(&models.Role{}).
+		Where("id = ?", authz.BuiltInRoleEditor).
+		Update("permissions", models.StringSlice(oldEditorPermissions)).Error)
+
+	require.NoError(t, roleSvc.EnsureBuiltInRoles(ctx))
+	require.NoError(t, roleSvc.BackfillApiKeyPermissions(ctx))
+
+	allVariablePermissions := []string{
+		authz.PermVariablesRead,
+		authz.PermVariablesCreate,
+		authz.PermVariablesUpdate,
+		authz.PermVariablesDelete,
+		authz.PermVariablesSync,
+	}
+	for _, roleID := range []string{authz.BuiltInRoleAdmin, authz.BuiltInRoleEditor, authz.BuiltInRoleNoShellEditor} {
+		role, getErr := roleSvc.GetRole(ctx, roleID)
+		require.NoError(t, getErr)
+		for _, permission := range allVariablePermissions {
+			require.Contains(t, []string(role.Permissions), permission, "role %s", roleID)
+		}
+	}
+	for _, roleID := range []string{authz.BuiltInRoleViewer, authz.BuiltInRoleDeployer} {
+		role, getErr := roleSvc.GetRole(ctx, roleID)
+		require.NoError(t, getErr)
+		require.Contains(t, []string(role.Permissions), authz.PermVariablesRead)
+		for _, permission := range allVariablePermissions[1:] {
+			require.NotContains(t, []string(role.Permissions), permission, "role %s", roleID)
+		}
+	}
+	monitor, err := roleSvc.GetRole(ctx, authz.BuiltInRoleMonitor)
+	require.NoError(t, err)
+	for _, permission := range allVariablePermissions {
+		require.NotContains(t, []string(monitor.Permissions), permission)
+	}
+
+	preservedCustomRole, err := roleSvc.GetRole(ctx, customRole.ID)
+	require.NoError(t, err)
+	require.Equal(t, []string{authz.PermTemplatesRead}, []string(preservedCustomRole.Permissions))
+
+	var keyPermissions []models.ApiKeyPermission
+	require.NoError(t, roleSvc.db.WithContext(ctx).Where("api_key_id = ?", scopedKey.ID).Find(&keyPermissions).Error)
+	require.Len(t, keyPermissions, 1)
+	require.Equal(t, authz.PermTemplatesRead, keyPermissions[0].Permission)
+}
+
 func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
 	ctx := context.Background()
 	userSvc, roleSvc := setupUserAndRoleServices(t)

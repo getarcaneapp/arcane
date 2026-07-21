@@ -40,13 +40,6 @@ type ImageHandler struct {
 
 // --- Huma Input/Output Wrappers ---
 
-// ImagePaginatedResponse is the paginated response for images.
-type ImagePaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []image.Summary         `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListImagesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -59,7 +52,7 @@ type ListImagesInput struct {
 }
 
 type ListImagesOutput struct {
-	Body ImagePaginatedResponse
+	Body base.Paginated[image.Summary]
 }
 
 type GetImageInput struct {
@@ -136,12 +129,6 @@ type BuildImageInput struct {
 	Body          buildtypes.BuildRequest
 }
 
-type ImageBuildPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []image.BuildRecord     `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListImageBuildsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -154,7 +141,7 @@ type ListImageBuildsInput struct {
 }
 
 type ListImageBuildsOutput struct {
-	Body ImageBuildPaginatedResponse
+	Body base.Paginated[image.BuildRecord]
 }
 
 type GetImageBuildInput struct {
@@ -185,13 +172,8 @@ type GetImageUsageCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type ImageUsageCountsResponse struct {
-	Success bool              `json:"success"`
-	Data    image.UsageCounts `json:"data"`
-}
-
 type GetImageUsageCountsOutput struct {
-	Body ImageUsageCountsResponse
+	Body base.ApiResponse[image.UsageCounts]
 }
 
 type UploadImageInput struct {
@@ -222,10 +204,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "List images",
 		Description: "Get a paginated list of Docker images",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesList, h.ListImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -235,10 +214,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Get image usage counts",
 		Description: "Get counts of images in use, unused, total, and total size",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesList, h.GetImageUsageCounts)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -248,10 +224,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Get image attestations",
 		Description: "Get in-toto attestation statements attached to a Docker image",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.GetImageAttestations)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -261,10 +234,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Search images",
 		Description: "Search Docker Hub images",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.SearchImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -274,10 +244,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Tag image",
 		Description: "Add a repository tag to an image",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesTag, h.TagImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -287,10 +254,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Get image history",
 		Description: "Get Docker image layer history",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.GetImageHistory)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -300,10 +264,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Export image",
 		Description: "Download a Docker image as a tar archive",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.ExportImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -313,10 +274,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Get image by ID",
 		Description: "Get a Docker image by its ID",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.GetImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -326,10 +284,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Remove an image",
 		Description: "Remove a Docker image by ID",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesDelete, h.RemoveImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -339,10 +294,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Pull an image",
 		Description: "Pull a Docker image from a registry with streaming progress output",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesPull, h.PullImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -352,10 +304,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Build an image",
 		Description: "Build a Docker image using BuildKit with streaming progress output",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesBuild, h.BuildImage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -365,10 +314,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "List image builds",
 		Description: "Get a paginated list of image build history for an environment",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesList, h.ListImageBuilds)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -378,10 +324,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Get image build",
 		Description: "Get a single image build history entry with output",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesRead, h.GetImageBuild)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -391,10 +334,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Prune unused images",
 		Description: "Remove unused Docker images",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesPrune, h.PruneImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -404,10 +344,7 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 		Summary:     "Upload an image",
 		Description: "Upload a Docker image from a tar archive",
 		Tags:        []string{"Images"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		RequestBody: &huma.RequestBody{
 			Content: map[string]*huma.MediaType{
 				"multipart/form-data": {
@@ -430,10 +367,6 @@ func RegisterImages(api huma.API, dockerService *services.DockerClientService, i
 
 // ListImages returns a paginated list of images.
 func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (*ListImagesOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
@@ -456,7 +389,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 	}
 
 	return &ListImagesOutput{
-		Body: ImagePaginatedResponse{
+		Body: base.Paginated[image.Summary]{
 			Success:    true,
 			Data:       images,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -466,10 +399,6 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 
 // GetImage returns an image by ID.
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*GetImageOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.ImageNotFoundError{Err: err}).Error())
@@ -485,10 +414,6 @@ func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*Get
 
 // GetImageAttestations returns in-toto attestation statements attached to an image.
 func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImageAttestationsInput) (*GetImageAttestationsOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	imageName, err := url.PathUnescape(input.ImageName)
 	if err != nil {
 		return nil, huma.Error400BadRequest(fmt.Sprintf("invalid image name %q", input.ImageName))
@@ -523,10 +448,6 @@ func (h *ImageHandler) GetImageAttestations(ctx context.Context, input *GetImage
 
 // TagImage adds a repository tag to an image.
 func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*TagImageOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	imageName, err := decodeImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -554,10 +475,6 @@ func (h *ImageHandler) TagImage(ctx context.Context, input *TagImageInput) (*Tag
 
 // GetImageHistory returns Docker image layer history.
 func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHistoryInput) (*GetImageHistoryOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	imageName, err := decodeImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -581,10 +498,6 @@ func (h *ImageHandler) GetImageHistory(ctx context.Context, input *GetImageHisto
 
 // SearchImages searches Docker Hub images.
 func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInput) (*SearchImagesOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	results, err := h.imageService.SearchImages(ctx, input.Term)
 	if err != nil {
 		if strings.Contains(err.Error(), "term is required") {
@@ -606,10 +519,6 @@ func (h *ImageHandler) SearchImages(ctx context.Context, input *SearchImagesInpu
 
 // ExportImage streams a Docker image tar archive.
 func (h *ImageHandler) ExportImage(ctx context.Context, input *ExportImageInput) (*huma.StreamResponse, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	imageName, err := decodeImageNameInternal(input.ImageName)
 	if err != nil {
 		return nil, err
@@ -655,10 +564,6 @@ func imageExportFileNameInternal(imageName string) string {
 
 // RemoveImage removes a Docker image.
 func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput) (*RemoveImageOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -680,10 +585,6 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 
 // PullImage pulls a Docker image with streaming progress.
 func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*huma.StreamResponse, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.Body.ImageName == "" {
 		return nil, huma.Error400BadRequest("image name is required")
 	}
@@ -737,10 +638,6 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 // BuildImage builds a Docker image with streaming progress.
 func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (*huma.StreamResponse, error) {
-	if h.buildService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if strings.TrimSpace(input.Body.ContextDir) == "" {
 		return nil, huma.Error400BadRequest("contextDir is required")
 	}
@@ -794,10 +691,6 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 
 // ListImageBuilds returns a paginated list of image build history entries.
 func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*ListImageBuildsOutput, error) {
-	if h.buildService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
@@ -820,7 +713,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 	}
 
 	return &ListImageBuildsOutput{
-		Body: ImageBuildPaginatedResponse{
+		Body: base.Paginated[image.BuildRecord]{
 			Success:    true,
 			Data:       builds,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -830,10 +723,6 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 
 // GetImageBuild returns a single build history entry.
 func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*GetImageBuildOutput, error) {
-	if h.buildService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
@@ -860,10 +749,6 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 
 // PruneImages removes unused Docker images.
 func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput) (*PruneImagesOutput, error) {
-	if h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	mode := resolvePruneImageModeInternal(input)
 	until := resolvePruneImageUntilInternal(input)
 
@@ -939,10 +824,6 @@ func resolveLegacyPruneImageModeInternal(dangling bool) string {
 
 // GetImageUsageCounts returns counts of images by usage status.
 func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageUsageCountsInput) (*GetImageUsageCountsOutput, error) {
-	if h.dockerService == nil || h.imageService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	var (
 		inuse, unused, total int
 		totalSize            int64
@@ -968,7 +849,7 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 	}
 
 	return &GetImageUsageCountsOutput{
-		Body: ImageUsageCountsResponse{
+		Body: base.ApiResponse[image.UsageCounts]{
 			Success: true,
 			Data: image.UsageCounts{
 				Inuse:     inuse,
@@ -982,10 +863,6 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 
 // UploadImage uploads a Docker image from a tar archive.
 func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput) (*UploadImageOutput, error) {
-	if h.imageService == nil || h.settingsService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err

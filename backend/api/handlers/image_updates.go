@@ -89,7 +89,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check",
 		Summary:     "Check image update by reference",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.CheckImageUpdate)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -98,7 +98,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -107,7 +107,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check/{imageId}",
 		Summary:     "Check image update by ID (POST)",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.CheckImageUpdateByID)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -116,7 +116,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check-batch",
 		Summary:     "Check multiple images",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.CheckMultipleImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -125,7 +125,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/check-all",
 		Summary:     "Check all images",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesCheck, h.CheckAllImages)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -134,7 +134,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/by-refs",
 		Summary:     "Get persisted update info for image references",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesRead, h.GetUpdateInfoByRefs)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -143,7 +143,7 @@ func RegisterImageUpdates(api huma.API, imageUpdateSvc *services.ImageUpdateServ
 		Path:        "/environments/{id}/image-updates/summary",
 		Summary:     "Get update summary",
 		Tags:        []string{"Image Updates"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImageUpdatesRead, h.GetUpdateSummary)
 }
 

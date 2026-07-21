@@ -13,9 +13,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 )
 
-// VariableHandler handles the manager-level global variable endpoints plus the
-// per-environment /environments/{id}/templates/variables routes, which remain
-// the materialization channel the manager pushes through to agents.
+// VariableHandler handles manager-level global variables and the separate
+// agent-only materialization channel used to push effective values.
 type VariableHandler struct {
 	variableService    *services.VariableService
 	environmentService *services.EnvironmentService
@@ -99,11 +98,8 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "List global variables",
 		Description: "List all global variables with their environment scope (secret values are redacted)",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesRead, h.ListVariables)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesRead, h.ListVariables)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "createVariable",
@@ -112,11 +108,8 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "Create a global variable",
 		Description: "Create a global variable scoped to all or specific environments",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.CreateVariable)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesCreate, h.CreateVariable)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "updateVariable",
@@ -125,11 +118,8 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "Update a global variable",
 		Description: "Update a global variable's key, value, secret flag, or environment scope",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.UpdateVariable)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesUpdate, h.UpdateVariable)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "deleteVariable",
@@ -138,11 +128,8 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "Delete a global variable",
 		Description: "Delete a global variable and re-sync affected environments",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.DeleteVariable)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesDelete, h.DeleteVariable)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "syncVariables",
@@ -151,11 +138,8 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "Sync global variables",
 		Description: "Push the effective global variable set to every environment now",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.SyncVariables)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesSync, h.SyncVariables)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "getVariableSyncStatus",
@@ -164,39 +148,37 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 		Summary:     "Get variable sync status",
 		Description: "Get the last global-variable sync result per environment",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesRead, h.GetSyncStatus)
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVariablesRead, h.GetSyncStatus)
+}
 
-	// Per-environment materialized-file routes. Agents serve these locally; the
-	// manager pushes each environment's effective set through them.
-	humamw.RegisterWithPermission(api, huma.Operation{
+// RegisterMaterializedVariables registers the plaintext synchronization
+// channel on agents. It must never be registered on a manager API because its
+// response intentionally contains decrypted values for .env.global.
+func RegisterMaterializedVariables(api huma.API, variableService *services.VariableService, environmentService *services.EnvironmentService) {
+	h := &VariableHandler{variableService: variableService, environmentService: environmentService}
+
+	huma.Register(api, huma.Operation{
 		OperationID: "getGlobalVariables",
 		Method:      "GET",
 		Path:        "/environments/{id}/templates/variables",
 		Summary:     "Get materialized variables",
 		Description: "Get the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesRead, h.GetMaterializedVariables)
+		Security:    defaultOperationSecurityInternal(),
+		Middlewares: humamw.RequireSudo(api),
+	}, h.GetMaterializedVariables)
 
-	humamw.RegisterWithPermission(api, huma.Operation{
+	huma.Register(api, huma.Operation{
 		OperationID: "updateGlobalVariables",
 		Method:      "PUT",
 		Path:        "/environments/{id}/templates/variables",
 		Summary:     "Update materialized variables",
 		Description: "Replace the materialized variable set for an environment. Managed via /variables on the manager.",
 		Tags:        []string{"Variables"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
-	}, authz.PermTemplatesUpdate, h.UpdateMaterializedVariables)
+		Security:    defaultOperationSecurityInternal(),
+		Middlewares: humamw.RequireSudo(api),
+	}, h.UpdateMaterializedVariables)
 }
 
 // ============================================================================
@@ -204,10 +186,6 @@ func RegisterVariables(api huma.API, variableService *services.VariableService, 
 // ============================================================================
 
 func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariablesInput) (*ListGlobalVariablesOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	variables, err := h.variableService.ListVariables(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -222,10 +200,6 @@ func (h *VariableHandler) ListVariables(ctx context.Context, _ *ListGlobalVariab
 }
 
 func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGlobalVariableInput) (*CreateGlobalVariableOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	variable, err := h.variableService.CreateVariable(ctx, input.Body)
 	if err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
@@ -243,10 +217,6 @@ func (h *VariableHandler) CreateVariable(ctx context.Context, input *CreateGloba
 }
 
 func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGlobalVariableInput) (*UpdateGlobalVariableOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	variable, err := h.variableService.UpdateVariable(ctx, input.ID, input.Body)
 	if err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
@@ -264,10 +234,6 @@ func (h *VariableHandler) UpdateVariable(ctx context.Context, input *UpdateGloba
 }
 
 func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGlobalVariableInput) (*DeleteGlobalVariableOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.variableService.DeleteVariable(ctx, input.ID); err != nil {
 		return nil, variableMutationHTTPErrorInternal(err)
 	}
@@ -283,10 +249,6 @@ func (h *VariableHandler) DeleteVariable(ctx context.Context, input *DeleteGloba
 }
 
 func (h *VariableHandler) SyncVariables(ctx context.Context, _ *SyncGlobalVariablesInput) (*SyncGlobalVariablesOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return &SyncGlobalVariablesOutput{
 		Body: base.ApiResponse[[]env.EnvironmentSyncStatus]{
 			Success: true,
@@ -296,10 +258,6 @@ func (h *VariableHandler) SyncVariables(ctx context.Context, _ *SyncGlobalVariab
 }
 
 func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableSyncStatusInput) (*GetGlobalVariableSyncStatusOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return &GetGlobalVariableSyncStatusOutput{
 		Body: base.ApiResponse[[]env.EnvironmentSyncStatus]{
 			Success: true,
@@ -311,14 +269,7 @@ func (h *VariableHandler) GetSyncStatus(_ context.Context, _ *GetGlobalVariableS
 // GetMaterializedVariables returns the environment's materialized .env.global
 // content (local file for environment "0", proxied to the agent otherwise).
 func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *GetGlobalVariablesInput) (*GetGlobalVariablesOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		response, err := proxyRemoteJSONInternal[base.ApiResponse[[]env.Variable]](ctx, h.environmentService, input.EnvironmentID, http.MethodGet, "/api/environments/0/templates/variables", nil)
 		if err != nil {
 			return nil, err
@@ -342,14 +293,7 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *G
 // UpdateMaterializedVariables replaces the environment's materialized
 // .env.global content (local file for environment "0", proxied otherwise).
 func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input *UpdateGlobalVariablesInput) (*UpdateGlobalVariablesOutput, error) {
-	if h.variableService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EnvironmentID != "0" {
-		if h.environmentService == nil {
-			return nil, huma.Error500InternalServerError("environment service not available")
-		}
 		response, err := proxyRemoteJSONInternal[base.ApiResponse[base.MessageResponse]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/templates/variables", input.Body)
 		if err != nil {
 			return nil, err

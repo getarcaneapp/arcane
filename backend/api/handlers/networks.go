@@ -29,13 +29,6 @@ type NetworkHandler struct {
 	appCtx          context.Context
 }
 
-type NetworkPaginatedResponse struct {
-	Success    bool                     `json:"success"`
-	Data       []networktypes.Summary   `json:"data"`
-	Counts     networktypes.UsageCounts `json:"counts"`
-	Pagination base.PaginationResponse  `json:"pagination"`
-}
-
 type ListNetworksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -47,25 +40,15 @@ type ListNetworksInput struct {
 }
 
 type ListNetworksOutput struct {
-	Body NetworkPaginatedResponse
+	Body base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]
 }
 
 type GetNetworkCountsInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-type NetworkCountsApiResponse struct {
-	Success bool                     `json:"success"`
-	Data    networktypes.UsageCounts `json:"data"`
-}
-
 type GetNetworkCountsOutput struct {
-	Body NetworkCountsApiResponse
-}
-
-type NetworkCreatedApiResponse struct {
-	Success bool                        `json:"success"`
-	Data    networktypes.CreateResponse `json:"data"`
+	Body base.ApiResponse[networktypes.UsageCounts]
 }
 
 type CreateNetworkInput struct {
@@ -74,13 +57,7 @@ type CreateNetworkInput struct {
 }
 
 type CreateNetworkOutput struct {
-	Body NetworkCreatedApiResponse
-}
-
-// NetworkInspectApiResponse is a dedicated response type
-type NetworkInspectApiResponse struct {
-	Success bool                 `json:"success"`
-	Data    networktypes.Inspect `json:"data"`
+	Body base.ApiResponse[networktypes.CreateResponse]
 }
 
 type GetNetworkInput struct {
@@ -91,12 +68,7 @@ type GetNetworkInput struct {
 }
 
 type GetNetworkOutput struct {
-	Body NetworkInspectApiResponse
-}
-
-type NetworkTopologyApiResponse struct {
-	Success bool                  `json:"success"`
-	Data    networktypes.Topology `json:"data"`
+	Body base.ApiResponse[networktypes.Inspect]
 }
 
 type GetNetworkTopologyInput struct {
@@ -104,13 +76,7 @@ type GetNetworkTopologyInput struct {
 }
 
 type GetNetworkTopologyOutput struct {
-	Body NetworkTopologyApiResponse
-}
-
-// NetworkMessageApiResponse is a dedicated response type
-type NetworkMessageApiResponse struct {
-	Success bool                 `json:"success"`
-	Data    base.MessageResponse `json:"data"`
+	Body base.ApiResponse[networktypes.Topology]
 }
 
 type DeleteNetworkInput struct {
@@ -119,21 +85,15 @@ type DeleteNetworkInput struct {
 }
 
 type DeleteNetworkOutput struct {
-	Body NetworkMessageApiResponse
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 type PruneNetworksInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
-// NetworkPruneResponse is a dedicated response type
-type NetworkPruneResponse struct {
-	Success bool                     `json:"success"`
-	Data    networktypes.PruneReport `json:"data"`
-}
-
 type PruneNetworksOutput struct {
-	Body NetworkPruneResponse
+	Body base.ApiResponse[networktypes.PruneReport]
 }
 
 // RegisterNetworks registers network endpoints.
@@ -151,7 +111,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks",
 		Summary:     "List networks",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksList, h.ListNetworks)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -160,7 +120,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks/counts",
 		Summary:     "Network counts",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksList, h.GetNetworkCounts)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -169,7 +129,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks",
 		Summary:     "Create network",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksCreate, h.CreateNetwork)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -178,7 +138,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks/topology",
 		Summary:     "Get network topology",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksRead, h.GetNetworkTopology)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -187,7 +147,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks/{networkId}",
 		Summary:     "Get network",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksRead, h.GetNetwork)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -196,7 +156,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks/{networkId}",
 		Summary:     "Delete network",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksDelete, h.DeleteNetwork)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -205,7 +165,7 @@ func RegisterNetworks(api huma.API, networkSvc *services.NetworkService, dockerS
 		Path:        "/environments/{id}/networks/prune",
 		Summary:     "Prune networks",
 		Tags:        []string{"Networks"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermNetworksPrune, h.PruneNetworks)
 }
 
@@ -221,7 +181,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 	}
 
 	return &ListNetworksOutput{
-		Body: NetworkPaginatedResponse{
+		Body: base.PaginatedWithCounts[networktypes.Summary, networktypes.UsageCounts]{
 			Success:    true,
 			Data:       networks,
 			Counts:     counts,
@@ -237,7 +197,7 @@ func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetwork
 	}
 
 	return &GetNetworkCountsOutput{
-		Body: NetworkCountsApiResponse{
+		Body: base.ApiResponse[networktypes.UsageCounts]{
 			Success: true,
 			Data: networktypes.UsageCounts{
 				Inuse:  inuse,
@@ -289,7 +249,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &CreateNetworkOutput{
-		Body: NetworkCreatedApiResponse{
+		Body: base.ApiResponse[networktypes.CreateResponse]{
 			Success: true,
 			Data:    out,
 		},
@@ -377,7 +337,7 @@ func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput)
 	})
 
 	return &GetNetworkOutput{
-		Body: NetworkInspectApiResponse{
+		Body: base.ApiResponse[networktypes.Inspect]{
 			Success: true,
 			Data:    out,
 		},
@@ -391,7 +351,7 @@ func (h *NetworkHandler) GetNetworkTopology(ctx context.Context, input *GetNetwo
 	}
 
 	return &GetNetworkTopologyOutput{
-		Body: NetworkTopologyApiResponse{
+		Body: base.ApiResponse[networktypes.Topology]{
 			Success: true,
 			Data:    *topology,
 		},
@@ -426,7 +386,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 	}
 
 	return &DeleteNetworkOutput{
-		Body: NetworkMessageApiResponse{
+		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: "Network removed successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
 		},
@@ -460,7 +420,7 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 	out.ActivityID = utils.StringPtrFromTrimmed(activityID)
 
 	return &PruneNetworksOutput{
-		Body: NetworkPruneResponse{
+		Body: base.ApiResponse[networktypes.PruneReport]{
 			Success: true,
 			Data:    out,
 		},

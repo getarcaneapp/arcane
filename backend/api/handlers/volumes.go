@@ -40,14 +40,6 @@ type VolumeUsageCountsData struct {
 	Total  int `json:"total"`
 }
 
-// VolumePaginatedResponse is the paginated response for volumes.
-type VolumePaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []volumetypes.Volume    `json:"data"`
-	Counts     VolumeUsageCountsData   `json:"counts"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListVolumesInput struct {
 	EnvironmentID   string `path:"id" doc:"Environment ID"`
 	Search          string `query:"search" doc:"Search query"`
@@ -60,7 +52,7 @@ type ListVolumesInput struct {
 }
 
 type ListVolumesOutput struct {
-	Body VolumePaginatedResponse
+	Body base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]
 }
 
 type GetVolumeInput struct {
@@ -300,8 +292,6 @@ type UploadAndRestoreOutput struct {
 }
 
 // RegisterVolumes registers volume management routes using Huma.
-//
-//nolint:maintidx // long but flat Huma route-registration function; complexity is sequential, not branching
 func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, volumeService *services.VolumeService, activityService *services.ActivityService, appCtx ActivityAppContext) {
 	h := &VolumeHandler{
 		volumeService:   volumeService,
@@ -317,10 +307,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Get volume usage counts",
 		Description: "Get counts of volumes in use, unused, and total",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesList, h.GetVolumeUsageCounts)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -330,10 +317,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "List volumes",
 		Description: "Get a paginated list of Docker volumes",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesList, h.ListVolumes)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -343,10 +327,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Get volume by name",
 		Description: "Get a Docker volume by its name",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesRead, h.GetVolume)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -356,10 +337,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Create a volume",
 		Description: "Create a new Docker volume",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesCreate, h.CreateVolume)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -369,10 +347,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Remove a volume",
 		Description: "Remove a Docker volume by name",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesDelete, h.RemoveVolume)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -382,10 +357,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Prune unused volumes",
 		Description: "Remove all unused Docker volumes",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesPrune, h.PruneVolumes)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -395,10 +367,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Get volume usage",
 		Description: "Get containers using a specific volume",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesRead, h.GetVolumeUsage)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -408,10 +377,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Summary:     "Get volume sizes",
 		Description: "Get disk usage sizes for all volumes (slow operation)",
 		Tags:        []string{"Volumes"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesList, h.GetVolumeSizes)
 
 	// --- Volume Browsing Endpoints ---
@@ -422,10 +388,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse",
 		Summary:     "List volume directory",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.BrowseDirectory)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -434,10 +397,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/content",
 		Summary:     "Get file content preview",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.GetFileContent)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -446,10 +406,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/download",
 		Summary:     "Download file from volume",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.DownloadFile)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -458,10 +415,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/upload",
 		Summary:     "Upload file to volume",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		RequestBody: &huma.RequestBody{
 			Content: map[string]*huma.MediaType{
 				"multipart/form-data": {
@@ -487,10 +441,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse/mkdir",
 		Summary:     "Create directory in volume",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesUpload, h.CreateDirectory)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -499,10 +450,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/browse",
 		Summary:     "Delete file or directory in volume",
 		Tags:        []string{"Volume Browser"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesDelete, h.DeleteFile)
 
 	// --- Volume Backup Endpoints ---
@@ -513,10 +461,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/backups",
 		Summary:     "List volume backups",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.ListBackups)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -525,10 +470,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/backups",
 		Summary:     "Create volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBackup, h.CreateBackup)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -537,10 +479,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore",
 		Summary:     "Restore volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBackup, h.RestoreBackup)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -549,10 +488,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/{backupId}/restore-files",
 		Summary:     "Restore specific files from a volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBackup, h.RestoreBackupFiles)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -561,10 +497,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/backups/{backupId}",
 		Summary:     "Delete volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBackup, h.DeleteBackup)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -573,10 +506,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/backups/{backupId}/download",
 		Summary:     "Download volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.DownloadBackup)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -585,10 +515,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/backups/{backupId}/has-path",
 		Summary:     "Check if backup contains path",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.BackupHasPath)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -597,10 +524,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/backups/{backupId}/files",
 		Summary:     "List files in a volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermVolumesBrowse, h.ListBackupFiles)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -609,10 +533,7 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 		Path:        "/environments/{id}/volumes/{volumeName}/backups/upload",
 		Summary:     "Upload and restore volume backup",
 		Tags:        []string{"Volume Backup"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		RequestBody: &huma.RequestBody{
 			Content: map[string]*huma.MediaType{
 				"multipart/form-data": {
@@ -635,10 +556,6 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 
 // ListVolumes returns a paginated list of volumes.
 func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput) (*ListVolumesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.InUse != "" {
 		params.Filters["inUse"] = input.InUse
@@ -658,7 +575,7 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 	}
 
 	return &ListVolumesOutput{
-		Body: VolumePaginatedResponse{
+		Body: base.PaginatedWithCounts[volumetypes.Volume, VolumeUsageCountsData]{
 			Success: true,
 			Data:    volumes,
 			Counts: VolumeUsageCountsData{
@@ -673,10 +590,6 @@ func (h *VolumeHandler) ListVolumes(ctx context.Context, input *ListVolumesInput
 
 // GetVolume returns a volume by name.
 func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*GetVolumeOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	vol, err := h.volumeService.GetVolumeByName(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.VolumeNotFoundError{Err: err}).Error())
@@ -692,10 +605,6 @@ func (h *VolumeHandler) GetVolume(ctx context.Context, input *GetVolumeInput) (*
 
 // CreateVolume creates a new Docker volume.
 func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInput) (*CreateVolumeOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -744,10 +653,6 @@ func (h *VolumeHandler) CreateVolume(ctx context.Context, input *CreateVolumeInp
 
 // RemoveVolume removes a Docker volume.
 func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInput) (*RemoveVolumeOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -788,10 +693,6 @@ func (h *VolumeHandler) RemoveVolume(ctx context.Context, input *RemoveVolumeInp
 
 // PruneVolumes removes all unused Docker volumes.
 func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInput) (*PruneVolumesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	var report *volumetypes.PruneReport
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -825,10 +726,6 @@ func (h *VolumeHandler) PruneVolumes(ctx context.Context, input *PruneVolumesInp
 
 // GetVolumeUsage returns containers using a specific volume.
 func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsageInput) (*GetVolumeUsageOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	inUse, containers, err := h.volumeService.GetVolumeUsage(ctx, input.VolumeName)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeUsageError{Err: err}).Error())
@@ -847,10 +744,6 @@ func (h *VolumeHandler) GetVolumeUsage(ctx context.Context, input *GetVolumeUsag
 
 // GetVolumeUsageCounts returns counts of volumes by usage status.
 func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolumeUsageCountsInput) (*GetVolumeUsageCountsOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	_, _, counts, err := h.volumeService.ListVolumesPaginated(ctx, pagination.QueryParams{}, input.IncludeInternal)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.VolumeCountsError{Err: err}).Error())
@@ -871,10 +764,6 @@ func (h *VolumeHandler) GetVolumeUsageCounts(ctx context.Context, input *GetVolu
 // GetVolumeSizes returns disk usage sizes for all volumes.
 // This is a slow operation as it requires calculating disk usage.
 func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSizesInput) (*GetVolumeSizesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	sizes, err := h.volumeService.GetVolumeSizes(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -900,9 +789,6 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 // --- Volume Browser Handler Methods ---
 
 func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirectoryInput) (*BrowseDirectoryOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	entries, err := h.volumeService.ListDirectory(ctx, input.VolumeName, input.Path)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -916,9 +802,6 @@ func (h *VolumeHandler) BrowseDirectory(ctx context.Context, input *BrowseDirect
 }
 
 func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileContentInput) (*GetFileContentOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	content, mimeType, err := h.volumeService.GetFileContent(ctx, input.VolumeName, input.Path, input.MaxBytes)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -935,9 +818,6 @@ func (h *VolumeHandler) GetFileContent(ctx context.Context, input *GetFileConten
 }
 
 func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInput) (*huma.StreamResponse, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	reader, size, err := h.volumeService.DownloadFile(ctx, input.VolumeName, input.Path)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -958,18 +838,9 @@ func (h *VolumeHandler) DownloadFile(ctx context.Context, input *DownloadFileInp
 }
 
 func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) (*base.ApiResponse[base.MessageResponse], error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-	files := input.RawBody.File["file"]
-	if len(files) == 0 {
-		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
-	}
-
-	fileHeader := files[0]
-	file, err := fileHeader.Open()
+	file, fileHeader, err := openUploadedFileInternal(input.RawBody)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 
@@ -1035,9 +906,6 @@ type volumePathActivityConfigInternal struct {
 }
 
 func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -1069,10 +937,6 @@ func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, envir
 // --- Volume Backup Handler Methods ---
 
 func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput) (*ListBackupsOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := pagination.QueryParams{
 		SearchQuery: pagination.SearchQuery{
 			Search: input.Search,
@@ -1114,9 +978,6 @@ func (h *VolumeHandler) ListBackups(ctx context.Context, input *ListBackupsInput
 }
 
 func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInput) (*CreateBackupOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -1153,9 +1014,6 @@ func (h *VolumeHandler) CreateBackup(ctx context.Context, input *CreateBackupInp
 }
 
 func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupInput) (*RestoreBackupOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -1191,10 +1049,6 @@ func (h *VolumeHandler) RestoreBackup(ctx context.Context, input *RestoreBackupI
 }
 
 func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBackupFilesInput) (*RestoreBackupFilesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -1236,10 +1090,6 @@ func (h *VolumeHandler) RestoreBackupFiles(ctx context.Context, input *RestoreBa
 }
 
 func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathInput) (*BackupHasPathOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.Path == "" {
 		return nil, huma.Error400BadRequest("path is required")
 	}
@@ -1258,10 +1108,6 @@ func (h *VolumeHandler) BackupHasPath(ctx context.Context, input *BackupHasPathI
 }
 
 func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFilesInput) (*ListBackupFilesOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	files, err := h.volumeService.ListBackupFiles(ctx, input.BackupID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1276,9 +1122,6 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
@@ -1310,9 +1153,6 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 }
 
 func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
 	reader, size, err := h.volumeService.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
@@ -1334,23 +1174,14 @@ func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBacku
 }
 
 func (h *VolumeHandler) UploadAndRestore(ctx context.Context, input *UploadAndRestoreInput) (*UploadAndRestoreOutput, error) {
-	if h.volumeService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	files := input.RawBody.File["file"]
-	if len(files) == 0 {
-		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
-	}
-
-	fileHeader := files[0]
-	file, err := fileHeader.Open()
+	file, fileHeader, err := openUploadedFileInternal(input.RawBody)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+		return nil, err
 	}
 	defer func() { _ = file.Close() }()
 

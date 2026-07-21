@@ -8,6 +8,7 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"go.getarcane.app/sys/cgroup"
 )
@@ -22,7 +23,7 @@ func GetCurrentContainerMounts(ctx context.Context, dockerCli *client.Client) ([
 	}
 
 	// Prefer robust current-container detection and fall back to hostname.
-	inspectTarget, err := getCurrentContainerInspectTargetInternal(cgroup.CurrentContainerID, os.Hostname)
+	inspectTarget, err := dockerutils.CurrentContainerInspectTarget(cgroup.CurrentContainerID, os.Hostname)
 	if err != nil {
 		return nil, err
 	}
@@ -62,25 +63,4 @@ func GetHostPathForContainerPath(ctx context.Context, dockerCli *client.Client, 
 	}
 
 	return "", nil
-}
-
-func getCurrentContainerInspectTargetInternal(currentContainerID func() (string, error), hostname func() (string, error)) (string, error) {
-	if currentContainerID != nil {
-		if containerID, err := currentContainerID(); err == nil {
-			if containerID = strings.TrimSpace(containerID); containerID != "" {
-				return containerID, nil
-			}
-		}
-	}
-
-	if hostname == nil {
-		hostname = os.Hostname
-	}
-
-	value, err := hostname()
-	if err != nil {
-		return "", err
-	}
-
-	return strings.TrimSpace(value), nil
 }
