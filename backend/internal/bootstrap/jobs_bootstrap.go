@@ -73,6 +73,10 @@ func registerDynamicJobs(appCtx context.Context, newScheduler *scheduler.JobSche
 		appServices.Volume.SetScheduler(appCtx, newScheduler)
 		appServices.Volume.RegisterBackupJobsOnStartup(appCtx)
 	}
+	if !appConfig.AgentMode && appServices.SystemBackup != nil {
+		appServices.SystemBackup.SetScheduler(appCtx, newScheduler)
+		appServices.SystemBackup.RegisterBackupJobOnStartup(appCtx)
+	}
 
 	// GitOps: one job per auto-sync-enabled sync (runs on manager and agents).
 	if appServices.GitOpsSync != nil {

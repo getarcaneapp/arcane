@@ -62,6 +62,7 @@ type Services struct {
 	Webhook           *services.WebhookService
 	Vulnerability     *services.VulnerabilityService
 	S3Destination     *services.S3DestinationService
+	SystemBackup      *services.SystemBackupService
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
 	// AuthMiddleware is the shared Echo auth middleware. It's wired here so the

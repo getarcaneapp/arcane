@@ -14,7 +14,8 @@
 		CodeIcon,
 		GlobeIcon,
 		ActivityIcon,
-		RemoteEnvironmentIcon
+		RemoteEnvironmentIcon,
+		BackupIcon
 	} from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { settingsSearchService } from '$lib/services/settings-search';
@@ -51,7 +52,8 @@
 		code: CodeIcon,
 		globe: GlobeIcon,
 		activity: ActivityIcon,
-		remoteenvironment: RemoteEnvironmentIcon
+		remoteenvironment: RemoteEnvironmentIcon,
+		backup: BackupIcon
 	};
 
 	onMount(async () => {
@@ -70,6 +72,7 @@
 	}
 
 	function isAccessibleCategory(category: SettingsCategory) {
+		if (category.id === 'systembackups' && !user?.isGlobalAdmin) return false;
 		if (!permissionsManifest?.accessSurfaces?.length) return true;
 		if (category.id === 'jobschedule') {
 			return canReachAccessSurface(permissionsManifest, 'settings.category.jobschedule', user, environmentStore.selected?.id);

@@ -108,7 +108,7 @@ func connectDatabaseInternal(ctx context.Context, databaseURL string) (*DB, erro
 
 	switch {
 	case strings.HasPrefix(databaseURL, "file:"):
-		connString, err := parseSqliteConnectionStringInternal(databaseURL)
+		connString, err := ParseSQLiteConnectionString(databaseURL)
 		if err != nil {
 			return nil, fmt.Errorf("failed to parse SQLite connection string: %w", err)
 		}
@@ -591,7 +591,7 @@ func logMigrationStateInternal(dbProvider string, currentVersion, requiredVersio
 	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 }
 
-func parseSqliteConnectionStringInternal(connString string) (string, error) {
+func ParseSQLiteConnectionString(connString string) (string, error) {
 	if !strings.HasPrefix(connString, "file:") {
 		connString = "file:" + connString
 	}

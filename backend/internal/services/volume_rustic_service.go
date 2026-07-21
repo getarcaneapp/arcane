@@ -114,7 +114,7 @@ func (s *VolumeService) ensureRusticImageInternal(ctx context.Context, dockerCli
 	return nil
 }
 
-func (s *VolumeService) runRusticInternal(ctx context.Context, dockerClient *client.Client, repository rusticRepositoryInternal, command []string, extraMounts ...mount.Mount) (string, error) {
+func (s *VolumeService) runRusticInternal(ctx context.Context, dockerClient *client.Client, repository rusticRepositoryInternal, password string, command []string, extraMounts ...mount.Mount) (string, error) {
 	s.rusticMu.Lock()
 	defer s.rusticMu.Unlock()
 	if err := s.ensureRusticImageInternal(ctx, dockerClient); err != nil {
@@ -122,7 +122,7 @@ func (s *VolumeService) runRusticInternal(ctx context.Context, dockerClient *cli
 	}
 	environment := append([]string{}, repository.environment...)
 	environment = append(environment,
-		"RUSTIC_PASSWORD="+s.rusticPasswordInternal(),
+		"RUSTIC_PASSWORD="+password,
 		"RUSTIC_NO_PROGRESS=true",
 		"RUSTIC_LOG_LEVEL=error",
 	)
@@ -178,7 +178,7 @@ func (s *VolumeService) runRusticInternal(ctx context.Context, dockerClient *cli
 }
 
 func (s *VolumeService) createRusticSnapshotInternal(ctx context.Context, dockerClient *client.Client, repository rusticRepositoryInternal, sourceVolumeName, label string) (rusticSnapshotInternal, error) {
-	output, err := s.runRusticInternal(ctx, dockerClient, repository,
+	output, err := s.runRusticInternal(ctx, dockerClient, repository, s.rusticPasswordInternal(),
 		[]string{"backup", "--init", "--json", "--as-path", "/", "--host", "arcane", "--label", label, "/volume"},
 		mount.Mount{Type: mount.TypeVolume, Source: sourceVolumeName, Target: "/volume", ReadOnly: true},
 	)
@@ -220,14 +220,14 @@ func (s *VolumeService) restoreRusticSnapshotInternal(ctx context.Context, docke
 		destinationPath = "/volume"
 	}
 	command = append(command, source, destinationPath)
-	_, err := s.runRusticInternal(ctx, dockerClient, repository, command,
+	_, err := s.runRusticInternal(ctx, dockerClient, repository, s.rusticPasswordInternal(), command,
 		mount.Mount{Type: mount.TypeVolume, Source: volumeName, Target: "/volume"},
 	)
 	return err
 }
 
 func (s *VolumeService) forgetRusticSnapshotInternal(ctx context.Context, dockerClient *client.Client, repository rusticRepositoryInternal, snapshotID string) error {
-	_, err := s.runRusticInternal(ctx, dockerClient, repository, []string{"forget", "--prune", snapshotID})
+	_, err := s.runRusticInternal(ctx, dockerClient, repository, s.rusticPasswordInternal(), []string{"forget", "--prune", snapshotID})
 	return err
 }
 
@@ -534,7 +534,7 @@ func (s *VolumeService) ListBackupFiles(ctx context.Context, backupID string) ([
 	if err != nil {
 		return nil, err
 	}
-	output, err := s.runRusticInternal(ctx, dockerClient, repository, []string{"ls", "--json", "--recursive", snapshotID + ":/"})
+	output, err := s.runRusticInternal(ctx, dockerClient, repository, s.rusticPasswordInternal(), []string{"ls", "--json", "--recursive", snapshotID + ":/"})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list Rustic snapshot: %w", err)
 	}

@@ -18,6 +18,16 @@ import (
 // cancelled (rather than failed) terminal status.
 var ErrCanceled = errors.New("activity cancelled by user")
 
+type handlerActivityIDContextKey struct{}
+
+func IDFromContext(ctx context.Context) string {
+	if ctx == nil {
+		return ""
+	}
+	activityID, _ := ctx.Value(handlerActivityIDContextKey{}).(string)
+	return strings.TrimSpace(activityID)
+}
+
 // cancelledMessage is the latest-message recorded when work is cancelled.
 const cancelledMessage = "Cancelled by user"
 
@@ -85,6 +95,7 @@ func StartHandlerActivityForUser(
 	if tracker, ok := activityService.(Tracker); ok {
 		workCtx = tracker.Track(ctx, activity.ID)
 	}
+	workCtx = context.WithValue(workCtx, handlerActivityIDContextKey{}, activity.ID)
 	return activity.ID, workCtx
 }
 

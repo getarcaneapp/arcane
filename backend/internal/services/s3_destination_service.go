@@ -193,7 +193,8 @@ func (s *S3DestinationService) DeleteS3Destination(ctx context.Context, id strin
 		query           string
 		args            []any
 	}{
-		{table: "system_backup_runs", requiredColumns: []string{"s3_destination_id", "remote_key"}, query: "s3_destination_id = ? AND remote_key <> ''", args: []any{id}},
+		{table: "system_backup_runs", requiredColumns: []string{"s3_destination_id", "remote_snapshot_id"}, query: "s3_destination_id = ? AND remote_snapshot_id <> ''", args: []any{id}},
+		{table: "system_backup_policies", requiredColumns: []string{"s3_destination_id", "s3_enabled"}, query: "s3_destination_id = ? AND s3_enabled = ?", args: []any{id, true}},
 		{table: "volume_backups", requiredColumns: []string{"s3_destination_id", "remote_snapshot_id"}, query: "s3_destination_id = ? AND remote_snapshot_id <> ''", args: []any{id}},
 		{table: "volume_backup_policies", requiredColumns: []string{"s3_destination_id", "s3_enabled"}, query: "s3_destination_id = ? AND s3_enabled = ?", args: []any{id, true}},
 		{table: "settings", requiredColumns: []string{"key", "value"}, query: "key = ? AND value = ?", args: []any{"backupS3DestinationId", id}},
