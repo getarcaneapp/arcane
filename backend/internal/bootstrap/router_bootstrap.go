@@ -73,7 +73,10 @@ func shouldLogRequestInternal(c echo.Context) bool {
 // edge tunnel requests plus high-volume endpoints (health, WS, static).
 func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 	loggerMiddleware := slogecho.NewWithConfig(slog.Default(), slogecho.Config{
-		Filters: []slogecho.Filter{shouldLogRequestInternal},
+		DefaultLevel:     slog.LevelInfo,
+		ClientErrorLevel: slog.LevelWarn,
+		ServerErrorLevel: slog.LevelError,
+		Filters:          []slogecho.Filter{shouldLogRequestInternal},
 	})
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
