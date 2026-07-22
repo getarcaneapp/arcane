@@ -74,7 +74,7 @@
     "oxfmt": "^0.58.0",
     "paneforge": "^1.0.2",
     "shadcn-svelte": "^1.4.1",
-    "svelte-check-rs": "^0.10.2",
+    "svelte-check-rs": "^0.11.0",
     "svelte-toolbelt": "^0.10.6",
     "sveltekit-superforms": "^2.30.2",
     "tailwindcss": "^4.3.3",
