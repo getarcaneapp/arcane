@@ -184,8 +184,8 @@ html.reduce-effects *::after {
 	body {
 		@apply bg-background text-foreground;
 		position: relative;
-		-webkit-font-smoothing: auto;
-		-moz-osx-font-smoothing: auto;
+		-webkit-font-smoothing: antialiased;
+		-moz-osx-font-smoothing: grayscale;
 		text-rendering: optimizeLegibility;
 	}
 
@@ -196,6 +196,18 @@ html.reduce-effects *::after {
 
 	button {
 		@apply cursor-pointer;
+	}
+
+	/* Refined, consistent focus ring across interactive elements */
+	:where(a, button, [role='button'], input, select, textarea, [tabindex]):focus-visible {
+		outline: 2px solid color-mix(in oklch, var(--ring) 60%, transparent);
+		outline-offset: 2px;
+		border-radius: var(--radius-sm);
+	}
+
+	/* Numbers line up everywhere by default */
+	:where(td, th, [data-slot='card']) {
+		font-variant-numeric: tabular-nums;
 	}
 
 	.font-mono {
@@ -267,12 +279,6 @@ html.reduce-effects *::after {
 		box-shadow: 0 2px 8px -4px color-mix(in oklch, var(--glass-shadow-color) 50%, transparent);
 	}
 
-	.bubble-pill {
-		border-radius: 9999px;
-		padding-inline: 0.875rem;
-		padding-block: 0.5rem;
-	}
-
 	.bubble-shadow {
 		box-shadow: 0 1px 2px -1px color-mix(in oklch, var(--glass-shadow-color) 60%, transparent);
 	}
@@ -288,7 +294,12 @@ html.reduce-effects *::after {
 	}
 
 	.hover-lift:hover {
-		transform: translateZ(0);
+		transform: translateY(-1px);
+		box-shadow: 0 4px 12px -6px color-mix(in oklch, var(--glass-shadow-color) 70%, transparent);
+	}
+
+	.hover-lift:active {
+		transform: translateY(0);
 	}
 
 	@media (prefers-reduced-motion: reduce) {
@@ -296,6 +307,23 @@ html.reduce-effects *::after {
 			transition: none;
 		}
 		.hover-lift:hover {
+			transform: none;
+			box-shadow: none;
+		}
+	}
+
+	/* Subtle press feedback for clickable controls */
+	.pressable {
+		transition: transform 120ms ease;
+	}
+	.pressable:active {
+		transform: scale(0.97);
+	}
+	@media (prefers-reduced-motion: reduce) {
+		.pressable {
+			transition: none;
+		}
+		.pressable:active {
 			transform: none;
 		}
 	}

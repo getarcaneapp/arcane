@@ -41,13 +41,13 @@ func TestTunnelRegistry(t *testing.T) {
 	r.Register(envID, tunnel)
 
 	// Get
-	got, ok := r.Get(envID)
+	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
 	assert.Equal(t, tunnel, got)
 
 	// Unregister
 	r.Unregister(envID)
-	_, ok = r.Get(envID)
+	_, ok = r.Get(envID).Get()
 	assert.False(t, ok)
 
 	// Test Connection Closed after Unregister
@@ -71,7 +71,7 @@ func TestTunnelRegistry_RegisterReplace(t *testing.T) {
 	r.Register(envID, tunnel2)
 
 	// Check replacement
-	got, ok := r.Get(envID)
+	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
 	assert.Equal(t, tunnel2, got)
 
@@ -106,7 +106,7 @@ func TestTunnelRegistry_RegisterSessionRejectsCompetingAgent(t *testing.T) {
 	assert.False(t, drainPrevious)
 	assert.Equal(t, "another edge agent session is already active", reason)
 
-	got, ok := r.Get(envID)
+	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
 	assert.Equal(t, tunnel1, got)
 	assert.False(t, tunnel1.Conn.IsClosed())
@@ -137,7 +137,7 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 	assert.Equal(t, "", reason)
 	assert.True(t, tunnel1.Conn.IsClosed())
 
-	got, ok := r.Get(envID)
+	got, ok := r.Get(envID).Get()
 	assert.True(t, ok)
 	assert.Equal(t, tunnel2, got)
 }
@@ -159,9 +159,10 @@ func TestTunnelRegistry_CleanupStale(t *testing.T) {
 
 	// Cleanup
 	removed := r.CleanupStale(5 * time.Minute)
-	assert.Equal(t, 1, removed)
+	require.Len(t, removed, 1)
+	assert.Same(t, tunnel, removed[0])
 
-	_, ok := r.Get(envID)
+	_, ok := r.Get(envID).Get()
 	assert.False(t, ok)
 	assert.True(t, tunnel.Conn.IsClosed())
 }

@@ -52,6 +52,7 @@ type Activity struct {
 	BaseModel
 
 	EnvironmentID        string         `json:"environmentId" gorm:"column:environment_id;not null;index" sortable:"true"`
+	BatchID              *string        `json:"batchId,omitempty" gorm:"column:batch_id;index"`
 	Type                 ActivityType   `json:"type" gorm:"column:type;not null;index" sortable:"true"`
 	Status               ActivityStatus `json:"status" gorm:"column:status;not null;index" sortable:"true"`
 	ResourceType         *string        `json:"resourceType,omitempty" gorm:"column:resource_type;index" sortable:"true"`

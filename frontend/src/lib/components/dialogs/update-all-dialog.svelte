@@ -16,6 +16,7 @@
 	import ReleaseNotes from '$lib/components/release-notes.svelte';
 	import type { AppVersionInformation } from '$lib/types/settings';
 	import { formatDistanceToNow } from 'date-fns';
+	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open has no $bindable fallback: upstream binds can start out undefined, and
 	// binding undefined to a $bindable with a fallback throws props_invalid_value.
@@ -65,6 +66,18 @@
 		pollTimer = setTimeout(poll, POLL_INTERVAL_MS);
 	}
 
+	function finishTerminalJob(terminalJob: UpdateAllJob) {
+		const managerUpdated =
+			terminalJob.status === 'completed' &&
+			(terminalJob.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
+		if (managerUpdated) {
+			window.location.reload();
+			return;
+		}
+		BaseAPIService.setUpgradeInProgress(false);
+		phase = 'finished';
+	}
+
 	async function poll() {
 		if (!pollActive) return;
 		try {
@@ -73,15 +86,7 @@
 			job = next;
 			if (next.status === 'completed' || next.status === 'failed') {
 				stopPolling();
-				const managerUpdated =
-					next.status === 'completed' &&
-					(next.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
-				if (managerUpdated) {
-					window.location.reload();
-					return;
-				}
-				BaseAPIService.setUpgradeInProgress(false);
-				phase = 'finished';
+				finishTerminalJob(next);
 				return;
 			}
 		} catch {
@@ -107,15 +112,7 @@
 		if (phase !== 'running') return;
 
 		if (job && (job.status === 'completed' || job.status === 'failed')) {
-			const managerUpdated =
-				job.status === 'completed' &&
-				(job.results?.some((result) => result.environmentId === '0' && result.status === 'updated') ?? false);
-			if (managerUpdated) {
-				window.location.reload();
-				return;
-			}
-			BaseAPIService.setUpgradeInProgress(false);
-			phase = 'finished';
+			finishTerminalJob(job);
 			return;
 		}
 
@@ -136,12 +133,6 @@
 
 	// Version/release presentation for the confirm step, rendered when the caller
 	// has the manager's version information at hand (sidebar / mobile nav).
-	const isSemver = $derived(!!versionInformation?.isSemverVersion);
-	const trackingTag = $derived(versionInformation?.currentTag ?? '');
-	const currentDigest = $derived(versionInformation?.currentDigest ?? '');
-	const newDigest = $derived(versionInformation?.newestDigest ?? '');
-	const semverCurrent = $derived(versionInformation?.displayVersion || versionInformation?.currentVersion || '');
-	const semverNew = $derived(versionInformation?.newestVersion ?? '');
 	const releaseNotes = $derived(versionInformation?.releaseNotes?.trim() ?? '');
 	const releaseUrl = $derived(versionInformation?.releaseUrl ?? '');
 	const releasedAgo = $derived.by(() => {
@@ -169,17 +160,17 @@
 	function statusLabel(status: UpdateAllEnvironmentStatus): string {
 		switch (status) {
 			case 'updating':
-				return m.environments_update_all_status_updating();
+				return m.common_action_updating();
 			case 'updated':
-				return m.environments_update_all_status_updated();
+				return m.common_updated();
 			case 'triggered':
 				return m.environments_update_all_status_triggered();
 			case 'skipped_offline':
 				return m.environments_update_all_status_skipped_offline();
 			case 'failed':
-				return m.environments_update_all_status_failed();
+				return m.common_failed();
 			default:
-				return m.environments_update_all_status_pending();
+				return m.common_pending();
 		}
 	}
 </script>
@@ -208,74 +199,17 @@
 
 		{#if phase === 'confirm' && versionInformation}
 			<div class="space-y-4">
-				{#if isSemver && (semverCurrent || semverNew)}
-					<div class="flex flex-wrap items-center gap-2 text-sm">
-						{#if semverCurrent}
-							<span class="bg-muted text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs">
-								{semverCurrent}
-							</span>
-						{/if}
-						{#if semverCurrent && semverNew}
-							<span class="text-muted-foreground/60">→</span>
-						{/if}
-						{#if semverNew}
-							<span
-								class="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-medium"
-							>
-								{semverNew}
-							</span>
-						{/if}
-						{#if releasedAgo}
-							<span class="text-muted-foreground/70 text-xs">· {m.update_center_released_at({ date: releasedAgo })}</span>
-						{/if}
-					</div>
-				{:else if !isSemver && (trackingTag || currentDigest || newDigest)}
-					<div class="space-y-1.5 text-xs">
-						{#if trackingTag}
-							<div class="flex items-baseline gap-2">
-								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase">{m.update_center_tag_label()}</span>
-								<span class="bg-muted text-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono">
-									{trackingTag}
-								</span>
-							</div>
-						{/if}
-						{#if currentDigest}
-							<div class="flex items-baseline gap-2">
-								<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase"
-									>{m.update_center_current_label()}</span
-								>
-								<code
-									class="text-muted-foreground bg-muted/50 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] break-all"
-								>
-									{currentDigest}
-								</code>
-							</div>
-						{/if}
-						{#if newDigest}
-							<div class="flex items-baseline gap-2">
-								<span class="text-primary/80 w-16 shrink-0 tracking-wide uppercase">{m.update_center_new_label()}</span>
-								<code
-									class="text-primary bg-primary/10 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium break-all"
-								>
-									{newDigest}
-								</code>
-							</div>
-						{/if}
-						{#if releasedAgo}
-							<p class="text-muted-foreground/70 pt-1">{m.update_center_released_at({ date: releasedAgo })}</p>
-						{/if}
-					</div>
-				{/if}
+				<VersionUpdateSummary {versionInformation} {releasedAgo} />
 
-				<div class="border-border/60 border-t pt-3">
+				<div class="border-t border-border/60 pt-3">
 					<div class="flex items-center justify-between pb-2">
-						<h3 class="text-foreground text-sm font-semibold">{m.update_center_whats_new()}</h3>
+						<h3 class="text-sm font-semibold text-foreground">{m.update_center_whats_new()}</h3>
 						{#if releaseUrl}
 							<a
 								href={releaseUrl}
 								target="_blank"
 								rel="noopener noreferrer"
-								class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+								class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 							>
 								{m.update_center_view_full_release()}
 								<ExternalLinkIcon class="size-3" />
@@ -286,7 +220,7 @@
 						{#if releaseNotes}
 							<ReleaseNotes markdown={releaseNotes} />
 						{:else}
-							<p class="text-muted-foreground text-sm italic">{m.update_center_release_notes_unavailable()}</p>
+							<p class="text-sm text-muted-foreground italic">{m.update_center_release_notes_unavailable()}</p>
 						{/if}
 					</ScrollArea.Root>
 				</div>
@@ -296,7 +230,7 @@
 		{#if phase !== 'confirm'}
 			<div class="space-y-3">
 				{#if reconnecting}
-					<div class="text-muted-foreground flex items-center gap-2 text-sm">
+					<div class="flex items-center gap-2 text-sm text-muted-foreground">
 						<Spinner class="size-4" />
 						<span>{m.environments_update_all_manager_restarting()}</span>
 					</div>
@@ -305,17 +239,17 @@
 				{#if job?.results?.length}
 					{#if phase === 'running'}
 						<div class="space-y-1.5">
-							<div class="text-muted-foreground flex items-center justify-end text-xs">
+							<div class="flex items-center justify-end text-xs text-muted-foreground">
 								<span>{m.environments_update_all_progress({ done: doneCount, total: totalCount })}</span>
 							</div>
-							<div class="bg-muted h-1.5 overflow-hidden rounded-full">
-								<div class="bg-primary h-full rounded-full transition-all duration-500" style="width: {progressPct}%"></div>
+							<div class="h-1.5 overflow-hidden rounded-full bg-muted">
+								<div class="h-full rounded-full bg-primary transition-all duration-500" style="width: {progressPct}%"></div>
 							</div>
 						</div>
 					{/if}
 
 					<ScrollArea.Root class="max-h-72">
-						<ul class="divide-border divide-y">
+						<ul class="divide-y divide-border">
 							{#each job.results as result (result.environmentId)}
 								<li class="flex items-center gap-3 py-2.5 text-sm">
 									<span
@@ -346,11 +280,11 @@
 									<div class="min-w-0 flex-1">
 										<span class="block truncate font-medium">{result.environmentName}</span>
 										{#if result.status === 'updating'}
-											<div class="bg-muted mt-1.5 h-1 overflow-hidden rounded-full">
-												<div class="update-all-capbar bg-primary h-full rounded-full"></div>
+											<div class="mt-1.5 h-1 overflow-hidden rounded-full bg-muted">
+												<div class="update-all-capbar h-full rounded-full bg-primary"></div>
 											</div>
 										{:else if result.error}
-											<span class="text-muted-foreground block truncate text-xs" title={result.error}>{result.error}</span>
+											<span class="block truncate text-xs text-muted-foreground" title={result.error}>{result.error}</span>
 										{/if}
 									</div>
 
@@ -369,7 +303,7 @@
 						</ul>
 					</ScrollArea.Root>
 				{:else}
-					<div class="text-muted-foreground flex items-center gap-2 py-2 text-sm">
+					<div class="flex items-center gap-2 py-2 text-sm text-muted-foreground">
 						<Spinner class="size-4" />
 						<span>{m.environments_update_all_in_progress()}</span>
 					</div>
@@ -381,7 +315,7 @@
 			{#if phase === 'confirm'}
 				<Button variant="outline" onclick={() => (open = false)}>{m.common_cancel()}</Button>
 				{#if canConfirm}
-					<Button onclick={handleConfirm}>{m.environments_update_all_confirm()}</Button>
+					<Button onclick={handleConfirm}>{m.update_all()}</Button>
 				{/if}
 			{:else}
 				<Button variant="outline" onclick={handleClose}>{m.common_close()}</Button>

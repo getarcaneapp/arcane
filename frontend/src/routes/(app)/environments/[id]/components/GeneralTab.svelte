@@ -38,7 +38,7 @@
 					placeholder={m.environments_name_placeholder()}
 				/>
 				{#if $formInputs.name.error}
-					<p class="text-destructive mt-1 text-[0.8rem] font-medium">{$formInputs.name.error}</p>
+					<p class="mt-1 text-[0.8rem] font-medium text-destructive">{$formInputs.name.error}</p>
 				{/if}
 			</div>
 
@@ -78,12 +78,12 @@
 						disabled={isTestingConnection}
 						loading={isTestingConnection}
 						icon={TestIcon}
-						customLabel={m.environments_test_connection()}
+						customLabel={m.test_connection()}
 						loadingLabel={m.environments_testing_connection()}
 						class="shrink-0"
 					/>
 				</div>
-				<p class="text-muted-foreground mt-1.5 text-xs">{m.environments_api_url_help()}</p>
+				<p class="mt-1.5 text-xs text-muted-foreground">{m.environments_api_url_help()}</p>
 			</div>
 		</div>
 
@@ -146,7 +146,7 @@
 				<div class="space-y-4 border-t pt-6">
 					<div class="space-y-0.5">
 						<h3 class="text-sm font-medium">{m.git_sync_file_limits_title()}</h3>
-						<div class="text-muted-foreground text-xs">{m.git_sync_file_limits_description()}</div>
+						<div class="text-xs text-muted-foreground">{m.git_sync_file_limits_description()}</div>
 					</div>
 					<div class="grid gap-4 sm:grid-cols-3">
 						<TextInputWithLabel

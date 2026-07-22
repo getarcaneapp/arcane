@@ -15,9 +15,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
+	"github.com/samber/hot"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {
@@ -48,14 +48,20 @@ func newTestAuthService(secret string) *AuthService {
 			jwtSecret:     b,
 			refreshExpiry: 24 * time.Hour,
 			config:        &config.Config{},
-			tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
+			tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
+				WithTTL(15 * time.Second).
+				WithJanitor().
+				Build(),
 		}
 	}
 	return &AuthService{
 		jwtSecret:     []byte(secret),
 		refreshExpiry: 24 * time.Hour,
 		config:        &config.Config{},
-		tokenCache:    cache.NewTTL[verifiedTokenEntry](15 * time.Second),
+		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
+			WithTTL(15 * time.Second).
+			WithJanitor().
+			Build(),
 	}
 }
 

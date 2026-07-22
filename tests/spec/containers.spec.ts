@@ -105,7 +105,7 @@ test.describe('Containers Page', () => {
 		await navigateToContainers(page);
 
 		if (running) {
-			const runningName = running.names[0]?.replace(/^\/+/, '') ?? running.id;
+			const runningName = running.names?.[0]?.replace(/^\/+/, '') ?? running.id;
 			const row = page
 				.getByRole('row')
 				.filter({ has: page.getByRole('link', { name: runningName, exact: true }) });
@@ -121,7 +121,7 @@ test.describe('Containers Page', () => {
 		}
 
 		if (stopped) {
-			const stoppedName = stopped.names[0]?.replace(/^\/+/, '') ?? stopped.id;
+			const stoppedName = stopped.names?.[0]?.replace(/^\/+/, '') ?? stopped.id;
 			const row = page
 				.getByRole('row')
 				.filter({ has: page.getByRole('link', { name: stoppedName, exact: true }) });
@@ -142,7 +142,7 @@ test.describe('Containers Page', () => {
 
 		await navigateToContainers(page);
 
-		const containerName = any.names[0]?.replace(/^\/+/, '') ?? any.id;
+		const containerName = any.names?.[0]?.replace(/^\/+/, '') ?? any.id;
 		const row = page
 			.getByRole('row')
 			.filter({ has: page.getByRole('link', { name: containerName, exact: true }) });

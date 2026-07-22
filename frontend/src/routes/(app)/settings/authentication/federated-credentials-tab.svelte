@@ -120,7 +120,7 @@ steps:
 		<div class="flex items-start justify-between gap-4">
 			<div>
 				<h3 class="text-base font-semibold">{m.federated_credential_page_title()}</h3>
-				<p class="text-muted-foreground mt-1 text-sm">{m.federated_credential_page_description()}</p>
+				<p class="mt-1 text-sm text-muted-foreground">{m.federated_credential_page_description()}</p>
 			</div>
 			<IfPermitted adminOnly>
 				<ArcaneButton
@@ -129,7 +129,7 @@ steps:
 					onclick={openCreateDialog}
 					loading={isLoading.creating}
 					disabled={isLoading.creating}
-					customLabel={m.federated_credential_create_button()}
+					customLabel={m.create_federated_credential()}
 				/>
 			</IfPermitted>
 		</div>
@@ -168,8 +168,8 @@ steps:
 		contentClass="!max-w-2xl"
 	>
 		<div class="space-y-4 py-4">
-			<div class="bg-muted rounded-lg p-4">
-				<p class="text-muted-foreground mb-2 text-sm font-medium">
+			<div class="rounded-lg bg-muted p-4">
+				<p class="mb-2 text-sm font-medium text-muted-foreground">
 					{m.federated_credential_instructions_snippet_label()}
 				</p>
 				<Snippet
@@ -188,8 +188,8 @@ steps:
 	</ResponsiveDialog.Root>
 
 	{#snippet fallback()}
-		<div class="border-border/40 bg-muted/20 rounded-lg border border-dashed p-6 text-center">
-			<p class="text-muted-foreground text-sm">{m.no_access_page_body()}</p>
+		<div class="rounded-lg border border-dashed border-border/40 bg-muted/20 p-6 text-center">
+			<p class="text-sm text-muted-foreground">{m.no_access_page_body()}</p>
 		</div>
 	{/snippet}
 </IfPermitted>

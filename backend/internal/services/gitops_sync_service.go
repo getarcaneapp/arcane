@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -26,6 +26,7 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
 
@@ -484,13 +485,13 @@ func isGitOpsSyncOverdueInternal(sync *models.GitOpsSync) bool {
 	return time.Now().After(sync.LastSyncAt.Add(time.Duration(interval) * time.Minute))
 }
 
-// acquireSyncLockInternal returns a release func and true when no sync is currently
-// running for the given id; otherwise it returns false and the caller should skip.
-func (s *GitOpsSyncService) acquireSyncLockInternal(syncID string) (func(), bool) {
+// acquireSyncLockInternal returns a release func when no sync is currently
+// running for the given id; otherwise the caller should skip.
+func (s *GitOpsSyncService) acquireSyncLockInternal(syncID string) mo.Option[func()] {
 	if _, loaded := s.runningSyncs.LoadOrStore(syncID, struct{}{}); loaded {
-		return nil, false
+		return mo.None[func()]()
 	}
-	return func() { s.runningSyncs.Delete(syncID) }, true
+	return mo.Some(func() { s.runningSyncs.Delete(syncID) })
 }
 
 func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, int64, int64) {
@@ -912,7 +913,7 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor models.User) (*gitops.SyncResult, error) {
 	// Coalesce overlapping runs for the same sync (scheduled fire, startup/enable
 	// kick, manual trigger, webhook) so they don't race the clone/redeploy.
-	release, ok := s.acquireSyncLockInternal(id)
+	release, ok := s.acquireSyncLockInternal(id).Get()
 	if !ok {
 		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
 		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil

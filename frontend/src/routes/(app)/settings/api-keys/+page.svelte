@@ -98,7 +98,7 @@
 		{
 			id: 'create',
 			action: 'create',
-			label: m.api_key_create_button(),
+			label: m.create_api_key(),
 			onclick: openCreateDialog,
 			loading: isLoading.creating,
 			disabled: isLoading.creating
@@ -152,8 +152,8 @@
 		>
 			{#snippet children()}
 				<div class="space-y-4 py-4">
-					<div class="bg-muted rounded-lg p-4">
-						<p class="text-muted-foreground mb-2 text-sm font-medium">{m.api_key_your_key()}</p>
+					<div class="rounded-lg bg-muted p-4">
+						<p class="mb-2 text-sm font-medium text-muted-foreground">{m.api_key_your_key()}</p>
 						<Snippet
 							text={newlyCreatedKey?.key || ''}
 							onCopy={(status) => {

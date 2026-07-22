@@ -84,14 +84,14 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageSummary', title: m.common_image(), sortable: false, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cell: DigestCol },
 		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol }
 	] satisfies ColumnSpec<ProjectUpdateRow>[];
 
 	const mobileFields = [
 		{ id: 'imageSummary', label: m.common_image(), defaultVisible: true },
-		{ id: 'currentValue', label: m.image_update_current_label(), defaultVisible: true },
+		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
 		{ id: 'latestValue', label: m.image_update_latest_digest_label(), defaultVisible: true },
 		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
 	];
@@ -109,7 +109,7 @@
 
 {#snippet ImageCell({ item }: { item: ProjectUpdateRow })}
 	<div class="flex items-center gap-2">
-		<ImagesIcon class="text-muted-foreground size-3.5 shrink-0" />
+		<ImagesIcon class="size-3.5 shrink-0 text-muted-foreground" />
 		<span class="truncate text-sm" title={item.imageSummary !== '-' ? item.imageSummary : undefined}>
 			{item.imageSummary}
 		</span>
@@ -135,7 +135,7 @@
 		subtitle={(item: ProjectUpdateRow) => item.imageSummary}
 		fields={[
 			{
-				label: m.image_update_current_label(),
+				label: m.common_current(),
 				getValue: (item: ProjectUpdateRow) => item.currentValue
 			},
 			{

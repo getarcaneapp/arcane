@@ -79,7 +79,7 @@
 <div class="flex items-center gap-2">
 	<Select.Root bind:value={selectedShell} type="single" onValueChange={handleShellChange}>
 		<Select.Trigger class="h-8 w-[140px]">
-			{shellLabels[selectedShell] ?? m.shell_select_placeholder()}
+			{shellLabels[selectedShell] ?? m.select_shell_placeholder()}
 		</Select.Trigger>
 		<Select.Content>
 			{#each commonShells as shell}

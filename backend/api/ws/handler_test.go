@@ -22,7 +22,7 @@ import (
 	"go.getarcane.app/sys/cgroup"
 )
 
-func TestBroadcastContainerLogStreamErrorInternal_JSON(t *testing.T) {
+func TestBroadcastLogStreamErrorInternal_JSON(t *testing.T) {
 	hub := wshub.NewHub(10)
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -37,8 +37,7 @@ func TestBroadcastContainerLogStreamErrorInternal_JSON(t *testing.T) {
 		format: "json",
 	}
 
-	handler := newTestWebSocketHandler()
-	handler.broadcastContainerLogStreamErrorInternal("container-1", "json", errors.New("boom"), stream)
+	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", "container-1", "json", errors.New("boom"), stream)
 
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, payload, err := clientConn.ReadMessage()
@@ -52,7 +51,7 @@ func TestBroadcastContainerLogStreamErrorInternal_JSON(t *testing.T) {
 	require.NotEmpty(t, message.Timestamp)
 }
 
-func TestBroadcastContainerLogStreamErrorInternal_Text(t *testing.T) {
+func TestBroadcastLogStreamErrorInternal_Text(t *testing.T) {
 	hub := wshub.NewHub(10)
 	ctx := t.Context()
 	go hub.Run(ctx)
@@ -67,8 +66,7 @@ func TestBroadcastContainerLogStreamErrorInternal_Text(t *testing.T) {
 		format: "text",
 	}
 
-	handler := newTestWebSocketHandler()
-	handler.broadcastContainerLogStreamErrorInternal("container-1", "text", errors.New("boom"), stream)
+	broadcastLogStreamErrorInternal("container log stream", "Failed to stream container logs: ", "container-1", "text", errors.New("boom"), stream)
 
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, payload, err := clientConn.ReadMessage()

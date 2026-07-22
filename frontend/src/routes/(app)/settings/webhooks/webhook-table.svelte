@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import { UniversalMobileCard } from '$lib/components/arcane-table';
 	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { CopyButton } from '$lib/components/ui/copy-button';
@@ -38,13 +38,13 @@
 	function targetTypeLabel(type: string): string {
 		switch (type) {
 			case 'container':
-				return m.webhook_type_container();
+				return m.container();
 			case 'project':
-				return m.webhook_type_project();
+				return m.project();
 			case 'updater':
-				return m.webhook_type_updater();
+				return m.updater();
 			case 'gitops':
-				return m.webhook_type_gitops();
+				return m.gitops();
 			default:
 				return type;
 		}
@@ -53,23 +53,23 @@
 	function actionTypeLabel(type: string): string {
 		switch (type) {
 			case 'update':
-				return m.webhook_action_type_update();
+				return m.common_update();
 			case 'start':
-				return m.webhook_action_type_start();
+				return m.common_start();
 			case 'stop':
-				return m.webhook_action_type_stop();
+				return m.common_stop();
 			case 'restart':
-				return m.webhook_action_type_restart();
+				return m.common_restart();
 			case 'redeploy':
-				return m.webhook_action_type_redeploy();
+				return m.common_redeploy();
 			case 'up':
-				return m.webhook_action_type_up();
+				return m.common_up();
 			case 'down':
-				return m.webhook_action_type_down();
+				return m.common_down();
 			case 'run':
 				return m.webhook_action_type_run();
 			case 'sync':
-				return m.webhook_action_type_sync();
+				return m.resource_sync_cap();
 			default:
 				return type;
 		}
@@ -80,7 +80,7 @@
 	}
 
 	function webhookStatusLabel(webhook: Webhook): string {
-		return webhook.enabled ? m.webhook_status_enabled() : m.webhook_status_disabled();
+		return webhook.enabled ? m.common_enabled() : m.common_disabled();
 	}
 
 	function webhookStatusVariant(webhook: Webhook): 'green' | 'gray' {
@@ -140,29 +140,29 @@
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: m.webhook_col_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'enabled', title: m.webhook_col_status(), sortable: true, cell: StatusCell },
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'enabled', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'tokenPrefix', title: m.webhook_col_token_prefix(), sortable: true, cell: TokenPrefixCell },
-		{ accessorKey: 'targetType', title: m.webhook_col_target_type(), sortable: true, cell: TargetTypeCell },
+		{ accessorKey: 'targetType', title: m.target_type(), sortable: true, cell: TargetTypeCell },
 		{ accessorKey: 'actionType', title: m.webhook_col_action_type(), sortable: true, cell: ActionTypeCell },
-		{ accessorKey: 'targetName', title: m.webhook_col_target_name(), sortable: true, cell: TargetNameCell },
+		{ accessorKey: 'targetName', title: m.target(), sortable: true, cell: TargetNameCell },
 		{ accessorKey: 'lastTriggeredAt', title: m.webhook_col_last_triggered(), sortable: true, cell: LastTriggeredCell },
-		{ accessorKey: 'createdAt', title: m.webhook_col_created(), sortable: true, cell: CreatedCell }
+		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell }
 	] satisfies ColumnSpec<Webhook>[];
 
 	const mobileFields = [
-		{ id: 'enabled', label: m.webhook_col_status(), defaultVisible: true },
+		{ id: 'enabled', label: m.common_status(), defaultVisible: true },
 		{ id: 'tokenPrefix', label: m.webhook_col_token_prefix(), defaultVisible: true },
-		{ id: 'targetType', label: m.webhook_col_target_type(), defaultVisible: true },
+		{ id: 'targetType', label: m.target_type(), defaultVisible: true },
 		{ id: 'actionType', label: m.webhook_col_action_type(), defaultVisible: true },
-		{ id: 'targetName', label: m.webhook_col_target_name(), defaultVisible: true },
+		{ id: 'targetName', label: m.target(), defaultVisible: true },
 		{ id: 'lastTriggeredAt', label: m.webhook_col_last_triggered(), defaultVisible: true },
-		{ id: 'createdAt', label: m.webhook_col_created(), defaultVisible: false }
+		{ id: 'createdAt', label: m.common_created(), defaultVisible: false }
 	];
 </script>
 
 {#if webhooks.length === 0}
-	<div class="text-muted-foreground flex flex-col items-center justify-center py-12 text-sm">
+	<div class="flex flex-col items-center justify-center py-12 text-sm text-muted-foreground">
 		<GlobeIcon class="mb-3 size-10 opacity-40" />
 		<p>{m.webhook_empty_title()}</p>
 		<p class="mt-1">{m.webhook_empty_description()}</p>
@@ -192,22 +192,22 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Webhook })}
-	<StatusBadge text={webhookStatusLabel(item)} variant={webhookStatusVariant(item)} />
+	<Badge variant={webhookStatusVariant(item)} minWidth="20">{webhookStatusLabel(item)}</Badge>
 {/snippet}
 
 {#snippet TokenPrefixCell({ item }: { item: Webhook })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.tokenPrefix}...</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.tokenPrefix}...</code>
 		<CopyButton text={item.tokenPrefix} class="size-6" />
 	</div>
 {/snippet}
 
 {#snippet TargetTypeCell({ item }: { item: Webhook })}
-	<span class="bg-muted rounded px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
+	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{targetTypeLabel(item.targetType)}</span>
 {/snippet}
 
 {#snippet ActionTypeCell({ item }: { item: Webhook })}
-	<span class="bg-muted rounded px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
+	<span class="rounded bg-muted px-2 py-1 text-xs font-medium">{actionTypeLabel(item.actionType)}</span>
 {/snippet}
 
 {#snippet TargetNameCell({ item }: { item: Webhook })}
@@ -249,7 +249,7 @@
 				show: mobileFieldVisibility['tokenPrefix'] ?? true
 			},
 			{
-				label: m.webhook_col_target_type(),
+				label: m.target_type(),
 				getValue: (item: Webhook) => targetTypeLabel(item.targetType),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
@@ -263,7 +263,7 @@
 				show: mobileFieldVisibility['actionType'] ?? true
 			},
 			{
-				label: m.webhook_col_target_name(),
+				label: m.target(),
 				getValue: (item: Webhook) => targetNameLabel(item),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
@@ -277,7 +277,7 @@
 				show: mobileFieldVisibility['lastTriggeredAt'] ?? true
 			},
 			{
-				label: m.webhook_col_created(),
+				label: m.common_created(),
 				getValue: (item: Webhook) => formatDate(item.createdAt),
 				icon: GlobeIcon,
 				iconVariant: 'gray' as const,
@@ -292,7 +292,7 @@
 	<RowActionsMenu>
 		<IfPermitted perm="webhooks:update">
 			<DropdownMenu.Item onclick={() => handleToggleWebhook(item)} disabled={isLoading.toggling}>
-				{item.enabled ? m.webhook_disable() : m.webhook_enable()}
+				{item.enabled ? m.common_disable() : m.common_enable()}
 			</DropdownMenu.Item>
 		</IfPermitted>
 		<DropdownMenu.Separator />

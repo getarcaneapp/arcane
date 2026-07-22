@@ -26,19 +26,21 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const smtpTestHost = "localhost."
-const smtpTestConnTimeout = 2 * time.Second
+const (
+	smtpTestHost        = "localhost"
+	smtpTestConnTimeout = 2 * time.Second
+)
 
 type smtpTestServer struct {
 	listener           net.Listener
 	tlsConfig          *tls.Config
 	clientTLSConfig    *tls.Config
-	supportStartTLS    bool
-	authMechanisms     []string
 	done               chan error
-	mu                 sync.Mutex
-	commands           []string
 	authMechanismUsed  string
+	authMechanisms     []string
+	commands           []string
+	mu                 sync.Mutex
+	supportStartTLS    bool
 	authBeforeTLS      bool
 	authAfterTLS       bool
 	startTLSNegotiated bool

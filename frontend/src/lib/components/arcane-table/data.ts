@@ -52,22 +52,22 @@ export const imageUpdateFilters: FilterOption[] = [
 export const severityFilters: FilterOption[] = [
 	{
 		value: 'info',
-		label: m.events_info(),
+		label: m.info(),
 		icon: InfoIcon
 	},
 	{
 		value: 'success',
-		label: m.events_success(),
+		label: m.common_success(),
 		icon: CheckIcon
 	},
 	{
 		value: 'warning',
-		label: m.events_warning(),
+		label: m.warning(),
 		icon: AlertIcon
 	},
 	{
 		value: 'error',
-		label: m.events_error(),
+		label: m.common_error(),
 		icon: CloseIcon
 	}
 ];
@@ -95,7 +95,7 @@ export const vulnerabilitySeverityFilters: FilterOption[] = [
 	},
 	{
 		value: 'UNKNOWN',
-		label: m.vuln_severity_unknown(),
+		label: m.common_unknown(),
 		dotClass: 'bg-slate-400'
 	}
 ];
@@ -103,7 +103,7 @@ export const vulnerabilitySeverityFilters: FilterOption[] = [
 export const templateTypeFilters: FilterOption[] = [
 	{
 		value: 'false',
-		label: m.templates_local(),
+		label: m.local(),
 		icon: FolderOpenIcon
 	},
 	{

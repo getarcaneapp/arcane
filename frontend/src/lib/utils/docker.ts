@@ -76,7 +76,7 @@ export function getSwarmServiceModeLabel(mode: string): string {
 		case 'replicated':
 			return m.swarm_service_mode_replicated();
 		case 'global':
-			return m.swarm_service_mode_global();
+			return m.global();
 		case 'replicated-job':
 			return m.swarm_service_mode_replicated_job();
 		case 'global-job':

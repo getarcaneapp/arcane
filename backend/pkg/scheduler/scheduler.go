@@ -9,7 +9,13 @@ import (
 
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
+	"github.com/samber/mo"
 )
+
+// cronScheduleParser is the shared parser for all cron settings: six fields
+// with seconds, plus @-descriptors. The image update watcher parses its poll
+// schedule with the same spec so Jobs-UI cron values behave identically.
+var cronScheduleParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
 type JobScheduler struct {
 	// mu guards jobs, jobsByID, entryIDs and schedules. It is held across the cron
@@ -36,7 +42,7 @@ func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler
 	if location == nil {
 		location = time.UTC
 	}
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	parser := cronScheduleParser
 	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
 	return &JobScheduler{
 		cron:      cron.New(cron.WithParser(parser), cron.WithLocation(location)),
@@ -90,31 +96,31 @@ func (js *JobScheduler) RunBusWatcherNow(ctx context.Context, watcherID string) 
 	return watcher.RunNow(ctx)
 }
 
-func (js *JobScheduler) GetJob(jobID string) (schedulertypes.Job, bool) {
+func (js *JobScheduler) GetJob(jobID string) mo.Option[schedulertypes.Job] {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 	job, ok := js.jobsByID[jobID]
-	return job, ok
+	return mo.TupleToOption(job, ok)
 }
 
 // GetJobRuntimeState returns the schedule currently installed for a registered job.
-func (js *JobScheduler) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
+func (js *JobScheduler) GetJobRuntimeState(jobID string) mo.Option[schedulertypes.JobRuntimeState] {
 	js.mu.Lock()
 	defer js.mu.Unlock()
 
 	if _, ok := js.jobsByID[jobID]; !ok {
-		return schedulertypes.JobRuntimeState{}, false
+		return mo.None[schedulertypes.JobRuntimeState]()
 	}
 
 	state := schedulertypes.JobRuntimeState{Schedule: js.schedules[jobID]}
 	entryID, ok := js.entryIDs[jobID]
 	if !ok {
-		return state, true
+		return mo.Some(state)
 	}
 
 	entry := js.cron.Entry(entryID)
 	if entry.ID == 0 {
-		return state, true
+		return mo.Some(state)
 	}
 
 	state.Scheduled = true
@@ -126,7 +132,7 @@ func (js *JobScheduler) GetJobRuntimeState(jobID string) (schedulertypes.JobRunt
 		state.NextRun = new(nextRun)
 	}
 
-	return state, true
+	return mo.Some(state)
 }
 
 // HasJob reports whether a job with the given name is currently registered.
@@ -190,15 +196,28 @@ func (js *JobScheduler) GetLocation() *time.Location {
 	return js.location
 }
 
-func (js *JobScheduler) Run(ctx context.Context) error {
-	js.StartScheduler()
-	<-ctx.Done()
-	// Running jobs may still own Docker or database resources. Wait for them here
-	// so Bootstrap cannot close shared services underneath them; the process-level
-	// signal handler owns the hard shutdown deadline for non-cooperative jobs.
-	<-js.cron.Stop().Done()
-	js.watcherWG.Wait()
-	return nil
+// Stop stops the scheduler and waits for running jobs and bus watchers to finish.
+// If ctx is canceled or reaches its deadline first, Stop returns ctx.Err().
+func (js *JobScheduler) Stop(ctx context.Context) error {
+	cronDone := js.cron.Stop().Done()
+	watchersDone := make(chan struct{})
+	go func() {
+		js.watcherWG.Wait()
+		close(watchersDone)
+	}()
+
+	select {
+	case <-cronDone:
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+
+	select {
+	case <-watchersDone:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
 }
 
 // upsertJobInternal records the job and (re)schedules it. A replacement expression

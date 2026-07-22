@@ -83,7 +83,7 @@
 			action="stop"
 			tone="ghost"
 			size="icon"
-			class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+			class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
 			onclick={onStop}
 			aria-label={m.common_stop()}
 		/>
@@ -92,7 +92,7 @@
 			action="start"
 			tone="ghost"
 			size="icon"
-			class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+			class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
 			onclick={onStart}
 			aria-label={m.common_start()}
 			{disabled}
@@ -102,7 +102,7 @@
 		action="refresh"
 		tone="ghost"
 		size="icon"
-		class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+		class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
 		onclick={onRefresh}
 		aria-label={m.log_refresh_aria_label()}
 	/>
@@ -117,7 +117,7 @@
 					action="base"
 					tone="ghost"
 					size="icon"
-					class="text-muted-foreground hover:text-foreground size-8 shrink-0"
+					class="size-8 shrink-0 text-muted-foreground hover:text-foreground"
 					aria-label={m.common_open_menu()}
 				>
 					<span class="sr-only">{m.common_open_menu()}</span>
@@ -144,7 +144,7 @@
 			>
 				<div class="flex flex-col gap-0.5">
 					<span class="font-medium">{m.common_autoscroll()}</span>
-					<span class="text-muted-foreground text-xs">{m.log_auto_scroll_tooltip()}</span>
+					<span class="text-xs text-muted-foreground">{m.log_auto_scroll_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
 			<DropdownMenu.CheckboxItem
@@ -155,7 +155,7 @@
 			>
 				<div class="flex flex-col gap-0.5">
 					<span class="font-medium">{m.auto_start()}</span>
-					<span class="text-muted-foreground text-xs">{m.log_auto_start_tooltip()}</span>
+					<span class="text-xs text-muted-foreground">{m.log_auto_start_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
 			<DropdownMenu.CheckboxItem
@@ -166,7 +166,7 @@
 			>
 				<div class="flex flex-col gap-0.5">
 					<span class="font-medium">{showParsedJson ? m.common_parsed() : m.common_raw()}</span>
-					<span class="text-muted-foreground text-xs">{m.log_parsed_mode_tooltip()}</span>
+					<span class="text-xs text-muted-foreground">{m.log_parsed_mode_tooltip()}</span>
 				</div>
 			</DropdownMenu.CheckboxItem>
 		</DropdownMenu.Content>

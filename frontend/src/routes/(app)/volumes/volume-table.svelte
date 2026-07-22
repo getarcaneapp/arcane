@@ -20,8 +20,9 @@
 	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
 	import { Spinner } from '$lib/components/ui/spinner';
 	import settingsStore from '$lib/stores/config-store';
-	import { onMount } from 'svelte';
+	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
+	import type { ColumnVisibilityState } from '@tanstack/table-core';
 	import { environmentStore } from '$lib/stores/environment.store.svelte';
 	import { hasPermission } from '$lib/utils/auth';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
@@ -50,13 +51,15 @@
 		return (customSettings['showInternalVolumes'] as boolean) ?? false;
 	});
 
-	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions) {
+	async function refreshVolumes(options: SearchPaginationSortRequest = requestOptions, refreshSizes = true) {
 		if (onRefreshData) {
 			await onRefreshData(options);
 		} else {
 			volumes = await volumeService.getVolumes(options);
 		}
-		void loadVolumeSizes();
+		if (refreshSizes && tablePreferencesReady && columnVisibility['size'] !== false) {
+			void loadVolumeSizes(currentEnvId);
+		}
 	}
 
 	function getCurrentLimit() {
@@ -84,21 +87,43 @@
 
 	// Lazy load volume sizes - this is a slow operation
 	let sizesMap = new SvelteMap<string, VolumeSizeInfo>();
+	let sizeLoadPromises = new SvelteMap<string, Promise<void>>();
 	let sizesLoading = $state(false);
+	let columnVisibility = $state<ColumnVisibilityState>({});
+	let tablePreferencesReady = $state(false);
 
-	async function loadVolumeSizes(): Promise<void> {
-		sizesLoading = true;
-		try {
-			const sizes = await volumeService.getVolumeSizes();
-			sizesMap.clear();
-			for (const s of sizes) {
-				sizesMap.set(s.name, s);
+	function loadVolumeSizes(environmentId: string): Promise<void> {
+		const existing = sizeLoadPromises.get(environmentId);
+		if (existing) return existing;
+
+		const request = (async () => {
+			if (currentEnvId === environmentId) {
+				sizesLoading = true;
 			}
-		} catch (error) {
-			console.error('Failed to load volume sizes:', error);
-		} finally {
-			sizesLoading = false;
-		}
+			try {
+				const sizes = await volumeService.getVolumeSizes(environmentId);
+				if (currentEnvId !== environmentId || columnVisibility['size'] === false) return;
+
+				sizesMap.clear();
+				for (const s of sizes) {
+					sizesMap.set(s.name, s);
+				}
+
+				if (requestOptions?.sort?.column === 'size') {
+					await refreshVolumes(requestOptions, false);
+				}
+			} catch (error) {
+				console.error('Failed to load volume sizes:', error);
+			} finally {
+				sizeLoadPromises.delete(environmentId);
+				if (currentEnvId === environmentId) {
+					sizesLoading = false;
+				}
+			}
+		})();
+
+		sizeLoadPromises.set(environmentId, request);
+		return request;
 	}
 
 	async function handleRemoveVolumeConfirm(name: string) {
@@ -141,10 +166,10 @@
 			destructive: true,
 			run: (id) => volumeService.deleteVolume(idToName.get(id)?.trim() || m.common_unknown()),
 			messages: {
-				success: (count) => m.common_bulk_remove_success({ count, resource: m.volumes_title() }),
+				success: (count) => m.common_bulk_remove_success({ count, resource: m.resource_volumes_cap() }),
 				partial: (success, total, failed) =>
-					m.common_bulk_remove_partial({ success, total, failed, resource: m.volumes_title() }),
-				failure: () => m.common_bulk_remove_failed({ count: idsToDelete.length, resource: m.volumes_title() })
+					m.common_bulk_remove_partial({ success, total, failed, resource: m.resource_volumes_cap() }),
+				failure: () => m.common_bulk_remove_failed({ count: idsToDelete.length, resource: m.resource_volumes_cap() })
 			},
 			setLoading: (loading) => (isLoading.removing = loading),
 			onComplete: async (result) => {
@@ -190,14 +215,29 @@
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
 
-	onMount(() => {
-		const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
-		const currentInternal = requestOptions?.includeInternal ?? false;
-		if (persistedInternal !== currentInternal) {
-			setShowInternal(persistedInternal);
-			// refreshVolumes (called by setShowInternal) already calls loadVolumeSizes
+	let persistedSettingsApplied = false;
+	$effect(() => {
+		if (!tablePreferencesReady) return;
+
+		const environmentId = currentEnvId;
+		const sizeVisible = columnVisibility['size'] !== false;
+		if (!sizeVisible) {
+			sizesMap.clear();
+			sizesLoading = false;
 		} else {
-			void loadVolumeSizes();
+			untrack(() => {
+				sizesMap.clear();
+				void loadVolumeSizes(environmentId);
+			});
+		}
+
+		if (!persistedSettingsApplied) {
+			persistedSettingsApplied = true;
+			const persistedInternal = (customSettings['showInternalVolumes'] as boolean) ?? false;
+			const currentInternal = requestOptions?.includeInternal ?? false;
+			if (persistedInternal !== currentInternal) {
+				untrack(() => setShowInternal(persistedInternal));
+			}
 		}
 	});
 </script>
@@ -220,14 +260,14 @@
 		{#if item.size > 0}
 			<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 		{:else}
-			<span class="text-muted-foreground flex items-center gap-1 text-sm">
+			<span class="flex items-center gap-1 text-sm text-muted-foreground">
 				<Spinner class="size-4" />
 			</span>
 		{/if}
 	{:else if item.size > 0}
 		<span class="text-sm tabular-nums">{bytes.format(item.size)}</span>
 	{:else}
-		<span class="text-muted-foreground text-sm">-</span>
+		<span class="text-sm text-muted-foreground">-</span>
 	{/if}
 {/snippet}
 
@@ -301,6 +341,9 @@
 	bind:selectedIds
 	bind:mobileFieldVisibility
 	bind:customSettings
+	bind:columnVisibility
+	bind:preferencesReady={tablePreferencesReady}
+	hiddenSortFallback={{ column: 'name', direction: 'asc' }}
 	{bulkActions}
 	onRefresh={async (options) => {
 		requestOptions = options;
@@ -316,6 +359,6 @@
 
 {#snippet CustomViewOptions()}
 	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>
-		{`${m.common_show()} ${m.internal()} ${m.volumes_title()}`}
+		{`${m.common_show()} ${m.internal()} ${m.resource_volumes_cap()}`}
 	</DropdownMenu.CheckboxItem>
 {/snippet}

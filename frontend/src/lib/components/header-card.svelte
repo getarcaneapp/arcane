@@ -12,7 +12,7 @@
 
 <div
 	class={cn(
-		'bg-card/60 backdrop-blur-md border-border/70 relative overflow-hidden rounded-xl border p-4 shadow-xs sm:p-5',
+		'relative overflow-hidden rounded-xl border border-border/70 bg-card/60 p-4 shadow-xs backdrop-blur-md sm:p-5',
 		className
 	)}
 >

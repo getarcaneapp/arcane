@@ -61,7 +61,7 @@
 					{@render children()}
 				</div>
 				{#if footer}
-					<div class="bg-background border-t p-4">
+					<div class="border-t bg-background p-4">
 						<Sheet.Footer class="mt-0 p-0 sm:justify-end">
 							{@render footer()}
 						</Sheet.Footer>

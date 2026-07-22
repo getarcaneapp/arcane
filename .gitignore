@@ -21,6 +21,7 @@ CLAUDE.md
 *.key
 *.pem
 *.crt
+.claude/**
 
 # OS
 .DS_Store
@@ -46,22 +47,11 @@ cli/test-results/
 types/test-results/
 backend/.bin
 backend/build-errors.log
-frontend/bun.lock
-tests/bun.lock
-tests/package-lock.json
 /.idea/**
 .pnpm-store/**
 .pnpm-store
-.claude/settings.local.json
-.claude/**
-.fast-check
 *.out
-arcane-devcli
-
-
-# btca
-.btca
 
 cli/arcane-cli
 completions
-coverage.txt
+*.txt

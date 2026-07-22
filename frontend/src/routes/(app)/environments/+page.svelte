@@ -92,7 +92,7 @@
 					{
 						id: 'remove-selected',
 						action: 'remove' as const,
-						label: m.environments_remove_selected_button(),
+						label: m.common_remove_selected(),
 						onclick: handleBulkDelete,
 						loading: isLoading.deleting,
 						disabled: isLoading.deleting
@@ -126,7 +126,7 @@
 					{
 						id: 'update-all',
 						action: 'update' as const,
-						label: m.environments_update_all_button(),
+						label: m.update_all(),
 						icon: UpdateIcon,
 						onclick: () => (showUpdateAllDialog = true)
 					}

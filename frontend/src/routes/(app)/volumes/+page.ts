@@ -9,16 +9,20 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
-	const volumeRequestOptions = resolveInitialTableRequest('arcane-volumes-table', {
-		pagination: {
-			page: 1,
-			limit: 20
-		},
-		sort: {
-			column: 'name',
-			direction: 'asc'
-		}
-	} satisfies SearchPaginationSortRequest);
+	const volumeRequestOptions = resolveInitialTableRequest(
+		'arcane-volumes-table',
+		{
+			pagination: {
+				page: 1,
+				limit: 20
+			},
+			sort: {
+				column: 'name',
+				direction: 'asc'
+			}
+		} satisfies SearchPaginationSortRequest,
+		{ deferredSortColumns: ['size'] }
+	);
 
 	// Single API call - counts are included in the response
 	const volumes = await queryClient.fetchQuery({

@@ -51,7 +51,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.ports_title()} subtitle={m.ports_subtitle()} {actionButtons}>
+<ResourcePageLayout title={m.common_ports()} subtitle={m.ports_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
 		{#if ports}
 			<PortTable

@@ -144,12 +144,12 @@
 {#snippet NameCell({ item }: { item: FileEntry })}
 	<div class="flex items-center gap-2">
 		{#if item.isDirectory}
-			<FolderOpenIcon class={minimal ? 'text-muted-foreground size-4' : 'size-4 text-blue-500'} />
+			<FolderOpenIcon class={minimal ? 'size-4 text-muted-foreground' : 'size-4 text-blue-500'} />
 			<button class="text-left font-medium hover:underline" onclick={() => onNavigate(item.path)}>
 				{item.name}
 			</button>
 		{:else}
-			<FileTextIcon class="text-muted-foreground size-4" />
+			<FileTextIcon class="size-4 text-muted-foreground" />
 			<span class="font-medium">{item.name}</span>
 		{/if}
 		{#if item.isSymlink}
@@ -179,13 +179,13 @@
 {/snippet}
 
 {#snippet SizeCell({ item, value }: { item: FileEntry; value: any })}
-	<span class="text-muted-foreground text-sm">
+	<span class="text-sm text-muted-foreground">
 		{item.isDirectory ? '--' : formatBytes(Number(value))}
 	</span>
 {/snippet}
 
 {#snippet CreatedCell({ value }: { value: any })}
-	<span class="text-muted-foreground text-sm">
+	<span class="text-sm text-muted-foreground">
 		{formatDateTimeShort(String(value))}
 	</span>
 {/snippet}
@@ -250,7 +250,7 @@
 
 <div
 	class={`file-browser-table overflow-hidden ${
-		minimal ? 'file-browser-table--minimal' : 'file-browser-table--card bg-card rounded-lg border shadow-sm'
+		minimal ? 'file-browser-table--minimal' : 'file-browser-table--card rounded-lg border bg-card shadow-sm'
 	}`}
 >
 	<ArcaneTable

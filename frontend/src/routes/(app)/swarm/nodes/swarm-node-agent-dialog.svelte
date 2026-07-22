@@ -4,7 +4,7 @@
 	import AgentCommandBlock from '$lib/components/agent-command-block.svelte';
 	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog';
 	import { Spinner } from '$lib/components/ui/spinner';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { AlertTriangleIcon, EdgeConnectionIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
@@ -87,22 +87,22 @@
 		</Alert.Root>
 
 		<div class="grid gap-3 sm:grid-cols-3">
-			<div class="bg-muted/40 rounded-lg border p-4">
-				<div class="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+			<div class="rounded-lg border bg-muted/40 p-4">
+				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 					{m.swarm_node_agent_binding_kind()}
 				</div>
 				<div class="mt-2 text-sm font-medium">{bindingLabel}</div>
 			</div>
 
-			<div class="bg-muted/40 rounded-lg border p-4">
-				<div class="text-muted-foreground text-xs font-medium tracking-wide uppercase">{m.common_status()}</div>
+			<div class="rounded-lg border bg-muted/40 p-4">
+				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
 				<div class="mt-2 flex items-center gap-2">
-					<StatusBadge text={agentStatusLabel} variant={getSwarmNodeAgentVariant(agentStatus.state)} />
+					<Badge variant={getSwarmNodeAgentVariant(agentStatus.state)} minWidth="20">{agentStatusLabel}</Badge>
 				</div>
 			</div>
 
-			<div class="bg-muted/40 rounded-lg border p-4">
-				<div class="text-muted-foreground text-xs font-medium tracking-wide uppercase">
+			<div class="rounded-lg border bg-muted/40 p-4">
+				<div class="text-xs font-medium tracking-wide text-muted-foreground uppercase">
 					{m.swarm_node_agent_environment_id()}
 				</div>
 				<div class="mt-2 font-mono text-sm break-all">
@@ -115,14 +115,14 @@
 			<div class="space-y-3 rounded-lg border p-4">
 				<div>
 					<div class="font-medium">{m.swarm_node_agent_candidates_title()}</div>
-					<div class="text-muted-foreground text-sm">{m.swarm_node_agent_candidates_description()}</div>
+					<div class="text-sm text-muted-foreground">{m.swarm_node_agent_candidates_description()}</div>
 				</div>
 				<div class="space-y-2">
 					{#each agentStatus.candidates as candidate (candidate.environmentId)}
-						<div class="bg-muted/30 flex items-center justify-between gap-3 rounded-md border px-3 py-2">
+						<div class="flex items-center justify-between gap-3 rounded-md border bg-muted/30 px-3 py-2">
 							<div>
 								<div class="text-sm font-medium">{candidate.environmentName}</div>
-								<div class="text-muted-foreground text-xs">{candidate.environmentType}</div>
+								<div class="text-xs text-muted-foreground">{candidate.environmentType}</div>
 							</div>
 							<ArcaneButton
 								action="save"
@@ -141,14 +141,14 @@
 			<div class="space-y-3 rounded-lg border p-4">
 				<div>
 					<div class="font-medium">{m.swarm_node_agent_resources_title()}</div>
-					<div class="text-muted-foreground text-sm">{m.swarm_node_agent_resources_description()}</div>
+					<div class="text-sm text-muted-foreground">{m.swarm_node_agent_resources_description()}</div>
 				</div>
 				<div class="flex flex-wrap gap-2">
 					{#if hasAnyPermission(['containers:list', 'containers:read'], agentStatus.environmentId)}
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							customLabel={m.containers_title()}
+							customLabel={m.containers()}
 							onclick={() => navigateToResource('/containers', ['containers:list', 'containers:read'])}
 						/>
 					{/if}
@@ -156,7 +156,7 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							customLabel={m.images_title()}
+							customLabel={m.images()}
 							onclick={() => navigateToResource('/images', ['images:list', 'images:read'])}
 						/>
 					{/if}
@@ -164,7 +164,7 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							customLabel={m.volumes_title()}
+							customLabel={m.resource_volumes_cap()}
 							onclick={() => navigateToResource('/volumes', ['volumes:list', 'volumes:read'])}
 						/>
 					{/if}
@@ -172,7 +172,7 @@
 						<ArcaneButton
 							action="base"
 							tone="outline"
-							customLabel={m.networks_title()}
+							customLabel={m.resource_networks_cap()}
 							onclick={() => navigateToResource('/networks', ['networks:list', 'networks:read'])}
 						/>
 					{/if}
@@ -195,9 +195,9 @@
 		{:else if isReady && deployment}
 			<div class="space-y-4">
 				<AgentCommandBlock
-					dockerRunLabel={m.environments_docker_run_command()}
+					dockerRunLabel={m.docker_run_command()}
 					dockerRun={deployment.dockerRun}
-					dockerComposeLabel={m.environments_docker_compose()}
+					dockerComposeLabel={m.common_docker_compose()}
 					dockerCompose={deployment.dockerCompose}
 					preClass="pr-12"
 				/>
@@ -205,7 +205,7 @@
 		{:else if canCreateEnvironment}
 			<div class="rounded-lg border border-dashed p-4">
 				<div class="font-medium">{m.swarm_node_agent_create_environment_title()}</div>
-				<div class="text-muted-foreground mt-1 text-sm">{m.swarm_node_agent_create_environment_description()}</div>
+				<div class="mt-1 text-sm text-muted-foreground">{m.swarm_node_agent_create_environment_description()}</div>
 				<ArcaneButton
 					class="mt-3"
 					action="create"
@@ -219,7 +219,7 @@
 				<div class="font-medium">
 					{isDedicated ? m.swarm_node_agent_legacy_deployment_title() : m.swarm_node_agent_deployment_title()}
 				</div>
-				<div class="text-muted-foreground mt-1 text-sm">
+				<div class="mt-1 text-sm text-muted-foreground">
 					{isDedicated ? m.swarm_node_agent_legacy_deployment_description() : m.swarm_node_agent_deployment_description()}
 				</div>
 				<ArcaneButton

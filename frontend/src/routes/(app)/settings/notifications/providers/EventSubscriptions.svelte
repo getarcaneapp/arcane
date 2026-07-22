@@ -26,7 +26,7 @@
 
 <div class="space-y-3 pt-2">
 	<Label class="text-sm font-medium">{m.notifications_events_title()}</Label>
-	<p class="text-muted-foreground text-xs">{m.notifications_events_description()}</p>
+	<p class="text-xs text-muted-foreground">{m.notifications_events_description()}</p>
 	<div class="space-y-2">
 		<SwitchWithLabel
 			id="{providerId}-event-image-update"

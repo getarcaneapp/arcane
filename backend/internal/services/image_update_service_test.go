@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	sqlite "github.com/libtnb/sqlite"
 	dockertypescontainer "github.com/moby/moby/api/types/container"
@@ -25,6 +26,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/opencontainers/go-digest"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -297,38 +299,6 @@ func TestImageUpdateService_DockerReferenceCompatibility(t *testing.T) {
 	}
 }
 
-// TestStringPtrToString tests the helper function used for pointer comparison fix
-func TestStringPtrToString(t *testing.T) {
-	tests := []struct {
-		name string
-		ptr  *string
-		want string
-	}{
-		{
-			name: "nil pointer returns empty string",
-			ptr:  nil,
-			want: "",
-		},
-		{
-			name: "valid pointer returns value",
-			ptr:  stringToPtr("test-value"),
-			want: "test-value",
-		},
-		{
-			name: "empty string pointer returns empty string",
-			ptr:  stringToPtr(""),
-			want: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := stringPtrToString(tt.ptr)
-			assert.Equal(t, tt.want, result)
-		})
-	}
-}
-
 // TestStringToPtr tests the helper function for creating string pointers
 func TestStringToPtr(t *testing.T) {
 	tests := []struct {
@@ -367,8 +337,100 @@ func setupImageUpdateTestDB(t *testing.T) *database.DB {
 	dsn := fmt.Sprintf("file:image-update-test-%d?mode=memory&cache=shared", time.Now().UnixNano())
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}, &models.Project{}))
 	return &database.DB{DB: db}
+}
+
+func newComposeBuildImageUpdateServiceInternal(t *testing.T) (*ImageUpdateService, *atomic.Int32) {
+	t.Helper()
+
+	db := setupImageUpdateTestDB(t)
+	buildRefsJSON := `["test2:latest"]`
+	require.NoError(t, db.Create(&models.Project{
+		BaseModel:          models.BaseModel{ID: "compose-build-project"},
+		Name:               "compose-build-project",
+		BuildImageRefsJSON: &buildRefsJSON,
+	}).Error)
+
+	localDigest := digest.FromString("compose-build-local").String()
+	remoteDigest := digest.FromString("compose-build-remote").String()
+	dockerServer := newImageUpdateFallbackServer(t, "library/test2:latest", localDigest, remoteDigest)
+	t.Cleanup(dockerServer.Close)
+
+	var registryCalls atomic.Int32
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(context.Context, string, client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				registryCalls.Add(1)
+				return client.DistributionInspectResult{
+					DistributionInspect: dockerregistry.DistributionInspect{
+						Descriptor: ocispec.Descriptor{Digest: digest.Digest(remoteDigest)},
+					},
+				}, nil
+			},
+		}, nil
+	}, nil)
+
+	dockerService := &DockerClientService{client: newTestDockerClient(t, dockerServer)}
+	eventService := NewEventService(db, nil, nil)
+	return NewImageUpdateService(db, nil, registryService, dockerService, eventService, nil, nil), &registryCalls
+}
+
+func TestImageUpdateService_CheckImageUpdate_ComposeBuildSkipsRegistryWithRepoDigests(t *testing.T) {
+	svc, registryCalls := newComposeBuildImageUpdateServiceInternal(t)
+
+	result, err := svc.CheckImageUpdate(context.Background(), "test2:latest")
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.Equal(t, models.UpdateTypeLocal, result.UpdateType)
+	assert.False(t, result.HasUpdate)
+	assert.Empty(t, result.Error)
+	assert.Zero(t, registryCalls.Load())
+
+	var saved models.ImageUpdateRecord
+	require.NoError(t, svc.db.First(&saved, "id = ?", "sha256:local-image-id").Error)
+	assert.Equal(t, models.UpdateTypeLocal, saved.UpdateType)
+	assert.Nil(t, saved.LastError)
+}
+
+func TestImageUpdateService_CheckMultipleImages_ComposeBuildSkipsRegistryWithRepoDigests(t *testing.T) {
+	svc, registryCalls := newComposeBuildImageUpdateServiceInternal(t)
+	credentials := []containerregistry.Credential{{
+		URL:      "https://index.docker.io/v1/",
+		Username: "unused",
+		Token:    "unused",
+		Enabled:  true,
+	}}
+
+	results, err := svc.CheckMultipleImages(context.Background(), []string{"test2:latest"}, credentials)
+	require.NoError(t, err)
+	result := results["test2:latest"]
+	require.NotNil(t, result)
+	assert.Equal(t, models.UpdateTypeLocal, result.UpdateType)
+	assert.False(t, result.HasUpdate)
+	assert.Empty(t, result.Error)
+	assert.Zero(t, registryCalls.Load())
+}
+
+func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
+			w.Header().Set("Content-Type", "application/json")
+			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+				ID:       "sha256:local-only-image",
+				RepoTags: []string{"local-only:latest"},
+			}))
+			return
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(server.Close)
+
+	svc := &ImageUpdateService{dockerService: &DockerClientService{client: newTestDockerClient(t, server)}}
+	snapshot, err := svc.inspectLocalImageSnapshotInternal(context.Background(), "local-only:latest", map[string]struct{}{})
+	require.NoError(t, err)
+	assert.True(t, snapshot.IsLocalBuild)
+	assert.Equal(t, "sha256:local-only-image", snapshot.PrimaryDigest)
 }
 
 func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remoteDigest string) *httptest.Server {
@@ -570,8 +632,8 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", recordID).First(&saved).Error)
 	assert.False(t, saved.HasUpdate)
 	assert.Nil(t, saved.LastError)
-	assert.Equal(t, pinnedDigest, stringPtrToString(saved.CurrentDigest))
-	assert.Equal(t, pinnedDigest, stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.CurrentDigest).OrEmpty())
+	assert.Equal(t, pinnedDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImages_DigestPinnedTagPreservedWhenLocalImageHasNoRepoTags(t *testing.T) {
@@ -654,7 +716,7 @@ func TestImageUpdateService_CheckImageUpdate_UsesRegistryFallback(t *testing.T) 
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.T) {
@@ -696,14 +758,14 @@ func TestImageUpdateService_CheckMultipleImages_UsesRegistryFallback(t *testing.
 
 	var saved models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", "sha256:local-image-id").First(&saved).Error)
-	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 }
 
 func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestContextCanceledInternal(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
 
-	activityService := NewActivityService(db)
+	activityService := NewActivityService(db, nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, nil, activityService)
 
 	for range 5 {
@@ -751,7 +813,7 @@ func TestImageUpdateService_CheckMultipleImagesTimesOutStalledRegistryCheckInter
 	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
 
 	settingsService := newImageUpdateTestSettingsServiceInternal("1", "30")
-	activityService := NewActivityService(db)
+	activityService := NewActivityService(db, nil)
 	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
 	defer dockerServer.Close()
 	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
@@ -815,7 +877,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeoutInterna
 	defer cancel()
 
 	start := time.Now()
-	_, err := svc.inspectLocalImageSnapshotInternal(parentCtx, "registry.example.com/team/app:1.2.3")
+	_, err := svc.inspectLocalImageSnapshotInternal(parentCtx, "registry.example.com/team/app:1.2.3", nil)
 	elapsed := time.Since(start)
 
 	require.Error(t, err)
@@ -825,7 +887,7 @@ func TestImageUpdateService_InspectLocalImageSnapshotUsesDockerAPITimeoutInterna
 
 func TestImageUpdateService_CheckMultipleImages_UsesDockerHubCredentialsOnFirstAttempt(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.Event{}, &models.Project{}))
 	createTestPullRegistry(t, db, "https://index.docker.io/v1/", "docker-user", "docker-token")
 
 	localDigest := digest.FromString("batchlocal-rate-limit").String()
@@ -947,7 +1009,7 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	assert.True(t, saved.HasUpdate)
-	assert.Equal(t, remoteDigest, stringPtrToString(saved.LatestDigest))
+	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 	assert.Nil(t, saved.LastError)
 }
 
@@ -1028,8 +1090,8 @@ func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsA
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, localDigest, stringPtrToString(currentRecord.CurrentDigest))
-	assert.Equal(t, localDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
+	assert.Equal(t, localDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 	assert.Equal(t, "1.2.3", currentRecord.CurrentVersion)
 	require.NotNil(t, currentRecord.LatestVersion)
 	assert.Equal(t, "1.2.3", *currentRecord.LatestVersion)
@@ -1204,8 +1266,8 @@ func TestImageUpdateService_NotificationSentReset(t *testing.T) {
 
 			// This is the logic we're testing - comparing string values not pointers
 			stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-			digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
-			versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
+			digestChanged := mo.PointerToOption(existingRecord.LatestDigest).OrEmpty() != mo.PointerToOption(updateRecord.LatestDigest).OrEmpty()
+			versionChanged := mo.PointerToOption(existingRecord.LatestVersion).OrEmpty() != mo.PointerToOption(updateRecord.LatestVersion).OrEmpty()
 
 			if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
 				updateRecord.NotificationSent = false
@@ -1283,10 +1345,10 @@ func TestImageUpdateService_RateLimitErrorPreservesPreviousResult(t *testing.T) 
 
 			if tt.expectPreserved {
 				assert.Nil(t, saved.LastError, "previous good record should be preserved")
-				assert.Equal(t, "sha256:current", stringPtrToString(saved.LatestDigest))
+				assert.Equal(t, "sha256:current", mo.PointerToOption(saved.LatestDigest).OrEmpty())
 				assert.Equal(t, checkTime, saved.CheckTime.UTC())
 			} else {
-				assert.Equal(t, tt.resultError, stringPtrToString(saved.LastError))
+				assert.Equal(t, tt.resultError, mo.PointerToOption(saved.LastError).OrEmpty())
 				assert.Nil(t, saved.LatestDigest)
 			}
 		})

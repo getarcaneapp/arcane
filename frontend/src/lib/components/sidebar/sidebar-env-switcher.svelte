@@ -32,7 +32,7 @@
 			onclick={() => onOpenDialog?.()}
 		>
 			{#if environmentStore.selected}
-				<div class="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+				<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
 					{#if environmentStore.selected.id === '0'}
 						<EnvironmentsIcon class="size-4" />
 					{:else if environmentStore.selected.isEdge}
@@ -50,7 +50,7 @@
 					</span>
 				</div>
 			{:else}
-				<div class="bg-primary text-primary-foreground flex aspect-square size-8 items-center justify-center rounded-lg">
+				<div class="flex aspect-square size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
 					<EnvironmentsIcon class="size-4" />
 				</div>
 				<div class="grid flex-1 text-left text-sm leading-tight">

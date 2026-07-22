@@ -8,6 +8,7 @@
 	import { toast } from 'svelte-sonner';
 	import type { Settings } from '$lib/types/settings';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import { LockIcon, InfoIcon, ArrowDownIcon } from '$lib/icons';
 	import settingsStore from '$lib/stores/config-store';
@@ -48,7 +49,7 @@
 			[
 				{
 					value: 'settings',
-					label: m.authentication_title()
+					label: m.authentication()
 				},
 				{
 					value: 'federated',
@@ -311,8 +312,28 @@
 	});
 </script>
 
+{#snippet passwordPolicyOption(value: 'basic' | 'standard' | 'strong', label: string, tooltip: string)}
+	<ArcaneTooltip.Root>
+		<ArcaneTooltip.Trigger>
+			{#snippet child({ props })}
+				{@const triggerProps = mergeProps(props, {
+					onclick: () => ($formInputs.authPasswordPolicy.value = value),
+					class: 'h-12 w-full text-xs sm:text-sm'
+				})}
+				<ArcaneButton
+					{...triggerProps}
+					action="base"
+					tone={$formInputs.authPasswordPolicy.value === value ? 'outline-primary' : 'outline'}
+					customLabel={label}
+				/>
+			{/snippet}
+		</ArcaneTooltip.Trigger>
+		<ArcaneTooltip.Content side="top">{tooltip}</ArcaneTooltip.Content>
+	</ArcaneTooltip.Root>
+{/snippet}
+
 <SettingsPageLayout
-	title={m.authentication_title()}
+	title={m.authentication()}
 	description={m.authentication_description()}
 	icon={LockIcon}
 	pageType={activeTab === 'settings' ? 'form' : 'management'}
@@ -325,7 +346,7 @@
 			<Tabs.Content value="settings" class="mt-6">
 				<fieldset disabled={isReadOnly} class="relative space-y-8">
 					<div class="space-y-4">
-						<h3 class="text-base font-semibold">{m.security_authentication_heading()}</h3>
+						<h3 class="text-base font-semibold">{m.authentication()}</h3>
 
 						{#if isAutoLoginEnabled}
 							<Alert.Root variant="default" class="border-amber-200 bg-amber-50 dark:border-amber-800 dark:bg-amber-950">
@@ -336,7 +357,7 @@
 								</Alert.Description>
 							</Alert.Root>
 						{:else}
-							<div class="divide-border/40 divide-y [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+							<div class="divide-y divide-border/40 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 								<SettingsRow
 									label={m.security_local_auth_label()}
 									description={m.security_local_auth_description()}
@@ -360,15 +381,13 @@
 												<div class="mt-2">
 													<ArcaneTooltip.Root>
 														<ArcaneTooltip.Trigger>
-															<span
-																class="inline-flex items-center gap-1.5 rounded-full bg-amber-100 px-2.5 py-1 text-xs font-medium text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/50 dark:text-amber-200 dark:ring-amber-800"
-															>
+															<Badge variant="amber">
 																{#if isOidcForcedDisabled}
 																	{m.security_server_disabled_via_server()}
 																{:else}
 																	{m.security_server_configured()}
 																{/if}
-															</span>
+															</Badge>
 														</ArcaneTooltip.Trigger>
 														<ArcaneTooltip.Content side="top">
 															{#if isOidcForcedDisabled}
@@ -390,7 +409,7 @@
 											/>
 											{#if showOidcDetails}
 												<Collapsible.Trigger
-													class="text-muted-foreground hover:text-foreground hover:bg-muted/50 inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium transition-colors"
+													class="inline-flex items-center gap-1.5 rounded-md px-2 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
 												>
 													<span>{oidcConfigOpen ? m.common_hide() : m.common_show()} {m.common_configuration()}</span>
 													<ArrowDownIcon class={cn('size-3.5 transition-transform', oidcConfigOpen && 'rotate-180')} />
@@ -401,7 +420,7 @@
 
 									{#if showOidcDetails}
 										<Collapsible.Content class="mt-4">
-											<div class="border-border/60 space-y-5 border-l-2 pl-5">
+											<div class="space-y-5 border-l-2 border-border/60 pl-5">
 												<div class="grid gap-5 sm:grid-cols-2">
 													<TextInputWithLabel
 														id="oidcClientId"
@@ -473,7 +492,7 @@
 													helpText={m.oidc_groups_claim_help()}
 												/>
 
-												<div class="divide-border/40 divide-y pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+												<div class="divide-y divide-border/40 pt-2 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 													<SettingsRow
 														label={m.security_oidc_merge_accounts_label()}
 														description={m.security_oidc_merge_accounts_description()}
@@ -512,14 +531,14 @@
 													</SettingsRow>
 												</div>
 
-												<div class="bg-muted/30 rounded-lg border p-4">
+												<div class="rounded-lg border bg-muted/30 p-4">
 													<div class="mb-2 flex items-center gap-2">
 														<InfoIcon class="size-4 text-blue-600" />
 														<span class="text-sm font-medium">{m.oidc_redirect_uri_title()}</span>
 													</div>
-													<p class="text-muted-foreground mb-3 text-sm">{m.oidc_redirect_uri_description()}</p>
+													<p class="mb-3 text-sm text-muted-foreground">{m.oidc_redirect_uri_description()}</p>
 													<div class="flex items-center gap-2">
-														<code class="bg-muted flex-1 rounded p-2 font-mono text-xs break-all">{redirectUri}</code>
+														<code class="flex-1 rounded bg-muted p-2 font-mono text-xs break-all">{redirectUri}</code>
 														<CopyButton text={redirectUri} size="sm" variant="outline" class="shrink-0" title={m.common_copy()} />
 													</div>
 												</div>
@@ -530,11 +549,11 @@
 							</div>
 
 							<IfPermitted adminOnly>
-								<div class="border-border/40 space-y-4 border-t pt-6">
+								<div class="space-y-4 border-t border-border/40 pt-6">
 									<div class="flex items-start justify-between gap-4">
 										<div>
 											<h4 class="text-sm font-semibold">{m.oidc_role_mappings_title()}</h4>
-											<p class="text-muted-foreground mt-0.5 text-xs">{m.oidc_role_mappings_description()}</p>
+											<p class="mt-0.5 text-xs text-muted-foreground">{m.oidc_role_mappings_description()}</p>
 										</div>
 										<ArcaneButton
 											action="create"
@@ -553,8 +572,8 @@
 											onEdit={openEditMapping}
 										/>
 									{:else}
-										<div class="border-border/40 bg-muted/20 rounded-lg border border-dashed p-6 text-center">
-											<p class="text-muted-foreground text-sm">{m.oidc_mappings_empty_body()}</p>
+										<div class="rounded-lg border border-dashed border-border/40 bg-muted/20 p-6 text-center">
+											<p class="text-sm text-muted-foreground">{m.oidc_mappings_empty_body()}</p>
 										</div>
 									{/if}
 								</div>
@@ -580,65 +599,17 @@
 						<h3 class="text-base font-semibold">{m.security_password_policy_label()}</h3>
 						<SettingsRow label={m.security_password_policy_label()} description={m.security_password_policy_description()}>
 							<div class="grid grid-cols-1 gap-2 sm:grid-cols-3 sm:gap-3" role="group" aria-labelledby="passwordPolicyLabel">
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'basic'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'basic' ? 'outline-primary' : 'outline'}
-												customLabel={m.common_basic()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_basic_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'standard'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'standard' ? 'outline-primary' : 'outline'}
-												customLabel={m.security_password_policy_standard()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_standard_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
-
-								<ArcaneTooltip.Root>
-									<ArcaneTooltip.Trigger>
-										{#snippet child({ props })}
-											{@const triggerProps = mergeProps(props, {
-												onclick: () => ($formInputs.authPasswordPolicy.value = 'strong'),
-												class: 'h-12 w-full text-xs sm:text-sm'
-											})}
-											<ArcaneButton
-												{...triggerProps}
-												action="base"
-												tone={$formInputs.authPasswordPolicy.value === 'strong' ? 'outline-primary' : 'outline'}
-												customLabel={m.security_password_policy_strong()}
-											/>
-										{/snippet}
-									</ArcaneTooltip.Trigger>
-									<ArcaneTooltip.Content side="top">
-										{m.security_password_policy_strong_tooltip()}
-									</ArcaneTooltip.Content>
-								</ArcaneTooltip.Root>
+								{@render passwordPolicyOption('basic', m.common_basic(), m.security_password_policy_basic_tooltip())}
+								{@render passwordPolicyOption(
+									'standard',
+									m.security_password_policy_standard(),
+									m.security_password_policy_standard_tooltip()
+								)}
+								{@render passwordPolicyOption(
+									'strong',
+									m.security_password_policy_strong(),
+									m.security_password_policy_strong_tooltip()
+								)}
 							</div>
 						</SettingsRow>
 					</div>

@@ -67,10 +67,6 @@ func RegisterVersion(api huma.API, versionService *services.VersionService) {
 
 // GetVersion returns version information with optional update check.
 func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput) (*GetVersionOutput, error) {
-	if h.versionService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	current := strings.TrimSpace(input.Current)
 	check, _ := h.versionService.GetVersionInformation(ctx, current)
 
@@ -81,10 +77,6 @@ func (h *VersionHandler) GetVersion(ctx context.Context, input *GetVersionInput)
 
 // GetAppVersion returns the current application version.
 func (h *VersionHandler) GetAppVersion(ctx context.Context, _ *GetAppVersionInput) (*GetAppVersionOutput, error) {
-	if h.versionService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	info := h.versionService.GetAppVersionInfo(ctx)
 
 	return &GetAppVersionOutput{

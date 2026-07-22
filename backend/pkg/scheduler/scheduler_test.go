@@ -81,7 +81,7 @@ func TestJobScheduler_StartScheduler_SkipsDisabledConditionalJobs(t *testing.T) 
 	require.Empty(t, js.cron.Entries())
 }
 
-func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *testing.T) {
+func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	js := NewJobScheduler(ctx, nil)
 	watcher := &testBusWatcherInternal{
@@ -92,6 +92,7 @@ func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *test
 	}
 
 	js.RegisterBusWatcher(watcher, true)
+	js.StartScheduler()
 
 	select {
 	case <-watcher.started:
@@ -99,8 +100,8 @@ func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *test
 		t.Fatal("timed out waiting for bus watcher to start")
 	}
 
-	runDone := make(chan error, 1)
-	go func() { runDone <- js.Run(ctx) }()
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- js.Stop(context.Background()) }()
 	cancel()
 
 	select {
@@ -108,7 +109,12 @@ func TestJobScheduler_RegisterBusWatcherUsesLifecycleAndWaitsForShutdown(t *test
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for bus watcher to stop")
 	}
-	require.NoError(t, <-runDone)
+	select {
+	case err := <-stopDone:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("scheduler did not stop after bus watcher finished")
+	}
 }
 
 func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
@@ -281,7 +287,7 @@ func TestJobScheduler_AddJob_UpsertReplacesEntryWithoutLeaking(t *testing.T) {
 	require.Len(t, js.cron.Entries(), 1)
 	require.NotEqual(t, firstEntry, js.entryIDs[job.Name()])
 
-	state, ok := js.GetJobRuntimeState(job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name()).Get()
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/10 * * * * *", state.Schedule)
@@ -303,7 +309,7 @@ func TestJobScheduler_AddJob_InvalidRescheduleKeepsExistingEntry(t *testing.T) {
 	require.Equal(t, firstEntry, js.entryIDs[job.Name()])
 	require.Len(t, js.cron.Entries(), 1)
 
-	state, ok := js.GetJobRuntimeState(job.Name())
+	state, ok := js.GetJobRuntimeState(job.Name()).Get()
 	require.True(t, ok)
 	require.True(t, state.Scheduled)
 	require.Equal(t, "*/5 * * * * *", state.Schedule)
@@ -340,7 +346,7 @@ func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T)
 	require.Len(t, js.cron.Entries(), 1)
 }
 
-func TestJobScheduler_RunWaitsForCanceledJobToFinish(t *testing.T) {
+func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	lifecycleCtx, cancelLifecycle := context.WithCancel(context.Background())
 	jobStarted := make(chan struct{}, 1)
 	cancellationObserved := make(chan struct{}, 1)
@@ -362,9 +368,7 @@ func TestJobScheduler_RunWaitsForCanceledJobToFinish(t *testing.T) {
 			})
 		},
 	})
-
-	runDone := make(chan error, 1)
-	go func() { runDone <- js.Run(lifecycleCtx) }()
+	js.StartScheduler()
 	t.Cleanup(func() {
 		cancelLifecycle()
 		select {
@@ -386,9 +390,12 @@ func TestJobScheduler_RunWaitsForCanceledJobToFinish(t *testing.T) {
 		t.Fatal("scheduled job did not observe lifecycle cancellation")
 	}
 
+	stopDone := make(chan error, 1)
+	go func() { stopDone <- js.Stop(context.Background()) }()
+
 	select {
-	case err := <-runDone:
-		t.Fatalf("scheduler returned before the running job finished: %v", err)
+	case err := <-stopDone:
+		t.Fatalf("scheduler stopped before the running job finished: %v", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -399,9 +406,9 @@ func TestJobScheduler_RunWaitsForCanceledJobToFinish(t *testing.T) {
 		t.Fatal("scheduled job did not finish after release")
 	}
 	select {
-	case err := <-runDone:
+	case err := <-stopDone:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("scheduler did not return after the running job finished")
+		t.Fatal("scheduler did not stop after the running job finished")
 	}
 }

@@ -171,9 +171,9 @@ test.describe('Build workspace provider flows', () => {
 			.fill('https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app');
 		await setRequiredBuildInputs(page, `e2e/remote:${Date.now()}`);
 
-		let buildPayload: Record<string, unknown> | null = null;
+		const buildRequest = { payload: null as Record<string, unknown> | null };
 		await page.route('**/api/environments/*/images/build', async (route) => {
-			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
+			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/x-ndjson',
@@ -182,11 +182,11 @@ test.describe('Build workspace provider flows', () => {
 		});
 
 		await getBuildButton(page).click();
-		await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
+		await expect.poll(() => buildRequest.payload, { timeout: 10000 }).not.toBeNull();
 
-		expect(buildPayload?.contextDir).toBe(
-			'https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app'
-		);
+		expect(buildRequest.payload).toMatchObject({
+			contextDir: 'https://git.sr.ht/~jordanreger/nws-alerts#main:docker/app'
+		});
 	});
 
 	test('submits local provider build payload from UI controls', async ({ page }) => {
@@ -202,10 +202,10 @@ test.describe('Build workspace provider flows', () => {
 		await ensureSwitchState(pushSwitch, true);
 		await ensureSwitchState(loadSwitch, true);
 
-		let buildPayload: Record<string, unknown> | null = null;
+		const buildRequest = { payload: null as Record<string, unknown> | null };
 
 		await page.route('**/api/environments/*/images/build', async (route) => {
-			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
+			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/x-ndjson',
@@ -215,11 +215,13 @@ test.describe('Build workspace provider flows', () => {
 
 		await page.getByRole('button', { name: 'Build', exact: true }).first().click();
 
-		await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
+		await expect.poll(() => buildRequest.payload, { timeout: 10000 }).not.toBeNull();
 
-		expect(buildPayload?.provider).toBe('local');
-		expect(buildPayload?.push).toBe(true);
-		expect(buildPayload?.load).toBe(true);
+		expect(buildRequest.payload).toMatchObject({
+			provider: 'local',
+			push: true,
+			load: true
+		});
 
 		await expect(page.getByText('Build completed').first()).toBeVisible();
 	});
@@ -234,10 +236,10 @@ test.describe('Build workspace provider flows', () => {
 		const loadSwitch = page.locator('#build-load');
 		await expect(loadSwitch).toBeDisabled();
 
-		let buildPayload: Record<string, unknown> | null = null;
+		const buildRequest = { payload: null as Record<string, unknown> | null };
 
 		await page.route('**/api/environments/*/images/build', async (route) => {
-			buildPayload = route.request().postDataJSON() as Record<string, unknown>;
+			buildRequest.payload = route.request().postDataJSON() as Record<string, unknown>;
 			await route.fulfill({
 				status: 200,
 				contentType: 'application/x-ndjson',
@@ -247,11 +249,13 @@ test.describe('Build workspace provider flows', () => {
 
 		await page.getByRole('button', { name: 'Build', exact: true }).first().click();
 
-		await expect.poll(() => buildPayload, { timeout: 10000 }).not.toBeNull();
+		await expect.poll(() => buildRequest.payload, { timeout: 10000 }).not.toBeNull();
 
-		expect(buildPayload?.provider).toBe('depot');
-		expect(buildPayload?.push).toBe(true);
-		expect(buildPayload?.load).toBe(false);
+		expect(buildRequest.payload).toMatchObject({
+			provider: 'depot',
+			push: true,
+			load: false
+		});
 	});
 
 	test('maps advanced local build options from UI into build request payload', async ({ page }) => {

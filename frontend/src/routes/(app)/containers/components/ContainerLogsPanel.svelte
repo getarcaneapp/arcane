@@ -229,7 +229,7 @@
 			<div class="grid gap-3 md:grid-cols-2">
 				<ContainerLogStatMonitor
 					icon={CpuIcon}
-					label={m.dashboard_meter_cpu()}
+					label={m.cpu_usage()}
 					value={cpuValue}
 					detail={cpuDetail}
 					history={cpuHistory}
@@ -240,7 +240,7 @@
 				/>
 				<ContainerLogStatMonitor
 					icon={MemoryStickIcon}
-					label={m.dashboard_meter_memory()}
+					label={m.memory_usage()}
 					value={memoryValue}
 					detail={memoryDetail}
 					history={memoryHistory}
@@ -251,7 +251,7 @@
 				/>
 			</div>
 		</div>
-		<div class="bg-card/90 min-h-0 flex-1 overflow-hidden rounded-lg border p-0 backdrop-blur-sm">
+		<div class="min-h-0 flex-1 overflow-hidden rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
 				bind:this={viewer}
 				bind:autoScroll

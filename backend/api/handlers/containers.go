@@ -23,6 +23,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
+	"github.com/samber/mo"
 )
 
 type ContainerHandler struct {
@@ -64,14 +65,8 @@ type GetContainerStatusCountsInput struct {
 	IncludeInternal bool   `query:"includeInternal" default:"false" doc:"Include internal containers"`
 }
 
-// ContainerStatusCountsResponse is a dedicated response type to avoid schema name collision
-type ContainerStatusCountsResponse struct {
-	Success bool                        `json:"success"`
-	Data    containertypes.StatusCounts `json:"data"`
-}
-
 type GetContainerStatusCountsOutput struct {
-	Body ContainerStatusCountsResponse
+	Body base.ApiResponse[containertypes.StatusCounts]
 }
 
 type CreateContainerInput struct {
@@ -79,14 +74,8 @@ type CreateContainerInput struct {
 	Body          containertypes.Create
 }
 
-// ContainerCreatedResponse is a dedicated response type
-type ContainerCreatedResponse struct {
-	Success bool                   `json:"success"`
-	Data    containertypes.Created `json:"data"`
-}
-
 type CreateContainerOutput struct {
-	Body ContainerCreatedResponse
+	Body base.ApiResponse[containertypes.Created]
 }
 
 type GetContainerInput struct {
@@ -94,14 +83,8 @@ type GetContainerInput struct {
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
-// ContainerDetailsResponse is a dedicated response type
-type ContainerDetailsResponse struct {
-	Success bool                   `json:"success"`
-	Data    containertypes.Details `json:"data"`
-}
-
 type GetContainerOutput struct {
-	Body ContainerDetailsResponse
+	Body base.ApiResponse[containertypes.Details]
 }
 
 type ContainerActionInput struct {
@@ -109,14 +92,8 @@ type ContainerActionInput struct {
 	ContainerID   string `path:"containerId" doc:"Container ID"`
 }
 
-// ContainerActionResponse is a dedicated response type
-type ContainerActionResponse struct {
-	Success bool                 `json:"success"`
-	Data    base.MessageResponse `json:"data"`
-}
-
 type ContainerActionOutput struct {
-	Body ContainerActionResponse
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 type DeleteContainerInput struct {
@@ -127,7 +104,7 @@ type DeleteContainerInput struct {
 }
 
 type DeleteContainerOutput struct {
-	Body ContainerActionResponse
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 // SetAutoUpdateInput is the request input for toggling container auto-update.
@@ -140,7 +117,7 @@ type SetAutoUpdateInput struct {
 }
 
 type SetAutoUpdateOutput struct {
-	Body ContainerActionResponse
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 // KillContainerInput carries the optional signal for a container kill.
@@ -176,7 +153,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "List containers",
 		Description: "Paginated list of containers",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersList, h.ListContainers)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -185,7 +162,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/counts",
 		Summary:     "Container status counts",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersList, h.GetContainerStatusCounts)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -194,7 +171,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers",
 		Summary:     "Create container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersCreate, h.CreateContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -203,7 +180,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}",
 		Summary:     "Get container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersRead, h.GetContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -212,7 +189,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}/start",
 		Summary:     "Start container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersStart, h.StartContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -221,7 +198,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}/stop",
 		Summary:     "Stop container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersStop, h.StopContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -230,7 +207,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}/restart",
 		Summary:     "Restart container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersRestart, h.RestartContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -240,7 +217,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Kill container",
 		Description: "Send a signal to the container's main process (default SIGKILL)",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersKill, h.KillContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -249,7 +226,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}/pause",
 		Summary:     "Pause container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersPause, h.PauseContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -258,7 +235,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}/unpause",
 		Summary:     "Unpause container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersPause, h.UnpauseContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -268,7 +245,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Commit container",
 		Description: "Create an image from a container",
 		Tags:        []string{"Containers", "Images"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermImagesCommit, h.CommitContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -278,7 +255,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Redeploy container",
 		Description: "Pull latest image and recreate container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersRedeploy, h.RedeployContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -287,7 +264,7 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Path:        "/environments/{id}/containers/{containerId}",
 		Summary:     "Delete container",
 		Tags:        []string{"Containers"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersDelete, h.DeleteContainer)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -297,15 +274,11 @@ func RegisterContainers(api huma.API, containerSvc *services.ContainerService, d
 		Summary:     "Set container auto-update",
 		Description: "Enable or disable auto-update for a specific container",
 		Tags:        []string{"Containers", "Updater"},
-		Security:    []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermContainersAutoUpdate, h.SetAutoUpdate)
 }
 
 func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContainersInput) (*ListContainersOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	if input.Updates != "" {
 		params.Filters["updates"] = input.Updates
@@ -331,10 +304,6 @@ func (h *ContainerHandler) ListContainers(ctx context.Context, input *ListContai
 }
 
 func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *GetContainerStatusCountsInput) (*GetContainerStatusCountsOutput, error) {
-	if h.dockerService == nil {
-		return nil, huma.Error500InternalServerError("docker service not available")
-	}
-
 	containers, _, _, _, err := h.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError((&common.ContainerStatusCountsError{Err: err}).Error())
@@ -362,7 +331,7 @@ func (h *ContainerHandler) GetContainerStatusCounts(ctx context.Context, input *
 	total := len(containers)
 
 	return &GetContainerStatusCountsOutput{
-		Body: ContainerStatusCountsResponse{
+		Body: base.ApiResponse[containertypes.StatusCounts]{
 			Success: true,
 			Data: containertypes.StatusCounts{
 				RunningContainers: running,
@@ -575,10 +544,6 @@ func buildNetworkingConfig(body containertypes.Create) *network.NetworkingConfig
 }
 
 func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateContainerInput) (*CreateContainerOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -615,7 +580,7 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 	}
 
 	return &CreateContainerOutput{
-		Body: ContainerCreatedResponse{
+		Body: base.ApiResponse[containertypes.Created]{
 			Success: true,
 			Data:    out,
 		},
@@ -623,17 +588,13 @@ func (h *ContainerHandler) CreateContainer(ctx context.Context, input *CreateCon
 }
 
 func (h *ContainerHandler) GetContainer(ctx context.Context, input *GetContainerInput) (*GetContainerOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	details, err := h.containerService.GetContainerDetails(ctx, input.ContainerID)
 	if err != nil {
 		return nil, huma.Error404NotFound((&common.ContainerRetrievalError{Err: err}).Error())
 	}
 
 	return &GetContainerOutput{
-		Body: ContainerDetailsResponse{
+		Body: base.ApiResponse[containertypes.Details]{
 			Success: true,
 			Data:    details,
 		},
@@ -748,10 +709,6 @@ type containerActionConfigInternal struct {
 }
 
 func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input *ContainerActionInput, cfg containerActionConfigInternal) (*ContainerActionOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -766,18 +723,14 @@ func (h *ContainerHandler) runContainerActionInternal(ctx context.Context, input
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, cfg.CompleteMessage, nil)
 
 	return &ContainerActionOutput{
-		Body: ContainerActionResponse{
+		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: cfg.SuccessMessage, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitContainerInput) (*CommitContainerOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if strings.TrimSpace(input.ContainerID) == "" {
 		return nil, huma.Error400BadRequest("container ID is required")
 	}
@@ -801,17 +754,14 @@ func (h *ContainerHandler) CommitContainer(ctx context.Context, input *CommitCon
 }
 
 func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *ContainerActionInput) (*GetContainerOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
 	}
 
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
-	activityID, runtimeCtx := activitylib.StartHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
+	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
 	redeployCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
@@ -826,10 +776,10 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	// Fetch full container details to return (consistent with other endpoints)
 	details, inspectErr := h.containerService.GetContainerDetails(runtimeCtx, newContainerID)
 	if inspectErr == nil {
-		details.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
 		return &GetContainerOutput{
-			Body: ContainerDetailsResponse{
+			Body: base.ApiResponse[containertypes.Details]{
 				Success: true,
 				Data:    details,
 			},
@@ -839,21 +789,17 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	// Container was redeployed successfully, but we couldn't fetch full details.
 	// Return minimal response with just the ID so frontend can still navigate.
 	return &GetContainerOutput{
-		Body: ContainerDetailsResponse{
+		Body: base.ApiResponse[containertypes.Details]{
 			Success: true,
 			Data: containertypes.Details{
 				ID:         newContainerID,
-				ActivityID: utils.StringPtrFromTrimmed(activityID),
+				ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 			},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteContainerInput) (*DeleteContainerOutput, error) {
-	if h.containerService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -868,18 +814,14 @@ func (h *ContainerHandler) DeleteContainer(ctx context.Context, input *DeleteCon
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Container deleted", nil)
 
 	return &DeleteContainerOutput{
-		Body: ContainerActionResponse{
+		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
-			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: utils.StringPtrFromTrimmed(activityID)},
+			Data:    base.MessageResponse{Message: "Container deleted successfully", ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()},
 		},
 	}, nil
 }
 
 func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpdateInput) (*SetAutoUpdateOutput, error) {
-	if h.settingsService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// Resolve container name from ID
 	containerName, err := h.containerService.GetContainerNameByID(ctx, input.ContainerID)
 	if err != nil {
@@ -897,7 +839,7 @@ func (h *ContainerHandler) SetAutoUpdate(ctx context.Context, input *SetAutoUpda
 	}
 
 	return &SetAutoUpdateOutput{
-		Body: ContainerActionResponse{
+		Body: base.ApiResponse[base.MessageResponse]{
 			Success: true,
 			Data:    base.MessageResponse{Message: msg},
 		},

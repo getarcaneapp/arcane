@@ -67,7 +67,7 @@
 			case 'ssh':
 				return m.git_repository_auth_ssh();
 			default:
-				return m.git_repository_auth_none();
+				return m.none();
 		}
 	}
 
@@ -166,7 +166,7 @@
 						<span>{selectedAuthType.label}</span>
 					</Select.Trigger>
 					<Select.Content>
-						<Select.Item value="none">{m.git_repository_auth_none()}</Select.Item>
+						<Select.Item value="none">{m.none()}</Select.Item>
 						<Select.Item value="http">{m.git_repository_auth_http()}</Select.Item>
 						<Select.Item value="ssh">{m.git_repository_auth_ssh()}</Select.Item>
 					</Select.Content>
@@ -214,24 +214,24 @@
 							<Select.Item value="accept_new">
 								<div class="flex flex-col">
 									<span>{m.git_repository_ssh_host_key_accept_new()}</span>
-									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_accept_new_description()}</span>
+									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_accept_new_description()}</span>
 								</div>
 							</Select.Item>
 							<Select.Item value="strict">
 								<div class="flex flex-col">
 									<span>{m.git_repository_ssh_host_key_strict()}</span>
-									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_strict_description()}</span>
+									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_strict_description()}</span>
 								</div>
 							</Select.Item>
 							<Select.Item value="skip">
 								<div class="flex flex-col">
 									<span>{m.git_repository_ssh_host_key_skip()}</span>
-									<span class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_skip_description()}</span>
+									<span class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_skip_description()}</span>
 								</div>
 							</Select.Item>
 						</Select.Content>
 					</Select.Root>
-					<p class="text-muted-foreground text-xs">{m.git_repository_ssh_host_key_verification_description()}</p>
+					<p class="text-xs text-muted-foreground">{m.git_repository_ssh_host_key_verification_description()}</p>
 				</div>
 			{/if}
 

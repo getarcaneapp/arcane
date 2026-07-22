@@ -123,10 +123,10 @@
 			<SidebarItemGroup label={m.sidebar_management()} items={managementItems} />
 		{/if}
 		{#if resourceItems.length > 0}
-			<SidebarItemGroup label={m.sidebar_resources()} items={resourceItems} />
+			<SidebarItemGroup label={m.resources()} items={resourceItems} />
 		{/if}
 		{#if swarmItems.length > 0}
-			<SidebarItemGroup label={m.swarm_title()} items={swarmItems} />
+			<SidebarItemGroup label={m.swarm()} items={swarmItems} />
 		{/if}
 		{#if settingsItems.length > 0}
 			<SidebarItemGroup label={m.sidebar_administration()} items={settingsItems} />
@@ -143,7 +143,7 @@
 			<button
 				type="button"
 				onclick={() => (showVersionDialog = true)}
-				class="text-muted-foreground/60 hover:text-muted-foreground cursor-pointer text-xs font-medium transition-colors"
+				class="cursor-pointer text-xs font-medium text-muted-foreground/60 transition-colors hover:text-muted-foreground"
 			>
 				{m.sidebar_version({
 					version: versionInformation?.displayVersion ?? versionInformation?.currentVersion ?? m.common_unknown()

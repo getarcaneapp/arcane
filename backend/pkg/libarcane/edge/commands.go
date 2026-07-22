@@ -1,17 +1,11 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"net/http"
 	"strings"
 )
-
-type commandRoute struct {
-	Method      string
-	PathPattern string
-	CommandName string
-	Stream      bool
-	LocalOnly   bool
-}
 
 var commandRoutes = []commandRoute{
 	{Method: http.MethodGet, PathPattern: "/api/health", CommandName: "system.health"},
@@ -232,41 +226,26 @@ var commandRoutes = []commandRoute{
 	{PathPattern: "/api/environments/{id}/ws/system/stats", CommandName: "system.stats.stream", Stream: true},
 }
 
-type commandRouteKey struct {
-	Method string
-	Stream bool
-}
-
-type commandRouteNode struct {
-	static map[string]*commandRouteNode
-	param  *commandRouteNode
-	route  *commandRoute
-}
-
-type commandRouteIndexInternal struct {
-	roots map[commandRouteKey]*commandRouteNode
-}
-
 var commandRoutesIndex = buildCommandRouteIndexInternal(commandRoutes)
 
-func ResolveEdgeCommandName(method, requestPath string, stream bool) (string, bool) {
+func ResolveEdgeCommandName(method, requestPath string, stream bool) mo.Option[string] {
 	method = strings.ToUpper(strings.TrimSpace(method))
 	requestPath = normalizeCommandPathInternal(requestPath)
 
-	route, ok := commandRoutesIndex.resolveInternal(method, requestPath, stream)
+	route, ok := commandRoutesIndex.resolveInternal(method, requestPath, stream).Get()
 	if !ok {
-		return "", false
+		return mo.None[string]()
 	}
 
 	if route.LocalOnly {
-		return "", false
+		return mo.None[string]()
 	}
 
-	return route.CommandName, true
+	return mo.Some(route.CommandName)
 }
 
 func ValidateEdgeCommand(commandName, method, requestPath string, stream bool) bool {
-	resolved, ok := ResolveEdgeCommandName(method, requestPath, stream)
+	resolved, ok := ResolveEdgeCommandName(method, requestPath, stream).Get()
 	return ok && resolved == strings.TrimSpace(commandName)
 }
 
@@ -362,10 +341,10 @@ func (n *commandRouteNode) insertInternal(route *commandRoute) {
 	current.route = route
 }
 
-func (i commandRouteIndexInternal) resolveInternal(method string, requestPath string, stream bool) (*commandRoute, bool) {
+func (i commandRouteIndexInternal) resolveInternal(method string, requestPath string, stream bool) mo.Option[*commandRoute] {
 	root := i.roots[commandRouteLookupKeyInternal(method, stream)]
 	if root == nil {
-		return nil, false
+		return mo.None[*commandRoute]()
 	}
 
 	current := root
@@ -375,12 +354,12 @@ func (i commandRouteIndexInternal) resolveInternal(method string, requestPath st
 			continue
 		}
 		if current.param == nil || part == "" {
-			return nil, false
+			return mo.None[*commandRoute]()
 		}
 		current = current.param
 	}
 	if current.route == nil {
-		return nil, false
+		return mo.None[*commandRoute]()
 	}
-	return current.route, true
+	return mo.Some(current.route)
 }

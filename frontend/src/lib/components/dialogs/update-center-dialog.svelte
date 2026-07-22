@@ -14,6 +14,7 @@
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { formatDistanceToNow } from 'date-fns';
 	import ReleaseNotes from '$lib/components/release-notes.svelte';
+	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open/upgrading have no $bindable fallback: upstream binds can start out
 	// undefined, and binding undefined to a $bindable with a fallback throws
@@ -70,11 +71,7 @@
 	const debugFetchSettled = $derived(debugReleaseQuery.isSuccess || debugReleaseQuery.isError);
 
 	const trackingTag = $derived(versionInformation?.currentTag ?? '');
-	const currentDigest = $derived(versionInformation?.currentDigest ?? '');
-	const newDigest = $derived(versionInformation?.newestDigest ?? '');
-
-	const semverCurrent = $derived(versionInformation?.displayVersion || versionInformation?.currentVersion || '');
-	const semverNew = $derived(versionInformation?.newestVersion || debugRelease?.tag || '');
+	const newestVersion = $derived(versionInformation?.newestVersion || debugRelease?.tag || '');
 
 	const installLabel = $derived.by(() => {
 		if (isSemver && versionInformation?.newestVersion) {
@@ -497,7 +494,7 @@
 								class={cn(
 									'transition-colors',
 									step.state === 'done' && 'text-foreground',
-									step.state === 'active' && 'text-foreground font-medium',
+									step.state === 'active' && 'font-medium text-foreground',
 									step.state === 'pending' && 'text-muted-foreground'
 								)}
 							>
@@ -513,10 +510,10 @@
 							<SuccessIcon class="size-4" />
 							{m.update_center_complete()}
 						</p>
-						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.update_center_close()} />
+						<ArcaneButton action="base" onclick={closeAfterComplete} size="sm" customLabel={m.common_close()} />
 					</div>
 				{:else}
-					<p class="text-muted-foreground mt-4 text-xs">
+					<p class="mt-4 text-xs text-muted-foreground">
 						{m.update_center_estimated()}
 					</p>
 				{/if}
@@ -539,77 +536,19 @@
 						{/if}
 					</Dialog.Title>
 
-					{#if isSemver && (semverCurrent || semverNew)}
-						<div class="flex flex-wrap items-center gap-2 text-sm">
-							{#if semverCurrent}
-								<span class="bg-muted text-muted-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs">
-									{semverCurrent}
-								</span>
-							{/if}
-							{#if semverCurrent && semverNew}
-								<span class="text-muted-foreground/60">→</span>
-							{/if}
-							{#if semverNew}
-								<span
-									class="bg-primary/10 text-primary inline-flex items-center rounded-md px-2 py-0.5 font-mono text-xs font-medium"
-								>
-									{semverNew}
-								</span>
-							{/if}
-							{#if releasedAgo}
-								<span class="text-muted-foreground/70 text-xs">· {m.update_center_released_at({ date: releasedAgo })}</span>
-							{/if}
-						</div>
-					{:else if !isSemver && (trackingTag || currentDigest || newDigest)}
-						<div class="space-y-1.5 text-xs">
-							{#if trackingTag}
-								<div class="flex items-baseline gap-2">
-									<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase">{m.update_center_tag_label()}</span
-									>
-									<span class="bg-muted text-foreground inline-flex items-center rounded-md px-2 py-0.5 font-mono">
-										{trackingTag}
-									</span>
-								</div>
-							{/if}
-							{#if currentDigest}
-								<div class="flex items-baseline gap-2">
-									<span class="text-muted-foreground/70 w-16 shrink-0 tracking-wide uppercase"
-										>{m.update_center_current_label()}</span
-									>
-									<code
-										class="text-muted-foreground bg-muted/50 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] break-all"
-									>
-										{currentDigest}
-									</code>
-								</div>
-							{/if}
-							{#if newDigest}
-								<div class="flex items-baseline gap-2">
-									<span class="text-primary/80 w-16 shrink-0 tracking-wide uppercase">{m.update_center_new_label()}</span>
-									<code
-										class="text-primary bg-primary/10 min-w-0 flex-1 rounded-md px-2 py-1 font-mono text-[11px] font-medium break-all"
-									>
-										{newDigest}
-									</code>
-								</div>
-							{/if}
-							{#if releasedAgo}
-								<p class="text-muted-foreground/70 pt-1">{m.update_center_released_at({ date: releasedAgo })}</p>
-							{/if}
-						</div>
-					{/if}
+					<VersionUpdateSummary {versionInformation} {newestVersion} {releasedAgo} />
 				</Dialog.Header>
 			</div>
 
-			<div class="border-border/60 border-t">
+			<div class="border-t border-border/60">
 				<div class="flex items-center justify-between px-6 pt-4 pb-2">
-					<h3 class="text-foreground text-sm font-semibold">{m.update_center_whats_new()}</h3>
+					<h3 class="text-sm font-semibold text-foreground">{m.update_center_whats_new()}</h3>
 					{#if effectiveReleaseUrl}
 						<a
 							href={effectiveReleaseUrl}
 							target="_blank"
 							rel="noopener noreferrer"
-							class="text-muted-foreground hover:text-foreground inline-flex items-center gap-1 text-xs transition-colors"
+							class="inline-flex items-center gap-1 text-xs text-muted-foreground transition-colors hover:text-foreground"
 						>
 							{m.update_center_view_full_release()}
 							<ExternalLinkIcon class="size-3" />
@@ -621,29 +560,29 @@
 					{#if effectiveReleaseNotes}
 						<ReleaseNotes markdown={effectiveReleaseNotes} />
 					{:else if debug && debugFetching}
-						<div class="text-muted-foreground flex items-center gap-2 text-sm">
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
 							<Spinner class="size-3.5" />
 							<span>Loading release notes…</span>
 						</div>
 					{:else if debug && debugFetchSettled && !effectiveReleaseNotes}
-						<p class="text-muted-foreground text-sm italic">
+						<p class="text-sm text-muted-foreground italic">
 							{m.update_center_release_notes_unavailable()}
 						</p>
 					{:else}
-						<p class="text-muted-foreground text-sm italic">
+						<p class="text-sm text-muted-foreground italic">
 							{m.update_center_release_notes_unavailable()}
 						</p>
 					{/if}
 				</ScrollArea.Root>
 			</div>
 
-			<div class="border-border/60 bg-muted/30 border-t px-6 py-3">
-				<p class="text-muted-foreground text-xs leading-relaxed">
+			<div class="border-t border-border/60 bg-muted/30 px-6 py-3">
+				<p class="text-xs leading-relaxed text-muted-foreground">
 					{m.update_center_summary()}
 				</p>
 			</div>
 
-			<Dialog.Footer class="border-border/60 border-t px-6 py-4">
+			<Dialog.Footer class="border-t border-border/60 px-6 py-4">
 				<ArcaneButton action="cancel" customLabel={m.update_center_later()} onclick={() => (open = false)} />
 				{#if canInstall}
 					<ArcaneButton action="update" customLabel={installLabel} onclick={handleConfirm} />

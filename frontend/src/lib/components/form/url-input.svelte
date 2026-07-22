@@ -71,10 +71,10 @@
 	</ButtonGroup.Root>
 
 	{#if description && !error}
-		<p class="text-muted-foreground text-xs">{description}</p>
+		<p class="text-xs text-muted-foreground">{description}</p>
 	{/if}
 
 	{#if error}
-		<p class="text-destructive text-xs">{error}</p>
+		<p class="text-xs text-destructive">{error}</p>
 	{/if}
 </div>

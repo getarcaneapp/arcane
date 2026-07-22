@@ -31,7 +31,7 @@
 					onSuccess: (data) => {
 						services = data;
 					},
-					errorMessage: m.common_refresh_failed({ resource: m.swarm_services_title() })
+					errorMessage: m.common_refresh_failed({ resource: m.services() })
 				}
 			},
 			(v) => (isLoading.refresh = v)
@@ -93,7 +93,7 @@
 	/>
 {/if}
 
-<ResourcePageLayout title={m.swarm_services_title()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.services()} subtitle={m.swarm_services_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<SwarmServicesTable bind:services bind:requestOptions />
 	{/snippet}

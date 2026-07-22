@@ -3,8 +3,4 @@
 	import { m } from '$lib/paraglide/messages';
 </script>
 
-<ResourceErrorPage
-	fallbackTitle={m.error_generic()}
-	backLabel={m.common_back_to({ resource: m.images_title() })}
-	backHref="/images"
-/>
+<ResourceErrorPage fallbackTitle={m.error_generic()} backLabel={m.common_back_to({ resource: m.images() })} backHref="/images" />

@@ -109,7 +109,7 @@
 			actions.push({
 				id: 'sync',
 				action: 'base',
-				label: m.sync_environment(),
+				label: m.resource_sync_cap(),
 				onclick: syncEnvironment,
 				disabled: isSyncing,
 				loading: isSyncing,
@@ -173,7 +173,7 @@
 				},
 				{
 					value: 'security',
-					label: m.security_title(),
+					label: m.security(),
 					icon: SecurityIcon
 				},
 				{
@@ -363,7 +363,7 @@
 			onSave: saveEnvironmentSettings,
 			successMessage: m.common_update_success({ resource: m.resource_environment_cap() }),
 			errorMessage: m.common_update_failed({ resource: m.resource_environment() }),
-			onReset: () => toast.info(m.environments_changes_reset())
+			onReset: () => toast.info(m.changes_reset())
 		})
 	);
 
@@ -526,11 +526,11 @@
 			<div class="flex flex-1 items-start gap-4">
 				<div class="min-w-0 flex-1">
 					<h1 class="text-xl font-semibold wrap-break-word sm:text-2xl">{environment.name}</h1>
-					<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">{m.environments_page_subtitle()}</p>
+					<p class="mt-1.5 text-sm wrap-break-word text-muted-foreground sm:text-base">{m.environments_page_subtitle()}</p>
 				</div>
 
 				<!-- Enable/Disable indicator -->
-				<div class="border-border/60 bg-card/40 flex shrink-0 items-center gap-2.5 rounded-lg border px-3 py-1.5">
+				<div class="flex shrink-0 items-center gap-2.5 rounded-lg border border-border/60 bg-card/40 px-3 py-1.5">
 					<div class="flex items-center gap-2">
 						<div
 							class={cn(
@@ -560,9 +560,9 @@
 			<div class="flex min-w-0 flex-col items-start gap-3 sm:items-end">
 				<div class="hidden flex-wrap items-center gap-2 self-start sm:flex sm:self-end">
 					{#if settingsForm.hasChanges}
-						<span class="text-xs text-orange-600 dark:text-orange-400">{m.environments_unsaved_changes()}</span>
+						<span class="text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
 					{:else}
-						<span class="text-xs text-green-600 dark:text-green-400">{m.environments_all_changes_saved()}</span>
+						<span class="text-xs text-green-600 dark:text-green-400">{m.common_all_changes_saved()}</span>
 					{/if}
 
 					{#if settingsForm.hasChanges}
@@ -640,7 +640,7 @@
 				<div class="space-y-2">
 					<p class="text-sm font-medium">{m.environments_new_api_key()}</p>
 					<div class="flex items-center gap-2">
-						<code class="bg-background/70 flex-1 rounded-md px-3 py-2 font-mono text-sm break-all">
+						<code class="flex-1 rounded-md bg-background/70 px-3 py-2 font-mono text-sm break-all">
 							{regeneratedApiKey}
 						</code>
 						<CopyButton text={regeneratedApiKey} size="icon" class="size-8 shrink-0" />

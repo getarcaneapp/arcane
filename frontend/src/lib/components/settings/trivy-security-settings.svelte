@@ -59,7 +59,7 @@
 	const baseTrivyNetworkOptions: TrivyNetworkOption[] = [
 		{
 			value: '',
-			label: m.security_trivy_network_auto_label(),
+			label: m.auto(),
 			description: m.security_trivy_network_auto_description()
 		},
 		{ value: 'bridge', label: 'bridge' },
@@ -158,7 +158,7 @@
 			</Card.Title>
 		</div>
 	</Card.Header>
-	<Card.Content class="divide-border/40 divide-y lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+	<Card.Content class="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 		<div class="max-w-xl">
 			<TextInputWithLabel
 				bind:value={$formInputs.trivyImage.value}
@@ -199,7 +199,7 @@
 				class="w-full justify-between"
 			/>
 			{#if $formInputs.trivyNetwork.error}
-				<p class="text-destructive mt-2 text-sm">{$formInputs.trivyNetwork.error}</p>
+				<p class="mt-2 text-sm text-destructive">{$formInputs.trivyNetwork.error}</p>
 			{/if}
 		</SettingsRow>
 
@@ -212,7 +212,7 @@
 				<Switch id="trivyServerEnabledSwitch" bind:checked={$formInputs.trivyServerEnabled.value} />
 			</SettingsRow>
 			{#if $formInputs.trivyServerEnabled.value}
-				<div class="border-border/60 space-y-4 border-l-2 pl-5">
+				<div class="space-y-4 border-l-2 border-border/60 pl-5">
 					<TextInputWithLabel
 						bind:value={$formInputs.trivyServerUrl.value}
 						error={$formInputs.trivyServerUrl.error}
@@ -251,7 +251,7 @@
 				rows={4}
 			/>
 			{#if $formInputs.trivySecurityOpts.error}
-				<p class="text-destructive mt-2 text-sm">{$formInputs.trivySecurityOpts.error}</p>
+				<p class="mt-2 text-sm text-destructive">{$formInputs.trivySecurityOpts.error}</p>
 			{/if}
 		</SettingsRow>
 
@@ -292,7 +292,7 @@
 				/>
 			</SettingsRow>
 			{#if $formInputs.trivyResourceLimitsEnabled.value}
-				<div class="border-border/60 space-y-4 border-l-2 pl-5">
+				<div class="space-y-4 border-l-2 border-border/60 pl-5">
 					<div class="grid gap-4 sm:grid-cols-2">
 						<TextInputWithLabel
 							bind:value={$formInputs.trivyCpuLimit.value}

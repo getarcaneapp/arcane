@@ -55,12 +55,13 @@ func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath strin
 
 	// Register the stream before sending the start message so agent replies
 	// are never dropped when the routing goroutine is faster than this goroutine.
-	agentDataCh := make(chan *TunnelMessage, 512)
+	pending := &PendingRequest{
+		ResponseCh: make(chan *TunnelMessage, 512),
+		failureCh:  make(chan error, 1),
+	}
 	clientDoneCh := make(chan struct{})
 
-	tunnel.Pending.Store(streamID, &PendingRequest{
-		ResponseCh: agentDataCh,
-	})
+	tunnel.Pending.Store(streamID, pending)
 	defer tunnel.Pending.Delete(streamID)
 
 	headers := buildWebSocketHeaders(req)
@@ -84,7 +85,7 @@ func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath strin
 	// Goroutine to read from client and send to agent
 	go forwardClientToAgent(ctx, streamCtx, clientWS, tunnel, streamID, clientDoneCh)
 
-	forwardAgentToClient(ctx, streamCtx, clientWS, tunnel, agentDataCh, streamID, clientDoneCh)
+	forwardAgentToClient(ctx, streamCtx, clientWS, tunnel, pending, streamID, clientDoneCh)
 	return nil
 }
 
@@ -128,13 +129,17 @@ func forwardClientToAgent(ctx context.Context, streamCtx context.Context, client
 	}
 }
 
-func forwardAgentToClient(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, agentDataCh <-chan *TunnelMessage, streamID string, clientDoneCh <-chan struct{}) {
+func forwardAgentToClient(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, pending *PendingRequest, streamID string, clientDoneCh <-chan struct{}) {
 	pingTicker := time.NewTicker(tunnelWSPingPeriod)
 	defer pingTicker.Stop()
 
 	for {
 		select {
 		case <-streamCtx.Done():
+			return
+		case <-tunnel.done:
+			return
+		case <-pending.failureCh:
 			return
 		case <-clientDoneCh:
 			return
@@ -145,7 +150,7 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 				sendWebSocketClose(tunnel, streamID)
 				return
 			}
-		case msg, ok := <-agentDataCh:
+		case msg, ok := <-pending.ResponseCh:
 			if !ok {
 				return
 			}

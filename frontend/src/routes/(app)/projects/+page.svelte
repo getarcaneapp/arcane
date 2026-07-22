@@ -171,7 +171,7 @@
 	}
 
 	async function toggleArchived(next: boolean) {
-		const url = new URL(page.url);
+		const url = new URL(page.url.href);
 		if (next) {
 			url.searchParams.set('archived', 'true');
 		} else {

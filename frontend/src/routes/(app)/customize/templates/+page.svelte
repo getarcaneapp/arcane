@@ -7,7 +7,7 @@
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts';
 	import { TabBar, type TabItem } from '$lib/components/tab-bar';
 	import * as Tabs from '$lib/components/ui/tabs';
-	import TemplatesBrowser from './components/TemplatesBrowser.svelte';
+	import TemplateGallery from './components/template-gallery.svelte';
 	import RegistryManager from './components/RegistryManager.svelte';
 	import type { TemplateRegistry } from '$lib/types/swarm';
 	import { untrack } from 'svelte';
@@ -200,7 +200,7 @@
 				</div>
 
 				<Tabs.Content value="browse">
-					<TemplatesBrowser bind:templates bind:requestOptions />
+					<TemplateGallery bind:templates bind:requestOptions />
 				</Tabs.Content>
 
 				<Tabs.Content value="registries">

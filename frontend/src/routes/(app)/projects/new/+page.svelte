@@ -190,7 +190,7 @@
 					m.common_create_success({ resource: `${m.resource_project()} "${name}"` }),
 					activityToastOptions(extractActivityId(project))
 				);
-				// fallow-ignore-next-line code-duplication create-success handler; navigation target diverges per page
+				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
 				goto(`/projects/${project.id}`, { invalidateAll: true });
 			}
 		});
@@ -306,7 +306,7 @@
 	}
 </script>
 
-<div class="bg-background flex h-full min-h-0 flex-col">
+<div class="flex h-full min-h-0 flex-col bg-background">
 	<div class="sticky top-0 mb-2 border-b">
 		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
 			<div class="flex items-center gap-4">
@@ -319,7 +319,7 @@
 					icon={ArrowLeftIcon}
 					customLabel={m.common_back()}
 				/>
-				<div class="bg-border hidden h-4 w-px sm:block"></div>
+				<div class="hidden h-4 w-px bg-border sm:block"></div>
 				<div class="hidden items-center gap-3 sm:flex">
 					<EditableName
 						bind:value={$inputs.name.value}
@@ -357,7 +357,7 @@
 					itemsDisabled={ui.saving || ui.converting || ui.isLoadingTemplateContent}
 					useTemplateLabel={m.common_use_template()}
 					onUseTemplate={() => {
-						// fallow-ignore-next-line code-duplication shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
+						// fallow-ignore-next-line code-duplication -- shared ComposeCreateMenu wiring with swarm stack create; labels/handlers are page-specific
 						ui.showTemplateDialog = true;
 					}}
 					convertLabel={m.compose_convert_from_docker_run()}
@@ -400,7 +400,7 @@
 				<div class="flex shrink-0 items-center justify-end gap-2">
 					<label
 						for="new-project-layout-mode-toggle"
-						class="text-muted-foreground cursor-pointer text-xs"
+						class="cursor-pointer text-xs text-muted-foreground"
 						title={m.project_view_description()}
 					>
 						{m.workspace()}
@@ -417,7 +417,7 @@
 				</div>
 
 				{#if layoutMode === 'tree'}
-					<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
 						<ResizableSplit
 							class="min-h-0 flex-1"
 							{...composeTreeSplitProps}
@@ -536,7 +536,7 @@
 						{/snippet}
 					</ComposeEditorSplit>
 				{/if}
-				<!-- fallow-ignore-next-line code-duplication compose editor panel closing structure; ResizableSplit bindings/persistKey diverge per page -->
+				<!-- fallow-ignore-next-line code-duplication -- compose editor panel closing structure; ResizableSplit bindings/persistKey diverge per page -->
 			</div>
 		</div>
 	</div>

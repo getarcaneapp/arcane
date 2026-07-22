@@ -65,7 +65,7 @@
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">
-		<div class="bg-card/90 rounded-lg border p-0 backdrop-blur-sm">
+		<div class="rounded-lg border bg-card/90 p-0 backdrop-blur-sm">
 			<LogViewer
 				bind:this={viewer}
 				bind:autoScroll

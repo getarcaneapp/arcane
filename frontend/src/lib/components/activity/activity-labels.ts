@@ -1,5 +1,5 @@
 import { m } from '$lib/paraglide/messages';
-import type { ActivityFilter, ActivityStatus, ActivityType } from '$lib/types/activity.type';
+import type { ActivityStatus, ActivityType } from '$lib/types/activity.type';
 import type { IconType } from '$lib/icons';
 import {
 	ActivityIcon,
@@ -81,7 +81,7 @@ export function activityTypeLabel(type: ActivityType): string {
 		case 'vulnerability_scan':
 			return m.activity_type_vulnerability_scan();
 		case 'auto_update':
-			return m.activity_type_auto_update();
+			return m.auto_update();
 		case 'system_prune':
 			return m.activity_type_system_prune();
 		case 'resource_action':
@@ -125,16 +125,5 @@ export function activityTypeIcon(type: ActivityType): IconType {
 			return ActivityIcon;
 		default:
 			return ActivityIcon;
-	}
-}
-
-export function activityFilterLabel(filter: ActivityFilter): string {
-	switch (filter) {
-		case 'running':
-			return m.common_running();
-		case 'failed':
-			return m.common_failed();
-		case 'completed':
-			return m.activity_filter_completed();
 	}
 }

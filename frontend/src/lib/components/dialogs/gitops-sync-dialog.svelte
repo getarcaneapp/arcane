@@ -309,7 +309,7 @@
 
 						<SelectWithLabel
 							id="targetType"
-							label={m.webhook_target_type_label()}
+							label={m.target_type()}
 							value={selectedTargetType}
 							options={targetTypeOptions}
 							onValueChange={(value) => (selectedTargetType = value as GitOpsSyncTargetType)}
@@ -351,7 +351,7 @@
 							{#if loadingBranches}
 								<div class="flex h-10 items-center gap-2 rounded-md border px-3">
 									<Spinner class="size-4" />
-									<span class="text-muted-foreground text-sm">{m.common_loading()}</span>
+									<span class="text-sm text-muted-foreground">{m.common_loading()}</span>
 								</div>
 							{:else if branches.length > 0}
 								<Select.Root
@@ -371,7 +371,7 @@
 											<Select.Item value={branch.name} class="truncate">
 												{branch.name}
 												{#if branch.isDefault}
-													<span class="text-muted-foreground ml-2 text-xs">({m.common_default()})</span>
+													<span class="ml-2 text-xs text-muted-foreground">({m.common_default()})</span>
 												{/if}
 											</Select.Item>
 										{/each}
@@ -401,18 +401,18 @@
 					</div>
 				</div>
 
-				<div class="border-border/70 bg-muted/20 grid gap-3 rounded-lg border p-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
+				<div class="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-3 sm:grid-cols-[minmax(0,1fr)_8rem]">
 					<div class="grid gap-3 sm:grid-cols-2">
 						<div class="flex items-start gap-3">
 							<Switch id="syncDirectorySwitch" bind:checked={$inputs.syncDirectory.value} disabled={lockSyncDirectory} />
 							<div class="space-y-1">
 								<Label for="syncDirectorySwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_sync_files()}</Label>
-								<p class="text-muted-foreground text-xs">{m.git_sync_sync_files_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.git_sync_sync_files_description()}</p>
 								{#if lockSyncDirectory}
-									<p class="text-muted-foreground text-xs italic">{m.git_sync_sync_files_locked_hint()}</p>
+									<p class="text-xs text-muted-foreground italic">{m.git_sync_sync_files_locked_hint()}</p>
 								{/if}
 								{#if $inputs.syncDirectory.error}
-									<p class="text-destructive text-xs font-medium">{$inputs.syncDirectory.error}</p>
+									<p class="text-xs font-medium text-destructive">{$inputs.syncDirectory.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -421,9 +421,9 @@
 							<Switch id="autoSyncSwitch" bind:checked={$inputs.autoSync.value} />
 							<div class="space-y-1">
 								<Label for="autoSyncSwitch" class="mb-0 text-sm leading-none font-medium">{m.git_sync_auto_sync()}</Label>
-								<p class="text-muted-foreground text-xs">{m.common_auto_sync_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.common_auto_sync_description()}</p>
 								{#if $inputs.autoSync.error}
-									<p class="text-destructive text-xs font-medium">{$inputs.autoSync.error}</p>
+									<p class="text-xs font-medium text-destructive">{$inputs.autoSync.error}</p>
 								{/if}
 							</div>
 						</div>
@@ -434,7 +434,7 @@
 							<Label for="syncInterval" class="mb-0 text-sm leading-none font-medium">
 								{m.git_sync_sync_interval()}
 							</Label>
-							<p class="text-muted-foreground text-xs">{m.git_sync_sync_interval_description()}</p>
+							<p class="text-xs text-muted-foreground">{m.git_sync_sync_interval_description()}</p>
 						</div>
 						<Input
 							id="syncInterval"
@@ -444,7 +444,7 @@
 							aria-invalid={$inputs.syncInterval.error ? 'true' : undefined}
 						/>
 						{#if $inputs.syncInterval.error}
-							<p class="text-destructive text-xs font-medium">{$inputs.syncInterval.error}</p>
+							<p class="text-xs font-medium text-destructive">{$inputs.syncInterval.error}</p>
 						{/if}
 					</div>
 				</div>
@@ -452,7 +452,7 @@
 				<Collapsible.Root class="group/collapsible">
 					<Collapsible.Trigger
 						type="button"
-						class="text-muted-foreground hover:text-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm transition-colors"
+						class="flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
 					>
 						<span class="min-w-0">
 							<span class="block font-medium">{m.git_sync_per_sync_file_limits_title()}</span>
@@ -460,8 +460,8 @@
 						<ArrowRightIcon class="mt-0.5 size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
 					</Collapsible.Trigger>
 					<Collapsible.Content>
-						<div class="border-border/70 mt-2 rounded-lg border border-dashed p-3">
-							<p class="text-muted-foreground mb-3 text-xs">{m.git_sync_per_sync_file_limits_description()}</p>
+						<div class="mt-2 rounded-lg border border-dashed border-border/70 p-3">
+							<p class="mb-3 text-xs text-muted-foreground">{m.git_sync_per_sync_file_limits_description()}</p>
 							<div class="grid gap-3 sm:grid-cols-3">
 								<FormInput
 									label={m.git_sync_max_files_label()}
@@ -493,7 +493,7 @@
 					<Collapsible.Root class="group/collapsible">
 						<Collapsible.Trigger
 							type="button"
-							class="text-muted-foreground hover:text-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm transition-colors"
+							class="flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm text-muted-foreground transition-colors hover:text-foreground"
 						>
 							<span class="min-w-0">
 								<span class="block font-medium">{m.git_sync_pre_deploy_title()}</span>
@@ -501,7 +501,7 @@
 							<ArrowRightIcon class="mt-0.5 size-4 shrink-0 transition-transform group-data-[state=open]/collapsible:rotate-90" />
 						</Collapsible.Trigger>
 						<Collapsible.Content>
-							<div class="border-border/70 mt-2 space-y-3 rounded-lg border border-dashed p-3">
+							<div class="mt-2 space-y-3 rounded-lg border border-dashed border-border/70 p-3">
 								<Alert.Root
 									class="border-amber-500/30 bg-amber-500/5 text-amber-700 dark:text-amber-300 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2"
 								>
@@ -511,7 +511,7 @@
 									</Alert.Description>
 								</Alert.Root>
 
-								<p class="text-muted-foreground text-xs">{m.git_sync_pre_deploy_description()}</p>
+								<p class="text-xs text-muted-foreground">{m.git_sync_pre_deploy_description()}</p>
 
 								<div class="space-y-1.5">
 									<Label for="preDeployScriptPath" class="text-sm font-medium">
@@ -529,9 +529,9 @@
 										</div>
 										{@render BrowseFilesButton('preDeployScript')}
 									</div>
-									<p class="text-muted-foreground text-xs">{m.git_sync_pre_deploy_script_path_help()}</p>
+									<p class="text-xs text-muted-foreground">{m.git_sync_pre_deploy_script_path_help()}</p>
 									{#if $inputs.preDeployScriptPath.error}
-										<p class="text-destructive text-xs font-medium">{$inputs.preDeployScriptPath.error}</p>
+										<p class="text-xs font-medium text-destructive">{$inputs.preDeployScriptPath.error}</p>
 									{/if}
 								</div>
 
@@ -552,7 +552,7 @@
 										bind:input={$inputs.preDeployTimeoutSec}
 									/>
 									<FormInput
-										label={m.git_sync_pre_deploy_network_mode_label()}
+										label={m.resource_network_cap()}
 										type="text"
 										placeholder={m.git_sync_pre_deploy_network_mode_placeholder()}
 										helpText={m.git_sync_pre_deploy_network_mode_help()}
@@ -582,7 +582,7 @@
 					</Collapsible.Root>
 				{:else if lifecycleEnabled && canManageLifecycle}
 					<div
-						class="text-muted-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm"
+						class="flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm text-muted-foreground"
 					>
 						<span class="min-w-0">
 							<span class="block font-medium">{m.git_sync_pre_deploy_title()}</span>
@@ -591,7 +591,7 @@
 					</div>
 				{:else if lifecycleEnabled}
 					<div
-						class="text-muted-foreground flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm"
+						class="flex w-full items-start justify-between gap-3 rounded-md px-1 py-1.5 text-left text-sm text-muted-foreground"
 					>
 						<span class="min-w-0">
 							<span class="block font-medium">{m.git_sync_pre_deploy_title()}</span>
@@ -608,7 +608,7 @@
 					</div>
 				{/if}
 
-				<Alert.Root class="border-border/70 bg-muted/20 text-muted-foreground py-2 [&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
+				<Alert.Root class="border-border/70 bg-muted/20 py-2 text-muted-foreground [&>svg]:top-1/2 [&>svg]:-translate-y-1/2">
 					<InfoIcon class="size-4" />
 					<Alert.Description class="text-xs">
 						{m.webhook_hint_description()}
@@ -636,14 +636,14 @@
 
 {#snippet composeBadge(file: FileTreeNode)}
 	{#if composeFileFilter(file)}
-		<span class="bg-primary/10 text-primary ml-auto rounded px-2 py-0.5 text-xs">
-			{m.git_sync_browse_compose_label()}
+		<span class="ml-auto rounded bg-primary/10 px-2 py-0.5 text-xs text-primary">
+			{m.compose()}
 		</span>
 	{/if}
 {/snippet}
 
 {#snippet composeFooterHint()}
-	<p class="text-muted-foreground text-xs">{m.git_sync_browse_hint()}</p>
+	<p class="text-xs text-muted-foreground">{m.git_sync_browse_hint()}</p>
 {/snippet}
 
 <FileBrowserDialog

@@ -1,5 +1,8 @@
 name: Release New Arcane Version
 
+env:
+  GOEXPERIMENT: jsonv2
+
 on:
   push:
     tags:
@@ -45,6 +48,9 @@ jobs:
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
 
+      - name: Setup depot buildx driver
+        run: depot configure-docker
+
       - name: Login to GHCR
         uses: docker/login-action@v4.4.0
         with:
@@ -73,128 +79,11 @@ jobs:
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.2
 
-      - name: Manager image metadata
-        id: manager-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ${{ env.MANAGER_IMAGE_NAME }}
-            ${{ env.MANAGER_IMAGE_ALIAS }}
-          tags: |
-            type=semver,pattern={{version}},prefix=v
-            type=semver,pattern={{major}}.{{minor}},prefix=v
-            type=semver,pattern={{major}},prefix=v
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.authors=OFKM Technologies
-            org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
-            org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
-            org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
-            org.opencontainers.image.version=${{ github.ref_name }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=BSD-3-Clause
-            org.opencontainers.image.ref.name=arcane
-            org.opencontainers.image.title=Arcane
-            org.opencontainers.image.description=Modern Docker Management, Made for Everyone
-            com.getarcaneapp.arcane=true
-
-      - name: Build and push manager image
-        id: manager-build
-        uses: depot/build-push-action@v1.18.0
-        with:
-          context: .
-          file: docker/Dockerfile
-          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
-          push: true
-          tags: ${{ steps.manager-meta.outputs.tags }}
-          labels: ${{ steps.manager-meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-          sbom: true
-          provenance: true
-
-      - name: Sign manager image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${MANAGER_IMAGE_NAME}@${{ steps.manager-build.outputs.digest }}" "${MANAGER_IMAGE_ALIAS}@${{ steps.manager-build.outputs.digest }}"
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-
-      - name: Agent image metadata
-        id: agent-meta
-        uses: docker/metadata-action@v6
-        with:
-          images: |
-            ${{ env.AGENT_IMAGE_NAME }}
-            ${{ env.AGENT_IMAGE_ALIAS }}
-          tags: |
-            type=semver,pattern={{version}},prefix=v
-            type=semver,pattern={{major}}.{{minor}},prefix=v
-            type=semver,pattern={{major}},prefix=v
-            type=raw,value=latest
-          labels: |
-            org.opencontainers.image.authors=OFKM Technologies
-            org.opencontainers.image.url=https://github.com/getarcaneapp/arcane
-            org.opencontainers.image.documentation=https://github.com/getarcaneapp/arcane/blob/main/README.md
-            org.opencontainers.image.source=https://github.com/getarcaneapp/arcane
-            org.opencontainers.image.version=${{ github.ref_name }}
-            org.opencontainers.image.revision=${{ github.sha }}
-            org.opencontainers.image.licenses=BSD-3-Clause
-            org.opencontainers.image.ref.name=arcane-agent
-            org.opencontainers.image.title=Arcane Agent
-            org.opencontainers.image.description=Arcane Agent
-            com.getarcaneapp.arcane=true
-            com.getarcaneapp.arcane.agent=true
-
-      - name: Build and push agent image
-        id: agent-build
-        uses: depot/build-push-action@v1.18.0
-        with:
-          context: .
-          file: docker/Dockerfile-agent
-          platforms: linux/amd64,linux/arm64,linux/arm/v7,linux/riscv64
-          push: true
-          tags: ${{ steps.agent-meta.outputs.tags }}
-          labels: ${{ steps.agent-meta.outputs.labels }}
-          build-args: |
-            VERSION=${{ github.ref_name }}
-            REVISION=${{ github.sha }}
-          sbom: true
-          provenance: true
-
-      - name: Sign agent image
-        run: cosign sign --yes --key env://COSIGN_PRIVATE_KEY "${AGENT_IMAGE_NAME}@${{ steps.agent-build.outputs.digest }}" "${AGENT_IMAGE_ALIAS}@${{ steps.agent-build.outputs.digest }}"
-        env:
-          COSIGN_PRIVATE_KEY: ${{ secrets.COSIGN_PRIVATE_KEY }}
-          COSIGN_PASSWORD: ${{ secrets.COSIGN_PASSWORD }}
-
-      - name: Container image attestation (manager)
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.MANAGER_IMAGE_NAME }}
-          subject-digest: ${{ steps.manager-build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Container image attestation (manager alias)
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.MANAGER_IMAGE_ALIAS }}
-          subject-digest: ${{ steps.manager-build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Container image attestation (agent)
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.AGENT_IMAGE_NAME }}
-          subject-digest: ${{ steps.agent-build.outputs.digest }}
-          push-to-registry: true
-
-      - name: Container image attestation (agent alias)
-        uses: actions/attest-build-provenance@v4
-        with:
-          subject-name: ${{ env.AGENT_IMAGE_ALIAS }}
-          subject-digest: ${{ steps.agent-build.outputs.digest }}
-          push-to-registry: true
+      - name: Capture frontend build versions
+        id: frontend-versions
+        run: |
+          echo "node_version=$(node --version)" >> "$GITHUB_OUTPUT"
+          echo "sveltekit_version=$(pnpm -C frontend exec node -p 'require("@sveltejs/kit/package.json").version')" >> "$GITHUB_OUTPUT"
 
       - name: Run GoReleaser
         uses: goreleaser/goreleaser-action@v7
@@ -216,6 +105,42 @@ jobs:
           DISCORD_WEBHOOK_TOKEN: ${{ secrets.DISCORD_WEBHOOK_TOKEN }}
           NEXUS_USERNAME: ${{ secrets.NEXUS_USERNAME }}
           NEXUS_PASSWORD: ${{ secrets.NEXUS_PASSWORD }}
+          NODE_VERSION: ${{ steps.frontend-versions.outputs.node_version }}
+          SVELTEKIT_VERSION: ${{ steps.frontend-versions.outputs.sveltekit_version }}
+
+      - name: Resolve image digests
+        id: digests
+        run: |
+          echo "manager=$(docker buildx imagetools inspect "${MANAGER_IMAGE_NAME}:${{ github.ref_name }}" --format '{{ .Manifest.Digest }}')" >> "$GITHUB_OUTPUT"
+          echo "agent=$(docker buildx imagetools inspect "${AGENT_IMAGE_NAME}:${{ github.ref_name }}" --format '{{ .Manifest.Digest }}')" >> "$GITHUB_OUTPUT"
+
+      - name: Container image attestation (manager)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.MANAGER_IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.manager }}
+          push-to-registry: true
+
+      - name: Container image attestation (manager alias)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.MANAGER_IMAGE_ALIAS }}
+          subject-digest: ${{ steps.digests.outputs.manager }}
+          push-to-registry: true
+
+      - name: Container image attestation (agent)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.AGENT_IMAGE_NAME }}
+          subject-digest: ${{ steps.digests.outputs.agent }}
+          push-to-registry: true
+
+      - name: Container image attestation (agent alias)
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-name: ${{ env.AGENT_IMAGE_ALIAS }}
+          subject-digest: ${{ steps.digests.outputs.agent }}
+          push-to-registry: true
 
       - name: Publish release
         env:

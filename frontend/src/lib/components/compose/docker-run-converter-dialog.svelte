@@ -63,7 +63,7 @@
 
 		<div class="max-h-[60vh] space-y-4 overflow-y-auto">
 			<div class="space-y-2">
-				<Label for="dockerRunCommand">{m.compose_docker_run_command_label()}</Label>
+				<Label for="dockerRunCommand">{m.docker_run_command()}</Label>
 				<Textarea
 					id="dockerRunCommand"
 					bind:value={dockerRunCommand}
@@ -75,7 +75,7 @@
 			</div>
 
 			<div class="space-y-2">
-				<Label class="text-muted-foreground text-xs">{m.compose_example_commands_label()}</Label>
+				<Label class="text-xs text-muted-foreground">{m.compose_example_commands_label()}</Label>
 				<div class="space-y-1">
 					{#each exampleCommands as command (command)}
 						<ArcaneButton

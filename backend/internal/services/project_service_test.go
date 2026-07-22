@@ -36,6 +36,7 @@ import (
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/opencontainers/go-digest"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	buildtypes "go.getarcane.app/builds/types"
@@ -76,6 +77,101 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.Project{}, &models.SettingVariable{}, &models.ImageUpdateRecord{}, &models.Event{}))
 	return &database.DB{DB: db}
+}
+
+func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	projectPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(projectPath, "compose.yaml"), []byte(`services:
+  explicit:
+    build: .
+    image: test2:latest
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+  regular:
+    image: postgres:17
+`), 0o644))
+
+	proj := &models.Project{
+		BaseModel: models.BaseModel{ID: "project-build-image-refs"},
+		Name:      "demo",
+		Path:      projectPath,
+	}
+	require.NoError(t, db.Create(proj).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	svc.refreshProjectImageRefsInternal(ctx, proj)
+
+	var saved models.Project
+	require.NoError(t, db.First(&saved, "id = ?", proj.ID).Error)
+	assert.ElementsMatch(t, []string{"test2:latest", "postgres:17"}, projects.ParseImageRefsJSON(saved.ImageRefsJSON))
+	require.NotNil(t, saved.BuildImageRefsJSON)
+	assert.ElementsMatch(t, []string{"test2:latest", "demo-worker"}, projects.ParseImageRefsJSON(*saved.BuildImageRefsJSON))
+}
+
+func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *testing.T) {
+	ctx := context.Background()
+	db := setupProjectTestDB(t)
+	settingsService, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+
+	validPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(validPath, "compose.yaml"), []byte(`services:
+  app:
+    build: .
+    image: local-app:latest
+`), 0o644))
+	invalidPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(invalidPath, "compose.yaml"), []byte("services: [\n"), 0o644))
+	regularPath := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(regularPath, "compose.yaml"), []byte(`services:
+  app:
+    image: nginx:latest
+`), 0o644))
+
+	valid := &models.Project{BaseModel: models.BaseModel{ID: "backfill-valid"}, Name: "valid", Path: validPath}
+	invalid := &models.Project{BaseModel: models.BaseModel{ID: "backfill-invalid"}, Name: "invalid", Path: invalidPath}
+	regular := &models.Project{BaseModel: models.BaseModel{ID: "backfill-regular"}, Name: "regular", Path: regularPath}
+	require.NoError(t, db.Create(valid).Error)
+	require.NoError(t, db.Create(invalid).Error)
+	require.NoError(t, db.Create(regular).Error)
+
+	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
+	count, err := svc.BackfillProjectImageRefs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 3, count)
+
+	var savedValid models.Project
+	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
+	require.NotNil(t, savedValid.BuildImageRefsJSON)
+	assert.Equal(t, []string{"local-app:latest"}, projects.ParseImageRefsJSON(*savedValid.BuildImageRefsJSON))
+
+	var savedInvalid models.Project
+	require.NoError(t, db.First(&savedInvalid, "id = ?", invalid.ID).Error)
+	assert.Nil(t, savedInvalid.BuildImageRefsJSON)
+
+	var savedRegular models.Project
+	require.NoError(t, db.First(&savedRegular, "id = ?", regular.ID).Error)
+	require.NotNil(t, savedRegular.BuildImageRefsJSON)
+	assert.Equal(t, "[]", *savedRegular.BuildImageRefsJSON)
+
+	require.NoError(t, os.Remove(filepath.Join(validPath, "compose.yaml")))
+	require.NoError(t, os.Remove(filepath.Join(regularPath, "compose.yaml")))
+	count, err = svc.BackfillProjectImageRefs(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 1, count)
+	require.NoError(t, db.First(&savedValid, "id = ?", valid.ID).Error)
+	require.NotNil(t, savedValid.BuildImageRefsJSON)
+	assert.Equal(t, []string{"local-app:latest"}, projects.ParseImageRefsJSON(*savedValid.BuildImageRefsJSON))
+	require.NoError(t, db.First(&savedRegular, "id = ?", regular.ID).Error)
+	require.NotNil(t, savedRegular.BuildImageRefsJSON)
+	assert.Equal(t, "[]", *savedRegular.BuildImageRefsJSON)
 }
 
 func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *database.DB, string) {
@@ -467,7 +563,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject")
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -484,7 +580,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, replacement.ID, found.ID)
 
-		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject")
+		cachedProjectID, cached = svc.getCachedComposeProjectIDInternal("myproject").Get()
 		require.True(t, cached)
 		assert.Equal(t, replacement.ID, cachedProjectID)
 	})
@@ -504,7 +600,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, original.ID, found.ID)
 
-		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp")
+		cachedProjectID, cached := svc.getCachedComposeProjectIDInternal("myapp").Get()
 		require.True(t, cached)
 		assert.Equal(t, original.ID, cachedProjectID)
 
@@ -517,7 +613,7 @@ func TestProjectService_GetProjectByComposeName(t *testing.T) {
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "project not found")
 
-		_, cached = svc.getCachedComposeProjectIDInternal("myapp")
+		_, cached = svc.getCachedComposeProjectIDInternal("myapp").Get()
 		assert.False(t, cached)
 	})
 }
@@ -619,8 +715,8 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	assert.False(t, currentRecord.HasUpdate)
 	assert.Equal(t, repository, currentRecord.Repository)
 	assert.Equal(t, "1.2.3", currentRecord.Tag)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.CurrentDigest))
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.CurrentDigest).OrEmpty())
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -672,7 +768,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t *testing.T) {
@@ -721,7 +817,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	var currentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", imageID).First(&currentRecord).Error)
 	assert.False(t, currentRecord.HasUpdate)
-	assert.Equal(t, imageDigest, stringPtrToString(currentRecord.LatestDigest))
+	assert.Equal(t, imageDigest, mo.PointerToOption(currentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSuccess(t *testing.T) {
@@ -836,12 +932,12 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	var privateCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", privateImageID).First(&privateCurrentRecord).Error)
 	assert.False(t, privateCurrentRecord.HasUpdate)
-	assert.Equal(t, privateImageDigest, stringPtrToString(privateCurrentRecord.LatestDigest))
+	assert.Equal(t, privateImageDigest, mo.PointerToOption(privateCurrentRecord.LatestDigest).OrEmpty())
 
 	var publicCurrentRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", publicImageID).First(&publicCurrentRecord).Error)
 	assert.False(t, publicCurrentRecord.HasUpdate)
-	assert.Equal(t, publicImageDigest, stringPtrToString(publicCurrentRecord.LatestDigest))
+	assert.Equal(t, publicImageDigest, mo.PointerToOption(publicCurrentRecord.LatestDigest).OrEmpty())
 }
 
 func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPullFails(t *testing.T) {

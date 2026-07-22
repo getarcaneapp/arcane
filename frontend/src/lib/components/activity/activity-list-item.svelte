@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { Progress } from '$lib/components/ui/progress/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { ArrowDownIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { cn } from '$lib/utils';
@@ -10,17 +10,22 @@
 
 	let {
 		activity,
-		expanded = false
+		expanded = false,
+		child = false
 	}: {
 		activity: Activity;
 		expanded?: boolean;
+		/** Compact variant for rows nested inside a batch group. */
+		child?: boolean;
 	} = $props();
 
 	const IconComponent = $derived(activityTypeIcon(activity.type));
 	const hasProgress = $derived(typeof activity.progress === 'number');
 	const progressValue = $derived(Math.round(activity.progress ?? 0));
 	const isActive = $derived(activity.status === 'running' || activity.status === 'queued');
-	const targetName = $derived(activity.resourceName || activity.resourceId || m.activity_unknown_target());
+	// Resource-less activities (e.g. prunes) promote the type label instead.
+	const resourceLabel = $derived(activity.resourceName || activity.resourceId || '');
+	const targetName = $derived(resourceLabel || activityTypeLabel(activity.type));
 	const subtitle = $derived(activity.latestMessage || activity.step || m.activity_no_message());
 	const sourceEnvironmentName = $derived(
 		activity.sourceEnvironmentName || activity.sourceEnvironmentId || activity.environmentId
@@ -48,7 +53,8 @@
 
 <div
 	class={cn(
-		'group border-border/40 hover:bg-muted/30 relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b px-4 py-3 text-left transition-colors last:border-b-0',
+		'group relative grid w-full grid-cols-[auto_minmax(0,1fr)_auto] items-start gap-3 border-b border-border/40 text-left transition-colors last:border-b-0 hover:bg-muted/30',
+		child ? 'px-3 py-2' : 'px-4 py-3',
 		expanded && 'bg-muted/40'
 	)}
 >
@@ -63,47 +69,47 @@
 
 	<div
 		class={cn(
-			'bg-muted/80 text-muted-foreground mt-0.5 flex size-8 items-center justify-center rounded-md',
+			'mt-0.5 flex items-center justify-center rounded-md bg-muted/80 text-muted-foreground',
+			child ? 'size-6' : 'size-8',
 			isActive && 'bg-primary/10 text-primary',
 			expanded && 'bg-primary/10 text-primary'
 		)}
 	>
-		<IconComponent class="size-4" aria-hidden="true" />
+		<IconComponent class={cn(child ? 'size-3.5' : 'size-4')} aria-hidden="true" />
 	</div>
 	<div class="min-w-0 space-y-1.5">
 		<div class="flex min-w-0 items-start justify-between gap-3">
 			<div class="min-w-0 flex-1">
 				<div class="flex min-w-0 items-center gap-2">
-					<span class="text-foreground truncate text-sm font-semibold">{activityTypeLabel(activity.type)}</span>
+					<span class="truncate text-sm font-semibold text-foreground">{targetName}</span>
 					{#if relativeTime}
-						<span class="text-muted-foreground/70 shrink-0 text-[11px]">· {relativeTime}</span>
+						<span class="shrink-0 text-[11px] text-muted-foreground/70">· {relativeTime}</span>
 					{/if}
 				</div>
-				<div class="text-muted-foreground truncate text-xs">{targetName}</div>
-				<div class="text-muted-foreground/80 flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px]">
-					{#if sourceEnvironmentName}
-						<span class="truncate">{sourceEnvironmentName}</span>
-					{/if}
-					{#if startedByName}
-						<span class="text-muted-foreground/50">·</span>
-						<span class="truncate">{m.activity_started_by({ user: startedByName })}</span>
-					{/if}
-				</div>
+				{#if resourceLabel}
+					<div class="truncate text-xs text-muted-foreground">{activityTypeLabel(activity.type)}</div>
+				{/if}
+				{#if !child}
+					<div class="flex min-w-0 flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground/80">
+						{#if sourceEnvironmentName}
+							<span class="truncate">{sourceEnvironmentName}</span>
+						{/if}
+						{#if startedByName}
+							<span class="text-muted-foreground/50">·</span>
+							<span class="truncate">{m.activity_started_by({ user: startedByName })}</span>
+						{/if}
+					</div>
+				{/if}
 			</div>
-			<StatusBadge
-				text={activityStatusLabel(activity.status)}
-				variant={activityStatusVariant(activity.status)}
-				size="sm"
-				minWidth="none"
-			/>
+			<Badge variant={activityStatusVariant(activity.status)} size="sm">{activityStatusLabel(activity.status)}</Badge>
 		</div>
 
 		<div class="space-y-1.5">
-			<div class="text-muted-foreground line-clamp-2 text-xs leading-relaxed">{subtitle}</div>
+			<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
 			{#if isActive && !expanded}
 				<div class="flex items-center gap-2">
 					<Progress value={hasProgress ? progressValue : 100} indeterminate={!hasProgress} class="h-1.5 rounded-full" />
-					<span class="text-muted-foreground w-9 shrink-0 text-right text-[11px] tabular-nums">
+					<span class="w-9 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
 						{#if hasProgress}
 							{m.activity_progress_percent({ progress: progressValue })}
 						{:else}
@@ -115,7 +121,7 @@
 		</div>
 	</div>
 
-	<div class="text-muted-foreground mt-1 flex size-6 shrink-0 items-center justify-center">
+	<div class="mt-1 flex size-6 shrink-0 items-center justify-center text-muted-foreground">
 		<ArrowDownIcon class={cn('size-4 transition-transform duration-200', expanded && 'rotate-180')} aria-hidden="true" />
 	</div>
 </div>

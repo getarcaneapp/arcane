@@ -22,7 +22,7 @@
 	<Empty.Root>
 		<Empty.Header>
 			<Empty.Media variant="icon">
-				<AlertIcon class="text-destructive size-16" aria-hidden="true" />
+				<AlertIcon class="size-16 text-destructive" aria-hidden="true" />
 			</Empty.Media>
 			<Empty.Title>
 				{status === 404 ? m.error_not_found() : fallbackTitle}

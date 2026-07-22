@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -122,6 +123,7 @@ func DefaultSettingsConfig() *models.Settings {
 		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},
 		ActivityHistoryRetentionDays:    models.SettingVariable{Value: "30"},
 		ActivityHistoryMaxEntries:       models.SettingVariable{Value: "1000"},
+		MaxConcurrentActivities:         models.SettingVariable{Value: "5"},
 		AutoInjectEnv:                   models.SettingVariable{Value: "false"},
 		DefaultDeployPullPolicy:         models.SettingVariable{Value: "missing"},
 		ScheduledPruneEnabled:           models.SettingVariable{Value: "false"},
@@ -535,7 +537,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
 
 		switch key {
-		case "pollingEnabled":
+		case "pollingEnabled", "pollingInterval":
 			changedPolling = true
 		case "autoUpdate", "autoUpdateInterval":
 			changedAutoUpdate = true
@@ -803,39 +805,30 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 	return nil
 }
 
-func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
+func settingValueInternal[T any](ctx context.Context, s *SettingsService, key string, parse func(string) (T, error)) mo.Option[T] {
 	cfg := s.getEffectiveSettingsConfigInternal(ctx)
-	val, _, _, err := cfg.FieldByKey(key)
-	if err != nil || val == "" {
-		return defaultValue
+	value, _, _, err := cfg.FieldByKey(key)
+	if err != nil || value == "" {
+		return mo.None[T]()
 	}
-	b, err := strconv.ParseBool(val)
+
+	parsed, err := parse(value)
 	if err != nil {
-		return defaultValue
+		return mo.None[T]()
 	}
-	return b
+	return mo.Some(parsed)
+}
+
+func (s *SettingsService) GetBoolSetting(ctx context.Context, key string, defaultValue bool) bool {
+	return settingValueInternal(ctx, s, key, strconv.ParseBool).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetIntSetting(ctx context.Context, key string, defaultValue int) int {
-	cfg := s.getEffectiveSettingsConfigInternal(ctx)
-	val, _, _, err := cfg.FieldByKey(key)
-	if err != nil || val == "" {
-		return defaultValue
-	}
-	i, err := strconv.Atoi(val)
-	if err != nil {
-		return defaultValue
-	}
-	return i
+	return settingValueInternal(ctx, s, key, strconv.Atoi).OrElse(defaultValue)
 }
 
 func (s *SettingsService) GetStringSetting(ctx context.Context, key, defaultValue string) string {
-	cfg := s.getEffectiveSettingsConfigInternal(ctx)
-	val, _, _, err := cfg.FieldByKey(key)
-	if err != nil || val == "" {
-		return defaultValue
-	}
-	return val
+	return settingValueInternal(ctx, s, key, func(value string) (string, error) { return value, nil }).OrElse(defaultValue)
 }
 
 func (s *SettingsService) SetBoolSetting(ctx context.Context, key string, value bool) error {

@@ -48,9 +48,9 @@
 					triggerClass="w-full"
 				/>
 				{#if registryLoadError}
-					<p class="text-destructive text-xs">{m.build_push_registry_permission()}</p>
+					<p class="text-xs text-destructive">{m.build_push_registry_permission()}</p>
 				{:else if registryOptions.length === 0}
-					<p class="text-muted-foreground text-xs">{m.build_push_registry_none()}</p>
+					<p class="text-xs text-muted-foreground">{m.build_push_registry_none()}</p>
 				{/if}
 
 				<SelectWithLabel
@@ -62,7 +62,7 @@
 					triggerClass="w-full"
 				/>
 				{#if $inputs.registryId.value && repositoryOptions.length === 0 && !registryLoadError}
-					<p class="text-muted-foreground text-xs">{m.build_push_repository_empty()}</p>
+					<p class="text-xs text-muted-foreground">{m.build_push_repository_empty()}</p>
 				{/if}
 
 				<FormInput
@@ -74,10 +74,10 @@
 
 				{#if fullImageReference}
 					<div class="space-y-1">
-						<span class="text-muted-foreground text-xs font-medium">
+						<span class="text-xs font-medium text-muted-foreground">
 							{m.build_push_reference_label()}
 						</span>
-						<div class="bg-muted/50 rounded-md px-3 py-2">
+						<div class="rounded-md bg-muted/50 px-3 py-2">
 							<code class="text-xs break-all">{fullImageReference}</code>
 						</div>
 					</div>
@@ -94,9 +94,9 @@
 
 			<Collapsible.Root bind:open={showAdvanced}>
 				<Collapsible.Trigger
-					class="text-muted-foreground hover:text-foreground hover:bg-accent flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs transition-colors"
+					class="flex w-full items-center justify-between rounded-md px-2 py-1.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
 				>
-					{m.tabs_advanced()}
+					{m.common_advanced()}
 					<ArrowDownIcon class={showAdvanced ? 'size-4 rotate-180 transition-transform' : 'size-4 transition-transform'} />
 				</Collapsible.Trigger>
 				<Collapsible.Content>
@@ -112,7 +112,7 @@
 							/>
 
 							<FormInput
-								label={m.target_label()}
+								label={m.target()}
 								type="text"
 								placeholder={m.target_placeholder()}
 								description={m.target_description()}
@@ -169,7 +169,7 @@
 
 						<div class="grid gap-4 sm:grid-cols-2">
 							<FormInput
-								label={m.build_network_label()}
+								label={m.resource_network_cap()}
 								type="text"
 								placeholder={m.build_network_placeholder()}
 								description={m.build_network_description()}
@@ -179,7 +179,7 @@
 							/>
 
 							<FormInput
-								label={m.build_isolation_label()}
+								label={m.isolation()}
 								type="text"
 								placeholder={m.build_isolation_placeholder()}
 								description={m.build_isolation_description()}

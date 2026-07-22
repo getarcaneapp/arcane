@@ -4,7 +4,8 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -223,7 +224,18 @@
 {#snippet RoleCell({ item }: { item: User })}
 	<div class="flex flex-wrap items-center gap-1">
 		{#each rolesSummary(item) as badge (badge.text)}
-			<StatusBadge text={badge.text} variant={badge.variant} tooltip={badge.tooltip} />
+			{#if badge.tooltip}
+				<ArcaneTooltip.Root>
+					<ArcaneTooltip.Trigger>
+						<Badge variant={badge.variant} minWidth="20">{badge.text}</Badge>
+					</ArcaneTooltip.Trigger>
+					<ArcaneTooltip.Content>
+						<p class="max-w-xs text-xs">{badge.tooltip}</p>
+					</ArcaneTooltip.Content>
+				</ArcaneTooltip.Root>
+			{:else}
+				<Badge variant={badge.variant} minWidth="20">{badge.text}</Badge>
+			{/if}
 		{/each}
 	</div>
 {/snippet}

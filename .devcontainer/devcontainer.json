@@ -28,7 +28,7 @@
       "extensions": [
         "golang.go",
         "dbaeumer.vscode-eslint",
-        "esbenp.prettier-vscode",
+        "oxc.oxc-vscode",
         "svelte.svelte-vscode",
         "bradlc.vscode-tailwindcss",
         "ms-azuretools.vscode-docker",
@@ -46,7 +46,8 @@
   "postCreateCommand": "npx -y corepack enable && pnpm install && cd backend && go mod download",
   "remoteUser": "root",
   "containerEnv": {
-    "TZ": "Pacific/Auckland"
+    "TZ": "Pacific/Auckland",
+    "GOEXPERIMENT": "jsonv2"
   },
   "remoteEnv": {
     "HOST_PROJECT_ROOT": "${localWorkspaceFolder}"

@@ -1,7 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
 	import { Badge } from '$lib/components/ui/badge';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { m } from '$lib/paraglide/messages';
 	import { VolumesIcon, TerminalIcon, FolderOpenIcon } from '$lib/icons';
 	import type { SwarmServiceMount } from '$lib/types/swarm';
@@ -53,7 +52,7 @@
 		<Card.Header icon={VolumesIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
-					<h2>{m.containers_nav_storage()}</h2>
+					<h2>{m.storage()}</h2>
 				</Card.Title>
 			</div>
 		</Card.Header>
@@ -69,7 +68,7 @@
 						{@const bindBacked = type === 'volume' && isBindBackedVolume(mount)}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
-								<div class="border-border mb-4 flex items-center justify-between border-b pb-4">
+								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
 										<div class="rounded-lg p-2 {iconColor.bg}">
 											{#if type === 'volume' && !bindBacked}
@@ -81,18 +80,18 @@
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
-											<div class="text-foreground text-base font-semibold break-all">
+											<div class="text-base font-semibold break-all text-foreground">
 												{type === 'tmpfs' ? m.containers_mount_type_tmpfs() : source || m.image_update_auth_anonymous()}
 											</div>
 											<div class="mt-1 flex flex-wrap items-center gap-1.5">
-												<span class="text-muted-foreground text-xs">{getMountLabel(type)}</span>
+												<span class="text-xs text-muted-foreground">{getMountLabel(type)}</span>
 												{#if mount.volumeDriver}
-													<StatusBadge text={mount.volumeDriver} variant="gray" size="sm" minWidth="none" />
+													<Badge variant="gray" size="sm">{mount.volumeDriver}</Badge>
 												{/if}
 											</div>
 										</div>
 									</div>
-									<Badge variant={readOnly ? 'secondary' : 'outline'} class="text-xs font-semibold">
+									<Badge variant={readOnly ? 'secondary' : 'outline'}>
 										{readOnly ? m.common_ro() : m.common_rw()}
 									</Badge>
 								</div>
@@ -100,10 +99,10 @@
 								<div class="grid grid-cols-1 gap-3">
 									<Card.Root variant="outlined">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
 											</div>
-											<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+											<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 												{target}
 											</div>
 										</Card.Content>
@@ -112,10 +111,10 @@
 									{#if source && type !== 'tmpfs'}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{type === 'volume' ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
 												</div>
-												<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 													{source}
 												</div>
 											</Card.Content>
@@ -125,8 +124,8 @@
 									{#if bindBacked && mount.volumeOptions?.['device']}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.dashboard_meter_gpu_device()}:</div>
-												<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.dashboard_meter_gpu_device()}:</div>
+												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 													{mount.volumeOptions['device']}
 												</div>
 											</Card.Content>
@@ -136,10 +135,10 @@
 									{#if mount.devicePath}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">
 													{bindBacked ? m.containers_mount_label_volume() : m.containers_mount_label_host()}
 												</div>
-												<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+												<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 													{mount.devicePath}
 												</div>
 											</Card.Content>
@@ -152,10 +151,10 @@
 				</div>
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center">
-					<div class="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-						<VolumesIcon class="text-muted-foreground size-6" />
+					<div class="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-muted/30">
+						<VolumesIcon class="size-6 text-muted-foreground" />
 					</div>
-					<div class="text-muted-foreground text-sm">{m.containers_no_mounts_configured()}</div>
+					<div class="text-sm text-muted-foreground">{m.containers_no_mounts_configured()}</div>
 				</div>
 			{/if}
 		</Card.Content>

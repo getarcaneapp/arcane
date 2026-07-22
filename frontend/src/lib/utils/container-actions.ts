@@ -158,10 +158,10 @@ export function confirmAndUpdateContainer({
 	onRefresh
 }: ConfirmAndUpdateContainerOptions) {
 	openConfirmDialog({
-		title: m.containers_update_confirm_title(),
+		title: m.update_container(),
 		message: m.containers_update_confirm_message({ name: containerName }),
 		confirm: {
-			label: m.containers_update_container(),
+			label: m.update_container(),
 			destructive: false,
 			action: async () => {
 				setLoading?.(true);

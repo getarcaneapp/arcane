@@ -16,7 +16,6 @@ import (
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -30,43 +29,26 @@ import (
 )
 
 const dockerClientNegotiationTimeout = 5 * time.Second
-const dockerListCacheTTL = 0
 const dockerImageStateResyncActionInternal events.Action = "arcane-resync"
 
 type DockerClientService struct {
-	db                *database.DB
-	config            *config.Config
-	settingsService   *SettingsService
-	client            *client.Client
-	clientVersion     string
-	clientLastProbe   time.Time
-	mu                sync.Mutex
-	containerCache    *cache.Cache[[]container.Summary]
-	imageCache        *cache.Cache[[]image.Summary]
-	networkCache      *cache.Cache[[]network.Summary]
-	volumeCache       *cache.Cache[*client.VolumeListResult]
-	eventBus          *bus.DockerEventBus
-	subscriptionCtx   context.Context
-	subscriptionStop  context.CancelFunc
-	subscriptionUnsub []func()
+	db              *database.DB
+	config          *config.Config
+	settingsService *SettingsService
+	client          *client.Client
+	clientVersion   string
+	clientLastProbe time.Time
+	mu              sync.Mutex
+	eventBus        *bus.DockerEventBus
 }
 
-func NewDockerClientService(ctx context.Context, db *database.DB, cfg *config.Config, settingsService *SettingsService) *DockerClientService {
-	subscriptionCtx, subscriptionStop := context.WithCancel(ctx)
-	svc := &DockerClientService{
-		db:               db,
-		config:           cfg,
-		settingsService:  settingsService,
-		containerCache:   cache.New[[]container.Summary](dockerListCacheTTL),
-		imageCache:       cache.New[[]image.Summary](dockerListCacheTTL),
-		networkCache:     cache.New[[]network.Summary](dockerListCacheTTL),
-		volumeCache:      cache.New[*client.VolumeListResult](dockerListCacheTTL),
-		eventBus:         bus.NewDockerEventBus(),
-		subscriptionCtx:  subscriptionCtx,
-		subscriptionStop: subscriptionStop,
+func NewDockerClientService(_ context.Context, db *database.DB, cfg *config.Config, settingsService *SettingsService) *DockerClientService {
+	return &DockerClientService{
+		db:              db,
+		config:          cfg,
+		settingsService: settingsService,
+		eventBus:        bus.NewDockerEventBus(),
 	}
-	svc.subscribeListCacheInvalidationInternal(subscriptionCtx)
-	return svc
 }
 
 func newDockerClientInternal(ctx context.Context, host string) (*client.Client, error) {
@@ -208,18 +190,9 @@ func (s *DockerClientService) DockerHost() string {
 	return s.config.DockerHost
 }
 
-// Close stops Docker event subscriptions owned by this service and closes the
-// cached Docker client.
+// Close closes the cached Docker client.
 func (s *DockerClientService) Close() {
 	s.mu.Lock()
-	if s.subscriptionStop != nil {
-		s.subscriptionStop()
-		s.subscriptionStop = nil
-	}
-	for _, unsubscribe := range s.subscriptionUnsub {
-		unsubscribe()
-	}
-	s.subscriptionUnsub = nil
 	oldClient := s.client
 	s.client = nil
 	s.mu.Unlock()
@@ -234,82 +207,6 @@ func (s *DockerClientService) EventBus() *bus.DockerEventBus {
 		s.eventBus = bus.NewDockerEventBus()
 	}
 	return s.eventBus
-}
-
-func (s *DockerClientService) ensureListCachesInternal() {
-	s.mu.Lock()
-	if s.containerCache == nil {
-		s.containerCache = cache.New[[]container.Summary](dockerListCacheTTL)
-	}
-	if s.imageCache == nil {
-		s.imageCache = cache.New[[]image.Summary](dockerListCacheTTL)
-	}
-	if s.networkCache == nil {
-		s.networkCache = cache.New[[]network.Summary](dockerListCacheTTL)
-	}
-	if s.volumeCache == nil {
-		s.volumeCache = cache.New[*client.VolumeListResult](dockerListCacheTTL)
-	}
-	s.mu.Unlock()
-}
-
-func (s *DockerClientService) subscribeListCacheInvalidationInternal(ctx context.Context) {
-	s.subscribeCacheInvalidationInternal(ctx, events.ContainerEventType, func() {
-		if s.containerCache != nil {
-			s.containerCache.Invalidate()
-		}
-	})
-	s.subscribeCacheInvalidationInternal(ctx, events.ImageEventType, func() {
-		if s.imageCache != nil {
-			s.imageCache.Invalidate()
-		}
-	})
-	s.subscribeCacheInvalidationInternal(ctx, events.NetworkEventType, func() {
-		if s.networkCache != nil {
-			s.networkCache.Invalidate()
-		}
-	})
-	s.subscribeCacheInvalidationInternal(ctx, events.VolumeEventType, func() {
-		if s.volumeCache != nil {
-			s.volumeCache.Invalidate()
-		}
-	})
-}
-
-func (s *DockerClientService) subscribeCacheInvalidationInternal(ctx context.Context, eventType events.Type, invalidate func()) {
-	ch, unsubscribe := s.EventBus().Subscribe(eventType, bus.WithSubscriberBuffer(16))
-	s.mu.Lock()
-	s.subscriptionUnsub = append(s.subscriptionUnsub, unsubscribe)
-	s.mu.Unlock()
-	go func() {
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case _, ok := <-ch:
-				if !ok {
-					return
-				}
-				invalidate()
-			}
-		}
-	}()
-}
-
-func (s *DockerClientService) invalidateListCachesInternal() {
-	s.ensureListCachesInternal()
-	if s.containerCache != nil {
-		s.containerCache.Invalidate()
-	}
-	if s.imageCache != nil {
-		s.imageCache.Invalidate()
-	}
-	if s.networkCache != nil {
-		s.networkCache.Invalidate()
-	}
-	if s.volumeCache != nil {
-		s.volumeCache.Invalidate()
-	}
 }
 
 func (s *DockerClientService) WatchEvents(ctx context.Context) {
@@ -327,7 +224,6 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 			continue
 		}
 
-		s.invalidateListCachesInternal()
 		eventBackoff.Reset()
 		result := dockerClient.Events(ctx, client.EventsListOptions{})
 		s.publishImageStateResyncInternal()
@@ -380,87 +276,71 @@ func sleepDockerEventBackoffInternal(ctx context.Context, eventBackoff *backoff.
 }
 
 func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]container.Summary, error) {
-	s.ensureListCachesInternal()
-	containerCache := s.containerCache
-	return containerCache.GetOrFetch(ctx, func(ctx context.Context) ([]container.Summary, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
+	dockerClient, err := s.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-		defer cancel()
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
 
-		containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker containers: %w", err)
-		}
-		return containerList.Items, nil
-	})
+	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+	}
+	return containerList.Items, nil
 }
 
 func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.Summary, error) {
-	s.ensureListCachesInternal()
-	imageCache := s.imageCache
-	return imageCache.GetOrFetch(ctx, func(ctx context.Context) ([]image.Summary, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
+	dockerClient, err := s.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-		defer cancel()
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
 
-		imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker images: %w", err)
-		}
-		return imageList.Items, nil
-	})
+	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker images: %w", err)
+	}
+	return imageList.Items, nil
 }
 
 func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]network.Summary, error) {
-	s.ensureListCachesInternal()
-	networkCache := s.networkCache
-	return networkCache.GetOrFetch(ctx, func(ctx context.Context) ([]network.Summary, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
+	dockerClient, err := s.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-		defer cancel()
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
 
-		networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker networks: %w", err)
-		}
-		return networkList.Items, nil
-	})
+	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+	}
+	return networkList.Items, nil
 }
 
 func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.VolumeListResult, error) {
-	s.ensureListCachesInternal()
-	volumeCache := s.volumeCache
-	return volumeCache.GetOrFetch(ctx, func(ctx context.Context) (*client.VolumeListResult, error) {
-		dockerClient, err := s.GetClient(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("failed to connect to Docker: %w", err)
-		}
+	dockerClient, err := s.GetClient(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+	}
 
-		settings := s.settingsService.GetSettingsConfig()
-		apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
-		defer cancel()
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
 
-		volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
-		if err != nil {
-			return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
-		}
-		return &volResp, nil
-	})
+	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
+	}
+	return &volResp, nil
 }
 
 func (s *DockerClientService) GetSnapshot(ctx context.Context, envID string) (*dashboardtypes.DockerSnapshot, error) {

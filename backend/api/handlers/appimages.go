@@ -104,10 +104,6 @@ func RegisterAppImages(api huma.API, appImagesService *services.ApplicationImage
 
 // GetLogo returns the application logo image.
 func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*GetAppImageOutput, error) {
-	if h.appImagesService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	name := "logo"
 	if input.Full {
 		name = "logo-full"
@@ -118,37 +114,21 @@ func (h *AppImagesHandler) GetLogo(ctx context.Context, input *GetLogoInput) (*G
 
 // GetLogoEmail returns the application logo image for emails (PNG).
 func (h *AppImagesHandler) GetLogoEmail(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	if h.appImagesService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return h.getImage("logo-email")
 }
 
 // GetFavicon returns the application favicon image.
 func (h *AppImagesHandler) GetFavicon(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	if h.appImagesService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return h.getImage("favicon")
 }
 
 // GetDefaultProfile returns the default user profile image.
 func (h *AppImagesHandler) GetDefaultProfile(ctx context.Context, input *struct{}) (*GetAppImageOutput, error) {
-	if h.appImagesService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return h.getImage("profile")
 }
 
 // GetPWAIcon returns a PWA icon image.
 func (h *AppImagesHandler) GetPWAIcon(ctx context.Context, input *GetPWAIconInput) (*GetAppImageOutput, error) {
-	if h.appImagesService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return h.getImageByFilenameInternal(input.Filename)
 }
 

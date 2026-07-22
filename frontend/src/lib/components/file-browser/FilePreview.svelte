@@ -50,14 +50,14 @@
 		<div class="mt-6 min-h-0 flex-grow overflow-y-auto">
 			{#if loading}
 				<div class="flex h-full items-center justify-center p-12">
-					<LoadingSpinnerIcon class="text-muted-foreground h-8 w-8" />
+					<LoadingSpinnerIcon class="h-8 w-8 text-muted-foreground" />
 				</div>
 			{:else if error}
-				<div class="border-destructive/20 bg-destructive/10 text-destructive rounded border p-4">
+				<div class="rounded border border-destructive/20 bg-destructive/10 p-4 text-destructive">
 					{error}
 				</div>
 			{:else}
-				<pre class="bg-muted w-full rounded p-4 font-mono text-xs break-all whitespace-pre-wrap">{content}</pre>
+				<pre class="w-full rounded bg-muted p-4 font-mono text-xs break-all whitespace-pre-wrap">{content}</pre>
 			{/if}
 		</div>
 	</Sheet.Content>

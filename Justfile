@@ -4,6 +4,8 @@
 
 set working-directory := './'
 
+export GOEXPERIMENT := "jsonv2"
+
 edge_proto_dir := 'backend/pkg/libarcane/edge/proto'
 
 _default:
@@ -156,57 +158,14 @@ _build-image-manager tag="ghcr.io/getarcaneapp/arcane:development" flag='':
 _build-image-agent tag="ghcr.io/getarcaneapp/agent:development" flag='':
     docker buildx build {{ if flag == "--push" { "--push" } else { "" } }} --platform linux/arm64,linux/amd64,linux/arm/v7 -f 'docker/Dockerfile-agent' --build-arg ENABLED_FEATURES="{{ env('ENABLED_FEATURES', env('BUILD_FEATURES', '')) }}" -t "{{ tag }}" .
 
-# Build + push both manager and agent multi-arch images for a beta release.
-#
-# Tag pattern:    ghcr.io/getarcaneapp/{manager,agent}:<release>-beta
-# Version flag:   <release>.0.0-beta (compiled into the binary via -ldflags),
-#                 unless an explicit version is supplied as the second arg.
-#
-# Examples:
-#   just build v2                          tags :v2-beta, VERSION=v2.0.0-beta
-# just build v2 v2.0.0-beta.2            tags :v2-beta, VERSION=v2.0.0-beta.2
-[group('build')]
-_build-release release version="":
-    #!/usr/bin/env bash
-    set -euo pipefail
-
-    if [ -z "{{ release }}" ]; then
-        echo "Release shortcut is required, e.g. 'just build v2'" >&2
-        exit 1
-    fi
-
-    image_tag="{{ release }}-beta"
-    version="{{ if version != "" { version } else { release + ".0.0-beta" } }}"
-
-    echo "==> Building manager image ghcr.io/getarcaneapp/manager:${image_tag} (VERSION=${version})"
-    docker buildx build \
-        --tag "ghcr.io/getarcaneapp/manager:${image_tag}" \
-        --push \
-        --platform linux/amd64,linux/arm64 \
-        --build-arg VERSION="${version}" \
-        -f docker/Dockerfile .
-
-    echo "==> Building agent image ghcr.io/getarcaneapp/agent:${image_tag} (VERSION=${version})"
-    docker buildx build \
-        --tag "ghcr.io/getarcaneapp/agent:${image_tag}" \
-        --push \
-        --platform linux/amd64,linux/arm64 \
-        --build-arg VERSION="${version}" \
-        -f docker/Dockerfile-agent .
-
-    echo ""
-    echo "✓ Pushed manager + agent images tagged :${image_tag} (VERSION=${version})"
-
 # Build targets:
 #   just build single {frontend|backend|all}
-#   just build image {manager|agent} [tag] [--push]
-# just build <release> [version]            e.g. just build v2 -> push manager+agent :v2-beta with VERSION=v2.0.0-beta
+# just build image {manager|agent} [tag] [--push]
 [group('build')]
 build buildtype type="" tag="" flag="":
     @if [ "{{ buildtype }}" = "single" ]; then just _build-{{ type }}; \
     elif [ "{{ buildtype }}" = "image" ]; then just _build-image-{{ type }} "{{ if tag != "" { tag } else if type == "manager" { "arcane:latest" } else { "arcane-agent:latest" } }}" "{{ flag }}"; \
-    elif echo "{{ buildtype }}" | grep -qE '^v[0-9]'; then just _build-release "{{ buildtype }}" "{{ type }}"; \
-    else echo "Unknown build target: {{ buildtype }}. Try: just build single|image|<release>" >&2; exit 1; \
+    else echo "Unknown build target: {{ buildtype }}. Try: just build single|image" >&2; exit 1; \
     fi
 
 # -----------------------------------------------------------------------------
@@ -276,15 +235,15 @@ test target="all":
 # Quality: format, lint, and fixes
 # -----------------------------------------------------------------------------
 
-# Format frontend (Prettier), test/email TypeScript (oxfmt), and Go modules (gofmt)
+# Format frontend/test/email TypeScript with oxfmt and Go modules with gofmt
 [group('quality')]
 _format-frontend:
     pnpm -C frontend format
 
 [group('quality')]
 _format-js:
-    pnpm -C tests exec oxfmt "**/*.{ts,tsx,js,jsx,mts,cts}"
-    pnpm -C email-templates exec oxfmt "**/*.{ts,tsx,js,jsx,mts,cts}"
+    pnpm -C tests format
+    pnpm -C email-templates format
 
 [group('quality')]
 _format-go:
@@ -302,8 +261,8 @@ _format-check-frontend:
 
 [group('quality')]
 _format-check-js:
-    pnpm -C tests exec oxfmt --check "**/*.{ts,tsx,js,jsx,mts,cts}"
-    pnpm -C email-templates exec oxfmt --check "**/*.{ts,tsx,js,jsx,mts,cts}"
+    pnpm -C tests format:check
+    pnpm -C email-templates format:check
 
 [group('quality')]
 _format-check-go:
@@ -340,6 +299,23 @@ format target="all" check="":
 _lint-frontend:
     pnpm -C frontend check
 
+# Type check Playwright tests
+[group('quality')]
+_lint-tests:
+    pnpm -C tests check
+
+# Type check email templates
+[group('quality')]
+_lint-email-templates:
+    pnpm -C email-templates check
+
+# Type check all JavaScript/TypeScript workspaces
+[group('quality')]
+_lint-js:
+    @just _lint-frontend
+    @just _lint-tests
+    @just _lint-email-templates
+
 # Lint Go backend
 [group('quality')]
 _lint-backend:
@@ -355,16 +331,22 @@ _lint-cli:
 _lint-types:
     cd types && golangci-lint run -c ../.github/.golangci.yml ./...
 
+# Lint edge tunnel protobuf definitions.
+[group('quality')]
+_lint-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
+
 # Lint all Go code
 [group('quality')]
 _lint-go: _lint-backend _lint-cli _lint-types
 
 [group('quality')]
 _lint-all:
-    @just _lint-frontend
+    @just _lint-js
     @just _lint-go
+    @just _lint-proto
 
-# Lint targets. Valid: "backend", "frontend", "cli", "types" "all".
+# Lint targets. Valid: "backend", "frontend", "tests", "email-templates", "js", "cli", "types", "go", "proto", "all".
 [group('quality')]
 lint target="all":
     @just "_lint-{{ target }}"
@@ -531,14 +513,10 @@ gomod action="tidy" target="all":
 # Generate edge tunnel protobuf/gRPC code.
 [group('codegen')]
 _generate-proto:
+    cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest lint
     cd {{ edge_proto_dir }} && go run github.com/bufbuild/buf/cmd/buf@latest generate
 
-# Generate Wire dependency injection code.
-[group('codegen')]
-_generate-wire:
-    cd backend && go tool wire ./...
-
-# Generate targets. Valid: "proto", "wire".
+# Generate targets. Valid: "proto".
 [group('codegen')]
 generate target:
     @just "_generate-{{ target }}"

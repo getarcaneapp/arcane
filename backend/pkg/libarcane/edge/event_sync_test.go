@@ -1,7 +1,6 @@
 package edge
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"testing"
@@ -38,10 +37,6 @@ func (f *fakeEventTunnelConn) IsExpectedReceiveError(error) bool { return false 
 func (f *fakeEventTunnelConn) Close() error { f.closed = true; return nil }
 
 func (f *fakeEventTunnelConn) IsClosed() bool { return f.closed }
-
-func (f *fakeEventTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return nil, errors.New("not implemented")
-}
 
 func TestPublishEventToManager_NoActiveTunnel(t *testing.T) {
 	clearActiveAgentTunnelConn(getActiveAgentTunnelConn())

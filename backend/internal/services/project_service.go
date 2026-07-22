@@ -3,7 +3,7 @@ package services
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -24,6 +24,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	dockerregistry "github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -36,13 +37,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/iconcatalog"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/samber/hot"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
@@ -63,7 +64,7 @@ type ProjectService struct {
 
 	composeNameCacheMu  sync.RWMutex
 	composeNameToProjID map[string]string
-	composeCache        *cache.KeyedCache[string, composeCacheEntry]
+	composeCache        *hot.HotCache[string, composeCacheEntry]
 }
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
@@ -86,7 +87,7 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		lifecycleService:         lifecycleService,
 		containerRegistryService: containerRegistryService,
 		config:                   cfg,
-		composeCache:             cache.NewKeyed[string, composeCacheEntry](),
+		composeCache:             hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build(),
 	}
 }
 
@@ -307,20 +308,20 @@ func lookupProjectContainers(p models.Project, containersByProject map[string][]
 	return nil
 }
 
-func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) (string, bool) {
+func (s *ProjectService) getCachedComposeProjectIDInternal(normalizedName string) mo.Option[string] {
 	if normalizedName == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	s.composeNameCacheMu.RLock()
 	defer s.composeNameCacheMu.RUnlock()
 
 	if s.composeNameToProjID == nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	projectID, ok := s.composeNameToProjID[normalizedName]
-	return projectID, ok
+	return mo.TupleToOption(projectID, ok)
 }
 
 func (s *ProjectService) cacheComposeProjectIDInternal(normalizedName, projectID string) {
@@ -349,7 +350,7 @@ func (s *ProjectService) invalidateCachedComposeProjectIDInternal(normalizedName
 }
 
 func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Context, normalizedName string) (*models.Project, bool, error) {
-	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName)
+	projectID, ok := s.getCachedComposeProjectIDInternal(normalizedName).Get()
 	if !ok {
 		return nil, false, nil
 	}
@@ -507,13 +508,20 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		return nil, errors.New("project is nil")
 	}
 	if s.composeCache == nil {
-		s.composeCache = cache.NewKeyed[string, composeCacheEntry]()
+		s.composeCache = hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build()
 	}
 
-	entry, err := s.composeCache.GetOrFetch(ctx, proj.ID, validComposeCacheEntryInternal, func(ctx context.Context) (composeCacheEntry, error) {
+	if cached, ok := s.composeCache.Peek(proj.ID); ok {
+		if validComposeCacheEntryInternal(cached) {
+			return cached.project, nil
+		}
+		s.composeCache.Delete(proj.ID)
+	}
+
+	entry, found, err := s.composeCache.GetWithLoaders(proj.ID, func(_ []string) (map[string]composeCacheEntry, error) {
 		composeProject, composePath, err := s.loadComposeProjectForProjectInternal(ctx, proj, cfg)
 		if err != nil {
-			return composeCacheEntry{}, err
+			return nil, err
 		}
 
 		entry := composeCacheEntry{
@@ -524,7 +532,7 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 		if info, statErr := os.Stat(composePath); statErr == nil {
 			entry.composeMtime = info.ModTime()
 		} else {
-			return composeCacheEntry{}, fmt.Errorf("stat compose file: %w", statErr)
+			return nil, fmt.Errorf("stat compose file: %w", statErr)
 		}
 		if composeProject != nil {
 			for _, composeFile := range composeProject.ComposeFiles {
@@ -533,16 +541,19 @@ func (s *ProjectService) getCachedComposeProjectInternal(ctx context.Context, pr
 				}
 				info, statErr := os.Stat(composeFile)
 				if statErr != nil {
-					return composeCacheEntry{}, fmt.Errorf("stat compose include %s: %w", composeFile, statErr)
+					return nil, fmt.Errorf("stat compose include %s: %w", composeFile, statErr)
 				}
 				entry.includeMtimes[composeFile] = info.ModTime()
 			}
 		}
 
-		return entry, nil
+		return map[string]composeCacheEntry{proj.ID: entry}, nil
 	})
 	if err != nil {
 		return nil, err
+	}
+	if !found {
+		return nil, errors.New("compose cache loader returned no project")
 	}
 
 	return entry.project, nil
@@ -570,7 +581,7 @@ func (s *ProjectService) invalidateComposeCacheInternal(projectID string) {
 	if s.composeCache == nil || strings.TrimSpace(projectID) == "" {
 		return
 	}
-	s.composeCache.Invalidate(projectID)
+	s.composeCache.Delete(projectID)
 }
 
 func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, proj *models.Project) {
@@ -579,27 +590,39 @@ func (s *ProjectService) refreshProjectImageRefsInternal(ctx context.Context, pr
 	}
 
 	s.invalidateComposeCacheInternal(proj.ID)
-	refs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
+	refs, buildRefs, err := s.getProjectImageRefsFromComposeInternal(ctx, *proj, nil)
 	if err != nil {
 		if dbErr := s.db.WithContext(ctx).
 			Model(&models.Project{}).
 			Where("id = ?", proj.ID).
-			Update("image_refs_json", "").Error; dbErr != nil {
+			Updates(map[string]any{
+				"image_refs_json":       "",
+				"build_image_refs_json": nil,
+			}).Error; dbErr != nil {
 			slog.WarnContext(ctx, "failed to clear stale project image refs", "projectID", proj.ID, "error", dbErr)
 		}
 		proj.ImageRefsJSON = ""
+		proj.BuildImageRefsJSON = nil
 		slog.WarnContext(ctx, "failed to refresh project image refs", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 		return
 	}
 	imageRefsJSON := projects.MarshalImageRefsJSON(refs)
+	buildImageRefsJSON := projects.MarshalImageRefsJSON(buildRefs)
+	if buildImageRefsJSON == "" {
+		buildImageRefsJSON = "[]"
+	}
 	if err := s.db.WithContext(ctx).
 		Model(&models.Project{}).
 		Where("id = ?", proj.ID).
-		Update("image_refs_json", imageRefsJSON).Error; err != nil {
+		Updates(map[string]any{
+			"image_refs_json":       imageRefsJSON,
+			"build_image_refs_json": buildImageRefsJSON,
+		}).Error; err != nil {
 		slog.WarnContext(ctx, "failed to persist project image refs", "projectID", proj.ID, "error", err)
 		return
 	}
 	proj.ImageRefsJSON = imageRefsJSON
+	proj.BuildImageRefsJSON = new(buildImageRefsJSON)
 }
 
 func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []string) {
@@ -618,21 +641,24 @@ func (s *ProjectService) HandleProjectFilesChanged(ctx context.Context, paths []
 	}
 }
 
-func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) {
+func (s *ProjectService) BackfillProjectImageRefs(ctx context.Context) (int, error) {
 	if s.db == nil {
-		return
+		return 0, nil
 	}
 
 	var projectsList []models.Project
 	if err := s.db.WithContext(ctx).
-		Where("image_refs_json = '' OR image_refs_json IS NULL").
+		Where("build_image_refs_json IS NULL").
 		Find(&projectsList).Error; err != nil {
-		slog.WarnContext(ctx, "failed to list projects for image ref backfill", "error", err)
-		return
+		return 0, fmt.Errorf("list projects for image ref backfill: %w", err)
 	}
 	for i := range projectsList {
+		if err := ctx.Err(); err != nil {
+			return i, err
+		}
 		s.refreshProjectImageRefsInternal(ctx, &projectsList[i])
 	}
+	return len(projectsList), nil
 }
 
 func (s *ProjectService) resolveProjectsByChangedPathsInternal(ctx context.Context, paths []string) ([]models.Project, error) {
@@ -1014,7 +1040,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.IsArchived = proj.IsArchived
 	resp.ArchivedAt = proj.ArchivedAt
 	resp.HasBuildDirective = false
-	resp.DirName = utils.DerefString(proj.DirName)
+	resp.DirName = mo.PointerToOption(proj.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, *proj)
@@ -1328,7 +1354,7 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 			}
 			defer func() { <-sem }()
 
-			refs, err := s.getProjectImageRefsFromComposeInternal(ctx, proj, cfg)
+			refs, _, err := s.getProjectImageRefsFromComposeInternal(ctx, proj, cfg)
 			if err != nil {
 				slog.WarnContext(ctx, "failed to resolve project image refs for update summary", "projectID", proj.ID, "projectName", proj.Name, "error", err)
 				return
@@ -1361,13 +1387,13 @@ func (s *ProjectService) enrichProjectsWithUpdateInfoInternal(
 	}
 }
 
-func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project, cfg *models.Settings) ([]string, error) {
+func (s *ProjectService) getProjectImageRefsFromComposeInternal(ctx context.Context, proj models.Project, cfg *models.Settings) ([]string, []string, error) {
 	composeProject, err := s.getCachedComposeProjectInternal(ctx, &proj, cfg)
 	if err != nil {
-		return nil, fmt.Errorf("load compose project: %w", err)
+		return nil, nil, fmt.Errorf("load compose project: %w", err)
 	}
 
-	return projects.ImageRefsFromComposeServices(composeProject.Services), nil
+	return projects.ImageRefsFromComposeServices(composeProject.Services), projects.BuildImageRefsFromComposeProject(composeProject), nil
 }
 
 func buildProjectUpdateInfoSummaryInternal(
@@ -1593,7 +1619,7 @@ func (s *ProjectService) upsertProjectForDir(ctx context.Context, dirName, dirPa
 	} else if serviceCountErr != nil {
 		slog.WarnContext(ctx, "failed to refresh compose service count during project sync", "projectID", existing.ID, "path", dirPath, "error", serviceCountErr)
 	}
-	if serviceCountErr == nil && !utils.StringPtrEqual(existing.ComposeProjectName, composeMetadata.composeProjectName) {
+	if serviceCountErr == nil && mo.PointerToOption(existing.ComposeProjectName) != mo.PointerToOption(composeMetadata.composeProjectName) {
 		updates["compose_project_name"] = composeMetadata.composeProjectName
 	}
 	if serviceCountErr == nil {
@@ -1727,7 +1753,7 @@ func (s *ProjectService) cleanupDBProjectsInternal(ctx context.Context, seen map
 			continue
 		}
 		candidates++
-		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth); remove {
+		if decision, remove := s.evaluateProjectCleanupInternal(ctx, p, followProjectSymlinks, projectsDir, maxDepth).Get(); remove {
 			pendingDeletions = append(pendingDeletions, decision)
 		}
 	}
@@ -1797,9 +1823,9 @@ func isInternalScratchProjectInternal(p models.Project) bool {
 // the current filesystem pass should be pruned. It performs only read-only checks
 // (warning in place for the "keep" cases); the actual deletion is deferred to the
 // caller so the mass-wipe guard can veto an entire suspicious pass.
-func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p models.Project, followProjectSymlinks bool, projectsDir string, maxDepth int) mo.Option[projectCleanupDecision] {
 	if s.projectExceedsScanDepthInternal(p, projectsDir, maxDepth) {
-		return projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory is beyond the configured scan depth"})
 	}
 
 	validDir, err := projects.IsProjectDirectoryPath(p.Path, followProjectSymlinks)
@@ -1807,7 +1833,7 @@ func (s *ProjectService) evaluateProjectCleanupInternal(ctx context.Context, p m
 		return s.evaluateProjectPathErrorInternal(ctx, p, err)
 	}
 	if !validDir {
-		return projectCleanupDecision{project: p, reason: "removed project: path is no longer a valid project directory"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: path is no longer a valid project directory"})
 	}
 
 	return s.evaluateProjectComposeFileInternal(ctx, p)
@@ -1827,19 +1853,19 @@ func (s *ProjectService) projectExceedsScanDepthInternal(p models.Project, proje
 	return rel != "" && strings.Count(rel, "/")+1 > maxDepth
 }
 
-func (s *ProjectService) evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectPathErrorInternal(ctx context.Context, p models.Project, err error) mo.Option[projectCleanupDecision] {
 	if os.IsNotExist(err) {
-		return projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"}, true
+		return mo.Some(projectCleanupDecision{project: p, reason: "removed project: directory no longer exists"})
 	}
 
 	slog.WarnContext(ctx, "stat error during cleanup; keeping DB record", "path", p.Path, "error", err)
-	return projectCleanupDecision{}, false
+	return mo.None[projectCleanupDecision]()
 }
 
-func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) (projectCleanupDecision, bool) {
+func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context, p models.Project) mo.Option[projectCleanupDecision] {
 	_, err := s.resolveProjectComposeFileInternal(ctx, &p)
 	if err == nil {
-		return projectCleanupDecision{}, false
+		return mo.None[projectCleanupDecision]()
 	}
 
 	// The project directory still exists here (it passed the directory-validity
@@ -1852,10 +1878,10 @@ func (s *ProjectService) evaluateProjectComposeFileInternal(ctx context.Context,
 	if _, ok := errors.AsType[*common.ComposeFileNotFoundError](err); !ok {
 		slog.WarnContext(ctx, "project directory present but compose file unresolved during cleanup; keeping DB record",
 			"projectID", p.ID, "path", p.Path, "error", err)
-		return projectCleanupDecision{}, false
+		return mo.None[projectCleanupDecision]()
 	}
 
-	return projectCleanupDecision{project: p, reason: "removed orphaned project: directory present but contains no compose file"}, true
+	return mo.Some(projectCleanupDecision{project: p, reason: "removed orphaned project: directory present but contains no compose file"})
 }
 
 // deleteProjectDuringCleanupInternal removes a project record discovered to be
@@ -4124,7 +4150,7 @@ func (s *ProjectService) ensureProjectPathUnderRoot(ctx context.Context, proj *m
 	}
 
 	// Attempt to repair using known directory name or sanitized project name
-	dirName := utils.DerefString(proj.DirName)
+	dirName := mo.PointerToOption(proj.DirName).OrEmpty()
 	if strings.TrimSpace(dirName) == "" {
 		dirName = projects.SanitizeProjectName(proj.Name)
 	}
@@ -4707,7 +4733,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			_ = mapper.MapStruct(p, &results[i])
 			results[i].CreatedAt = p.CreatedAt.Format(time.RFC3339)
 			results[i].UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
-			results[i].DirName = utils.DerefString(p.DirName)
+			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
 			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
 			meta := s.getProjectMetadataForProject(ctx, p)
@@ -4739,7 +4765,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.UpdatedAt = p.UpdatedAt.Format(time.RFC3339)
 	resp.IsArchived = p.IsArchived
 	resp.ArchivedAt = p.ArchivedAt
-	resp.DirName = utils.DerefString(p.DirName)
+	resp.DirName = mo.PointerToOption(p.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
 	meta := s.getProjectMetadataForProject(ctx, p)
@@ -4975,7 +5001,7 @@ func (s *ProjectService) refreshComposeProjectNameInternal(ctx context.Context, 
 	if shouldUpdateName && meta.resolvedProjectName != "" && proj.Name != meta.resolvedProjectName {
 		updates["name"] = meta.resolvedProjectName
 	}
-	if !utils.StringPtrEqual(proj.ComposeProjectName, meta.composeProjectName) {
+	if mo.PointerToOption(proj.ComposeProjectName) != mo.PointerToOption(meta.composeProjectName) {
 		updates["compose_project_name"] = meta.composeProjectName
 	}
 	if len(updates) == 0 {
@@ -5318,7 +5344,6 @@ func (s *ProjectService) rollbackProjectRenameJournalInternal(ctx context.Contex
 		}
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
 	return directoryErr
 }
 
@@ -5383,7 +5408,7 @@ func (s *ProjectService) recoverProjectRenameRollbackCleanupInternal(ctx context
 		return err
 	}
 
-	dockerutil.InvalidateVolumeUsageCache()
+	dockerutil.InvalidateVolumeUsageCache(dockerClient)
 	return s.clearProjectRenameRollbackCleanupInternal(ctx, cleanup.ProjectID)
 }
 

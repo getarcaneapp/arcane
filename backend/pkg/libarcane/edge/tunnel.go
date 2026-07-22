@@ -2,12 +2,9 @@ package edge
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"io"
-	"sync"
-	"sync/atomic"
-	"time"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
@@ -17,6 +14,8 @@ import (
 
 // TunnelMessageType represents the type of message sent over the tunnel.
 type TunnelMessageType string
+
+const maxGRPCTunnelMessageSize = 16 * 1024 * 1024
 
 const (
 	// MessageTypeRequest is sent from manager to agent to initiate a request.
@@ -61,66 +60,6 @@ const (
 	MessageTypeCancelRequest TunnelMessageType = "cancel_request"
 )
 
-// TunnelMessage represents a transport-agnostic edge tunnel message.
-type TunnelMessage struct {
-	ID            string            `json:"id"`                        // Unique request/stream ID
-	Type          TunnelMessageType `json:"type"`                      // Message type
-	Method        string            `json:"method,omitempty"`          // HTTP method for requests
-	Path          string            `json:"path,omitempty"`            // Request path
-	Query         string            `json:"query,omitempty"`           // Query string
-	Headers       map[string]string `json:"headers,omitempty"`         // HTTP headers
-	Body          []byte            `json:"body,omitempty"`            // Request/response body
-	WSMessageType int               `json:"ws_message_type,omitempty"` // WebSocket message type
-	Status        int               `json:"status,omitempty"`          // HTTP status for responses
-	Accepted      bool              `json:"accepted,omitempty"`        // Registration accepted
-	AgentToken    string            `json:"agent_token,omitempty"`     // Register request token
-	EnvironmentID string            `json:"environment_id,omitempty"`  // Manager-resolved environment ID
-	Error         string            `json:"error,omitempty"`           // Error field for register response
-	Event         *TunnelEvent      `json:"event,omitempty"`           // Agent event payload
-	Command       string            `json:"command,omitempty"`         // Typed command name
-	SessionID     string            `json:"session_id,omitempty"`      // Manager-issued session identifier
-	ResumeSession string            `json:"resume_session,omitempty"`  // Previous session being resumed
-	AgentInstance string            `json:"agent_instance,omitempty"`  // Stable agent runtime identity
-	Capabilities  []string          `json:"capabilities,omitempty"`    // Agent advertised capabilities
-	SecurityMode  string            `json:"security_mode,omitempty"`   // token, mtls, etc.
-	DrainPrevious bool              `json:"drain_previous,omitempty"`  // Replace previous session
-	TimeoutMillis int64             `json:"timeout_millis,omitempty"`  // Command timeout
-	Sequence      int64             `json:"sequence,omitempty"`        // Chunk sequence number
-	Streaming     bool              `json:"streaming,omitempty"`       // Response used chunked output
-	Metadata      map[string]string `json:"metadata,omitempty"`        // Correlation and audit metadata
-	EOF           bool              `json:"eof,omitempty"`             // Final chunk indicator
-}
-
-// TunnelEvent is an event payload sent from an agent to the manager.
-type TunnelEvent struct {
-	Type         string `json:"type"`
-	Severity     string `json:"severity,omitempty"`
-	Title        string `json:"title"`
-	Description  string `json:"description,omitempty"`
-	ResourceType string `json:"resource_type,omitempty"`
-	ResourceID   string `json:"resource_id,omitempty"`
-	ResourceName string `json:"resource_name,omitempty"`
-	UserID       string `json:"user_id,omitempty"`
-	Username     string `json:"username,omitempty"`
-	MetadataJSON []byte `json:"metadata_json,omitempty"`
-}
-
-// MarshalJSON custom marshaler to handle nil body as empty.
-func (m *TunnelMessage) MarshalJSON() ([]byte, error) {
-	type Alias TunnelMessage
-	return json.Marshal(&struct {
-		*Alias
-	}{
-		Alias: (*Alias)(m),
-	})
-}
-
-// PendingRequest tracks an in-flight request waiting for response.
-type PendingRequest struct {
-	ResponseCh chan *TunnelMessage
-	CreatedAt  time.Time
-}
-
 // TunnelConnection is the transport contract shared by WebSocket and gRPC wrappers.
 type TunnelConnection interface {
 	Send(msg *TunnelMessage) error
@@ -128,16 +67,6 @@ type TunnelConnection interface {
 	IsExpectedReceiveError(err error) bool
 	Close() error
 	IsClosed() bool
-	SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error)
-}
-
-const defaultSendRequestTimeout = 5 * time.Minute
-
-// TunnelConn wraps a WebSocket connection with send/receive helpers.
-type TunnelConn struct {
-	conn   *websocket.Conn
-	mu     sync.Mutex
-	closed atomic.Bool
 }
 
 // NewTunnelConn creates a new WebSocket tunnel connection wrapper.
@@ -206,11 +135,6 @@ func (t *TunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// SendRequest sends a request and waits for response.
-func (t *TunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return sendRequestWithPending(ctx, t, msg, pending)
-}
-
 type grpcManagerStream interface {
 	Send(msg *tunnelpb.ManagerMessage) error
 	Recv() (*tunnelpb.AgentMessage, error)
@@ -222,14 +146,6 @@ type grpcAgentStream interface {
 	Recv() (*tunnelpb.ManagerMessage, error)
 	Context() context.Context
 	CloseSend() error
-}
-
-// GRPCManagerTunnelConn wraps the manager-side gRPC tunnel stream.
-type GRPCManagerTunnelConn struct {
-	stream grpcManagerStream
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	closed atomic.Bool
 }
 
 // NewGRPCManagerTunnelConn creates a manager-side gRPC tunnel wrapper.
@@ -305,21 +221,8 @@ func (t *GRPCManagerTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// SendRequest sends a request and waits for response.
-func (t *GRPCManagerTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return sendRequestWithPending(ctx, t, msg, pending)
-}
-
 func (t *GRPCManagerTunnelConn) markClosed() {
 	t.closed.Store(true)
-}
-
-// GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.
-type GRPCAgentTunnelConn struct {
-	stream grpcAgentStream
-	cancel context.CancelFunc
-	mu     sync.Mutex
-	closed atomic.Bool
 }
 
 // NewGRPCAgentTunnelConn creates an agent-side gRPC tunnel wrapper.
@@ -392,43 +295,8 @@ func (t *GRPCAgentTunnelConn) IsClosed() bool {
 	return t.closed.Load()
 }
 
-// SendRequest sends a request and waits for response.
-func (t *GRPCAgentTunnelConn) SendRequest(ctx context.Context, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	return sendRequestWithPending(ctx, t, msg, pending)
-}
-
 func (t *GRPCAgentTunnelConn) markClosed() {
 	t.closed.Store(true)
-}
-
-func sendRequestWithPending(ctx context.Context, conn interface {
-	Send(msg *TunnelMessage) error
-}, msg *TunnelMessage, pending *sync.Map) (*TunnelMessage, error) {
-	ctx, cancel := ensureSendRequestContextInternal(ctx)
-	defer cancel()
-
-	respCh := make(chan *TunnelMessage, 1)
-	pending.Store(msg.ID, &PendingRequest{
-		ResponseCh: respCh,
-		CreatedAt:  time.Now(),
-	})
-	defer pending.Delete(msg.ID)
-
-	if err := conn.Send(msg); err != nil {
-		return nil, err
-	}
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case resp := <-respCh:
-		return resp, nil
-	}
-}
-
-type cancelableGRPCManagerStream struct {
-	stream grpcManagerStream
-	ctx    context.Context
 }
 
 func (s *cancelableGRPCManagerStream) Send(msg *tunnelpb.ManagerMessage) error {
@@ -457,18 +325,6 @@ func (s *cancelableGRPCManagerStream) Recv() (*tunnelpb.AgentMessage, error) {
 
 func (s *cancelableGRPCManagerStream) Context() context.Context {
 	return s.ctx
-}
-
-func ensureSendRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		return context.WithTimeout(context.Background(), defaultSendRequestTimeout)
-	}
-
-	if _, hasDeadline := ctx.Deadline(); hasDeadline {
-		return ctx, func() {}
-	}
-
-	return context.WithTimeout(ctx, defaultSendRequestTimeout)
 }
 
 func isExpectedGRPCReceiveErrorInternal(err error) bool {

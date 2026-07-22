@@ -149,14 +149,17 @@ func extractArcaneComposeMetadata(project *composetypes.Project) ArcaneComposeMe
 }
 
 func parseArcaneBlockInternal(block any) (IconSet, []string) {
-	arcaneBlock, ok := utils.AsStringMap(block)
+	arcaneBlock, ok := utils.AsStringMap(block).Get()
 	if !ok {
 		return IconSet{}, nil
 	}
 	icon := IconSet{
-		Icon:  utils.FirstNonEmpty(getFirstString(arcaneBlock[arcaneIconKey]), getFirstString(arcaneBlock[arcaneIconsKey])),
-		Light: getFirstString(arcaneBlock[arcaneIconLightKey]),
-		Dark:  getFirstString(arcaneBlock[arcaneIconDarkKey]),
+		Icon: utils.FirstNonEmpty(
+			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconKey], utils.ToString)...),
+			utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconsKey], utils.ToString)...),
+		),
+		Light: utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconLightKey], utils.ToString)...),
+		Dark:  utils.FirstNonEmpty(utils.Collect(arcaneBlock[arcaneIconDarkKey], utils.ToString)...),
 	}
 	urls := utils.UniqueNonEmptyStrings(utils.Collect(arcaneBlock[arcaneURLsKey], utils.ToString))
 	return icon, urls
@@ -337,21 +340,11 @@ func parseIncludePaths(composeFilePath string) ([]string, error) {
 	return paths, nil
 }
 
-// getFirstString retrieves the first non-empty string from a value (single or slice).
-func getFirstString(v any) string {
-	for _, s := range utils.Collect(v, utils.ToString) {
-		if s != "" {
-			return s
-		}
-	}
-	return ""
-}
-
 // FindArcaneIconSet attempts to locate Arcane icon labels within service labels.
 // It supports both map[string]string and []string label formats.
 func FindArcaneIconSet(labels any) IconSet {
 	iconSet := IconSet{}
-	if labelMap, ok := utils.AsStringMap(labels); ok {
+	if labelMap, ok := utils.AsStringMap(labels).Get(); ok {
 		for key, value := range labelMap {
 			assignArcaneIconValueInternal(&iconSet, key, utils.ToString(value))
 		}

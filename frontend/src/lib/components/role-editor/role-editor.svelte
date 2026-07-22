@@ -2,7 +2,7 @@
 	import * as Card from '$lib/components/ui/card';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import FormInput from '$lib/components/form/form-input.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import PermissionPicker from './permission-picker.svelte';
 	import type { Role, PermissionsManifest } from '$lib/types/auth';
 	import { normalizePermissionSelection } from '$lib/utils/permissions';
@@ -25,9 +25,9 @@
 	const totalPermissions = $derived(manifest.resources.reduce((sum, r) => sum + r.actions.length, 0));
 
 	const formSchema = z.object({
-		name: z.string().min(1, m.roles_name_required()),
+		name: z.string().min(1, m.common_name_required()),
 		description: z.string().optional().default(''),
-		permissions: z.array(z.string()).min(1, m.roles_permissions_required())
+		permissions: z.array(z.string()).min(1, m.pick_at_least_one_permission())
 	});
 
 	const formData = $derived({
@@ -62,16 +62,11 @@
 			</Card.Header>
 			<Card.Content class="space-y-4 p-6 pt-2">
 				<div class="flex items-center gap-2">
-					<StatusBadge
-						text={isBuiltIn ? m.roles_built_in() : m.roles_custom()}
-						variant={isBuiltIn ? 'blue' : 'green'}
-						size="sm"
-						minWidth="none"
-					/>
+					<Badge variant={isBuiltIn ? 'blue' : 'green'} size="sm">{isBuiltIn ? m.roles_built_in() : m.custom()}</Badge>
 				</div>
 
 				<FormInput
-					label={m.roles_name_label()}
+					label={m.common_name()}
 					type="text"
 					placeholder={m.roles_name_placeholder()}
 					disabled={isBuiltIn || isLoading}
@@ -79,7 +74,7 @@
 				/>
 
 				<FormInput
-					label={m.roles_description_label()}
+					label={m.common_description()}
 					type="text"
 					placeholder={m.roles_description_placeholder()}
 					disabled={isBuiltIn || isLoading}
@@ -87,7 +82,7 @@
 				/>
 
 				<div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{m.roles_permissions_count({ count: selectedCount, total: totalPermissions })}
 					</div>
 					{#if $inputs.permissions?.error}
@@ -96,7 +91,7 @@
 				</div>
 
 				{#if isBuiltIn}
-					<p class="text-muted-foreground text-xs">{m.roles_built_in_note()}</p>
+					<p class="text-xs text-muted-foreground">{m.roles_built_in_note()}</p>
 				{/if}
 
 				{#if isBuiltIn && onClone}

@@ -5,7 +5,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import { goto } from '$app/navigation';
@@ -143,9 +143,9 @@
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: m.roles_name_label(), sortable: true, cell: NameCell },
-		{ accessorKey: 'description', title: m.roles_description_label(), sortable: false, cell: DescriptionCell },
-		{ id: 'type', accessorKey: 'builtIn', title: m.roles_col_type(), sortable: false, cell: TypeCell },
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'description', title: m.common_description(), sortable: false, cell: DescriptionCell },
+		{ id: 'type', accessorKey: 'builtIn', title: m.common_type(), sortable: false, cell: TypeCell },
 		{
 			id: 'assignedUsers',
 			accessorKey: 'assignedUserCount',
@@ -156,15 +156,15 @@
 		{
 			id: 'permissions',
 			accessorKey: 'permissions',
-			title: m.roles_col_permissions(),
+			title: m.permissions(),
 			sortable: false,
 			cell: PermissionsCell
 		}
 	] satisfies ColumnSpec<Role>[];
 
 	const mobileFields = [
-		{ id: 'description', label: m.roles_description_label(), defaultVisible: true },
-		{ id: 'permissions', label: m.roles_col_permissions(), defaultVisible: true },
+		{ id: 'description', label: m.common_description(), defaultVisible: true },
+		{ id: 'permissions', label: m.permissions(), defaultVisible: true },
 		{ id: 'assignedUsers', label: m.roles_col_assigned_users(), defaultVisible: true }
 	];
 
@@ -198,7 +198,7 @@
 {/snippet}
 
 {#snippet TypeCell({ item }: { item: Role })}
-	<StatusBadge text={item.builtIn ? m.roles_built_in() : m.roles_custom()} variant={item.builtIn ? 'amber' : 'blue'} />
+	<Badge variant={item.builtIn ? 'amber' : 'blue'} minWidth="20">{item.builtIn ? m.roles_built_in() : m.custom()}</Badge>
 {/snippet}
 
 {#snippet AssignedUsersCell({ item }: { item: Role })}
@@ -225,12 +225,12 @@
 		badges={[
 			(item: Role) => ({
 				variant: item.builtIn ? 'amber' : 'blue',
-				text: item.builtIn ? m.roles_built_in() : m.roles_custom()
+				text: item.builtIn ? m.roles_built_in() : m.custom()
 			})
 		]}
 		fields={[
 			{
-				label: m.roles_col_permissions(),
+				label: m.permissions(),
 				getValue: (item: Role) => String(item.permissions.length),
 				icon: ShieldAlertIcon,
 				iconVariant: 'gray' as const,

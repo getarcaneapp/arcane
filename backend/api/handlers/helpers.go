@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
+	"mime/multipart"
 	"strings"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -78,6 +79,21 @@ func requireUserInternal(ctx context.Context) (*models.User, error) {
 		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
 	}
 	return user, nil
+}
+
+func openUploadedFileInternal(form multipart.Form) (multipart.File, *multipart.FileHeader, error) {
+	files := form.File["file"]
+	if len(files) == 0 {
+		return nil, nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
+	}
+
+	fileHeader := files[0]
+	file, err := fileHeader.Open()
+	if err != nil {
+		return nil, nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+	}
+
+	return file, fileHeader, nil
 }
 
 func registerSecuredInternal[I, O any](

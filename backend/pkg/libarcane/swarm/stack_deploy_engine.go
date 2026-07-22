@@ -25,6 +25,7 @@ import (
 	"github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
 	dockerclient "github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 type resourceMeta struct {
@@ -45,16 +46,16 @@ const (
 
 // StackDeployOptions controls how a swarm stack is deployed.
 type StackDeployOptions struct {
+	RegistryAuthForImage func(context.Context, string) (string, error)
+	PathMapper           *projects.PathMapper
 	Name                 string
 	ComposeContent       string
 	OverrideContent      string
 	EnvContent           string
-	WithRegistryAuth     bool
-	RegistryAuthForImage func(context.Context, string) (string, error)
-	Prune                bool
 	ResolveImage         string
 	WorkingDir           string
-	PathMapper           *projects.PathMapper
+	WithRegistryAuth     bool
+	Prune                bool
 }
 
 type StackRenderOptions struct {
@@ -1090,7 +1091,7 @@ func convertIPAM(cfg composegotypes.IPAMConfig) *network.IPAM {
 			}
 			subnet := parsePrefix(pool.Subnet)
 			ipRange := parsePrefix(pool.IPRange)
-			gateway, _ := parseAddr(pool.Gateway)
+			gateway := parseAddr(pool.Gateway).OrEmpty()
 			pools = append(pools, network.IPAMConfig{
 				Subnet:     subnet,
 				Gateway:    gateway,
@@ -1109,7 +1110,7 @@ func parseIPList(values []string) []netip.Addr {
 	}
 	out := make([]netip.Addr, 0, len(values))
 	for _, value := range values {
-		addr, ok := parseAddr(value)
+		addr, ok := parseAddr(value).Get()
 		if ok {
 			out = append(out, addr)
 		}
@@ -1117,16 +1118,16 @@ func parseIPList(values []string) []netip.Addr {
 	return out
 }
 
-func parseAddr(value string) (netip.Addr, bool) {
+func parseAddr(value string) mo.Option[netip.Addr] {
 	value = strings.TrimSpace(value)
 	if value == "" {
-		return netip.Addr{}, false
+		return mo.None[netip.Addr]()
 	}
 	addr, err := netip.ParseAddr(value)
 	if err != nil {
-		return netip.Addr{}, false
+		return mo.None[netip.Addr]()
 	}
-	return addr, true
+	return mo.Some(addr)
 }
 
 func parsePrefix(value string) netip.Prefix {
@@ -1147,7 +1148,7 @@ func parseAuxAddresses(values map[string]string) map[string]netip.Addr {
 	}
 	out := make(map[string]netip.Addr, len(values))
 	for key, value := range values {
-		if addr, ok := parseAddr(value); ok {
+		if addr, ok := parseAddr(value).Get(); ok {
 			out[key] = addr
 		}
 	}
@@ -1250,17 +1251,14 @@ func convertFileMode(mode *composegotypes.FileMode) *uint32 {
 	if mode == nil {
 		return nil
 	}
-	if result, ok := toUint32FromInt64(int64(*mode)); ok {
-		return &result
-	}
-	return nil
+	return toUint32FromInt64(int64(*mode)).ToPointer()
 }
 
-func toUint32FromInt64(value int64) (uint32, bool) {
+func toUint32FromInt64(value int64) mo.Option[uint32] {
 	if value < 0 || value > int64(^uint32(0)) {
-		return 0, false
+		return mo.None[uint32]()
 	}
-	return uint32(value), true
+	return mo.Some(uint32(value))
 }
 
 func normalizeResolveImageMode(value string) (string, error) {

@@ -2,7 +2,6 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Badge } from '$lib/components/ui/badge';
 	import { goto } from '$app/navigation';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -298,11 +297,11 @@
 	{@const statusValue = resolveEnvironmentStatus(item)}
 	<div class="flex items-center gap-3">
 		<div class="relative">
-			<div class="bg-muted flex size-8 items-center justify-center rounded-lg">
-				<EnvironmentsIcon class="text-muted-foreground size-4" />
+			<div class="flex size-8 items-center justify-center rounded-lg bg-muted">
+				<EnvironmentsIcon class="size-4 text-muted-foreground" />
 			</div>
 			<div
-				class="border-background absolute -top-1 -right-1 size-3 rounded-full border-2 {statusValue === 'online'
+				class="absolute -top-1 -right-1 size-3 rounded-full border-2 border-background {statusValue === 'online'
 					? 'bg-green-500'
 					: statusValue === 'standby'
 						? 'bg-blue-500'
@@ -312,7 +311,7 @@
 			></div>
 		</div>
 		{#if environmentStore.selected?.id === item.id}
-			<Badge variant="default" class="border-blue-500/20 bg-blue-500/10 text-blue-600">
+			<Badge variant="blue">
 				{m.common_current()}
 			</Badge>
 		{/if}
@@ -323,7 +322,7 @@
 			>
 				{item.name}
 			</button>
-			<span class="text-muted-foreground font-mono text-xs leading-tight">{item.apiUrl}</span>
+			<span class="font-mono text-xs leading-tight text-muted-foreground">{item.apiUrl}</span>
 		</div>
 	</div>
 {/snippet}
@@ -331,7 +330,7 @@
 {#snippet StatusCell({ value }: { value: unknown })}
 	{@const statusValue = String(value)}
 	{@const variant = getEnvironmentStatusVariant(statusValue as Environment['status'])}
-	<StatusBadge text={capitalizeFirstLetter(statusValue) || m.common_unknown()} {variant} />
+	<Badge {variant} minWidth="20">{capitalizeFirstLetter(statusValue) || m.common_unknown()}</Badge>
 {/snippet}
 
 {#snippet TypeCell({ value }: { value: unknown })}
@@ -339,15 +338,15 @@
 	{@const typeLabel = getEnvironmentTypeLabel(env)}
 	{@const transport = resolveEnvironmentTransport(env)}
 	{@const typeVariant = !env.isEdge || !transport ? 'gray' : transport === 'websocket' ? 'purple' : 'blue'}
-	<StatusBadge text={typeLabel} variant={typeVariant} />
+	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
 {/snippet}
 
 {#snippet ApiCell({ value }: { value: unknown })}
-	<span class="text-muted-foreground font-mono text-sm">{String(value)}</span>
+	<span class="font-mono text-sm text-muted-foreground">{String(value)}</span>
 {/snippet}
 
 {#snippet EnabledCell({ value }: { value: unknown })}
-	<StatusBadge text={value ? m.common_enabled() : m.common_disabled()} variant={value ? 'green' : 'red'} />
+	<Badge variant={value ? 'green' : 'red'} minWidth="20">{value ? m.common_enabled() : m.common_disabled()}</Badge>
 {/snippet}
 
 {#snippet EnvironmentMobileCardSnippet({
@@ -363,7 +362,7 @@
 		title={(item: Environment) => item.name || item.id}
 		subtitle={(item: Environment) => ((mobileFieldVisibility['id'] ?? true) ? item.id : null)}
 		badges={[
-			{ variant: 'green', text: m.sidebar_environment_label() },
+			{ variant: 'green', text: m.resource_environment_cap() },
 			...(environmentStore.selected?.id === item.id ? [{ variant: 'blue' as const, text: m.common_current() }] : [])
 		]}
 		fields={[
@@ -429,7 +428,7 @@
 
 		<DropdownMenu.Item onclick={() => handleTest(item.id)} disabled={isLoading.testing}>
 			<TestIcon class="size-4" />
-			{m.environments_test_connection()}
+			{m.test_connection()}
 		</DropdownMenu.Item>
 
 		{#if item.id !== '0'}

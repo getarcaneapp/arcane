@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -50,12 +51,12 @@ func NewMissingIncludeStubLoader(projectPath string) *MissingIncludeStubLoader {
 }
 
 func (l *MissingIncludeStubLoader) Accept(path string) bool {
-	_, ok := l.resolveMissingIncludeInternal(path)
+	_, ok := l.resolveMissingIncludeInternal(path).Get()
 	return ok
 }
 
 func (l *MissingIncludeStubLoader) Load(_ context.Context, path string) (string, error) {
-	validatedPath, ok := l.resolveMissingIncludeInternal(path)
+	validatedPath, ok := l.resolveMissingIncludeInternal(path).Get()
 	if !ok {
 		return "", fmt.Errorf("include file is not eligible for validation stub: %s", path)
 	}
@@ -95,19 +96,19 @@ func (l *MissingIncludeStubLoader) Dir(path string) string {
 	return filepath.Dir(path)
 }
 
-func (l *MissingIncludeStubLoader) resolveMissingIncludeInternal(path string) (string, bool) {
+func (l *MissingIncludeStubLoader) resolveMissingIncludeInternal(path string) mo.Option[string] {
 	validatedPath, err := ValidateIncludePathForWrite(l.projectPath, path)
 	if err != nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	if _, err := os.Stat(validatedPath); err == nil {
-		return "", false
+		return mo.None[string]()
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return "", false
+		return mo.None[string]()
 	}
 
-	return validatedPath, true
+	return mo.Some(validatedPath)
 }
 
 // Cleanup removes any temporary validation stub files created by the loader.

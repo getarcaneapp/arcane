@@ -1,5 +1,7 @@
 import { toast } from 'svelte-sonner';
 import { openConfirmDialog } from '$lib/components/confirm-dialog';
+import { markActivityToastShown } from '$lib/components/activity/activity-completion-toasts';
+import { runWithActivityBatchId } from '$lib/services/api-service';
 import { handleApiResultWithCallbacks, tryCatch, type Result } from '$lib/utils/api';
 import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 
@@ -62,28 +64,44 @@ async function runBulkOperation<T>({
 	if (total === 0) return result;
 
 	let firstActivityId: string | undefined;
+	const activityIds: string[] = [];
 	const tally = (id: string, outcome: Result<T>) => {
 		if (outcome.error) {
 			result.failed += 1;
 			onItemFailure?.(id);
 		} else {
 			result.success += 1;
-			if (!firstActivityId) firstActivityId = extractActivityId(outcome.data);
+			const activityId = extractActivityId(outcome.data);
+			if (activityId) {
+				activityIds.push(activityId);
+				firstActivityId ??= activityId;
+			}
 		}
 	};
 
 	setLoading?.(true);
 	try {
+		// Multi-item runs share a batch id so the Activity Center renders one
+		// batch row. Each request is STARTED inside the synchronous batch scope
+		// (awaited outside it), so concurrent unrelated actions never inherit it.
+		const batchId = total > 1 ? crypto.randomUUID() : null;
+		const startRun = (id: string) => (batchId ? runWithActivityBatchId(batchId, () => tryCatch(run(id))) : tryCatch(run(id)));
 		if (sequential) {
 			for (const id of ids) {
-				tally(id, await tryCatch(run(id)));
+				tally(id, await startRun(id));
 			}
 		} else {
-			const outcomes = await Promise.all(ids.map(async (id) => [id, await tryCatch(run(id))] as const));
+			const outcomes = await Promise.all(ids.map(async (id) => [id, await startRun(id)] as const));
 			for (const [id, outcome] of outcomes) tally(id, outcome);
 		}
 	} finally {
 		setLoading?.(false);
+	}
+
+	// The summary toast below covers every spawned activity; suppress the
+	// per-activity completion toasts for all of them, not just the linked one.
+	for (const activityId of activityIds) {
+		markActivityToastShown(activityId);
 	}
 
 	if (result.failed === 0) {

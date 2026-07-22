@@ -27,13 +27,13 @@
 
 	const registryTypeOptions = [
 		{ value: 'generic', label: m.registries_type_generic() },
-		{ value: 'ecr', label: m.registries_type_ecr() }
+		{ value: 'ecr', label: m.amazon_ecr() }
 	];
 
 	const formSchema = z
 		.object({
 			registryType: z.enum(['generic', 'ecr']).default('generic'),
-			url: z.string().min(1, m.registries_url_required()),
+			url: z.string().min(1, m.registry_url_is_required()),
 			username: z.string().optional(),
 			token: z.string().optional(),
 			description: z.string().optional(),
@@ -71,7 +71,7 @@
 				if (!data.username?.trim()) {
 					ctx.addIssue({
 						code: z.ZodIssueCode.custom,
-						message: m.registries_username_required(),
+						message: m.common_username_required(),
 						path: ['username']
 					});
 				}
@@ -127,7 +127,7 @@
 	bind:open
 	onOpenChange={handleOpenChange}
 	variant="sheet"
-	title={isEditMode ? m.registries_edit_title() : m.common_add_button({ resource: m.resource_registry_cap() })}
+	title={isEditMode ? m.registries_edit_title() : m.common_add_button({ resource: m.common_registry() })}
 	description={isEditMode ? m.registries_edit_description() : m.registries_add_description()}
 	contentClass="sm:max-w-[500px]"
 >
@@ -157,7 +157,7 @@
 					bind:input={$inputs.username}
 				/>
 				<FormInput
-					label={m.registries_token_label()}
+					label={m.common_token()}
 					type="password"
 					placeholder={isEditMode ? m.registries_token_keep_placeholder() : m.registries_token_placeholder()}
 					description={m.registries_token_description()}
@@ -186,7 +186,7 @@
 				bind:input={$inputs.description}
 			/>
 			<FormInput
-			label={m.registries_repository_names()}
+				label={m.registries_repository_names()}
 				type="textarea"
 				rows={3}
 				placeholder={m.registries_repository_names_placeholder()}
@@ -207,7 +207,7 @@
 					bind:checked={$inputs.insecure.value}
 				/>
 			{/if}
-			<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}
 
@@ -219,7 +219,7 @@
 			submitDisabled={isLoading}
 			submitLoading={isLoading}
 			onSubmit={handleSubmit}
-			submitLabel={isEditMode ? m.registries_save_changes() : m.common_add_button({ resource: m.resource_registry_cap() })}
+			submitLabel={isEditMode ? m.common_save_changes() : m.common_add_button({ resource: m.common_registry() })}
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>

@@ -90,7 +90,7 @@ export function createComposeEditorSchema(nameRequiredMessage: string) {
 			.string()
 			.min(1, nameRequiredMessage)
 			.regex(/^[a-z0-9-_]+$/i, m.compose_project_name_invalid()),
-		composeContent: z.string().min(1, m.compose_compose_content_required()),
+		composeContent: z.string().min(1, m.compose_content_is_required()),
 		envContent: z.string().optional().default('')
 	});
 }

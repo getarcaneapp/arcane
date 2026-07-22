@@ -36,19 +36,19 @@
 	>
 		<Dialog.Header class="space-y-3">
 			<Dialog.Title class="flex items-start gap-3 text-lg leading-tight font-semibold">
-				<AlertIcon class="text-destructive mt-0.5 size-5 shrink-0" />
+				<AlertIcon class="mt-0.5 size-5 shrink-0 text-destructive" />
 				<span class="min-w-0 break-words">
 					{$confirmDialogStore.title}
 				</span>
 			</Dialog.Title>
 		</Dialog.Header>
 
-		<div class="text-muted-foreground mt-4 min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap">
+		<div class="mt-4 min-w-0 text-sm leading-relaxed break-words whitespace-pre-wrap text-muted-foreground">
 			{$confirmDialogStore.message}
 		</div>
 
 		{#if $confirmDialogStore.checkboxes && $confirmDialogStore.checkboxes.length > 0}
-			<div class="border-border mt-6 flex flex-col gap-4 border-t pt-4">
+			<div class="mt-6 flex flex-col gap-4 border-t border-border pt-4">
 				{#each $confirmDialogStore.checkboxes as checkbox (checkbox.id)}
 					<div class="flex items-start space-x-3">
 						{#if checkboxStates[checkbox.id] !== undefined}
@@ -78,7 +78,7 @@
 							</Label>
 
 							{#if checkbox.id === 'files' && checkboxStates[checkbox.id]}
-								<div class="text-destructive mt-1 text-xs leading-snug">{m.confirm_remove_project_files_warning()}</div>
+								<div class="mt-1 text-xs leading-snug text-destructive">{m.confirm_remove_project_files_warning()}</div>
 							{/if}
 						</div>
 					</div>

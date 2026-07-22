@@ -83,7 +83,7 @@
 		<h1 class="m-0 w-full">
 			<button
 				type="button"
-				class="hover:bg-muted/50 focus:ring-ring min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors focus:ring-2 focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
+				class="min-h-[32px] w-full rounded bg-transparent px-1 py-1 text-center text-base font-semibold transition-colors hover:bg-muted/50 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-none disabled:cursor-not-allowed disabled:opacity-50 {error
 					? 'border border-destructive'
 					: ''}"
 				title={canEdit ? `${shownValue || placeholder} (tap to edit)` : shownValue || placeholder}
@@ -97,14 +97,14 @@
 
 		{#if canEdit}
 			<div class="flex items-center justify-center">
-				<span class="text-muted-foreground flex items-center gap-0.5 text-[8px] whitespace-nowrap opacity-30">
+				<span class="flex items-center gap-0.5 text-[8px] whitespace-nowrap text-muted-foreground opacity-30">
 					<EditIcon class="size-1.5" />
 					{m.tap_to_edit()}
 				</span>
 			</div>
 		{:else}
 			<div class="flex items-center justify-center">
-				<span class="text-muted-foreground inline-flex cursor-help items-center gap-0.5 text-[8px] whitespace-nowrap opacity-40">
+				<span class="inline-flex cursor-help items-center gap-0.5 text-[8px] whitespace-nowrap text-muted-foreground opacity-40">
 					<InfoIcon class="size-1.5" />
 					{m.cannot_edit()}
 				</span>
@@ -141,7 +141,7 @@
 			{:else}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger>
-						<span class="text-muted-foreground inline-flex cursor-help items-center">
+						<span class="inline-flex cursor-help items-center text-muted-foreground">
 							<InfoIcon class="size-4 shrink-0" />
 						</span>
 					</ArcaneTooltip.Trigger>
@@ -155,5 +155,5 @@
 </div>
 
 {#if error}
-	<p class="text-destructive mt-1 text-xs">{error}</p>
+	<p class="mt-1 text-xs text-destructive">{error}</p>
 {/if}

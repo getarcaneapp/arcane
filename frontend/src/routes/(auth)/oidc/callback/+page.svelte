@@ -190,6 +190,6 @@
 	<!-- Defensive fallback: if neither branch matches (e.g. an
 	     unexpected throw inside onSuccess), the user would otherwise
 	     see a blank page with no way out. Always show a logout link. -->
-	<p class="text-muted-foreground text-sm">{m.auth_processing_login()}</p>
-	<a href="/logout" class="text-primary mt-6 text-xs underline">{m.common_logout()}</a>
+	<p class="text-sm text-muted-foreground">{m.auth_processing_login()}</p>
+	<a href="/logout" class="mt-6 text-xs text-primary underline">{m.common_logout()}</a>
 </OidcStatusPanel>

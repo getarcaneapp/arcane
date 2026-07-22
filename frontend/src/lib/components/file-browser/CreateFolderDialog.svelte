@@ -41,7 +41,7 @@
 <Dialog.Root {open} onOpenChange={(nextOpen) => (open = nextOpen)}>
 	<Dialog.Content class="sm:max-w-[425px]">
 		<Dialog.Header>
-			<Dialog.Title>{m.volumes_browser_new_folder()}</Dialog.Title>
+			<Dialog.Title>{m.new_folder()}</Dialog.Title>
 			<Dialog.Description>
 				Enter a name for the new folder in {currentPath}
 			</Dialog.Description>

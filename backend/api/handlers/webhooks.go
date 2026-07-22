@@ -67,10 +67,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 		Summary:     "List webhooks",
 		Description: "List all webhooks configured for this environment",
 		Tags:        []string{"Webhooks"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermWebhooksList, h.ListWebhooks)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -80,10 +77,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 		Summary:     "Create webhook",
 		Description: "Create a webhook that triggers a container or stack update. The token is only returned once.",
 		Tags:        []string{"Webhooks"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermWebhooksCreate, h.CreateWebhook)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -93,10 +87,7 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 		Summary:     "Update webhook",
 		Description: "Update a webhook's enabled state",
 		Tags:        []string{"Webhooks"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermWebhooksUpdate, h.UpdateWebhook)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
@@ -106,19 +97,12 @@ func RegisterWebhooks(api huma.API, webhookService *services.WebhookService) {
 		Summary:     "Delete webhook",
 		Description: "Delete a webhook by ID",
 		Tags:        []string{"Webhooks"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermWebhooksDelete, h.DeleteWebhook)
 }
 
 // ListWebhooks returns all webhooks for an environment (tokens are masked).
 func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksInput) (*ListWebhooksOutput, error) {
-	if h.webhookService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	webhooks, err := h.webhookService.ListWebhookSummaries(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list webhooks")
@@ -134,9 +118,6 @@ func (h *WebhookHandler) ListWebhooks(ctx context.Context, input *ListWebhooksIn
 
 // CreateWebhook creates a new webhook and returns the raw token (shown once only).
 func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhookInput) (*CreateWebhookOutput, error) {
-	if h.webhookService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if input.Body == nil {
 		return nil, huma.Error400BadRequest("request body is required")
 	}
@@ -186,9 +167,6 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 
 // UpdateWebhook updates a webhook's enabled state.
 func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhookInput) (*UpdateWebhookOutput, error) {
-	if h.webhookService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if input.Body == nil {
 		return nil, huma.Error400BadRequest("request body is required")
 	}
@@ -214,10 +192,6 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*DeleteWebhookOutput, error) {
-	if h.webhookService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := models.User{}
 	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser

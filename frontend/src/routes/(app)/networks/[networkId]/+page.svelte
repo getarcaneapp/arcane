@@ -16,7 +16,7 @@
 		ArrowDownIcon
 	} from '$lib/icons';
 	import * as Alert from '$lib/components/ui/alert';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { formatDateTimeShort } from '$lib/utils/formatting';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -121,21 +121,21 @@
 
 <ResourceDetailLayout
 	backUrl="/networks"
-	backLabel={m.networks_title()}
+	backLabel={m.resource_networks_cap()}
 	title={network?.name ?? m.common_details_title({ resource: m.resource_network_cap() })}
 	subtitle={`${m.common_id()}: ${shortId}`}
 	{actions}
 >
 	{#snippet badges()}
 		{#if inUse}
-			<StatusBadge variant="green" text={m.networks_in_use_count({ count: connectedContainers.length })} />
+			<Badge variant="green" minWidth="20">{m.networks_in_use_count({ count: connectedContainers.length })}</Badge>
 		{:else}
-			<StatusBadge variant="amber" text={m.common_unused()} />
+			<Badge variant="amber" minWidth="20">{m.common_unused()}</Badge>
 		{/if}
 		{#if isPredefined}
-			<StatusBadge variant="blue" text={m.networks_predefined()} />
+			<Badge variant="blue" minWidth="20">{m.networks_predefined()}</Badge>
 		{/if}
-		<StatusBadge variant="purple" text={network?.driver ?? m.common_unknown()} />
+		<Badge variant="purple" minWidth="20">{network?.driver ?? m.common_unknown()}</Badge>
 	{/snippet}
 
 	{#if errorMessage}
@@ -187,26 +187,24 @@
 
 						<PropertyItem icon={LayersIcon} color="yellow" label={m.attachable()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.attachable ? 'green' : 'gray'}
-									text={network.attachable ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.attachable ? 'green' : 'gray'} minWidth="20"
+									>{network.attachable ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						<PropertyItem icon={SettingsIcon} color="red" label={m.internal()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.internal ? 'blue' : 'gray'}
-									text={network.internal ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.internal ? 'blue' : 'gray'} minWidth="20"
+									>{network.internal ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						{#snippet ipToggleTile(label: string, enabled: boolean | undefined)}
 							<PropertyItem icon={NetworksIcon} color="indigo" {label}>
 								<p class="mt-1 text-base font-semibold">
-									<StatusBadge variant={enabled ? 'indigo' : 'gray'} text={enabled ? m.common_yes() : m.common_no()} />
+									<Badge variant={enabled ? 'indigo' : 'gray'} minWidth="20">{enabled ? m.common_yes() : m.common_no()}</Badge>
 								</p>
 							</PropertyItem>
 						{/snippet}
@@ -217,19 +215,17 @@
 
 						<PropertyItem icon={SettingsIcon} color="cyan" label={m.ingress()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.ingress ? 'cyan' : 'gray'}
-									text={network.ingress ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.ingress ? 'cyan' : 'gray'} minWidth="20"
+									>{network.ingress ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 
 						<PropertyItem icon={SettingsIcon} color="pink" label={m.config_only()}>
 							<p class="mt-1 text-base font-semibold">
-								<StatusBadge
-									variant={network.configOnly ? 'pink' : 'gray'}
-									text={network.configOnly ? m.common_yes() : m.common_no()}
-								/>
+								<Badge variant={network.configOnly ? 'pink' : 'gray'} minWidth="20"
+									>{network.configOnly ? m.common_yes() : m.common_no()}</Badge
+								>
 							</p>
 						</PropertyItem>
 					</div>
@@ -249,9 +245,9 @@
 							{#each network.peers as peer (`${peer.Name ?? ''}:${peer.IP ?? ''}`)}
 								<Card.Root variant="subtle">
 									<Card.Content class="flex flex-col gap-2 p-4">
-										<div class="text-muted-foreground text-xs font-semibold tracking-wide break-all uppercase">{peer.Name}</div>
+										<div class="text-xs font-semibold tracking-wide break-all text-muted-foreground uppercase">{peer.Name}</div>
 										<div
-											class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+											class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 											title={m.common_click_to_select()}
 										>
 											{peer.IP}
@@ -268,7 +264,7 @@
 				<Card.Root>
 					<Card.Header icon={LayersIcon}>
 						<div class="flex flex-col space-y-1.5">
-							<Card.Title>{m.networks_services_title()}</Card.Title>
+							<Card.Title>{m.services()}</Card.Title>
 							<Card.Description>{m.networks_services_description()}</Card.Description>
 						</div>
 					</Card.Header>
@@ -279,22 +275,20 @@
 									<Card.Content class="p-4">
 										<div class="space-y-2">
 											<div class="flex flex-col sm:flex-row sm:items-center">
-												<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-													>{m.networks_service_name_label()}:</span
-												>
+												<span class="w-full text-sm font-medium text-muted-foreground sm:w-24">{m.common_name()}:</span>
 												<code
-													class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
+													class="mt-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground sm:mt-0 sm:text-sm"
 												>
 													{name}
 												</code>
 											</div>
 											{#if service.VIP}
 												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+													<span class="w-full text-sm font-medium text-muted-foreground sm:w-24"
 														>{m.networks_service_vip_label()}:</span
 													>
 													<code
-														class="bg-muted text-muted-foreground mt-1 rounded px-1.5 py-0.5 font-mono text-xs sm:mt-0 sm:text-sm"
+														class="mt-1 rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground sm:mt-0 sm:text-sm"
 													>
 														{service.VIP}
 													</code>
@@ -302,12 +296,10 @@
 											{/if}
 											{#if service.Ports && service.Ports.length > 0}
 												<div class="flex flex-col sm:flex-row sm:items-start">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_service_ports_label()}:</span
-													>
+													<span class="w-full text-sm font-medium text-muted-foreground sm:w-24">{m.common_ports()}:</span>
 													<div class="flex flex-wrap gap-1">
 														{#each service.Ports as port (port)}
-															<code class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 font-mono text-xs sm:text-sm">
+															<code class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground sm:text-sm">
 																{port}
 															</code>
 														{/each}
@@ -339,9 +331,9 @@
 										<div class="space-y-2">
 											{#if config.subnet}
 												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24">{m.common_subnet()}:</span>
+													<span class="w-full text-sm font-medium text-muted-foreground sm:w-24">{m.common_subnet()}:</span>
 													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+														class="mt-1 cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground select-all sm:mt-0 sm:text-sm"
 														title={m.common_click_to_select()}
 													>
 														{config.subnet}
@@ -351,11 +343,9 @@
 
 											{#if config.gateway}
 												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
-														>{m.networks_ipam_gateway_label()}:</span
-													>
+													<span class="w-full text-sm font-medium text-muted-foreground sm:w-24">{m.common_gateway()}:</span>
 													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+														class="mt-1 cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground select-all sm:mt-0 sm:text-sm"
 														title={m.common_click_to_select()}
 													>
 														{config.gateway}
@@ -365,11 +355,11 @@
 
 											{#if config.ipRange}
 												<div class="flex flex-col sm:flex-row sm:items-center">
-													<span class="text-muted-foreground w-full text-sm font-medium sm:w-24"
+													<span class="w-full text-sm font-medium text-muted-foreground sm:w-24"
 														>{m.networks_ipam_iprange_label()}:</span
 													>
 													<code
-														class="bg-muted text-muted-foreground mt-1 cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs select-all sm:mt-0 sm:text-sm"
+														class="mt-1 cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-muted-foreground select-all sm:mt-0 sm:text-sm"
 														title={m.common_click_to_select()}
 													>
 														{config.ipRange}
@@ -379,13 +369,13 @@
 
 											{#if config.auxAddress && Object.keys(config.auxAddress).length > 0}
 												<div class="mt-3">
-													<p class="text-muted-foreground mb-1 text-sm font-medium">{m.networks_ipam_aux_addresses_label()}:</p>
+													<p class="mb-1 text-sm font-medium text-muted-foreground">{m.networks_ipam_aux_addresses_label()}:</p>
 													<ul class="ml-4 space-y-1">
 														{#each Object.entries(config.auxAddress) as [name, addr] (name)}
 															<li class="flex font-mono text-xs">
-																<span class="text-muted-foreground mr-2">{name}:</span>
+																<span class="mr-2 text-muted-foreground">{name}:</span>
 																<code
-																	class="bg-muted text-muted-foreground cursor-pointer rounded px-1 py-0.5 select-all"
+																	class="cursor-pointer rounded bg-muted px-1 py-0.5 text-muted-foreground select-all"
 																	title={m.common_click_to_select()}>{addr}</code
 																>
 															</li>
@@ -401,15 +391,15 @@
 
 						{#if network.ipam.driver}
 							<div class="mt-4 flex items-center">
-								<span class="text-muted-foreground mr-2 text-sm font-medium">{m.networks_ipam_driver_label()}:</span>
-								<StatusBadge variant="cyan" text={network.ipam.driver} />
+								<span class="mr-2 text-sm font-medium text-muted-foreground">{m.networks_ipam_driver_label()}:</span>
+								<Badge variant="cyan" minWidth="20">{network.ipam.driver}</Badge>
 							</div>
 						{/if}
 
 						{#if network.ipam.options && Object.keys(network.ipam.options).length > 0}
 							<div class="mt-4">
-								<p class="text-muted-foreground mb-2 text-sm font-medium">{m.networks_ipam_options_label()}</p>
-								<div class="bg-muted/50 rounded-lg border p-3">
+								<p class="mb-2 text-sm font-medium text-muted-foreground">{m.networks_ipam_options_label()}</p>
+								<div class="rounded-lg border bg-muted/50 p-3">
 									{#each Object.entries(network.ipam.options) as [key, value] (key)}
 										<div class="mb-1 flex justify-between font-mono text-xs last:mb-0">
 											<span class="text-muted-foreground">{key}:</span>
@@ -436,9 +426,9 @@
 					<Card.Content class="p-4">
 						<Card.Root variant="outlined">
 							<Card.Content class="p-0">
-								<div class="bg-muted/30 flex flex-col border-b p-3 sm:flex-row sm:items-center">
+								<div class="flex flex-col border-b bg-muted/30 p-3 sm:flex-row sm:items-center">
 									<div
-										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center text-sm font-medium sm:w-1/3"
+										class="flex w-full cursor-pointer items-center text-sm font-medium text-muted-foreground hover:text-foreground sm:w-1/3"
 										onclick={() => handleSort('name')}
 										role="button"
 										tabindex="0"
@@ -454,7 +444,7 @@
 										{/if}
 									</div>
 									<div
-										class="text-muted-foreground hover:text-foreground flex w-full cursor-pointer items-center pl-0 text-sm font-medium sm:w-2/3 sm:pl-4"
+										class="flex w-full cursor-pointer items-center pl-0 text-sm font-medium text-muted-foreground hover:text-foreground sm:w-2/3 sm:pl-4"
 										onclick={() => handleSort('ip')}
 										role="button"
 										tabindex="0"
@@ -475,14 +465,14 @@
 									{#each connectedContainers as container (container.id)}
 										<div class="flex flex-col p-3 sm:flex-row sm:items-center">
 											<div class="mb-2 w-full font-medium break-all sm:mb-0 sm:w-1/3">
-												<a href="/containers/{container.id}" class="text-primary flex items-center hover:underline">
-													<ContainersIcon class="text-muted-foreground mr-1.5 size-3.5" />
+												<a href="/containers/{container.id}" class="flex items-center text-primary hover:underline">
+													<ContainersIcon class="mr-1.5 size-3.5 text-muted-foreground" />
 													{container.name ?? container.Name}
 												</a>
 											</div>
 											<div class="w-full pl-0 sm:w-2/3 sm:pl-4">
 												<code
-													class="bg-muted text-muted-foreground cursor-pointer rounded px-1.5 py-0.5 font-mono text-xs break-all select-all sm:text-sm"
+													class="cursor-pointer rounded bg-muted px-1.5 py-0.5 font-mono text-xs break-all text-muted-foreground select-all sm:text-sm"
 													title={m.common_click_to_select()}
 												>
 													{container.ipv4Address ??
@@ -521,14 +511,16 @@
 		</div>
 	{:else}
 		<div class="flex flex-col items-center justify-center px-4 py-16 text-center">
-			<div class="bg-muted/30 mb-4 rounded-full p-4">
-				<NetworksIcon class="text-muted-foreground size-10 opacity-70" />
+			<div class="mb-4 rounded-full bg-muted/30 p-4">
+				<NetworksIcon class="size-10 text-muted-foreground opacity-70" />
 			</div>
-			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.networks_title() })}</h2>
-			<p class="text-muted-foreground mb-6">{m.common_not_found_description({ resource: m.networks_title().toLowerCase() })}</p>
+			<h2 class="mb-2 text-xl font-medium">{m.common_not_found_title({ resource: m.resource_networks_cap() })}</h2>
+			<p class="mb-6 text-muted-foreground">
+				{m.common_not_found_description({ resource: m.resource_networks_cap().toLowerCase() })}
+			</p>
 			<ArcaneButton
 				action="cancel"
-				customLabel={m.common_back_to({ resource: m.networks_title() })}
+				customLabel={m.common_back_to({ resource: m.resource_networks_cap() })}
 				onclick={() => goto('/networks')}
 				size="sm"
 			/>

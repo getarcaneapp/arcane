@@ -24,9 +24,9 @@
 			case 'docker':
 				return m.docker_title();
 			case 'authentication':
-				return m.authentication_title();
+				return m.authentication();
 			case 'security':
-				return m.security_title();
+				return m.security();
 			case 'users':
 				return m.users_title();
 			case 'navigation':
@@ -40,7 +40,7 @@
 			case 'build':
 				return 'Build';
 			default:
-				return m.sidebar_settings();
+				return m.settings();
 		}
 	});
 
@@ -91,7 +91,7 @@
 								action="base"
 								tone="ghost"
 								onclick={goBackToSettings}
-								class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
+								class="shrink-0 gap-2 text-muted-foreground hover:text-foreground"
 								icon={ArrowLeftIcon}
 								customLabel={m.common_back()}
 								showLabel={!isMobile.current}
@@ -102,12 +102,12 @@
 									action="base"
 									tone="ghost"
 									onclick={goBackToSettings}
-									class="text-muted-foreground hover:text-foreground shrink-0 gap-2"
+									class="shrink-0 gap-2 text-muted-foreground hover:text-foreground"
 									icon={SettingsIcon}
-									customLabel={m.settings_title()}
+									customLabel={m.settings()}
 								/>
-								<ArrowRightIcon class="text-muted-foreground size-4 shrink-0" />
-								<span class="text-foreground truncate font-medium">{pageTitle}</span>
+								<ArrowRightIcon class="size-4 shrink-0 text-muted-foreground" />
+								<span class="truncate font-medium text-foreground">{pageTitle}</span>
 							</nav>
 						</div>
 					</div>

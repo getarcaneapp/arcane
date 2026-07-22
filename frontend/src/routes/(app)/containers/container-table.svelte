@@ -7,7 +7,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { formatDateTimeShort, truncateImageDigest } from '$lib/utils/formatting';
 	import type { ContainerSummaryDto } from '$lib/types/docker';
 	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
@@ -263,21 +263,21 @@
 				if (row.updateInfo) return 'up_to_date';
 				return 'unknown';
 			},
-			title: m.containers_update_column(),
+			title: m.updates(),
 			sortable: false,
 			cell: UpdatesCell
 		},
 		{
 			accessorFn: (row) => statsManager.getCPUPercent(row.id) ?? -1,
 			id: 'cpuUsage',
-			title: m.containers_cpu_usage(),
+			title: m.cpu_usage(),
 			sortable: false,
 			cell: CPUCell
 		},
 		{
 			accessorFn: (row) => statsManager.getMemoryPercent(row.id) ?? -1,
 			id: 'memoryUsage',
-			title: m.containers_memory_usage(),
+			title: m.memory_usage(),
 			sortable: false,
 			cell: MemoryCell
 		},
@@ -290,9 +290,9 @@
 	const mobileFields = [
 		{ id: 'id', label: m.common_id(), defaultVisible: false },
 		{ id: 'state', label: m.common_state(), defaultVisible: true },
-		{ id: 'updates', label: m.containers_update_column(), defaultVisible: true },
-		{ id: 'cpuUsage', label: m.containers_cpu_usage(), defaultVisible: false },
-		{ id: 'memoryUsage', label: m.containers_memory_usage(), defaultVisible: false },
+		{ id: 'updates', label: m.updates(), defaultVisible: true },
+		{ id: 'cpuUsage', label: m.cpu_usage(), defaultVisible: false },
+		{ id: 'memoryUsage', label: m.memory_usage(), defaultVisible: false },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'image', label: m.common_image(), defaultVisible: true },
 		{ id: 'ipAddress', label: m.containers_ip_address(), defaultVisible: false },
@@ -415,12 +415,12 @@
 		{#if status}
 			<div class="flex items-center gap-1.5">
 				<Spinner class="size-3.5" />
-				<span class="text-muted-foreground text-xs font-medium">
+				<span class="text-xs font-medium text-muted-foreground">
 					{getActionStatusMessage(status)}
 				</span>
 			</div>
 		{:else}
-			<StatusBadge variant={getStateBadgeVariant(item.state)} text={getContainerStatusLabel(item.state)} />
+			<Badge variant={getStateBadgeVariant(item.state)} minWidth="20">{getContainerStatusLabel(item.state)}</Badge>
 		{/if}
 		<div class="flex items-center gap-1">
 			{#if !status && item.state !== 'running'}
@@ -454,7 +454,7 @@
 					class="size-7 p-0"
 					onclick={() => handleUpdateContainer(item)}
 					disabled={!resourcesCurrent || isAnyLoading}
-					title={m.containers_update_container()}
+					title={m.update_container()}
 					icon={UpdateIcon}
 				/>
 			{/if}
@@ -552,7 +552,7 @@
 				show: mobileFieldVisibility['ipAddress'] ?? false
 			},
 			{
-				label: m.containers_cpu_usage(),
+				label: m.cpu_usage(),
 				getValue: (item: ContainerSummaryDto) => {
 					const cpu = statsManager.getCPUPercent(item.id);
 					if (item.state !== 'running') return m.common_na();
@@ -564,7 +564,7 @@
 				show: mobileFieldVisibility['cpuUsage'] ?? false
 			},
 			{
-				label: m.containers_memory_usage(),
+				label: m.memory_usage(),
 				getValue: (item: ContainerSummaryDto) => {
 					const memData = statsManager.getMemoryUsage(item.id);
 					if (item.state !== 'running') return m.common_na();
@@ -594,7 +594,7 @@
 							<NetworksIcon class="size-3.5 text-sky-500" />
 						</div>
 						<div class="min-w-0 flex-1">
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
+							<div class="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
 								{m.common_ports()}
 							</div>
 							<div class="mt-1">
@@ -606,8 +606,8 @@
 				{#if mobileFieldVisibility['updates'] ?? true}
 					<div class="flex min-w-0 flex-1 items-start gap-2.5">
 						<div class="flex min-w-0 flex-col">
-							<div class="text-muted-foreground text-[10px] font-medium tracking-wide uppercase">
-								{m.images_updates()}
+							<div class="text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+								{m.updates()}
 							</div>
 							<div class="mt-1">
 								{@render ContainerUpdateItem(item)}
@@ -764,7 +764,7 @@
 		{m.containers_group_by_project()}
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem checked={showInternal} onCheckedChange={(v) => setShowInternal(!!v)}>
-		{`${m.common_show()} ${m.internal()} ${m.containers_title()}`}
+		{`${m.common_show()} ${m.internal()} ${m.containers()}`}
 	</DropdownMenu.CheckboxItem>
 	<DropdownMenu.CheckboxItem
 		checked={hideExposedPorts}

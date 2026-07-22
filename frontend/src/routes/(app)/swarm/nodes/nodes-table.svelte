@@ -16,7 +16,7 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
@@ -286,14 +286,14 @@
 
 	const columns = [
 		{ accessorKey: 'id', title: m.common_id(), hidden: true },
-		{ accessorKey: 'hostname', title: m.swarm_hostname(), sortable: true },
+		{ accessorKey: 'hostname', title: m.hostname(), sortable: true },
 		{ accessorKey: 'role', title: m.common_role(), sortable: true, cell: RoleCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'availability', title: m.swarm_availability(), sortable: true, cell: AvailabilityCell },
 		{ accessorKey: 'labels', title: m.common_labels(), cell: LabelsCell },
 		{
 			id: 'agent',
-			title: m.swarm_node_agent_column(),
+			title: m.agent(),
 			accessorFn: (node) => node.agent?.state ?? 'none',
 			cell: AgentCell
 		},
@@ -305,7 +305,7 @@
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'availability', label: m.swarm_availability(), defaultVisible: true },
 		{ id: 'labels', label: m.common_labels(), defaultVisible: true },
-		{ id: 'agent', label: m.swarm_node_agent_column(), defaultVisible: true },
+		{ id: 'agent', label: m.agent(), defaultVisible: true },
 		{ id: 'engineVersion', label: m.swarm_engine_version(), defaultVisible: false }
 	];
 
@@ -317,30 +317,29 @@
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={statusVariant(String(value ?? ''))} />
+	<Badge variant={statusVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet AvailabilityCell({ value }: { value: unknown })}
-	<StatusBadge text={String(value ?? m.common_unknown())} variant={availabilityVariant(String(value ?? ''))} />
+	<Badge variant={availabilityVariant(String(value ?? ''))} minWidth="20">{String(value ?? m.common_unknown())}</Badge>
 {/snippet}
 
 {#snippet AgentCell({ value }: { value: unknown })}
-	<StatusBadge
-		text={getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
-		variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}
-	/>
+	<Badge variant={getSwarmNodeAgentVariant(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])} minWidth="20"
+		>{getSwarmNodeAgentLabel(String(value ?? 'none') as SwarmNodeSummary['agent']['state'])}</Badge
+	>
 {/snippet}
 
 {#snippet LabelsCell({ item }: { item: SwarmNodeSummary })}
 	<div class="flex flex-wrap items-center gap-1.5">
 		{#each Object.entries(item.systemLabels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="gray" minWidth="none" class="max-w-[200px] truncate" />
+				<Badge variant="gray" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
 			</div>
 		{/each}
 		{#each Object.entries(item.labels ?? {}) as [key, value] (key)}
 			<div class="group relative overflow-hidden rounded-[var(--radius)]">
-				<StatusBadge text={`${key}${value ? `=${value}` : ''}`} variant="blue" minWidth="none" class="max-w-[200px] truncate" />
+				<Badge variant="blue" class="max-w-[200px] truncate">{`${key}${value ? `=${value}` : ''}`}</Badge>
 				{#if canManageNodes}
 					<button
 						class="absolute inset-0 flex cursor-pointer items-center justify-end rounded-[var(--radius)] bg-blue-500/10 pr-1 opacity-0 backdrop-blur-[1px] transition-opacity group-hover:opacity-100 dark:bg-blue-400/20"
@@ -356,7 +355,7 @@
 		{/each}
 		{#if canManageNodes}
 			<button
-				class="border-border hover:border-primary hover:text-primary inline-flex items-center gap-1 rounded border border-dashed px-2 py-0.5 text-[11px] font-medium transition-colors"
+				class="inline-flex items-center gap-1 rounded border border-dashed border-border px-2 py-0.5 text-[11px] font-medium transition-colors hover:border-primary hover:text-primary"
 				onclick={() => openAddLabelDialog(item)}
 			>
 				<AddIcon class="size-3" />
@@ -416,7 +415,7 @@
 				show: mobileFieldVisibility['labels'] ?? true
 			},
 			{
-				label: m.swarm_node_agent_column(),
+				label: m.agent(),
 				getValue: (item: SwarmNodeSummary) => getSwarmNodeAgentLabel(item.agent?.state),
 				icon: EdgeConnectionIcon,
 				iconVariant: 'gray' as const,
@@ -448,7 +447,7 @@
 			onclick={() => setAvailability(item, 'drain')}
 			disabled={!canManageNodes || isLoading || item.availability === 'drain'}
 		>
-			{m.swarm_node_drain()}
+			{m.drain()}
 		</DropdownMenu.Item>
 		<DropdownMenu.Item
 			onclick={() => setAvailability(item, 'active')}

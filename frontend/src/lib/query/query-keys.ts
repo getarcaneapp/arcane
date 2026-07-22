@@ -62,8 +62,11 @@ export const queryKeys = {
 		defaults: () => ['templates', 'defaults'] as const,
 		list: (options: SearchPaginationSortRequest) => ['templates', stableSerialize(options)] as const,
 		content: (templateId: string) => ['template-content', templateId] as const,
-		registries: () => ['template-registries'] as const,
-		globalVariables: () => ['templates', 'global-variables'] as const
+		registries: () => ['template-registries'] as const
+	},
+	variables: {
+		all: ['variables'] as const,
+		list: () => ['variables', 'list'] as const
 	},
 	notifications: {
 		settings: () => ['notification-settings'] as const
@@ -71,6 +74,7 @@ export const queryKeys = {
 	events: {
 		all: ['events'] as const,
 		listGlobal: (options: SearchPaginationSortRequest) => ['events', 'global', stableSerialize(options)] as const,
+		statsGlobal: () => ['events', 'stats', 'global'] as const,
 		deleteSelectedGlobal: () => ['events', 'delete-selected', 'global'] as const
 	},
 	system: {

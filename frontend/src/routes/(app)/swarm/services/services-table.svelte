@@ -7,7 +7,7 @@
 	import { swarmService } from '$lib/services/swarm-service';
 	import type { SwarmServiceSummary, SwarmServicePort } from '$lib/types/swarm';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
@@ -99,13 +99,13 @@
 		{
 			id: 'nodes',
 			accessorFn: (item: SwarmServiceSummary) => item.nodes,
-			title: m.swarm_nodes_column(),
+			title: m.nodes(),
 			cell: NodesCell
 		},
 		{
 			id: 'networks',
 			accessorFn: (item: SwarmServiceSummary) => item.networks,
-			title: m.swarm_networks(),
+			title: m.resource_networks_cap(),
 			cell: NetworksCell
 		},
 		{ accessorKey: 'ports', title: m.common_ports(), cell: PortsCell }
@@ -115,8 +115,8 @@
 		{ id: 'stackName', label: m.swarm_stack(), defaultVisible: true },
 		{ id: 'mode', label: m.swarm_mode(), defaultVisible: true },
 		{ id: 'replicas', label: m.swarm_replicas(), defaultVisible: true },
-		{ id: 'nodes', label: m.swarm_nodes_column(), defaultVisible: true },
-		{ id: 'networks', label: m.swarm_networks(), defaultVisible: false },
+		{ id: 'nodes', label: m.nodes(), defaultVisible: true },
+		{ id: 'networks', label: m.resource_networks_cap(), defaultVisible: false },
 		{ id: 'ports', label: m.common_ports(), defaultVisible: false }
 	];
 
@@ -124,20 +124,22 @@
 </script>
 
 {#snippet NameCell({ item }: { item: SwarmServiceSummary })}
-	<a href="/swarm/services/{item.id}" class="text-primary text-sm font-medium hover:underline">
+	<a href="/swarm/services/{item.id}" class="text-sm font-medium text-primary hover:underline">
 		{getShortName(item.name, item.stackName)}
 	</a>
 {/snippet}
 
 {#snippet ModeCell({ value }: { value: unknown })}
-	<StatusBadge text={getSwarmServiceModeLabel(String(value ?? ''))} variant={getSwarmServiceModeVariant(String(value ?? ''))} />
+	<Badge variant={getSwarmServiceModeVariant(String(value ?? ''))} minWidth="20"
+		>{getSwarmServiceModeLabel(String(value ?? ''))}</Badge
+	>
 {/snippet}
 
 {#snippet StackCell({ value }: { value: unknown })}
 	{#if value}
 		<span class="text-sm">{String(value)}</span>
 	{:else}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{/if}
 {/snippet}
 
@@ -147,15 +149,15 @@
 
 {#snippet OverflowCell({ items }: { items: string[] })}
 	{#if !items || items.length === 0}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{:else}
 		<div class="flex flex-col gap-0.5">
 			{#each items.slice(0, MAX_OVERFLOW_ITEMS) as item (item)}
 				<span class="max-w-45 truncate font-mono text-sm">{item}</span>
 			{/each}
 			{#if items.length > MAX_OVERFLOW_ITEMS}
-				<span class="text-muted-foreground text-xs font-medium">
-					{m.swarm_n_more({ count: items.length - MAX_OVERFLOW_ITEMS })}
+				<span class="text-xs font-medium text-muted-foreground">
+					{m.count_more({ count: items.length - MAX_OVERFLOW_ITEMS })}
 				</span>
 			{/if}
 		</div>
@@ -204,7 +206,7 @@
 				show: mobileFieldVisibility['replicas'] ?? true
 			},
 			{
-				label: m.swarm_nodes_column(),
+				label: m.nodes(),
 				getValue: (item: SwarmServiceSummary) =>
 					item.nodes?.length
 						? item.nodes.slice(0, 3).join(', ') + (item.nodes.length > 3 ? ` +${item.nodes.length - 3}` : '')
@@ -214,7 +216,7 @@
 				show: mobileFieldVisibility['nodes'] ?? true
 			},
 			{
-				label: m.swarm_networks(),
+				label: m.resource_networks_cap(),
 				getValue: (item: SwarmServiceSummary) => (item.networks?.length ? item.networks.join(', ') : m.common_na()),
 				icon: NetworksIcon,
 				iconVariant: 'gray' as const,

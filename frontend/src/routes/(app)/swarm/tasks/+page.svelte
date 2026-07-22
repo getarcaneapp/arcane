@@ -30,7 +30,7 @@
 					onSuccess: (data) => {
 						tasks = data;
 					},
-					errorMessage: m.common_refresh_failed({ resource: m.swarm_tasks_title() })
+					errorMessage: m.common_refresh_failed({ resource: m.tasks() })
 				}
 			},
 			(v) => (isLoading.refresh = v)
@@ -63,7 +63,7 @@
 </script>
 
 <ResourcePageLayout
-	title={m.swarm_tasks_title()}
+	title={m.tasks()}
 	subtitle={nodeId ? m.swarm_tasks_subtitle_node_scoped() : m.swarm_tasks_subtitle()}
 	{actionButtons}
 	{statCards}

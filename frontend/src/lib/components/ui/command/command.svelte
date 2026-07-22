@@ -9,6 +9,6 @@
 	bind:value
 	bind:ref
 	data-slot="command"
-	class={cn('bg-popover text-popover-foreground flex h-full w-full flex-col overflow-hidden rounded-md', className)}
+	class={cn('flex h-full w-full flex-col overflow-hidden rounded-md bg-popover text-popover-foreground', className)}
 	{...restProps}
 />

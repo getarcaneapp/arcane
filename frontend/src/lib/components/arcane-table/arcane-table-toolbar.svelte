@@ -76,7 +76,7 @@
 	// Check if any filter columns exist
 	const hasFilterColumns = $derived(
 		!withoutFilters &&
-			(!!(typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn) ||
+			(!!(typeColumn && typeColumnFilterOptions.length > 0) ||
 				!!usageColumn ||
 				!!updatesColumn ||
 				!!severityColumn ||
@@ -88,14 +88,14 @@
 </script>
 
 {#snippet filterList()}
-	{#if typeColumn && typeColumnFilterOptions.length > 0 && !severityColumn && !vulnSeverityColumn}
+	{#if typeColumn && typeColumnFilterOptions.length > 0}
 		<DataTableFacetedFilter column={typeColumn} title={m.common_type()} options={typeColumnFilterOptions} />
 	{/if}
 	{#if usageColumn}
 		<DataTableFacetedFilter column={usageColumn} title={m.common_usage()} options={usageFilters} />
 	{/if}
 	{#if updatesColumn}
-		<DataTableFacetedFilter column={updatesColumn} title={m.images_updates()} options={imageUpdateFilters} />
+		<DataTableFacetedFilter column={updatesColumn} title={m.updates()} options={imageUpdateFilters} />
 	{/if}
 	{#if vulnSeverityColumn}
 		<DataTableFacetedFilter column={vulnSeverityColumn} title={m.events_col_severity()} options={vulnerabilitySeverityFilters} />
@@ -113,7 +113,7 @@
 <div class={cn('flex flex-wrap items-center gap-2 px-4 py-3', className)}>
 	<div class="order-1 flex min-w-0 flex-1 items-center gap-2 md:flex-none">
 		<div class="relative min-w-0 flex-1 md:w-64 md:flex-none">
-			<SearchIcon class="text-muted-foreground pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2" />
+			<SearchIcon class="pointer-events-none absolute top-1/2 left-2.5 size-4 -translate-y-1/2 text-muted-foreground" />
 			<Input
 				placeholder={m.common_search()}
 				value={(table.state.globalFilter as string) ?? ''}
@@ -139,7 +139,7 @@
 								<FilterIcon class="size-4" />
 								{#if activeFilterCount > 0}
 									<span
-										class="bg-primary text-primary-foreground absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full text-[10px] font-medium"
+										class="absolute -top-1 -right-1 flex size-4 items-center justify-center rounded-full bg-primary text-[10px] font-medium text-primary-foreground"
 									>
 										{activeFilterCount}
 									</span>

@@ -27,6 +27,11 @@ type IncludeFile struct {
 
 // ProjectFile represents a file or folder within a project directory.
 type ProjectFile struct {
+	// ModTime is the last modification time.
+	//
+	// Required: true
+	ModTime time.Time `json:"modTime"`
+
 	// Path is the absolute path to the file or folder.
 	//
 	// Required: true
@@ -42,31 +47,26 @@ type ProjectFile struct {
 	// Required: true
 	Name string `json:"name"`
 
-	// IsDirectory indicates whether this entry is a folder.
+	// Content is the file content when explicitly requested.
 	//
-	// Required: true
-	IsDirectory bool `json:"isDirectory"`
+	// Required: false
+	Content string `json:"content,omitempty"`
 
 	// Size is the file size in bytes. Directories report zero.
 	//
 	// Required: true
 	Size int64 `json:"size"`
 
-	// ModTime is the last modification time.
+	// IsDirectory indicates whether this entry is a folder.
 	//
 	// Required: true
-	ModTime time.Time `json:"modTime"`
+	IsDirectory bool `json:"isDirectory"`
 
 	// Protected indicates that Arcane owns this path and it cannot be renamed,
 	// deleted, moved, or overwritten through project file management.
 	//
 	// Required: false
 	Protected bool `json:"protected,omitempty"`
-
-	// Content is the file content when explicitly requested.
-	//
-	// Required: false
-	Content string `json:"content,omitempty"`
 }
 
 // ProjectFileDraft is used when creating a project with staged files.
@@ -449,45 +449,46 @@ type CreateReponse struct {
 
 // Details contains detailed information about a project.
 type Details struct {
-	// ID is the unique identifier of the project.
-	//
-	// Required: true
-	ID string `json:"id"`
 
-	// Name of the project.
+	// StatusReason provides additional information about the status.
+	//
+	// Required: false
+	StatusReason *string `json:"statusReason,omitempty"`
+
+	// ActivityID is the activity created by the project action.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
+
+	// LastSyncCommit is the last commit synced from Git (if GitOps managed).
+	//
+	// Required: false
+	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
+
+	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
+	//
+	// Required: false
+	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
+
+	// UpdateInfo contains aggregated image update status for the project.
+	//
+	// Required: false
+	UpdateInfo *UpdateInfo `json:"updateInfo,omitempty"`
+
+	// ArchivedAt is the date and time when the project was archived.
+	//
+	// Required: false
+	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
+
+	// Status is the current status of the project.
 	//
 	// Required: true
-	Name string `json:"name"`
+	Status string `json:"status"`
 
 	// DirName is the directory name where the project is stored.
 	//
 	// Required: false
 	DirName string `json:"dirName,omitempty"`
-
-	// RelativePath is the path to the project directory relative to the configured projects root.
-	//
-	// Required: false
-	RelativePath string `json:"relativePath,omitempty"`
-
-	// Path is the file path to the project.
-	//
-	// Required: true
-	Path string `json:"path"`
-
-	// IconLightURL is the optional light stack icon URL for dark themes.
-	//
-	// Required: false
-	IconLightURL string `json:"iconLightUrl,omitempty"`
-
-	// IconDarkURL is the optional dark stack icon URL for light themes.
-	//
-	// Required: false
-	IconDarkURL string `json:"iconDarkUrl,omitempty"`
-
-	// URLs are optional custom stack URLs from compose metadata.
-	//
-	// Required: false
-	URLs []string `json:"urls,omitempty"`
 
 	// ComposeContent is the Docker Compose file content.
 	//
@@ -514,21 +515,20 @@ type Details struct {
 	// Required: false
 	OverrideFileName string `json:"overrideFileName,omitempty"`
 
-	// IncludeFiles is a list of included files in the project.
+	// Name of the project.
 	//
-	// Required: false
-	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
+	// Required: true
+	Name string `json:"name"`
 
-	// DirectoryFiles contains all other files in the project directory
-	// (excluding compose files, .env, and include files which are shown separately).
+	// GitRepositoryURL is the URL of the Git repository (if GitOps managed).
 	//
 	// Required: false
-	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
+	GitRepositoryURL string `json:"gitRepositoryURL,omitempty"`
 
-	// ProjectFiles contains the editable file tree for project file management.
+	// IconLightURL is the optional light stack icon URL for dark themes.
 	//
 	// Required: false
-	ProjectFiles []ProjectFile `json:"projectFiles,omitempty"`
+	IconLightURL string `json:"iconLightUrl,omitempty"`
 
 	// FileTreeRevision identifies the project file tree state returned to the client.
 	// Mutations using staged file changes must include this value.
@@ -536,71 +536,85 @@ type Details struct {
 	// Required: false
 	FileTreeRevision string `json:"fileTreeRevision,omitempty"`
 
-	// FileTreeTruncated indicates the file tree walk hit the entry cap and
-	// ProjectFiles is only a prefix of the full tree.
+	// RelativePath is the path to the project directory relative to the configured projects root.
 	//
 	// Required: false
-	FileTreeTruncated bool `json:"fileTreeTruncated,omitempty"`
-
-	// Status is the current status of the project.
+	RelativePath string `json:"relativePath,omitempty"`
+	// ID is the unique identifier of the project.
 	//
 	// Required: true
-	Status string `json:"status"`
+	ID string `json:"id"`
 
-	// StatusReason provides additional information about the status.
+	// IconDarkURL is the optional dark stack icon URL for light themes.
 	//
 	// Required: false
-	StatusReason *string `json:"statusReason,omitempty"`
+	IconDarkURL string `json:"iconDarkUrl,omitempty"`
 
-	// ServiceCount is the total number of services in the project.
+	// Path is the file path to the project.
 	//
 	// Required: true
-	ServiceCount int `json:"serviceCount"`
-
-	// RunningCount is the number of running services in the project.
-	//
-	// Required: true
-	RunningCount int `json:"runningCount"`
-
-	// IsArchived indicates whether the project is hidden from the default project list.
-	//
-	// Required: true
-	IsArchived bool `json:"isArchived"`
-
-	// IsDiscovered indicates whether this row was derived from runtime Compose labels instead of an Arcane project record.
-	//
-	// Required: false
-	IsDiscovered bool `json:"isDiscovered,omitempty"`
-
-	// ArchivedAt is the date and time when the project was archived.
-	//
-	// Required: false
-	ArchivedAt *time.Time `json:"archivedAt,omitempty"`
-
-	// CreatedAt is the date and time when the project was created.
-	//
-	// Required: true
-	CreatedAt string `json:"createdAt"`
+	Path string `json:"path"`
 
 	// UpdatedAt is the date and time when the project was last updated.
 	//
 	// Required: true
 	UpdatedAt string `json:"updatedAt"`
 
-	// Services is a list of services defined in the Docker Compose file.
+	// CreatedAt is the date and time when the project was created.
 	//
-	// Required: false
-	Services []composetypes.ServiceConfig `json:"services,omitempty"`
+	// Required: true
+	CreatedAt string `json:"createdAt"`
 
 	// RuntimeServices contains live container status information for each service.
 	//
 	// Required: false
 	RuntimeServices []RuntimeService `json:"runtimeServices,omitempty"`
 
-	// UpdateInfo contains aggregated image update status for the project.
+	// Services is a list of services defined in the Docker Compose file.
 	//
 	// Required: false
-	UpdateInfo *UpdateInfo `json:"updateInfo,omitempty"`
+	Services []composetypes.ServiceConfig `json:"services,omitempty"`
+
+	// URLs are optional custom stack URLs from compose metadata.
+	//
+	// Required: false
+	URLs []string `json:"urls,omitempty"`
+
+	// ProjectFiles contains the editable file tree for project file management.
+	//
+	// Required: false
+	ProjectFiles []ProjectFile `json:"projectFiles,omitempty"`
+
+	// DirectoryFiles contains all other files in the project directory
+	// (excluding compose files, .env, and include files which are shown separately).
+	//
+	// Required: false
+	DirectoryFiles []IncludeFile `json:"directoryFiles,omitempty"`
+
+	// IncludeFiles is a list of included files in the project.
+	//
+	// Required: false
+	IncludeFiles []IncludeFile `json:"includeFiles,omitempty"`
+
+	// RunningCount is the number of running services in the project.
+	//
+	// Required: true
+	RunningCount int `json:"runningCount"`
+
+	// ServiceCount is the total number of services in the project.
+	//
+	// Required: true
+	ServiceCount int `json:"serviceCount"`
+
+	// IsDiscovered indicates whether this row was derived from runtime Compose labels instead of an Arcane project record.
+	//
+	// Required: false
+	IsDiscovered bool `json:"isDiscovered,omitempty"`
+
+	// IsArchived indicates whether the project is hidden from the default project list.
+	//
+	// Required: true
+	IsArchived bool `json:"isArchived"`
 
 	// HasBuildDirective indicates whether any Compose service defines a build directive.
 	//
@@ -612,25 +626,11 @@ type Details struct {
 	// Required: false
 	RedeployDisabled bool `json:"redeployDisabled,omitempty"`
 
-	// GitOpsManagedBy is the ID of the GitOps sync managing this project (if any).
+	// FileTreeTruncated indicates the file tree walk hit the entry cap and
+	// ProjectFiles is only a prefix of the full tree.
 	//
 	// Required: false
-	GitOpsManagedBy *string `json:"gitOpsManagedBy,omitempty"`
-
-	// LastSyncCommit is the last commit synced from Git (if GitOps managed).
-	//
-	// Required: false
-	LastSyncCommit *string `json:"lastSyncCommit,omitempty"`
-
-	// GitRepositoryURL is the URL of the Git repository (if GitOps managed).
-	//
-	// Required: false
-	GitRepositoryURL string `json:"gitRepositoryURL,omitempty"`
-
-	// ActivityID is the activity created by the project action.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
+	FileTreeTruncated bool `json:"fileTreeTruncated,omitempty"`
 }
 
 // Destroy is used to destroy a project.

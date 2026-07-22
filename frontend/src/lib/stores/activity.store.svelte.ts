@@ -8,16 +8,20 @@ import {
 } from '$lib/stores/environment-stream.svelte';
 import type {
 	Activity,
+	ActivityBatchGroup,
 	ActivityClearHistorySummary,
 	ActivityDetail,
 	ActivityEnvironmentFailure,
-	ActivityFilter,
+	ActivityGroup,
 	ActivityMessage,
 	ActivityStatus,
-	ActivityStreamEvent
+	ActivityStreamEvent,
+	ActivityType
 } from '$lib/types/activity.type';
 import type { Environment } from '$lib/types/environment';
 import userStore from '$lib/stores/user-store';
+import { get } from 'svelte/store';
+import { discardPendingActivityToasts, queueActivityCompletionToast } from '$lib/components/activity/activity-completion-toasts';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;
@@ -31,12 +35,16 @@ function sortActivitiesInternal(items: Activity[]): Activity[] {
 		const aActive = isActiveStatusInternal(a.status);
 		const bActive = isActiveStatusInternal(b.status);
 		if (aActive !== bActive) return aActive ? -1 : 1;
-		return getActivitySortTimeInternal(b) - getActivitySortTimeInternal(a);
+		const diff = getActivitySortTimeInternal(b) - getActivitySortTimeInternal(a);
+		if (diff !== 0) return diff;
+		return b.id.localeCompare(a.id);
 	});
 }
 
+// Mirrors the backend default order: active rows keep their immutable createdAt
+// so progress updates never reshuffle them; terminal rows sort by endedAt.
 function getActivitySortTimeInternal(activity: Activity): number {
-	const value = activity.updatedAt || activity.endedAt || activity.startedAt || activity.createdAt;
+	const value = activity.endedAt || activity.createdAt || activity.startedAt;
 	return value ? new Date(value).getTime() : 0;
 }
 
@@ -44,15 +52,97 @@ function isActiveStatusInternal(status: ActivityStatus): boolean {
 	return status === 'queued' || status === 'running';
 }
 
-function filterActivityInternal(activity: Activity, filter: ActivityFilter): boolean {
-	switch (filter) {
-		case 'running':
-			return isActiveStatusInternal(activity.status);
-		case 'failed':
-			return activity.status === 'failed';
-		case 'completed':
-			return activity.status === 'success' || activity.status === 'cancelled';
+function activitySearchHaystackInternal(activity: Activity): string {
+	// Mirrors the backend LIKE search fields, plus the environment name.
+	return [
+		activity.type,
+		activity.resourceName,
+		activity.resourceId,
+		activity.latestMessage,
+		activity.step,
+		activity.error,
+		activity.sourceEnvironmentName
+	]
+		.filter(Boolean)
+		.join('\n')
+		.toLowerCase();
+}
+
+// Groups consecutive-by-batch activities of an already-sorted list into
+// ActivityGroups. A batch group sits at the position of its first (newest)
+// member, so group positions inherit the stable activity ordering.
+function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
+	const groups: ActivityGroup[] = [];
+	const batches = new Map<string, ActivityBatchGroup>();
+	for (const activity of items) {
+		const batchId = activity.batchId;
+		if (!batchId) {
+			groups.push({ kind: 'single', activity });
+			continue;
+		}
+		const existing = batches.get(batchId);
+		if (existing) {
+			existing.items.push(activity);
+			continue;
+		}
+		const group: ActivityBatchGroup = {
+			kind: 'batch',
+			batchId,
+			items: [activity],
+			total: 0,
+			done: 0,
+			failed: 0,
+			status: 'running',
+			progress: null
+		};
+		batches.set(batchId, group);
+		groups.push(group);
 	}
+
+	for (const group of batches.values()) {
+		// A "batch" of one renders as a plain activity row.
+		const only = group.items.length === 1 ? group.items[0] : undefined;
+		if (only) {
+			const index = groups.indexOf(group);
+			groups[index] = { kind: 'single', activity: only };
+			continue;
+		}
+		finalizeBatchGroupInternal(group);
+	}
+	return groups;
+}
+
+function finalizeBatchGroupInternal(group: ActivityBatchGroup) {
+	group.total = group.items.length;
+	group.done = group.items.filter((item) => !isActiveStatusInternal(item.status)).length;
+	group.failed = group.items.filter((item) => item.status === 'failed').length;
+	if (group.items.some((item) => isActiveStatusInternal(item.status))) {
+		group.status = group.items.some((item) => item.status === 'running') ? 'running' : 'queued';
+		const memberProgress = group.items.map((item) =>
+			isActiveStatusInternal(item.status) ? clampBatchProgressInternal(item.progress) : 100
+		);
+		group.progress = Math.round(memberProgress.reduce((sum, value) => sum + value, 0) / group.total);
+	} else {
+		if (group.failed > 0) {
+			group.status = 'failed';
+		} else if (group.items.every((item) => item.status === 'cancelled')) {
+			group.status = 'cancelled';
+		} else {
+			group.status = 'success';
+		}
+		group.progress = 100;
+	}
+}
+
+function clampBatchProgressInternal(progress: number | null | undefined): number {
+	if (typeof progress !== 'number' || Number.isNaN(progress)) {
+		return 0;
+	}
+	return Math.min(100, Math.max(0, progress));
+}
+
+function groupStatusIsActiveInternal(group: ActivityGroup): boolean {
+	return group.kind === 'batch' ? isActiveStatusInternal(group.status) : isActiveStatusInternal(group.activity.status);
 }
 
 function sourceEnvironmentIdInternal(activity: Activity | null | undefined): string {
@@ -67,10 +157,41 @@ function createActivityStore() {
 	let _detailLoadingIds = $state<Record<string, boolean>>({});
 	let _detailErrorIds = $state<Record<string, boolean>>({});
 	let _cancellingIds = $state<Record<string, boolean>>({});
-	let _filter = $state<ActivityFilter>('running');
+	let _expandedBatchIds = $state<Record<string, boolean>>({});
+	let _searchTerm = $state('');
+	let _statusFilters = $state<ActivityStatus[]>([]);
+	let _typeFilters = $state<ActivityType[]>([]);
 	let _open = $state(false);
 	let _currentEnvironmentId = $state(LOCAL_DOCKER_ENVIRONMENT_ID);
 	let sessionGeneration = 0;
+	// Last observed status per activity, for completion-toast transition
+	// detection. Intentionally non-reactive: only stream handling reads it.
+	const observedStatusById = new Map<string, ActivityStatus>();
+
+	// Toast when an activity this session observed as active reaches
+	// success/failed while the sheet is closed. Activities that first appear
+	// already terminal (history snapshots on load) and other users' work
+	// (schedulers, other admins) stay silent.
+	function noteActivityStatusInternal(activity: Activity) {
+		const prev = observedStatusById.get(activity.id);
+		observedStatusById.set(activity.id, activity.status);
+		if (!prev || !isActiveStatusInternal(prev) || prev === activity.status) {
+			return;
+		}
+		if (activity.status !== 'success' && activity.status !== 'failed') {
+			return;
+		}
+		if (_open) {
+			return;
+		}
+		// Only the initiating user's own actions toast — scheduled jobs and
+		// other users' work carry no/another userId and stay silent.
+		const currentUserId = get(userStore)?.id;
+		if (!activity.startedBy?.userId || !currentUserId || activity.startedBy.userId !== currentUserId) {
+			return;
+		}
+		queueActivityCompletionToast(activity);
+	}
 
 	const core = createEnvironmentStreamStore<ActivityEnvironmentState, ActivityStreamEvent>({
 		label: 'Activity',
@@ -181,6 +302,11 @@ function createActivityStore() {
 		const normalizedActivities = sortActivitiesInternal(
 			activities.map((activity) => normalizeActivityInternal(activity, environmentId))
 		);
+		// Remote environments only deliver snapshots, so transition detection
+		// for completion toasts has to happen here as well as in merges.
+		for (const activity of normalizedActivities) {
+			noteActivityStatusInternal(activity);
+		}
 		_environmentActivities = {
 			..._environmentActivities,
 			[environmentId]: normalizedActivities
@@ -206,11 +332,18 @@ function createActivityStore() {
 			}
 		}
 		_expandedActivityIds = nextExpanded;
+
+		for (const id of observedStatusById.keys()) {
+			if (!present.has(id)) {
+				observedStatusById.delete(id);
+			}
+		}
 	}
 
 	function mergeActivityInternal(activity: Activity) {
 		const environmentId = sourceEnvironmentIdInternal(activity);
 		const normalized = normalizeActivityInternal(activity, environmentId);
+		noteActivityStatusInternal(normalized);
 		const currentActivities = _environmentActivities[environmentId] ?? core.environmentState(environmentId)?.activities ?? [];
 		const index = currentActivities.findIndex((item) => item.id === normalized.id);
 		const activities = sortActivitiesInternal(
@@ -331,6 +464,19 @@ function createActivityStore() {
 		setActivityExpanded(activityId, !_expandedActivityIds[activityId]);
 	}
 
+	function setBatchExpandedInternal(batchId: string, expanded: boolean) {
+		if (!batchId) {
+			return;
+		}
+		if (expanded) {
+			_expandedBatchIds = { ..._expandedBatchIds, [batchId]: true };
+		} else {
+			const next = { ..._expandedBatchIds };
+			delete next[batchId];
+			_expandedBatchIds = next;
+		}
+	}
+
 	function environmentFailuresInternal(): ActivityEnvironmentFailure[] {
 		return Object.values(core.environmentStates)
 			.filter((state) => state.streamError)
@@ -341,18 +487,53 @@ function createActivityStore() {
 			}));
 	}
 
+	function matchesFiltersInternal(activity: Activity): boolean {
+		if (_statusFilters.length > 0 && !_statusFilters.includes(activity.status)) {
+			return false;
+		}
+		if (_typeFilters.length > 0 && !_typeFilters.includes(activity.type)) {
+			return false;
+		}
+		const term = _searchTerm.trim().toLowerCase();
+		if (term && !activitySearchHaystackInternal(activity).includes(term)) {
+			return false;
+		}
+		return true;
+	}
+
+	function filteredGroupsInternal(): ActivityGroup[] {
+		return groupActivitiesInternal(_activities.filter(matchesFiltersInternal));
+	}
+
 	return {
 		get activities(): Activity[] {
 			return _activities;
 		},
-		get filteredActivities(): Activity[] {
-			return _activities.filter((activity) => filterActivityInternal(activity, _filter));
+		// A batch containing any active member renders once, in the running
+		// section, so completing members never duplicate into history early.
+		get runningGroups(): ActivityGroup[] {
+			return filteredGroupsInternal().filter(groupStatusIsActiveInternal);
+		},
+		get historyGroups(): ActivityGroup[] {
+			return filteredGroupsInternal().filter((group) => !groupStatusIsActiveInternal(group));
 		},
 		get activeCount(): number {
 			return _activities.filter((activity) => isActiveStatusInternal(activity.status)).length;
 		},
-		get filter(): ActivityFilter {
-			return _filter;
+		get searchTerm(): string {
+			return _searchTerm;
+		},
+		get statusFilters(): ActivityStatus[] {
+			return _statusFilters;
+		},
+		get typeFilters(): ActivityType[] {
+			return _typeFilters;
+		},
+		get hasActiveFilters(): boolean {
+			return _searchTerm.trim() !== '' || _statusFilters.length > 0 || _typeFilters.length > 0;
+		},
+		get activeFilterCount(): number {
+			return _statusFilters.length + _typeFilters.length;
 		},
 		get open(): boolean {
 			return _open;
@@ -375,6 +556,10 @@ function createActivityStore() {
 		isExpanded(activityId: string): boolean {
 			return !!_expandedActivityIds[activityId];
 		},
+		isBatchExpanded(batchId: string): boolean {
+			return !!_expandedBatchIds[batchId];
+		},
+		setBatchExpanded: setBatchExpandedInternal,
 		isDetailLoading(activityId: string): boolean {
 			return !!_detailLoadingIds[activityId];
 		},
@@ -399,14 +584,19 @@ function createActivityStore() {
 			const wasStarted = core.stop(options);
 			if (options?.resetState) {
 				sessionGeneration += 1;
+				observedStatusById.clear();
+				discardPendingActivityToasts();
 				_activities = [];
 				_environmentActivities = {};
 				_details = {};
 				_expandedActivityIds = {};
+				_expandedBatchIds = {};
 				_detailLoadingIds = {};
 				_detailErrorIds = {};
 				_cancellingIds = {};
-				_filter = 'running';
+				_searchTerm = '';
+				_statusFilters = [];
+				_typeFilters = [];
 				_open = false;
 				_currentEnvironmentId = LOCAL_DOCKER_ENVIRONMENT_ID;
 			}
@@ -468,16 +658,36 @@ function createActivityStore() {
 				failed
 			};
 		},
-		setFilter: (filter: ActivityFilter) => {
-			_filter = filter;
+		setSearchTerm: (term: string) => {
+			_searchTerm = term;
+		},
+		toggleStatusFilter: (status: ActivityStatus) => {
+			_statusFilters = _statusFilters.includes(status)
+				? _statusFilters.filter((item) => item !== status)
+				: [..._statusFilters, status];
+		},
+		toggleTypeFilter: (type: ActivityType) => {
+			_typeFilters = _typeFilters.includes(type) ? _typeFilters.filter((item) => item !== type) : [..._typeFilters, type];
+		},
+		clearFilters: () => {
+			_searchTerm = '';
+			_statusFilters = [];
+			_typeFilters = [];
 		},
 		setOpen: (open: boolean) => {
 			_open = open;
+			if (open) {
+				discardPendingActivityToasts();
+			}
 		},
-		openCenter: (activityId?: string) => {
+		openCenter: (activityId?: string, batchId?: string) => {
 			_open = true;
+			discardPendingActivityToasts();
 			if (activityId) {
 				setActivityExpanded(activityId, true);
+			}
+			if (batchId) {
+				setBatchExpandedInternal(batchId, true);
 			}
 		},
 		retryLoadDetail: (activityId: string) => {

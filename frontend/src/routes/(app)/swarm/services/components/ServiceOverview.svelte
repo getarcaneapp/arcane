@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import type { SwarmServiceInspect } from '$lib/types/swarm';
 	import { formatDistanceToNow } from 'date-fns';
@@ -53,31 +53,31 @@
 	<Card.Content class="p-4">
 		<div class="mb-6 grid grid-cols-1 gap-6 sm:grid-cols-2 lg:grid-cols-3">
 			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+				<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					{m.common_name()}
 				</div>
-				<div class="text-foreground cursor-pointer text-base font-semibold break-all select-all">
+				<div class="cursor-pointer text-base font-semibold break-all text-foreground select-all">
 					{serviceName}
 				</div>
 			</div>
 
 			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+				<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					{m.swarm_stack()}
 				</div>
-				<div class="text-foreground text-base font-semibold">
+				<div class="text-base font-semibold text-foreground">
 					{stackName || m.common_na()}
 				</div>
 			</div>
 
 			<div>
-				<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+				<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 					{m.swarm_mode()} / {m.swarm_replicas()}
 				</div>
 				<div class="flex items-center gap-2">
-					<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+					<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
 					{#if canScaleService}
-						<span class="text-foreground font-mono text-sm">
+						<span class="font-mono text-sm text-foreground">
 							{desiredReplicas}
 							{m.swarm_replicas()}
 						</span>
@@ -89,10 +89,10 @@
 		<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{m.common_image()}
 					</div>
-					<div class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all">
+					<div class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all">
 						{truncateImageDigest(serviceImage) || m.common_na()}
 					</div>
 				</Card.Content>
@@ -100,10 +100,10 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{m.common_version()}
 					</div>
-					<div class="text-foreground font-mono text-sm font-medium">
+					<div class="font-mono text-sm font-medium text-foreground">
 						{versionIndex}
 					</div>
 				</Card.Content>
@@ -113,13 +113,13 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{m.common_created()}
 					</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-sm font-medium text-foreground">
 						{formatRelative(service.createdAt)}
 					</div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{formatDate(service.createdAt)}
 					</div>
 				</Card.Content>
@@ -127,13 +127,13 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						{m.common_updated()}
 					</div>
-					<div class="text-foreground text-sm font-medium">
+					<div class="text-sm font-medium text-foreground">
 						{formatRelative(service.updatedAt)}
 					</div>
-					<div class="text-muted-foreground text-xs">
+					<div class="text-xs text-muted-foreground">
 						{formatDate(service.updatedAt)}
 					</div>
 				</Card.Content>
@@ -141,20 +141,20 @@
 
 			<Card.Root variant="subtle">
 				<Card.Content class="flex flex-col gap-2 p-4">
-					<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">
-						{m.swarm_nodes_column()}
+					<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+						{m.nodes()}
 					</div>
 					{#if nodes.length > 0}
 						<div class="flex flex-wrap gap-1.5">
 							{#each nodes as node (node)}
 								<div class="flex items-center gap-1">
-									<ConnectionIcon class="text-muted-foreground size-3" />
-									<span class="text-foreground text-sm font-medium">{node}</span>
+									<ConnectionIcon class="size-3 text-muted-foreground" />
+									<span class="text-sm font-medium text-foreground">{node}</span>
 								</div>
 							{/each}
 						</div>
 					{:else}
-						<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+						<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 					{/if}
 				</Card.Content>
 			</Card.Root>
@@ -162,9 +162,9 @@
 			{#if updateStatus?.['State']}
 				<Card.Root variant="subtle" class="sm:col-span-2">
 					<Card.Content class="flex flex-col gap-2 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{m.common_status()}</div>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.common_status()}</div>
 						<div class="flex items-center gap-2">
-							<StatusBadge
+							<Badge
 								variant={updateStatus['State'] === 'completed'
 									? 'green'
 									: updateStatus['State'] === 'updating'
@@ -172,14 +172,14 @@
 										: updateStatus['State'] === 'paused'
 											? 'amber'
 											: 'red'}
-								text={updateStatus['State']}
-							/>
+								minWidth="20">{updateStatus['State']}</Badge
+							>
 							{#if updateStatus['Message']}
-								<span class="text-muted-foreground text-sm">{updateStatus['Message']}</span>
+								<span class="text-sm text-muted-foreground">{updateStatus['Message']}</span>
 							{/if}
 						</div>
 						{#if updateStatus['CompletedAt']}
-							<div class="text-muted-foreground text-xs">
+							<div class="text-xs text-muted-foreground">
 								{formatRelative(updateStatus['CompletedAt'])}
 							</div>
 						{/if}

@@ -18,13 +18,11 @@
 
 	const queryClient = useQueryClient();
 	const options = $derived([
-		{ value: 'auto' as const, label: m.time_format_auto() },
+		{ value: 'auto' as const, label: m.auto() },
 		{ value: '12h' as const, label: m.time_format_12_hour() },
 		{ value: '24h' as const, label: m.time_format_24_hour() }
 	]);
-	const currentLabel = $derived(
-		options.find((option) => option.value === timeFormatStore.current)?.label ?? m.time_format_auto()
-	);
+	const currentLabel = $derived(options.find((option) => option.value === timeFormatStore.current)?.label ?? m.auto());
 
 	const updateTimeFormatMutation = createMutation(() => ({
 		mutationFn: (timeFormat: TimeFormat) => userService.updateMyProfile({ timeFormat }),

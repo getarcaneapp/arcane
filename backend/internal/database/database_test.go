@@ -63,6 +63,82 @@ func TestMigrateDatabase_DowngradesWhenAllowed(t *testing.T) {
 	assert.Equal(t, targetVersion, readGooseSQLiteVersionInternal(t, dsn))
 }
 
+func TestMigration065_ProjectBuildImageRefs_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-project-build-refs.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 64))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 65))
+	var notNull int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*), COALESCE(MAX("notnull"), 0) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount, &notNull))
+	assert.Equal(t, 1, columnCount)
+	assert.Zero(t, notNull)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 64))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('projects') WHERE name = 'build_image_refs_json'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
+func TestMigration066_GlobalVariables_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-global-variables.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 65))
+	var tableCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Equal(t, 2, tableCount)
+
+	_, err := rawDB.Exec(`INSERT INTO environments (id, api_url, status, enabled) VALUES ('env-1', 'http://localhost', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO global_variables (id, created_at, key, value, is_secret, all_environments) VALUES ('var-1', CURRENT_TIMESTAMP, 'API_URL', 'https://example.test', FALSE, FALSE)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO global_variable_environments (global_variable_id, environment_id) VALUES ('var-1', 'env-1')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 65))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	var rowCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM global_variables`).Scan(&rowCount))
+	assert.Zero(t, rowCount)
+}
+
+func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-activity-batch-id.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 67))
+	var notNull int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*), COALESCE(MAX("notnull"), 0) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount, &notNull))
+	assert.Equal(t, 1, columnCount)
+	assert.Zero(t, notNull)
+
+	var indexCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_activities_environment_batch'`).Scan(&indexCount))
+	assert.Equal(t, 1, indexCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 66))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('activities') WHERE name = 'batch_id'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'index' AND name = 'idx_activities_environment_batch'`).Scan(&indexCount))
+	assert.Zero(t, indexCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

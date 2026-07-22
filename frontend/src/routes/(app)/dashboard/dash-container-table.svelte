@@ -1,7 +1,7 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import DashTableCardHeader from './dash-table-card-header.svelte';
 	import { getStatusVariant } from '$lib/utils/docker';
@@ -59,7 +59,7 @@
 {/snippet}
 
 {#snippet StateCell({ item }: { item: ContainerSummaryDto })}
-	<StatusBadge variant={getStatusVariant(item.state)} text={capitalizeFirstLetter(item.state)} />
+	<Badge variant={getStatusVariant(item.state)} minWidth="20">{capitalizeFirstLetter(item.state)}</Badge>
 {/snippet}
 
 {#snippet DashContainerMobileCard({ item }: { item: ContainerSummaryDto })}
@@ -105,7 +105,7 @@
 		<DashTableCardHeader
 			icon={ContainersIcon}
 			href="/containers"
-			title={m.containers_title()}
+			title={m.containers()}
 			description={m.containers_recent()}
 			{isLoading}
 		/>
@@ -125,7 +125,7 @@
 		</Card.Content>
 		{#if tableLimit.shouldShowFooter(containers.data.length)}
 			<Card.Footer class="border-t px-6 py-3">
-				<span class="text-muted-foreground text-xs">
+				<span class="text-xs text-muted-foreground">
 					{m.containers_showing_of_total({ shown: tableLimit.displayLimit, total: containers.pagination.totalItems })}
 				</span>
 			</Card.Footer>

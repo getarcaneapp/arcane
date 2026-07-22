@@ -2,7 +2,7 @@ package base
 
 import (
 	"database/sql/driver"
-	"encoding/json"
+	json "encoding/json/v2"
 )
 
 // JsonObject is a map-based representation of a JSON object that can be stored

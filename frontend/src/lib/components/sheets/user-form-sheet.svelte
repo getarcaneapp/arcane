@@ -167,7 +167,7 @@
 			<FormInput
 				label={m.common_email()}
 				type="text"
-				placeholder={m.users_email_placeholder()}
+				placeholder={m.user_example_com_placeholder()}
 				description={m.users_email_description()}
 				autocomplete="email"
 				disabled={isOidcUser}
@@ -176,12 +176,12 @@
 			<IfPermitted adminOnly>
 				<div>
 					<label for="roleAssignments" class="text-sm font-medium">{m.users_role_assignments_label()}</label>
-					<p class="text-muted-foreground mb-2 text-xs">{m.users_role_assignments_description()}</p>
+					<p class="mb-2 text-xs text-muted-foreground">{m.users_role_assignments_description()}</p>
 					{#if assignmentsDisabled}
 						<Alert.Root variant="default" class="mb-3">
 							<Alert.Description>
 								{m.users_role_assignments_oidc_managed()}
-								<a href="/settings/authentication" class="text-primary ml-2 underline">{m.users_role_assignments_oidc_link()}</a>
+								<a href="/settings/authentication" class="ml-2 text-primary underline">{m.users_role_assignments_oidc_link()}</a>
 							</Alert.Description>
 						</Alert.Root>
 					{/if}
@@ -192,11 +192,11 @@
 						disabled={assignmentsDisabled}
 					/>
 					{#if $inputs.roleAssignments.error}
-						<p class="text-destructive mt-1 text-xs">{$inputs.roleAssignments.error}</p>
+						<p class="mt-1 text-xs text-destructive">{$inputs.roleAssignments.error}</p>
 					{/if}
 				</div>
 			</IfPermitted>
-			<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}
 
@@ -208,7 +208,7 @@
 			submitDisabled={isLoading}
 			submitLoading={isLoading}
 			onSubmit={handleSubmit}
-			submitLabel={isEditMode ? m.users_save_changes() : m.common_create_button({ resource: m.resource_user_cap() })}
+			submitLabel={isEditMode ? m.common_save_changes() : m.common_create_button({ resource: m.common_user() })}
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>

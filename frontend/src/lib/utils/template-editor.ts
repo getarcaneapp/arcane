@@ -30,14 +30,14 @@ export function createNamedTemplateSchema() {
 	return z.object({
 		name: z.string().min(1, m.templates_template_name_required()),
 		description: z.string().optional().default(''),
-		composeContent: z.string().min(1, m.templates_content_required()),
+		composeContent: z.string().min(1, m.compose_content_is_required()),
 		envContent: z.string().optional().default('')
 	});
 }
 
 export function createTemplateContentSchema() {
 	return z.object({
-		composeContent: z.string().min(1, m.compose_compose_content_required()),
+		composeContent: z.string().min(1, m.compose_content_is_required()),
 		envContent: z.string().optional().default('')
 	});
 }
@@ -118,5 +118,5 @@ export function resetTemplateEditorFields<T>(fields: ResetField<T>[]) {
 		field.set(field.value);
 	}
 
-	toast.info(m.templates_reset_success());
+	toast.info(m.changes_reset());
 }

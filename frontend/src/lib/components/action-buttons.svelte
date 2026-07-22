@@ -500,14 +500,14 @@
 
 {#snippet ActionsMenu()}
 	<DropdownMenu.Root>
-		<DropdownMenu.Trigger class="bg-background/70 inline-flex size-9 items-center justify-center rounded-lg border">
+		<DropdownMenu.Trigger class="inline-flex size-9 items-center justify-center rounded-lg border bg-background/70">
 			<span class="sr-only">{m.common_open_menu()}</span>
 			<EllipsisIcon />
 		</DropdownMenu.Trigger>
 
 		<DropdownMenu.Content
 			align="end"
-			class="bg-popover/20 z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border p-1 shadow-lg backdrop-blur-md"
+			class="z-[var(--arcane-z-surface)] min-w-[180px] rounded-xl border bg-popover/20 p-1 shadow-lg backdrop-blur-md"
 		>
 			<DropdownMenu.Group>
 				{#if !isRunning && canStart}
@@ -572,7 +572,7 @@
 						{/if}
 						{#if canPull}
 							<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
-								{m.images_pull()}
+								{m.pull()}
 							</DropdownMenu.Item>
 						{/if}
 					{/if}

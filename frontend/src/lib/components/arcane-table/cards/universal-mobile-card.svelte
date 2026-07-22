@@ -1,6 +1,6 @@
 <script lang="ts" generics="T">
 	import * as Card from '$lib/components/ui/card';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import type { Snippet, Component } from 'svelte';
 
@@ -111,20 +111,20 @@
 
 {#snippet FieldValue(field: FieldDefinition<T>, value: any, isCompact: boolean)}
 	{#if field.type === 'badge' && field.badgeVariant}
-		<StatusBadge variant={field.badgeVariant} text={String(value)} size="sm" />
+		<Badge variant={field.badgeVariant} size="sm" minWidth="20">{String(value)}</Badge>
 	{:else if field.type === 'mono'}
-		<span class={isCompact ? 'text-muted-foreground truncate font-mono text-xs leading-tight' : 'font-mono text-xs'}>{value}</span
+		<span class={isCompact ? 'truncate font-mono text-xs leading-tight text-muted-foreground' : 'font-mono text-xs'}>{value}</span
 		>
 	{:else if field.type === 'component' && field.component}
 		{#if isCompact}
-			<span class="text-muted-foreground min-w-0 flex-1 text-xs leading-tight">
+			<span class="min-w-0 flex-1 text-xs leading-tight text-muted-foreground">
 				{@render field.component(value)}
 			</span>
 		{:else}
 			{@render field.component(value)}
 		{/if}
 	{:else if isCompact}
-		<span class="text-muted-foreground min-w-0 flex-1 truncate text-xs leading-tight">
+		<span class="min-w-0 flex-1 truncate text-xs leading-tight text-muted-foreground">
 			{value}
 		</span>
 	{:else}
@@ -176,7 +176,7 @@
 						{title(item)}
 					</h3>
 					{#if hasSubtitle}
-						<p class={cn('text-muted-foreground mt-0.5 truncate font-mono', compact ? 'text-[10px]' : 'text-xs')}>
+						<p class={cn('mt-0.5 truncate font-mono text-muted-foreground', compact ? 'text-[10px]' : 'text-xs')}>
 							{subtitleValue}
 						</p>
 					{/if}
@@ -189,7 +189,7 @@
 			{#if resolvedBadges.length > 0}
 				<div class="flex flex-wrap items-center gap-1">
 					{#each resolvedBadges as badge (`${badge.variant}:${badge.text}`)}
-						<StatusBadge variant={badge.variant} text={badge.text} size="sm" />
+						<Badge variant={badge.variant} size="sm" minWidth="20">{badge.text}</Badge>
 					{/each}
 				</div>
 			{/if}
@@ -216,7 +216,7 @@
 										</div>
 									{/if}
 									<div class="min-w-0 flex-1">
-										<div class="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+										<div class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
 											{field.label}
 										</div>
 										<div class="truncate text-sm leading-snug font-medium">
@@ -232,7 +232,7 @@
 						{@const value = field.getValue(item)}
 						{#if value !== null && value !== undefined}
 							<div class="flex items-baseline gap-2">
-								<span class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">{field.label}:</span>
+								<span class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">{field.label}:</span>
 								{@render FieldValue(field, value, true)}
 							</div>
 						{/if}
@@ -250,12 +250,12 @@
 			{@const footerValue = footer.getValue(item)}
 			{#if footerValue}
 				{@const FooterIcon = footer.icon}
-				<Card.Footer class="bg-muted/30 border-border/40 flex items-center gap-2.5 border-t px-3.5 py-2.5!">
-					<FooterIcon class="text-muted-foreground size-4" />
-					<span class="text-muted-foreground text-[11px] font-medium tracking-wide uppercase">
+				<Card.Footer class="flex items-center gap-2.5 border-t border-border/40 bg-muted/30 px-3.5 py-2.5!">
+					<FooterIcon class="size-4 text-muted-foreground" />
+					<span class="text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
 						{footer.label}
 					</span>
-					<span class="text-foreground ml-auto font-mono text-xs font-medium">
+					<span class="ml-auto font-mono text-xs font-medium text-foreground">
 						{footerValue}
 					</span>
 				</Card.Footer>

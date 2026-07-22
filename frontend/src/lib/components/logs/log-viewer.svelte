@@ -486,7 +486,7 @@
 {#snippet renderGroupedSummary(displayEntry: LogViewerDisplayEntry, contentClass: string)}
 	<div class="flex min-w-0 items-start gap-2">
 		<Collapsible.Trigger
-			class="focus-visible:border-ring focus-visible:ring-ring/50 inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-zinc-500 outline-none hover:bg-white/4 focus-visible:ring-[3px]"
+			class="inline-flex shrink-0 items-center gap-1 rounded border border-transparent px-1 py-0.5 text-zinc-500 outline-none hover:bg-white/4 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 		>
 			{#if isGroupExpanded(displayEntry)}
 				<ArrowDownIcon class="size-4" />

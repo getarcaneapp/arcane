@@ -84,7 +84,7 @@
 	</div>
 {/snippet}
 
-<div class="divide-border/30 divide-y">
+<div class="divide-y divide-border/30">
 	{#if isGrouped && groupedRows}
 		<div class="space-y-4 py-2">
 			{#each groupedRows as group (group.groupName)}
@@ -97,11 +97,11 @@
 					description={`${group.items.length} ${group.items.length === 1 ? 'item' : 'items'}`}
 					icon={IconComponent}
 				>
-					<div class="divide-border/30 divide-y">
+					<div class="divide-y divide-border/30">
 						{#each groupRows as row (row.id)}
 							{@render mobileRow(row)}
 						{:else}
-							<div class="text-muted-foreground flex h-24 items-center justify-center text-center">
+							<div class="flex h-24 items-center justify-center text-center text-muted-foreground">
 								{m.common_no_results_found()}
 							</div>
 						{/each}

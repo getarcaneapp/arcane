@@ -3,7 +3,7 @@ package libarcane
 import (
 	"bufio"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +17,7 @@ import (
 	containertypes "github.com/moby/moby/api/types/container"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 // WrapDockerAPIClientForInspectCompatibility wraps a Docker API client so
@@ -231,16 +232,16 @@ func normalizeContainerInspectRawJSONInternal(raw []byte) ([]byte, bool, error) 
 
 	changed := false
 
-	networkSettings, ok := asMapInternal(payload["NetworkSettings"])
+	networkSettings, ok := asMapInternal(payload["NetworkSettings"]).Get()
 	if ok {
 		changed = normalizeAddressStringFieldInternal(networkSettings, "Gateway") || changed
 		changed = normalizeAddressStringFieldInternal(networkSettings, "IPv6Gateway") || changed
 		changed = normalizeAddressWithPrefixFieldInternal(networkSettings, "IPAddress", "IPPrefixLen") || changed
 		changed = normalizeAddressWithPrefixFieldInternal(networkSettings, "GlobalIPv6Address", "GlobalIPv6PrefixLen") || changed
 
-		if networks, ok := asMapInternal(networkSettings["Networks"]); ok {
+		if networks, ok := asMapInternal(networkSettings["Networks"]).Get(); ok {
 			for _, endpointAny := range networks {
-				endpoint, ok := asMapInternal(endpointAny)
+				endpoint, ok := asMapInternal(endpointAny).Get()
 				if !ok {
 					continue
 				}
@@ -250,7 +251,7 @@ func normalizeContainerInspectRawJSONInternal(raw []byte) ([]byte, bool, error) 
 				changed = normalizeAddressWithPrefixFieldInternal(endpoint, "IPAddress", "IPPrefixLen") || changed
 				changed = normalizeAddressWithPrefixFieldInternal(endpoint, "GlobalIPv6Address", "GlobalIPv6PrefixLen") || changed
 
-				if ipam, ok := asMapInternal(endpoint["IPAMConfig"]); ok {
+				if ipam, ok := asMapInternal(endpoint["IPAMConfig"]).Get(); ok {
 					changed = normalizeAddressStringFieldInternal(ipam, "IPv4Address") || changed
 					changed = normalizeAddressStringFieldInternal(ipam, "IPv6Address") || changed
 					changed = normalizeAddressStringSliceFieldInternal(ipam, "LinkLocalIPs") || changed
@@ -278,7 +279,7 @@ func normalizeNetworkListRawJSONInternal(raw []byte) ([]byte, bool, error) {
 
 	changed := false
 	for _, item := range payload {
-		networkPayload, ok := asMapInternal(item)
+		networkPayload, ok := asMapInternal(item).Get()
 		if !ok {
 			continue
 		}
@@ -316,10 +317,10 @@ func normalizeNetworkInspectRawJSONInternal(raw []byte) ([]byte, bool, error) {
 
 func normalizeNetworkObjectInternal(payload map[string]any) bool {
 	changed := false
-	if ipam, ok := asMapInternal(payload["IPAM"]); ok {
-		if configs, ok := asSliceInternal(ipam["Config"]); ok {
+	if ipam, ok := asMapInternal(payload["IPAM"]).Get(); ok {
+		if configs, ok := asSliceInternal(ipam["Config"]).Get(); ok {
 			for _, configAny := range configs {
-				config, ok := asMapInternal(configAny)
+				config, ok := asMapInternal(configAny).Get()
 				if !ok {
 					continue
 				}
@@ -330,9 +331,9 @@ func normalizeNetworkObjectInternal(payload map[string]any) bool {
 			}
 		}
 	}
-	if containers, ok := asMapInternal(payload["Containers"]); ok {
+	if containers, ok := asMapInternal(payload["Containers"]).Get(); ok {
 		for _, endpointAny := range containers {
-			endpoint, ok := asMapInternal(endpointAny)
+			endpoint, ok := asMapInternal(endpointAny).Get()
 			if !ok {
 				continue
 			}
@@ -350,7 +351,7 @@ func normalizeAddressStringFieldInternal(obj map[string]any, key string) bool {
 		return false
 	}
 
-	normalized, changed := normalizeAddressStringInternal(raw)
+	normalized, changed := normalizeAddressStringInternal(raw).Get()
 	if !changed {
 		return false
 	}
@@ -398,7 +399,7 @@ func normalizeAddressWithPrefixFieldInternal(obj map[string]any, addrKey, prefix
 }
 
 func normalizeAddressStringSliceFieldInternal(obj map[string]any, key string) bool {
-	values, ok := asSliceInternal(obj[key])
+	values, ok := asSliceInternal(obj[key]).Get()
 	if !ok {
 		return false
 	}
@@ -409,7 +410,7 @@ func normalizeAddressStringSliceFieldInternal(obj map[string]any, key string) bo
 		if !ok {
 			continue
 		}
-		normalized, fieldChanged := normalizeAddressStringInternal(raw)
+		normalized, fieldChanged := normalizeAddressStringInternal(raw).Get()
 		if !fieldChanged {
 			continue
 		}
@@ -424,7 +425,7 @@ func normalizeAddressStringSliceFieldInternal(obj map[string]any, key string) bo
 }
 
 func normalizeAuxiliaryAddressesInternal(obj map[string]any, key string) bool {
-	auxMap, ok := asMapInternal(obj[key])
+	auxMap, ok := asMapInternal(obj[key]).Get()
 	if !ok {
 		return false
 	}
@@ -435,7 +436,7 @@ func normalizeAuxiliaryAddressesInternal(obj map[string]any, key string) bool {
 		if !ok {
 			continue
 		}
-		normalized, fieldChanged := normalizeAddressStringInternal(raw)
+		normalized, fieldChanged := normalizeAddressStringInternal(raw).Get()
 		if !fieldChanged {
 			continue
 		}
@@ -474,22 +475,28 @@ func normalizePrefixStringFieldInternal(obj map[string]any, key string) bool {
 	return true
 }
 
-func normalizeAddressStringInternal(raw string) (string, bool) {
+func normalizeAddressStringInternal(raw string) mo.Option[string] {
 	trimmed := strings.TrimSpace(raw)
 	if trimmed == "" {
-		return raw, false
+		return mo.None[string]()
 	}
 	if _, err := netip.ParseAddr(trimmed); err == nil {
-		return trimmed, trimmed != raw
+		if trimmed != raw {
+			return mo.Some(trimmed)
+		}
+		return mo.None[string]()
 	}
 
 	prefix, err := netip.ParsePrefix(trimmed)
 	if err != nil {
-		return raw, false
+		return mo.None[string]()
 	}
 
 	normalized := prefix.Addr().String()
-	return normalized, normalized != raw
+	if normalized != raw {
+		return mo.Some(normalized)
+	}
+	return mo.None[string]()
 }
 
 func prefixLenMissingInternal(value any) bool {
@@ -516,14 +523,14 @@ func prefixLenMissingInternal(value any) bool {
 	}
 }
 
-func asMapInternal(value any) (map[string]any, bool) {
-	out, ok := value.(map[string]any)
-	return out, ok
+func asMapInternal(value any) mo.Option[map[string]any] {
+	mapped, ok := value.(map[string]any)
+	return mo.TupleToOption(mapped, ok)
 }
 
-func asSliceInternal(value any) ([]any, bool) {
-	out, ok := value.([]any)
-	return out, ok
+func asSliceInternal(value any) mo.Option[[]any] {
+	slice, ok := value.([]any)
+	return mo.TupleToOption(slice, ok)
 }
 
 func buildNetworkListQueryInternal(options client.NetworkListOptions) (url.Values, error) {

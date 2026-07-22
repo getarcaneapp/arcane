@@ -5,6 +5,6 @@
 
 <ResourceErrorPage
 	fallbackTitle={m.error_generic()}
-	backLabel={m.common_back_to({ resource: m.volumes_title() })}
+	backLabel={m.common_back_to({ resource: m.resource_volumes_cap() })}
 	backHref="/volumes"
 />

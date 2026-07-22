@@ -47,14 +47,14 @@
 				icon={FilterIcon}
 				customLabel={title}
 				class={cn(
-					'border-input hover:bg-card/60 h-8 border border-dashed hover:text-inherit',
-					selectedValues.size > 0 && 'border-primary/40 bg-primary/10 border-solid text-foreground'
+					'h-8 border border-dashed border-input hover:bg-card/60 hover:text-inherit',
+					selectedValues.size > 0 && 'border-solid border-primary/40 bg-primary/10 text-foreground'
 				)}
 				data-testid={`facet-${title.toLowerCase()}-trigger`}
 			>
 				{#if selectedValues.size > 0}
 					<Separator orientation="vertical" class="mx-1 h-4" />
-					<div class="text-muted-foreground flex items-center gap-1 text-xs font-medium">
+					<div class="flex items-center gap-1 text-xs font-medium text-muted-foreground">
 						{#if selectedValues.size > 2}
 							<span>{selectedValues.size}</span>
 						{:else}
@@ -91,18 +91,18 @@
 							{#if showCheckboxes}
 								<div
 									class={cn(
-										'border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border',
+										'flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary',
 										isSelected ? 'bg-primary text-primary-foreground' : 'opacity-50 [&_svg]:invisible'
 									)}
 								>
-									<CheckIcon class="text-foreground size-6" />
+									<CheckIcon class="size-6 text-foreground" />
 								</div>
 							{/if}
 							{#if option.dotClass}
 								<span class="{option.dotClass} h-2 w-2 shrink-0 rounded-full" aria-hidden="true"></span>
 							{:else if option.icon}
 								{@const Icon = option.icon}
-								<Icon class="text-muted-foreground shrink-0" />
+								<Icon class="shrink-0 text-muted-foreground" />
 							{/if}
 
 							<span class="truncate">{option.label}</span>

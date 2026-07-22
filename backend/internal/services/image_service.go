@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	ref "github.com/distribution/reference"
@@ -24,6 +23,8 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
+	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -36,15 +37,7 @@ type ImageService struct {
 	vulnerabilityService *VulnerabilityService
 	eventService         *EventService
 
-	projectIDCache projectIDNameCache
-}
-
-// projectIDNameCache memoizes the (project name → project ID) map used to enrich image
-// usage data with the owning project. The TTL bounds staleness; see projectIDCacheTTL.
-type projectIDNameCache struct {
-	mu      sync.RWMutex
-	byName  map[string]string
-	expires time.Time
+	projectIDCache *hot.HotCache[struct{}, map[string]string]
 }
 
 func NewImageService(db *database.DB, dockerService *DockerClientService, registryService *ContainerRegistryService, imageUpdateService *ImageUpdateService, vulnerabilityService *VulnerabilityService, eventService *EventService) *ImageService {
@@ -55,6 +48,9 @@ func NewImageService(db *database.DB, dockerService *DockerClientService, regist
 		imageUpdateService:   imageUpdateService,
 		vulnerabilityService: vulnerabilityService,
 		eventService:         eventService,
+		projectIDCache: hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
+			WithTTL(projectIDCacheTTL).
+			Build(),
 	}
 }
 
@@ -766,7 +762,7 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	seen := make(map[string]struct{}, len(imageRefs))
 
 	for _, rawRef := range imageRefs {
-		lookup, ok := parseImageRefUpdateLookupInternal(rawRef)
+		lookup, ok := parseImageRefUpdateLookupInternal(rawRef).Get()
 		if !ok {
 			continue
 		}
@@ -780,15 +776,15 @@ func buildImageRefUpdateLookupsInternal(imageRefs []string) []imageRefUpdateLook
 	return lookups
 }
 
-func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, bool) {
+func parseImageRefUpdateLookupInternal(imageRef string) mo.Option[imageRefUpdateLookup] {
 	trimmedRef := strings.TrimSpace(imageRef)
 	if trimmedRef == "" {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	named, err := ref.ParseNormalizedNamed(trimmedRef)
 	if err != nil {
-		return imageRefUpdateLookup{}, false
+		return mo.None[imageRefUpdateLookup]()
 	}
 
 	tag := "latest"
@@ -820,11 +816,11 @@ func parseImageRefUpdateLookupInternal(imageRef string) (imageRefUpdateLookup, b
 		repositoryCandidates[strings.TrimPrefix(repositoryPath, "library/")] = struct{}{}
 	}
 
-	return imageRefUpdateLookup{
+	return mo.Some(imageRefUpdateLookup{
 		originalRef:          trimmedRef,
 		tag:                  tag,
 		repositoryCandidates: repositoryCandidates,
-	}, true
+	})
 }
 
 func selectLatestMatchingImageUpdateRecordInternal(
@@ -879,35 +875,34 @@ func (s *ImageService) GetTotalImageSize(ctx context.Context) (int64, error) {
 const projectIDCacheTTL = 5 * time.Second
 
 func (s *ImageService) loadProjectIDByNameCachedInternal(ctx context.Context) map[string]string {
-	s.projectIDCache.mu.RLock()
-	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
-		s.projectIDCache.mu.RUnlock()
-		return cached
+	if s.projectIDCache == nil {
+		s.projectIDCache = hot.NewHotCache[struct{}, map[string]string](hot.LRU, 1).
+			WithTTL(projectIDCacheTTL).
+			Build()
 	}
-	s.projectIDCache.mu.RUnlock()
+	stale, staleFound := s.projectIDCache.Peek(struct{}{})
+	byName, found, err := s.projectIDCache.GetWithLoaders(struct{}{}, func(_ []struct{}) (map[struct{}]map[string]string, error) {
+		var projects []models.Project
+		if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+			return nil, err
+		}
 
-	s.projectIDCache.mu.Lock()
-	defer s.projectIDCache.mu.Unlock()
-	if cached := s.projectIDCache.byName; cached != nil && time.Now().Before(s.projectIDCache.expires) {
-		return cached
-	}
-
-	var projects []models.Project
-	if err := s.db.WithContext(ctx).Select("id", "name").Find(&projects).Error; err != nil {
+		loaded := make(map[string]string, len(projects))
+		for _, project := range projects {
+			loaded[project.Name] = project.ID
+		}
+		return map[struct{}]map[string]string{{}: loaded}, nil
+	})
+	if err != nil {
 		slog.WarnContext(ctx, "failed to load project ID map", "error", err)
-		// Return last cached value if any; otherwise an empty map (don't store, so we retry next call).
-		if s.projectIDCache.byName != nil {
-			return s.projectIDCache.byName
+		if staleFound {
+			return stale
 		}
 		return map[string]string{}
 	}
-
-	byName := make(map[string]string, len(projects))
-	for _, p := range projects {
-		byName[p.Name] = p.ID
+	if !found {
+		return map[string]string{}
 	}
-	s.projectIDCache.byName = byName
-	s.projectIDCache.expires = time.Now().Add(projectIDCacheTTL)
 	return byName
 }
 
@@ -1052,7 +1047,7 @@ func parseRepoAndTagFromRepoTag(repoTag string) (repo, tag string) {
 	return repoTag, "latest"
 }
 
-func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
+func parseRepoFromDigests(repoDigests []string) mo.Option[string] {
 	for _, rd := range repoDigests {
 		if rd == "<none>@<none>" {
 			continue
@@ -1060,11 +1055,11 @@ func parseRepoFromDigests(repoDigests []string) (repo string, found bool) {
 		if at := strings.LastIndex(rd, "@"); at != -1 {
 			candidateRepo := rd[:at]
 			if candidateRepo != "" {
-				return candidateRepo, true
+				return mo.Some(candidateRepo)
 			}
 		}
 	}
-	return "", false
+	return mo.None[string]()
 }
 
 func determineRepoAndTag(di image.Summary) (repo, tag string) {
@@ -1073,19 +1068,12 @@ func determineRepoAndTag(di image.Summary) (repo, tag string) {
 	}
 
 	if len(di.RepoDigests) > 0 {
-		if r, found := parseRepoFromDigests(di.RepoDigests); found {
-			return r, "<none>"
+		if repo, found := parseRepoFromDigests(di.RepoDigests).Get(); found {
+			return repo, "<none>"
 		}
 	}
 
 	return "<none>", "<none>"
-}
-
-func stringPtrValue(p *string) string {
-	if p == nil {
-		return ""
-	}
-	return *p
 }
 
 func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateInfo {
@@ -1093,15 +1081,15 @@ func buildUpdateInfo(updateRecord *models.ImageUpdateRecord) *imagetypes.UpdateI
 		HasUpdate:      updateRecord.HasUpdate,
 		UpdateType:     updateRecord.UpdateType,
 		CurrentVersion: updateRecord.CurrentVersion,
-		LatestVersion:  stringPtrValue(updateRecord.LatestVersion),
-		CurrentDigest:  stringPtrValue(updateRecord.CurrentDigest),
-		LatestDigest:   stringPtrValue(updateRecord.LatestDigest),
+		LatestVersion:  mo.PointerToOption(updateRecord.LatestVersion).OrEmpty(),
+		CurrentDigest:  mo.PointerToOption(updateRecord.CurrentDigest).OrEmpty(),
+		LatestDigest:   mo.PointerToOption(updateRecord.LatestDigest).OrEmpty(),
 		CheckTime:      updateRecord.CheckTime,
 		ResponseTimeMs: updateRecord.ResponseTimeMs,
-		Error:          stringPtrValue(updateRecord.LastError),
-		AuthMethod:     stringPtrValue(updateRecord.AuthMethod),
-		AuthUsername:   stringPtrValue(updateRecord.AuthUsername),
-		AuthRegistry:   stringPtrValue(updateRecord.AuthRegistry),
+		Error:          mo.PointerToOption(updateRecord.LastError).OrEmpty(),
+		AuthMethod:     mo.PointerToOption(updateRecord.AuthMethod).OrEmpty(),
+		AuthUsername:   mo.PointerToOption(updateRecord.AuthUsername).OrEmpty(),
+		AuthRegistry:   mo.PointerToOption(updateRecord.AuthRegistry).OrEmpty(),
 		UsedCredential: updateRecord.UsedCredential,
 	}
 }

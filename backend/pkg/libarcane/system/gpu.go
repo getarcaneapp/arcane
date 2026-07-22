@@ -15,13 +15,16 @@ import (
 	"time"
 
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
+	"github.com/samber/hot"
 )
 
 // AMDGPUSysfsPath is the sysfs base used to discover AMD GPUs.
-const AMDGPUSysfsPath = "/sys/class/drm"
+const (
+	AMDGPUSysfsPath = "/sys/class/drm"
 
-// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
-const gpuDetectionTTL = 30 * time.Second
+	// gpuDetectionTTL bounds how long a successful detection result is reused before re-detecting.
+	gpuDetectionTTL = 30 * time.Second
+)
 
 // GPUMonitor probes for an attached GPU (NVIDIA / AMD / Intel) and reports VRAM usage.
 // Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
@@ -33,18 +36,26 @@ type GPUMonitor struct {
 	detectionMu   sync.Mutex
 	detectionDone bool
 
-	cacheMu   sync.RWMutex
-	detected  bool
-	timestamp time.Time
-	gpuType   string
-	toolPath  string
+	detectionCache *hot.HotCache[struct{}, gpuDetection]
+}
+
+type gpuDetection struct {
+	detected bool
+	gpuType  string
+	toolPath string
 }
 
 // NewGPUMonitor creates a monitor. enabled gates Stats; when false, Stats returns
 // (nil, nil). configuredType is the user-pinned vendor ("nvidia"|"amd"|"intel"|"auto"|"")
 // — anything else falls back to auto-detection.
 func NewGPUMonitor(enabled bool, configuredType string) *GPUMonitor {
-	return &GPUMonitor{enabled: enabled, configuredType: configuredType}
+	return &GPUMonitor{
+		enabled:        enabled,
+		configuredType: configuredType,
+		detectionCache: hot.NewHotCache[struct{}, gpuDetection](hot.LRU, 1).
+			WithTTL(gpuDetectionTTL).
+			Build(),
+	}
 }
 
 // Enabled reports whether GPU monitoring is on.
@@ -66,25 +77,19 @@ func (m *GPUMonitor) Stats(ctx context.Context) ([]systemtypes.GPUStats, error) 
 		}
 	}
 
-	m.cacheMu.RLock()
-	if m.detected && time.Since(m.timestamp) < gpuDetectionTTL {
-		t := m.gpuType
-		m.cacheMu.RUnlock()
-		return m.statsForTypeInternal(ctx, t)
+	if detection, found, _ := m.detectionCache.Get(struct{}{}); found && detection.detected {
+		return m.statsForTypeInternal(ctx, detection.gpuType)
 	}
-	m.cacheMu.RUnlock()
 
 	if err := m.detectInternal(ctx); err != nil {
 		return nil, err
 	}
 
-	m.cacheMu.RLock()
-	t := m.gpuType
-	m.cacheMu.RUnlock()
-	if t == "" {
+	detection, found, _ := m.detectionCache.Get(struct{}{})
+	if !found || detection.gpuType == "" {
 		return nil, errors.New("no supported GPU found")
 	}
-	return m.statsForTypeInternal(ctx, t)
+	return m.statsForTypeInternal(ctx, detection.gpuType)
 }
 
 func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) ([]systemtypes.GPUStats, error) {
@@ -100,14 +105,9 @@ func (m *GPUMonitor) statsForTypeInternal(ctx context.Context, gpuType string) (
 	}
 }
 
-// markDetected records a successful detection. Caller must NOT hold cacheMu.
+// markDetected records a successful detection.
 func (m *GPUMonitor) markDetectedInternal(gpuType, toolPath string) {
-	m.cacheMu.Lock()
-	m.detected = true
-	m.gpuType = gpuType
-	m.toolPath = toolPath
-	m.timestamp = time.Now()
-	m.cacheMu.Unlock()
+	m.detectionCache.Set(struct{}{}, gpuDetection{detected: true, gpuType: gpuType, toolPath: toolPath})
 	m.detectionDone = true
 }
 

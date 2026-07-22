@@ -92,7 +92,7 @@
 		</div>
 	</div>
 	{#if error}
-		<p class="text-destructive px-4 py-2 text-xs">{error}</p>
+		<p class="px-4 py-2 text-xs text-destructive">{error}</p>
 	{/if}
 {/snippet}
 

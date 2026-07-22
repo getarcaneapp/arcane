@@ -99,14 +99,14 @@
 			<Label for="schedule">{m.jobs_cron_expression()}</Label>
 			<Input id="schedule" bind:value={scheduleValue} placeholder="0 */15 * * * *" class={error ? 'border-destructive' : ''} />
 			{#if error}
-				<p class="text-destructive text-sm">{error}</p>
+				<p class="text-sm text-destructive">{error}</p>
 			{:else}
-				<p class="text-muted-foreground text-sm">{m.jobs_cron_expression_help()}</p>
+				<p class="text-sm text-muted-foreground">{m.jobs_cron_expression_help()}</p>
 			{/if}
 		</div>
 
 		<div class="space-y-2">
-			<Label>{m.jobs_cron_examples()}</Label>
+			<Label>{m.examples()}</Label>
 			<div class="grid grid-cols-2 gap-3 pt-2">
 				{#each cronExamples as example (example.value)}
 					<Button
@@ -116,7 +116,7 @@
 					>
 						<div class="text-left">
 							<div class="text-xs leading-4 font-medium">{example.label}</div>
-							<div class="text-muted-foreground font-mono text-xs leading-4">{example.value}</div>
+							<div class="font-mono text-xs leading-4 text-muted-foreground">{example.value}</div>
 						</div>
 					</Button>
 				{/each}

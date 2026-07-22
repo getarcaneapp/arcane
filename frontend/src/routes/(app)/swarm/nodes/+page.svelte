@@ -28,7 +28,7 @@
 					onSuccess: (data) => {
 						nodes = data;
 					},
-					errorMessage: m.common_refresh_failed({ resource: m.swarm_nodes_title() })
+					errorMessage: m.common_refresh_failed({ resource: m.nodes() })
 				}
 			},
 			(v) => (isLoading.refresh = v)
@@ -74,7 +74,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.swarm_nodes_title()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.nodes()} subtitle={m.swarm_nodes_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-4">
 			{#if uncoveredNodeCount > 0}

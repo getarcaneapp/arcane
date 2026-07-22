@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cache"
+	"github.com/samber/hot"
 )
 
 const (
@@ -43,10 +43,10 @@ type ProjectEnvState struct {
 	EditableContent  string
 	EffectiveContent string
 	DirectContent    string
-	HasEffective     bool
 	GitContent       string
-	HasGitSource     bool
 	OverrideContent  string
+	HasEffective     bool
+	HasGitSource     bool
 	HasOverride      bool
 	// The *Unreadable fields report a file that exists on disk but could not be
 	// read because of a permission error (e.g. a chmod 000 or foreign-owned
@@ -75,8 +75,8 @@ type envFileCacheEntry struct {
 var (
 	processEnvOnce      sync.Once
 	processEnvSnapshot  EnvMap
-	globalEnvFileCache  = cache.NewKeyed[string, envFileCacheEntry]()
-	projectEnvFileCache = cache.NewKeyed[string, envFileCacheEntry]()
+	globalEnvFileCache  = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
+	projectEnvFileCache = hot.NewHotCache[string, envFileCacheEntry](hot.LRU, 4096).Build()
 )
 
 func NewEnvLoader(projectsDir, workdir string, autoInjectEnv bool) *EnvLoader {
@@ -167,29 +167,43 @@ func (l *EnvLoader) loadAndMergeProjectEnv(ctx context.Context, path string, env
 	return nil
 }
 
-func loadCachedEnvFileInternal(ctx context.Context, envCache *cache.KeyedCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
-	return envCache.GetOrFetch(ctx, key, validEnvFileCacheEntryInternal, func(context.Context) (envFileCacheEntry, error) {
+func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string, envFileCacheEntry], key, path string, contextEnv EnvMap) (envFileCacheEntry, error) {
+	if cached, ok := envCache.Peek(key); ok {
+		if validEnvFileCacheEntryInternal(cached) {
+			return cached, nil
+		}
+		envCache.Delete(key)
+	}
+
+	entry, found, err := envCache.GetWithLoaders(key, func(_ []string) (map[string]envFileCacheEntry, error) {
 		entry := envFileCacheEntry{path: path}
 		info, err := os.Stat(path)
 		if err != nil {
 			if errors.Is(err, os.ErrNotExist) {
-				return entry, nil
+				return map[string]envFileCacheEntry{key: entry}, nil
 			}
-			return entry, err
+			return nil, err
 		}
 		if info.IsDir() {
-			return entry, fmt.Errorf("path is a directory: %s", path)
+			return nil, fmt.Errorf("path is a directory: %s", path)
 		}
 
 		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
 		if err != nil {
-			return entry, fmt.Errorf("parse env file: %w", err)
+			return nil, fmt.Errorf("parse env file: %w", err)
 		}
 		entry.exists = true
 		entry.mtime = info.ModTime()
 		entry.values = parsed
-		return entry, nil
+		return map[string]envFileCacheEntry{key: entry}, nil
 	})
+	if err != nil {
+		return envFileCacheEntry{}, err
+	}
+	if !found {
+		return envFileCacheEntry{}, errors.New("environment file cache loader returned no entry")
+	}
+	return entry, nil
 }
 
 func envContextFingerprintInternal(envMap EnvMap) string {

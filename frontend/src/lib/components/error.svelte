@@ -76,7 +76,7 @@
 	<Empty.Root>
 		<Empty.Header>
 			<Empty.Media variant="icon">
-				<ErrorNotFoundIcon class="text-destructive size-20" aria-hidden="true" />
+				<ErrorNotFoundIcon class="size-20 text-destructive" aria-hidden="true" />
 			</Empty.Media>
 			<Empty.Title>{isConnectionError ? connectionErrorTitle : title}</Empty.Title>
 			<Empty.Description>{isConnectionError ? connectionErrorMessage : message} - {status}</Empty.Description>

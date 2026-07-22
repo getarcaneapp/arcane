@@ -20,14 +20,21 @@ export const load: PageLoad = async ({ parent }) => {
 	} satisfies SearchPaginationSortRequest);
 
 	let events;
+	let eventStats;
 	try {
-		events = await queryClient.fetchQuery({
-			queryKey: queryKeys.events.listGlobal(eventRequestOptions),
-			queryFn: () => eventService.getEvents(eventRequestOptions)
-		});
+		[events, eventStats] = await Promise.all([
+			queryClient.fetchQuery({
+				queryKey: queryKeys.events.listGlobal(eventRequestOptions),
+				queryFn: () => eventService.getEvents(eventRequestOptions)
+			}),
+			queryClient.fetchQuery({
+				queryKey: queryKeys.events.statsGlobal(),
+				queryFn: () => eventService.getEventStats()
+			})
+		]);
 	} catch (err) {
 		throwPageLoadError(err, 'Failed to load events');
 	}
 
-	return { events, eventRequestOptions };
+	return { events, eventStats, eventRequestOptions };
 };

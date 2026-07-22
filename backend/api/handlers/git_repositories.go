@@ -21,13 +21,6 @@ type GitRepositoryHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// GitRepositoryPaginatedResponse is the paginated response for git repositories.
-type GitRepositoryPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []gitops.GitRepository  `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListGitRepositoriesInput struct {
 	Search string `query:"search" doc:"Search query"`
 	Sort   string `query:"sort" doc:"Column to sort by"`
@@ -37,7 +30,7 @@ type ListGitRepositoriesInput struct {
 }
 
 type ListGitRepositoriesOutput struct {
-	Body GitRepositoryPaginatedResponse
+	Body base.Paginated[gitops.GitRepository]
 }
 
 type CreateGitRepositoryInput struct {
@@ -133,10 +126,6 @@ func RegisterGitRepositories(api huma.API, repoService *services.GitRepositorySe
 
 // ListRepositories returns a paginated list of git repositories.
 func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *ListGitRepositoriesInput) (*ListGitRepositoriesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
@@ -145,7 +134,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 	}
 
 	return &ListGitRepositoriesOutput{
-		Body: GitRepositoryPaginatedResponse{
+		Body: base.Paginated[gitops.GitRepository]{
 			Success:    true,
 			Data:       repositories,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -155,10 +144,6 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 
 // CreateRepository creates a new git repository.
 func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *CreateGitRepositoryInput) (*CreateGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
@@ -181,10 +166,6 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 
 // GetRepository returns a git repository by ID.
 func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitRepositoryInput) (*GetGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	repo, err := h.repoService.GetRepositoryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
@@ -205,10 +186,6 @@ func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitR
 
 // UpdateRepository updates an existing git repository.
 func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *UpdateGitRepositoryInput) (*UpdateGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
@@ -231,10 +208,6 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 
 // DeleteRepository deletes a git repository by ID.
 func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *DeleteGitRepositoryInput) (*DeleteGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
@@ -254,10 +227,6 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 
 // TestRepository tests connectivity and authentication to a git repository.
 func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGitRepositoryInput) (*TestGitRepositoryOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
@@ -276,10 +245,6 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 
 // ListBranches returns all branches from a git repository.
 func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*ListBranchesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	branches, err := h.repoService.ListBranches(ctx, input.ID)
 	if err != nil {
 		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
@@ -297,10 +262,6 @@ func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBran
 
 // BrowseFiles returns files and directories from a git repository.
 func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFilesInput) (*BrowseFilesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.Branch == "" {
 		return nil, huma.Error400BadRequest("branch parameter is required")
 	}
@@ -320,10 +281,6 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 
 // SyncRepositories syncs git repositories from a manager to this agent instance.
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
-	if h.repoService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
 		apiErr := models.ToAPIError(err)
 		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositorySyncError{Err: err}).Error())

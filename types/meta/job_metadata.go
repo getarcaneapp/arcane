@@ -113,9 +113,9 @@ var jobMetadataRegistry = map[string]JobMetadata{
 	"image-polling": {
 		ID:             "image-polling",
 		Name:           "Image Update Watcher",
-		Description:    "Checks container registries after Docker image changes",
+		Description:    "Checks container registries on a schedule and after Docker image changes",
 		Category:       "updates",
-		SettingsKey:    "",
+		SettingsKey:    "pollingInterval",
 		EnabledKey:     "pollingEnabled",
 		ManagerOnly:    false,
 		IsContinuous:   true,

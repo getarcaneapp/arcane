@@ -1,5 +1,5 @@
 import { projectService } from '$lib/services/project-service';
-import { templateService } from '$lib/services/template-service';
+import { variableService } from '$lib/services/variable-service';
 import { environmentStore } from '$lib/stores/environment.store.svelte';
 import { queryKeys } from '$lib/query/query-keys';
 import { throwPageLoadError } from '$lib/utils/api';
@@ -9,8 +9,8 @@ import type { PageLoad } from './$types';
 async function loadGlobalVariables(queryClient: QueryClient) {
 	return queryClient
 		.fetchQuery({
-			queryKey: queryKeys.templates.globalVariables(),
-			queryFn: () => templateService.getGlobalVariables()
+			queryKey: queryKeys.variables.list(),
+			queryFn: () => variableService.list()
 		})
 		.catch((err) => {
 			console.warn('Failed to load global variables:', err);

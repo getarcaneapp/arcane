@@ -152,6 +152,7 @@ All user-facing text goes in `frontend/messages/en.json`, accessed via Paraglide
 **AI Agent Rule for i18n**:
 
 - Never use hardcoded English strings in frontend UI components (`.svelte` files). This includes text inside HTML tags and text assigned to variables, props, or state that is rendered in the UI.
+- Before adding a page-specific message key, search `frontend/messages/en.json` for the same user-facing text and reuse an existing shared key when the grammatical purpose matches.
 - Always define new keys ONLY in `frontend/messages/en.json` and use `m.*()`. Do NOT edit other language files (e.g., `fr.json`, `es.json`) because translations are handled automatically by Crowdin via pull requests.
 
 ## RBAC Architecture

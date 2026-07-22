@@ -82,7 +82,7 @@
 </script>
 
 <SettingsPageLayout
-	title={m.build_settings_page_title()}
+	title={m.build()}
 	description={m.build_settings_page_description()}
 	icon={CodeIcon}
 	pageType="form"
@@ -91,7 +91,7 @@
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative space-y-8">
 			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.build_settings_workspace_section_title()}</h3>
+				<h3 class="text-base font-semibold">{m.build_workspace()}</h3>
 				<div class="max-w-xl">
 					<TextInputWithLabel
 						bind:value={$formInputs.buildsDirectory.value}
@@ -105,7 +105,7 @@
 			</div>
 
 			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.build_settings_provider_section_title()}</h3>
+				<h3 class="text-base font-semibold">{m.build_provider()}</h3>
 				<div class="grid gap-5 sm:grid-cols-2">
 					<div>
 						<SelectWithLabel
@@ -118,7 +118,7 @@
 							options={providerOptions}
 						/>
 						{#if !depotCredentialsPresent && !depotConfigured}
-							<p class="text-muted-foreground mt-2 text-xs">{m.build_settings_depot_enable_hint()}</p>
+							<p class="mt-2 text-xs text-muted-foreground">{m.build_settings_depot_enable_hint()}</p>
 						{/if}
 					</div>
 					<TextInputWithLabel
@@ -134,7 +134,7 @@
 			</div>
 
 			<div class="space-y-4">
-				<h3 class="text-base font-semibold">{m.build_settings_depot_section_title()}</h3>
+				<h3 class="text-base font-semibold">{m.depot()}</h3>
 				<div class="grid gap-5 sm:grid-cols-2">
 					<TextInputWithLabel
 						bind:value={$formInputs.depotProjectId.value}

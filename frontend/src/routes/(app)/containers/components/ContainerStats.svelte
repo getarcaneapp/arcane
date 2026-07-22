@@ -202,9 +202,9 @@
 				<div class="lg:col-span-2">
 					<div class="space-y-3">
 						<div class="flex min-h-[44px] items-start justify-between">
-							<span class="text-foreground text-base font-semibold">{m.dashboard_meter_cpu()}</span>
+							<span class="text-base font-semibold text-foreground">{m.cpu_usage()}</span>
 							<div class="text-right">
-								<div class="text-muted-foreground text-sm font-semibold">
+								<div class="text-sm font-semibold text-muted-foreground">
 									{cpuUsagePercent.toFixed(2)}%
 								</div>
 							</div>
@@ -215,7 +215,7 @@
 							class="h-3 {cpuUsagePercent > 80 ? '[&>div]:bg-destructive' : cpuUsagePercent > 60 ? '[&>div]:bg-warning' : ''}"
 						/>
 						{#if stats.cpu_stats}
-							<div class="text-muted-foreground mt-2 flex items-center justify-between text-xs">
+							<div class="mt-2 flex items-center justify-between text-xs text-muted-foreground">
 								{#if cpuLimit > 0}
 									<span
 										>{m.containers_stats_cpu_limit()}: {cpuLimit}
@@ -225,7 +225,7 @@
 									<span>{m.containers_stats_online_cpus()}: {stats.cpu_stats.online_cpus}</span>
 								{/if}
 								<span>
-									{m.containers_stats_system_cpu()}: {((stats.cpu_stats.system_cpu_usage || 0) / 1e9).toFixed(2)}s
+									{m.system()}: {((stats.cpu_stats.system_cpu_usage || 0) / 1e9).toFixed(2)}s
 								</span>
 							</div>
 						{/if}
@@ -236,12 +236,12 @@
 				<div class="lg:col-span-2">
 					<div class="space-y-3">
 						<div class="flex min-h-[44px] items-start justify-between">
-							<span class="text-foreground text-base font-semibold">{m.dashboard_meter_memory()}</span>
+							<span class="text-base font-semibold text-foreground">{m.memory_usage()}</span>
 							<div class="text-right">
-								<div class="text-muted-foreground text-sm font-semibold">
+								<div class="text-sm font-semibold text-muted-foreground">
 									{memoryUsagePercent.toFixed(1)}%
 								</div>
-								<div class="text-muted-foreground text-xs">
+								<div class="text-xs text-muted-foreground">
 									{memoryUsageFormatted} / {memoryLimitFormatted}
 								</div>
 							</div>
@@ -255,17 +255,17 @@
 									? '[&>div]:bg-warning'
 									: ''}"
 						/>
-						<div class="text-muted-foreground mt-2 grid grid-cols-3 gap-2 text-xs">
+						<div class="mt-2 grid grid-cols-3 gap-2 text-xs text-muted-foreground">
 							<div>
 								<div class="font-medium">{m.containers_stats_cache()}</div>
 								<div>{bytes.format(memoryCacheBytes)}</div>
 							</div>
 							<div>
-								<div class="font-medium">{m.containers_stats_active()}</div>
+								<div class="font-medium">{m.common_active()}</div>
 								<div>{bytes.format(memoryActiveBytes)}</div>
 							</div>
 							<div>
-								<div class="font-medium">{m.containers_stats_inactive()}</div>
+								<div class="font-medium">{m.inactive()}</div>
 								<div>{bytes.format(memoryInactiveBytes)}</div>
 							</div>
 						</div>
@@ -278,12 +278,12 @@
 				{#if stats.pids_stats && stats.pids_stats.current !== undefined}
 					<Card.Root variant="subtle" class="flex flex-col justify-center">
 						<Card.Content class="flex flex-col justify-center p-4">
-							<div class="text-muted-foreground mb-2 text-xs font-semibold tracking-wide uppercase">
+							<div class="mb-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.containers_process_count()}
 							</div>
-							<div class="text-foreground text-2xl font-semibold">{stats.pids_stats.current}</div>
+							<div class="text-2xl font-semibold text-foreground">{stats.pids_stats.current}</div>
 							{#if stats.pids_stats.limit && stats.pids_stats.limit < Number.MAX_SAFE_INTEGER}
-								<div class="text-muted-foreground mt-1 text-xs">
+								<div class="mt-1 text-xs text-muted-foreground">
 									{m.common_limit()}: {stats.pids_stats.limit}
 								</div>
 							{/if}
@@ -294,30 +294,30 @@
 				<!-- Network I/O Summary -->
 				<Card.Root variant="subtle" class="flex flex-col">
 					<Card.Content class="flex flex-col p-4">
-						<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+						<div class="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 							{m.containers_network_io()}
 						</div>
 						<div class="grid flex-1 grid-cols-2 gap-3">
 							<div>
-								<div class="text-muted-foreground text-xs font-medium">
+								<div class="text-xs font-medium text-muted-foreground">
 									{m.containers_network_received()}
 								</div>
-								<div class="text-foreground text-sm font-semibold">
+								<div class="text-sm font-semibold text-foreground">
 									{bytes.format(totalNetworkRx)}
 								</div>
-								<div class="text-muted-foreground text-xs">
+								<div class="text-xs text-muted-foreground">
 									{totalNetworkRxPackets}
 									{m.containers_stats_packets()}
 								</div>
 							</div>
 							<div>
-								<div class="text-muted-foreground text-xs font-medium">
+								<div class="text-xs font-medium text-muted-foreground">
 									{m.containers_network_transmitted()}
 								</div>
-								<div class="text-foreground text-sm font-semibold">
+								<div class="text-sm font-semibold text-foreground">
 									{bytes.format(totalNetworkTx)}
 								</div>
-								<div class="text-muted-foreground text-xs">
+								<div class="text-xs text-muted-foreground">
 									{totalNetworkTxPackets}
 									{m.containers_stats_packets()}
 								</div>
@@ -330,23 +330,23 @@
 				{#if stats.blkio_stats && stats.blkio_stats.io_service_bytes_recursive && stats.blkio_stats.io_service_bytes_recursive.length > 0}
 					<Card.Root variant="subtle" class="flex flex-col">
 						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							<div class="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.containers_block_io()}
 							</div>
 							<div class="grid flex-1 grid-cols-2 gap-3">
 								<div>
-									<div class="text-muted-foreground text-xs font-medium">
+									<div class="text-xs font-medium text-muted-foreground">
 										{m.containers_block_io_read()}
 									</div>
-									<div class="text-foreground text-sm font-semibold">
+									<div class="text-sm font-semibold text-foreground">
 										{bytes.format(blockIoRead)}
 									</div>
 								</div>
 								<div>
-									<div class="text-muted-foreground text-xs font-medium">
+									<div class="text-xs font-medium text-muted-foreground">
 										{m.containers_block_io_write()}
 									</div>
-									<div class="text-foreground text-sm font-semibold">
+									<div class="text-sm font-semibold text-foreground">
 										{bytes.format(blockIoWrite)}
 									</div>
 								</div>
@@ -361,27 +361,27 @@
 				<div class="mt-4">
 					<Card.Root variant="subtle">
 						<Card.Content class="p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							<div class="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.containers_stats_network_interfaces()}
 							</div>
 							<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
 								{#each networkInterfaces as [interfaceName, interfaceStats]}
 									<Card.Root variant="outlined" class="flex flex-col">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-foreground mb-2 text-sm font-semibold">
+											<div class="mb-2 text-sm font-semibold text-foreground">
 												{interfaceName}
 											</div>
 											<div class="flex-1 space-y-1 text-xs">
 												<div class="flex justify-between">
 													<span class="text-muted-foreground">RX:</span>
-													<span class="text-foreground font-medium">{bytes.format(interfaceStats.rx_bytes)}</span>
+													<span class="font-medium text-foreground">{bytes.format(interfaceStats.rx_bytes)}</span>
 												</div>
 												<div class="flex justify-between">
 													<span class="text-muted-foreground">TX:</span>
-													<span class="text-foreground font-medium">{bytes.format(interfaceStats.tx_bytes)}</span>
+													<span class="font-medium text-foreground">{bytes.format(interfaceStats.tx_bytes)}</span>
 												</div>
 												{#if interfaceStats.rx_errors > 0 || interfaceStats.tx_errors > 0}
-													<div class="text-destructive mt-1 text-xs">
+													<div class="mt-1 text-xs text-destructive">
 														{m.containers_stats_errors()}: {interfaceStats.rx_errors + interfaceStats.tx_errors}
 													</div>
 												{/if}
@@ -405,44 +405,44 @@
 				{#if stats.memory_stats?.stats}
 					<Card.Root variant="subtle" class="flex flex-col">
 						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							<div class="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.containers_stats_memory_details()}
 							</div>
 							<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.common_usage()}:</span>
-									<span class="text-foreground font-medium">{memoryUsageFormatted}</span>
+									<span class="font-medium text-foreground">{memoryUsageFormatted}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.common_limit()}:</span>
-									<span class="text-foreground font-medium">{memoryLimitFormatted}</span>
+									<span class="font-medium text-foreground">{memoryLimitFormatted}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_cache()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(memoryCacheBytes)}</span>
+									<span class="font-medium text-foreground">{bytes.format(memoryCacheBytes)}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_memory_rss()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.anon || 0)}</span>
+									<span class="font-medium text-foreground">{bytes.format(stats.memory_stats.stats.anon || 0)}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_memory_active_file()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.active_file || 0)}</span>
+									<span class="font-medium text-foreground">{bytes.format(stats.memory_stats.stats.active_file || 0)}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_memory_inactive_file()}:</span>
-									<span class="text-foreground font-medium">{bytes.format(stats.memory_stats.stats.inactive_file || 0)}</span>
+									<span class="font-medium text-foreground">{bytes.format(stats.memory_stats.stats.inactive_file || 0)}</span>
 								</div>
 								{#if stats.memory_stats.stats.pgfault}
 									<div class="flex justify-between">
 										<span class="text-muted-foreground">{m.containers_stats_memory_page_faults()}:</span>
-										<span class="text-foreground font-medium">{stats.memory_stats.stats.pgfault.toLocaleString()}</span>
+										<span class="font-medium text-foreground">{stats.memory_stats.stats.pgfault.toLocaleString()}</span>
 									</div>
 								{/if}
 								{#if stats.memory_stats.stats.pgmajfault}
 									<div class="flex justify-between">
 										<span class="text-muted-foreground">{m.containers_stats_memory_major_faults()}:</span>
-										<span class="text-foreground font-medium">{stats.memory_stats.stats.pgmajfault.toLocaleString()}</span>
+										<span class="font-medium text-foreground">{stats.memory_stats.stats.pgmajfault.toLocaleString()}</span>
 									</div>
 								{/if}
 							</div>
@@ -454,38 +454,38 @@
 				{#if stats.cpu_stats}
 					<Card.Root variant="subtle" class="flex flex-col">
 						<Card.Content class="flex flex-col p-4">
-							<div class="text-muted-foreground mb-3 text-xs font-semibold tracking-wide uppercase">
+							<div class="mb-3 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 								{m.containers_stats_cpu_details()}
 							</div>
 							<div class="grid flex-1 grid-cols-2 gap-x-4 gap-y-2 text-xs">
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_online_cpus()}:</span>
-									<span class="text-foreground font-medium">{stats.cpu_stats.online_cpus}</span>
+									<span class="font-medium text-foreground">{stats.cpu_stats.online_cpus}</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.common_usage()}:</span>
-									<span class="text-foreground font-medium">{cpuUsagePercent.toFixed(2)}%</span>
+									<span class="font-medium text-foreground">{cpuUsagePercent.toFixed(2)}%</span>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_cpu_user_mode()}:</span>
-									<span class="text-foreground font-medium"
+									<span class="font-medium text-foreground"
 										>{(stats.cpu_stats.cpu_usage.usage_in_usermode / 1000000000).toFixed(2)}s</span
 									>
 								</div>
 								<div class="flex justify-between">
 									<span class="text-muted-foreground">{m.containers_stats_cpu_kernel_mode()}:</span>
-									<span class="text-foreground font-medium"
+									<span class="font-medium text-foreground"
 										>{(stats.cpu_stats.cpu_usage.usage_in_kernelmode / 1000000000).toFixed(2)}s</span
 									>
 								</div>
 								{#if stats.cpu_stats.throttling_data}
 									<div class="flex justify-between">
 										<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_periods()}:</span>
-										<span class="text-foreground font-medium">{stats.cpu_stats.throttling_data.throttled_periods}</span>
+										<span class="font-medium text-foreground">{stats.cpu_stats.throttling_data.throttled_periods}</span>
 									</div>
 									<div class="flex justify-between">
 										<span class="text-muted-foreground">{m.containers_stats_cpu_throttled_time()}:</span>
-										<span class="text-foreground font-medium"
+										<span class="font-medium text-foreground"
 											>{(stats.cpu_stats.throttling_data.throttled_time / 1000000000).toFixed(2)}s</span
 										>
 									</div>
@@ -496,11 +496,11 @@
 				{/if}
 			</div>
 		{:else if !container.state?.running}
-			<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+			<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 				<div class="text-sm">{m.containers_stats_unavailable()}</div>
 			</div>
 		{:else}
-			<div class="text-muted-foreground rounded-lg border border-dashed py-12 text-center">
+			<div class="rounded-lg border border-dashed py-12 text-center text-muted-foreground">
 				<div class="text-sm">{m.containers_stats_loading()}</div>
 			</div>
 		{/if}

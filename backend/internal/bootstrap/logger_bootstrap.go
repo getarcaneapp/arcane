@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"os"
 	"strings"
@@ -15,10 +16,7 @@ import (
 	"gorm.io/gorm/logger"
 )
 
-// timeFilterHandler wraps a slog.Handler and removes redundant time attributes
-// from grouped attributes (like request.time and response.time emitted by HTTP
-// request loggers such as slog-echo).
-type timeFilterHandler struct {
+type requestLogHandler struct {
 	handler slog.Handler
 }
 
@@ -27,66 +25,102 @@ type attrFilterHandler struct {
 	dropKeys map[string]struct{}
 }
 
-func (h *timeFilterHandler) Enabled(ctx context.Context, level slog.Level) bool {
+func (h *requestLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
 	return h.handler.Enabled(ctx, level)
 }
 
-func (h *timeFilterHandler) Handle(ctx context.Context, r slog.Record) error {
-	// Filter out time attributes from groups
-	var filteredAttrs []slog.Attr
+func (h *requestLogHandler) Handle(ctx context.Context, r slog.Record) error {
+	var attrs []slog.Attr
+	var requestAttrs, responseAttrs []slog.Attr
+	var hasRequest, hasResponse bool
+
 	r.Attrs(func(a slog.Attr) bool {
-		if a.Value.Kind() == slog.KindGroup {
-			filtered := filterGroupTimeAttrs(a)
-			filteredAttrs = append(filteredAttrs, filtered)
-		} else {
-			filteredAttrs = append(filteredAttrs, a)
+		a.Value = a.Value.Resolve()
+		switch {
+		case a.Key == "request" && a.Value.Kind() == slog.KindGroup:
+			requestAttrs = a.Value.Group()
+			hasRequest = true
+		case a.Key == "response" && a.Value.Kind() == slog.KindGroup:
+			responseAttrs = a.Value.Group()
+			hasResponse = true
+		default:
+			attrs = append(attrs, a)
 		}
 		return true
 	})
 
-	// Create a new record without the original attrs
+	if !hasRequest || !hasResponse {
+		return h.handler.Handle(ctx, r)
+	}
+
+	condensedAttrs := make([]slog.Attr, 0, 10+len(attrs))
+	debugAttrs := make([]slog.Attr, 0, 6)
+	debug := h.handler.Enabled(ctx, slog.LevelDebug)
+
+	for _, a := range requestAttrs {
+		a.Value = a.Value.Resolve()
+		switch a.Key {
+		case "method", "path":
+			condensedAttrs = append(condensedAttrs, a)
+		case "host", "route":
+			if debug {
+				debugAttrs = append(debugAttrs, a)
+			}
+		case "length":
+			if debug {
+				a.Key = "request_length"
+				debugAttrs = append(debugAttrs, a)
+			}
+		case "query", "referer":
+			if debug && a.Value.Kind() == slog.KindString && a.Value.String() != "" {
+				debugAttrs = append(debugAttrs, a)
+			}
+		}
+	}
+
+	for _, a := range responseAttrs {
+		a.Value = a.Value.Resolve()
+		switch a.Key {
+		case "status":
+			condensedAttrs = append(condensedAttrs, a)
+		case "latency":
+			a.Key = "duration"
+			condensedAttrs = append(condensedAttrs, a)
+		case "length":
+			if debug {
+				a.Key = "response_length"
+				debugAttrs = append(debugAttrs, a)
+			}
+		}
+	}
+
+	condensedAttrs = append(condensedAttrs, debugAttrs...)
+	for _, a := range attrs {
+		condensedAttrs = append(condensedAttrs, normalizeRequestLogErrorInternal(a))
+	}
+
 	newRecord := slog.NewRecord(r.Time, r.Level, r.Message, r.PC)
-	newRecord.AddAttrs(filteredAttrs...)
+	newRecord.AddAttrs(condensedAttrs...)
 
 	return h.handler.Handle(ctx, newRecord)
 }
 
-func filterGroupTimeAttrs(a slog.Attr) slog.Attr {
-	if a.Value.Kind() != slog.KindGroup {
+func normalizeRequestLogErrorInternal(a slog.Attr) slog.Attr {
+	if a.Key != "error" {
 		return a
 	}
-
-	var filtered []slog.Attr
-	for _, attr := range a.Value.Group() {
-		// Skip "time" attributes within groups (request.time, response.time)
-		if attr.Key == "time" {
-			continue
-		}
-		// Recursively filter nested groups
-		if attr.Value.Kind() == slog.KindGroup {
-			filtered = append(filtered, filterGroupTimeAttrs(attr))
-		} else {
-			filtered = append(filtered, attr)
-		}
+	if value, ok := a.Value.Any().(map[string]any); ok {
+		return slog.String("error", fmt.Sprint(value["message"]))
 	}
-
-	return slog.Group(a.Key, anySlice(filtered)...)
+	return a
 }
 
-func anySlice(attrs []slog.Attr) []any {
-	result := make([]any, len(attrs))
-	for i, a := range attrs {
-		result[i] = a
-	}
-	return result
+func (h *requestLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return &requestLogHandler{handler: h.handler.WithAttrs(attrs)}
 }
 
-func (h *timeFilterHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
-	return &timeFilterHandler{handler: h.handler.WithAttrs(attrs)}
-}
-
-func (h *timeFilterHandler) WithGroup(name string) slog.Handler {
-	return &timeFilterHandler{handler: h.handler.WithGroup(name)}
+func (h *requestLogHandler) WithGroup(name string) slog.Handler {
+	return &requestLogHandler{handler: h.handler.WithGroup(name)}
 }
 
 func (h *attrFilterHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -143,8 +177,7 @@ func SetupSlogLogger(cfg *config.Config) {
 		})
 	}
 
-	// Wrap with timeFilterHandler to remove redundant time attributes from slog-echo
-	h = &timeFilterHandler{handler: h}
+	h = &requestLogHandler{handler: h}
 
 	slog.SetDefault(slog.New(h))
 }

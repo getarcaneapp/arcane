@@ -90,7 +90,7 @@ func TestNormalizeContainerInspectRawJSONInternal_NormalizesTopLevelNetworkSetti
 	payload := map[string]any{}
 	require.NoError(t, json.Unmarshal(normalized, &payload))
 
-	networkSettings, ok := asMapInternal(payload["NetworkSettings"])
+	networkSettings, ok := asMapInternal(payload["NetworkSettings"]).Get()
 	require.True(t, ok)
 	assert.Equal(t, "172.18.0.1", networkSettings["Gateway"])
 	assert.Equal(t, "172.18.0.20", networkSettings["IPAddress"])
@@ -200,7 +200,7 @@ func TestNormalizeNetworkListRawJSONInternal(t *testing.T) {
 }
 
 func TestNormalizeAddressStringInternal_TrimsWhitespaceAroundValidAddress(t *testing.T) {
-	normalized, changed := normalizeAddressStringInternal(" 172.18.0.1 ")
+	normalized, changed := normalizeAddressStringInternal(" 172.18.0.1 ").Get()
 	assert.True(t, changed)
 	assert.Equal(t, "172.18.0.1", normalized)
 }

@@ -117,10 +117,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 		Summary:     "List federated credentials",
 		Description: "Get a paginated list of workload identity federation trust rules",
 		Tags:        []string{"Federated Credentials"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermFederatedList),
 	}, h.ListFederatedCredentials)
 
@@ -131,10 +128,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 		Summary:     "Create a federated credential",
 		Description: "Create a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.CreateFederatedCredential)
 
@@ -145,10 +139,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 		Summary:     "Get a federated credential",
 		Description: "Get details of a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermFederatedRead),
 	}, h.GetFederatedCredential)
 
@@ -159,10 +150,7 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 		Summary:     "Update a federated credential",
 		Description: "Update a workload identity federation trust rule",
 		Tags:        []string{"Federated Credentials"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.UpdateFederatedCredential)
 
@@ -173,19 +161,12 @@ func RegisterFederatedCredentials(api huma.API, federatedCredentialService *serv
 		Summary:     "Delete a federated credential",
 		Description: "Delete a workload identity federation trust rule and its service user",
 		Tags:        []string{"Federated Credentials"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireGlobalAdmin(api),
 	}, h.DeleteFederatedCredential)
 }
 
 func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Context, input *ListFederatedCredentialsInput) (*ListFederatedCredentialsOutput, error) {
-	if h.federatedCredentialService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	credentials, paginationResp, err := h.federatedCredentialService.List(ctx, buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search))
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to list federated credentials")
@@ -201,9 +182,6 @@ func (h *FederatedCredentialHandler) ListFederatedCredentials(ctx context.Contex
 }
 
 func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Context, input *CreateFederatedCredentialInput) (*CreateFederatedCredentialOutput, error) {
-	if h.federatedCredentialService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -223,9 +201,6 @@ func (h *FederatedCredentialHandler) CreateFederatedCredential(ctx context.Conte
 }
 
 func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context, input *GetFederatedCredentialInput) (*GetFederatedCredentialOutput, error) {
-	if h.federatedCredentialService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	credential, err := h.federatedCredentialService.Get(ctx, input.ID)
 	if err != nil {
 		return nil, federatedCredentialManagementErrorInternal(err)
@@ -240,9 +215,6 @@ func (h *FederatedCredentialHandler) GetFederatedCredential(ctx context.Context,
 }
 
 func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Context, input *UpdateFederatedCredentialInput) (*UpdateFederatedCredentialOutput, error) {
-	if h.federatedCredentialService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -262,9 +234,6 @@ func (h *FederatedCredentialHandler) UpdateFederatedCredential(ctx context.Conte
 }
 
 func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Context, input *DeleteFederatedCredentialInput) (*DeleteFederatedCredentialOutput, error) {
-	if h.federatedCredentialService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.federatedCredentialService.Delete(ctx, input.ID); err != nil {
 		return nil, federatedCredentialManagementErrorInternal(err)
 	}

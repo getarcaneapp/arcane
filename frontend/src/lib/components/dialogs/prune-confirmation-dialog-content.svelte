@@ -41,28 +41,28 @@
 	let buildCacheUntil = $state(initialSelectionInternal.buildCacheUntil);
 
 	const containerModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'stopped', label: m.prune_stopped_containers() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const imageModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'dangling', label: m.prune_images_mode_dangling() },
-		{ value: 'all', label: m.prune_images_mode_all() },
+		{ value: 'all', label: m.all_unused() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const networkModes = [
-		{ value: 'none', label: m.prune_mode_none() },
-		{ value: 'unused', label: m.prune_unused_networks() },
+		{ value: 'none', label: m.none() },
+		{ value: 'unused', label: m.unused_networks() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const volumeModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'anonymous', label: m.prune_volumes_mode_anonymous(), destructive: true },
-		{ value: 'all', label: m.prune_volumes_mode_all(), destructive: true }
+		{ value: 'all', label: m.all_unused(), destructive: true }
 	];
 	const buildCacheModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'unused', label: m.prune_build_cache_mode_unused() },
 		{ value: 'all', label: m.prune_build_cache_mode_all() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
@@ -119,7 +119,7 @@
 <div class="space-y-4">
 	<div class="grid gap-2 md:grid-cols-2">
 		<PruneModeCard
-			title={m.prune_containers_label()}
+			title={m.containers()}
 			description={m.scheduled_prune_containers_description()}
 			modeOptions={containerModes}
 			bind:value={containerMode}
@@ -127,7 +127,7 @@
 			disabled={isPruning}
 		/>
 		<PruneModeCard
-			title={m.prune_images_label()}
+			title={m.images()}
 			description={m.prune_images_dialog_description()}
 			modeOptions={imageModes}
 			bind:value={imageMode}
@@ -135,7 +135,7 @@
 			disabled={isPruning}
 		/>
 		<PruneModeCard
-			title={m.prune_networks_label()}
+			title={m.resource_networks_cap()}
 			description={m.scheduled_prune_networks_description()}
 			modeOptions={networkModes}
 			bind:value={networkMode}
@@ -143,7 +143,7 @@
 			disabled={isPruning}
 		/>
 		<PruneModeCard
-			title={m.prune_volumes_label()}
+			title={m.resource_volumes_cap()}
 			description={m.prune_volumes_guidance()}
 			modeOptions={volumeModes}
 			bind:value={volumeMode}
@@ -155,7 +155,7 @@
 		/>
 		<div class="md:col-span-2">
 			<PruneModeCard
-				title={m.prune_build_cache_label()}
+				title={m.build_cache()}
 				description={m.scheduled_prune_build_cache_description()}
 				modeOptions={buildCacheModes}
 				bind:value={buildCacheMode}

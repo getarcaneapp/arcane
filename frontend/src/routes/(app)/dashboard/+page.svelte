@@ -28,7 +28,7 @@
 		if (hour >= 5 && hour < 12) return m.dashboard_greeting_morning();
 		if (hour >= 12 && hour < 18) return m.dashboard_greeting_afternoon();
 		if (hour >= 18 && hour < 23) return m.dashboard_greeting_evening();
-		return m.dashboard_greeting_welcome_back();
+		return m.welcome_back();
 	});
 	const greetingUserName = $derived.by(() => currentUser?.displayName?.trim() || currentUser?.username?.trim() || '');
 	const dashboardHeroGreeting = $derived.by(() =>

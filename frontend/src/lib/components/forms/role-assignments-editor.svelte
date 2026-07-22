@@ -2,7 +2,7 @@
 	import * as Select from '$lib/components/ui/select';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import {
 		type Role,
 		BUILT_IN_ROLE_ADMIN,
@@ -26,7 +26,7 @@
 
 	let { assignments = $bindable([]), roles, environments, disabled = false }: Props = $props();
 
-	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.users_role_assignments_scope_global()));
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global_org_wide()));
 	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
 
 	const quickPresetRoles = $derived(roles.filter((role) => role.id === BUILT_IN_ROLE_EDITOR || role.id === BUILT_IN_ROLE_ADMIN));
@@ -113,11 +113,11 @@
 					/>
 					<div class="flex flex-col gap-1">
 						<div class="flex items-center gap-2">
-							<StatusBadge text={role.name} variant={getRoleVariant(role.id)} size="sm" minWidth="none" />
-							<span class="text-xs text-muted-foreground">{m.users_role_assignments_scope_global()}</span>
+							<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
+							<span class="text-xs text-muted-foreground">{m.global_org_wide()}</span>
 						</div>
 						{#if role.description}
-							<span class="text-muted-foreground text-xs">{role.description}</span>
+							<span class="text-xs text-muted-foreground">{role.description}</span>
 						{/if}
 					</div>
 				</label>
@@ -126,21 +126,21 @@
 	{/if}
 
 	{#if assignments.length === 0}
-		<p class="text-muted-foreground rounded-md border border-dashed p-4 text-center text-sm">
+		<p class="rounded-md border border-dashed p-4 text-center text-sm text-muted-foreground">
 			{m.users_role_assignments_description()}
 		</p>
 	{/if}
 
 	{#each assignments as assignment, index (`${assignment.roleId}-${assignment.environmentId ?? 'global'}`)}
 		{@const envValue = envIdToSelectValue(assignment.environmentId)}
-		<div class="bg-card/50 grid grid-cols-1 gap-2 rounded-md border p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
+		<div class="grid grid-cols-1 gap-2 rounded-md border bg-card/50 p-3 sm:grid-cols-[1fr_1fr_auto] sm:items-center">
 			<Select.Root
 				type="single"
 				value={envValue}
 				{disabled}
 				onValueChange={(v) => updateAssignment(index, { environmentId: selectValueToEnvId(v) })}
 			>
-				<Select.Trigger class="w-full" aria-label={m.users_role_assignments_environment()}>
+				<Select.Trigger class="w-full" aria-label={m.resource_environment_cap()}>
 					<span>{selectedLabel.environment(envValue)}</span>
 				</Select.Trigger>
 				<Select.Content>
@@ -162,7 +162,7 @@
 				{disabled}
 				onValueChange={(v) => updateAssignment(index, { roleId: v })}
 			>
-				<Select.Trigger class="w-full" aria-label={m.users_role_assignments_role()}>
+				<Select.Trigger class="w-full" aria-label={m.common_role()}>
 					<span class="flex items-center gap-2">
 						<span>{selectedLabel.role(assignment.roleId)}</span>
 					</span>
@@ -171,9 +171,9 @@
 					{#each roles as role (role.id)}
 						<Select.Item value={role.id} label={role.name}>
 							<span class="flex items-center gap-2">
-								<StatusBadge text={role.name} variant={getRoleVariant(role.id)} size="sm" minWidth="none" />
+								<Badge variant={getRoleVariant(role.id)} size="sm">{role.name}</Badge>
 								{#if role.description}
-									<span class="text-muted-foreground text-xs">{role.description}</span>
+									<span class="text-xs text-muted-foreground">{role.description}</span>
 								{/if}
 							</span>
 						</Select.Item>
@@ -189,8 +189,8 @@
 				showLabel={false}
 				onclick={() => removeAssignment(index)}
 				{disabled}
-				class="text-muted-foreground hover:text-destructive justify-self-end"
-				customLabel={m.users_role_assignments_remove()}
+				class="justify-self-end text-muted-foreground hover:text-destructive"
+				customLabel={m.common_remove()}
 			/>
 		</div>
 	{/each}

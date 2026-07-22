@@ -17,13 +17,16 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ratelimit"
 	registry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
 	updaterdigest "go.getarcane.app/updater/pkg/digest"
+	updaterrefs "go.getarcane.app/updater/pkg/refs"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -95,6 +98,35 @@ func (s *ImageUpdateService) dockerClientInternal(ctx context.Context) (*client.
 	return dockerClient, nil
 }
 
+func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) (map[string]struct{}, error) {
+	refs := make(map[string]struct{})
+	if s == nil || s.db == nil {
+		return refs, nil
+	}
+
+	var projectRows []models.Project
+	if err := s.db.WithContext(ctx).
+		Select("id", "build_image_refs_json").
+		Where("build_image_refs_json IS NOT NULL AND build_image_refs_json <> ''").
+		Find(&projectRows).Error; err != nil {
+		return nil, fmt.Errorf("load project build image references: %w", err)
+	}
+
+	for i := range projectRows {
+		if projectRows[i].BuildImageRefsJSON == nil {
+			continue
+		}
+		for _, imageRef := range projectspkg.ParseImageRefsJSON(*projectRows[i].BuildImageRefsJSON) {
+			normalized := updaterrefs.NormalizeImageUpdateRef(imageRef)
+			if normalized != "" {
+				refs[normalized] = struct{}{}
+			}
+		}
+	}
+
+	return refs, nil
+}
+
 func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Context, resourceName string, count int) string {
 	if s.activityService == nil {
 		return ""
@@ -106,8 +138,9 @@ func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Contex
 	activity, err := s.activityService.StartActivity(ctx, StartActivityRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeImageUpdateCheck,
+		Queue:         true,
 		ResourceType:  &resourceType,
-		ResourceName:  utils.StringPtrFromTrimmed(resourceName),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(resourceName)).ToPointer(),
 		Step:          "Checking image updates",
 		LatestMessage: "Image update check started",
 		Metadata: models.JSON{
@@ -146,7 +179,7 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 	var errMessage *string
 	if !success {
 		status = models.ActivityStatusFailed
-		errMessage = utils.StringPtrFromTrimmed(message)
+		errMessage = mo.EmptyableToOption(strings.TrimSpace(message)).ToPointer()
 		if activitylib.CancelledByContext(ctx) {
 			status = models.ActivityStatusCancelled
 			errMessage = nil
@@ -166,10 +199,11 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	startTime := time.Now()
 	activityID := s.startImageUpdateActivityInternal(ctx, imageRef, 1)
 	ctx = s.activityService.Track(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.activityService, activityID, "0")
 
-	if result, ok := digestPinnedImageUpdateResultInternal(imageRef); ok {
+	if result, ok := digestPinnedImageUpdateResultInternal(imageRef).Get(); ok {
 		result.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
-		result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", 100, "Skipping image update check")
 		if saveErr := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); saveErr != nil {
 			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", saveErr.Error())
@@ -201,19 +235,24 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 			Error:          "Invalid image reference format",
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
-			ActivityID:     utils.StringPtrFromTrimmed(activityID),
+			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
 		s.completeImageUpdateActivityInternal(ctx, activityID, false, result.Error)
 		return result, nil
 	}
 
-	digestResult, snapshot, err := s.checkDigestUpdateWithSnapshotInternal(ctx, parts)
+	composeBuildRefs, err := s.composeBuildImageRefsInternal(ctx)
+	var digestResult *imageupdate.Response
+	var snapshot *localImageSnapshot
+	if err == nil {
+		digestResult, snapshot, err = s.checkDigestUpdateWithSnapshotInternal(ctx, parts, composeBuildRefs)
+	}
 	if err != nil {
 		result := &imageupdate.Response{
 			Error:          err.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: int(time.Since(startTime).Milliseconds()),
-			ActivityID:     utils.StringPtrFromTrimmed(activityID),
+			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
 		metadata := models.JSON{
 			"action":    "check_update",
@@ -232,7 +271,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	}
 
 	digestResult.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
-	digestResult.ActivityID = utils.StringPtrFromTrimmed(activityID)
+	digestResult.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	if digestResult.UpdateType == models.UpdateTypeLocal {
 		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — local build, registry check skipped", 100, "Skipping image update check")
 	}
@@ -306,11 +345,11 @@ func (s *ImageUpdateService) resolveNotifiedImageIDInternal(ctx context.Context,
 	return resolved
 }
 
-func digestPinnedImageUpdateResultInternal(imageRef string) (*imageupdate.Response, bool) {
+func digestPinnedImageUpdateResultInternal(imageRef string) mo.Option[*imageupdate.Response] {
 	imageRef = strings.TrimSpace(imageRef)
 	pinnedDigest, ok := updaterdigest.FromReferenceSuffix(imageRef)
 	if !ok {
-		return nil, false
+		return mo.None[*imageupdate.Response]()
 	}
 
 	tag := "latest"
@@ -320,7 +359,7 @@ func digestPinnedImageUpdateResultInternal(imageRef string) (*imageupdate.Respon
 		}
 	}
 
-	return &imageupdate.Response{
+	return mo.Some(&imageupdate.Response{
 		HasUpdate:      false,
 		UpdateType:     models.UpdateTypeDigest,
 		CurrentVersion: tag,
@@ -329,17 +368,17 @@ func digestPinnedImageUpdateResultInternal(imageRef string) (*imageupdate.Respon
 		LatestDigest:   pinnedDigest,
 		CheckTime:      time.Now(),
 		ResponseTimeMs: 0,
-	}, true
+	})
 }
 
-func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot, error) {
+func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.Context, parts *ImageParts, composeBuildRefs map[string]struct{}) (*imageupdate.Response, *localImageSnapshot, error) {
 	if s.registryService == nil {
 		return nil, nil, errors.New("registry service unavailable")
 	}
 
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
 	start := time.Now()
-	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 	if err == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot, nil
 	}
@@ -365,7 +404,7 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	}
 
 	if snapshot == nil {
-		snapshot, err = s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+		snapshot, err = s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to get local digest: %w", err)
 		}
@@ -604,7 +643,7 @@ func dedupeImageRefsFromSummariesInternal(images []image.Summary, limit int) []s
 	return imageRefs
 }
 
-func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string) (*localImageSnapshot, error) {
+func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
 	dockerClient, err := s.dockerClientInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -644,6 +683,10 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		isLocalBuild = true
 		primaryDigest = inspectResponse.ID
 		allDigests = []string{primaryDigest}
+	}
+	if normalizedRef := updaterrefs.NormalizeImageUpdateRef(imageRef); normalizedRef != "" {
+		_, isComposeBuild := composeBuildRefs[normalizedRef]
+		isLocalBuild = isLocalBuild || isComposeBuild
 	}
 
 	repo, tag := extractRepoAndTagFromImage(inspectResponse.InspectResponse)
@@ -817,13 +860,6 @@ func stringToPtr(s string) *string {
 	return new(s)
 }
 
-func stringPtrToString(s *string) string {
-	if s == nil {
-		return ""
-	}
-	return *s
-}
-
 func buildImageUpdateRecord(imageID, repo, tag string, result *imageupdate.Response) *models.ImageUpdateRecord {
 	currentVersion := result.CurrentVersion
 	if currentVersion == "" {
@@ -874,7 +910,7 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	if hasExisting &&
 		strings.TrimSpace(result.Error) != "" &&
 		isRateLimitErrorStringInternal(result.Error) &&
-		strings.TrimSpace(stringPtrToString(existingRecord.LastError)) == "" {
+		strings.TrimSpace(mo.PointerToOption(existingRecord.LastError).OrEmpty()) == "" {
 		slog.Debug("Preserving previous image update result; check hit a registry rate limit",
 			"imageID", imageID, "repository", repo, "tag", tag, "error", result.Error)
 		return nil
@@ -883,8 +919,8 @@ func savePreparedUpdateResultWithTxInternal(tx *gorm.DB, imageID, repo, tag stri
 	if hasExisting {
 		// Existing record found - check if we need to reset notification_sent
 		stateChanged := existingRecord.HasUpdate != updateRecord.HasUpdate
-		digestChanged := stringPtrToString(existingRecord.LatestDigest) != stringPtrToString(updateRecord.LatestDigest)
-		versionChanged := stringPtrToString(existingRecord.LatestVersion) != stringPtrToString(updateRecord.LatestVersion)
+		digestChanged := mo.PointerToOption(existingRecord.LatestDigest).OrEmpty() != mo.PointerToOption(updateRecord.LatestDigest).OrEmpty()
+		versionChanged := mo.PointerToOption(existingRecord.LatestVersion).OrEmpty() != mo.PointerToOption(updateRecord.LatestVersion).OrEmpty()
 
 		// Reset notification_sent if the update state changed in any way
 		if stateChanged || (updateRecord.HasUpdate && (digestChanged || versionChanged)) {
@@ -954,7 +990,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		return nil
 	}
 
-	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef, nil)
 	if err != nil {
 		return fmt.Errorf("inspect pulled image: %w", err)
 	}
@@ -971,9 +1007,9 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 		ResponseTimeMs: 0,
 	}
 
-	lookup, hasLookup := parseImageRefUpdateLookupInternal(imageRef)
+	lookup := parseImageRefUpdateLookupInternal(imageRef)
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if hasLookup {
+		if lookup, hasLookup := lookup.Get(); hasLookup {
 			repositories := repositoryCandidatesSliceInternal(lookup.repositoryCandidates)
 			if len(repositories) > 0 {
 				// Only clear synthetic ref:: records, not real sha256 image ID records.
@@ -1072,7 +1108,7 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 	indexByNormalizedRef := make(map[string]int)
 
 	for _, ref := range imageRefs {
-		if result, ok := digestPinnedImageUpdateResultInternal(ref); ok {
+		if result, ok := digestPinnedImageUpdateResultInternal(ref).Get(); ok {
 			results[ref] = result
 			continue
 		}
@@ -1106,7 +1142,7 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 	return regRepos, results, images
 }
 
-func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context, externalCreds []containerregistry.Credential, parts *ImageParts) (*imageupdate.Response, *localImageSnapshot) {
+func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context, externalCreds []containerregistry.Credential, parts *ImageParts, composeBuildRefs map[string]struct{}) (*imageupdate.Response, *localImageSnapshot) {
 	if s.registryService == nil {
 		return &imageupdate.Response{
 			Error:          "registry service unavailable",
@@ -1117,7 +1153,7 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 
 	start := time.Now()
 	imageRef := fmt.Sprintf("%s/%s:%s", parts.Registry, parts.Repository, parts.Tag)
-	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+	snapshot, ldErr := s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 	if ldErr == nil && snapshot.IsLocalBuild {
 		return localBuildImageUpdateResultInternal(snapshot, int(time.Since(start).Milliseconds())), snapshot
 	}
@@ -1141,7 +1177,7 @@ func (s *ImageUpdateService) checkSingleImageInBatchInternal(ctx context.Context
 	}
 
 	if ldErr != nil {
-		snapshot, ldErr = s.inspectLocalImageSnapshotInternal(ctx, imageRef)
+		snapshot, ldErr = s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 		if ldErr != nil {
 			return &imageupdate.Response{
 				Error:          ldErr.Error(),
@@ -1228,7 +1264,7 @@ func (s *ImageUpdateService) resolveBatchCredentialsInternal(ctx context.Context
 	return credentials
 }
 
-func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activityID string, resolvedCreds []containerregistry.Credential, img batchImage, recorder *batchImageProgressRecorder) error {
+func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activityID string, resolvedCreds []containerregistry.Credential, img batchImage, composeBuildRefs map[string]struct{}, recorder *batchImageProgressRecorder) error {
 	registry := img.parts.Registry
 
 	if err := s.registryLimiter.Acquire(ctx, registry); err != nil {
@@ -1244,19 +1280,19 @@ func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activi
 			Error:          err.Error(),
 			CheckTime:      time.Now(),
 			ResponseTimeMs: 0,
-			ActivityID:     utils.StringPtrFromTrimmed(activityID),
+			ActivityID:     mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer(),
 		}
 		s.recordBatchImageCheckInternal(ctx, activityID, img, res, nil, recorder)
 		return nil
 	}
 	defer s.registryLimiter.Release(registry)
 
-	res, snapshot := s.checkSingleImageInBatchInternal(ctx, resolvedCreds, img.parts)
+	res, snapshot := s.checkSingleImageInBatchInternal(ctx, resolvedCreds, img.parts, composeBuildRefs)
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
 	if res != nil {
-		res.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		res.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	}
 
 	s.recordBatchImageCheckInternal(ctx, activityID, img, res, snapshot, recorder)
@@ -1283,6 +1319,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
 	ctx = s.activityService.Track(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.activityService, activityID, "0")
 	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
 	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
@@ -1292,7 +1329,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		if result == nil {
 			continue
 		}
-		result.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		if strings.TrimSpace(result.Error) != "" {
 			continue
 		}
@@ -1304,6 +1341,13 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		if err := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); err != nil {
 			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
 		}
+	}
+
+	composeBuildRefs, err := s.composeBuildImageRefsInternal(ctx)
+	if err != nil {
+		wrappedErr := fmt.Errorf("prepare compose build image references: %w", err)
+		s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+wrappedErr.Error())
+		return results, wrappedErr
 	}
 
 	resolvedCreds := s.resolveBatchCredentialsInternal(ctx, externalCreds)
@@ -1319,7 +1363,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	for _, img := range images {
 		g.Go(func() error {
-			return s.checkBatchImageInternal(groupCtx, activityID, resolvedCreds, img, recorder)
+			return s.checkBatchImageInternal(groupCtx, activityID, resolvedCreds, img, composeBuildRefs, recorder)
 		})
 	}
 
@@ -1382,15 +1426,15 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 				HasUpdate:      record.HasUpdate,
 				UpdateType:     record.UpdateType,
 				CurrentVersion: record.CurrentVersion,
-				LatestVersion:  stringPtrToString(record.LatestVersion),
-				CurrentDigest:  stringPtrToString(record.CurrentDigest),
-				LatestDigest:   stringPtrToString(record.LatestDigest),
+				LatestVersion:  mo.PointerToOption(record.LatestVersion).OrEmpty(),
+				CurrentDigest:  mo.PointerToOption(record.CurrentDigest).OrEmpty(),
+				LatestDigest:   mo.PointerToOption(record.LatestDigest).OrEmpty(),
 				CheckTime:      record.CheckTime,
 				ResponseTimeMs: record.ResponseTimeMs,
-				Error:          stringPtrToString(record.LastError),
-				AuthMethod:     stringPtrToString(record.AuthMethod),
-				AuthUsername:   stringPtrToString(record.AuthUsername),
-				AuthRegistry:   stringPtrToString(record.AuthRegistry),
+				Error:          mo.PointerToOption(record.LastError).OrEmpty(),
+				AuthMethod:     mo.PointerToOption(record.AuthMethod).OrEmpty(),
+				AuthUsername:   mo.PointerToOption(record.AuthUsername).OrEmpty(),
+				AuthRegistry:   mo.PointerToOption(record.AuthRegistry).OrEmpty(),
 				UsedCredential: record.UsedCredential,
 			}
 			imageIDsToMark = append(imageIDsToMark, imageID)

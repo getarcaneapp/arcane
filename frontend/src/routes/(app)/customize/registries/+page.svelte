@@ -105,7 +105,7 @@
 			buttons.push({
 				id: 'create',
 				action: 'create',
-				label: m.common_add_button({ resource: m.resource_registry_cap() }),
+				label: m.common_add_button({ resource: m.common_registry() }),
 				onclick: openCreateRegistryDialog
 			});
 		}
@@ -152,25 +152,25 @@
 						<div class="space-y-2 text-sm">
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_docker_hub()}</span>
-								<code class="bg-muted rounded px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
+								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_docker_hub_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_github_container_registry()}</span>
-								<code class="bg-muted rounded px-2 py-1 text-xs">{m.registry_github_url()}</code>
+								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_github_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_google_container_registry()}</span>
-								<code class="bg-muted rounded px-2 py-1 text-xs">{m.registry_google_url()}</code>
+								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_google_url()}</code>
 							</div>
 							<div class="flex justify-between">
 								<span class="text-muted-foreground">{m.registry_quay_io()}</span>
-								<code class="bg-muted rounded px-2 py-1 text-xs">{m.registry_quay_url()}</code>
+								<code class="rounded bg-muted px-2 py-1 text-xs">{m.registry_quay_url()}</code>
 							</div>
 						</div>
 					</div>
 					<div class="space-y-3">
 						<h4 class="text-sm font-medium">{m.registries_auth_notes_title()}</h4>
-						<div class="text-muted-foreground space-y-1 text-sm">
+						<div class="space-y-1 text-sm text-muted-foreground">
 							<p>• {m.registries_auth_notes_bullet_docker_hub()}</p>
 							<p>• {m.registries_auth_notes_bullet_github()}</p>
 							<p>• {m.registries_auth_notes_bullet_anonymous()}</p>

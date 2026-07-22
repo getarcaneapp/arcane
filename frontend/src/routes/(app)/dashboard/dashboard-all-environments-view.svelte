@@ -7,7 +7,7 @@
 	import { type ActionButton } from '$lib/components/action-button-group/index.js';
 	import { cn } from '$lib/utils';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge, badgeVariants } from '$lib/components/ui/badge';
 	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
 	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
 	import { Skeleton } from '$lib/components/ui/skeleton';
@@ -17,7 +17,7 @@
 	import { systemService } from '$lib/services/system-service';
 	import { activityStore } from '$lib/stores/activity.store.svelte';
 	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
 	import userStore from '$lib/stores/user-store';
 	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
 	import { formatDateTime } from '$lib/utils/formatting';
@@ -34,9 +34,8 @@
 	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
 	import type { Settings } from '$lib/types/settings';
 	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
 	import { tryCatch } from '$lib/utils/api';
-	import { getEnvironmentStatusVariant, isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
 	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
 	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
 	import { bytes } from '$lib/utils/formatting';
@@ -51,7 +50,9 @@
 		MemoryStickIcon,
 		RefreshIcon,
 		TrashIcon,
-		VolumesIcon
+		UpdateIcon,
+		VolumesIcon,
+		VerifiedCheckIcon
 	} from '$lib/icons';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
@@ -427,21 +428,10 @@
 		}
 	}
 
-	function getTransportBadge(environment: Environment): { text: string; variant: 'blue' | 'purple' | 'gray' } {
-		if (!environment.isEdge) {
-			return { text: m.dashboard_all_transport_http(), variant: 'gray' };
-		}
-
-		// Prefer the live tunnel transport; fall back to the last one used so
-		// disconnected or poll-only agents still show what they connect with.
-		const transport = (environment.connected ? environment.edgeTransport : undefined) ?? environment.lastEdgeTransport;
-		if (!transport) {
-			return { text: m.dashboard_all_transport_edge(), variant: 'gray' };
-		}
-
-		return transport === 'websocket'
-			? { text: m.dashboard_all_transport_websocket(), variant: 'purple' }
-			: { text: m.dashboard_all_transport_grpc(), variant: 'blue' };
+	function getRoleBadge(environment: Environment): { text: string; variant: 'primary' | 'gray' } {
+		return environment.id === LOCAL_DOCKER_ENVIRONMENT_ID
+			? { text: m.manager(), variant: 'primary' }
+			: { text: m.agent(), variant: 'gray' };
 	}
 
 	function getResolvedStatusLabel(environment: Environment): string {
@@ -462,11 +452,11 @@
 	function getActionItemLabel(item: DashboardActionItem): string {
 		switch (item.kind) {
 			case 'stopped_containers':
-				return m.containers_title();
+				return m.containers();
 			case 'image_updates':
-				return m.images_updates();
+				return m.updates();
 			case 'actionable_vulnerabilities':
-				return m.security_title();
+				return m.security();
 			case 'expiring_keys':
 				return m.api_key_page_title();
 			default:
@@ -489,7 +479,7 @@
 		if (!isEnvironmentOnline(environment)) {
 			const statusLabel = getResolvedStatusLabel(environment);
 			return {
-				label: m.dashboard_all_activity(),
+				label: m.activity(),
 				value: statusLabel,
 				title: statusLabel
 			};
@@ -506,7 +496,7 @@
 						: null;
 
 		if (!labelAndValue?.raw) {
-			return { label: m.dashboard_all_activity(), value: m.common_never(), title: m.common_never() };
+			return { label: m.activity(), value: m.common_never(), title: m.common_never() };
 		}
 
 		const parsed = new Date(labelAndValue.raw);
@@ -630,23 +620,31 @@
 		return buttons;
 	}
 
-	function formatEnvironmentOverviewLabel(summary: DashboardOverviewSummary): string {
-		if (summary.totalEnvironments === 0) {
-			return m.dashboard_all_no_visible_environments();
+	// Updates hero: aggregate pending image updates across every environment,
+	// mirroring the iOS Updates overview header.
+	const updatesOverview = $derived.by(() => {
+		let pending = 0;
+		let checkedEnvironments = 0;
+
+		for (const { environment } of environmentCards) {
+			if (!shouldLoadEnvironment(environment)) {
+				continue;
+			}
+			const state = dashboardStore.getEnvironmentState(environment.id);
+			if (!state?.hasLoaded) {
+				continue;
+			}
+			checkedEnvironments += 1;
+			if (debugAllGood) {
+				continue;
+			}
+			const updateItem = state.snapshot?.actionItems.items.find((item) => item.kind === 'image_updates');
+			pending += updateItem?.count ?? 0;
 		}
 
-		const parts = [m.dashboard_all_reachable_summary({ count: summary.reachableEnvironments })];
-
-		if (summary.unavailableEnvironments > 0) {
-			parts.push(m.dashboard_all_unavailable_summary({ count: summary.unavailableEnvironments }));
-		}
-
-		if (summary.disabledEnvironments > 0) {
-			parts.push(m.dashboard_all_disabled_summary({ count: summary.disabledEnvironments }));
-		}
-
-		return parts.join(' · ');
-	}
+		const checking = checkedEnvironments < loadableEnvironmentCards.length;
+		return { pending, checking };
+	});
 
 	function formatContainerOverviewLabel(summary: DashboardOverviewSummary): string {
 		if (summary.totalContainers === 0) {
@@ -722,8 +720,8 @@
 		const typeLabels: Record<PruneType, string> = {
 			containers: m.prune_stopped_containers(),
 			images: m.prune_unused_images(),
-			networks: m.prune_unused_networks(),
-			volumes: m.prune_unused_volumes(),
+			networks: m.unused_networks(),
+			volumes: m.unused_volumes(),
 			buildCache: m.build_cache()
 		};
 		const typesString = selectedTypes.map((type) => typeLabels[type]).join(', ');
@@ -763,91 +761,96 @@
 	}
 </script>
 
-<div class="flex h-full min-h-0 flex-col gap-3 overflow-hidden pt-2 md:gap-4 md:pt-3">
-	<header class="bg-card/60 backdrop-blur-md border-border/70 shrink-0 rounded-xl border p-3 shadow-xs sm:p-4">
-		<div class="relative flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-			<div class="space-y-1">
-				<p class="text-muted-foreground text-[11px] font-semibold tracking-[0.14em] uppercase">{m.dashboard_title()}</p>
-				<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
-			</div>
-
-			<ArcaneButton
-				action="restart"
-				size="sm"
-				customLabel={m.common_refresh()}
-				icon={RefreshIcon}
-				loading={isRefreshing}
-				onclick={refreshOverview}
-			/>
+<div class="flex h-full min-h-0 flex-col gap-4 overflow-hidden pt-3 md:gap-5 md:pt-5">
+	<header class="flex shrink-0 items-start justify-between gap-4">
+		<div class="min-w-0 space-y-1">
+			<p class="text-[11px] font-semibold tracking-[0.14em] text-muted-foreground uppercase">{m.dashboard_title()}</p>
+			<h1 class="text-xl font-semibold tracking-tight sm:text-2xl">{heroGreeting}</h1>
 		</div>
+
+		<ArcaneButton
+			action="restart"
+			size="sm"
+			customLabel={m.common_refresh()}
+			icon={RefreshIcon}
+			loading={isRefreshing}
+			onclick={refreshOverview}
+		/>
 	</header>
 
-	<section class="shrink-0 space-y-2">
-		<h2 class="text-base font-semibold tracking-tight">{m.common_overview()}</h2>
-
+	<section class="shrink-0">
 		{#if boardSummaryLoading}
-			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				{#each [{ icon: EnvironmentsIcon, label: m.environments_title() }, { icon: ContainersIcon, label: m.containers_title() }, { icon: ImagesIcon, label: m.images_title() }, { icon: VolumesIcon, label: m.dashboard_all_storage_title() }] as tile (tile.label)}
-					<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-						<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
+				{#each [{ icon: UpdateIcon, label: m.updates() }, { icon: ContainersIcon, label: m.containers() }, { icon: ImagesIcon, label: m.images() }, { icon: VolumesIcon, label: m.storage() }] as tile (tile.label)}
+					<div class="min-w-0">
+						<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 							<tile.icon class="size-3.5" />
 							<span>{tile.label}</span>
 						</div>
-						<Skeleton class="mt-2 h-7 w-12" />
+						<Skeleton class="mt-1.5 h-7 w-12" />
 						<Skeleton class="mt-1.5 h-3.5 w-28" />
 					</div>
 				{/each}
 			</div>
 		{:else}
 			{@const summary = boardState.summary}
-			<div class="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-4">
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
-						<EnvironmentsIcon class="size-3.5" />
-						<span>{m.environments_title()}</span>
+			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
+				<div class="min-w-0">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+						<UpdateIcon class="size-3.5" />
+						<span>{m.updates()}</span>
 					</div>
-					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalEnvironments}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatEnvironmentOverviewLabel(summary)}</div>
+					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{updatesOverview.pending}</div>
+					<div class="mt-0.5 flex h-4 items-center gap-1.5 truncate text-xs text-muted-foreground">
+						{#if updatesOverview.pending === 0 && !updatesOverview.checking}
+							<VerifiedCheckIcon class="size-3.5 shrink-0 text-emerald-600 dark:text-emerald-400" />
+							<span class="truncate">{m.dashboard_updates_up_to_date()}</span>
+						{:else if updatesOverview.checking}
+							<span class="truncate">{m.dashboard_updates_checking()}</span>
+						{:else}
+							<span class="truncate">{m.dashboard_updates_available_label()}</span>
+						{/if}
+					</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="min-w-0 border-border/60 max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<ContainersIcon class="size-3.5" />
-						<span>{m.containers_title()}</span>
+						<span>{m.containers()}</span>
 					</div>
-					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatContainerOverviewLabel(summary)}</div>
+					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
+					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatContainerOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="min-w-0 border-border/60 lg:border-l lg:pl-6">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<ImagesIcon class="size-3.5" />
-						<span>{m.images_title()}</span>
+						<span>{m.images()}</span>
 					</div>
-					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatImageOverviewLabel(summary)}</div>
+					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
+					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatImageOverviewLabel(summary)}</div>
 				</div>
 
-				<div class="border-border/50 bg-background/50 rounded-xl border p-3">
-					<div class="text-muted-foreground flex items-center gap-1.5 text-[11px] font-semibold tracking-wide uppercase">
+				<div class="min-w-0 border-border/60 max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6">
+					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 						<VolumesIcon class="size-3.5" />
-						<span>{m.dashboard_all_storage_title()}</span>
+						<span>{m.storage()}</span>
 					</div>
-					<div class="mt-2 text-2xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
-					<div class="text-muted-foreground mt-0.5 text-xs">{formatStorageOverviewLabel(summary)}</div>
+					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
+					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatStorageOverviewLabel(summary)}</div>
 				</div>
 			</div>
 		{/if}
 	</section>
 
-	<section class="flex min-h-0 flex-1 flex-col overflow-hidden">
+	<section class="flex min-h-0 flex-1 flex-col overflow-hidden border-t border-border/60 pt-3">
 		<div class="mb-2 flex shrink-0 items-center justify-between gap-3">
-			<h2 class="text-base font-semibold tracking-tight">{m.dashboard_all_environment_board_title()}</h2>
+			<h2 class="text-sm font-semibold tracking-tight text-muted-foreground">{m.dashboard_all_environment_board_title()}</h2>
 		</div>
 
 		{#if environmentCards.length === 0}
-			<div class="border-border/60 rounded-xl border border-dashed px-4 py-8 text-center">
-				<p class="text-muted-foreground text-sm">{m.dashboard_all_no_visible_environments()}</p>
+			<div class="rounded-xl border border-dashed border-border/60 px-4 py-8 text-center">
+				<p class="text-sm text-muted-foreground">{m.dashboard_all_no_visible_environments()}</p>
 			</div>
 		{:else}
 			<div class="min-h-0 flex-1 overflow-y-auto pb-2">
@@ -855,9 +858,7 @@
 					{#each environmentCards as item (item.environment.id)}
 						{@const baseItem = createBaseEnvironmentOverview(item.environment)}
 						{@const environment = baseItem.environment}
-						{@const resolvedStatus = resolveEnvironmentStatus(environment)}
-						{@const statusVariant = getEnvironmentStatusVariant(resolvedStatus)}
-						{@const transportBadge = getTransportBadge(environment)}
+						{@const roleBadge = getRoleBadge(environment)}
 						{@const activity = getActivityMeta(environment)}
 						{@const isCurrent = currentEnvironmentId === environment.id}
 						{@const liveStatsState = getLiveStatsState(environment.id)}
@@ -870,23 +871,14 @@
 
 						<Card.Root
 							variant="outlined"
-							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-blue-500/40 bg-blue-500/5' : 'border-border/60'}`}
+							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60'}`}
 						>
-							<Card.Content class="space-y-5 p-5">
-								<div class="border-border/60 flex flex-col gap-3 border-b pb-4 sm:flex-row sm:items-start sm:justify-between">
+							<Card.Content class="space-y-4 p-4 sm:p-5">
+								<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">
 									<div class="min-w-0 space-y-2">
 										<div class="flex min-w-0 flex-wrap items-center gap-2">
-											<div class="min-w-0 max-w-full break-words text-base font-semibold tracking-tight">{environment.name}</div>
-											{#if isCurrent}
-												<StatusBadge text={m.common_current()} variant="blue" size="sm" minWidth="none" />
-											{/if}
-											<StatusBadge
-												text={capitalizeFirstLetter(getResolvedStatusLabel(environment))}
-												variant={statusVariant}
-												size="sm"
-												minWidth="none"
-											/>
-											<StatusBadge text={transportBadge.text} variant={transportBadge.variant} size="sm" minWidth="none" />
+											<div class="max-w-full min-w-0 text-base font-semibold tracking-tight break-words">{environment.name}</div>
+											<Badge variant={roleBadge.variant} size="sm">{roleBadge.text}</Badge>
 											{#if boardState}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
 												{@const vInfo =
@@ -899,7 +891,7 @@
 														{#if vInfo.updateAvailable || debugUpgrade}
 															<ArcaneTooltip.Root>
 																<ArcaneTooltip.Trigger
-																	class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
+																	class={cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'font-mono hover:text-foreground')}
 																>
 																	v{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
 																	<span class="relative ml-1.5 flex h-2 w-2">
@@ -927,11 +919,9 @@
 																</ArcaneTooltip.Content>
 															</ArcaneTooltip.Root>
 														{:else}
-															<div
-																class="bg-surface/50 text-muted-foreground border-border/50 hover:text-foreground inline-flex items-center rounded-md border px-2 py-[2px] font-mono text-[11px] font-medium transition-colors"
-															>
+															<Badge variant="gray" size="sm" class="font-mono">
 																{vInfo.displayVersion || vInfo.currentTag || vInfo.currentVersion || 'unknown'}
-															</div>
+															</Badge>
 														{/if}
 													</div>
 													{#if vInfo.updateAvailable || debugUpgrade}
@@ -950,7 +940,7 @@
 											{/if}
 										</div>
 
-										<div class="text-muted-foreground/70 mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]">
+										<div class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px] text-muted-foreground/70">
 											<span class="font-mono">{environment.apiUrl}</span>
 											<span>•</span>
 											<span title={activity.title}>{activity.label}: {activity.value}</span>
@@ -976,7 +966,7 @@
 															class={cn(
 																'size-8',
 																btn.action === 'prune' && 'text-destructive hover:bg-destructive/10 hover:text-destructive',
-																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-blue-600! dark:[&_svg]:text-blue-500!'
+																isActiveEnv && 'disabled:opacity-100 [&_svg]:text-primary!'
 															)}
 														/>
 													{/snippet}
@@ -988,10 +978,10 @@
 								</div>
 
 								{#if shouldLoadEnvironment(environment) || isEnvironmentOnline(environment)}
-									<div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-												{m.containers_title()}
+									<div class="grid grid-cols-1 max-sm:gap-4 sm:grid-cols-3 sm:divide-x sm:divide-border/60">
+										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+												{m.containers()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
 												<div class="mt-2 space-y-2">
@@ -1000,19 +990,19 @@
 												</div>
 											{:else}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold">
+												<div class="mt-1 text-lg font-semibold tabular-nums">
 													{loadedItem.containers.runningContainers}/{loadedItem.containers.totalContainers}
 												</div>
-												<div class="text-muted-foreground text-xs">
+												<div class="text-xs text-muted-foreground">
 													{loadedItem.containers.stoppedContainers}
 													{m.common_stopped()}
 												</div>
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
-												{m.images_title()}
+										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+												{m.images()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
 												<div class="mt-2 space-y-2">
@@ -1021,8 +1011,8 @@
 												</div>
 											{:else}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold">{loadedItem.imageUsageCounts.totalImages}</div>
-												<div class="text-muted-foreground text-xs">
+												<div class="mt-1 text-lg font-semibold tabular-nums">{loadedItem.imageUsageCounts.totalImages}</div>
+												<div class="text-xs text-muted-foreground">
 													{loadedItem.imageUsageCounts.imagesInuse}
 													{m.common_in_use()} · {loadedItem.imageUsageCounts.imagesUnused}
 													{m.common_unused()}
@@ -1030,8 +1020,8 @@
 											{/if}
 										</div>
 
-										<div class="border-border/50 bg-background/50 rounded-lg border p-3">
-											<div class="text-muted-foreground text-[11px] font-semibold tracking-wide uppercase">
+										<div class="min-w-0 not-first:sm:pl-4 first:sm:pr-4">
+											<div class="text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 												{m.dashboard_action_items_title()}
 											</div>
 											{#if isEnvironmentSnapshotLoading(environment.id)}
@@ -1041,20 +1031,20 @@
 												</div>
 											{:else}
 												{@const loadedItem = boardState.overviewById.get(environment.id) ?? baseItem}
-												<div class="mt-1 text-lg font-semibold">{loadedItem.actionItems.items.length}</div>
-												<div class="text-muted-foreground text-xs">{getActionSummary(loadedItem)}</div>
+												<div class="mt-1 text-lg font-semibold tabular-nums">{loadedItem.actionItems.items.length}</div>
+												<div class="text-xs text-muted-foreground">{getActionSummary(loadedItem)}</div>
 											{/if}
 										</div>
 									</div>
 								{:else}
-									<div class="border-border/50 bg-background/50 rounded-lg border px-4 py-3 text-sm">
+									<div class="border-t border-border/60 pt-3 text-sm">
 										<p class="font-medium">{m.dashboard_all_environment_unavailable_title()}</p>
-										<p class="text-muted-foreground mt-1">{m.dashboard_all_environment_unavailable_description()}</p>
+										<p class="mt-1 text-muted-foreground">{m.dashboard_all_environment_unavailable_description()}</p>
 									</div>
 								{/if}
 
 								{#if shouldLoadEnvironment(environment)}
-									<div class="pt-1">
+									<div class="border-t border-border/60 pt-3">
 										<div class="grid grid-cols-1 gap-1 {gpuMetric !== null ? 'sm:grid-cols-2 lg:grid-cols-4' : 'sm:grid-cols-3'}">
 											{#if liveStatsLoading}
 												{#each [1, 2, 3] as tile (tile)}
@@ -1069,7 +1059,7 @@
 												{/each}
 											{:else}
 												<DashboardMetricTile
-													title={m.dashboard_meter_cpu()}
+													title={m.cpu_usage()}
 													icon={CpuIcon}
 													value={formatPercent(cpuMetric)}
 													label={getCpuMetricLabel(systemStats)}
@@ -1077,7 +1067,7 @@
 												/>
 
 												<DashboardMetricTile
-													title={m.dashboard_meter_memory()}
+													title={m.memory_usage()}
 													icon={MemoryStickIcon}
 													value={formatPercent(memoryMetric)}
 													label={getCapacityLabel(systemStats?.memoryUsage, systemStats?.memoryTotal)}

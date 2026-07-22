@@ -56,7 +56,7 @@
 						</div>
 						<div
 							class={{
-								'border-border mt-1 rounded-lg border-1 transition-all duration-200 ease-in-out': true,
+								'mt-1 rounded-lg border-1 border-border transition-all duration-200 ease-in-out': true,
 								'h-9 w-9': isValidColor(customColorInput),
 								'h-0 w-0': !isValidColor(customColorInput)
 							}}
@@ -67,7 +67,7 @@
 			</div>
 
 			<Dialog.Footer class="mt-6">
-				<ArcaneButton action="cancel" tone="ghost" onclick={() => onOpenChange(false)} customLabel={m.cancel()} />
+				<ArcaneButton action="cancel" tone="ghost" onclick={() => onOpenChange(false)} customLabel={m.common_cancel()} />
 				<ArcaneButton
 					action="confirm"
 					type="submit"

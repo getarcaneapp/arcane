@@ -28,12 +28,6 @@ type SwarmHandler struct {
 	cfg                *config.Config
 }
 
-type SwarmPaginatedResponse[T any] struct {
-	Success    bool                    `json:"success"`
-	Data       []T                     `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListSwarmServicesInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Search        string `query:"search" doc:"Search query"`
@@ -44,7 +38,7 @@ type ListSwarmServicesInput struct {
 }
 
 type ListSwarmServicesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.ServiceSummary]
+	Body base.Paginated[swarmtypes.ServiceSummary]
 }
 
 type GetSwarmServiceInput struct {
@@ -95,7 +89,7 @@ type ListSwarmServiceTasksInput struct {
 }
 
 type ListSwarmServiceTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type RollbackSwarmServiceInput struct {
@@ -127,7 +121,7 @@ type ListSwarmNodesInput struct {
 }
 
 type ListSwarmNodesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.NodeSummary]
+	Body base.Paginated[swarmtypes.NodeSummary]
 }
 
 type GetSwarmNodeInput struct {
@@ -159,8 +153,8 @@ type GetSwarmNodeAgentDeploymentOutput struct {
 }
 
 type ReconcileSwarmNodeAgentsInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
 	Body          swarmtypes.NodeAgentReconcileRequest
+	EnvironmentID string `path:"id" doc:"Environment ID"`
 }
 
 type ReconcileSwarmNodeAgentsOutput struct {
@@ -250,7 +244,7 @@ type ListSwarmNodeTasksInput struct {
 }
 
 type ListSwarmNodeTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type ListSwarmTasksInput struct {
@@ -263,7 +257,7 @@ type ListSwarmTasksInput struct {
 }
 
 type ListSwarmTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type ListSwarmStacksInput struct {
@@ -276,7 +270,7 @@ type ListSwarmStacksInput struct {
 }
 
 type ListSwarmStacksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.StackSummary]
+	Body base.Paginated[swarmtypes.StackSummary]
 }
 
 type DeploySwarmStackInput struct {
@@ -336,7 +330,7 @@ type ListSwarmStackServicesInput struct {
 }
 
 type ListSwarmStackServicesOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.ServiceSummary]
+	Body base.Paginated[swarmtypes.ServiceSummary]
 }
 
 type ListSwarmStackTasksInput struct {
@@ -350,7 +344,7 @@ type ListSwarmStackTasksInput struct {
 }
 
 type ListSwarmStackTasksOutput struct {
-	Body SwarmPaginatedResponse[swarmtypes.TaskSummary]
+	Body base.Paginated[swarmtypes.TaskSummary]
 }
 
 type RenderSwarmStackConfigInput struct {
@@ -574,65 +568,65 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 		cfg:                cfg,
 	}
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/services", Summary: "List swarm services", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListServices)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-service", Method: http.MethodGet, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Get swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetService)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services", Summary: "Create swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmServices, h.CreateService)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-service", Method: http.MethodPut, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Update swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmServices, h.UpdateService)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-service", Method: http.MethodDelete, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Delete swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmServices, h.DeleteService)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-service-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/services/{serviceId}/tasks", Summary: "List tasks for a swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListServiceTasks)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "rollback-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services/{serviceId}/rollback", Summary: "Rollback a swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmServices, h.RollbackService)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "scale-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services/{serviceId}/scale", Summary: "Scale a swarm service", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmServices, h.ScaleService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/services", Summary: "List swarm services", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListServices)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-service", Method: http.MethodGet, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Get swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services", Summary: "Create swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmServices, h.CreateService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-service", Method: http.MethodPut, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Update swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmServices, h.UpdateService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-service", Method: http.MethodDelete, Path: "/environments/{id}/swarm/services/{serviceId}", Summary: "Delete swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmServices, h.DeleteService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-service-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/services/{serviceId}/tasks", Summary: "List tasks for a swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListServiceTasks)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "rollback-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services/{serviceId}/rollback", Summary: "Rollback a swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmServices, h.RollbackService)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "scale-swarm-service", Method: http.MethodPost, Path: "/environments/{id}/swarm/services/{serviceId}/scale", Summary: "Scale a swarm service", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmServices, h.ScaleService)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-nodes", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes", Summary: "List swarm nodes", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListNodes)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Get swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetNode)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node-agent-deployment", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Get swarm node agent deployment snippets", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.GetNodeAgentDeployment)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "reconcile-swarm-node-agents", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/agents/reconcile", Summary: "Reconcile swarm node agent bindings", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.ReconcileNodeAgents)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "put-swarm-node-agent-binding", Method: http.MethodPut, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Attach a visible environment to a swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.PutNodeAgentBinding)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-binding", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Detach a visible environment from a swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNodeAgentBinding)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-deployment", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Remove a dedicated swarm node agent registration", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNodeAgentDeployment)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-node", Method: http.MethodPatch, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Update swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.UpdateNode)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Delete swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DeleteNode)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "promote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/promote", Summary: "Promote swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.PromoteNode)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "demote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/demote", Summary: "Demote swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.DemoteNode)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-node-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}/tasks", Summary: "List tasks for a swarm node", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListNodeTasks)
-	huma.Register(api, huma.Operation{OperationID: "get-swarm-node-identity", Method: http.MethodGet, Path: "/swarm/node-identity", Summary: "Get local swarm node identity", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}, Middlewares: humamw.RequirePermission(api, authz.PermSwarmRead)}, h.GetNodeIdentity)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-nodes", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes", Summary: "List swarm nodes", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListNodes)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Get swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetNode)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node-agent-deployment", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Get swarm node agent deployment snippets", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.GetNodeAgentDeployment)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "reconcile-swarm-node-agents", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/agents/reconcile", Summary: "Reconcile swarm node agent bindings", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.ReconcileNodeAgents)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "put-swarm-node-agent-binding", Method: http.MethodPut, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Attach a visible environment to a swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.PutNodeAgentBinding)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-binding", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/binding", Summary: "Detach a visible environment from a swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.DeleteNodeAgentBinding)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node-agent-deployment", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}/agent/deployment", Summary: "Remove a dedicated swarm node agent registration", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.DeleteNodeAgentDeployment)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-node", Method: http.MethodPatch, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Update swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.UpdateNode)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-node", Method: http.MethodDelete, Path: "/environments/{id}/swarm/nodes/{nodeId}", Summary: "Delete swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.DeleteNode)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "promote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/promote", Summary: "Promote swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.PromoteNode)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "demote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/demote", Summary: "Demote swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.DemoteNode)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-node-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}/tasks", Summary: "List tasks for a swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListNodeTasks)
+	huma.Register(api, huma.Operation{OperationID: "get-swarm-node-identity", Method: http.MethodGet, Path: "/swarm/node-identity", Summary: "Get local swarm node identity", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal(), Middlewares: humamw.RequirePermission(api, authz.PermSwarmRead)}, h.GetNodeIdentity)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/tasks", Summary: "List swarm tasks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListTasks)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/tasks", Summary: "List swarm tasks", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListTasks)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stacks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks", Summary: "List swarm stacks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListStacks)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "deploy-swarm-stack", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks", Summary: "Deploy swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmStacks, h.DeployStack)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-stack", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Get swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetStack)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-stack-source", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Get swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmStacks, h.GetStackSource)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-stack-source", Method: http.MethodPut, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Update swarm stack source", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmStacks, h.UpdateStackSource)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-stack", Method: http.MethodDelete, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Delete swarm stack", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmStacks, h.DeleteStack)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stack-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/services", Summary: "List swarm stack services", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListStackServices)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stack-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/tasks", Summary: "List swarm stack tasks", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListStackTasks)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "render-swarm-stack-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks/config/render", Summary: "Render/validate swarm stack config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.RenderStackConfig)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stacks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks", Summary: "List swarm stacks", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListStacks)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "deploy-swarm-stack", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks", Summary: "Deploy swarm stack", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmStacks, h.DeployStack)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-stack", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Get swarm stack", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetStack)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-stack-source", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Get swarm stack source", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmStacks, h.GetStackSource)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-stack-source", Method: http.MethodPut, Path: "/environments/{id}/swarm/stacks/{name}/source", Summary: "Update swarm stack source", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmStacks, h.UpdateStackSource)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-stack", Method: http.MethodDelete, Path: "/environments/{id}/swarm/stacks/{name}", Summary: "Delete swarm stack", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmStacks, h.DeleteStack)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stack-services", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/services", Summary: "List swarm stack services", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListStackServices)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-stack-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/stacks/{name}/tasks", Summary: "List swarm stack tasks", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListStackTasks)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "render-swarm-stack-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/stacks/config/render", Summary: "Render/validate swarm stack config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.RenderStackConfig)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-status", Method: http.MethodGet, Path: "/environments/{id}/swarm/status", Summary: "Get swarm status", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetSwarmStatus)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-info", Method: http.MethodGet, Path: "/environments/{id}/swarm/info", Summary: "Get swarm info", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetSwarmInfo)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "init-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/init", Summary: "Initialize swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmInit, h.InitSwarm)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/join", Summary: "Join swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmJoin, h.JoinSwarm)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-join-candidates", Method: http.MethodGet, Path: "/environments/{id}/swarm/join-candidates", Summary: "List environments available for Easy Join", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.GetJoinCandidates)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm-environments", Method: http.MethodPost, Path: "/environments/{id}/swarm/join-environments", Summary: "Join environments to a swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmNodes, h.JoinEnvironments)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "leave-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/leave", Summary: "Leave swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmLeave, h.LeaveSwarm)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "unlock-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/unlock", Summary: "Unlock swarm", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.UnlockSwarm)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-unlock-key", Method: http.MethodGet, Path: "/environments/{id}/swarm/unlock-key", Summary: "Get swarm unlock key", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.GetUnlockKey)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-join-tokens", Method: http.MethodGet, Path: "/environments/{id}/swarm/join-tokens", Summary: "Get swarm join tokens", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.GetJoinTokens)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "rotate-swarm-join-tokens", Method: http.MethodPost, Path: "/environments/{id}/swarm/join-tokens/rotate", Summary: "Rotate swarm join tokens", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmUnlock, h.RotateJoinTokens)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-spec", Method: http.MethodPut, Path: "/environments/{id}/swarm/spec", Summary: "Update swarm spec", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmSpec, h.UpdateSwarmSpec)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-status", Method: http.MethodGet, Path: "/environments/{id}/swarm/status", Summary: "Get swarm status", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetSwarmStatus)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-info", Method: http.MethodGet, Path: "/environments/{id}/swarm/info", Summary: "Get swarm info", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetSwarmInfo)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "init-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/init", Summary: "Initialize swarm", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmInit, h.InitSwarm)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/join", Summary: "Join swarm", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmJoin, h.JoinSwarm)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-join-candidates", Method: http.MethodGet, Path: "/environments/{id}/swarm/join-candidates", Summary: "List environments available for Easy Join", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmJoin, h.GetJoinCandidates)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "join-swarm-environments", Method: http.MethodPost, Path: "/environments/{id}/swarm/join-environments", Summary: "Join environments to a swarm", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmJoin, h.JoinEnvironments)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "leave-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/leave", Summary: "Leave swarm", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmLeave, h.LeaveSwarm)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "unlock-swarm", Method: http.MethodPost, Path: "/environments/{id}/swarm/unlock", Summary: "Unlock swarm", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmUnlock, h.UnlockSwarm)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-unlock-key", Method: http.MethodGet, Path: "/environments/{id}/swarm/unlock-key", Summary: "Get swarm unlock key", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmUnlock, h.GetUnlockKey)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-join-tokens", Method: http.MethodGet, Path: "/environments/{id}/swarm/join-tokens", Summary: "Get swarm join tokens", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmUnlock, h.GetJoinTokens)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "rotate-swarm-join-tokens", Method: http.MethodPost, Path: "/environments/{id}/swarm/join-tokens/rotate", Summary: "Rotate swarm join tokens", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmUnlock, h.RotateJoinTokens)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-spec", Method: http.MethodPut, Path: "/environments/{id}/swarm/spec", Summary: "Update swarm spec", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSpec, h.UpdateSwarmSpec)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-configs", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs", Summary: "List swarm configs", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListConfigs)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-config", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Get swarm config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetConfig)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/configs", Summary: "Create swarm config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmConfigs, h.CreateConfig)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-config", Method: http.MethodPut, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Update swarm config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmConfigs, h.UpdateConfig)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-config", Method: http.MethodDelete, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Delete swarm config", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmConfigs, h.DeleteConfig)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-configs", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs", Summary: "List swarm configs", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListConfigs)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-config", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Get swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetConfig)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/configs", Summary: "Create swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.CreateConfig)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-config", Method: http.MethodPut, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Update swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.UpdateConfig)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-config", Method: http.MethodDelete, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Delete swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.DeleteConfig)
 
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-secrets", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets", Summary: "List swarm secrets", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.ListSecrets)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-secret", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Get swarm secret", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmRead, h.GetSecret)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-secret", Method: http.MethodPost, Path: "/environments/{id}/swarm/secrets", Summary: "Create swarm secret", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmSecrets, h.CreateSecret)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-secret", Method: http.MethodPut, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Update swarm secret", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmSecrets, h.UpdateSecret)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-secret", Method: http.MethodDelete, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Delete swarm secret", Tags: []string{"Swarm"}, Security: []map[string][]string{{"BearerAuth": {}}, {"ApiKeyAuth": {}}}}, authz.PermSwarmSecrets, h.DeleteSecret)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-secrets", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets", Summary: "List swarm secrets", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListSecrets)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-secret", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Get swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetSecret)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-secret", Method: http.MethodPost, Path: "/environments/{id}/swarm/secrets", Summary: "Create swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.CreateSecret)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-secret", Method: http.MethodPut, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Update swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.UpdateSecret)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-secret", Method: http.MethodDelete, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Delete swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.DeleteSecret)
 }
 
 // ListServices lists swarm services for an environment and returns a paginated response.
@@ -648,11 +642,7 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 // Returns an HTTP-shaped error if the swarm service is unavailable or if the
 // underlying swarm lookup fails.
 func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmServicesInput) (*ListSwarmServicesOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServicesPaginated(ctx, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmServiceListError{Err: err}).Error())
@@ -661,7 +651,7 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmServicesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmServicesOutput{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // GetService returns detailed information for a single swarm service.
@@ -676,10 +666,6 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 // Returns `404 Not Found` when the service does not exist and other mapped HTTP
 // errors when the inspection fails.
 func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInput) (*GetSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	service, err := h.swarmService.GetService(ctx, input.ServiceID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -703,9 +689,6 @@ func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInp
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
 func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*CreateSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.CreateService(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmServiceCreateError{Err: err}).Error())
@@ -728,9 +711,6 @@ func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServ
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update request is invalid or the underlying update fails.
 func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*UpdateSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.UpdateService(ctx, input.ServiceID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
@@ -754,9 +734,6 @@ func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServ
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the service does not exist, or another mapped HTTP error when removal fails.
 func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*DeleteSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RemoveService(ctx, input.ServiceID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound((&common.SwarmServiceNotFoundError{Err: err}).Error())
@@ -780,11 +757,7 @@ func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServ
 // Returns a paginated list of task summaries for the service.
 // Returns a mapped HTTP error when the swarm task lookup fails.
 func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmServiceTasksInput) (*ListSwarmServiceTasksOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServiceTasksPaginated(ctx, input.ServiceID, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
@@ -793,7 +766,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmServiceTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmServiceTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // RollbackService requests a server-side rollback for a swarm service.
@@ -808,9 +781,6 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the rollback cannot be performed.
 func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*RollbackSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.RollbackService(ctx, input.ServiceID)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
@@ -833,9 +803,6 @@ func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarm
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when scaling is invalid or the update fails.
 func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*ScaleSwarmServiceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.ScaleService(ctx, input.ServiceID, input.Body.Replicas)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
@@ -857,11 +824,7 @@ func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServic
 // Returns a paginated list of node summaries.
 // Returns a mapped HTTP error when node enumeration fails.
 func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput) (*ListSwarmNodesOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeListError{Err: err}).Error())
@@ -870,7 +833,7 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 		items = []swarmtypes.NodeSummary{}
 	}
 
-	return &ListSwarmNodesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmNodesOutput{Body: base.Paginated[swarmtypes.NodeSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // GetNode returns detailed information for a single swarm node.
@@ -885,10 +848,6 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 // Returns `404 Not Found` when the node does not exist or another mapped HTTP
 // error when the inspection fails.
 func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*GetSwarmNodeOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -917,9 +876,6 @@ func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*
 // not exist, or `500 Internal Server Error` when environment provisioning or
 // snippet generation fails.
 func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwarmNodeAgentDeploymentInput) (*GetSwarmNodeAgentDeploymentOutput, error) {
-	if h.swarmService == nil || h.environmentService == nil || h.cfg == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -983,10 +939,6 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 
 // ReconcileNodeAgents verifies and persists unique visible-environment node bindings.
 func (h *SwarmHandler) ReconcileNodeAgents(ctx context.Context, input *ReconcileSwarmNodeAgentsInput) (*ReconcileSwarmNodeAgentsOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	result, err := h.swarmService.ReconcileNodeAgents(ctx, input.EnvironmentID)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to reconcile swarm node agents")
@@ -996,10 +948,6 @@ func (h *SwarmHandler) ReconcileNodeAgents(ctx context.Context, input *Reconcile
 
 // PutNodeAgentBinding verifies and attaches an existing visible environment.
 func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmNodeAgentBindingInput) (*PutSwarmNodeAgentBindingOutput, error) {
-	if h.swarmService == nil || h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if _, err := h.swarmService.BindNodeAgent(ctx, input.EnvironmentID, input.NodeID, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
@@ -1022,9 +970,6 @@ func (h *SwarmHandler) PutNodeAgentBinding(ctx context.Context, input *PutSwarmN
 
 // DeleteNodeAgentBinding detaches the visible environment currently bound to a node.
 func (h *SwarmHandler) DeleteNodeAgentBinding(ctx context.Context, input *DeleteSwarmNodeAgentBindingInput) (*DeleteSwarmNodeAgentBindingOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.environmentService.DetachSwarmNodeEnvironment(ctx, input.EnvironmentID, input.NodeID); err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
 	}
@@ -1033,9 +978,6 @@ func (h *SwarmHandler) DeleteNodeAgentBinding(ctx context.Context, input *Delete
 
 // DeleteNodeAgentDeployment removes a dedicated hidden node-agent registration.
 func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *DeleteSwarmNodeAgentDeploymentInput) (*DeleteSwarmNodeAgentDeploymentOutput, error) {
-	if h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	user, err := requireUserInternal(ctx)
 	if err != nil {
 		return nil, err
@@ -1058,10 +1000,6 @@ func (h *SwarmHandler) DeleteNodeAgentDeployment(ctx context.Context, input *Del
 // Returns `500 Internal Server Error` when the swarm service is unavailable or
 // identity discovery fails.
 func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdentityInput) (*GetSwarmNodeIdentityOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	identity, err := h.swarmService.GetLocalNodeIdentity(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())
@@ -1087,9 +1025,6 @@ func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdent
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node update fails.
 func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*UpdateSwarmNodeOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.UpdateNode(ctx, input.NodeID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
 	}
@@ -1111,9 +1046,6 @@ func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInp
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the node cannot be removed.
 func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*DeleteSwarmNodeOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RemoveNode(ctx, input.NodeID, input.Force); err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
 	}
@@ -1135,9 +1067,6 @@ func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInp
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the promotion fails.
 func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*PromoteSwarmNodeOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.PromoteNode(ctx, input.NodeID); err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
 	}
@@ -1159,9 +1088,6 @@ func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeI
 // Returns an authorization error for non-admin callers or a mapped HTTP error
 // when the demotion fails.
 func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*DemoteSwarmNodeOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.DemoteNode(ctx, input.NodeID); err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
 	}
@@ -1182,11 +1108,7 @@ func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInp
 // Returns a paginated list of node task summaries.
 // Returns a mapped HTTP error when the underlying lookup fails.
 func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTasksInput) (*ListSwarmNodeTasksOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodeTasksPaginated(ctx, input.NodeID, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
@@ -1195,7 +1117,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmNodeTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmNodeTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // ListTasks lists swarm tasks across the current environment.
@@ -1209,11 +1131,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 // Returns a paginated task listing for the environment.
 // Returns a mapped HTTP error when task enumeration fails.
 func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput) (*ListSwarmTasksOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListTasksPaginated(ctx, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
@@ -1222,7 +1140,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // ListStacks lists swarm stacks for the current environment.
@@ -1236,11 +1154,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 // Returns a paginated list of stack summaries.
 // Returns a mapped HTTP error when stack enumeration fails.
 func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInput) (*ListSwarmStacksOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmStackListError{Err: err}).Error())
@@ -1249,7 +1163,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 		items = []swarmtypes.StackSummary{}
 	}
 
-	return &ListSwarmStacksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStacksOutput{Body: base.Paginated[swarmtypes.StackSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // DeployStack deploys or updates a swarm stack.
@@ -1265,9 +1179,6 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when rendering, validation, or deployment fails.
 func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*DeploySwarmStackOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.DeployStack(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmStackDeployError{Err: err}).Error())
@@ -1290,10 +1201,6 @@ func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackI
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when inspection fails.
 func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) (*GetSwarmStackOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	stack, err := h.swarmService.GetStack(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1317,9 +1224,6 @@ func (h *SwarmHandler) GetStack(ctx context.Context, input *GetSwarmStackInput) 
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // no saved source exists, or another mapped HTTP error when loading fails.
 func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackSourceInput) (*GetSwarmStackSourceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	source, err := h.swarmService.GetStackSource(ctx, input.EnvironmentID, input.Name)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1337,9 +1241,6 @@ func (h *SwarmHandler) GetStackSource(ctx context.Context, input *GetSwarmStackS
 // sensitive configuration. The stack name comes from the route, and the body
 // contains the replacement source files to save.
 func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarmStackSourceInput) (*UpdateSwarmStackSourceOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	source, err := h.swarmService.UpdateStackSource(ctx, input.EnvironmentID, input.Name, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm stack source")
@@ -1363,9 +1264,6 @@ func (h *SwarmHandler) UpdateStackSource(ctx context.Context, input *UpdateSwarm
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the stack does not exist, or another mapped HTTP error when removal fails.
 func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackInput) (*DeleteSwarmStackOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RemoveStack(ctx, input.EnvironmentID, input.Name); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm stack not found")
@@ -1390,11 +1288,7 @@ func (h *SwarmHandler) DeleteStack(ctx context.Context, input *DeleteSwarmStackI
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
 func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmStackServicesInput) (*ListSwarmStackServicesOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStackServicesPaginated(ctx, input.Name, params)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1406,7 +1300,7 @@ func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmSt
 		items = []swarmtypes.ServiceSummary{}
 	}
 
-	return &ListSwarmStackServicesOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStackServicesOutput{Body: base.Paginated[swarmtypes.ServiceSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // ListStackTasks lists tasks belonging to a swarm stack.
@@ -1421,11 +1315,7 @@ func (h *SwarmHandler) ListStackServices(ctx context.Context, input *ListSwarmSt
 // Returns `404 Not Found` when the stack does not exist or another mapped HTTP
 // error when the lookup fails.
 func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStackTasksInput) (*ListSwarmStackTasksOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
-	params := buildSwarmQueryParams(input.Search, input.Sort, input.Order, input.Start, input.Limit)
+	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStackTasksPaginated(ctx, input.Name, params)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1437,7 +1327,7 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 		items = []swarmtypes.TaskSummary{}
 	}
 
-	return &ListSwarmStackTasksOutput{Body: toSwarmPaginatedResponse(items, paginationResp)}, nil
+	return &ListSwarmStackTasksOutput{Body: base.Paginated[swarmtypes.TaskSummary]{Success: true, Data: items, Pagination: toPaginationResponseInternal(paginationResp)}}, nil
 }
 
 // RenderStackConfig renders and validates a swarm stack configuration without deploying it.
@@ -1451,10 +1341,6 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 // Returns the rendered compose content together with discovered resource names.
 // Returns a mapped HTTP error when parsing, interpolation, or rendering fails.
 func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*RenderSwarmStackConfigOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	resp, err := h.swarmService.RenderStackConfig(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to render swarm stack config")
@@ -1474,10 +1360,6 @@ func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarm
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
 func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatusInput) (*GetSwarmStatusOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	enabled, err := h.swarmService.IsEnabled(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("failed to read swarm status")
@@ -1502,10 +1384,6 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatus
 // Returns the current swarm information when swarm mode is available.
 // Returns a mapped HTTP error when swarm inspection fails.
 func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*GetSwarmInfoOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, (&common.SwarmInspectError{Err: err}).Error())
@@ -1526,9 +1404,6 @@ func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInpu
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when initialization fails.
 func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*InitSwarmOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.InitSwarm(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to initialize swarm")
@@ -1551,9 +1426,6 @@ func (h *SwarmHandler) InitSwarm(ctx context.Context, input *InitSwarmInput) (*I
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the join operation fails.
 func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*JoinSwarmOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.JoinSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to join swarm")
 	}
@@ -1565,9 +1437,6 @@ func (h *SwarmHandler) JoinSwarm(ctx context.Context, input *JoinSwarmInput) (*J
 
 // GetJoinCandidates lists enabled visible environments the caller can join.
 func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoinCandidatesInput) (*GetSwarmJoinCandidatesOutput, error) {
-	if h.environmentService == nil || h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -1612,9 +1481,6 @@ func (h *SwarmHandler) GetJoinCandidates(ctx context.Context, input *GetSwarmJoi
 
 // JoinEnvironments performs Easy Join without returning manager join tokens.
 func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnvironmentsInput) (*JoinSwarmEnvironmentsOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := requireEasyJoinManagerPermissionsInternal(ctx, input.EnvironmentID); err != nil {
 		return nil, err
 	}
@@ -1653,8 +1519,8 @@ func (h *SwarmHandler) JoinEnvironments(ctx context.Context, input *JoinSwarmEnv
 
 func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentID string) error {
 	permissions, _ := humamw.PermissionsFromContext(ctx)
-	if permissions == nil || !permissions.Allows(authz.PermSwarmNodes, environmentID) || !permissions.Allows(authz.PermSwarmUnlock, environmentID) {
-		return huma.Error403Forbidden("swarm:nodes and swarm:unlock permissions are required on the manager environment")
+	if permissions == nil || !permissions.Allows(authz.PermSwarmJoin, environmentID) {
+		return huma.Error403Forbidden("swarm:join permission is required on the manager environment")
 	}
 	return nil
 }
@@ -1671,9 +1537,6 @@ func requireEasyJoinManagerPermissionsInternal(ctx context.Context, environmentI
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the leave operation fails.
 func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (*LeaveSwarmOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.LeaveSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to leave swarm")
 	}
@@ -1695,9 +1558,6 @@ func (h *SwarmHandler) LeaveSwarm(ctx context.Context, input *LeaveSwarmInput) (
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the unlock operation fails.
 func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput) (*UnlockSwarmOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.UnlockSwarm(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to unlock swarm")
 	}
@@ -1718,9 +1578,6 @@ func (h *SwarmHandler) UnlockSwarm(ctx context.Context, input *UnlockSwarmInput)
 // Returns the current manager unlock key.
 // Returns a mapped HTTP error when the unlock key cannot be retrieved.
 func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKeyInput) (*GetSwarmUnlockKeyOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.GetSwarmUnlockKey(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm unlock key")
@@ -1740,9 +1597,6 @@ func (h *SwarmHandler) GetUnlockKey(ctx context.Context, input *GetSwarmUnlockKe
 // Returns the current worker and manager join tokens.
 // Returns a mapped HTTP error when token lookup fails.
 func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTokensInput) (*GetSwarmJoinTokensOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	resp, err := h.swarmService.GetSwarmJoinTokens(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to get swarm join tokens")
@@ -1763,9 +1617,6 @@ func (h *SwarmHandler) GetJoinTokens(ctx context.Context, input *GetSwarmJoinTok
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when token rotation fails.
 func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJoinTokensInput) (*RotateSwarmJoinTokensOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RotateSwarmJoinTokens(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to rotate swarm join tokens")
 	}
@@ -1787,9 +1638,6 @@ func (h *SwarmHandler) RotateJoinTokens(ctx context.Context, input *RotateSwarmJ
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the spec update fails.
 func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSpecInput) (*UpdateSwarmSpecOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.UpdateSwarmSpec(ctx, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm spec")
 	}
@@ -1810,10 +1658,6 @@ func (h *SwarmHandler) UpdateSwarmSpec(ctx context.Context, input *UpdateSwarmSp
 // Returns the current swarm configs.
 // Returns a mapped HTTP error when config enumeration fails.
 func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsInput) (*ListSwarmConfigsOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	items, err := h.swarmService.ListConfigs(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm configs")
@@ -1837,10 +1681,6 @@ func (h *SwarmHandler) ListConfigs(ctx context.Context, input *ListSwarmConfigsI
 // Returns `404 Not Found` when the config does not exist or another mapped HTTP
 // error when inspection fails.
 func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput) (*GetSwarmConfigOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	cfg, err := h.swarmService.GetConfig(ctx, input.ConfigID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1864,9 +1704,6 @@ func (h *SwarmHandler) GetConfig(ctx context.Context, input *GetSwarmConfigInput
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
 func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfigInput) (*CreateSwarmConfigOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	cfg, err := h.swarmService.CreateConfig(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to create swarm config")
@@ -1890,9 +1727,6 @@ func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfi
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update fails.
 func (h *SwarmHandler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*UpdateSwarmConfigOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.UpdateConfig(ctx, input.ConfigID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm config")
 	}
@@ -1911,9 +1745,6 @@ func (h *SwarmHandler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfi
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the config does not exist, or another mapped HTTP error when removal fails.
 func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfigInput) (*DeleteSwarmConfigOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RemoveConfig(ctx, input.ConfigID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm config not found")
@@ -1937,10 +1768,6 @@ func (h *SwarmHandler) DeleteConfig(ctx context.Context, input *DeleteSwarmConfi
 // Returns the current swarm secrets.
 // Returns a mapped HTTP error when secret enumeration fails.
 func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsInput) (*ListSwarmSecretsOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	items, err := h.swarmService.ListSecrets(ctx)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to list swarm secrets")
@@ -1964,10 +1791,6 @@ func (h *SwarmHandler) ListSecrets(ctx context.Context, input *ListSwarmSecretsI
 // Returns `404 Not Found` when the secret does not exist or another mapped HTTP
 // error when inspection fails.
 func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput) (*GetSwarmSecretOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	secret, err := h.swarmService.GetSecret(ctx, input.SecretID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
@@ -1991,9 +1814,6 @@ func (h *SwarmHandler) GetSecret(ctx context.Context, input *GetSwarmSecretInput
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when validation or creation fails.
 func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecretInput) (*CreateSwarmSecretOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	secret, err := h.swarmService.CreateSecret(ctx, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to create swarm secret")
@@ -2017,9 +1837,6 @@ func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecre
 // Returns an authorization error for non-admin callers or mapped HTTP errors
 // when the update fails.
 func (h *SwarmHandler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecretInput) (*UpdateSwarmSecretOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.UpdateSecret(ctx, input.SecretID, input.Body); err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to update swarm secret")
 	}
@@ -2038,9 +1855,6 @@ func (h *SwarmHandler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecre
 // Returns an authorization error for non-admin callers, `404 Not Found` when
 // the secret does not exist, or another mapped HTTP error when removal fails.
 func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecretInput) (*DeleteSwarmSecretOutput, error) {
-	if h.swarmService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
 	if err := h.swarmService.RemoveSecret(ctx, input.SecretID); err != nil {
 		if errdefs.IsNotFound(err) {
 			return nil, huma.Error404NotFound("Swarm secret not found")
@@ -2051,20 +1865,6 @@ func (h *SwarmHandler) DeleteSecret(ctx context.Context, input *DeleteSwarmSecre
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "secret.delete", "swarm_secret", input.SecretID, "", map[string]any{"secretId": input.SecretID})
 
 	return &DeleteSwarmSecretOutput{Body: base.ApiResponse[base.MessageResponse]{Success: true, Data: base.MessageResponse{Message: "Swarm secret removed successfully"}}}, nil
-}
-
-// toSwarmPaginatedResponse wraps items and pagination metadata in the standard swarm list envelope.
-//
-// items is the collection to include in the response body.
-// p provides the pagination metadata produced by the pagination package.
-//
-// Returns a SwarmPaginatedResponse with `Success` set to true.
-func toSwarmPaginatedResponse[T any](items []T, p pagination.Response) SwarmPaginatedResponse[T] {
-	return SwarmPaginatedResponse[T]{
-		Success:    true,
-		Data:       items,
-		Pagination: toPaginationResponseInternal(p),
-	}
 }
 
 // auditSwarmMutation writes an informational event for a completed swarm mutation.
@@ -2129,38 +1929,6 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 	})
 	if err != nil {
 		slog.WarnContext(ctx, "failed to audit swarm mutation", "action", action, "error", err)
-	}
-}
-
-// buildSwarmQueryParams converts raw request values into pagination query parameters.
-//
-// It trims string inputs, applies the default limit used by the swarm API, and
-// preserves the requested start offset.
-//
-// search is the free-text search term.
-// sort is the requested sort column.
-// order is the requested sort direction.
-// start is the zero-based pagination offset.
-// limit is the requested page size.
-//
-// Returns normalized pagination.QueryParams for downstream service calls.
-func buildSwarmQueryParams(search, sort, order string, start, limit int) pagination.QueryParams {
-	if limit == 0 {
-		limit = 20
-	}
-
-	return pagination.QueryParams{
-		SearchQuery: pagination.SearchQuery{
-			Search: strings.TrimSpace(search),
-		},
-		SortParams: pagination.SortParams{
-			Sort:  strings.TrimSpace(sort),
-			Order: pagination.SortOrder(order),
-		},
-		Params: pagination.Params{
-			Start: start,
-			Limit: limit,
-		},
 	}
 }
 

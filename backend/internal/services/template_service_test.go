@@ -9,11 +9,13 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	sqlite "github.com/libtnb/sqlite"
+	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -22,7 +24,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 )
 
@@ -274,11 +275,11 @@ services:
 		Description: "Remote template",
 		IsRemote:    true,
 		IsCustom:    false,
-		RegistryID:  stringPtr("reg-1"),
+		RegistryID:  mo.EmptyableToOption(strings.TrimSpace("reg-1")).ToPointer(),
 		Metadata: &models.ComposeTemplateMetadata{
-			RemoteURL: stringPtr(baseURL + "/compose.yaml"),
-			EnvURL:    stringPtr(baseURL + "/template.env"),
-			IconURL:   stringPtr("https://cdn.example/download.png"),
+			RemoteURL: mo.EmptyableToOption(strings.TrimSpace(baseURL + "/compose.yaml")).ToPointer(),
+			EnvURL:    mo.EmptyableToOption(strings.TrimSpace(baseURL + "/template.env")).ToPointer(),
+			IconURL:   mo.EmptyableToOption(strings.TrimSpace("https://cdn.example/download.png")).ToPointer(),
 		},
 	}
 
@@ -323,24 +324,17 @@ func TestGetAllTemplatesPaginated_FiltersByType(t *testing.T) {
 	}
 	require.NoError(t, db.WithContext(context.Background()).Create(&localTemplates).Error)
 
-	service := &TemplateService{
-		db:                db,
-		httpClient:        http.DefaultClient,
-		registryFetchMeta: make(map[string]*registryFetchMeta),
-		remoteCache: remoteCache{
-			templates: []models.ComposeTemplate{
-				{
-					BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
-					Name:        "Remote One",
-					Description: "Remote template",
-					Content:     "services: {}",
-					IsRemote:    true,
-					RegistryID:  stringPtr("registry-one"),
-				},
-			},
-			lastFetch: now,
+	service := NewTemplateService(context.Background(), db, http.DefaultClient, nil)
+	service.remoteCache.Set(struct{}{}, []models.ComposeTemplate{
+		{
+			BaseModel:   models.BaseModel{ID: "remote-one", CreatedAt: now, UpdatedAt: &now},
+			Name:        "Remote One",
+			Description: "Remote template",
+			Content:     "services: {}",
+			IsRemote:    true,
+			RegistryID:  mo.EmptyableToOption(strings.TrimSpace("registry-one")).ToPointer(),
 		},
-	}
+	})
 
 	tests := []struct {
 		name       string
@@ -467,13 +461,9 @@ func TestGetTemplate_ForceRefreshesRemoteCacheOnMiss(t *testing.T) {
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "templatesDirectory", filepath.Join(tempDir, "templates")))
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", filepath.Join(tempDir, "projects")))
 
-	service := &TemplateService{
-		db:                db,
-		httpClient:        client,
-		lookupIP:          lookupIP,
-		settingsService:   settingsSvc,
-		registryFetchMeta: make(map[string]*registryFetchMeta),
-	}
+	service := NewTemplateService(context.Background(), db, client, settingsSvc)
+	service.lookupIP = lookupIP
+	service.safeHTTPClient = service.newSafeHTTPClientInternal()
 
 	// Cache starts empty; GetTemplate for a remote ID should force a refresh and find the template.
 	got, err := service.GetTemplate(context.Background(), "remote:reg-1:affine")
@@ -497,26 +487,4 @@ func minimalSettingsServiceForTest(t *testing.T) *SettingsService {
 	svc, err := NewSettingsService(context.Background(), &database.DB{DB: db})
 	require.NoError(t, err)
 	return svc
-}
-
-func TestUpdateGlobalVariables_RejectsNewlineInjectionKey(t *testing.T) {
-	projectsDir := t.TempDir()
-
-	db, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
-	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
-	dbWrap := &database.DB{DB: db}
-	settingsSvc, err := NewSettingsService(context.Background(), dbWrap)
-	require.NoError(t, err)
-	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", projectsDir))
-
-	service := &TemplateService{db: dbWrap, settingsService: settingsSvc}
-
-	err = service.UpdateGlobalVariables(context.Background(), []envtypes.Variable{
-		{Key: "BENIGN\nINJECTED", Value: "x"},
-	})
-	require.True(t, common.IsInvalidEnvKeyError(err), "expected InvalidEnvKeyError, got %v", err)
-
-	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
-	require.True(t, os.IsNotExist(statErr), ".env.global must not be written on validation failure")
 }

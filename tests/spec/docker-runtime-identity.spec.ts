@@ -145,7 +145,7 @@ async function waitForHealth(container: string) {
 			},
 			{
 				timeout: 120_000,
-				interval: 2_000
+				intervals: [2_000]
 			}
 		)
 		.toBe('UP');
@@ -163,7 +163,7 @@ async function waitForFile(container: string, filePath: string) {
 			},
 			{
 				timeout: 60_000,
-				interval: 1_000
+				intervals: [1_000]
 			}
 		)
 		.toBe('present');

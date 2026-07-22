@@ -29,7 +29,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	jobService.SetScheduler(lifecycleCtx, jobScheduler)
 	jobScheduler.StartScheduler()
 
-	_, ok := jobScheduler.GetJobRuntimeState("image-polling")
+	_, ok := jobScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, jobScheduler.cron.Entries())
 
@@ -45,17 +45,17 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.Equal(t, requestedSchedule, persisted.Value)
 	require.Equal(t, requestedSchedule, settingsService.GetStringSetting(ctx, "pollingInterval", ""))
 
-	_, ok = jobScheduler.GetJobRuntimeState("image-polling")
+	_, ok = jobScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, jobScheduler.cron.Entries())
 
 	jobs, err := jobService.ListJobs(ctx)
 	require.NoError(t, err)
 	imagePollingStatus := findJobStatusInternal(t, jobs, "image-polling")
-	require.Equal(t, "continuous", imagePollingStatus.Schedule)
-	require.Nil(t, imagePollingStatus.NextRun)
+	require.Equal(t, requestedSchedule, imagePollingStatus.Schedule)
+	require.NotNil(t, imagePollingStatus.NextRun)
 	require.True(t, imagePollingStatus.IsContinuous)
-	require.Empty(t, imagePollingStatus.SettingsKey)
+	require.Equal(t, "pollingInterval", imagePollingStatus.SettingsKey)
 
 	cancelLifecycle()
 	waitForSchedulerStopInternal(jobScheduler)
@@ -73,21 +73,21 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 		closeJobScheduleTestDatabaseInternal(t, restartDB)
 	})
 
-	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
+	_, ok = restartScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, restartScheduler.cron.Entries())
 	require.Equal(t, requestedSchedule, restartSettingsService.GetStringSetting(ctx, "pollingInterval", ""))
 
 	restartedJobs, err := restartJobService.ListJobs(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "continuous", findJobStatusInternal(t, restartedJobs, "image-polling").Schedule)
+	require.Equal(t, requestedSchedule, findJobStatusInternal(t, restartedJobs, "image-polling").Schedule)
 
 	require.NoError(t, restartSettingsService.SetBoolSetting(ctx, "pollingEnabled", false))
 	disabledSchedule := "0 0 9 * * *"
 	_, err = restartJobService.UpdateJobSchedules(ctx, jobschedule.Update{PollingInterval: &disabledSchedule})
 	require.NoError(t, err)
 
-	_, ok = restartScheduler.GetJobRuntimeState("image-polling")
+	_, ok = restartScheduler.GetJobRuntimeState("image-polling").Get()
 	require.False(t, ok)
 	require.Empty(t, restartScheduler.cron.Entries())
 
@@ -95,8 +95,7 @@ func TestDeprecatedImagePollingSchedulePersistsWithoutRuntimeJob(t *testing.T) {
 	require.NoError(t, err)
 	disabledStatus := findJobStatusInternal(t, disabledJobs, "image-polling")
 	require.False(t, disabledStatus.Enabled)
-	require.Nil(t, disabledStatus.NextRun)
-	require.Equal(t, "continuous", disabledStatus.Schedule)
+	require.Equal(t, disabledSchedule, disabledStatus.Schedule)
 }
 
 func openJobScheduleTestDatabaseInternal(t *testing.T, ctx context.Context, databasePath string) (*database.DB, *services.SettingsService) {

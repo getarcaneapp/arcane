@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -28,13 +28,6 @@ type EventHandler struct {
 // Input/Output Types
 // ============================================================================
 
-// EventPaginatedResponse is the paginated response for events.
-type EventPaginatedResponse struct {
-	Success    bool                    `json:"success"`
-	Data       []event.Event           `json:"data"`
-	Pagination base.PaginationResponse `json:"pagination"`
-}
-
 type ListEventsInput struct {
 	Search   string `query:"search" doc:"Search query"`
 	Sort     string `query:"sort" doc:"Column to sort by"`
@@ -42,11 +35,17 @@ type ListEventsInput struct {
 	Start    int    `query:"start" default:"0" doc:"Start index"`
 	Limit    int    `query:"limit" default:"20" doc:"Limit"`
 	Severity string `query:"severity" doc:"Filter by severity"`
-	Type     string `query:"type" doc:"Filter by event type"`
+	Type     string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
 type ListEventsOutput struct {
-	Body EventPaginatedResponse
+	Body base.Paginated[event.Event]
+}
+
+type GetEventStatsInput struct{}
+
+type GetEventStatsOutput struct {
+	Body base.ApiResponse[services.EventSeverityCounts]
 }
 
 type GetEventsByEnvironmentInput struct {
@@ -57,11 +56,11 @@ type GetEventsByEnvironmentInput struct {
 	Start         int    `query:"start" default:"0" doc:"Start index"`
 	Limit         int    `query:"limit" default:"20" doc:"Limit"`
 	Severity      string `query:"severity" doc:"Filter by severity"`
-	Type          string `query:"type" doc:"Filter by event type"`
+	Type          string `query:"type" doc:"Filter by event type (exact type or category prefix, comma-separated)"`
 }
 
 type GetEventsByEnvironmentOutput struct {
-	Body EventPaginatedResponse
+	Body base.Paginated[event.Event]
 }
 
 type DeleteEventInput struct {
@@ -102,8 +101,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventServ
 		}
 
 		var input services.CreateEventRequest
-		decoder := json.NewDecoder(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20))
-		if err := decoder.Decode(&input); err != nil {
+		if err := json.UnmarshalRead(http.MaxBytesReader(c.Response(), c.Request().Body, 1<<20), &input); err != nil {
 			return c.JSON(http.StatusBadRequest, base.ApiResponse[base.MessageResponse]{
 				Success: false,
 				Data:    base.MessageResponse{Message: "invalid event payload"},
@@ -151,12 +149,20 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "List events",
 		Description: "Get a paginated list of system events",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.ListEvents)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getEventStats",
+		Method:      "GET",
+		Path:        "/events/stats",
+		Summary:     "Event severity counts",
+		Description: "Get global event counts grouped by severity",
+		Tags:        []string{"Events"},
+		Security:    defaultOperationSecurityInternal(),
+		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
+	}, h.GetEventStats)
 
 	huma.Register(api, huma.Operation{
 		OperationID: "deleteEvent",
@@ -165,10 +171,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "Delete an event",
 		Description: "Delete a system event by ID",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsDelete),
 	}, h.DeleteEvent)
 
@@ -179,10 +182,7 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 		Summary:     "Get events by environment",
 		Description: "Get a paginated list of events for a specific environment",
 		Tags:        []string{"Events"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequirePermission(api, authz.PermEventsRead),
 	}, h.GetEventsByEnvironment)
 }
@@ -193,10 +193,6 @@ func RegisterEvents(api huma.API, eventService *services.EventService) {
 
 // ListEvents returns a paginated list of events.
 func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (*ListEventsOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 
 	if input.Severity != "" {
@@ -212,7 +208,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 	}
 
 	return &ListEventsOutput{
-		Body: EventPaginatedResponse{
+		Body: base.Paginated[event.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -220,12 +216,23 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 	}, nil
 }
 
-// GetEventsByEnvironment returns events for a specific environment.
-func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
+// GetEventStats returns global event counts grouped by severity.
+func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*GetEventStatsOutput, error) {
+	counts, err := h.eventService.GetEventSeverityCounts(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError((&common.EventStatsError{Err: err}).Error())
 	}
 
+	return &GetEventStatsOutput{
+		Body: base.ApiResponse[services.EventSeverityCounts]{
+			Success: true,
+			Data:    counts,
+		},
+	}, nil
+}
+
+// GetEventsByEnvironment returns events for a specific environment.
+func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
 	if input.EnvironmentID == "" {
 		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
 	}
@@ -245,7 +252,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 	}
 
 	return &GetEventsByEnvironmentOutput{
-		Body: EventPaginatedResponse{
+		Body: base.Paginated[event.Event]{
 			Success:    true,
 			Data:       events,
 			Pagination: toPaginationResponseInternal(paginationResp),
@@ -255,10 +262,6 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 
 // DeleteEvent deletes an event.
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
-	if h.eventService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	if input.EventID == "" {
 		return nil, huma.Error400BadRequest((&common.EventIDRequiredError{}).Error())
 	}

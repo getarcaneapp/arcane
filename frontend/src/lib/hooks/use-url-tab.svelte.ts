@@ -11,7 +11,7 @@ type UseUrlTabOptions<T extends string> = {
 export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () => true }: UseUrlTabOptions<T>) {
 	function currentUrl() {
 		const reactiveUrl = page.url;
-		return typeof window === 'undefined' ? new URL(reactiveUrl) : new URL(window.location.href);
+		return typeof window === 'undefined' ? new URL(reactiveUrl.href) : new URL(window.location.href);
 	}
 
 	function resolveTab(url = currentUrl()) {

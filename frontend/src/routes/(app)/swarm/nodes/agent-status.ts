@@ -4,9 +4,9 @@ import type { SwarmNodeAgentState } from '$lib/types/swarm';
 export function getSwarmNodeAgentLabel(state: SwarmNodeAgentState | null | undefined): string {
 	switch (state) {
 		case 'pending':
-			return m.swarm_node_agent_status_pending();
+			return m.common_pending();
 		case 'offline':
-			return m.swarm_node_agent_status_offline();
+			return m.common_offline();
 		case 'connected':
 			return m.swarm_node_agent_status_connected();
 		case 'mismatched':

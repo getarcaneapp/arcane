@@ -1,8 +1,10 @@
 package services
 
 import (
+	"github.com/samber/mo"
+
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -18,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -26,6 +29,7 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
+	"github.com/samber/hot"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
 )
@@ -39,7 +43,7 @@ type EnvironmentService struct {
 	apiKeyService   *ApiKeyService
 	remoteClient    *remenv.Client
 	tokenCacheMu    sync.RWMutex
-	tokenCache      map[string]edgeTokenCacheEntry
+	tokenCache      *hot.HotCache[string, string]
 	tokenByEnvID    map[string]string
 	remoteEnvMu     sync.RWMutex
 	remoteEnvs      map[string]models.Environment
@@ -52,17 +56,22 @@ type EnvironmentService struct {
 	// runningHealthChecks guards against a per-environment health check overlapping
 	// with itself (replaces the old single job's atomic "running" guard).
 	runningHealthChecks sync.Map
+
+	// variableSyncer is injected post-construction via SetVariableSyncer
+	// (manager-only) to avoid a wire cycle with VariableService.
+	variableSyncer VariableSyncer
+}
+
+// VariableSyncer pushes the effective global-variable set to one environment.
+// Implemented by VariableService.
+type VariableSyncer interface {
+	SyncEnvironment(ctx context.Context, envID string) error
 }
 
 const (
 	defaultEnvironmentHealthInterval = "0 */2 * * * *"
 	environmentHealthCheckTimeout    = 90 * time.Second
 )
-
-type edgeTokenCacheEntry struct {
-	EnvironmentID string
-	ExpiresAt     time.Time
-}
 
 const edgeTokenCacheTTL = time.Minute
 
@@ -86,7 +95,10 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 			EnsureAvailableFunc: ensureRemoteEnvironmentTunnelAvailableInternal,
 			DoFunc:              doRemoteEnvironmentTunnelRequestInternal,
 		}),
-		tokenCache:   make(map[string]edgeTokenCacheEntry),
+		tokenCache: hot.NewHotCache[string, string](hot.LRU, 1024).
+			WithTTL(edgeTokenCacheTTL).
+			WithJanitor().
+			Build(),
 		tokenByEnvID: make(map[string]string),
 		remoteEnvs:   make(map[string]models.Environment),
 	}
@@ -105,6 +117,12 @@ func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler Dynamic
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
+}
+
+// SetVariableSyncer injects the global-variable syncer. Called during
+// bootstrap on the manager only; agents leave it nil.
+func (s *EnvironmentService) SetVariableSyncer(syncer VariableSyncer) {
+	s.variableSyncer = syncer
 }
 
 func (s *EnvironmentService) schedulerCtxInternal(ctx context.Context) context.Context {
@@ -209,17 +227,17 @@ func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
 	return nil
 }
 
-func (s *EnvironmentService) acquireHealthLockInternal(envID string) (func(), bool) {
+func (s *EnvironmentService) acquireHealthLockInternal(envID string) mo.Option[func()] {
 	if _, loaded := s.runningHealthChecks.LoadOrStore(envID, struct{}{}); loaded {
-		return nil, false
+		return mo.None[func()]()
 	}
-	return func() { s.runningHealthChecks.Delete(envID) }, true
+	return mo.Some(func() { s.runningHealthChecks.Delete(envID) })
 }
 
 // runHealthCheckInternal tests one environment's connection (updating its DB status)
 // and, for online remotes, syncs registries and repositories to it.
 func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) {
-	release, ok := s.acquireHealthLockInternal(envID)
+	release, ok := s.acquireHealthLockInternal(envID).Get()
 	if !ok {
 		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
 		return
@@ -248,6 +266,11 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
 	}
+	if s.variableSyncer != nil {
+		if err := s.variableSyncer.SyncEnvironment(syncCtx, envID); err != nil {
+			slog.WarnContext(syncCtx, "failed to sync global variables during health check", "environment_id", envID, "error", err)
+		}
+	}
 }
 
 func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, token string) (string, error) {
@@ -256,7 +279,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		return "", errors.New("agent token required")
 	}
 
-	if envID, ok := s.getCachedEnvironmentIDForTokenInternal(token, time.Now()); ok {
+	if envID, ok := s.getCachedEnvironmentIDForTokenInternal(token).Get(); ok {
 		return envID, nil
 	}
 
@@ -273,7 +296,7 @@ func (s *EnvironmentService) ResolveEdgeEnvironmentByToken(ctx context.Context, 
 		return "", fmt.Errorf("failed to resolve edge environment by token: %w", err)
 	}
 
-	s.cacheEnvironmentTokenInternal(env.ID, token, time.Now())
+	s.cacheEnvironmentTokenInternal(env.ID, token)
 	return env.ID, nil
 }
 
@@ -313,62 +336,40 @@ func (s *EnvironmentService) logEdgeTokenResolveMissInternal(ctx context.Context
 	slog.DebugContext(ctx, "Edge agent token did not match any environment", args...)
 }
 
-func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string, now time.Time) (string, bool) {
-	if s == nil || token == "" {
-		return "", false
-	}
-	if now.IsZero() {
-		now = time.Now()
+func (s *EnvironmentService) getCachedEnvironmentIDForTokenInternal(token string) mo.Option[string] {
+	if s == nil || s.tokenCache == nil || token == "" {
+		return mo.None[string]()
 	}
 
-	s.tokenCacheMu.RLock()
-	entry, ok := s.tokenCache[token]
-	s.tokenCacheMu.RUnlock()
-	if !ok {
-		return "", false
+	staleEnvironmentID, wasCached := s.tokenCache.Peek(token)
+	environmentID, ok, _ := s.tokenCache.Get(token)
+	if ok {
+		return mo.Some(environmentID)
 	}
-	if entry.ExpiresAt.After(now) {
-		return entry.EnvironmentID, true
-	}
-
-	s.tokenCacheMu.Lock()
-	defer s.tokenCacheMu.Unlock()
-
-	entry, ok = s.tokenCache[token]
-	if !ok {
-		return "", false
-	}
-	if !entry.ExpiresAt.After(now) {
-		delete(s.tokenCache, token)
-		if currentToken, ok := s.tokenByEnvID[entry.EnvironmentID]; ok && currentToken == token {
-			delete(s.tokenByEnvID, entry.EnvironmentID)
+	if wasCached {
+		s.tokenCacheMu.Lock()
+		if currentToken, indexed := s.tokenByEnvID[staleEnvironmentID]; indexed && currentToken == token {
+			delete(s.tokenByEnvID, staleEnvironmentID)
 		}
-		return "", false
+		s.tokenCacheMu.Unlock()
 	}
-
-	return entry.EnvironmentID, true
+	return mo.None[string]()
 }
 
-func (s *EnvironmentService) cacheEnvironmentTokenInternal(envID string, token string, now time.Time) {
-	if s == nil || envID == "" || token == "" {
+func (s *EnvironmentService) cacheEnvironmentTokenInternal(envID string, token string) {
+	if s == nil || s.tokenCache == nil || envID == "" || token == "" {
 		return
-	}
-	if now.IsZero() {
-		now = time.Now()
 	}
 
 	s.tokenCacheMu.Lock()
 	defer s.tokenCacheMu.Unlock()
 
 	if previousToken, ok := s.tokenByEnvID[envID]; ok && previousToken != token {
-		delete(s.tokenCache, previousToken)
+		s.tokenCache.Delete(previousToken)
 	}
 
 	s.tokenByEnvID[envID] = token
-	s.tokenCache[token] = edgeTokenCacheEntry{
-		EnvironmentID: envID,
-		ExpiresAt:     now.Add(edgeTokenCacheTTL),
-	}
+	s.tokenCache.Set(token, envID)
 }
 
 func (s *EnvironmentService) invalidateEnvironmentTokenInternal(envID string) {
@@ -381,7 +382,9 @@ func (s *EnvironmentService) invalidateEnvironmentTokenInternal(envID string) {
 
 	if token, ok := s.tokenByEnvID[envID]; ok {
 		delete(s.tokenByEnvID, envID)
-		delete(s.tokenCache, token)
+		if s.tokenCache != nil {
+			s.tokenCache.Delete(token)
+		}
 	}
 }
 
@@ -395,24 +398,24 @@ func (s *EnvironmentService) syncEnvironmentTokenCacheInternal(envID string, tok
 	resolvedToken := strings.TrimSpace(token)
 
 	if resolvedToken != "" {
-		s.cacheEnvironmentTokenInternal(envID, resolvedToken, time.Now())
+		s.cacheEnvironmentTokenInternal(envID, resolvedToken)
 	}
 }
 
 // GetActiveRemoteEnvironmentSnapshot returns the latest in-process snapshot for
 // an enabled, visible, non-local remote environment.
-func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) (models.Environment, bool) {
+func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID string) mo.Option[models.Environment] {
 	if s == nil || environmentID == "" {
-		return models.Environment{}, false
+		return mo.None[models.Environment]()
 	}
 
 	s.remoteEnvMu.RLock()
 	environment, ok := s.remoteEnvs[environmentID]
 	s.remoteEnvMu.RUnlock()
 	if !ok || !isActiveRemoteEnvironmentInternal(environment) {
-		return models.Environment{}, false
+		return mo.None[models.Environment]()
 	}
-	return environment, true
+	return mo.Some(environment)
 }
 
 func isActiveRemoteEnvironmentInternal(environment models.Environment) bool {
@@ -1227,7 +1230,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 // testEdgeConnection tests connection to an edge agent via its tunnel
 func (s *EnvironmentService) testEdgeConnection(ctx context.Context, id string) (string, error) {
 	if !edge.HasActiveTunnel(id) {
-		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); !ok {
+		if _, ok := edge.RequestTunnelAndWait(ctx, id, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); !ok {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 			return "offline", errors.New("edge agent is not connected")
 		}
@@ -1335,7 +1338,7 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 		updates["last_seen"] = &now
 		// Remember the tunnel transport so the UI can keep showing it after
 		// the tunnel drops or while the agent is poll-only.
-		if state, ok := edge.GetTunnelRuntimeState(id); ok && state.Transport != "" {
+		if state, ok := edge.GetTunnelRuntimeState(id).Get(); ok && state.Transport != "" {
 			updates["last_edge_transport"] = state.Transport
 		}
 	} else {
@@ -1823,7 +1826,13 @@ func (s *EnvironmentService) executeRemoteRequestForTargetInternal(
 	path string,
 	body []byte,
 ) (*remenv.Response, error) {
-	request, err := s.buildRemoteRequestInternal(target, method, path, body, nil)
+	// Forward the activity batch ID so bulk actions proxied to a remote
+	// environment group the same way they do locally.
+	var headers map[string]string
+	if batchID := pkgutils.ActivityBatchIDFromContext(ctx); batchID != "" {
+		headers = map[string]string{pkgutils.HeaderActivityBatchID: batchID}
+	}
+	request, err := s.buildRemoteRequestInternal(target, method, path, body, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -1889,7 +1898,7 @@ func ensureRemoteEnvironmentTunnelAvailableInternal(ctx context.Context, envID s
 		return nil
 	}
 
-	if _, ok := edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()); ok {
+	if _, ok := edge.RequestTunnelAndWait(ctx, envID, edge.DefaultTunnelDemandTTL, edge.DefaultTunnelAcquireTimeout()).Get(); ok {
 		return nil
 	}
 
@@ -1904,7 +1913,7 @@ func doRemoteEnvironmentTunnelRequestInternal(
 	headers map[string]string,
 	body []byte,
 ) (*remenv.Response, error) {
-	tunnel, ok := edge.GetRegistry().Get(envID)
+	tunnel, ok := edge.GetRegistry().Get(envID).Get()
 	if !ok {
 		return nil, fmt.Errorf("no active tunnel for environment %s", envID)
 	}

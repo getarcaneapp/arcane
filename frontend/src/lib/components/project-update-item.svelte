@@ -35,7 +35,7 @@
 
 	const summaryText = $derived.by(() => {
 		if (imageCount <= 0) return null;
-		return `${checkedImageCount} / ${imageCount} ${String(m.images_title()).toLowerCase()}`;
+		return `${checkedImageCount} / ${imageCount} ${String(m.images()).toLowerCase()}`;
 	});
 
 	const lastCheckedAtLabel = $derived.by(() => {
@@ -132,11 +132,11 @@
 
 {#snippet recheckButton()}
 	{#if canCheck}
-		<div class="border-border/50 bg-muted/50 border-t p-3">
+		<div class="border-t border-border/50 bg-muted/50 p-3">
 			<button
 				onclick={handleCheckClick}
 				disabled={checking}
-				class="group bg-secondary/80 text-secondary-foreground hover:bg-secondary flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+				class="group flex w-full items-center justify-center gap-2 rounded-lg bg-secondary/80 px-3 py-2 text-xs font-medium text-secondary-foreground shadow-sm transition-all hover:bg-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
 			>
 				{#if checking}
 					<Spinner class="size-3" />
@@ -235,7 +235,7 @@
 				<div class="bg-transparent p-4">
 					<div class="space-y-3">
 						{#if summaryText}
-							<div class="text-muted-foreground flex items-center gap-2 text-xs">
+							<div class="flex items-center gap-2 text-xs text-muted-foreground">
 								<ImagesIcon class="size-3.5" />
 								<span>{summaryText}</span>
 							</div>
@@ -243,23 +243,23 @@
 
 						{#if status === 'has_update' && updatedImageRefs.length > 0}
 							<div class="space-y-2">
-								<div class="text-foreground text-[11px] font-medium tracking-wide uppercase">{m.images_has_updates()}</div>
+								<div class="text-[11px] font-medium tracking-wide text-foreground uppercase">{m.images_has_updates()}</div>
 								<div class="max-h-40 space-y-1 overflow-auto">
 									{#each updatedImageRefs as imageRef (imageRef)}
-										<div class="bg-muted text-foreground rounded-md px-2 py-1 font-mono text-xs break-all">
+										<div class="rounded-md bg-muted px-2 py-1 font-mono text-xs break-all text-foreground">
 											{imageRef}
 										</div>
 									{/each}
 								</div>
 							</div>
 						{:else if status === 'up_to_date'}
-							<div class="text-muted-foreground text-xs leading-relaxed">{m.image_update_up_to_date_desc()}</div>
+							<div class="text-xs leading-relaxed text-muted-foreground">{m.image_update_up_to_date_desc()}</div>
 						{:else if status === 'error'}
-							<div class="text-muted-foreground text-xs leading-relaxed">
+							<div class="text-xs leading-relaxed text-muted-foreground">
 								{errorMessage || m.image_update_could_not_query_registry()}
 							</div>
 						{:else}
-							<div class="text-muted-foreground text-xs leading-relaxed">
+							<div class="text-xs leading-relaxed text-muted-foreground">
 								{#if canCheck}
 									{m.image_update_click_to_check()}
 								{:else}
@@ -269,14 +269,14 @@
 						{/if}
 
 						{#if errorCount > 0 && status !== 'error'}
-							<div class="text-muted-foreground flex items-center gap-2 text-xs">
+							<div class="flex items-center gap-2 text-xs text-muted-foreground">
 								<AlertIcon class="size-3.5 text-red-500" />
 								<span>{errorCount} {m.common_error()}</span>
 							</div>
 						{/if}
 
 						{#if lastCheckedAtLabel}
-							<div class="text-muted-foreground flex items-center gap-2 text-xs">
+							<div class="flex items-center gap-2 text-xs text-muted-foreground">
 								<ClockIcon class="size-3.5" />
 								<span>{lastCheckedAtLabel}</span>
 							</div>

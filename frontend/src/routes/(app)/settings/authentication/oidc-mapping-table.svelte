@@ -4,7 +4,7 @@
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -77,7 +77,7 @@
 	}
 
 	function getEnvName(environmentId: string | undefined): string {
-		if (!environmentId) return m.users_role_assignments_scope_global();
+		if (!environmentId) return m.global_org_wide();
 		return envsById[environmentId]?.name ?? environmentId;
 	}
 
@@ -124,26 +124,26 @@
 	}
 
 	const columns = [
-		{ id: 'claimValue', accessorKey: 'claimValue', title: m.oidc_mappings_col_claim(), sortable: true, cell: ClaimCell },
+		{ id: 'claimValue', accessorKey: 'claimValue', title: m.claim_value(), sortable: true, cell: ClaimCell },
 		{
 			id: 'roleId',
 			accessorKey: 'roleId',
-			title: m.oidc_mappings_col_role(),
+			title: m.common_role(),
 			sortable: true,
 			cell: RoleCell
 		},
 		{
 			id: 'environmentId',
 			accessorKey: 'environmentId',
-			title: m.oidc_mappings_col_scope(),
+			title: m.resource_environment_cap(),
 			sortable: true,
 			cell: ScopeCell
 		}
 	] satisfies ColumnSpec<OidcRoleMapping>[];
 
 	const mobileFields = [
-		{ id: 'roleId', label: m.oidc_mappings_col_role(), defaultVisible: true },
-		{ id: 'environmentId', label: m.oidc_mappings_col_scope(), defaultVisible: true }
+		{ id: 'roleId', label: m.common_role(), defaultVisible: true },
+		{ id: 'environmentId', label: m.resource_environment_cap(), defaultVisible: true }
 	];
 
 	let mobileFieldVisibility = $state<Record<string, boolean>>({});
@@ -151,16 +151,16 @@
 
 {#snippet ClaimCell({ item }: { item: OidcRoleMapping })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.claimValue}</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.claimValue}</code>
 		{#if item.source === 'env'}
-			<StatusBadge text="ENV" variant="amber" size="sm" minWidth="none" />
+			<Badge variant="amber" size="sm">ENV</Badge>
 		{/if}
 	</div>
 {/snippet}
 
 {#snippet RoleCell({ item }: { item: OidcRoleMapping })}
 	{@const role = rolesById[item.roleId]}
-	<StatusBadge text={getRoleName(item.roleId)} variant={getRoleBadgeVariant(role)} />
+	<Badge variant={getRoleBadgeVariant(role)} minWidth="20">{getRoleName(item.roleId)}</Badge>
 {/snippet}
 
 {#snippet ScopeCell({ item }: { item: OidcRoleMapping })}
@@ -188,7 +188,7 @@
 		]}
 		fields={[
 			{
-				label: m.oidc_mappings_col_scope(),
+				label: m.resource_environment_cap(),
 				getValue: (item: OidcRoleMapping) => getEnvName(item.environmentId),
 				icon: ShieldAlertIcon,
 				iconVariant: 'gray' as const,

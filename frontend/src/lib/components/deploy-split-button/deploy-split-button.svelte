@@ -54,19 +54,19 @@
 				<DropdownMenu.RadioItem value="missing">
 					<div class="flex flex-col gap-0.5">
 						<span class="font-medium">Missing</span>
-						<span class="text-muted-foreground text-xs">{m.deploy_pull_policy_missing()}</span>
+						<span class="text-xs text-muted-foreground">{m.deploy_pull_policy_missing()}</span>
 					</div>
 				</DropdownMenu.RadioItem>
 				<DropdownMenu.RadioItem value="always">
 					<div class="flex flex-col gap-0.5">
 						<span class="font-medium">{m.common_always()}</span>
-						<span class="text-muted-foreground text-xs">{m.deploy_pull_policy_always()}</span>
+						<span class="text-xs text-muted-foreground">{m.deploy_pull_policy_always()}</span>
 					</div>
 				</DropdownMenu.RadioItem>
 				<DropdownMenu.RadioItem value="never">
 					<div class="flex flex-col gap-0.5">
 						<span class="font-medium">{m.common_never()}</span>
-						<span class="text-muted-foreground text-xs">{m.deploy_pull_policy_never()}</span>
+						<span class="text-xs text-muted-foreground">{m.deploy_pull_policy_never()}</span>
 					</div>
 				</DropdownMenu.RadioItem>
 			</DropdownMenu.RadioGroup>

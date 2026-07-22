@@ -12,7 +12,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/samber/mo"
 	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -170,7 +172,20 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		return nil, err
 	}
 
-	if err := validateGitRepositoryCredentialChangeInternal(repository, req); err != nil {
+	if err := validation.ValidateCredentialTargetChange(
+		"repository URL",
+		repository.URL,
+		req.URL,
+		nil,
+		map[string]bool{
+			"sshKey": repository.SSHKey != "",
+			"token":  repository.Token != "",
+		},
+		map[string]bool{
+			"sshKey": req.SSHKey != nil,
+			"token":  req.Token != nil,
+		},
+	); err != nil {
 		return nil, err
 	}
 
@@ -242,39 +257,6 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 	}
 
 	return s.GetRepositoryByID(ctx, id)
-}
-
-func validateGitRepositoryCredentialChangeInternal(repository *models.GitRepository, req models.UpdateGitRepositoryRequest) error {
-	if repository == nil || req.URL == nil || *req.URL == repository.URL {
-		return nil
-	}
-
-	missingFields := make([]string, 0, 2)
-	missingCredentialLabels := make([]string, 0, 2)
-
-	if repository.Token != "" && req.Token == nil {
-		missingFields = append(missingFields, "token")
-		missingCredentialLabels = append(missingCredentialLabels, "token")
-	}
-
-	if repository.SSHKey != "" && req.SSHKey == nil {
-		missingFields = append(missingFields, "sshKey")
-		missingCredentialLabels = append(missingCredentialLabels, "SSH key")
-	}
-
-	if len(missingFields) == 0 {
-		return nil
-	}
-
-	if len(missingFields) == 1 {
-		field := missingFields[0]
-		return &models.ValidationError{Field: field, Message: "Changing repository URL requires re-supplying or clearing the " + missingCredentialLabels[0]}
-	}
-
-	return models.NewValidationError(
-		"Changing repository URL requires re-supplying or clearing all stored credentials: "+strings.Join(missingCredentialLabels, " and "),
-		map[string]any{"fields": missingFields},
-	)
 }
 
 func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, actor models.User) error {
@@ -516,19 +498,19 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 }
 
 func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.RepositorySync, existing *models.GitRepository) bool {
-	needsUpdate := utils.UpdateIfChanged(&existing.Name, item.Name)
-	needsUpdate = utils.UpdateIfChanged(&existing.URL, item.URL) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.AuthType, item.AuthType) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Username, item.Username) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.SSHHostKeyVerification, item.SSHHostKeyVerification) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Description, item.Description) || needsUpdate
-	needsUpdate = utils.UpdateIfChanged(&existing.Enabled, item.Enabled) || needsUpdate
+	needsUpdate := utils.ApplyChanged(&existing.Name, mo.Some(item.Name))
+	needsUpdate = utils.ApplyChanged(&existing.URL, mo.Some(item.URL)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.AuthType, mo.Some(item.AuthType)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Username, mo.Some(item.Username)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.SSHHostKeyVerification, mo.Some(item.SSHHostKeyVerification)) || needsUpdate
+	needsUpdate = utils.ApplyNullable(&existing.Description, mo.PointerToOption(item.Description)) || needsUpdate
+	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
 	// Handle Token update
 	if item.Token != "" {
 		encryptedToken, err := crypto.Encrypt(item.Token)
 		if err == nil {
-			needsUpdate = utils.UpdateIfChanged(&existing.Token, encryptedToken) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.Token, mo.Some(encryptedToken)) || needsUpdate
 		}
 	} else if existing.Token != "" {
 		existing.Token = ""
@@ -539,7 +521,7 @@ func (s *GitRepositoryService) checkRepositoryNeedsUpdate(item gitops.Repository
 	if item.SSHKey != "" {
 		encryptedSSHKey, err := crypto.Encrypt(item.SSHKey)
 		if err == nil {
-			needsUpdate = utils.UpdateIfChanged(&existing.SSHKey, encryptedSSHKey) || needsUpdate
+			needsUpdate = utils.ApplyChanged(&existing.SSHKey, mo.Some(encryptedSSHKey)) || needsUpdate
 		}
 	} else if existing.SSHKey != "" {
 		existing.SSHKey = ""

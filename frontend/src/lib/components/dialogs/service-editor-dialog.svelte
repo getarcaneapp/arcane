@@ -278,7 +278,7 @@
 			return;
 		}
 		if (!form.image.value.trim()) {
-			form.image.error = m.swarm_service_form_image_required();
+			form.image.error = m.image_is_required();
 			return;
 		}
 
@@ -384,7 +384,7 @@
 				<FormInput
 					input={form.image}
 					label={m.swarm_service_form_image_label()}
-					placeholder={m.swarm_service_form_image_placeholder()}
+					placeholder={m.nginx_latest_placeholder()}
 					disabled={isLoading}
 				/>
 			</div>
@@ -400,7 +400,7 @@
 								<Select.Item value="replicated" label={m.swarm_service_mode_replicated()}
 									>{m.swarm_service_mode_replicated()}</Select.Item
 								>
-								<Select.Item value="global" label={m.swarm_service_mode_global()}>{m.swarm_service_mode_global()}</Select.Item>
+								<Select.Item value="global" label={m.global()}>{m.global()}</Select.Item>
 							</Select.Content>
 						</Select.Root>
 					{/snippet}
@@ -415,7 +415,7 @@
 			<Accordion.Root class="w-full space-y-5" type="multiple">
 				<!-- Ports -->
 				<Accordion.Item value="ports">
-					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_ports()}</Accordion.Trigger>
+					<Accordion.Trigger class="text-sm font-medium">{m.common_ports()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
 							{#each form.ports as port, i (i)}
@@ -449,7 +449,7 @@
 
 				<!-- Environment Variables -->
 				<Accordion.Item value="env">
-					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_env_vars()}</Accordion.Trigger>
+					<Accordion.Trigger class="text-sm font-medium">{m.common_environment_variables()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
 							{#each form.envVars as env, i (i)}
@@ -508,7 +508,7 @@
 
 				<!-- Labels -->
 				<Accordion.Item value="labels">
-					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_labels()}</Accordion.Trigger>
+					<Accordion.Trigger class="text-sm font-medium">{m.common_labels()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-4">
 							{#each form.labels as label, i (i)}
@@ -525,7 +525,7 @@
 								onclick={addLabel}
 								disabled={isLoading}
 								icon={AddIcon}
-								customLabel={m.swarm_service_form_add_label()}
+								customLabel={m.add_label()}
 							/>
 						</div>
 					</Accordion.Content>
@@ -536,21 +536,11 @@
 					<Accordion.Trigger class="text-sm font-medium">{m.swarm_service_form_advanced()}</Accordion.Trigger>
 					<Accordion.Content class="pt-6 pb-5">
 						<div class="space-y-5">
-							<FormInput input={form.command} label={m.swarm_service_form_command()} placeholder="/bin/sh" disabled={isLoading} />
-							<FormInput
-								input={form.args}
-								label={m.swarm_service_form_arguments()}
-								placeholder="-c echo hello"
-								disabled={isLoading}
-							/>
-							<FormInput
-								input={form.workingDir}
-								label={m.swarm_service_form_working_dir()}
-								placeholder="/app"
-								disabled={isLoading}
-							/>
-							<FormInput input={form.user} label={m.swarm_service_form_user()} placeholder="1000:1000" disabled={isLoading} />
-							<FormInput input={form.hostname} label={m.swarm_hostname()} placeholder="my-service" disabled={isLoading} />
+							<FormInput input={form.command} label={m.common_command()} placeholder="/bin/sh" disabled={isLoading} />
+							<FormInput input={form.args} label={m.common_args()} placeholder="-c echo hello" disabled={isLoading} />
+							<FormInput input={form.workingDir} label={m.common_working_directory()} placeholder="/app" disabled={isLoading} />
+							<FormInput input={form.user} label={m.common_user()} placeholder="1000:1000" disabled={isLoading} />
+							<FormInput input={form.hostname} label={m.hostname()} placeholder="my-service" disabled={isLoading} />
 						</div>
 					</Accordion.Content>
 				</Accordion.Item>

@@ -45,30 +45,30 @@
 						tone="ghost"
 						size="sm"
 						customLabel={title}
-						class="data-[state=open]:bg-accent -ml-3 h-8"
+						class="-ml-3 h-8 data-[state=open]:bg-accent"
 					>
 						{#if column.getIsSorted() === 'desc'}
-							<ArrowDownIcon class="text-foreground size-4" />
+							<ArrowDownIcon class="size-4 text-foreground" />
 						{:else if column.getIsSorted() === 'asc'}
-							<ArrowUpIcon class="text-foreground size-4" />
+							<ArrowUpIcon class="size-4 text-foreground" />
 						{:else}
-							<ArrowsUpDownIcon class="text-muted-foreground/70 size-4" />
+							<ArrowsUpDownIcon class="size-4 text-muted-foreground/70" />
 						{/if}
 					</ArcaneButton>
 				{/snippet}
 			</DropdownMenu.Trigger>
 			<DropdownMenu.Content align="start">
 				<DropdownMenu.Item onclick={() => column.toggleSorting(false)}>
-					<ArrowUpIcon class="text-muted-foreground/70 mr-2 size-4" />
+					<ArrowUpIcon class="mr-2 size-4 text-muted-foreground/70" />
 					{m.common_sort_asc()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Item onclick={() => column.toggleSorting(true)}>
-					<ArrowDownIcon class="text-muted-foreground/70 mr-2 size-4" />
+					<ArrowDownIcon class="mr-2 size-4 text-muted-foreground/70" />
 					{m.common_sort_desc()}
 				</DropdownMenu.Item>
 				<DropdownMenu.Separator />
 				<DropdownMenu.Item onclick={() => column.toggleVisibility(false)}>
-					<EyeOffIcon class="text-muted-foreground/70 mr-2 size-4" />
+					<EyeOffIcon class="mr-2 size-4 text-muted-foreground/70" />
 					{m.common_hide()}
 				</DropdownMenu.Item>
 			</DropdownMenu.Content>

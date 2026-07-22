@@ -1,0 +1,27 @@
+name: Merge Conflict Labeler
+
+on:
+  push:
+    branches:
+      - main
+  workflow_run:
+    workflows:
+      - CI
+    types:
+      - completed
+
+jobs:
+  label:
+    name: Labeling
+    runs-on: depot-ubuntu-latest
+    if: ${{ github.repository == 'getarcaneapp/arcane' && (github.event_name == 'push' || github.event.workflow_run.event == 'pull_request') }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Apply label
+        uses: eps1lon/actions-label-merge-conflict@v3.1.0
+        with:
+          dirtyLabel: "merge conflict"
+          commentOnDirty: "This pull request has merge conflicts. Please resolve the conflicts so the PR can stay up-to-date and reviewed."
+          repoToken: "${{ secrets.GITHUB_TOKEN }}"

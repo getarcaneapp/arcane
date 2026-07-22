@@ -1,6 +1,6 @@
 <script lang="ts">
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { ArrowRightIcon, type IconType } from '$lib/icons';
 
@@ -40,14 +40,14 @@
 <Card.Root variant="outlined">
 	<Card.Content class="space-y-2.5 p-4">
 		<div class="flex items-center justify-between gap-2">
-			<div class="text-foreground/80 flex items-center gap-2 text-sm font-medium">
+			<div class="flex items-center gap-2 text-sm font-medium text-foreground/80">
 				<Icon class="size-4" />
 				{title}
 			</div>
-			<StatusBadge text={badgeText} variant={badgeVariant} size="sm" minWidth="none" />
+			<Badge variant={badgeVariant} size="sm">{badgeText}</Badge>
 		</div>
 		<p class="text-2xl leading-none font-semibold tracking-tight">{value}</p>
-		<p class="text-muted-foreground/90 text-xs leading-relaxed">{description}</p>
+		<p class="text-xs leading-relaxed text-muted-foreground/90">{description}</p>
 		<ArcaneButton
 			action="base"
 			tone="ghost"

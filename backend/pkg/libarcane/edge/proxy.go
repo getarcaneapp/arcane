@@ -1,6 +1,8 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"bytes"
 	"context"
 	"errors"
@@ -44,71 +46,96 @@ func ProxyRequest(ctx context.Context, tunnel *AgentTunnel, method, path, query 
 	return result.Status, result.Headers, result.Body, nil
 }
 
-func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (<-chan *TunnelMessage, error) {
+func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (*PendingRequest, error) {
 	if requestID == "" {
 		return nil, errors.New("request ID is required")
 	}
 
-	respCh := make(chan *TunnelMessage, 256)
-	tunnel.Pending.Store(requestID, &PendingRequest{
-		ResponseCh: respCh,
-		CreatedAt:  time.Now(),
-	})
-	return respCh, nil
+	pending := &PendingRequest{
+		ResponseCh: make(chan *TunnelMessage, 256),
+		failureCh:  make(chan error, 1),
+	}
+	tunnel.Pending.Store(requestID, pending)
+	return pending, nil
 }
 
-func collectCommandResponseInternal(ctx context.Context, respCh <-chan *TunnelMessage, method string) (int, map[string]string, []byte, error) {
+func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pending *PendingRequest, method string) (int, map[string]string, []byte, error) {
 	state := &grpcResponseState{}
 
 	for {
 		select {
 		case <-ctx.Done():
 			return 0, nil, nil, ctx.Err()
-		case incoming := <-respCh:
-			if incoming == nil {
-				continue
-			}
-
-			switch incoming.Type {
-			case MessageTypeResponse:
-				if done, status, headers, body := state.handleResponse(method, incoming); done {
-					return status, headers, body, nil
-				}
-			case MessageTypeCommandAck:
-				continue
-			case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
-				state.handleStreamData(incoming)
-			case MessageTypeCommandComplete:
-				status, headers, body, err := state.handleCommandComplete(incoming)
+		case <-tunnel.done:
+			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
 				return status, headers, body, err
-			case MessageTypeStreamEnd:
-				if done, status, headers, body := state.handleStreamEnd(); done {
-					return status, headers, body, nil
-				}
-			case MessageTypeRequest,
-				MessageTypeCommandRequest,
-				MessageTypeHeartbeat,
-				MessageTypeHeartbeatAck,
-				MessageTypeWebSocketStart,
-				MessageTypeWebSocketData,
-				MessageTypeWebSocketClose,
-				MessageTypeStreamOpen,
-				MessageTypeStreamClose,
-				MessageTypeCancelRequest,
-				MessageTypeRegister,
-				MessageTypeRegisterResponse,
-				MessageTypeEvent:
-				continue
+			}
+			return 0, nil, nil, errors.New("edge tunnel closed while waiting for response")
+		case err := <-pending.failureCh:
+			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
+				return status, headers, body, err
+			}
+			return 0, nil, nil, err
+		case incoming, ok := <-pending.ResponseCh:
+			if !ok {
+				return 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+			}
+			if done, status, headers, body, err := state.handleTunnelMessageInternal(method, incoming); done {
+				return status, headers, body, err
 			}
 		}
 	}
 }
 
-type grpcResponseState struct {
-	status      int
-	respHeaders map[string]string
-	respBody    bytes.Buffer
-	gotResponse bool
+func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
+	if incoming == nil {
+		return false, 0, nil, nil, nil
+	}
+
+	switch incoming.Type {
+	case MessageTypeResponse:
+		done, status, headers, body := s.handleResponse(method, incoming)
+		return done, status, headers, body, nil
+	case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
+		s.handleStreamData(incoming)
+	case MessageTypeCommandComplete:
+		status, headers, body, err := s.handleCommandComplete(incoming)
+		return true, status, headers, body, err
+	case MessageTypeStreamEnd:
+		done, status, headers, body := s.handleStreamEnd()
+		return done, status, headers, body, nil
+	case MessageTypeRequest,
+		MessageTypeHeartbeat,
+		MessageTypeHeartbeatAck,
+		MessageTypeWebSocketStart,
+		MessageTypeWebSocketData,
+		MessageTypeWebSocketClose,
+		MessageTypeRegister,
+		MessageTypeRegisterResponse,
+		MessageTypeEvent,
+		MessageTypeCommandRequest,
+		MessageTypeCommandAck,
+		MessageTypeStreamOpen,
+		MessageTypeStreamClose,
+		MessageTypeCancelRequest:
+	}
+	return false, 0, nil, nil, nil
+}
+
+func (s *grpcResponseState) drainTerminalResponseInternal(respCh <-chan *TunnelMessage, method string) (bool, int, map[string]string, []byte, error) {
+	for {
+		select {
+		case incoming, ok := <-respCh:
+			if !ok {
+				return true, 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+			}
+			if done, status, headers, body, err := s.handleTunnelMessageInternal(method, incoming); done {
+				return true, status, headers, body, err
+			}
+		default:
+			return false, 0, nil, nil, nil
+		}
+	}
 }
 
 func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
@@ -274,27 +301,26 @@ func stripInternalTunnelHeaders(headers map[string]string) map[string]string {
 
 // HasActiveTunnel checks if an environment has an active edge tunnel
 func HasActiveTunnel(envID string) bool {
-	_, ok := GetActiveTunnel(envID)
-	return ok
+	return GetActiveTunnel(envID).IsPresent()
 }
 
 // GetActiveTunnel returns the active tunnel for an environment, if one exists.
-func GetActiveTunnel(envID string) (*AgentTunnel, bool) {
-	tunnel, ok := GetRegistry().Get(envID)
+func GetActiveTunnel(envID string) mo.Option[*AgentTunnel] {
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return nil, false
+		return mo.None[*AgentTunnel]()
 	}
-	return tunnel, true
+	return mo.Some(tunnel)
 }
 
 // WaitForActiveTunnel waits for an environment to establish a live tunnel.
-func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) (*AgentTunnel, bool) {
+func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duration) mo.Option[*AgentTunnel] {
 	if timeout <= 0 {
 		return GetActiveTunnel(envID)
 	}
 
-	if tunnel, ok := GetActiveTunnel(envID); ok {
-		return tunnel, true
+	if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
+		return mo.Some(tunnel)
 	}
 
 	waitCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -306,10 +332,10 @@ func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duratio
 	for {
 		select {
 		case <-waitCtx.Done():
-			return nil, false
+			return mo.None[*AgentTunnel]()
 		case <-ticker.C:
-			if tunnel, ok := GetActiveTunnel(envID); ok {
-				return tunnel, true
+			if tunnel, ok := GetActiveTunnel(envID).Get(); ok {
+				return mo.Some(tunnel)
 			}
 		}
 	}
@@ -317,7 +343,7 @@ func WaitForActiveTunnel(ctx context.Context, envID string, timeout time.Duratio
 
 // RequestTunnelAndWait marks an edge environment as needed and waits for the
 // agent to establish a live tunnel.
-func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) (*AgentTunnel, bool) {
+func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout time.Duration) mo.Option[*AgentTunnel] {
 	TouchTunnelDemand(envID, demandTTL)
 	return WaitForActiveTunnel(ctx, envID, timeout)
 }
@@ -326,7 +352,16 @@ func RequestTunnelAndWait(ctx context.Context, envID string, demandTTL, timeout 
 // This is for service-level calls that need to route through the tunnel.
 // Returns (statusCode, responseBody, error)
 func DoRequest(ctx context.Context, envID, method, path string, body []byte) (int, []byte, error) {
-	tunnel, ok := GetRegistry().Get(envID)
+	if ctx == nil {
+		return 0, nil, errors.New("context is required")
+	}
+	if _, hasDeadline := ctx.Deadline(); !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, DefaultProxyTimeout)
+		defer cancel()
+	}
+
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok {
 		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
 	}

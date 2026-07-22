@@ -2,7 +2,8 @@ package configschema
 
 import (
 	"bytes"
-	"encoding/json"
+	"encoding/json/jsontext"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"go/ast"
@@ -67,15 +68,15 @@ type SettingOverrideEntry struct {
 	Description  string `json:"description,omitempty"`
 	DefaultValue string `json:"defaultValue,omitempty"`
 	Type         string `json:"type"`
-	Sensitive    bool   `json:"sensitive"`
-	Deprecated   bool   `json:"deprecated"`
 	Category     string `json:"category,omitempty"`
-	Public       bool   `json:"public"`
 	Requires     string `json:"requires,omitempty"`
 	Note         string `json:"note,omitempty"`
 	Source       string `json:"source"`
 	SourceFile   string `json:"sourceFile"`
 	SourceSymbol string `json:"sourceSymbol"`
+	Sensitive    bool   `json:"sensitive"`
+	Deprecated   bool   `json:"deprecated"`
+	Public       bool   `json:"public"`
 }
 
 type envFieldOptions struct {
@@ -166,7 +167,7 @@ func GenerateWithSourceRoot(sourceRoot string) (*SchemaDocument, error) {
 
 // MarshalJSON returns a stable, indented JSON encoding of the schema document.
 func MarshalJSON(doc *SchemaDocument) ([]byte, error) {
-	output, err := json.MarshalIndent(doc, "", "  ")
+	output, err := json.Marshal(doc, json.Deterministic(true), jsontext.WithIndent("  "))
 	if err != nil {
 		return nil, fmt.Errorf("marshal schema document: %w", err)
 	}

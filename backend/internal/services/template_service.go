@@ -1,9 +1,8 @@
 package services
 
 import (
-	"bufio"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -30,15 +28,11 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	tmpl "github.com/getarcaneapp/arcane/types/v2/template"
 	"github.com/google/uuid"
+	"github.com/samber/hot"
+	"github.com/samber/mo"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
-
-type remoteCache struct {
-	templates  []models.ComposeTemplate
-	lastFetch  time.Time
-	refreshing bool
-}
 
 type registryFetchMeta struct {
 	LastModified string
@@ -52,8 +46,7 @@ type TemplateService struct {
 	lookupIP        httputils.LookupIPFunc
 	settingsService *SettingsService
 
-	remoteMu    sync.RWMutex
-	remoteCache remoteCache
+	remoteCache *hot.HotCache[struct{}, []models.ComposeTemplate]
 
 	registryMu        sync.RWMutex
 	registryFetchMeta map[string]*registryFetchMeta
@@ -74,6 +67,8 @@ const (
 
 const remoteIDPrefix = "remote"
 
+var errNoRemoteTemplates = errors.New("remote template registries returned no templates")
+
 func makeRemoteID(registryID, slug string) string {
 	return fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registryID, slug)
 }
@@ -88,11 +83,29 @@ func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.C
 		httpClient:        httpClient,
 		lookupIP:          httputils.DefaultLookupIP,
 		settingsService:   settingsService,
-		remoteCache:       remoteCache{},
 		registryFetchMeta: make(map[string]*registryFetchMeta),
 		registryErrors:    make(map[string]string),
 	}
 	service.safeHTTPClient = service.newSafeHTTPClientInternal()
+	revalidationCtx := context.WithoutCancel(ctx)
+	loader := func(_ []struct{}) (map[struct{}][]models.ComposeTemplate, error) {
+		loadCtx, cancel := context.WithTimeout(revalidationCtx, 2*time.Minute)
+		defer cancel()
+		templates, err := service.loadRemoteTemplates(loadCtx)
+		if err != nil {
+			return nil, err
+		}
+		if len(templates) == 0 {
+			return nil, errNoRemoteTemplates
+		}
+		return map[struct{}][]models.ComposeTemplate{{}: templates}, nil
+	}
+	service.remoteCache = hot.NewHotCache[struct{}, []models.ComposeTemplate](hot.LRU, 1).
+		WithTTL(remoteCacheDuration).
+		WithLoaders(loader).
+		WithRevalidation(24*time.Hour, loader).
+		WithRevalidationErrorPolicy(hot.KeepOnError).
+		Build()
 
 	if err := projects.EnsureDefaultTemplates(ctx, service.configuredTemplatesDirSettingInternal(ctx)); err != nil {
 		slog.WarnContext(ctx, "failed to ensure default templates", "error", err)
@@ -118,50 +131,18 @@ func (s *TemplateService) getTemplatesDirectoryInternal(ctx context.Context) (st
 	return projects.GetTemplatesDirectory(ctx, strings.TrimSpace(s.configuredTemplatesDirSettingInternal(ctx)))
 }
 
-func (s *TemplateService) ensureRemoteTemplatesLoaded(ctx context.Context) error {
-	s.remoteMu.Lock()
-
-	// If cache has entries and is fresh, return.
-	// An empty slice is treated as "no cache" so callers always trigger a blocking
-	// refresh — otherwise a single failed/empty refresh would poison the cache.
-	if len(s.remoteCache.templates) > 0 && time.Since(s.remoteCache.lastFetch) < remoteCacheDuration {
-		s.remoteMu.Unlock()
-		return nil
+func (s *TemplateService) ensureRemoteTemplatesLoaded(_ context.Context) error {
+	if s.remoteCache == nil {
+		return errors.New("remote template cache is not initialized")
 	}
-
-	// If we have a non-empty stale cache and nobody is refreshing, trigger background refresh.
-	if len(s.remoteCache.templates) > 0 {
-		if !s.remoteCache.refreshing {
-			s.remoteCache.refreshing = true
-			s.remoteMu.Unlock()
-
-			// Use a closure that accepts context to satisfy linter, though we create a new one
-			go func(parentCtx context.Context) {
-				// Create a detached context with timeout for background fetch
-				// We use context.WithoutCancel(parentCtx) to ensure it outlives the request
-				bgCtx, cancel := context.WithTimeout(context.WithoutCancel(parentCtx), 2*time.Minute)
-				defer cancel()
-
-				defer func() {
-					s.remoteMu.Lock()
-					s.remoteCache.refreshing = false
-					s.remoteMu.Unlock()
-				}()
-
-				if err := s.refreshRemoteTemplates(bgCtx); err != nil {
-					slog.WarnContext(bgCtx, "background remote template refresh failed", "error", err)
-				}
-			}(ctx)
-			return nil // Return stale cache
-		}
-		s.remoteMu.Unlock()
-		return nil // Return stale cache while someone else refreshes
+	templates, found, err := s.remoteCache.Get(struct{}{})
+	if err != nil {
+		return fmt.Errorf("failed to load remote templates: %w", err)
 	}
-
-	s.remoteMu.Unlock()
-
-	// No cache at all, must block
-	return s.refreshRemoteTemplates(ctx)
+	if !found || len(templates) == 0 {
+		return errNoRemoteTemplates
+	}
+	return nil
 }
 
 func (s *TemplateService) refreshRemoteTemplates(ctx context.Context) error {
@@ -170,10 +151,13 @@ func (s *TemplateService) refreshRemoteTemplates(ctx context.Context) error {
 		return fmt.Errorf("failed to load remote templates: %w", err)
 	}
 
-	s.remoteMu.Lock()
-	defer s.remoteMu.Unlock()
-	s.remoteCache.templates = templates
-	s.remoteCache.lastFetch = time.Now()
+	if len(templates) == 0 {
+		return errNoRemoteTemplates
+	}
+	if s.remoteCache == nil {
+		return errors.New("remote template cache is not initialized")
+	}
+	s.remoteCache.Set(struct{}{}, templates)
 	return nil
 }
 
@@ -256,11 +240,6 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 	return result.Items, paginationResp, nil
 }
 
-// envKeyPattern is the POSIX env-name shape used to validate global variable
-// keys before they are persisted to .env.global. Keys that do not match are
-// rejected with a common.InvalidEnvKeyError.
-var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.ComposeTemplate, error) {
 	if err := s.syncFilesystemTemplatesInternal(ctx); err != nil {
 		slog.WarnContext(ctx, "failed to sync filesystem templates", "error", err)
@@ -273,7 +252,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 		return nil, fmt.Errorf("failed to query local template: %w", err)
 	}
 
-	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil {
+	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil && !errors.Is(err, errNoRemoteTemplates) {
 		return nil, fmt.Errorf("template %q lookup failed: registry refresh error: %w", id, err)
 	}
 
@@ -286,7 +265,7 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 	// silently returned empty.
 	if strings.HasPrefix(id, remoteIDPrefix+":") {
 		slog.InfoContext(ctx, "remote template not in cache, forcing registry refresh", "templateID", id, "cacheSize", s.remoteCacheSizeInternal())
-		if refreshErr := s.refreshRemoteTemplates(ctx); refreshErr != nil {
+		if refreshErr := s.refreshRemoteTemplates(ctx); refreshErr != nil && !errors.Is(refreshErr, errNoRemoteTemplates) {
 			return nil, fmt.Errorf("template %q not found and registry refresh failed: %w", id, refreshErr)
 		}
 		if found := s.lookupRemoteFromCacheInternal(id); found != nil {
@@ -301,11 +280,16 @@ func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.C
 }
 
 func (s *TemplateService) lookupRemoteFromCacheInternal(id string) *models.ComposeTemplate {
-	s.remoteMu.RLock()
-	defer s.remoteMu.RUnlock()
-	for i := range s.remoteCache.templates {
-		if s.remoteCache.templates[i].ID == id {
-			cloned := cloneRemoteTemplates(s.remoteCache.templates[i : i+1])
+	if s.remoteCache == nil {
+		return nil
+	}
+	templates, found := s.remoteCache.Peek(struct{}{})
+	if !found {
+		return nil
+	}
+	for i := range templates {
+		if templates[i].ID == id {
+			cloned := cloneRemoteTemplates(templates[i : i+1])
 			return &cloned[0]
 		}
 	}
@@ -313,9 +297,11 @@ func (s *TemplateService) lookupRemoteFromCacheInternal(id string) *models.Compo
 }
 
 func (s *TemplateService) remoteCacheSizeInternal() int {
-	s.remoteMu.RLock()
-	defer s.remoteMu.RUnlock()
-	return len(s.remoteCache.templates)
+	if s.remoteCache == nil {
+		return 0
+	}
+	templates, _ := s.remoteCache.Peek(struct{}{})
+	return len(templates)
 }
 
 func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.ComposeTemplate) error {
@@ -324,7 +310,7 @@ func (s *TemplateService) CreateTemplate(ctx context.Context, template *models.C
 	}
 	template.IsCustom = true
 	template.IsRemote = false
-	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, derefString(template.EnvContent)))
+	setTemplateIconURL(template, s.resolveTemplateIconURL(ctx, template.Content, mo.PointerToOption(template.EnvContent).OrEmpty()))
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(template).Error; err != nil {
 			return fmt.Errorf("failed to create template: %w", err)
@@ -351,7 +337,7 @@ func (s *TemplateService) UpdateTemplate(ctx context.Context, id string, updates
 		existing.Description = updates.Description
 		existing.Content = updates.Content
 		existing.EnvContent = updates.EnvContent
-		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, derefString(existing.EnvContent)))
+		setTemplateIconURL(&existing, s.resolveTemplateIconURL(ctx, existing.Content, mo.PointerToOption(existing.EnvContent).OrEmpty()))
 
 		if err := tx.Save(&existing).Error; err != nil {
 			return fmt.Errorf("failed to update template: %w", err)
@@ -611,7 +597,7 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			defer mu.Unlock()
 			for _, template := range remoteTemplates {
 				template.Registry = cloneRegistry(&reg)
-				template.RegistryID = stringPtr(reg.ID)
+				template.RegistryID = mo.EmptyableToOption(strings.TrimSpace(reg.ID)).ToPointer()
 				templates = append(templates, template)
 			}
 			return nil
@@ -736,15 +722,15 @@ func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, regis
 		EnvContent:  nil,
 		IsCustom:    false,
 		IsRemote:    true,
-		RegistryID:  stringPtr(registry.ID),
+		RegistryID:  mo.EmptyableToOption(strings.TrimSpace(registry.ID)).ToPointer(),
 		Registry:    cloneRegistry(registry),
 		Metadata: &models.ComposeTemplateMetadata{
-			Version:          stringPtr(remote.Version),
-			Author:           stringPtr(remote.Author),
+			Version:          mo.EmptyableToOption(strings.TrimSpace(remote.Version)).ToPointer(),
+			Author:           mo.EmptyableToOption(strings.TrimSpace(remote.Author)).ToPointer(),
 			Tags:             remote.Tags,
-			RemoteURL:        stringPtr(remote.ComposeURL),
-			EnvURL:           stringPtr(remote.EnvURL),
-			DocumentationURL: stringPtr(remote.DocumentationURL),
+			RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(remote.ComposeURL)).ToPointer(),
+			EnvURL:           mo.EmptyableToOption(strings.TrimSpace(remote.EnvURL)).ToPointer(),
+			DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(remote.DocumentationURL)).ToPointer(),
 		},
 	}
 }
@@ -956,13 +942,13 @@ func cloneTemplateMetadata(meta *models.ComposeTemplateMetadata) *models.Compose
 		return nil
 	}
 	return &models.ComposeTemplateMetadata{
-		Version:          stringPtr(derefString(meta.Version)),
-		Author:           stringPtr(derefString(meta.Author)),
+		Version:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Version).OrEmpty())).ToPointer(),
+		Author:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.Author).OrEmpty())).ToPointer(),
 		Tags:             append([]string(nil), meta.Tags...),
-		RemoteURL:        stringPtr(derefString(meta.RemoteURL)),
-		EnvURL:           stringPtr(derefString(meta.EnvURL)),
-		DocumentationURL: stringPtr(derefString(meta.DocumentationURL)),
-		IconURL:          stringPtr(derefString(meta.IconURL)),
+		RemoteURL:        mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.RemoteURL).OrEmpty())).ToPointer(),
+		EnvURL:           mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.EnvURL).OrEmpty())).ToPointer(),
+		DocumentationURL: mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.DocumentationURL).OrEmpty())).ToPointer(),
+		IconURL:          mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(meta.IconURL).OrEmpty())).ToPointer(),
 	}
 }
 
@@ -974,7 +960,7 @@ func cloneRemoteTemplates(items []models.ComposeTemplate) []models.ComposeTempla
 	cloned := make([]models.ComposeTemplate, len(items))
 	for i := range items {
 		cloned[i] = items[i]
-		cloned[i].RegistryID = stringPtr(derefString(items[i].RegistryID))
+		cloned[i].RegistryID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(items[i].RegistryID).OrEmpty())).ToPointer()
 		cloned[i].Registry = cloneRegistry(items[i].Registry)
 		cloned[i].Metadata = cloneTemplateMetadata(items[i].Metadata)
 	}
@@ -990,9 +976,9 @@ func cloneRegistry(registry *models.TemplateRegistry) *models.TemplateRegistry {
 }
 
 func (s *TemplateService) invalidateRemoteCache() {
-	s.remoteMu.Lock()
-	s.remoteCache = remoteCache{}
-	s.remoteMu.Unlock()
+	if s.remoteCache != nil {
+		s.remoteCache.Purge()
+	}
 
 	s.registryMu.Lock()
 	s.registryFetchMeta = make(map[string]*registryFetchMeta)
@@ -1004,7 +990,7 @@ func (s *TemplateService) SyncLocalTemplatesFromFilesystem(ctx context.Context) 
 }
 
 func (s *TemplateService) upsertFilesystemTemplate(ctx context.Context, name, desc, compose string, envPtr *string) error {
-	iconURL := s.resolveTemplateIconURL(ctx, compose, derefString(envPtr))
+	iconURL := s.resolveTemplateIconURL(ctx, compose, mo.PointerToOption(envPtr).OrEmpty())
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var existing models.ComposeTemplate
@@ -1093,122 +1079,6 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 	}
 
 	s.lastFsSync = time.Now()
-	return nil
-}
-
-func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, error) {
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
-	if err != nil {
-		return "", fmt.Errorf("failed to get projects directory: %w", err)
-	}
-
-	return filepath.Join(projectsDirectory, ".env.global"), nil
-}
-
-func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]env.Variable, error) {
-	envPath, err := s.getGlobalVariablesPath(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-		return []env.Variable{}, nil
-	}
-
-	file, err := os.Open(envPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open global variables file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	vars := []env.Variable{}
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-
-	for scanner.Scan() {
-		lineNum++
-		line := strings.TrimSpace(scanner.Text())
-
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			slog.WarnContext(ctx, "Skipping invalid line in global variables file",
-				"line", lineNum,
-				"content", line)
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		if len(value) >= 2 {
-			if (strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)) ||
-				(strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`)) {
-				value = value[1 : len(value)-1]
-			}
-		}
-
-		vars = append(vars, env.Variable{
-			Key:   key,
-			Value: value,
-		})
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading global variables file: %w", err)
-	}
-
-	return vars, nil
-}
-
-func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.Variable) error {
-	envPath, err := s.getGlobalVariablesPath(ctx)
-	if err != nil {
-		return err
-	}
-
-	projectsDirectory := filepath.Dir(envPath)
-	if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
-		return fmt.Errorf("failed to create projects directory: %w", err)
-	}
-
-	var builder strings.Builder
-	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n")
-	builder.WriteString("# Last updated: ")
-	builder.WriteString(time.Now().Format(time.RFC3339))
-	builder.WriteString("\n\n")
-
-	for _, v := range vars {
-		if strings.TrimSpace(v.Key) == "" {
-			continue
-		}
-
-		key := strings.TrimSpace(v.Key)
-		if !envKeyPattern.MatchString(key) {
-			return &common.InvalidEnvKeyError{Key: v.Key}
-		}
-		value := strings.TrimSpace(v.Value)
-
-		if strings.ContainsAny(value, " \t\n\r#") {
-			value = fmt.Sprintf(`"%s"`, strings.ReplaceAll(value, `"`, `\"`))
-		}
-
-		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
-	}
-
-	if err := projects.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
-		return fmt.Errorf("failed to write global variables file: %w", err)
-	}
-
-	slog.InfoContext(ctx, "Updated global variables",
-		"path", envPath,
-		"count", len(vars))
-
 	return nil
 }
 
@@ -1309,37 +1179,17 @@ func (s *TemplateService) resolveTemplateIconURL(ctx context.Context, composeCon
 		return nil
 	}
 
-	arcaneBlockMap, ok := utils.AsStringMap(arcaneBlock)
+	arcaneBlockMap, ok := utils.AsStringMap(arcaneBlock).Get()
 	if !ok {
 		return nil
 	}
 
 	icon := utils.FirstNonEmpty(
-		getFirstString(arcaneBlockMap[templateArcaneIconKey]),
-		getFirstString(arcaneBlockMap[templateArcaneIconsAliasKey]),
+		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconKey], utils.ToString)...),
+		utils.FirstNonEmpty(utils.Collect(arcaneBlockMap[templateArcaneIconsAliasKey], utils.ToString)...),
 	)
 
-	return stringPtr(icon)
-}
-
-func getFirstString(value any) string {
-	values := utils.Collect(value, utils.ToString)
-	return utils.FirstNonEmpty(values...)
-}
-
-func stringPtr(value string) *string {
-	trimmed := strings.TrimSpace(value)
-	if trimmed == "" {
-		return nil
-	}
-	return &trimmed
-}
-
-func derefString(value *string) string {
-	if value == nil {
-		return ""
-	}
-	return *value
+	return mo.EmptyableToOption(strings.TrimSpace(icon)).ToPointer()
 }
 
 func setTemplateIconURL(template *models.ComposeTemplate, iconURL *string) {
@@ -1426,9 +1276,8 @@ func (s *TemplateService) getMergedTemplates(ctx context.Context) ([]models.Comp
 	if err := s.ensureRemoteTemplatesLoaded(ctx); err != nil {
 		slog.WarnContext(ctx, "failed to load remote templates", "error", err)
 	} else {
-		s.remoteMu.RLock()
-		copied := cloneRemoteTemplates(s.remoteCache.templates)
-		s.remoteMu.RUnlock()
+		remoteTemplates, _ := s.remoteCache.Peek(struct{}{})
+		copied := cloneRemoteTemplates(remoteTemplates)
 
 		if len(copied) > 0 {
 			templates = append(templates, copied...)

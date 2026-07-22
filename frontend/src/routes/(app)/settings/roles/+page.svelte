@@ -28,7 +28,7 @@
 					{
 						id: 'create',
 						action: 'create',
-						label: m.common_create_button({ resource: m.resource_role_cap() }),
+						label: m.common_create_button({ resource: m.common_role() }),
 						onclick: () => goto('/settings/roles/new')
 					}
 				]

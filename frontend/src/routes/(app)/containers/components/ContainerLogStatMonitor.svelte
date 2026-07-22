@@ -27,18 +27,18 @@
 
 <section
 	class={cn(
-		'bg-card/35 border-border/70 grid min-w-0 gap-2 rounded-lg border px-3 py-2.5',
+		'grid min-w-0 gap-2 rounded-lg border border-border/70 bg-card/35 px-3 py-2.5',
 		disabled && 'bg-muted/25 text-muted-foreground'
 	)}
 	data-testid={testId}
 >
 	<div class="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3">
 		<div class="flex min-w-0 items-center gap-2">
-			<div class="bg-background/70 border-border/60 flex size-7 shrink-0 items-center justify-center rounded-md border">
+			<div class="flex size-7 shrink-0 items-center justify-center rounded-md border border-border/60 bg-background/70">
 				<Icon class={cn('size-4', disabled ? 'text-muted-foreground' : iconColorClass)} />
 			</div>
 			<div class="min-w-0">
-				<div class="text-muted-foreground text-[11px] font-medium tracking-normal">{label}</div>
+				<div class="text-[11px] font-medium tracking-normal text-muted-foreground">{label}</div>
 				{#if loading}
 					<Skeleton class="mt-1 h-5 w-20" />
 				{:else}
@@ -52,14 +52,14 @@
 		{#if loading}
 			<Skeleton class="mt-0.5 h-4 w-16 justify-self-end" />
 		{:else}
-			<div class="text-muted-foreground shrink-0 justify-self-end pl-2 text-right text-[11px] tabular-nums">{detail}</div>
+			<div class="shrink-0 justify-self-end pl-2 text-right text-[11px] text-muted-foreground tabular-nums">{detail}</div>
 		{/if}
 	</div>
 
 	{#if loading}
 		<Skeleton class="h-8 w-full" />
 	{:else}
-		<div class="bg-background/60 border-border/60 flex h-8 items-end gap-[3px] overflow-hidden rounded-md border px-1.5 py-1">
+		<div class="flex h-8 items-end gap-[3px] overflow-hidden rounded-md border border-border/60 bg-background/60 px-1.5 py-1">
 			{#each history as sample, index (`${tone}-${index}`)}
 				<ArcaneTooltip.Root>
 					<ArcaneTooltip.Trigger class="flex h-full min-w-0 flex-1 items-end self-stretch">
@@ -71,7 +71,7 @@
 					<ArcaneTooltip.Content side="top">
 						<div class="space-y-1">
 							<div class="text-xs font-medium">{label}</div>
-							<div class="text-muted-foreground text-xs tabular-nums">{sample.tooltip}</div>
+							<div class="text-xs text-muted-foreground tabular-nums">{sample.tooltip}</div>
 						</div>
 					</ArcaneTooltip.Content>
 				</ArcaneTooltip.Root>

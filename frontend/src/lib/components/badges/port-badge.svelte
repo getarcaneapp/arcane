@@ -1,19 +1,22 @@
 <script lang="ts">
 	import type { ContainerPorts } from '$lib/types/docker';
+	import type { ServicePort } from '$lib/types/swarm';
 	import { m } from '$lib/paraglide/messages';
 	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { badgeVariants } from '$lib/components/ui/badge';
+	import { cn } from '$lib/utils';
 	import settingsStore from '$lib/stores/config-store';
 	import { toPortHref } from '$lib/utils/navigation';
 	import { mergeProps } from 'bits-ui';
 
 	let {
-		ports = [] as ContainerPorts[],
+		ports = [] as PortBadgePort[],
 		collapsible = true,
 		maxVisible = 3,
 		hideExposed = false,
 		wrap = true
 	} = $props<{
-		ports?: ContainerPorts[];
+		ports?: PortBadgePort[];
 		collapsible?: boolean;
 		maxVisible?: number;
 		hideExposed?: boolean;
@@ -24,6 +27,7 @@
 	let expanded = $state(false);
 
 	const baseServerUrl = $derived($settingsStore?.baseServerUrl ?? 'http://localhost');
+	type PortBadgePort = ContainerPorts | ServicePort;
 
 	type NormalizedPort = {
 		hostPort: string | null;
@@ -33,36 +37,39 @@
 		isPublished: boolean;
 	};
 
-	function getPublicPort(p: ContainerPorts): string | null {
-		const pub =
-			(p as any).publicPort?.toString?.() ?? (p as any).hostPort?.toString?.() ?? (p as any).published?.toString?.() ?? null;
+	function isContainerPort(p: PortBadgePort): p is ContainerPorts {
+		return 'privatePort' in p;
+	}
+
+	function getPublicPort(p: PortBadgePort): string | null {
+		const pub = isContainerPort(p) ? p.publicPort?.toString() : p.published?.toString();
 		return pub && pub !== '0' ? pub : null;
 	}
 
-	function getPrivatePort(p: ContainerPorts): string {
-		return ((p as any).privatePort ?? (p as any).target ?? '?').toString();
+	function getPrivatePort(p: PortBadgePort): string {
+		return (isContainerPort(p) ? p.privatePort : p.target).toString();
 	}
 
-	function getProto(p: ContainerPorts): string | undefined {
-		return (p as any).type ?? (p as any).protocol ?? undefined;
+	function getProto(p: PortBadgePort): string | undefined {
+		return isContainerPort(p) ? p.type : p.protocol;
 	}
 
-	function normalize(p: ContainerPorts): NormalizedPort {
+	function normalize(p: PortBadgePort): NormalizedPort {
 		const hostPort = getPublicPort(p);
 		return {
 			hostPort,
 			containerPort: getPrivatePort(p),
 			proto: getProto(p),
-			ip: (p as any).ip ?? null,
+			ip: (isContainerPort(p) ? p.ip : p.host_ip)?.trim() || null,
 			isPublished: hostPort !== null
 		};
 	}
 
-	function uniquePorts(list: ContainerPorts[]): NormalizedPort[] {
+	function uniquePorts(list: PortBadgePort[]): NormalizedPort[] {
 		const map = new Map<string, NormalizedPort>();
 		for (const p of list) {
 			const n = normalize(p);
-			const key = `${n.hostPort ?? ''}:${n.containerPort}/${n.proto ?? ''}`;
+			const key = `${n.ip ?? ''}:${n.hostPort ?? ''}:${n.containerPort}/${n.proto ?? ''}`;
 			if (!map.has(key)) map.set(key, n);
 		}
 		return Array.from(map.values()).sort((a, b) => {
@@ -88,7 +95,7 @@
 </script>
 
 {#if allPorts.length === 0}
-	<span class="text-muted-foreground text-xs">{m.containers_no_ports()}</span>
+	<span class="text-xs text-muted-foreground">{m.containers_no_ports()}</span>
 {:else}
 	<div class="flex gap-1.5 {wrap ? 'flex-wrap' : 'flex-nowrap'}">
 		{#each published as p, i (i)}
@@ -96,8 +103,10 @@
 				<ArcaneTooltip.Trigger>
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
-							class:
-								'ring-offset-background focus-visible:ring-ring bg-background/70 inline-flex items-center gap-1 rounded-md border border-sky-700/20 px-2 py-1 text-[11px] transition-colors hover:border-sky-700/40 hover:bg-sky-500/10 focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:outline-none dark:border-sky-400/40 dark:bg-slate-500/20 dark:text-sky-100 dark:hover:border-sky-300/60 dark:hover:bg-sky-500/30',
+							class: cn(
+								badgeVariants({ variant: 'sky', size: 'sm' }),
+								'hover:bg-sky-500/20 hover:border-sky-500/40 dark:hover:border-sky-500/50 focus-visible:outline-none'
+							),
 							href: toPortHref(p.hostPort!, baseServerUrl),
 							target: '_blank',
 							rel: 'noopener noreferrer'
@@ -112,7 +121,7 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
-						Published: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
+						{m.published()}: {p.ip ?? '0.0.0.0'}:{p.hostPort} → {p.containerPort}{p.proto ? `/${p.proto}` : ''}
 					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
@@ -120,9 +129,7 @@
 		{#each exposedOnly as p, i (i)}
 			<ArcaneTooltip.Root>
 				<ArcaneTooltip.Trigger>
-					<span
-						class="bg-background/50 inline-flex items-center gap-1 rounded-md border border-gray-600/30 px-2 py-1 text-[11px] text-gray-400 dark:border-slate-400/40 dark:bg-slate-500/20 dark:text-slate-200"
-					>
+					<span class={badgeVariants({ variant: 'gray', size: 'sm' })}>
 						<span class="tabular-nums">{p.containerPort}</span>
 						{#if p.proto}
 							<span class="text-muted-foreground uppercase">{p.proto}</span>
@@ -131,7 +138,7 @@
 				</ArcaneTooltip.Trigger>
 				<ArcaneTooltip.Content>
 					<p class="text-xs">
-						Exposed: {p.containerPort}{p.proto ? `/${p.proto}` : ''} (not published to host)
+						{m.ports_exposed_label()}: {p.containerPort}{p.proto ? `/${p.proto}` : ''} ({m.ports_no_host_binding()})
 					</p>
 				</ArcaneTooltip.Content>
 			</ArcaneTooltip.Root>
@@ -142,8 +149,7 @@
 					{#snippet child({ props })}
 						{@const triggerProps = mergeProps(props, {
 							onclick: () => (expanded = !expanded),
-							class:
-								'bg-muted hover:bg-muted/80 text-muted-foreground inline-flex cursor-pointer items-center rounded-md border px-2 py-1 text-[11px] font-medium transition-colors'
+							class: cn(badgeVariants({ variant: 'gray', size: 'sm' }), 'hover:bg-muted cursor-pointer')
 						})}
 						<button {...triggerProps}>{expanded ? '−' : `+${hiddenCount}`}</button>
 					{/snippet}

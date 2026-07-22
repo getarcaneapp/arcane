@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { LifecycleIndicator } from '$lib/components/lifecycle-indicator';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
@@ -154,7 +154,7 @@
 		},
 		{
 			accessorKey: 'lastSyncCommit',
-			title: m.git_sync_commit(),
+			title: m.commit(),
 			sortable: true,
 			cell: CommitCell
 		},
@@ -173,7 +173,7 @@
 		{ id: 'composePath', label: m.git_sync_compose_path(), defaultVisible: true },
 		{ id: 'autoSync', label: m.git_sync_auto_sync(), defaultVisible: true },
 		{ id: 'lastSyncStatus', label: m.git_sync_status(), defaultVisible: true },
-		{ id: 'lastSyncCommit', label: m.git_sync_commit(), defaultVisible: false },
+		{ id: 'lastSyncCommit', label: m.commit(), defaultVisible: false },
 		{ id: 'lastSyncAt', label: m.git_sync_last_sync(), defaultVisible: true }
 	];
 
@@ -205,31 +205,31 @@
 
 {#snippet BranchCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
-		<GitBranchIcon class="text-muted-foreground size-3.5" />
-		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
+		<GitBranchIcon class="size-3.5 text-muted-foreground" />
+		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{value}</code>
 	</div>
 {/snippet}
 
 {#snippet PathCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	<div class="flex items-center gap-1.5">
-		<FolderIcon class="text-muted-foreground size-3.5" />
-		<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 text-xs">{value}</code>
+		<FolderIcon class="size-3.5 text-muted-foreground" />
+		<code class="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">{value}</code>
 	</div>
 {/snippet}
 
 {#snippet AutoSyncCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
-	<StatusBadge variant={value ? 'blue' : 'gray'} text={value ? m.common_enabled() : m.common_disabled()} />
+	<Badge variant={value ? 'blue' : 'gray'} minWidth="20">{value ? m.common_enabled() : m.common_disabled()}</Badge>
 {/snippet}
 
 {#snippet StatusCell({ value }: { value: any; item: GitOpsSync; row: ArcaneRow<GitOpsSync> })}
 	{#if value === 'success'}
-		<StatusBadge variant="green" text={m.common_success()} />
+		<Badge variant="green" minWidth="20">{m.common_success()}</Badge>
 	{:else if value === 'failed'}
-		<StatusBadge variant="red" text={m.common_failed()} />
+		<Badge variant="red" minWidth="20">{m.common_failed()}</Badge>
 	{:else if value === 'pending'}
-		<StatusBadge variant="amber" text={m.common_pending()} />
+		<Badge variant="amber" minWidth="20">{m.common_pending()}</Badge>
 	{:else}
-		<StatusBadge variant="gray" text={m.common_na()} />
+		<Badge variant="gray" minWidth="20">{m.common_na()}</Badge>
 	{/if}
 {/snippet}
 
@@ -237,23 +237,23 @@
 	{#if value}
 		{@const commitUrl = item.repository?.url ? toGitCommitUrl(item.repository.url, String(value)) : null}
 		<div class="flex items-center gap-1.5">
-			<HashIcon class="text-muted-foreground size-3.5" />
+			<HashIcon class="size-3.5 text-muted-foreground" />
 			{#if commitUrl}
 				<a
 					href={commitUrl}
 					target="_blank"
-					class="hover:text-primary bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs transition-colors"
+					class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground transition-colors hover:text-primary"
 				>
 					{value}
 				</a>
 			{:else}
-				<code class="bg-muted text-muted-foreground rounded px-2 py-0.5 font-mono text-xs">
+				<code class="rounded bg-muted px-2 py-0.5 font-mono text-xs text-muted-foreground">
 					{value}
 				</code>
 			{/if}
 		</div>
 	{:else}
-		<span class="text-muted-foreground text-sm">{m.common_na()}</span>
+		<span class="text-sm text-muted-foreground">{m.common_na()}</span>
 	{/if}
 {/snippet}
 

@@ -5,7 +5,7 @@
 	import { CopyButton } from '$lib/components/ui/copy-button';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
 	import { tryCatch } from '$lib/utils/api';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
@@ -37,8 +37,8 @@
 	});
 
 	function getStatusText(apiKey: ApiKey): string {
-		if (isPastDate(apiKey.expiresAt)) return m.api_key_status_expired();
-		return m.api_key_status_active();
+		if (isPastDate(apiKey.expiresAt)) return m.expired();
+		return m.common_active();
 	}
 
 	function getStatusVariant(apiKey: ApiKey): 'red' | 'green' {
@@ -144,18 +144,18 @@
 	}
 
 	const columns = [
-		{ accessorKey: 'name', title: m.api_key_name(), sortable: true, cell: NameCell },
-		{ accessorKey: 'description', title: m.api_key_description_label(), sortable: false, cell: DescriptionCell },
+		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ accessorKey: 'description', title: m.common_description(), sortable: false, cell: DescriptionCell },
 		{ accessorKey: 'keyPrefix', title: m.api_key_key_prefix(), sortable: false, cell: KeyPrefixCell },
 		{ accessorKey: 'expiresAt', title: m.api_key_expires_at(), sortable: true, cell: ExpiresCell },
-		{ accessorKey: 'lastUsedAt', title: m.api_key_last_used(), sortable: true, cell: LastUsedCell }
+		{ accessorKey: 'lastUsedAt', title: m.last_used(), sortable: true, cell: LastUsedCell }
 	] satisfies ColumnSpec<ApiKey>[];
 
 	const mobileFields = [
-		{ id: 'description', label: m.api_key_description_label(), defaultVisible: true },
+		{ id: 'description', label: m.common_description(), defaultVisible: true },
 		{ id: 'keyPrefix', label: m.api_key_key_prefix(), defaultVisible: true },
 		{ id: 'expiresAt', label: m.api_key_expires_at(), defaultVisible: true },
-		{ id: 'lastUsedAt', label: m.api_key_last_used(), defaultVisible: true }
+		{ id: 'lastUsedAt', label: m.last_used(), defaultVisible: true }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => [
@@ -183,7 +183,7 @@
 
 {#snippet KeyPrefixCell({ item }: { item: ApiKey })}
 	<div class="flex items-center gap-2">
-		<code class="bg-muted rounded px-2 py-1 text-xs">{item.keyPrefix}...</code>
+		<code class="rounded bg-muted px-2 py-1 text-xs">{item.keyPrefix}...</code>
 		<CopyButton text={item.keyPrefix} class="size-6" />
 	</div>
 {/snippet}
@@ -193,9 +193,9 @@
 		{#if item.expiresAt}
 			<span class={isPastDate(item.expiresAt) ? 'text-red-500' : ''}>{formatOptionalDateTime(item.expiresAt)}</span>
 		{:else}
-			<span class="text-muted-foreground">{m.api_key_expires_never()}</span>
+			<span class="text-muted-foreground">{m.common_never()}</span>
 		{/if}
-		<StatusBadge text={getStatusText(item)} variant={getStatusVariant(item)} />
+		<Badge variant={getStatusVariant(item)} minWidth="20">{getStatusText(item)}</Badge>
 	</div>
 {/snippet}
 
@@ -223,7 +223,7 @@
 		]}
 		fields={[
 			{
-				label: m.api_key_description_label(),
+				label: m.common_description(),
 				getValue: (item: ApiKey) => item.description || '-',
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
@@ -231,13 +231,13 @@
 			},
 			{
 				label: m.api_key_expires_at(),
-				getValue: (item: ApiKey) => (item.expiresAt ? formatOptionalDateTime(item.expiresAt) : m.api_key_expires_never()),
+				getValue: (item: ApiKey) => (item.expiresAt ? formatOptionalDateTime(item.expiresAt) : m.common_never()),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,
 				show: mobileFieldVisibility['expiresAt'] ?? true
 			},
 			{
-				label: m.api_key_last_used(),
+				label: m.last_used(),
 				getValue: (item: ApiKey) => formatOptionalDateTime(item.lastUsedAt),
 				icon: ApiKeyIcon,
 				iconVariant: 'gray' as const,

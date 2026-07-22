@@ -122,11 +122,11 @@
 
 <CategoryIndexPage
 	headerIcon={SettingsIcon}
-	title={m.sidebar_settings()}
+	title={m.settings()}
 	subtitle={m.settings_subtitle()}
 	searchPlaceholder={m.settings_search_placeholder()}
-	clearSearchLabel={m.settings_clear_search()}
-	searchingLabel={m.settings_searching()}
+	clearSearchLabel={m.common_clear_search()}
+	searchingLabel={m.searching()}
 	noResultsTitle={m.settings_no_results()}
 	noResultsDescription={m.settings_no_results_description()}
 	matchingItemsLabel={m.settings_matching_settings()}
@@ -144,6 +144,6 @@
 		{m.settings_search_results({ query: categorySearch.searchQuery, count: categorySearch.searchResults.length })}
 	{/snippet}
 	{#snippet moreKeywords(count: number)}
-		{m.settings_more_keywords({ count })}
+		{m.count_more({ count })}
 	{/snippet}
 </CategoryIndexPage>

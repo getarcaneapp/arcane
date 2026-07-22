@@ -5,6 +5,6 @@
 
 <ResourceErrorPage
 	fallbackTitle={m.error_generic()}
-	backLabel={m.common_back_to({ resource: m.containers_title() })}
+	backLabel={m.common_back_to({ resource: m.containers() })}
 	backHref="/containers"
 />

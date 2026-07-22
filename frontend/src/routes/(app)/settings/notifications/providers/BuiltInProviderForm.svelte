@@ -42,7 +42,7 @@
 			description: m.notifications_discord_description()
 		},
 		email: {
-			title: m.notifications_email_title(),
+			title: m.common_email(),
 			description: m.notifications_email_description()
 		},
 		telegram: {
@@ -378,7 +378,7 @@
 				key: 'username',
 				id: 'discord-username',
 				label: m.notifications_discord_username_label(),
-				placeholder: m.notifications_discord_username_placeholder(),
+				placeholder: m.arcane_placeholder(),
 				helpText: m.notifications_discord_username_help()
 			},
 			{
@@ -386,7 +386,7 @@
 				key: 'avatarUrl',
 				id: 'discord-avatar-url',
 				label: m.notifications_discord_avatar_url_label(),
-				placeholder: m.notifications_discord_avatar_url_placeholder(),
+				placeholder: m.https_placeholder(),
 				helpText: m.notifications_discord_avatar_url_help()
 			}
 		],
@@ -423,7 +423,7 @@
 						key: 'smtpUsername',
 						id: 'smtp-username',
 						label: m.notifications_email_username_label(),
-						placeholder: m.notifications_email_username_placeholder(),
+						placeholder: m.user_example_com_placeholder(),
 						helpText: m.notifications_email_username_help()
 					},
 					{
@@ -610,7 +610,7 @@
 				kind: 'switch',
 				key: 'disableTls',
 				id: 'signal-disable-tls',
-				label: m.notifications_signal_disable_tls_label(),
+				label: m.disable_tls(),
 				description: m.notifications_signal_disable_tls_description()
 			}
 		],
@@ -633,7 +633,7 @@
 						key: 'botName',
 						id: 'slack-bot-name',
 						label: m.notifications_slack_bot_name_label(),
-						placeholder: m.notifications_slack_bot_name_placeholder(),
+						placeholder: m.arcane_placeholder(),
 						helpText: m.notifications_slack_bot_name_help()
 					},
 					{
@@ -677,7 +677,7 @@
 						key: 'title',
 						id: 'slack-title',
 						label: m.notifications_slack_title_label(),
-						placeholder: m.notifications_slack_title_placeholder(),
+						placeholder: m.container_update_placeholder(),
 						helpText: m.notifications_slack_title_help()
 					},
 					{
@@ -696,7 +696,7 @@
 				kind: 'input',
 				key: 'host',
 				id: 'ntfy-host',
-				label: m.notifications_ntfy_host_label(),
+				label: m.host(),
 				placeholder: m.notifications_ntfy_host_placeholder(),
 				helpText: m.notifications_ntfy_host_help()
 			},
@@ -704,7 +704,7 @@
 				kind: 'input',
 				key: 'port',
 				id: 'ntfy-port',
-				label: m.notifications_ntfy_port_label(),
+				label: m.port_optional(),
 				placeholder: m.notifications_ntfy_port_placeholder(),
 				helpText: m.notifications_ntfy_port_help(),
 				inputType: 'number'
@@ -722,7 +722,7 @@
 				key: 'username',
 				id: 'ntfy-username',
 				label: m.notifications_ntfy_username_label(),
-				placeholder: m.notifications_ntfy_username_placeholder(),
+				placeholder: m.username_placeholder(),
 				helpText: m.notifications_ntfy_username_help()
 			},
 			{
@@ -738,15 +738,15 @@
 				kind: 'input',
 				key: 'title',
 				id: 'ntfy-title',
-				label: m.notifications_ntfy_title_label(),
-				placeholder: m.notifications_ntfy_title_placeholder(),
-				helpText: m.notifications_ntfy_title_help()
+				label: m.title_optional(),
+				placeholder: m.container_update_placeholder(),
+				helpText: m.optional_title_override_for_notifications()
 			},
 			{
 				kind: 'native-select',
 				key: 'priority',
 				id: 'ntfy-priority',
-				label: m.notifications_ntfy_priority_label(),
+				label: m.priority(),
 				description: m.notifications_ntfy_priority_help(),
 				options: [
 					{ value: 'min', label: 'Min (1)' },
@@ -770,7 +770,7 @@
 				key: 'icon',
 				id: 'ntfy-icon',
 				label: m.notifications_ntfy_icon_label(),
-				placeholder: m.notifications_ntfy_icon_placeholder(),
+				placeholder: m.https_placeholder(),
 				helpText: m.notifications_ntfy_icon_help()
 			},
 			{
@@ -839,7 +839,7 @@
 				kind: 'select',
 				key: 'priority',
 				id: 'pushover-priority',
-				label: m.notifications_pushover_priority_label(),
+				label: m.priority(),
 				description: m.notifications_pushover_priority_help(),
 				valueType: 'number',
 				options: [
@@ -854,9 +854,9 @@
 				kind: 'input',
 				key: 'title',
 				id: 'pushover-title',
-				label: m.notifications_pushover_title_label(),
-				placeholder: m.notifications_pushover_title_placeholder(),
-				helpText: m.notifications_pushover_title_help()
+				label: m.title_optional(),
+				placeholder: m.container_update_placeholder(),
+				helpText: m.optional_title_override_for_notifications()
 			}
 		],
 		gotify: [
@@ -868,7 +868,7 @@
 						kind: 'input',
 						key: 'host',
 						id: 'gotify-host',
-						label: m.notifications_gotify_host_label(),
+						label: m.server_host(),
 						placeholder: m.notifications_gotify_host_placeholder(),
 						helpText: m.notifications_gotify_host_help(),
 						wrapperClass: 'md:col-span-3'
@@ -877,9 +877,9 @@
 						kind: 'input',
 						key: 'port',
 						id: 'gotify-port',
-						label: m.notifications_gotify_port_label(),
+						label: m.port_optional(),
 						placeholder: m.notifications_gotify_port_placeholder(),
-						helpText: m.notifications_gotify_port_help(),
+						helpText: m.server_port_leave_at_0_to_use_default_443_for_https_80_for_http(),
 						inputType: 'number',
 						wrapperClass: 'md:col-span-1'
 					}
@@ -906,7 +906,7 @@
 				kind: 'select',
 				key: 'priority',
 				id: 'gotify-priority',
-				label: m.notifications_gotify_priority_label(),
+				label: m.priority(),
 				description: m.notifications_gotify_priority_help(),
 				valueType: 'number',
 				options: [
@@ -929,16 +929,16 @@
 				kind: 'input',
 				key: 'title',
 				id: 'gotify-title',
-				label: m.notifications_gotify_title_label(),
-				placeholder: m.notifications_gotify_title_placeholder(),
-				helpText: m.notifications_gotify_title_help()
+				label: m.title_optional(),
+				placeholder: m.container_update_placeholder(),
+				helpText: m.optional_title_override_for_notifications()
 			},
 			{
 				kind: 'switch',
 				key: 'disableTls',
 				id: 'gotify-disable-tls',
-				label: m.notifications_gotify_disable_tls_label(),
-				description: m.notifications_gotify_disable_tls_help()
+				label: m.disable_tls(),
+				description: m.use_http_instead_of_https_not_recommended_for_production()
 			}
 		],
 		matrix: [
@@ -950,7 +950,7 @@
 						kind: 'input',
 						key: 'host',
 						id: 'matrix-host',
-						label: m.notifications_matrix_host_label(),
+						label: m.server_host(),
 						placeholder: m.notifications_matrix_host_placeholder(),
 						helpText: m.notifications_matrix_host_help(),
 						wrapperClass: 'md:col-span-3'
@@ -959,9 +959,9 @@
 						kind: 'input',
 						key: 'port',
 						id: 'matrix-port',
-						label: m.notifications_matrix_port_label(),
+						label: m.port_optional(),
 						placeholder: m.notifications_matrix_port_placeholder(),
-						helpText: m.notifications_matrix_port_help(),
+						helpText: m.server_port_leave_at_0_to_use_default_443_for_https_80_for_http(),
 						inputType: 'number',
 						wrapperClass: 'md:col-span-1'
 					}
@@ -979,8 +979,8 @@
 				kind: 'input',
 				key: 'username',
 				id: 'matrix-username',
-				label: m.notifications_matrix_username_label(),
-				placeholder: m.notifications_matrix_username_placeholder(),
+				label: m.common_username(),
+				placeholder: m.username_placeholder(),
 				helpText: m.notifications_matrix_username_help()
 			},
 			{
@@ -996,8 +996,8 @@
 				kind: 'switch',
 				key: 'disableTlsVerification',
 				id: 'matrix-disable-tls',
-				label: m.notifications_matrix_disable_tls_label(),
-				description: m.notifications_matrix_disable_tls_help()
+				label: m.disable_tls(),
+				description: m.use_http_instead_of_https_not_recommended_for_production()
 			}
 		],
 		generic: [
@@ -1005,7 +1005,7 @@
 				kind: 'input',
 				key: 'webhookUrl',
 				id: 'generic-webhook-url',
-				label: m.notifications_generic_webhook_url_label(),
+				label: m.webhook_url(),
 				placeholder: m.notifications_generic_webhook_url_placeholder(),
 				helpText: m.notifications_generic_webhook_url_help()
 			},

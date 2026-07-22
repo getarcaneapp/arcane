@@ -2,7 +2,7 @@
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { refreshAll } from '$app/navigation';
 	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { bytes } from '$lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
@@ -80,7 +80,7 @@
 	const autoUpdateEnabled = $derived(autoUpdateOverride ?? isAutoUpdateEnabled(container, data?.settings));
 
 	const cleanContainerName = (name: string | undefined): string => {
-		if (!name) return m.common_not_found_title({ resource: m.containers_title() });
+		if (!name) return m.common_not_found_title({ resource: m.containers() });
 		return name.replace(/^\/+/, '');
 	};
 
@@ -253,14 +253,14 @@
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: ContainersIcon },
 		...(showStats ? [{ value: 'stats', label: m.containers_nav_metrics(), icon: StatsIcon }] : []),
-		...(canViewLogs ? [{ value: 'logs', label: m.containers_nav_logs(), icon: FileTextIcon }] : []),
+		...(canViewLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
 		...(showShell ? [{ value: 'shell', label: m.common_shell(), icon: TerminalIcon }] : []),
 		...(hasHealthcheck ? [{ value: 'healthcheck', label: m.containers_nav_healthcheck(), icon: HealthIcon }] : []),
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
-		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
-		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : []),
-		...(showComposeTab ? [{ value: 'compose', label: m.tabs_compose(), icon: CodeIcon }] : []),
-		{ value: 'inspect', label: m.tabs_inspect(), icon: InspectIcon }
+		...(showNetworkTab ? [{ value: 'network', label: m.resource_networks_cap(), icon: NetworksIcon }] : []),
+		...(hasMounts ? [{ value: 'storage', label: m.storage(), icon: VolumesIcon }] : []),
+		...(showComposeTab ? [{ value: 'compose', label: m.compose(), icon: CodeIcon }] : []),
+		{ value: 'inspect', label: m.common_inspect(), icon: InspectIcon }
 	]);
 
 	const urlTab = useUrlTab({
@@ -318,10 +318,10 @@
 					{containerDisplayName}
 				</h1>
 				{#if container?.state}
-					<StatusBadge
+					<Badge
 						variant={container.state.status === 'running' ? 'green' : container.state.status === 'exited' ? 'red' : 'amber'}
-						text={getContainerStatusLabel(container.state.status)}
-					/>
+						minWidth="20">{getContainerStatusLabel(container.state.status)}</Badge
+					>
 				{/if}
 			</div>
 		{/snippet}
@@ -397,7 +397,7 @@
 						{#if canCommitImage}
 							<DropdownMenu.Item disabled={actionButtonsLifecyclePending} onclick={() => (commitDialogOpen = true)}>
 								<ImagesIcon class="size-4" />
-								{m.containers_commit_action()}
+								{m.commit()}
 							</DropdownMenu.Item>
 						{/if}
 						{#if canKillContainer && (isContainerRunning || isContainerPaused)}
@@ -528,12 +528,7 @@
 		/>
 	{/if}
 {:else}
-	<ResourceNotFound
-		resource={m.container()}
-		resourceListTitle={m.containers_title()}
-		backHref="/containers"
-		onRetry={refreshData}
-	/>
+	<ResourceNotFound resource={m.container()} resourceListTitle={m.containers()} backHref="/containers" onRetry={refreshData} />
 {/if}
 
 <style>

@@ -1,6 +1,9 @@
 package system
 
-import "encoding/json"
+import (
+	stdjson "encoding/json"
+	json "encoding/json/v2"
+)
 
 type PruneContainerMode string
 
@@ -78,12 +81,12 @@ type PruneAllRequest struct {
 }
 
 type pruneAllRequestWireInternal struct {
-	Containers json.RawMessage `json:"containers,omitempty"`
-	Images     json.RawMessage `json:"images,omitempty"`
-	Volumes    json.RawMessage `json:"volumes,omitempty"`
-	Networks   json.RawMessage `json:"networks,omitempty"`
-	BuildCache json.RawMessage `json:"buildCache,omitempty"`
-	Dangling   *bool           `json:"dangling,omitempty"`
+	Containers stdjson.RawMessage `json:"containers,omitempty"`
+	Images     stdjson.RawMessage `json:"images,omitempty"`
+	Volumes    stdjson.RawMessage `json:"volumes,omitempty"`
+	Networks   stdjson.RawMessage `json:"networks,omitempty"`
+	BuildCache stdjson.RawMessage `json:"buildCache,omitempty"`
+	Dangling   *bool              `json:"dangling,omitempty"`
 }
 
 func (r *PruneAllRequest) UnmarshalJSON(data []byte) error {
@@ -127,7 +130,7 @@ func (r *PruneAllRequest) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
-func decodePruneContainersOptionsInternal(raw json.RawMessage) (*PruneContainersOptions, error) {
+func decodePruneContainersOptionsInternal(raw stdjson.RawMessage) (*PruneContainersOptions, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -147,7 +150,7 @@ func decodePruneContainersOptionsInternal(raw json.RawMessage) (*PruneContainers
 	return &options, nil
 }
 
-func decodePruneImagesOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneImagesOptions, error) {
+func decodePruneImagesOptionsInternal(raw stdjson.RawMessage, dangling *bool) (*PruneImagesOptions, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -171,7 +174,7 @@ func decodePruneImagesOptionsInternal(raw json.RawMessage, dangling *bool) (*Pru
 	return &options, nil
 }
 
-func decodePruneVolumesOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneVolumesOptions, error) {
+func decodePruneVolumesOptionsInternal(raw stdjson.RawMessage, dangling *bool) (*PruneVolumesOptions, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -195,7 +198,7 @@ func decodePruneVolumesOptionsInternal(raw json.RawMessage, dangling *bool) (*Pr
 	return &options, nil
 }
 
-func decodePruneNetworksOptionsInternal(raw json.RawMessage) (*PruneNetworksOptions, error) {
+func decodePruneNetworksOptionsInternal(raw stdjson.RawMessage) (*PruneNetworksOptions, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}
@@ -215,7 +218,7 @@ func decodePruneNetworksOptionsInternal(raw json.RawMessage) (*PruneNetworksOpti
 	return &options, nil
 }
 
-func decodePruneBuildCacheOptionsInternal(raw json.RawMessage, dangling *bool) (*PruneBuildCacheOptions, error) {
+func decodePruneBuildCacheOptionsInternal(raw stdjson.RawMessage, dangling *bool) (*PruneBuildCacheOptions, error) {
 	if len(raw) == 0 || string(raw) == "null" {
 		return nil, nil
 	}

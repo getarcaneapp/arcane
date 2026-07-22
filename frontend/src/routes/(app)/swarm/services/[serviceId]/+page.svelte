@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { m } from '$lib/paraglide/messages';
 	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
 	import { type TabItem } from '$lib/components/tab-bar/index.js';
@@ -176,10 +176,10 @@
 	const tabItems = $derived<TabItem[]>([
 		{ value: 'overview', label: m.common_overview(), icon: DockIcon },
 		...(canViewServiceLogs ? [{ value: 'logs', label: m.common_logs(), icon: FileTextIcon }] : []),
-		{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon },
+		{ value: 'tasks', label: m.tasks(), icon: JobsIcon },
 		...(showConfiguration ? [{ value: 'config', label: m.common_configuration(), icon: SettingsIcon }] : []),
-		...(showNetworkTab ? [{ value: 'network', label: m.containers_nav_networks(), icon: NetworksIcon }] : []),
-		...(hasMounts ? [{ value: 'storage', label: m.containers_nav_storage(), icon: VolumesIcon }] : [])
+		...(showNetworkTab ? [{ value: 'network', label: m.resource_networks_cap(), icon: NetworksIcon }] : []),
+		...(hasMounts ? [{ value: 'storage', label: m.storage(), icon: VolumesIcon }] : [])
 	]);
 
 	const urlTab = useUrlTab({
@@ -291,15 +291,15 @@
 	<TabbedPageLayout backUrl="/swarm/services" backLabel={m.common_back()} {tabItems} {selectedTab} {onTabChange}>
 		{#snippet headerInfo()}
 			<div class="flex items-center gap-2">
-				<div class="bg-primary/10 flex size-9 items-center justify-center rounded-full">
-					<DockIcon class="text-primary size-5" />
+				<div class="flex size-9 items-center justify-center rounded-full bg-primary/10">
+					<DockIcon class="size-5 text-primary" />
 				</div>
 				<h1 class="max-w-[300px] truncate text-lg font-semibold" title={serviceName}>
 					{serviceName}
 				</h1>
-				<StatusBadge variant={getSwarmServiceModeVariant(serviceMode)} text={getSwarmServiceModeLabel(serviceMode)} />
+				<Badge variant={getSwarmServiceModeVariant(serviceMode)} minWidth="20">{getSwarmServiceModeLabel(serviceMode)}</Badge>
 				{#if canScaleService}
-					<span class="text-muted-foreground font-mono text-sm">
+					<span class="font-mono text-sm text-muted-foreground">
 						{desiredReplicas}
 						{m.swarm_replicas()}
 					</span>
@@ -402,7 +402,7 @@
 {:else}
 	<ResourceNotFound
 		resource={m.swarm_service()}
-		resourceListTitle={m.swarm_services_title()}
+		resourceListTitle={m.services()}
 		backHref="/swarm/services"
 		onRetry={refreshData}
 	/>

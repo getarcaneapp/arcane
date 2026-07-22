@@ -292,13 +292,13 @@
 		<div class="flex items-center justify-between gap-4">
 			<div class="flex min-w-0 flex-1 items-center gap-3 sm:gap-4">
 				<div
-					class="bg-primary/10 text-primary ring-primary/20 flex size-8 shrink-0 items-center justify-center rounded-lg ring-1 sm:size-10"
+					class="flex size-8 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20 sm:size-10"
 				>
 					<UserIcon class="size-4 sm:size-5" />
 				</div>
 				<div class="min-w-0">
-					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{m.account_title()}</h1>
-					<p class="text-muted-foreground mt-1 text-sm">{m.account_subtitle()}</p>
+					<h1 class="text-2xl font-semibold tracking-tight sm:text-3xl">{m.common_account()}</h1>
+					<p class="mt-1 text-sm text-muted-foreground">{m.account_subtitle()}</p>
 				</div>
 			</div>
 		</div>
@@ -312,7 +312,7 @@
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_profile_title()}</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_profile_description()}</p>
+						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_profile_description()}</p>
 					</div>
 					<div class="space-y-5 p-4 sm:p-6">
 						<ImageCropper.Root
@@ -326,9 +326,9 @@
 							<ImageCropper.Dialog>
 								<div class="space-y-1">
 									<h3 class="text-base font-semibold tracking-tight">{m.account_avatar_crop_title()}</h3>
-									<p class="text-muted-foreground text-sm">{m.account_avatar_crop_description()}</p>
+									<p class="text-sm text-muted-foreground">{m.account_avatar_crop_description()}</p>
 								</div>
-								<div class="bg-muted/40 h-72 overflow-hidden rounded-lg border">
+								<div class="h-72 overflow-hidden rounded-lg border bg-muted/40">
 									<ImageCropper.Cropper />
 								</div>
 								<ImageCropper.Controls class="justify-end">
@@ -337,12 +337,12 @@
 								</ImageCropper.Controls>
 							</ImageCropper.Dialog>
 
-							<div class="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+							<div class="flex flex-col items-start justify-between gap-4 sm:flex-row sm:items-center">
 								<div class="flex min-w-0 items-center gap-4">
 									<ImageCropper.UploadTrigger
 										aria-label={m.account_upload_photo()}
 										class={cn(
-											'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2',
+											'group/avatar relative size-16 overflow-hidden rounded-xl focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2 focus-visible:outline-none',
 											avatarUploading && 'pointer-events-none opacity-70'
 										)}
 										disabled={avatarUploading}
@@ -354,7 +354,7 @@
 												{:else if avatarUrl}
 													<Avatar.Image src={avatarUrl} alt={currentUser.displayName ?? currentUser.username} />
 												{/if}
-												<Avatar.Fallback class="bg-primary text-primary-foreground rounded-xl text-xl font-semibold">
+												<Avatar.Fallback class="rounded-xl bg-primary text-xl font-semibold text-primary-foreground">
 													{(currentUser.displayName ?? currentUser.username).charAt(0).toUpperCase()}
 												</Avatar.Fallback>
 											</Avatar.Root>
@@ -362,12 +362,12 @@
 										<div
 											class="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 transition-opacity group-hover/avatar:opacity-100"
 										>
-											<div class="text-white text-xs font-medium">{m.account_upload_overlay()}</div>
+											<div class="text-xs font-medium text-white">{m.upload()}</div>
 										</div>
 									</ImageCropper.UploadTrigger>
-									<div class="min-w-0 flex flex-col items-start gap-1">
+									<div class="flex min-w-0 flex-col items-start gap-1">
 										<div class="text-sm font-medium">@{currentUser.username}</div>
-										<div class="text-muted-foreground text-xs">
+										<div class="text-xs text-muted-foreground">
 											{isOidcUser ? m.account_single_sign_on() : m.account_local_account()}
 										</div>
 										{#if currentUser.avatarUrl}
@@ -376,9 +376,9 @@
 													action="remove"
 													size="sm"
 													tone="ghost"
-													customLabel={m.account_remove_photo()}
+													customLabel={m.common_remove()}
 													showLabel={true}
-													class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+													class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
 													onclick={removeAvatar}
 													disabled={avatarUploading}
 												/>
@@ -388,12 +388,12 @@
 								</div>
 								<div class="hidden text-right sm:block">
 									{#if safeFormatDate(currentUser.createdAt, 'PP')}
-										<div class="text-muted-foreground text-xs">
+										<div class="text-xs text-muted-foreground">
 											{m.account_member_since()}
 											{safeFormatDate(currentUser.createdAt, 'PP')}
 										</div>
 									{/if}
-									<div class="text-muted-foreground text-xs" title={currentUser.lastLogin ?? ''}>
+									<div class="text-xs text-muted-foreground" title={currentUser.lastLogin ?? ''}>
 										{m.account_last_login_prefix()}
 										{safeFormatRelative(currentUser.lastLogin) ?? m.common_never()}
 									</div>
@@ -405,7 +405,7 @@
 							<TextInputWithLabel
 								id="account-display-name"
 								bind:value={profileDisplayName}
-								label={m.account_display_name_label()}
+								label={m.common_display_name()}
 								placeholder={m.account_display_name_placeholder()}
 								disabled={isOidcUser}
 							/>
@@ -413,7 +413,7 @@
 								id="account-email"
 								type="email"
 								bind:value={profileEmail}
-								label={m.account_email_label()}
+								label={m.common_email()}
 								placeholder={m.account_email_placeholder()}
 								disabled={isOidcUser}
 							/>
@@ -436,7 +436,7 @@
 								/>
 							</div>
 						{:else}
-							<p class="text-muted-foreground text-xs">{m.account_profile_managed_by_idp()}</p>
+							<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
 						{/if}
 					</div>
 				</Card>
@@ -445,8 +445,8 @@
 				{#if !isOidcUser}
 					<Card class="overflow-hidden">
 						<div class="border-b p-4 sm:p-6">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_password()}</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_password_desc()}</p>
+							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.common_password()}</h2>
+							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_password_desc()}</p>
 						</div>
 						<div class="space-y-5 p-4 sm:p-6">
 							<TextInputWithLabel
@@ -492,7 +492,7 @@
 					<div class="flex items-start justify-between gap-3 border-b p-4 sm:p-6">
 						<div class="min-w-0">
 							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_api_keys_description()}</p>
+							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_api_keys_description()}</p>
 						</div>
 						{#if !showCreateKeyForm && !createdKey}
 							<ArcaneButton
@@ -508,13 +508,13 @@
 
 					<div class="p-4 sm:p-6">
 						{#if createdKey}
-							<div class="border-primary/30 bg-primary/5 mb-4 space-y-3 rounded-lg border p-4">
+							<div class="mb-4 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
 								<div>
 									<div class="text-sm font-semibold">Key created: {createdKey.name}</div>
-									<p class="text-muted-foreground mt-1 text-xs">Copy this token now &mdash; you won't be able to see it again.</p>
+									<p class="mt-1 text-xs text-muted-foreground">Copy this token now &mdash; you won't be able to see it again.</p>
 								</div>
 								<div class="flex items-center gap-2">
-									<code class="bg-background flex-1 truncate rounded border px-3 py-2 font-mono text-xs">
+									<code class="flex-1 truncate rounded border bg-background px-3 py-2 font-mono text-xs">
 										{createdKey.key}
 									</code>
 									<ArcaneButton
@@ -539,9 +539,9 @@
 						{/if}
 
 						{#if apiKeysLoading && apiKeys.length === 0}
-							<div class="text-muted-foreground py-8 text-center text-sm">Loading keys…</div>
+							<div class="py-8 text-center text-sm text-muted-foreground">Loading keys…</div>
 						{:else if apiKeys.length === 0}
-							<div class="text-muted-foreground py-8 text-center text-sm">
+							<div class="py-8 text-center text-sm text-muted-foreground">
 								<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />
 								No API keys yet.
 							</div>
@@ -552,14 +552,14 @@
 										<div class="min-w-0 flex-1">
 											<div class="flex items-center gap-2">
 												<span class="truncate text-sm font-medium">{key.name}</span>
-												<code class="text-muted-foreground bg-muted/40 rounded px-1.5 py-0.5 font-mono text-xs">
+												<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
 													{key.keyPrefix}…
 												</code>
 											</div>
 											{#if key.description}
-												<div class="text-muted-foreground mt-0.5 truncate text-xs">{key.description}</div>
+												<div class="mt-0.5 truncate text-xs text-muted-foreground">{key.description}</div>
 											{/if}
-											<div class="text-muted-foreground mt-1 text-xs">
+											<div class="mt-1 text-xs text-muted-foreground">
 												{#if safeFormatDate(key.createdAt, 'PP')}
 													Created {safeFormatDate(key.createdAt, 'PP')}
 												{/if}
@@ -577,7 +577,7 @@
 											icon={TrashIcon}
 											customLabel={m.common_delete()}
 											showLabel={false}
-											class="text-muted-foreground hover:text-destructive hover:bg-destructive/10"
+											class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
 											onclick={() => deleteApiKey(key.id, key.name)}
 										/>
 									</li>
@@ -594,34 +594,34 @@
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_preferences_desc()}</p>
+						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_preferences_desc()}</p>
 					</div>
 					<div class="divide-y p-2">
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
 								<div class="text-sm font-medium">{m.account_theme()}</div>
-								<div class="text-muted-foreground text-xs">{m.appearance_theme_current_user_description()}</div>
+								<div class="text-xs text-muted-foreground">{m.appearance_theme_current_user_description()}</div>
 							</div>
 							<ThemeModeSelector />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.account_language()}</div>
-								<div class="text-muted-foreground text-xs">{m.account_language_desc()}</div>
+								<div class="text-sm font-medium">{m.language()}</div>
+								<div class="text-xs text-muted-foreground">{m.account_language_desc()}</div>
 							</div>
 							<LocalePicker inline />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
 								<div class="text-sm font-medium">{m.time_format()}</div>
-								<div class="text-muted-foreground text-xs">{m.account_time_format_desc()}</div>
+								<div class="text-xs text-muted-foreground">{m.account_time_format_desc()}</div>
 							</div>
 							<TimeFormatPicker id="accountTimeFormatPicker" />
 						</div>
 						<div class="flex items-center justify-between gap-4 p-3">
 							<div class="min-w-0">
 								<div class="text-sm font-medium">{m.font_size()}</div>
-								<div class="text-muted-foreground text-xs">{m.font_size_description()}</div>
+								<div class="text-xs text-muted-foreground">{m.font_size_description()}</div>
 							</div>
 							<FontSizePicker />
 						</div>
@@ -632,16 +632,16 @@
 				<Card class="overflow-hidden">
 					<div class="border-b p-4 sm:p-6">
 						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_roles_and_access()}</h2>
-						<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_roles()}</p>
+						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_roles()}</p>
 					</div>
 					<div class="p-4 sm:p-6">
 						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
 							<ul class="space-y-2">
 								{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
-									<li class="bg-muted/30 flex items-center justify-between gap-3 rounded-lg px-3 py-2">
+									<li class="flex items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
 										<div class="min-w-0">
 											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
-											<div class="text-muted-foreground text-xs">
+											<div class="text-xs text-muted-foreground">
 												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
 												{#if ra.source === 'oidc'}
 													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
@@ -652,13 +652,13 @@
 								{/each}
 							</ul>
 						{:else}
-							<p class="text-muted-foreground text-sm">{m.account_no_roles()}</p>
+							<p class="text-sm text-muted-foreground">{m.account_no_roles()}</p>
 						{/if}
 
 						{#if currentUser.permissionsByEnv}
 							{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
 							{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
-							<p class="text-muted-foreground mt-3 text-xs">
+							<p class="mt-3 text-xs text-muted-foreground">
 								{globalCount} global permission{globalCount === 1 ? '' : 's'} across {envCount} environment{envCount === 1
 									? ''
 									: 's'}.
@@ -668,18 +668,18 @@
 				</Card>
 
 				{#if !autoLoginEnabled}
-					<Card class="border-destructive/30 overflow-hidden">
-						<div class="border-destructive/20 border-b p-4 sm:p-6">
+					<Card class="overflow-hidden border-destructive/30">
+						<div class="border-b border-destructive/20 p-4 sm:p-6">
 							<div class="flex items-center gap-2">
-								<ShieldAlertIcon class="text-destructive size-5" />
+								<ShieldAlertIcon class="size-5 text-destructive" />
 								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
 							</div>
-							<p class="text-muted-foreground mt-1 text-xs sm:text-sm">{m.account_danger_zone_desc()}</p>
+							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
 						</div>
 						<div class="space-y-4 p-4 sm:p-6">
 							<div class="space-y-2">
 								<div class="text-sm font-medium">{m.account_signout_other()}</div>
-								<p class="text-muted-foreground text-xs">
+								<p class="text-xs text-muted-foreground">
 									{m.account_signout_other_desc()}
 								</p>
 								<ArcaneButton
@@ -696,7 +696,7 @@
 
 							<div class="space-y-2">
 								<div class="text-sm font-medium">{m.common_log_out()}</div>
-								<p class="text-muted-foreground text-xs">{m.account_signout_this()}</p>
+								<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
 								<form action="/logout" method="POST">
 									<ArcaneButton
 										action="cancel"
@@ -704,7 +704,7 @@
 										customLabel={m.common_log_out()}
 										icon={LogoutIcon}
 										type="submit"
-										class="text-destructive border-destructive/30 hover:bg-destructive/10 hover:text-destructive"
+										class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
 									/>
 								</form>
 							</div>
@@ -714,7 +714,7 @@
 			</div>
 		</div>
 	{:else}
-		<div class="text-muted-foreground py-12 text-center text-sm">Loading account…</div>
+		<div class="py-12 text-center text-sm text-muted-foreground">Loading account…</div>
 	{/if}
 </div>
 

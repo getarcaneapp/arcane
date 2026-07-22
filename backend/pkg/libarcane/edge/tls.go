@@ -8,7 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	"encoding/json"
+	json "encoding/json/v2"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -54,27 +54,6 @@ const (
 var generatedAssetNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
 var managerCALocks sync.Map
-
-// GeneratedMTLSFile describes a generated file that should be copied to the edge agent host.
-type GeneratedMTLSFile struct {
-	Name          string `json:"name"`
-	Content       string `json:"content"`
-	ContainerPath string `json:"containerPath"`
-	Permissions   string `json:"permissions"`
-}
-
-// GeneratedMTLSAssets contains manager-generated edge client certificates and snippet metadata.
-type GeneratedMTLSAssets struct {
-	Files       []GeneratedMTLSFile `json:"files"`
-	HostDirHint string              `json:"hostDirHint"`
-	CertIssued  bool                `json:"-"`
-	CAGenerated bool                `json:"-"`
-	Reenrolled  bool                `json:"-"`
-}
-
-type enrollMTLSResponse struct {
-	Files []GeneratedMTLSFile `json:"files"`
-}
 
 // BuildManagerServerTLSConfig returns the manager TLS configuration needed to
 // support optional edge mTLS on the shared Arcane listener.
@@ -358,7 +337,7 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 	}
 
 	var enrollResp enrollMTLSResponse
-	if err := json.NewDecoder(io.LimitReader(resp.Body, maxEnrollResponseBytes)).Decode(&enrollResp); err != nil {
+	if err := json.UnmarshalRead(io.LimitReader(resp.Body, maxEnrollResponseBytes), &enrollResp); err != nil {
 		return fmt.Errorf("failed to decode edge mTLS enrollment response: %w", err)
 	}
 	if len(enrollResp.Files) == 0 {
@@ -1152,11 +1131,6 @@ func removeStaleEdgeMTLSLockInternal(lockPath string) bool {
 		return false
 	}
 	return removeEdgeMTLSLockFileInternal(lockPath)
-}
-
-type edgeMTLSLockInfo struct {
-	pid       int
-	createdAt time.Time
 }
 
 func readEdgeMTLSLockInfoInternal(lockPath string) (*edgeMTLSLockInfo, error) {

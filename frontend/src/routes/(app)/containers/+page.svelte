@@ -144,7 +144,7 @@
 			{
 				id: 'create',
 				action: 'create',
-				label: m.common_create_button({ resource: m.resource_container_cap() }),
+				label: m.common_create_button({ resource: m.container() }),
 				onclick: () => (isCreateDialogOpen = true),
 				loading: createContainerMutation.isPending,
 				disabled: !resourcesReady || createContainerMutation.isPending
@@ -196,7 +196,7 @@
 	<ContainerEnvironmentSync onActivate={handleEnvironmentChange} />
 {/key}
 
-<ResourcePageLayout title={m.containers_title()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.containers()} subtitle={m.containers_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ContainerTable

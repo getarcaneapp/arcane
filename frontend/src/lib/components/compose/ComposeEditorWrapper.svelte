@@ -56,7 +56,7 @@
 		</Alert.Root>
 	{/if}
 
-	<div class="bg-muted flex items-start gap-2 rounded-lg border px-4 py-3 text-sm">
+	<div class="flex items-start gap-2 rounded-lg border bg-muted px-4 py-3 text-sm">
 		<span>
 			{#if serviceName}
 				{isReadOnly

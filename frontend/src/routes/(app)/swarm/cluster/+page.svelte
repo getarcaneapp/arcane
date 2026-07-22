@@ -278,7 +278,7 @@
 		isSwarmInitialized
 			? [
 					{
-						title: m.swarm_cluster_stat_cluster(),
+						title: m.cluster(),
 						value: swarmInfo?.id ? swarmInfo.id.slice(0, 12) : m.swarm_cluster_not_initialized(),
 						icon: SettingsIcon,
 						iconColor: 'text-blue-500'
@@ -301,7 +301,7 @@
 </script>
 
 <ResourcePageLayout
-	title={m.swarm_cluster_title()}
+	title={m.cluster()}
 	subtitle={m.swarm_cluster_subtitle()}
 	icon={SettingsIcon}
 	class="pb-6"
@@ -327,7 +327,7 @@
 							</Card.Action>
 						</Card.Header>
 						<Card.Content class="pb-6">
-							<div class="divide-border/60 divide-y text-sm">
+							<div class="divide-y divide-border/60 text-sm">
 								<div class="grid gap-1 py-3 sm:grid-cols-[140px_minmax(0,1fr)] sm:gap-4">
 									<span class="text-muted-foreground">{m.swarm_cluster_id_label()}</span>
 									<span class="font-mono break-all sm:text-right">{swarmInfo?.id ?? m.swarm_cluster_not_initialized()}</span>
@@ -361,7 +361,7 @@
 						</Card.Header>
 						<Card.Content class="space-y-4 pb-6">
 							<div class="space-y-2">
-								<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_manager_token_label()}</div>
+								<div class="text-xs font-medium text-muted-foreground">{m.manager()}</div>
 								<div class="flex items-center gap-2">
 									<InputGroup.Root class="flex-1">
 										<InputGroup.Input
@@ -392,7 +392,7 @@
 								</div>
 							</div>
 							<div class="space-y-2">
-								<div class="text-muted-foreground text-xs font-medium">{m.swarm_cluster_worker_token_label()}</div>
+								<div class="text-xs font-medium text-muted-foreground">{m.worker()}</div>
 								<div class="flex items-center gap-2">
 									<InputGroup.Root class="flex-1">
 										<InputGroup.Input
@@ -472,9 +472,9 @@
 				</Card.Root>
 			{:else}
 				<div class="mx-auto w-full max-w-5xl space-y-5 pt-2">
-					<div class="border-border/60 bg-muted/20 rounded-xl border px-5 py-4 sm:px-6">
+					<div class="rounded-xl border border-border/60 bg-muted/20 px-5 py-4 sm:px-6">
 						<p class="font-medium">{m.swarm_cluster_setup_title()}</p>
-						<p class="text-muted-foreground mt-1 max-w-3xl text-sm leading-relaxed">
+						<p class="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
 							{m.swarm_cluster_setup_description()}
 						</p>
 					</div>
@@ -488,9 +488,9 @@
 								</div>
 							</Card.Header>
 							<Card.Content class="flex flex-1 flex-col gap-5 pb-6">
-								<p class="text-muted-foreground text-sm leading-relaxed">{m.swarm_cluster_initialize_hint()}</p>
+								<p class="text-sm leading-relaxed text-muted-foreground">{m.swarm_cluster_initialize_hint()}</p>
 
-								<details class="border-border/60 bg-muted/15 rounded-lg border">
+								<details class="rounded-lg border border-border/60 bg-muted/15">
 									<summary class="cursor-pointer px-4 py-3 text-sm font-medium select-none">
 										{m.swarm_cluster_advanced_settings()}
 									</summary>
@@ -551,7 +551,7 @@
 									/>
 								</label>
 
-								<details class="border-border/60 bg-muted/15 rounded-lg border">
+								<details class="rounded-lg border border-border/60 bg-muted/15">
 									<summary class="cursor-pointer px-4 py-3 text-sm font-medium select-none">
 										{m.swarm_cluster_advanced_settings()}
 									</summary>
@@ -588,7 +588,7 @@
 					<div class="space-y-3">
 						{#if unlockKey}
 							<div
-								class="border-border/60 bg-muted/15 flex items-center justify-between gap-3 rounded-lg border px-3 py-2 text-sm"
+								class="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-muted/15 px-3 py-2 text-sm"
 							>
 								<span class="text-muted-foreground">{m.swarm_cluster_stat_unlock_key()}</span>
 								<CopyButton text={unlockKey} />

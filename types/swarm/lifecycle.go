@@ -10,13 +10,13 @@ type SwarmInitRequest struct {
 	ListenAddr       string                 `json:"listenAddr,omitempty"`
 	AdvertiseAddr    string                 `json:"advertiseAddr,omitempty"`
 	DataPathAddr     string                 `json:"dataPathAddr,omitempty"`
-	DataPathPort     uint32                 `json:"dataPathPort,omitempty"`
-	ForceNewCluster  bool                   `json:"forceNewCluster,omitempty"`
 	Spec             json.RawMessage        `json:"spec" doc:"Swarm specification"`
-	AutoLockManagers bool                   `json:"autoLockManagers,omitempty"`
 	Availability     swarm.NodeAvailability `json:"availability,omitempty"`
 	DefaultAddrPool  []string               `json:"defaultAddrPool,omitempty"`
+	DataPathPort     uint32                 `json:"dataPathPort,omitempty"`
 	SubnetSize       uint32                 `json:"subnetSize,omitempty"`
+	ForceNewCluster  bool                   `json:"forceNewCluster,omitempty"`
+	AutoLockManagers bool                   `json:"autoLockManagers,omitempty"`
 }
 
 type SwarmInitResponse struct {

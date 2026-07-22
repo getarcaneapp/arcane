@@ -40,12 +40,12 @@
 			{label}
 		</Label>
 		{#if error}
-			<p class="text-destructive text-[0.8rem] font-medium">
+			<p class="text-[0.8rem] font-medium text-destructive">
 				{error}
 			</p>
 		{/if}
 		{#if description}
-			<p class="text-muted-foreground text-[0.8rem]">
+			<p class="text-[0.8rem] text-muted-foreground">
 				{description}
 			</p>
 		{/if}

@@ -109,7 +109,7 @@
 		<div class="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
 			<div>
 				<h1 class="text-xl font-semibold wrap-break-word sm:text-2xl">{m.templates_defaults_title()}</h1>
-				<p class="text-muted-foreground mt-1.5 text-sm wrap-break-word sm:text-base">
+				<p class="mt-1.5 text-sm wrap-break-word text-muted-foreground sm:text-base">
 					{m.templates_defaults_description()}
 				</p>
 			</div>
@@ -130,7 +130,7 @@
 					onclick={handleSave}
 					disabled={!canSave || ui.isLoadingTemplate}
 					loading={ui.saving}
-					loadingLabel={m.common_action_saving()}
+					loadingLabel={m.common_saving()}
 				/>
 			</div>
 		</div>

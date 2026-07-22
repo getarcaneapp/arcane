@@ -37,7 +37,7 @@
 	let securityTab = $state('attestations');
 
 	const currentEnvId = $derived(environmentStore.selected?.id || '0');
-	// fallow-ignore-next-line code-duplication permission $derived declarations; script-level, no shared render surface
+	// fallow-ignore-next-line code-duplication -- permission $derived declarations; script-level, no shared render surface
 	const canDeleteImage = $derived(hasPermission('images:delete', currentEnvId));
 	const canScanImage = $derived(hasPermission('vulnerabilities:scan', currentEnvId));
 	const canTagImage = $derived(hasPermission('images:tag', currentEnvId));
@@ -220,10 +220,10 @@
 					const force = !!checkboxStates['force'];
 					await handleApiResultWithCallbacks({
 						result: await tryCatch(imageService.deleteImage(id, { force })),
-						message: m.images_remove_failed(),
+						message: m.failed_to_remove_image(),
 						setLoadingState: (value) => (isLoading.removing = value),
 						onSuccess: async (data) => {
-							toast.success(m.images_remove_success(), activityToastOptions(extractActivityId(data)));
+							toast.success(m.image_removed_successfully(), activityToastOptions(extractActivityId(data)));
 							goto('/images');
 						}
 					});
@@ -286,30 +286,30 @@
 	});
 </script>
 
-<ResourceDetailLayout backUrl="/images" backLabel={m.images_title()} title={image?.repoTags?.[0] || shortId} {actions}>
+<ResourceDetailLayout backUrl="/images" backLabel={m.images()} title={image?.repoTags?.[0] || shortId} {actions}>
 	{#if image}
 		<div class="space-y-6">
 			{#snippet tile(label: string, value: string, opts?: { mono?: boolean; class?: string })}
 				<Card.Root variant="subtle" class={opts?.class}>
 					<Card.Content class="flex flex-col gap-1 p-4">
-						<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-						<div class={cn('text-foreground text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
+						<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+						<div class={cn('text-sm font-medium text-foreground', opts?.mono && 'font-mono break-all select-all')}>
 							{value}
 						</div>
 					</Card.Content>
 				</Card.Root>
 			{/snippet}
 
-			<div class="bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3">
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+			<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
+				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 					<VolumesIcon class="size-4 shrink-0" />
 					<span>{imageSize}</span>
 				</div>
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 					<ClockIcon class="size-4 shrink-0" />
 					<span>{createdDate}</span>
 				</div>
-				<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+				<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 					<CpuIcon class="size-4 shrink-0" />
 					<span>{architecture} · {osName}</span>
 				</div>
@@ -317,7 +317,7 @@
 
 			{#if hasTags}
 				<div class="flex flex-wrap items-center gap-2">
-					<span class="text-muted-foreground inline-flex items-center gap-2 text-xs font-semibold tracking-wide uppercase">
+					<span class="inline-flex items-center gap-2 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
 						<TagIcon class="size-4" />
 						{m.common_tags()}
 					</span>
@@ -383,10 +383,10 @@
 		</div>
 	{:else}
 		<div class="py-12 text-center">
-			<p class="text-muted-foreground text-lg font-medium">{m.common_not_found_title({ resource: m.images_title() })}</p>
+			<p class="text-lg font-medium text-muted-foreground">{m.common_not_found_title({ resource: m.images() })}</p>
 			<ArcaneButton
 				action="cancel"
-				customLabel={m.common_back_to({ resource: m.images_title() })}
+				customLabel={m.common_back_to({ resource: m.images() })}
 				onclick={() => goto('/images')}
 				size="sm"
 				class="mt-4"

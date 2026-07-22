@@ -277,7 +277,7 @@
 	<div class="flex min-w-0 items-start gap-2">
 		{#if hasDetails}
 			<Collapsible.Trigger
-				class="focus-visible:border-ring focus-visible:ring-ring/50 flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:ring-[3px]"
+				class="flex min-w-0 flex-1 items-start gap-3 rounded-md border border-transparent px-1 py-0.5 text-left outline-none hover:bg-white/3 focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
 			>
 				{@render entrySummary(true)}
 

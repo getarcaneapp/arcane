@@ -41,11 +41,7 @@
 	}
 </script>
 
-<ResponsiveDialog.Root
-	bind:open
-	title={m.swarm_service_form_add_label()}
-	description={m.common_labels_description({ resource: m.swarm_node() })}
->
+<ResponsiveDialog.Root bind:open title={m.add_label()} description={m.common_labels_description({ resource: m.swarm_node() })}>
 	<form onsubmit={handleSubmit} class="space-y-4 px-6 py-4">
 		<div class="space-y-2">
 			<Label for="label-key" class={isReservedPrefix ? 'text-red-500' : ''}>{m.swarm_node_label_key()}</Label>
@@ -64,9 +60,9 @@
 		</div>
 		<div class="space-y-2">
 			<Label for="label-value">{m.swarm_node_label_value()}</Label>
-			<Input id="label-value" bind:value placeholder={m.swarm_service_form_value_placeholder()} />
+			<Input id="label-value" bind:value placeholder={m.value_placeholder()} />
 		</div>
-		<button type="submit" class="hidden" aria-label={m.swarm_service_form_add_label()}></button>
+		<button type="submit" class="hidden" aria-label={m.add_label()}></button>
 	</form>
 
 	{#snippet footer()}

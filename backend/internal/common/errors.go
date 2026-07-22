@@ -515,6 +515,14 @@ func (e *EventListError) Error() string {
 	return fmt.Sprintf("Failed to list events: %v", e.Err)
 }
 
+type EventStatsError struct {
+	Err error
+}
+
+func (e *EventStatsError) Error() string {
+	return fmt.Sprintf("Failed to load event statistics: %v", e.Err)
+}
+
 type EnvironmentIDRequiredError struct{}
 
 func (e *EnvironmentIDRequiredError) Error() string {
@@ -1305,6 +1313,52 @@ func IsInvalidEnvKeyError(err error) bool {
 	return isErrorTypeInternal[*InvalidEnvKeyError](err)
 }
 
+type GlobalVariableNotFoundError struct{}
+
+func (e *GlobalVariableNotFoundError) Error() string {
+	return "Global variable not found"
+}
+
+func IsGlobalVariableNotFoundError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableNotFoundError](err)
+}
+
+type GlobalVariableConflictError struct {
+	Key string
+}
+
+func (e *GlobalVariableConflictError) Error() string {
+	return fmt.Sprintf("A variable named %q already exists for an overlapping environment scope", e.Key)
+}
+
+func IsGlobalVariableConflictError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableConflictError](err)
+}
+
+// GlobalVariableScopeRequiredError is returned when a variable is scoped to
+// specific environments but no environment IDs were provided.
+type GlobalVariableScopeRequiredError struct{}
+
+func (e *GlobalVariableScopeRequiredError) Error() string {
+	return "At least one environment is required when a variable is not scoped to all environments"
+}
+
+func IsGlobalVariableScopeRequiredError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableScopeRequiredError](err)
+}
+
+// GlobalVariableSecretValueRequiredError is returned when a secret variable is
+// switched to readable without providing a replacement value.
+type GlobalVariableSecretValueRequiredError struct{}
+
+func (e *GlobalVariableSecretValueRequiredError) Error() string {
+	return "A new value is required when making a secret variable readable"
+}
+
+func IsGlobalVariableSecretValueRequiredError(err error) bool {
+	return isErrorTypeInternal[*GlobalVariableSecretValueRequiredError](err)
+}
+
 type UpdaterRunError struct {
 	Err error
 }
@@ -1937,18 +1991,6 @@ func (e *DefaultTransportTypeError) Error() string {
 	return "http.DefaultTransport is not *http.Transport"
 }
 
-// CacheInvalidatedDuringFetchError restarts a cache lookup when invalidation
-// makes an in-flight fetch ineligible to publish its result.
-type CacheInvalidatedDuringFetchError struct{}
-
-func (e *CacheInvalidatedDuringFetchError) Error() string {
-	return "cache invalidated during fetch"
-}
-
-func IsCacheInvalidatedDuringFetchError(err error) bool {
-	return isErrorTypeInternal[*CacheInvalidatedDuringFetchError](err)
-}
-
 // ManagerCALockTypeError is returned when a cached manager CA lock value is not
 // the expected *sync.Mutex.
 type ManagerCALockTypeError struct{}
@@ -1963,14 +2005,6 @@ type ECRTokenResultTypeError struct{}
 
 func (e *ECRTokenResultTypeError) Error() string {
 	return "unexpected ECR token result type"
-}
-
-// OidcProviderCacheTypeError is returned when a cached OIDC provider value is
-// not the expected *oidc.Provider.
-type OidcProviderCacheTypeError struct{}
-
-func (e *OidcProviderCacheTypeError) Error() string {
-	return "unexpected provider type from cache"
 }
 
 type FederatedCredentialInvalidRequestError struct{}

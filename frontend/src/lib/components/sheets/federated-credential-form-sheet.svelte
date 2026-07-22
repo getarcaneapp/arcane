@@ -34,7 +34,7 @@
 	const isEditMode = $derived(!!credentialToEdit);
 
 	const envOptions = $derived([
-		{ id: GLOBAL_OPTION_ID, name: m.federated_credential_scope_global_option() },
+		{ id: GLOBAL_OPTION_ID, name: m.global() },
 		...environments.map((env) => ({ id: env.id, name: env.name }))
 	]);
 
@@ -136,7 +136,7 @@
 	bind:open
 	onOpenChange={handleOpenChange}
 	variant="sheet"
-	title={isEditMode ? m.federated_credential_edit_title() : m.federated_credential_create_title()}
+	title={isEditMode ? m.federated_credential_edit_title() : m.create_federated_credential()}
 	description={isEditMode
 		? m.federated_credential_edit_description({ name: credentialToEdit?.name ?? m.common_unknown() })
 		: m.federated_credential_create_description()}
@@ -145,7 +145,7 @@
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
 			<FormInput
-				label={m.federated_credential_name_label()}
+				label={m.common_name()}
 				type="text"
 				placeholder={m.federated_credential_name_placeholder()}
 				bind:input={$inputs.name}
@@ -154,7 +154,7 @@
 			<FormInput
 				label={m.common_description()}
 				type="text"
-				placeholder={m.federated_credential_description_placeholder()}
+				placeholder={m.optional_description_placeholder()}
 				bind:input={$inputs.description}
 				disabled={isLoading}
 			/>
@@ -250,13 +250,13 @@
 				<Switch id="federated-enabled" bind:checked={$inputs.enabled.value} disabled={isLoading} />
 				<div class="grid gap-1.5 leading-none">
 					<Label for="federated-enabled" class="mb-0 text-sm leading-none font-medium">
-						{m.federated_credential_enabled_label()}
+						{m.common_enabled()}
 					</Label>
-					<p class="text-muted-foreground text-[0.8rem]">
+					<p class="text-[0.8rem] text-muted-foreground">
 						{m.federated_credential_enabled_description()}
 					</p>
 				</div>
-				<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+				<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 			</div>
 		</form>
 	{/snippet}

@@ -14,6 +14,7 @@ import (
 	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -148,9 +149,10 @@ func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteRe
 func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Options) (out *updater.Result, err error) {
 	start := time.Now()
 	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
-	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: utils.StringPtrFromTrimmed(activityID)}
+	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -159,7 +161,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		if out.Duration == "" {
 			out.Duration = time.Since(start).String()
 		}
-		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
@@ -181,7 +183,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
 		if moduleResult != nil {
 			out = resultFromModuleInternal(moduleResult)
-			out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+			out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 			s.logResultItemsInternal(ctx, out)
 		}
 		if engineErr != nil {
@@ -362,9 +364,10 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *updater.Result, err error) {
 	start := time.Now()
 	activityID := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
-	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: utils.StringPtrFromTrimmed(activityID)}
+	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
+	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -373,14 +376,14 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		if out.Duration == "" {
 			out.Duration = time.Since(start).String()
 		}
-		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
 	moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, moduletypes.Options{})
 	if moduleResult != nil {
 		out = resultFromModuleInternal(moduleResult)
-		out.ActivityID = utils.StringPtrFromTrimmed(activityID)
+		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 		s.logResultItemsInternal(ctx, out)
 	}
 	if engineErr != nil {
@@ -446,9 +449,9 @@ func (s *UpdaterService) recordAutoUpdateEventInternal(ctx context.Context, seve
 		Type:          models.EventTypeSystemAutoUpdate,
 		Severity:      severity,
 		Title:         autoUpdateEventTitleInternal(phase, metadata),
-		ResourceType:  utils.StringPtrFromTrimmed("system"),
-		ResourceName:  utils.StringPtrFromTrimmed("auto_updater"),
-		EnvironmentID: utils.StringPtrFromTrimmed("0"),
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("system")).ToPointer(),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace("auto_updater")).ToPointer(),
+		EnvironmentID: mo.EmptyableToOption(strings.TrimSpace("0")).ToPointer(),
 		Metadata:      metadata,
 	})
 	if err != nil {
@@ -686,7 +689,7 @@ func (s *UpdaterService) RecordEvent(ctx context.Context, event moduletypes.Even
 		return nil
 	}
 
-	eventType, ok := containerEventTypeInternal(event.Phase)
+	eventType, ok := containerEventTypeInternal(event.Phase).Get()
 	if ok {
 		if s.deps.Events == nil {
 			return nil
@@ -717,20 +720,20 @@ func (s *UpdaterService) RecordEvent(ctx context.Context, event moduletypes.Even
 	return nil
 }
 
-func containerEventTypeInternal(phase string) (models.EventType, bool) {
+func containerEventTypeInternal(phase string) mo.Option[models.EventType] {
 	switch phase {
 	case "container_stop":
-		return models.EventTypeContainerStop, true
+		return mo.Some(models.EventTypeContainerStop)
 	case "container_delete":
-		return models.EventTypeContainerDelete, true
+		return mo.Some(models.EventTypeContainerDelete)
 	case "container_create":
-		return models.EventTypeContainerCreate, true
+		return mo.Some(models.EventTypeContainerCreate)
 	case "container_start":
-		return models.EventTypeContainerStart, true
+		return mo.Some(models.EventTypeContainerStart)
 	case "container_update":
-		return models.EventTypeContainerUpdate, true
+		return mo.Some(models.EventTypeContainerUpdate)
 	default:
-		return "", false
+		return mo.None[models.EventType]()
 	}
 }
 
@@ -759,8 +762,9 @@ func (s *UpdaterService) startAutoUpdateActivityInternal(ctx context.Context, dr
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
-		ResourceType:  utils.StringPtrFromTrimmed("system"),
-		ResourceName:  utils.StringPtrFromTrimmed("Auto update"),
+		Queue:         true,
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("system")).ToPointer(),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace("Auto update")).ToPointer(),
 		Step:          "Planning updates",
 		LatestMessage: "Auto-update run started",
 		Metadata:      models.JSON{"dryRun": dryRun},
@@ -779,9 +783,10 @@ func (s *UpdaterService) startSingleContainerUpdateActivityInternal(ctx context.
 	activity, err := s.deps.Activity.StartActivity(ctx, activitylib.StartRequest{
 		EnvironmentID: "0",
 		Type:          models.ActivityTypeAutoUpdate,
-		ResourceType:  utils.StringPtrFromTrimmed("container"),
+		Queue:         true,
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace("container")).ToPointer(),
 		ResourceID:    &containerID,
-		ResourceName:  utils.StringPtrFromTrimmed(containerID),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(containerID)).ToPointer(),
 		Step:          "Updating container",
 		LatestMessage: "Container update started",
 		Metadata:      models.JSON{"containerID": containerID},

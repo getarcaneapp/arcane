@@ -1,27 +1,12 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"log/slog"
 	"sync"
 	"time"
 )
-
-// AgentTunnel represents an active tunnel connection from an edge agent
-type AgentTunnel struct {
-	EnvironmentID string
-	Conn          TunnelConnection
-	Pending       sync.Map // map[string]*PendingRequest
-	ConnectedAt   time.Time
-	LastHeartbeat time.Time
-	SessionID     string
-	AgentInstance string
-	Transport     string
-	SecurityMode  string
-	Capabilities  []string
-	State         string
-	DisconnectErr string
-	mu            sync.RWMutex
-}
 
 // NewAgentTunnelWithConn creates a new agent tunnel from a transport-agnostic connection.
 func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
@@ -32,6 +17,7 @@ func NewAgentTunnelWithConn(envID string, conn TunnelConnection) *AgentTunnel {
 		ConnectedAt:   now,
 		LastHeartbeat: now,
 		State:         "connected",
+		done:          make(chan struct{}),
 	}
 }
 
@@ -56,19 +42,24 @@ func (t *AgentTunnel) Close() error {
 
 // CloseWithReason closes the tunnel connection and records the disconnect reason.
 func (t *AgentTunnel) CloseWithReason(reason string) error {
+	if t == nil {
+		return nil
+	}
 	t.mu.Lock()
 	t.State = "closed"
 	if reason != "" {
 		t.DisconnectErr = reason
 	}
 	t.mu.Unlock()
+	t.closeOnce.Do(func() {
+		if t.done != nil {
+			close(t.done)
+		}
+	})
+	if t.Conn == nil {
+		return nil
+	}
 	return t.Conn.Close()
-}
-
-// TunnelRegistry manages active edge agent tunnel connections
-type TunnelRegistry struct {
-	tunnels map[string]*AgentTunnel // environmentID -> tunnel
-	mu      sync.RWMutex
 }
 
 // NewTunnelRegistry creates a new tunnel registry
@@ -79,11 +70,11 @@ func NewTunnelRegistry() *TunnelRegistry {
 }
 
 // Get retrieves a tunnel by environment ID
-func (r *TunnelRegistry) Get(envID string) (*AgentTunnel, bool) {
+func (r *TunnelRegistry) Get(envID string) mo.Option[*AgentTunnel] {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	tunnel, ok := r.tunnels[envID]
-	return tunnel, ok
+	return mo.TupleToOption(tunnel, ok)
 }
 
 // Register adds a tunnel to the registry, closing any existing tunnel for the same env
@@ -163,7 +154,7 @@ func (r *TunnelRegistry) UnregisterCurrent(envID string, current *AgentTunnel) (
 
 	existing, ok := r.tunnels[envID]
 	if !ok || existing != current {
-		if ok && existing != nil && !existing.Conn.IsClosed() {
+		if ok && existing != nil && existing.Conn != nil && !existing.Conn.IsClosed() {
 			return false, true
 		}
 		return false, false
@@ -175,20 +166,20 @@ func (r *TunnelRegistry) UnregisterCurrent(envID string, current *AgentTunnel) (
 	return true, false
 }
 
-// CleanupStale removes tunnels that haven't had a heartbeat within the given duration
-func (r *TunnelRegistry) CleanupStale(maxAge time.Duration) int {
+// CleanupStale removes tunnels that haven't had a heartbeat within the given duration.
+func (r *TunnelRegistry) CleanupStale(maxAge time.Duration) []*AgentTunnel {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
 	now := time.Now()
-	removed := 0
+	removed := make([]*AgentTunnel, 0)
 
 	for envID, tunnel := range r.tunnels {
 		if now.Sub(tunnel.GetLastHeartbeat()) > maxAge {
 			slog.Warn("Removing stale edge tunnel", "last_heartbeat", tunnel.GetLastHeartbeat())
-			_ = tunnel.Close()
+			_ = tunnel.CloseWithReason("edge tunnel heartbeat expired")
 			delete(r.tunnels, envID)
-			removed++
+			removed = append(removed, tunnel)
 		}
 	}
 

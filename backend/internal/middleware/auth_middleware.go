@@ -1,6 +1,8 @@
 package middleware
 
 import (
+	"github.com/samber/mo"
+
 	"context"
 	"crypto/subtle"
 	"errors"
@@ -179,7 +181,7 @@ func agentTokenMatchesInternal(presented, configured string) bool {
 func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
 	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
-		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken); ok {
+		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken).Get(); ok {
 			environmentScopedInternal(c, env)
 			return next(c)
 		}
@@ -272,7 +274,7 @@ func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c echo.Context, n
 			return next(c)
 		}
 	}
-	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey); ok {
+	if env, ok := m.resolveEnvironmentAccessToken(ctx, apiKey).Get(); ok {
 		environmentScopedInternal(c, env)
 		return next(c)
 	}
@@ -312,17 +314,17 @@ func (m *AuthMiddleware) resolveApiKeyPermissionsOrDeny(ctx context.Context, api
 	return ps
 }
 
-func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) (*models.Environment, bool) {
+func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, token string) mo.Option[*models.Environment] {
 	if m.envTokenResolver == nil {
-		return nil, false
+		return mo.None[*models.Environment]()
 	}
 
 	env, err := m.envTokenResolver.ResolveEnvironmentByAccessToken(ctx, token)
 	if err != nil || env == nil {
-		return nil, false
+		return mo.None[*models.Environment]()
 	}
 
-	return env, true
+	return mo.Some(env)
 }
 
 func isPreflightInternal(c echo.Context) bool {

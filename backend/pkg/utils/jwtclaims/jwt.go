@@ -3,9 +3,13 @@ package jwtclaims
 import (
 	"crypto/rand"
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
+	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/samber/mo"
+	"github.com/samber/mo/result"
 )
 
 // GetStringClaim extracts a string claim from a map
@@ -84,12 +88,12 @@ func GetStringSliceClaim(m map[string]any, key string) []string {
 }
 
 const (
-	// KnownInsecureJWTSecret is the placeholder shipped in config.go's struct
+	// knownInsecureJWTSecret is the placeholder shipped in config.go's struct
 	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
 	// on Config.JWTSecret.
-	KnownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
-	// MinJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
-	MinJWTSecretLength = 32
+	knownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
+	// minJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
+	minJWTSecretLength = 32
 )
 
 // CheckOrGenerateJwtSecret returns the HMAC signing key for JWTs.
@@ -100,16 +104,16 @@ const (
 // a random per-boot key is generated when none (or only the public default) is
 // configured, so the public default never becomes a live signing key.
 func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
-	isDefault := jwtSecret == "" || jwtSecret == KnownInsecureJWTSecret
+	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret
 
 	if requireExplicit {
 		if isDefault {
 			panic("JWT_SECRET is required in production. Set JWT_SECRET to a unique " +
 				"random value of at least 32 characters (e.g. `openssl rand -base64 32`).")
 		}
-		if len(jwtSecret) < MinJWTSecretLength {
+		if len(jwtSecret) < minJWTSecretLength {
 			panic(fmt.Sprintf("JWT_SECRET must be at least %d characters (got %d).",
-				MinJWTSecretLength, len(jwtSecret)))
+				minJWTSecretLength, len(jwtSecret)))
 		}
 		return []byte(jwtSecret)
 	}
@@ -126,38 +130,43 @@ func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
 
 // ParseJWTClaims decodes and unmarshals the payload part of a JWT
 func ParseJWTClaims(idToken string) map[string]any {
-	parts := strings.Split(idToken, ".")
-	if len(parts) < 2 {
-		return nil
-	}
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil
-	}
-	var claims map[string]any
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil
-	}
-	return claims
+	return result.Pipe3(
+		mo.Ok(idToken),
+		result.FlatMap(func(token string) mo.Result[[]string] {
+			parts := strings.Split(token, ".")
+			if len(parts) < 2 {
+				return mo.Err[[]string](errors.New("JWT has no payload"))
+			}
+			return mo.Ok(parts)
+		}),
+		result.FlatMap(func(parts []string) mo.Result[[]byte] {
+			return mo.TupleToResult(base64.RawURLEncoding.DecodeString(parts[1]))
+		}),
+		result.FlatMap(func(payload []byte) mo.Result[map[string]any] {
+			var claims map[string]any
+			err := json.Unmarshal(payload, &claims)
+			return mo.TupleToResult(claims, err)
+		}),
+	).OrElse(nil)
 }
 
 // GetByPath extracts a value from a nested map using a dot-separated path
-func GetByPath(m map[string]any, path string) (any, bool) {
+func GetByPath(m map[string]any, path string) mo.Option[any] {
 	if m == nil {
-		return nil, false
+		return mo.None[any]()
 	}
 	keys := strings.Split(path, ".")
 	var cur any = m
 	for _, k := range keys {
 		obj, ok := cur.(map[string]any)
 		if !ok {
-			return nil, false
+			return mo.None[any]()
 		}
 		v, ok := obj[k]
 		if !ok {
-			return nil, false
+			return mo.None[any]()
 		}
 		cur = v
 	}
-	return cur, true
+	return mo.Some(cur)
 }

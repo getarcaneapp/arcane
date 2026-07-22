@@ -112,14 +112,14 @@ export const navigationItems: NavigationSections = {
 	],
 	resourceItems: [
 		{
-			title: m.containers_title(),
+			title: m.containers(),
 			url: '/containers',
 			icon: ContainersIcon,
 			shortcut: ['mod', '5'],
 			accessSurfaceId: 'route.containers'
 		},
 		{
-			title: m.images_title(),
+			title: m.images(),
 			url: '/images',
 			icon: ImagesIcon,
 			shortcut: ['mod', '6'],
@@ -135,20 +135,20 @@ export const navigationItems: NavigationSections = {
 			]
 		},
 		{
-			title: m.images_updates(),
+			title: m.updates(),
 			url: '/updates',
 			icon: UpdateIcon,
 			shortcut: ['mod', 'u'],
 			accessSurfaceId: 'route.updates'
 		},
 		{
-			title: m.networks_title(),
+			title: m.resource_networks_cap(),
 			url: '/networks',
 			icon: NetworksIcon,
 			shortcut: ['mod', '7'],
 			accessSurfaceId: 'route.networks',
 			items: [
-				{ title: m.ports_title(), url: '/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
+				{ title: m.common_ports(), url: '/ports', icon: HashIcon, accessSurfaceId: 'route.ports' },
 				{
 					title: m.networks_topology_button(),
 					url: '/networks/topology',
@@ -158,7 +158,7 @@ export const navigationItems: NavigationSections = {
 			]
 		},
 		{
-			title: m.volumes_title(),
+			title: m.resource_volumes_cap(),
 			url: '/volumes',
 			icon: VolumesIcon,
 			shortcut: ['mod', '8'],
@@ -183,7 +183,7 @@ export const navigationItems: NavigationSections = {
 			accessSurfaceId: 'route.events'
 		},
 		{
-			title: m.settings_title(),
+			title: m.settings(),
 			url: '/settings',
 			icon: SettingsIcon,
 			shortcut: ['mod', '0'],
@@ -210,7 +210,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.webhooks'
 				},
 				{
-					title: m.authentication_title(),
+					title: m.authentication(),
 					url: '/settings/authentication',
 					icon: LockIcon,
 					shortcut: ['mod', 'shift', '3'],
@@ -224,7 +224,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.notifications'
 				},
 				{
-					title: m.activity_settings_title(),
+					title: m.activity(),
 					url: '/settings/activity',
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.activity'
@@ -257,7 +257,7 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.roles'
 				},
 				{
-					title: m.diagnostics_title(),
+					title: m.diagnostics(),
 					url: '/settings/diagnostics',
 					icon: ActivityIcon,
 					accessSurfaceId: 'settings.category.diagnostics'

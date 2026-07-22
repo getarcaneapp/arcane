@@ -48,9 +48,9 @@ function tagAwareWrap(input: string, maxLen: number): string {
 }
 
 async function buildTemplateFile(Component: any, templateName: string, isPlainText: boolean) {
-	const rendered = await render(Component(Component.TemplateProps), {
-		plainText: isPlainText
-	});
+	const rendered = isPlainText
+		? await render(Component(Component.TemplateProps), { plainText: true })
+		: await render(Component(Component.TemplateProps), { plainText: false });
 
 	// Normalize quotes
 	let normalized = rendered.replace(/&quot;/g, '"');

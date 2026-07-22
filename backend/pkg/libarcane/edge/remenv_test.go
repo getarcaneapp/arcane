@@ -270,14 +270,14 @@ func newTestRemenvClientInternal(timeout time.Duration) *remenv.Client {
 				return nil
 			}
 
-			if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()); ok {
+			if _, ok := RequestTunnelAndWait(ctx, envID, DefaultTunnelDemandTTL, DefaultTunnelAcquireTimeout()).Get(); ok {
 				return nil
 			}
 
 			return fmt.Errorf("edge agent is not connected (no active tunnel)")
 		},
 		DoFunc: func(ctx context.Context, envID, method, path string, headers map[string]string, body []byte) (*remenv.Response, error) {
-			tunnel, ok := GetRegistry().Get(envID)
+			tunnel, ok := GetRegistry().Get(envID).Get()
 			if !ok {
 				return nil, fmt.Errorf("no active tunnel for environment %s", envID)
 			}
@@ -376,7 +376,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	clientAPI := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := clientAPI.Connect(ctx)
+	stream, err := clientAPI.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -438,7 +438,7 @@ func TestRemenvClient_EdgeWithGRPCTunnel(t *testing.T) {
 	}()
 
 	require.Eventually(t, func() bool {
-		tunnel, ok := GetRegistry().Get(envID)
+		tunnel, ok := GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil && !tunnel.Conn.IsClosed()
 	}, time.Second, 10*time.Millisecond)
 

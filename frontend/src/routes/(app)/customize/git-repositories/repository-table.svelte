@@ -1,6 +1,6 @@
 <script lang="ts">
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import RemoveMenuItem from '$lib/components/arcane-table/cells/remove-menu-item.svelte';
@@ -82,7 +82,7 @@
 			},
 			onComplete: async (result) => {
 				if (result.success > 0) {
-					// fallow-ignore-next-line code-duplication refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
+					// fallow-ignore-next-line code-duplication -- refresh handler calls gitRepositoryService (sync-table calls gitOpsSyncService); no shared surface
 					repositories = await gitRepositoryService.getRepositories(requestOptions);
 				}
 			},
@@ -167,7 +167,7 @@
 	];
 </script>
 
-<!-- fallow-ignore-next-line code-duplication cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
+<!-- fallow-ignore-next-line code-duplication -- cell wrapper snippet around the shared EnabledStatusCell; arcane-table cell: API requires a per-table Snippet -->
 {#snippet enabledStatusCol({ value }: { value: unknown })}
 	<EnabledStatusCell {value} />
 {/snippet}
@@ -178,23 +178,23 @@
 
 {#snippet NameCell({ value }: { value: unknown })}
 	<div class="flex items-center gap-2">
-		<GitBranchIcon class="text-muted-foreground size-4" />
+		<GitBranchIcon class="size-4 text-muted-foreground" />
 		<span class="font-medium">{value}</span>
 	</div>
 {/snippet}
 
 {#snippet UrlCell({ value }: { value: unknown })}
-	<code class="bg-muted text-muted-foreground rounded px-2 py-1 text-xs">{value}</code>
+	<code class="rounded bg-muted px-2 py-1 text-xs text-muted-foreground">{value}</code>
 {/snippet}
 
 {#snippet AuthTypeCell({ value }: { value: unknown })}
 	{@const authType = String(value)}
 	{#if authType === 'http'}
-		<StatusBadge variant="blue" text={m.git_repository_auth_http()} />
+		<Badge variant="blue" minWidth="20">{m.git_repository_auth_http()}</Badge>
 	{:else if authType === 'ssh'}
-		<StatusBadge variant="purple" text={m.git_repository_auth_ssh()} />
+		<Badge variant="purple" minWidth="20">{m.git_repository_auth_ssh()}</Badge>
 	{:else}
-		<StatusBadge variant="gray" text={m.git_repository_auth_none()} />
+		<Badge variant="gray" minWidth="20">{m.none()}</Badge>
 	{/if}
 {/snippet}
 
@@ -237,7 +237,7 @@
 		<IfPermitted perm="git-repositories:test">
 			<DropdownMenu.Item onclick={() => handleTest(item.id, item.name)} disabled={isLoading.testing}>
 				<TestTubeIcon class="size-4" />
-				{m.git_repository_test_connection()}
+				{m.test_connection()}
 			</DropdownMenu.Item>
 		</IfPermitted>
 

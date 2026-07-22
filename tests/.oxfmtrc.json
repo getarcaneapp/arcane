@@ -4,5 +4,6 @@
 	"singleQuote": true,
 	"trailingComma": "none",
 	"printWidth": 100,
-	"sortPackageJson": true
+	"sortPackageJson": true,
+	"ignorePatterns": [".auth/**", ".bin/**", ".report/**", "test-results/**"]
 }

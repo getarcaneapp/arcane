@@ -1,13 +1,17 @@
 {
-  "type": "module",
-  "name": "arcane-tests",
-  "scripts": {
-    "preinstall": "npx only-allow pnpm",
-    "test": "playwright test"
-  },
-  "devDependencies": {
-    "@playwright/test": "^1.61.1",
-    "@types/node": "^26.1.0",
-    "oxfmt": "^0.58.0"
-  }
+	"name": "arcane-tests",
+	"type": "module",
+	"scripts": {
+		"preinstall": "npx only-allow pnpm",
+		"check": "tsc --noEmit",
+		"format": "oxfmt",
+		"format:check": "oxfmt --check",
+		"test": "playwright test"
+	},
+	"devDependencies": {
+		"@playwright/test": "^1.61.1",
+		"@types/node": "^26.1.0",
+		"oxfmt": "^0.58.0",
+		"typescript": "^6.0.3"
+	}
 }

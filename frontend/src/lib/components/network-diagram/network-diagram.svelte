@@ -2,7 +2,7 @@
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
 	import { ArcaneButton } from '$lib/components/arcane-button';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
 	import { EyeOnIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
@@ -471,9 +471,9 @@
 
 <div class={cn('space-y-4', className)}>
 	<div class="flex flex-wrap items-center gap-2">
-		<StatusBadge text={m.networks_topology_legend_networks()} variant="violet" minWidth="none" />
-		<StatusBadge text={m.networks_topology_legend_containers()} variant="emerald" minWidth="none" />
-		<p class="text-muted-foreground text-sm">{m.networks_topology_hint()}</p>
+		<Badge variant="violet">{m.resource_networks_cap()}</Badge>
+		<Badge variant="emerald">{m.containers()}</Badge>
+		<p class="text-sm text-muted-foreground">{m.networks_topology_hint()}</p>
 		{#if presentDefaults.length > 0}
 			<div class="ml-auto">
 				<DropdownMenu.Root>
@@ -485,7 +485,7 @@
 								tone="ghost"
 								icon={EyeOnIcon}
 								customLabel={`${m.networks_topology_default_networks()} (${visibleDefaultsCount}/${presentDefaults.length})`}
-								class="border-input hover:bg-card/60 border hover:text-inherit"
+								class="border border-input hover:bg-card/60 hover:text-inherit"
 							/>
 						{/snippet}
 					</DropdownMenu.Trigger>
@@ -508,8 +508,8 @@
 	</div>
 
 	{#if topology.nodes.length === 0}
-		<div class="bg-card border-border/70 rounded-3xl border px-6 py-16 text-center shadow-sm">
-			<p class="text-foreground text-base font-medium">{m.networks_topology_empty()}</p>
+		<div class="rounded-3xl border border-border/70 bg-card px-6 py-16 text-center shadow-sm">
+			<p class="text-base font-medium text-foreground">{m.networks_topology_empty()}</p>
 		</div>
 	{:else if browser && isReady}
 		<div

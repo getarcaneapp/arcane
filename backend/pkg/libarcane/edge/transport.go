@@ -1,28 +1,11 @@
 package edge
 
 import (
+	"github.com/samber/mo"
+
 	"net/url"
 	"strings"
-	"time"
 )
-
-// Config contains the public edge-tunnel runtime settings needed by pkg/libarcane/edge.
-type Config struct {
-	EdgeAgent             bool
-	EdgeTransport         string
-	EdgeReconnectInterval int
-	EdgeMTLSMode          string
-	EdgeMTLSCAFile        string
-	EdgeMTLSCertFile      string
-	EdgeMTLSKeyFile       string
-	EdgeMTLSServerName    string
-	EdgeMTLSAssetsDir     string
-	AppURL                string
-	ManagerApiUrl         string
-	AgentToken            string
-	Port                  string
-	Listen                string
-}
 
 // GetManagerBaseURL returns the base URL of the manager application.
 // It strips any trailing slashes or /api suffix from MANAGER_API_URL.
@@ -62,18 +45,6 @@ func (c *Config) GetManagerGRPCAddr() string {
 	}
 
 	return host + ":" + port
-}
-
-// TunnelRuntimeState describes the live, in-memory state of an active edge tunnel.
-type TunnelRuntimeState struct {
-	Transport     string
-	ConnectedAt   *time.Time
-	LastHeartbeat *time.Time
-	SessionID     string
-	AgentInstance string
-	SecurityMode  string
-	Capabilities  []string
-	State         string
 }
 
 const (
@@ -152,27 +123,27 @@ func UsePollEdgeTransport(cfg *Config) bool {
 }
 
 // GetActiveTunnelTransport returns the currently active tunnel transport for an environment.
-func GetActiveTunnelTransport(envID string) (string, bool) {
-	tunnel, ok := GetRegistry().Get(envID)
+func GetActiveTunnelTransport(envID string) mo.Option[string] {
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return "", false
+		return mo.None[string]()
 	}
 
 	switch tunnel.Conn.(type) {
 	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
-		return EdgeTransportGRPC, true
+		return mo.Some(EdgeTransportGRPC)
 	case *TunnelConn:
-		return EdgeTransportWebSocket, true
+		return mo.Some(EdgeTransportWebSocket)
 	default:
-		return "", false
+		return mo.None[string]()
 	}
 }
 
 // GetTunnelRuntimeState returns live metadata for an active tunnel.
-func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
-	tunnel, ok := GetRegistry().Get(envID)
+func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
+	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok || tunnel == nil || tunnel.Conn == nil || tunnel.Conn.IsClosed() {
-		return nil, false
+		return mo.None[*TunnelRuntimeState]()
 	}
 
 	state := &TunnelRuntimeState{}
@@ -192,5 +163,5 @@ func GetTunnelRuntimeState(envID string) (*TunnelRuntimeState, bool) {
 	state.Capabilities = append([]string(nil), tunnel.Capabilities...)
 	state.State = tunnel.State
 
-	return state, true
+	return mo.Some(state)
 }

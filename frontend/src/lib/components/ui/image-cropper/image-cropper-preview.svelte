@@ -14,7 +14,7 @@
 {#if child}
 	{@render child({ src: previewState.rootState.src })}
 {:else}
-	<Avatar.Root class={cn('ring-accent ring-offset-background size-20 ring-2 ring-offset-2', className)}>
+	<Avatar.Root class={cn('size-20 ring-2 ring-accent ring-offset-2 ring-offset-background', className)}>
 		<Avatar.Image src={previewState.rootState.src} />
 		<Avatar.Fallback>
 			<UploadIcon class="size-4" />

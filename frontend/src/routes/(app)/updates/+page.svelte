@@ -131,7 +131,7 @@
 	const tabItems: TabItem[] = $derived([
 		{
 			value: 'containers',
-			label: m.containers_title(),
+			label: m.containers(),
 			icon: ContainersIcon
 		},
 		{
@@ -192,7 +192,7 @@
 			iconColor: 'text-blue-500'
 		},
 		{
-			title: m.containers_title(),
+			title: m.containers(),
 			value: containerCount,
 			icon: ContainersIcon,
 			iconColor: 'text-emerald-500'
@@ -206,7 +206,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.images_updates()} icon={UpdateIcon} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.updates()} icon={UpdateIcon} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		<div class="space-y-6">
 			<Tabs.Root value={effectiveTab}>

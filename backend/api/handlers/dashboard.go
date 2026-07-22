@@ -2,8 +2,8 @@ package handlers
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"time"
 
@@ -63,10 +63,7 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Summary:     "Get dashboard snapshot",
 		Description: "Returns the dashboard first-paint snapshot in a single response",
 		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermDashboardRead, h.GetDashboard)
 
 	huma.Register(api, huma.Operation{
@@ -76,19 +73,12 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Summary:     "Stream dashboard snapshots across all environments",
 		Description: "Stream dashboard snapshot updates for the local environment and all enabled remote environments as JSON lines",
 		Tags:        []string{"Dashboard"},
-		Security: []map[string][]string{
-			{"BearerAuth": {}},
-			{"ApiKeyAuth": {}},
-		},
+		Security:    defaultOperationSecurityInternal(),
 		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermDashboardRead),
 	}, h.StreamAllDashboards)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
-	if h.dashboardService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	// EnvironmentID is consumed by env proxy/auth middleware for routing/validation.
 	_ = input.EnvironmentID
 
@@ -112,16 +102,11 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 }
 
 func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *StreamAllDashboardsInput) (*huma.StreamResponse, error) {
-	if h.dashboardService == nil || h.environmentService == nil {
-		return nil, huma.Error500InternalServerError("service not available")
-	}
-
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
 			httpx.SetJSONStreamHeaders(humaCtx)
 
 			writer := humaCtx.BodyWriter()
-			encoder := json.NewEncoder(writer)
 			flush := func() {
 				if f, ok := writer.(http.Flusher); ok {
 					f.Flush()
@@ -129,7 +114,7 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 			}
 
 			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, encoder, flush)
+			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, writer, flush)
 		},
 	}, nil
 }
@@ -137,9 +122,9 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // streamAllDashboardsInternal multiplexes dashboard snapshots for the local
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
-func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, encoder *json.Encoder, flush func()) {
+func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
 	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
-		Encoder:           encoder,
+		Writer:            writer,
 		Flush:             flush,
 		Buffer:            dashboardStreamEventBuffer,
 		HeartbeatInterval: dashboardStreamHeartbeatInterval,
@@ -276,7 +261,7 @@ func (h *DashboardHandler) runRemoteDashboardStreamPollerInternal(ctx context.Co
 		currentEnvironment := environment
 		if h.environmentService != nil {
 			var ok bool
-			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID)
+			currentEnvironment, ok = h.environmentService.GetActiveRemoteEnvironmentSnapshot(environmentID).Get()
 			if !ok {
 				return
 			}

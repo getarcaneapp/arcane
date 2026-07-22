@@ -7,7 +7,32 @@
     "typescript": true
   },
   "go.buildTags": "playwright,buildables",
-  "prettier.documentSelectors": ["**/*.svelte"],
+  "go.toolsEnvVars": {
+    "GOEXPERIMENT": "jsonv2"
+  },
+  "go.testEnvVars": {
+    "GOEXPERIMENT": "jsonv2"
+  },
+  "gopls": {
+    "ui.diagnostic.analyses": {
+      "stdversion": false
+    }
+  },
+  "[svelte]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[javascript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[javascriptreact]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[typescript]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
+  "[typescriptreact]": {
+    "editor.defaultFormatter": "oxc.oxc-vscode"
+  },
   "tasks.statusbar.default.hide": true,
   "tasks.statusbar.limit": 8,
   "github.copilot.chat.summarizeAgentConversationHistory.enabled": false,

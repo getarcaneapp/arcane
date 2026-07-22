@@ -55,11 +55,12 @@ export interface Event {
 	updatedAt?: string;
 }
 
-// --- Variables (key/value form helper) ---
-
-export interface Variable {
-	key: string;
-	value: string;
+export interface EventSeverityCounts {
+	total: number;
+	info: number;
+	success: number;
+	warning: number;
+	error: number;
 }
 
 // --- System stats ---

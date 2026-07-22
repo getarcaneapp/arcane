@@ -15,7 +15,7 @@
 	let { container, hasEnvVars, hasLabels }: Props = $props();
 </script>
 
-<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
+<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service config; typed props diverge across the boundary -->
 <div class="space-y-6">
 	{#if hasEnvVars}
 		<Card.Root>
@@ -37,11 +37,11 @@
 						valueTitle={m.common_click_to_select()}
 					/>
 				{:else}
-					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+					<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 						<div class="text-sm">{m.containers_no_env_vars()}</div>
 					</div>
 				{/if}
-				<!-- fallow-ignore-next-line code-duplication container vs swarm-service config; typed props diverge across the boundary -->
+				<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service config; typed props diverge across the boundary -->
 			</Card.Content>
 		</Card.Root>
 	{/if}
@@ -66,7 +66,7 @@
 						{/each}
 					</KeyValueGrid>
 				{:else}
-					<div class="text-muted-foreground rounded-lg border border-dashed py-8 text-center">
+					<div class="rounded-lg border border-dashed py-8 text-center text-muted-foreground">
 						<div class="text-sm">{m.containers_no_labels_defined()}</div>
 					</div>
 				{/if}

@@ -2,7 +2,7 @@ package activity
 
 import (
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -11,6 +11,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/samber/mo"
 )
 
 // ErrCanceled is the cancellation cause set on an activity's work context when a
@@ -40,6 +41,10 @@ type HandlerOptions struct {
 	Message        string
 	SuccessMessage string
 	Metadata       models.JSON
+	// Queue routes the activity through the per-environment concurrency
+	// limiter so bulk long-running operations wait visibly instead of all
+	// running at once. Quick actions (start/stop/delete) must not set this.
+	Queue bool
 }
 
 // StartHandlerActivityForUser creates a background activity and returns its ID
@@ -61,6 +66,63 @@ func StartHandlerActivityForUser(
 	message string,
 	metadata models.JSON,
 ) (string, context.Context) {
+	return startHandlerActivityInternal(ctx, activityService, environmentID, activityType, resourceType, resourceID, resourceName, user, step, message, metadata, false)
+}
+
+// StartQueuedHandlerActivityForUser behaves like StartHandlerActivityForUser
+// but routes the activity through the per-environment concurrency limiter:
+// when no slot is free the activity is created with status queued. The caller
+// MUST call AwaitHandlerActivitySlot on the returned work context before doing
+// the actual work (streaming endpoints write their started line in between,
+// so the client learns the activity ID before the queue wait begins).
+func StartQueuedHandlerActivityForUser(
+	ctx context.Context,
+	activityService Service,
+	environmentID string,
+	activityType models.ActivityType,
+	resourceType string,
+	resourceID string,
+	resourceName string,
+	user *models.User,
+	step string,
+	message string,
+	metadata models.JSON,
+) (string, context.Context) {
+	return startHandlerActivityInternal(ctx, activityService, environmentID, activityType, resourceType, resourceID, resourceName, user, step, message, metadata, true)
+}
+
+// AwaitHandlerActivitySlot blocks until the queued activity holds a
+// concurrency slot (flipping it to running). A cancellation while waiting is
+// not an error to the caller: the work context is already cancelled, so the
+// subsequent action fails fast and CompleteHandlerActivity records the
+// cancelled status.
+func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, activityID, environmentID string) {
+	if activityService == nil || strings.TrimSpace(activityID) == "" {
+		return
+	}
+	waiter, ok := activityService.(SlotWaiter)
+	if !ok {
+		return
+	}
+	if err := waiter.AwaitActivitySlot(ctx, activityID, environmentID); err != nil {
+		slog.DebugContext(ctx, "queued activity wait ended before acquiring a slot", "activityId", activityID, "error", err)
+	}
+}
+
+func startHandlerActivityInternal(
+	ctx context.Context,
+	activityService Service,
+	environmentID string,
+	activityType models.ActivityType,
+	resourceType string,
+	resourceID string,
+	resourceName string,
+	user *models.User,
+	step string,
+	message string,
+	metadata models.JSON,
+	queue bool,
+) (string, context.Context) {
 	if activityService == nil {
 		return "", ctx
 	}
@@ -68,9 +130,10 @@ func StartHandlerActivityForUser(
 	activity, err := activityService.StartActivity(ctx, StartRequest{
 		EnvironmentID: environmentID,
 		Type:          activityType,
-		ResourceType:  utils.StringPtrFromTrimmed(resourceType),
-		ResourceID:    utils.StringPtrFromTrimmed(resourceID),
-		ResourceName:  utils.StringPtrFromTrimmed(resourceName),
+		Queue:         queue,
+		ResourceType:  mo.EmptyableToOption(strings.TrimSpace(resourceType)).ToPointer(),
+		ResourceID:    mo.EmptyableToOption(strings.TrimSpace(resourceID)).ToPointer(),
+		ResourceName:  mo.EmptyableToOption(strings.TrimSpace(resourceName)).ToPointer(),
 		StartedBy:     user,
 		Step:          step,
 		LatestMessage: message,
@@ -121,7 +184,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 // The action MUST use the provided context for its operation so cancellation
 // propagates.
 func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
-	activityID, workCtx := StartHandlerActivityForUser(
+	activityID, workCtx := startHandlerActivityInternal(
 		ctx,
 		activityService,
 		opts.EnvironmentID,
@@ -133,7 +196,11 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 		opts.Step,
 		opts.Message,
 		opts.Metadata,
+		opts.Queue,
 	)
+	if opts.Queue {
+		AwaitHandlerActivitySlot(workCtx, activityService, activityID, opts.EnvironmentID)
+	}
 
 	err := action(workCtx)
 	CompleteHandlerActivity(workCtx, activityService, activityID, opts.SuccessMessage, err)
@@ -149,9 +216,11 @@ func WriteStartedLine(writer io.Writer, activityID string) {
 		"type":       "activity",
 		"activityId": activityID,
 	}
-	if err := json.NewEncoder(writer).Encode(payload); err != nil {
+	if err := json.MarshalWrite(writer, payload); err != nil {
 		_, _ = fmt.Fprintf(writer, `{"activityId":%q}`+"\n", activityID)
+		return
 	}
+	_, _ = io.WriteString(writer, "\n")
 }
 
 func FlushWriter(writer io.Writer) {

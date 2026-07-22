@@ -123,7 +123,7 @@
 				<span class="ml-1">{normalizedRoot || m.git_sync_browse_root()}</span>
 			</Button>
 			{#each pathSegments as segment, index (`${index}-${segment}`)}
-				<ArrowRightIcon class="text-muted-foreground size-4" />
+				<ArrowRightIcon class="size-4 text-muted-foreground" />
 				<Button variant="ghost" size="sm" onclick={() => goToPath(index)} class="h-8 px-2">
 					{segment}
 				</Button>
@@ -137,15 +137,15 @@
 					<Spinner class="size-6" />
 				</div>
 			{:else if files.length === 0}
-				<div class="text-muted-foreground flex items-center justify-center py-8 text-sm">{m.git_sync_browse_no_files()}</div>
+				<div class="flex items-center justify-center py-8 text-sm text-muted-foreground">{m.git_sync_browse_no_files()}</div>
 			{:else}
 				<div class="space-y-1 p-2">
 					{#if !atRoot}
 						<button
 							onclick={goBack}
-							class="hover:bg-accent flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors"
+							class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent"
 						>
-							<FolderOpenIcon class="text-muted-foreground size-4" />
+							<FolderOpenIcon class="size-4 text-muted-foreground" />
 							<span class="text-sm">..</span>
 						</button>
 					{/if}
@@ -154,12 +154,12 @@
 						<button
 							onclick={() => handleFileClick(file)}
 							disabled={!canSelect}
-							class="hover:bg-accent flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50"
+							class="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left transition-colors hover:bg-accent disabled:cursor-not-allowed disabled:opacity-50"
 						>
 							{#if file.type === 'directory'}
 								<FolderOpenIcon class="size-4 text-blue-500" />
 							{:else}
-								<FileTextIcon class="text-muted-foreground size-4" />
+								<FileTextIcon class="size-4 text-muted-foreground" />
 							{/if}
 							<span class="text-sm">{file.name}</span>
 							{@render fileBadge?.(file)}

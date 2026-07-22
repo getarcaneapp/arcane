@@ -9,6 +9,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -433,6 +434,89 @@ func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvid
 	assert.Equal(t, originalToken, updated.Token)
 }
 
+func TestContainerRegistryService_UpdateRegistry_RejectsTargetChangeWhenStoredTokenWouldBeReused(t *testing.T) {
+	tests := []struct {
+		name  string
+		token *string
+	}{
+		{name: "omitted token"},
+		{name: "empty token", token: new("")},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, db := setupImageServiceAuthTest(t)
+			svc := NewContainerRegistryService(db, nil, nil)
+
+			registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+				URL:      "https://registry.example.com",
+				Username: "my-user",
+				Token:    "my-token",
+			})
+			require.NoError(t, err)
+			originalToken := registry.Token
+
+			_, err = svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+				URL:   new("https://attacker.example.com"),
+				Token: tt.token,
+			})
+			require.Error(t, err)
+
+			var validationErr *models.ValidationError
+			require.ErrorAs(t, err, &validationErr)
+			assert.Equal(t, "token", validationErr.Field)
+
+			stored, loadErr := svc.GetRegistryByID(context.Background(), registry.ID)
+			require.NoError(t, loadErr)
+			assert.Equal(t, "https://registry.example.com", stored.URL)
+			assert.Equal(t, originalToken, stored.Token)
+		})
+	}
+}
+
+func TestContainerRegistryService_UpdateRegistry_AllowsPathChangeOnSameHostWithoutToken(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil, nil)
+
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com/one",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+	originalToken := registry.Token
+
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL: new("REGISTRY.EXAMPLE.COM/two"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "REGISTRY.EXAMPLE.COM/two", updated.URL)
+	assert.Equal(t, originalToken, updated.Token)
+}
+
+func TestContainerRegistryService_UpdateRegistry_AllowsTargetChangeWhenTokenIsResupplied(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil, nil)
+
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:      "https://registry.example.com",
+		Username: "my-user",
+		Token:    "my-token",
+	})
+	require.NoError(t, err)
+
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL:   new("https://registry.example.net"),
+		Token: new("new-token"),
+	})
+	require.NoError(t, err)
+	assert.Equal(t, "https://registry.example.net", updated.URL)
+
+	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
+	require.NoError(t, decryptErr)
+	assert.Equal(t, "new-token", decryptedToken)
+}
+
 func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	svc := NewContainerRegistryService(db, nil, nil)
@@ -576,6 +660,45 @@ func TestContainerRegistryService_InspectImageDigest_AnonymousSuccess(t *testing
 	assert.Equal(t, wantDigest, result.Digest)
 	assert.Equal(t, "anonymous", result.AuthMethod)
 	assert.Equal(t, "registry.example.com:5443", result.AuthRegistry)
+}
+
+func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *testing.T) {
+	started := make(chan struct{}, 1)
+	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, _ string, _ client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				select {
+				case started <- struct{}{}:
+				default:
+				}
+				<-ctx.Done()
+				return client.DistributionInspectResult{}, ctx.Err()
+			},
+		}, nil
+	}, nil)
+	t.Cleanup(svc.cache.StopJanitor)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	result := make(chan error, 1)
+	go func() {
+		_, err := svc.GetImageDigest(ctx, "registry.example.com/team/app:latest")
+		result <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("registry lookup did not start")
+	}
+	cancel()
+
+	select {
+	case err := <-result:
+		require.ErrorIs(t, err, context.Canceled)
+	case <-time.After(time.Second):
+		t.Fatal("registry lookup did not honor caller cancellation")
+	}
 }
 
 func TestContainerRegistryService_InspectImageDigest_UsesStoredDockerHubCredentialsOnFirstAttempt(t *testing.T) {

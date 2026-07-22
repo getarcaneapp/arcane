@@ -12,7 +12,7 @@
 
 <div
 	class={cn(
-		'border-border/30 flex border-b transition-all duration-300',
+		'flex border-b border-border/30 transition-all duration-300',
 		isCollapsed ? 'h-16 items-center justify-center px-2' : 'h-14 items-center justify-center px-4'
 	)}
 >

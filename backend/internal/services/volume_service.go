@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"github.com/google/uuid"
 	"github.com/moby/moby/api/pkg/stdcopy"
@@ -31,6 +32,7 @@ import (
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 )
 
 type VolumeService struct {
@@ -105,7 +107,10 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 		return nil, fmt.Errorf("volume not found: %w", err)
 	}
 
-	if usageVolumes, duErr := docker.GetVolumeUsageData(ctx, dockerClient); duErr == nil {
+	settings := s.settingsService.GetSettingsConfig()
+	usageCtx, usageCancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer usageCancel()
+	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient).Get(); ok {
 		for _, uv := range usageVolumes {
 			if uv.Name == vol.Name && uv.UsageData != nil {
 				vol.UsageData = uv.UsageData
@@ -113,8 +118,6 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 				break
 			}
 		}
-	} else {
-		slog.WarnContext(ctx, "failed to load volume usage data", "volume", vol.Name, "error", duErr.Error())
 	}
 
 	v := volumetypes.NewSummary(vol)
@@ -161,7 +164,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 		slog.WarnContext(ctx, "could not log volume creation action", "volume", vol.Volume.Name, "error", logErr.Error())
 	}
 
-	docker.InvalidateVolumeUsageCache()
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return new(volumetypes.NewSummary(vol.Volume)), nil
 }
@@ -196,6 +199,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	}
 
 	s.removeHelperEntry(name)
+	docker.InvalidateVolumeUsageCache(dockerClient)
 	return nil
 }
 
@@ -237,7 +241,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 		s.removeHelperEntry(volumeName)
 	}
 
-	docker.InvalidateVolumeUsageCache()
+	docker.InvalidateVolumeUsageCache(dockerClient)
 
 	return &volumetypes.PruneReport{
 		VolumesDeleted: volumePruneResult.Report.VolumesDeleted,
@@ -302,7 +306,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 		return nil, err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(dirPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return nil, fmt.Errorf("invalid path: %w", err)
 	}
@@ -389,7 +393,7 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 		return nil, "", err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, "", fmt.Errorf("invalid path: %w", err)
 	}
@@ -420,7 +424,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 		return nil, 0, err
 	}
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return nil, 0, fmt.Errorf("invalid path: %w", err)
 	}
@@ -471,7 +475,7 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 		slog.WarnContext(ctx, "volume service: image service unavailable, attempting arcane fallback")
 	}
 
-	if fallback, ok := volumehelper.ResolveArcaneRuntimeImage(ctx, dockerClient); ok {
+	if fallback, ok := volumehelper.ResolveArcaneRuntimeImage(ctx, dockerClient).Get(); ok {
 		slog.InfoContext(ctx, "volume service: helper image strategy selected", "strategy", "arcane-fallback", "source", fallback.Source, "image", fallback.Image)
 		return fallback.Image, nil
 	}
@@ -479,10 +483,10 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found (pull error: %w)", pullErr)
 }
 
-func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) (backupStorageMountInternal, bool) {
+func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) mo.Option[backupStorageMountInternal] {
 	mirroredMount := docker.MountForDestination(mounts, "/backups", target)
 	if mirroredMount == nil {
-		return backupStorageMountInternal{}, false
+		return mo.None[backupStorageMountInternal]()
 	}
 	// MountForDestination only returns non-nil for bind and named volume mounts.
 
@@ -491,10 +495,10 @@ func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, 
 	}
 	mirroredMount.ReadOnly = readOnly
 
-	return backupStorageMountInternal{
+	return mo.Some(backupStorageMountInternal{
 		mode:  backupStorageModeArcaneMount,
 		mount: *mirroredMount,
-	}, true
+	})
 }
 
 func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, dockerClient *client.Client, target string, readOnly bool) backupStorageMountInternal {
@@ -504,7 +508,7 @@ func (s *VolumeService) resolveBackupStorageMountInternal(ctx context.Context, d
 			inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerID, client.ContainerInspectOptions{})
 			if err != nil {
 				slog.WarnContext(ctx, "volume service: failed to inspect arcane container for backup mount resolution, falling back to named volume", "container_id", containerID, "error", err.Error())
-			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly); ok {
+			} else if resolved, ok := resolveBackupStorageMountFromMountsInternal(inspect.Container.Mounts, target, readOnly).Get(); ok {
 				return resolved
 			}
 		}
@@ -540,7 +544,7 @@ func backupMountWarningForStorageInternal(storage backupStorageMountInternal) st
 }
 
 func backupMountWarningFromArcaneMountsInternal(mounts []container.MountPoint) string {
-	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true)
+	backupStorage, ok := resolveBackupStorageMountFromMountsInternal(mounts, "/backups", true).Get()
 	if ok {
 		return backupMountWarningForStorageInternal(backupStorage)
 	}
@@ -714,7 +718,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	}
 
 	if readOnly {
-		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName); ok {
+		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
 			return containerID, func() {}, nil
 		}
 	}
@@ -767,12 +771,12 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	return resp.ID, cleanup, nil
 }
 
-func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, bool) {
+func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string) mo.Option[string] {
 	s.helperMu.Lock()
 	helper := s.helperByVolume[volumeName]
 	s.helperMu.Unlock()
 	if helper == nil || helper.id == "" {
-		return "", false
+		return mo.None[string]()
 	}
 
 	inspect, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, helper.id, client.ContainerInspectOptions{})
@@ -780,12 +784,12 @@ func (s *VolumeService) getReusableReadOnlyContainerInternal(ctx context.Context
 		s.helperMu.Lock()
 		delete(s.helperByVolume, volumeName)
 		s.helperMu.Unlock()
-		return "", false
+		return mo.None[string]()
 	}
 
 	s.touchHelperInternal(volumeName)
 
-	return helper.id, true
+	return mo.Some(helper.id)
 }
 
 // touchHelperInternal records that the helper for volumeName just serviced a
@@ -1007,7 +1011,7 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: delete file", "volume", volumeName, "path", filePath)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(filePath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1048,7 +1052,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: create directory", "volume", volumeName, "path", dirPath)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(dirPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1085,7 +1089,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath string, content io.Reader, filename string, user *models.User) error {
 	slog.DebugContext(ctx, "volume service: upload file", "volume", volumeName, "dest_path", destPath, "filename", filename)
 
-	sanitizedPath, err := s.sanitizeBrowsePathInternal(destPath)
+	sanitizedPath, err := utils.SanitizeBrowsePath(destPath)
 	if err != nil {
 		return fmt.Errorf("invalid path: %w", err)
 	}
@@ -1526,29 +1530,6 @@ func (s *VolumeService) backupArchiveFilenameInternal(backupID string) (string, 
 	return sanitizedBackupID + ".tar.gz", nil
 }
 
-// sanitizeBrowsePath validates and cleans a path for file browser operations.
-// It ensures the path stays within the volume boundary.
-func (s *VolumeService) sanitizeBrowsePathInternal(input string) (string, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" || trimmed == "/" {
-		return "/", nil // Root is valid for browse
-	}
-	cleaned := path.Clean(trimmed)
-	// Ensure path starts with /
-	if !path.IsAbs(cleaned) {
-		cleaned = "/" + cleaned
-	}
-	// Check for path traversal attempts
-	if strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") || cleaned == "/.." {
-		return "", errors.New("invalid path: path traversal not allowed")
-	}
-	// After cleaning, the path should not escape root
-	if !strings.HasPrefix(cleaned, "/") {
-		return "", errors.New("invalid path: must be absolute")
-	}
-	return cleaned, nil
-}
-
 func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, filePath string) (bool, error) {
 	slog.DebugContext(ctx, "volume service: backup has path", "backup_id", backupID, "path", filePath)
 	cleaned, err := s.sanitizeBackupPathInternal(filePath)
@@ -1959,12 +1940,16 @@ type VolumeSizeData struct {
 // This is a slow operation as it calls Docker's DiskUsage API.
 func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
 	slog.DebugContext(ctx, "volume service: get volume sizes")
-	dockerClient, err := s.dockerService.GetClient(ctx)
+	settings := s.settingsService.GetSettingsConfig()
+	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	defer cancel()
+
+	dockerClient, err := s.dockerService.GetClient(apiCtx)
 	if err != nil {
 		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
 	}
 
-	usageVolumes, err := docker.GetVolumeUsageData(ctx, dockerClient)
+	usageVolumes, err := docker.GetVolumeUsageData(apiCtx, dockerClient)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
 	}
@@ -1983,7 +1968,6 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 }
 
 func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volume, usageVolumes []volume.Volume) []volume.Volume {
-	slog.Debug("volume service: enrich volumes with usage data", "volumes", len(volumes), "usage_volumes", len(usageVolumes))
 	usageByName := make(map[string]*volume.UsageData, len(usageVolumes))
 	for _, uv := range usageVolumes {
 		if uv.Name == "" || uv.UsageData == nil {
@@ -2007,7 +1991,6 @@ func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volu
 }
 
 func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
-	slog.DebugContext(ctx, "volume service: build volume container map")
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list containers: %w", err)
@@ -2026,7 +2009,6 @@ func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, doc
 }
 
 func (s *VolumeService) buildVolumePaginationConfigInternal() pagination.Config[volumetypes.Volume] {
-	slog.Debug("volume service: build volume pagination config")
 	return pagination.Config[volumetypes.Volume]{
 		SearchAccessors: []pagination.SearchAccessor[volumetypes.Volume]{
 			func(v volumetypes.Volume) (string, error) { return v.Name, nil },
@@ -2040,7 +2022,6 @@ func (s *VolumeService) buildVolumePaginationConfigInternal() pagination.Config[
 }
 
 func (s *VolumeService) buildVolumeSortBindingsInternal() []pagination.SortBinding[volumetypes.Volume] {
-	slog.Debug("volume service: build volume sort bindings")
 	createdSortFn := s.compareVolumeCreatedInternal
 
 	return []pagination.SortBinding[volumetypes.Volume]{
@@ -2088,7 +2069,6 @@ func (s *VolumeService) buildVolumeSortBindingsInternal() []pagination.SortBindi
 }
 
 func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int {
-	slog.Debug("volume service: compare volume sizes")
 	aSize := a.Size
 	bSize := b.Size
 
@@ -2100,7 +2080,7 @@ func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int 
 	}
 
 	if aSize == bSize {
-		return 0
+		return strings.Compare(a.Name, b.Name)
 	}
 	if aSize < bSize {
 		return -1
@@ -2109,9 +2089,8 @@ func (s *VolumeService) compareVolumeSizesInternal(a, b volumetypes.Volume) int 
 }
 
 func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) int {
-	slog.Debug("volume service: compare volume created time")
-	aTime, aOk := s.parseVolumeCreatedAtInternal(a.CreatedAt)
-	bTime, bOk := s.parseVolumeCreatedAtInternal(b.CreatedAt)
+	aTime, aOk := s.parseVolumeCreatedAtInternal(a.CreatedAt).Get()
+	bTime, bOk := s.parseVolumeCreatedAtInternal(b.CreatedAt).Get()
 	if aOk && bOk {
 		if aTime.Before(bTime) {
 			return -1
@@ -2124,21 +2103,20 @@ func (s *VolumeService) compareVolumeCreatedInternal(a, b volumetypes.Volume) in
 	return strings.Compare(a.CreatedAt, b.CreatedAt)
 }
 
-func (s *VolumeService) parseVolumeCreatedAtInternal(createdAt string) (time.Time, bool) {
+func (s *VolumeService) parseVolumeCreatedAtInternal(createdAt string) mo.Option[time.Time] {
 	if createdAt == "" {
-		return time.Time{}, false
+		return mo.None[time.Time]()
 	}
 	if parsed, err := time.Parse(time.RFC3339Nano, createdAt); err == nil {
-		return parsed, true
+		return mo.Some(parsed)
 	}
 	if parsed, err := time.Parse(time.RFC3339, createdAt); err == nil {
-		return parsed, true
+		return mo.Some(parsed)
 	}
-	return time.Time{}, false
+	return mo.None[time.Time]()
 }
 
 func (s *VolumeService) buildVolumeFilterAccessorsInternal() []pagination.FilterAccessor[volumetypes.Volume] {
-	slog.Debug("volume service: build volume filter accessors")
 	return []pagination.FilterAccessor[volumetypes.Volume]{
 		{
 			Key: "inUse",
@@ -2156,7 +2134,6 @@ func (s *VolumeService) buildVolumeFilterAccessorsInternal() []pagination.Filter
 }
 
 func (s *VolumeService) calculateVolumeUsageCountsInternal(items []volumetypes.Volume) volumetypes.UsageCounts {
-	slog.Debug("volume service: calculate volume usage counts", "items", len(items))
 	counts := volumetypes.UsageCounts{
 		Total: len(items),
 	}
@@ -2179,6 +2156,7 @@ func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 }
 
 func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params pagination.QueryParams, includeInternal bool) ([]volumetypes.Volume, pagination.Response, volumetypes.UsageCounts, error) {
+	startedAt := time.Now()
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit, "include_internal", includeInternal)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
@@ -2225,13 +2203,20 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 		volumeContainerMap = make(map[string][]string)
 	}
 
-	// Fetch usage data if sorting by size is requested
+	effectiveParams := params
+	usageCacheSnapshot := "not_requested"
+
+	// Size sorting consumes the current cache snapshot and refreshes it in the
+	// background so this list request never waits for Docker's DiskUsage call.
 	var usageVolumes []volume.Volume
 	if params.Sort == "size" {
-		if uv, err := docker.GetVolumeUsageData(apiCtx, dockerClient); err == nil {
+		if uv, found := docker.GetVolumeUsageDataStaleWhileRevalidate(apiCtx, dockerClient).Get(); found && (len(uv) > 0 || len(volResult.volumes) == 0) {
 			usageVolumes = uv
+			usageCacheSnapshot = "available"
 		} else {
-			slog.WarnContext(ctx, "failed to get volume usage data for sorting", "error", err.Error())
+			usageCacheSnapshot = "missing"
+			effectiveParams.Sort = "name"
+			effectiveParams.Order = pagination.SortAsc
 		}
 	}
 
@@ -2253,9 +2238,27 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	}
 
 	config := s.buildVolumePaginationConfigInternal()
-	result := pagination.SearchOrderAndPaginate(items, params, config)
+	result := pagination.SearchOrderAndPaginate(items, effectiveParams, config)
 	counts := s.calculateVolumeUsageCountsInternal(items)
-	paginationResp := pagination.BuildResponseFromFilterResult(result, params)
+	paginationResp := pagination.BuildResponseFromFilterResult(result, effectiveParams)
+	slog.DebugContext(ctx, "volume service: listed volumes",
+		"docker_host", dockerClient.DaemonHost(),
+		"requested_sort", params.Sort,
+		"requested_order", params.Order,
+		"effective_sort", effectiveParams.Sort,
+		"effective_order", effectiveParams.Order,
+		"usage_cache_snapshot", usageCacheSnapshot,
+		"docker_volumes", len(volResult.volumes),
+		"usage_volumes", len(usageVolumes),
+		"included_volumes", len(items),
+		"matched_volumes", result.TotalCount,
+		"returned_volumes", len(result.Items),
+		"container_volume_count", len(volumeContainerMap),
+		"filter_count", len(params.Filters),
+		"current_page", paginationResp.CurrentPage,
+		"total_pages", paginationResp.TotalPages,
+		"duration", time.Since(startedAt),
+	)
 
 	return result.Items, paginationResp, counts, nil
 }

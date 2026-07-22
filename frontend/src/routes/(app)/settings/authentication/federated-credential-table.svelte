@@ -2,7 +2,7 @@
 	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
 	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import { openConfirmDialog } from '$lib/components/confirm-dialog';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
@@ -37,7 +37,7 @@
 	const canManageFederatedCredentials = $derived(isGlobalAdmin());
 
 	function getStatusText(credential: FederatedCredential): string {
-		if (isPastDate(credential.expiresAt)) return m.federated_credential_status_expired();
+		if (isPastDate(credential.expiresAt)) return m.expired();
 		if (!credential.enabled) return m.common_disabled();
 		return m.common_enabled();
 	}
@@ -49,7 +49,7 @@
 	}
 
 	function getScope(credential: FederatedCredential): string {
-		return credential.environmentName || m.federated_credential_scope_global_option();
+		return credential.environmentName || m.global();
 	}
 
 	function getRoleScope(credential: FederatedCredential): string {
@@ -134,14 +134,14 @@
 		{ accessorKey: 'subjectMatch', title: m.federated_credential_subject_match_label(), sortable: true, cell: SubjectCell },
 		{ accessorKey: 'roleId', title: m.federated_credential_role_scope_column(), sortable: false, cell: RoleScopeCell },
 		{ accessorKey: 'enabled', title: m.common_status(), sortable: true, cell: StatusCell },
-		{ accessorKey: 'lastUsedAt', title: m.federated_credential_last_used(), sortable: true, cell: LastUsedCell }
+		{ accessorKey: 'lastUsedAt', title: m.last_used(), sortable: true, cell: LastUsedCell }
 	] satisfies ColumnSpec<FederatedCredential>[];
 
 	const mobileFields = [
 		{ id: 'issuerUrl', label: m.federated_credential_issuer_label(), defaultVisible: true },
 		{ id: 'subjectMatch', label: m.federated_credential_subject_match_label(), defaultVisible: true },
 		{ id: 'roleScope', label: m.federated_credential_role_scope_column(), defaultVisible: true },
-		{ id: 'lastUsedAt', label: m.federated_credential_last_used(), defaultVisible: true }
+		{ id: 'lastUsedAt', label: m.last_used(), defaultVisible: true }
 	];
 
 	const bulkActions = $derived.by<BulkAction[]>(() => {
@@ -167,13 +167,13 @@
 {/snippet}
 
 {#snippet IssuerCell({ item }: { item: FederatedCredential })}
-	<span class="text-muted-foreground max-w-[18rem] truncate">{item.issuerUrl}</span>
+	<span class="max-w-[18rem] truncate text-muted-foreground">{item.issuerUrl}</span>
 {/snippet}
 
 {#snippet SubjectCell({ item }: { item: FederatedCredential })}
 	<div class="flex flex-col gap-0.5">
 		<span class="font-mono text-xs">{item.subjectMatch}</span>
-		<span class="text-muted-foreground text-xs">{item.subjectClaim} / {item.matchType}</span>
+		<span class="text-xs text-muted-foreground">{item.subjectClaim} / {item.matchType}</span>
 	</div>
 {/snippet}
 
@@ -182,7 +182,7 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: FederatedCredential })}
-	<StatusBadge text={getStatusText(item)} variant={getStatusVariant(item)} />
+	<Badge variant={getStatusVariant(item)} minWidth="20">{getStatusText(item)}</Badge>
 {/snippet}
 
 {#snippet LastUsedCell({ item }: { item: FederatedCredential })}
@@ -223,7 +223,7 @@
 				show: mobileFieldVisibility['roleScope'] ?? true
 			},
 			{
-				label: m.federated_credential_last_used(),
+				label: m.last_used(),
 				getValue: (item: FederatedCredential) => formatOptionalDateTime(item.lastUsedAt),
 				icon: LockIcon,
 				iconVariant: 'gray' as const,

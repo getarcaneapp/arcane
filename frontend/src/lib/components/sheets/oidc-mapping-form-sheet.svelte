@@ -23,7 +23,7 @@
 
 	const isEditMode = $derived(!!mappingToEdit);
 
-	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.oidc_mappings_scope_global_option()));
+	const envOptions = $derived(buildGlobalEnvironmentOptions(environments, m.global_org_wide()));
 	const selectedLabel = $derived(createRoleEnvironmentLabelers(roles, envOptions, m.common_select_option()));
 
 	const formSchema = z.object({
@@ -66,7 +66,7 @@
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} novalidate class="grid gap-4 py-6">
 			<FormInput
-				label={m.oidc_mappings_claim_label()}
+				label={m.claim_value()}
 				type="text"
 				placeholder={m.oidc_mappings_claim_placeholder()}
 				disabled={isLoading}
@@ -75,7 +75,7 @@
 
 			<RoleScopeSelects
 				idPrefix="oidc-mapping"
-				roleLabel={m.oidc_mappings_role_label()}
+				roleLabel={m.common_role()}
 				scopeLabel={m.oidc_mappings_scope_label()}
 				{roles}
 				{envOptions}
@@ -86,7 +86,7 @@
 				envSelectedLabel={selectedLabel.environment}
 				disabled={isLoading}
 			/>
-			<!-- fallow-ignore-next-line code-duplication per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
+			<!-- fallow-ignore-next-line code-duplication -- per-sheet footer wrapper ({#snippet footer} -> shared SheetFooterActions); ResponsiveDialog requires a footer snippet in each sheet -->
 		</form>
 	{/snippet}
 

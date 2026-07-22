@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { toast } from 'svelte-sonner';
 	import type { ImageUpdateData } from '$lib/types/docker';
 	import { m } from '$lib/paraglide/messages';
@@ -95,7 +96,7 @@
 	const canCheckUpdate = $derived(!!(repo && tag && repo !== '<none>' && tag !== '<none>') && !isLocalImage);
 	const hasError = $derived(!!effectiveUpdateInfo?.error && effectiveUpdateInfo.error.trim() !== '');
 
-	type AuthBadge = { label: string; classes: string };
+	type AuthBadge = { label: string; variant: BadgeVariant };
 
 	const authBadge = $derived.by((): AuthBadge | null => {
 		const mth = effectiveUpdateInfo?.authMethod;
@@ -105,19 +106,19 @@
 			const user = effectiveUpdateInfo?.authUsername;
 			return {
 				label: user ? m.image_update_auth_credential_with_user({ username: user }) : m.image_update_auth_credential(),
-				classes: 'border-amber-200/60 text-amber-900 dark:text-amber-300 bg-amber-100 dark:bg-amber-900/30'
+				variant: 'amber'
 			};
 		}
 		if (mth === 'anonymous') {
 			return {
 				label: m.image_update_auth_anonymous(),
-				classes: 'border-slate-200/60 text-slate-800 dark:text-slate-300 bg-slate-100 dark:bg-slate-900/40'
+				variant: 'gray'
 			};
 		}
 		if (mth === 'none') {
 			return {
 				label: m.image_update_auth_none(),
-				classes: 'border-gray-200/60 text-gray-800 dark:text-gray-300 bg-gray-100 dark:bg-gray-900/40'
+				variant: 'gray'
 			};
 		}
 		return null;
@@ -233,12 +234,10 @@
 {#snippet authBadgeDisplay()}
 	{#if authBadge}
 		<div class="mt-2">
-			<div
-				class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[10px] font-medium whitespace-nowrap {authBadge.classes}"
-			>
-				<ApiKeyIcon class="size-3 opacity-80" />
+			<Badge variant={authBadge.variant} size="sm">
+				<ApiKeyIcon class="opacity-80" />
 				<span>{m.image_update_auth({ label: authBadge.label })}</span>
-			</div>
+			</Badge>
 		</div>
 	{/if}
 {/snippet}
@@ -246,7 +245,7 @@
 {#snippet versionDisplay(label: string, version: string, bgClass: string, textClass: string = '')}
 	<div class="flex items-center justify-between">
 		<div class="flex items-center gap-1.5 text-gray-500 dark:text-gray-400">
-			{#if label === m.image_update_current_label()}
+			{#if label === m.common_current()}
 				<BoxIcon class="size-3" />
 			{:else}
 				<ArrowRightIcon class="size-3" />
@@ -261,20 +260,20 @@
 
 {#snippet recheckButton()}
 	{#if canCheckUpdate}
-		<div class="border-border/50 bg-muted/50 border-t p-3">
+		<div class="border-t border-border/50 bg-muted/50 p-3">
 			{#if effectiveUpdateInfo?.hasUpdate && onUpdateContainer}
 				<button
 					onclick={handleUpdateContainer}
-					class="group bg-primary text-primary-foreground hover:bg-primary/90 flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md"
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-primary px-3 py-2 text-xs font-medium text-primary-foreground shadow-sm transition-all hover:bg-primary/90 hover:shadow-md"
 				>
 					<CircleArrowUpIcon class="size-3" />
-					{m.containers_update_container()}
+					{m.update_container()}
 				</button>
 			{:else}
 				<button
 					onclick={checkImageUpdate}
 					disabled={isChecking}
-					class="group bg-secondary/80 text-secondary-foreground hover:bg-secondary flex w-full items-center justify-center gap-2 rounded-lg px-3 py-2 text-xs font-medium shadow-sm transition-all hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
+					class="group flex w-full items-center justify-center gap-2 rounded-lg bg-secondary/80 px-3 py-2 text-xs font-medium text-secondary-foreground shadow-sm transition-all hover:bg-secondary hover:shadow-md disabled:cursor-not-allowed disabled:opacity-50"
 				>
 					{#if isChecking}
 						<Spinner class="size-3" />
@@ -331,11 +330,11 @@
 	</div>
 	<div class="bg-transparent p-4">
 		<div class="text-center">
-			<div class="text-muted-foreground mb-2 text-xs">
+			<div class="mb-2 text-xs text-muted-foreground">
 				{m.common_running()}
-				<span class="bg-muted rounded px-1.5 py-0.5 font-mono text-xs font-medium">{currentVersion}</span>
+				<span class="rounded bg-muted px-1.5 py-0.5 font-mono text-xs font-medium">{currentVersion}</span>
 			</div>
-			<div class="text-muted-foreground text-xs leading-relaxed">
+			<div class="text-xs leading-relaxed text-muted-foreground">
 				{m.image_update_up_to_date_desc()}
 			</div>
 		</div>
@@ -347,7 +346,7 @@
 	<div class="bg-transparent p-4">
 		<div class="space-y-3">
 			<div class="space-y-2 text-xs">
-				{@render versionDisplay(m.image_update_current_label(), currentVersion, 'bg-muted', '')}
+				{@render versionDisplay(m.common_current(), currentVersion, 'bg-muted', '')}
 				{#if latestVersion}
 					{@render versionDisplay(latestLabel, latestVersion, latestBg, latestText)}
 				{/if}

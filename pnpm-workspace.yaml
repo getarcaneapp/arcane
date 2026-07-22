@@ -26,8 +26,8 @@ overrides:
   uuid: ">=11.1.1"
   fast-uri: ">=3.1.2"
   ws: ">=8.20.1"
-  "@sveltejs/kit": "^3.0.0-next.7"
-  "@sveltejs/adapter-static": ">=4.0.0-next.0"
+  "@sveltejs/kit": "^3.0.0-next.8"
+  "@sveltejs/adapter-static": ">=4.0.0-next.1"
   dompurify: ">=3.4.11"
   ts-deepmerge: ">=8.0.0"
   joi: ">=17.13.4"
@@ -37,7 +37,6 @@ allowBuilds:
   esbuild: true
   sharp: true
 minimumReleaseAgeExclude:
-  - prettier-plugin-svelte@4.0.1
   - "@fallow-cli/darwin-arm64@2.89.0"
   - "@fallow-cli/darwin-x64@2.89.0"
   - "@fallow-cli/linux-arm64-gnu@2.89.0"

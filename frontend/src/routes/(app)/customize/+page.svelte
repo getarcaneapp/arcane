@@ -94,8 +94,8 @@
 	title={m.customize_title()}
 	subtitle={m.customize_subtitle()}
 	searchPlaceholder={m.customize_search_placeholder()}
-	clearSearchLabel={m.customize_clear_search()}
-	searchingLabel={m.customize_searching()}
+	clearSearchLabel={m.common_clear_search()}
+	searchingLabel={m.searching()}
 	noResultsTitle={m.customize_no_options()}
 	noResultsDescription={m.customize_try_adjusting()}
 	matchingItemsLabel={m.customize_available_options()}

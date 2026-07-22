@@ -2,7 +2,7 @@
 	import * as Accordion from '$lib/components/ui/accordion';
 	import { Checkbox } from '$lib/components/ui/checkbox';
 	import { Input } from '$lib/components/ui/input';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import type { PermissionsManifest, PermissionResource, PermissionAction, PermissionPreset } from '$lib/types/auth';
 	import { normalizePermissionSelection } from '$lib/utils/permissions';
 	import { m } from '$lib/paraglide/messages';
@@ -113,7 +113,7 @@
 					<div class="flex flex-col gap-0.5">
 						<span class="text-sm leading-none font-medium">{preset.label}</span>
 						{#if preset.description}
-							<span class="text-muted-foreground text-xs">{preset.description}</span>
+							<span class="text-xs text-muted-foreground">{preset.description}</span>
 						{/if}
 					</div>
 				</label>
@@ -126,7 +126,7 @@
 	{/if}
 
 	{#if filteredGroups.length === 0}
-		<p class="text-muted-foreground py-6 text-center text-sm">{m.permissions_no_matches()}</p>
+		<p class="py-6 text-center text-sm text-muted-foreground">{m.permissions_no_matches()}</p>
 	{:else}
 		<Accordion.Root type="multiple" value={openValues} class="w-full">
 			{#each filteredGroups as group (group.resource.key)}
@@ -141,7 +141,7 @@
 							indeterminate={isIndeterminate}
 							{disabled}
 							onCheckedChange={(checked) => toggleGroup(group.resource, checked === true)}
-							aria-label={m.permissions_select_all()}
+							aria-label={m.common_select_all()}
 						/>
 						<Accordion.Trigger class="flex-1 py-2 text-left text-sm font-medium">
 							<div class="flex flex-1 items-center justify-between gap-2 pr-2">
@@ -152,12 +152,9 @@
 										total: group.resource.actions.length
 									})}
 								</span>
-								<StatusBadge
-									text={group.resource.scope === 'global' ? m.permissions_scope_global() : m.permissions_scope_env()}
-									variant={group.resource.scope === 'global' ? 'amber' : 'blue'}
-									size="sm"
-									minWidth="none"
-								/>
+								<Badge variant={group.resource.scope === 'global' ? 'amber' : 'blue'} size="sm"
+									>{group.resource.scope === 'global' ? m.global() : m.permissions_scope_env()}</Badge
+								>
 							</div>
 						</Accordion.Trigger>
 					</div>
@@ -178,9 +175,9 @@
 									/>
 									<div class="flex flex-col gap-0.5">
 										<span class="text-sm leading-none font-medium">{action.label}</span>
-										<code class="text-muted-foreground text-xs">{action.permission}</code>
+										<code class="text-xs text-muted-foreground">{action.permission}</code>
 										{#if action.description}
-											<span class="text-muted-foreground text-xs">{action.description}</span>
+											<span class="text-xs text-muted-foreground">{action.description}</span>
 										{/if}
 									</div>
 								</label>

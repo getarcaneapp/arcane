@@ -310,6 +310,7 @@ var expectedSettingOverrideKeys = []string{
 	"lifecycleDefaultRunnerImage",
 	"lifecycleEnabled",
 	"lifecycleMaxTimeoutSec",
+	"maxConcurrentActivities",
 	"maxImageUploadSize",
 	"mobileNavigationMode",
 	"mobileNavigationShowLabels",

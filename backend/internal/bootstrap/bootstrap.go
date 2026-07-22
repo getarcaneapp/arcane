@@ -6,13 +6,9 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"strings"
-	"sync"
-	"syscall"
 	"time"
 
 	"github.com/moby/moby/client"
@@ -20,17 +16,18 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	"github.com/labstack/echo/v4"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
-	"google.golang.org/grpc"
+	"go.uber.org/fx"
+	"go.uber.org/fx/fxevent"
 )
 
 func Bootstrap(ctx context.Context) error {
@@ -67,53 +64,63 @@ func Bootstrap(ctx context.Context) error {
 		cancelApp()
 		return fmt.Errorf("failed to initialize database: %w", err)
 	}
-	var appServices *di.Services
-	defer func(ctx context.Context) {
+	defer func() {
 		cancelApp()
-		// appCtx is already canceled here, so derive the shutdown deadline from a
-		// non-canceled copy of it.
-		baseCtx := context.WithoutCancel(ctx)
-		shutdownCtx, shutdownCancel := context.WithTimeout(baseCtx, 10*time.Second)
-		defer shutdownCancel()
-		if appServices != nil {
-			if appServices.Volume != nil {
-				appServices.Volume.CleanupHelperContainers(shutdownCtx)
-			}
-			if appServices.Docker != nil {
-				appServices.Docker.Close()
-			}
-		}
 		if err := db.Close(); err != nil {
-			slog.ErrorContext(shutdownCtx, "Error closing database", "error", err)
+			slog.Error("Error closing database", "error", err)
 		}
-	}(appCtx)
+	}()
 
-	httpClient := newConfiguredHTTPClient(cfg)
+	app := fx.New(applicationOptions(appCtx, cfg, db, cancelApp))
 
-	appServices, err = di.InitializeServices(appCtx, db, cfg, httpClient)
-	if err != nil {
-		return fmt.Errorf("failed to initialize services: %w", err)
-	}
-	dockerClientService := appServices.Docker
-
-	initializeStartupState(appCtx, cfg, appServices, dockerClientService, httpClient)
-
-	cronLocation := cfg.GetLocation()
-	scheduler := scheduler.NewJobScheduler(appCtx, cronLocation)
-	appServices.JobSchedule.SetScheduler(appCtx, scheduler)
-	registerJobs(appCtx, scheduler, appServices, cfg)
-
-	router, tunnelServer := setupRouter(appCtx, cfg, appServices)
-
-	startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
-
-	err = runServicesInternal(appCtx, cancelApp, cfg, router, tunnelServer, scheduler)
-	if err != nil {
-		return fmt.Errorf("failed to run services: %w", err)
+	startCtx, cancelStart := context.WithTimeout(ctx, 5*time.Minute)
+	defer cancelStart()
+	if err := app.Start(startCtx); err != nil {
+		return fmt.Errorf("start application: %w", err)
 	}
 
-	slog.InfoContext(appCtx, "Arcane shutdown complete")
+	select {
+	case <-ctx.Done():
+		slog.InfoContext(appCtx, "Context canceled")
+	case signal := <-app.Done():
+		slog.InfoContext(appCtx, "Received shutdown signal", "signal", signal)
+	}
+
+	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+	defer cancelStop()
+	if err := app.Stop(stopCtx); err != nil {
+		return fmt.Errorf("stop application: %w", err)
+	}
+
+	slog.InfoContext(context.WithoutCancel(appCtx), "Arcane shutdown complete")
 	return nil
+}
+
+func applicationOptions(appCtx context.Context, cfg *config.Config, db *database.DB, cancelApp context.CancelFunc) fx.Option {
+	return fx.Options(
+		fx.Supply(cfg, db, cancelApp),
+		fx.Provide(
+			func() context.Context { return appCtx },
+			newConfiguredHTTPClient,
+		),
+		di.ServiceOptions,
+		di.JobOptions,
+		serverOptions,
+		fx.Invoke(
+			initializeStartupState,
+			registerJobs,
+			registerAppRollbackCancelHook,
+			startEdgeTunnelClient,
+			registerAppCancelHook,
+		),
+		fx.WithLogger(func() fxevent.Logger {
+			logger := &fxevent.SlogLogger{Logger: slog.Default()}
+			logger.UseLogLevel(slog.LevelDebug)
+			return logger
+		}),
+		fx.StartTimeout(5*time.Minute),
+		fx.StopTimeout(30*time.Second),
+	)
 }
 
 // isWeakProductionEncryptionKeyInternal reports whether an explicit
@@ -138,9 +145,33 @@ func newConfiguredHTTPClient(cfg *config.Config) *http.Client {
 	return httputils.NewHTTPClient()
 }
 
-func initializeStartupState(appCtx context.Context, cfg *config.Config, appServices *di.Services, dockerClientService *services.DockerClientService, httpClient *http.Client) {
-	if appServices.Volume != nil {
-		startup.CleanupOrphanedVolumeHelpers(appCtx, appServices.Volume.CleanupOrphanedVolumeHelpers)
+type initializeStartupStateParams struct {
+	fx.In
+
+	AppCtx     context.Context
+	Config     *config.Config
+	HTTPClient *http.Client
+
+	Volume      *services.VolumeService
+	Settings    *services.SettingsService
+	Environment *services.EnvironmentService
+	GitOpsSync  *services.GitOpsSyncService
+	Project     *services.ProjectService
+	Variable    *services.VariableService
+	Docker      *services.DockerClientService
+	Swarm       *services.SwarmService
+	Role        *services.RoleService
+	User        *services.UserService
+	ApiKey      *services.ApiKeyService
+}
+
+func initializeStartupState(p initializeStartupStateParams) {
+	appCtx := p.AppCtx
+	cfg := p.Config
+	httpClient := p.HTTPClient
+
+	if p.Volume != nil {
+		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
 	}
 
 	runtimeCfg := &startup.RuntimeConfig{
@@ -152,8 +183,8 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		AdminStaticAPIKey: cfg.AdminStaticAPIKey,
 	}
 
-	startup.LoadAgentToken(appCtx, runtimeCfg, appServices.Settings.GetStringSetting)
-	startup.EnsureEncryptionKey(appCtx, runtimeCfg, appServices.Settings.EnsureEncryptionKey)
+	startup.LoadAgentToken(appCtx, runtimeCfg, p.Settings.GetStringSetting)
+	startup.EnsureEncryptionKey(appCtx, runtimeCfg, p.Settings.EnsureEncryptionKey)
 	cfg.AgentToken = runtimeCfg.AgentToken
 	cfg.EncryptionKey = runtimeCfg.EncryptionKey
 
@@ -166,35 +197,43 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		Environment:   string(cfg.Environment),
 		AgentMode:     cfg.AgentMode,
 	})
-	startup.InitializeDefaultSettings(appCtx, runtimeCfg, appServices.Settings)
+	startup.InitializeDefaultSettings(appCtx, runtimeCfg, p.Settings)
 
-	if err := appServices.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
+	if err := p.Settings.NormalizeProjectsDirectory(appCtx, cfg.ProjectsDirectory); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize projects directory", "error", err)
 	}
 
-	if err := appServices.Settings.NormalizeBuildsDirectory(appCtx); err != nil {
+	if err := p.Settings.NormalizeBuildsDirectory(appCtx); err != nil {
 		slog.WarnContext(appCtx, "Failed to normalize builds directory", "error", err)
 	}
 
-	if err := appServices.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
+	if err := p.Environment.EnsureLocalEnvironment(appCtx, cfg.AppUrl); err != nil {
 		slog.WarnContext(appCtx, "Failed to ensure local environment", "error", err)
 	}
-	initializeGitOpsStartupStateInternal(appCtx, appServices.GitOpsSync)
-	if appServices.Project != nil {
-		if err := appServices.Project.RecoverProjectRenameJournals(appCtx); err != nil {
+	initializeGitOpsStartupStateInternal(appCtx, p.GitOpsSync)
+	if p.Project != nil {
+		if err := p.Project.RecoverProjectRenameJournals(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to recover interrupted project rename operations on startup", "error", err)
 		}
-		go appServices.Project.BackfillProjectImageRefs(appCtx)
 	}
 
 	if !cfg.AgentMode {
-		if err := appServices.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
+		if err := p.Environment.ReconcileEdgeStatusesOnStartup(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to reconcile edge environment statuses on startup", "error", err)
 		}
+
+		// Global variables are a manager resource: import any pre-existing local
+		// .env.global once, then materialize the effective set everywhere. Agents
+		// only serve the per-environment variables endpoint the manager pushes to.
+		p.Environment.SetVariableSyncer(p.Variable)
+		if err := p.Variable.ImportLegacyLocalEnvFile(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to import legacy global variables", "error", err)
+		}
+		go p.Variable.SyncAll(appCtx)
 	}
 
 	startup.TestDockerConnection(appCtx, func(ctx context.Context) error {
-		dockerClient, err := dockerClientService.GetClient(ctx)
+		dockerClient, err := p.Docker.GetClient(ctx)
 		if err != nil {
 			return err
 		}
@@ -211,27 +250,26 @@ func initializeStartupState(appCtx context.Context, cfg *config.Config, appServi
 		slog.InfoContext(ctx, "Docker API versions detected", "client_api_version", dockerClient.ClientVersion(), "server_api_version", version.APIVersion, "effective_api_version", effectiveAPIVersion)
 		return nil
 	})
-	go dockerClientService.WatchEvents(appCtx)
-	if appServices.Swarm != nil {
-		if err := appServices.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
+	if p.Swarm != nil {
+		if err := p.Swarm.SyncSwarmEnabledState(appCtx); err != nil {
 			slog.WarnContext(appCtx, "Failed to persist swarm enabled state", "error", err)
 		}
 	}
 
 	startup.InitializeNonAgentFeatures(appCtx, runtimeCfg,
-		appServices.Role.EnsureBuiltInRoles,
-		appServices.User.CreateDefaultAdmin,
+		p.Role.EnsureBuiltInRoles,
+		p.User.CreateDefaultAdmin,
 		func(ctx context.Context) error {
-			return appServices.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
+			return p.ApiKey.ReconcileDefaultAdminAPIKey(ctx, runtimeCfg.AdminStaticAPIKey)
 		},
 		func(ctx context.Context) error {
 			startup.InitializeAutoLogin(ctx, runtimeCfg)
 			return nil
 		},
 	)
-	startup.CleanupUnknownSettings(appCtx, appServices.Settings)
+	startup.CleanupUnknownSettings(appCtx, p.Settings)
 
-	runRoleStartupTasks(appCtx, appServices.Role, cfg, cfg.AgentMode)
+	runRoleStartupTasks(appCtx, p.Role, cfg, cfg.AgentMode)
 
 	// Auto-pair only applies in Edge mode (where the agent's outbound tunnel is the
 	// only path to the manager). Direct mode is passive — the manager dials the agent's
@@ -290,6 +328,33 @@ func runRoleStartupTasks(ctx context.Context, roleService *services.RoleService,
 	if err := roleService.AssertGlobalAdminExists(ctx); err != nil {
 		slog.ErrorContext(ctx, "RBAC global admin guard failed", "error", err)
 	}
+}
+
+func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, router *echo.Echo, _ *http.Server) {
+	lc.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
+			return nil
+		},
+	})
+}
+
+func registerAppRollbackCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
+	lc.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			cancelApp()
+			return nil
+		},
+	})
+}
+
+func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
+	lc.Append(fx.Hook{
+		OnStop: func(context.Context) error {
+			cancelApp()
+			return nil
+		},
+	})
 }
 
 func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Config, router http.Handler) {
@@ -388,271 +453,4 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 	default:
 		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
-}
-
-func runServicesInternal(appCtx context.Context, cancelApp context.CancelFunc, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, schedulers ...interface {
-	Run(ctx context.Context) error
-}) error {
-	var schedulerWaitGroup sync.WaitGroup
-	defer func() {
-		cancelApp()
-		schedulerWaitGroup.Wait()
-	}()
-
-	listenAddr := cfg.ListenAddr()
-	useTLS, tlsCertFile, tlsKeyFile, edgeCfg, err := prepareServerTLSInternal(appCtx, cfg)
-	if err != nil {
-		return err
-	}
-	if tunnelServer != nil {
-		tunnelServer.SetConfig(edgeCfg)
-	}
-
-	httpHandler, grpcServer := configureTunnelServerInternal(appCtx, cfg, router, tunnelServer, listenAddr)
-	httpHandler, protocols := configureHTTPProtocolsInternal(useTLS, httpHandler)
-
-	// Base context for all request contexts. Derived from Background, NOT
-	// appCtx: appCtx carries the app-lifecycle marker value and inheriting it
-	// would make every request context pass utils.IsAppLifecycleContext (see
-	// pkg/projects/cmds.go).
-	baseCtx, cancelBase := context.WithCancel(context.Background())
-	defer cancelBase()
-
-	srv, err := newHTTPServerInternal(baseCtx, listenAddr, httpHandler, protocols, useTLS, edgeCfg) //nolint:contextcheck // baseCtx is deliberately not derived from appCtx, see comment above
-	if err != nil {
-		return err
-	}
-	for _, serviceScheduler := range schedulers {
-		scheduler := serviceScheduler
-		schedulerWaitGroup.Go(func() {
-			slog.InfoContext(appCtx, "Starting scheduler")
-			if err := scheduler.Run(appCtx); err != nil {
-				if !errors.Is(err, context.Canceled) {
-					slog.ErrorContext(appCtx, "Job scheduler exited with error", "error", err)
-				}
-			}
-			slog.InfoContext(appCtx, "Scheduler stopped")
-		})
-	}
-
-	go func() {
-		slog.InfoContext(appCtx, "Starting HTTP server", "addr", listenAddr, "listen", cfg.Listen, "port", cfg.Port, "tls_enabled", useTLS)
-
-		var err error
-		if useTLS {
-			err = srv.ListenAndServeTLS(tlsCertFile, tlsKeyFile)
-		} else {
-			err = srv.ListenAndServe()
-		}
-
-		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			slog.ErrorContext(appCtx, "Failed to start server", "error", err)
-		}
-	}()
-
-	quit := make(chan os.Signal, 1)
-	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
-	defer signal.Stop(quit)
-
-	select {
-	case <-quit:
-		slog.InfoContext(appCtx, "Received shutdown signal")
-		cancelApp()
-	case <-appCtx.Done():
-		slog.InfoContext(appCtx, "Context canceled")
-	}
-
-	// http.Server.Shutdown waits for in-flight handlers but does not cancel
-	// their request contexts; streaming handlers (activity streams, JSON-lines
-	// progress) loop on ctx.Done() and would otherwise pin Shutdown until the
-	// deadline below.
-	cancelBase()
-
-	// Use background context for shutdown as appCtx is already canceled
-	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer shutdownCancel()
-
-	if err := srv.Shutdown(shutdownCtx); err != nil { //nolint:contextcheck
-		slog.ErrorContext(shutdownCtx, "Server forced to shutdown", "error", err) //nolint:contextcheck
-		return err
-	}
-
-	if grpcServer != nil {
-		grpcServer.GracefulStop()
-	}
-
-	// Wait for tunnel cleanup loop to finish
-	if tunnelServer != nil {
-		tunnelServer.WaitForCleanupDone()
-	}
-
-	slog.InfoContext(shutdownCtx, "Server stopped gracefully") //nolint:contextcheck
-	return nil
-}
-
-func prepareServerTLSInternal(ctx context.Context, cfg *config.Config) (bool, string, string, *edge.Config, error) {
-	useTLS := cfg.TLSEnabled
-	tlsCertFile := strings.TrimSpace(cfg.TLSCertFile)
-	tlsKeyFile := strings.TrimSpace(cfg.TLSKeyFile)
-	edgeCfg := buildEdgeRuntimeConfigInternal(cfg)
-	if useTLS && (tlsCertFile == "" || tlsKeyFile == "") {
-		return false, "", "", nil, errors.New("TLS_ENABLED requires both TLS_CERT_FILE and TLS_KEY_FILE")
-	}
-
-	if cfg.AgentMode {
-		return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
-	}
-
-	if err := edge.PrepareManagerMTLSAssetsWithContext(ctx, edgeCfg); err != nil {
-		return false, "", "", nil, err
-	}
-
-	if edge.NormalizeEdgeMTLSMode(cfg.EdgeMTLSMode) != edge.EdgeMTLSModeDisabled {
-		if err := edge.ValidateManagerMTLSConfig(edgeCfg); err != nil {
-			return false, "", "", nil, err
-		}
-	}
-
-	return useTLS, tlsCertFile, tlsKeyFile, edgeCfg, nil
-}
-
-func configureTunnelServerInternal(appCtx context.Context, cfg *config.Config, router http.Handler, tunnelServer *edge.TunnelServer, listenAddr string) (http.Handler, *grpc.Server) {
-	httpHandler := router
-	var grpcServer *grpc.Server
-
-	if !cfg.AgentMode && tunnelServer != nil {
-		grpcServer = grpc.NewServer(tunnelServer.GRPCServerOptions(appCtx)...)
-		tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
-
-		httpHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if isTunnelGRPCRequestInternal(r) {
-				grpcReq := normalizeTunnelGRPCRequestPathInternal(r)
-				grpcServer.ServeHTTP(w, grpcReq)
-				return
-			}
-			router.ServeHTTP(w, r)
-		})
-		slog.InfoContext(appCtx, "Using shared HTTP/gRPC listener for edge tunnel", "addr", listenAddr)
-	}
-
-	return httpHandler, grpcServer
-}
-
-func configureHTTPProtocolsInternal(useTLS bool, handler http.Handler) (http.Handler, *http.Protocols) {
-	var protocols http.Protocols
-	protocols.SetHTTP1(true)
-	if useTLS {
-		protocols.SetHTTP2(true)
-		return handler, &protocols
-	}
-
-	protocols.SetUnencryptedHTTP2(true)
-	return handler, &protocols
-}
-
-func newHTTPServerInternal(baseCtx context.Context, listenAddr string, handler http.Handler, protocols *http.Protocols, useTLS bool, edgeCfg *edge.Config) (*http.Server, error) {
-	srv := &http.Server{
-		Addr:              listenAddr,
-		Handler:           handler,
-		Protocols:         protocols,
-		ReadHeaderTimeout: 5 * time.Second,
-		// IdleTimeout closes idle keep-alive connections so upstream pools
-		// (e.g. Caddy) don't accumulate stale entries. ReadTimeout and
-		// WriteTimeout are intentionally unset — WebSocket upgrades and
-		// streaming endpoints (deploy/pull/build progress) need long-lived
-		// connections.
-		IdleTimeout: 120 * time.Second,
-		// BaseContext is canceled right before Shutdown so long-lived
-		// streaming request contexts unblock and graceful shutdown can
-		// complete within its deadline.
-		BaseContext: func(net.Listener) context.Context { return baseCtx },
-	}
-	if !useTLS {
-		return srv, nil
-	}
-
-	tlsConfig, err := edge.BuildManagerServerTLSConfig(edgeCfg)
-	if err != nil {
-		return nil, err
-	}
-	if tlsConfig != nil {
-		srv.TLSConfig = tlsConfig
-	}
-	return srv, nil
-}
-
-func buildEdgeRuntimeConfigInternal(cfg *config.Config) *edge.Config {
-	return &edge.Config{
-		EdgeAgent:             cfg.EdgeAgent,
-		EdgeTransport:         cfg.EdgeTransport,
-		EdgeReconnectInterval: cfg.EdgeReconnectInterval,
-		EdgeMTLSMode:          cfg.EdgeMTLSMode,
-		EdgeMTLSCAFile:        cfg.EdgeMTLSCAFile,
-		EdgeMTLSCertFile:      cfg.EdgeMTLSCertFile,
-		EdgeMTLSKeyFile:       cfg.EdgeMTLSKeyFile,
-		EdgeMTLSServerName:    cfg.EdgeMTLSServerName,
-		EdgeMTLSAssetsDir:     cfg.EdgeMTLSAssetsDir,
-		AppURL:                cfg.GetAppURL(),
-		ManagerApiUrl:         cfg.ManagerApiUrl,
-		AgentToken:            cfg.AgentToken,
-		Port:                  cfg.Port,
-		Listen:                cfg.Listen,
-	}
-}
-
-func normalizeTunnelGRPCRequestPathInternal(r *http.Request) *http.Request {
-	if r == nil {
-		return nil
-	}
-	if r.URL == nil {
-		return r
-	}
-
-	connectMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-
-	const tunnelConnectPath = "/api/tunnel/connect"
-	if strings.HasSuffix(r.URL.Path, tunnelConnectPath) {
-		clone := r.Clone(r.Context())
-		cloneURL := *clone.URL
-		cloneURL.Path = connectMethodPath
-		clone.URL = &cloneURL
-		clone.RequestURI = connectMethodPath
-		return clone
-	}
-
-	idx := strings.Index(r.URL.Path, connectMethodPath)
-	if idx <= 0 {
-		return r
-	}
-
-	normalizedPath := r.URL.Path[idx:]
-	if normalizedPath == r.URL.Path {
-		return r
-	}
-
-	clone := r.Clone(r.Context())
-	cloneURL := *clone.URL
-	cloneURL.Path = normalizedPath
-	clone.URL = &cloneURL
-	clone.RequestURI = normalizedPath
-	return clone
-}
-
-func isTunnelGRPCRequestInternal(r *http.Request) bool {
-	if r == nil || r.URL == nil {
-		return false
-	}
-
-	if r.Method != http.MethodPost {
-		return false
-	}
-
-	path := r.URL.Path
-	fullMethodPath := tunnelpb.TunnelService_Connect_FullMethodName
-	if path == fullMethodPath || strings.HasSuffix(path, fullMethodPath) {
-		return true
-	}
-
-	contentType := strings.ToLower(strings.TrimSpace(r.Header.Get("Content-Type")))
-	return strings.HasPrefix(contentType, "application/grpc")
 }

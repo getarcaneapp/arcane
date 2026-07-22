@@ -3,7 +3,7 @@ package edge
 import (
 	"bytes"
 	"context"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
@@ -16,11 +16,6 @@ import (
 const defaultTunnelPollRequestTimeout = 15 * time.Second
 
 var defaultPollManagedSessionStopTimeout = 5 * time.Second
-
-type pollManagedTunnelSession struct {
-	cancel context.CancelFunc
-	done   chan error
-}
 
 func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 	managerBaseURL := strings.TrimRight(strings.TrimSpace(c.cfg.GetManagerBaseURL()), "/")
@@ -195,7 +190,7 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 	}
 
 	var pollResp TunnelPollResponse
-	if err := json.NewDecoder(resp.Body).Decode(&pollResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &pollResp); err != nil {
 		return nil, fmt.Errorf("failed to decode poll response: %w", err)
 	}
 	return &pollResp, nil

@@ -19,7 +19,7 @@
 	let { open = $bindable(false), onSubmit, isLoading }: CreateVolumeFormProps = $props();
 
 	const drivers = [
-		{ value: 'local', label: m.volume_driver_local() },
+		{ value: 'local', label: m.local() },
 		{ value: 'nfs', label: m.volume_driver_nfs() },
 		{ value: 'awsElasticBlockStore', label: m.volume_driver_aws_ebs() },
 		{ value: 'azure_disk', label: m.volume_driver_azure_disk() },
@@ -96,7 +96,7 @@
 				label={m.volume_driver_label()}
 				description={m.volume_driver_description()}
 				options={drivers}
-				placeholder={m.volume_driver_placeholder()}
+				placeholder={m.select_a_driver_placeholder()}
 			/>
 
 			<Accordion.Root type="single" class="w-full">

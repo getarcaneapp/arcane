@@ -1,10 +1,15 @@
 import { activityStore } from '$lib/stores/activity.store.svelte';
+import { markActivityToastShown } from '$lib/components/activity/activity-completion-toasts';
 import { m } from '$lib/paraglide/messages';
 
 export function activityToastOptions(activityId?: string) {
 	if (!activityId) {
 		return undefined;
 	}
+
+	// The caller is about to show a response toast for this activity; keep the
+	// stream-driven completion toast from duplicating it.
+	markActivityToastShown(activityId);
 
 	return {
 		action: {

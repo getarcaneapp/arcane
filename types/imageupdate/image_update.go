@@ -7,10 +7,15 @@ import (
 )
 
 type Response struct {
-	// HasUpdate indicates if an update is available for the image.
+	// CheckTime is the time when the update check was performed.
 	//
 	// Required: true
-	HasUpdate bool `json:"hasUpdate"`
+	CheckTime time.Time `json:"checkTime"`
+
+	// ActivityID is the background activity that tracked this check.
+	//
+	// Required: false
+	ActivityID *string `json:"activityId,omitempty"`
 
 	// UpdateType describes the type of update (e.g., major, minor, patch).
 	//
@@ -37,16 +42,6 @@ type Response struct {
 	// Required: false
 	LatestDigest string `json:"latestDigest,omitempty"`
 
-	// CheckTime is the time when the update check was performed.
-	//
-	// Required: true
-	CheckTime time.Time `json:"checkTime"`
-
-	// ResponseTimeMs is the response time in milliseconds.
-	//
-	// Required: true
-	ResponseTimeMs int `json:"responseTimeMs"`
-
 	// Error contains any error message from the update check.
 	//
 	// Required: false
@@ -67,15 +62,20 @@ type Response struct {
 	// Required: false
 	AuthRegistry string `json:"authRegistry,omitempty"`
 
+	// ResponseTimeMs is the response time in milliseconds.
+	//
+	// Required: true
+	ResponseTimeMs int `json:"responseTimeMs"`
+
+	// HasUpdate indicates if an update is available for the image.
+	//
+	// Required: true
+	HasUpdate bool `json:"hasUpdate"`
+
 	// UsedCredential indicates if credentials were used for the update check.
 	//
 	// Required: false
 	UsedCredential bool `json:"usedCredential,omitempty"`
-
-	// ActivityID is the background activity that tracked this check.
-	//
-	// Required: false
-	ActivityID *string `json:"activityId,omitempty"`
 }
 
 type Summary struct {

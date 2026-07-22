@@ -4,7 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
-	"encoding/json"
+	json "encoding/json/v2"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -16,11 +16,10 @@ import (
 	"time"
 
 	"github.com/coreos/go-oidc/v3/oidc"
+	"github.com/samber/hot"
 	"golang.org/x/net/http2"
 	"golang.org/x/oauth2"
-	"golang.org/x/sync/singleflight"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -34,11 +33,13 @@ type OidcService struct {
 	config             *config.Config
 	httpClient         *http.Client
 	insecureHttpClient *http.Client
-	providerCache      *oidc.Provider
 	providerMutex      sync.RWMutex
-	cachedIssuer       string
-	cachedSkipTls      bool
-	sfGroup            singleflight.Group
+	providerCache      *hot.HotCache[oidcProviderKey, *oidc.Provider]
+}
+
+type oidcProviderKey struct {
+	issuer  string
+	skipTLS bool
 }
 
 type OidcState struct {
@@ -59,12 +60,14 @@ func NewOidcService(authService *AuthService, settingsService *SettingsService, 
 	oidcClient := *httpClient
 	oidcClient.Timeout = 0
 
-	return &OidcService{
+	service := &OidcService{
 		authService:     authService,
 		settingsService: settingsService,
 		config:          cfg,
 		httpClient:      &oidcClient,
 	}
+	service.providerCache = hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).Build()
+	return service
 }
 
 func (s *OidcService) getEffectiveConfigInternal(ctx context.Context) (*models.OidcConfig, error) {
@@ -273,63 +276,31 @@ func (s *OidcService) GetOidcRedirectURL(origin string) string {
 }
 
 func (s *OidcService) getOrDiscoverProviderInternal(ctx context.Context, cfg *models.OidcConfig) (*oidc.Provider, error) {
-	issuer := cfg.IssuerURL
-	skipTls := cfg.SkipTlsVerify
-
-	s.providerMutex.RLock()
-	if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
-		provider := s.providerCache
-		s.providerMutex.RUnlock()
-		return provider, nil
+	if s.providerCache == nil {
+		s.providerCache = hot.NewHotCache[oidcProviderKey, *oidc.Provider](hot.LRU, 4).Build()
 	}
-	s.providerMutex.RUnlock()
-
-	// Use singleflight to prevent thundering herd. Include skipTls in key to handle toggling.
-	sfKey := fmt.Sprintf("%s|%v", issuer, skipTls)
-	v, err, _ := s.sfGroup.Do(sfKey, func() (any, error) {
-		// Double check inside the lock/singleflight
-		s.providerMutex.RLock()
-		if s.providerCache != nil && s.cachedIssuer == issuer && s.cachedSkipTls == skipTls {
-			provider := s.providerCache
-			s.providerMutex.RUnlock()
-			return provider, nil
+	key := oidcProviderKey{issuer: cfg.IssuerURL, skipTLS: cfg.SkipTlsVerify}
+	provider, found, err := s.providerCache.GetWithLoaders(key, func(keys []oidcProviderKey) (map[oidcProviderKey]*oidc.Provider, error) {
+		providers := make(map[oidcProviderKey]*oidc.Provider, len(keys))
+		for _, providerKey := range keys {
+			discoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClientInternal(providerKey.skipTLS))
+			discovered, discoveredIssuer, discoverErr := s.discoverProviderInternal(providerCtx, providerKey.issuer)
+			cancel()
+			if discoverErr != nil {
+				slog.ErrorContext(ctx, "getOrDiscoverProviderInternal: discovery failed", "issuer", providerKey.issuer, "skipTls", providerKey.skipTLS, "error", discoverErr)
+				return nil, fmt.Errorf("failed to discover provider at %s: %w", providerKey.issuer, discoverErr)
+			}
+			providers[providerKey] = discovered
+			slog.DebugContext(ctx, "getOrDiscoverProviderInternal: provider cached", "issuer", providerKey.issuer, "effectiveIssuer", discoveredIssuer, "skipTls", providerKey.skipTLS)
 		}
-		s.providerMutex.RUnlock()
-
-		// Create a context with a longer timeout for discovery
-		// We use context.WithoutCancel(ctx) as the parent because we don't want the discovery
-		// to be cancelled if the incoming request context is cancelled (e.g. client disconnect).
-		// This ensures the provider is cached for subsequent requests.
-		discoveryCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
-		defer cancel()
-
-		// Use the custom HTTP client with the new context
-		providerCtx := oidc.ClientContext(discoveryCtx, s.getHttpClientInternal(skipTls))
-		provider, discoveredIssuer, err := s.discoverProviderInternal(providerCtx, issuer)
-		if err != nil {
-			slog.ErrorContext(ctx, "getOrDiscoverProviderInternal: discovery failed", "issuer", issuer, "skipTls", skipTls, "error", err)
-			return nil, fmt.Errorf("failed to discover provider at %s: %w", issuer, err)
-		}
-
-		s.providerMutex.Lock()
-		s.providerCache = provider
-		// Cache based on the configured issuer to avoid repeated discovery on
-		// trailing-slash-only mismatches.
-		s.cachedIssuer = issuer
-		s.cachedSkipTls = skipTls
-		s.providerMutex.Unlock()
-
-		slog.DebugContext(ctx, "getOrDiscoverProviderInternal: provider cached", "issuer", issuer, "effectiveIssuer", discoveredIssuer, "skipTls", skipTls)
-		return provider, nil
+		return providers, nil
 	})
-
 	if err != nil {
 		return nil, err
 	}
-
-	provider, ok := v.(*oidc.Provider)
-	if !ok {
-		return nil, &common.OidcProviderCacheTypeError{}
+	if !found {
+		return nil, errors.New("OIDC provider cache loader returned no provider")
 	}
 	return provider, nil
 }
@@ -464,8 +435,7 @@ func (s *OidcService) fetchUserInfoClaimsInternal(ctx context.Context, cfg *mode
 	}
 
 	var claims map[string]any
-	decoder := json.NewDecoder(resp.Body)
-	if err := decoder.Decode(&claims); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &claims); err != nil {
 		return nil, err
 	}
 
@@ -761,7 +731,7 @@ func (s *OidcService) makeDeviceAuthRequestInternal(ctx context.Context, endpoin
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		var errorResp map[string]any
-		if err := json.NewDecoder(resp.Body).Decode(&errorResp); err == nil {
+		if err := json.UnmarshalRead(resp.Body, &errorResp); err == nil {
 			if errMsg, ok := errorResp["error"].(string); ok {
 				return nil, fmt.Errorf("device authorization failed: %s", errMsg)
 			}
@@ -770,7 +740,7 @@ func (s *OidcService) makeDeviceAuthRequestInternal(ctx context.Context, endpoin
 	}
 
 	var respData map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&respData); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &respData); err != nil {
 		return nil, fmt.Errorf("failed to decode device authorization response: %w", err)
 	}
 
@@ -869,7 +839,7 @@ func (s *OidcService) makeTokenRequestInternal(ctx context.Context, endpoint str
 	defer func() { _ = resp.Body.Close() }()
 
 	var tokenResp map[string]any
-	if err := json.NewDecoder(resp.Body).Decode(&tokenResp); err != nil {
+	if err := json.UnmarshalRead(resp.Body, &tokenResp); err != nil {
 		return nil, fmt.Errorf("failed to decode token response: %w", err)
 	}
 

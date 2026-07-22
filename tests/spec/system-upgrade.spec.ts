@@ -67,13 +67,13 @@ async function registerReloadCounter(page: Page) {
 
 async function registerTokenSeeding(page: Page) {
 	await page.addInitScript(
-		([tokenKey, expiryKey]: [string, string]) => {
+		({ tokenKey, expiryKey }: { tokenKey: string; expiryKey: string }) => {
 			if (!sessionStorage.getItem(tokenKey)) {
 				sessionStorage.setItem(tokenKey, 'playwright-test-refresh-token');
 				sessionStorage.setItem(expiryKey, new Date(Date.now() + 3_600_000).toISOString());
 			}
 		},
-		[REFRESH_TOKEN_KEY, TOKEN_EXPIRY_KEY]
+		{ tokenKey: REFRESH_TOKEN_KEY, expiryKey: TOKEN_EXPIRY_KEY }
 	);
 }
 

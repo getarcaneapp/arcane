@@ -25,11 +25,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/go-viper/mapstructure/v2"
+	"github.com/samber/hot"
 	"github.com/spf13/viper"
 )
 
@@ -48,12 +48,10 @@ const (
 
 var customConfigPath string
 
-var (
-	cacheMu     sync.RWMutex
-	cachedPath  string
-	cachedCfg   *types.Config
-	cacheLoaded bool
-)
+var configCache = hot.NewHotCache[string, *types.Config](hot.LRU, 4).
+	WithCopyOnRead(cloneConfig).
+	WithCopyOnWrite(cloneConfig).
+	Build()
 
 func cloneConfig(cfg *types.Config) *types.Config {
 	return cfg.Clone()
@@ -76,11 +74,7 @@ func normalizeConfig(cfg *types.Config) *types.Config {
 }
 
 func invalidateCache() {
-	cacheMu.Lock()
-	defer cacheMu.Unlock()
-	cacheLoaded = false
-	cachedPath = ""
-	cachedCfg = nil
+	configCache.Purge()
 }
 
 // DefaultConfig returns a Config with sensible default values.
@@ -150,23 +144,15 @@ func Load() (*types.Config, error) {
 		return nil, err
 	}
 
-	cacheMu.RLock()
-	if cacheLoaded && cachedCfg != nil && cachedPath == path {
-		cfg := cloneConfig(cachedCfg)
-		cacheMu.RUnlock()
+	if cfg, ok, _ := configCache.Get(path); ok {
 		return cfg, nil
 	}
-	cacheMu.RUnlock()
 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			def := DefaultConfig()
-			cacheMu.Lock()
-			cacheLoaded = true
-			cachedPath = path
-			cachedCfg = cloneConfig(def)
-			cacheMu.Unlock()
+			configCache.Set(path, def)
 			return def, nil
 		}
 		return nil, fmt.Errorf("failed to read config file: %w", err)
@@ -193,11 +179,7 @@ func Load() (*types.Config, error) {
 	}
 	normalized := normalizeConfig(&cfg)
 
-	cacheMu.Lock()
-	cacheLoaded = true
-	cachedPath = path
-	cachedCfg = cloneConfig(normalized)
-	cacheMu.Unlock()
+	configCache.Set(path, normalized)
 
 	return normalized, nil
 }
@@ -262,11 +244,7 @@ func Save(c *types.Config) error {
 		return fmt.Errorf("failed to set config permissions: %w", err)
 	}
 
-	cacheMu.Lock()
-	cacheLoaded = true
-	cachedPath = path
-	cachedCfg = cloneConfig(cfg)
-	cacheMu.Unlock()
+	configCache.Set(path, cfg)
 
 	return nil
 }

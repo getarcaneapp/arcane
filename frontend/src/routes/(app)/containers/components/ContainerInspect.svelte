@@ -29,6 +29,6 @@
 		</div>
 	</Card.Header>
 	<Card.Content class="p-0">
-		<pre class="bg-muted/40 overflow-auto rounded-b-lg p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
+		<pre class="overflow-auto rounded-b-lg bg-muted/40 p-4 font-mono text-xs leading-relaxed"><code>{json}</code></pre>
 	</Card.Content>
 </Card.Root>

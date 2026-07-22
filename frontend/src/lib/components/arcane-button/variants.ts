@@ -195,7 +195,7 @@ export const actionConfigs = {
 		loadingLabel: m.common_action_restarting()
 	},
 	pull: {
-		defaultLabel: m.images_pull(),
+		defaultLabel: m.pull(),
 		IconComponent: DownloadIcon,
 		tone: 'outline-primary',
 		loadingLabel: m.common_action_pulling()
@@ -213,7 +213,7 @@ export const actionConfigs = {
 		loadingLabel: m.common_processing()
 	},
 	commit: {
-		defaultLabel: m.containers_commit_action(),
+		defaultLabel: m.commit(),
 		IconComponent: ImagesIcon,
 		tone: 'outline-commit',
 		loadingLabel: m.common_processing()

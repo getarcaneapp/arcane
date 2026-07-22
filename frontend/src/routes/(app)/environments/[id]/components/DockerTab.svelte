@@ -18,28 +18,28 @@
 	];
 
 	const pruneContainerModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'stopped', label: m.prune_stopped_containers() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const pruneImageModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'dangling', label: m.prune_images_mode_dangling() },
-		{ value: 'all', label: m.prune_images_mode_all() },
+		{ value: 'all', label: m.all_unused() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const pruneVolumeModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'anonymous', label: m.prune_volumes_mode_anonymous() },
-		{ value: 'all', label: m.prune_volumes_mode_all(), destructive: true }
+		{ value: 'all', label: m.all_unused(), destructive: true }
 	];
 	const pruneNetworkModes = [
-		{ value: 'none', label: m.prune_mode_none() },
-		{ value: 'unused', label: m.prune_unused_networks() },
+		{ value: 'none', label: m.none() },
+		{ value: 'unused', label: m.unused_networks() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 	const pruneBuildCacheModes = [
-		{ value: 'none', label: m.prune_mode_none() },
+		{ value: 'none', label: m.none() },
 		{ value: 'unused', label: m.prune_build_cache_mode_unused() },
 		{ value: 'all', label: m.prune_build_cache_mode_all() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
@@ -65,7 +65,7 @@
 					onValueChange={handleShellSelectChange}
 					label={m.docker_default_shell_label()}
 					description={m.docker_default_shell_description()}
-					placeholder={m.docker_default_shell_placeholder()}
+					placeholder={m.select_shell_placeholder()}
 					options={[...shellOptions, { value: 'custom', label: m.custom(), description: m.docker_shell_custom_description() }]}
 				/>
 
@@ -75,7 +75,7 @@
 							bind:value={$formInputs.defaultShell.value}
 							error={$formInputs.defaultShell.error}
 							label={m.custom()}
-							placeholder={m.docker_shell_custom_path_placeholder()}
+							placeholder={m.bin_sh_placeholder()}
 							helpText={m.docker_shell_custom_path_help()}
 							type="text"
 						/>
@@ -105,26 +105,26 @@
 		<div class="space-y-4 border-t pt-6">
 			<div class="space-y-0.5">
 				<h3 class="text-sm font-medium">{m.prune_options_title()}</h3>
-				<p class="text-muted-foreground text-xs">{m.prune_options_description()}</p>
+				<p class="text-xs text-muted-foreground">{m.prune_options_description()}</p>
 			</div>
 
 			<div class="grid gap-2 sm:grid-cols-2">
 				<PruneModeCard
-					title={m.prune_containers_label()}
+					title={m.containers()}
 					description={m.scheduled_prune_containers_description()}
 					modeOptions={pruneContainerModes}
 					bind:value={$formInputs.pruneContainerMode.value}
 					bind:untilValue={$formInputs.pruneContainerUntil.value}
 				/>
 				<PruneModeCard
-					title={m.prune_images_label()}
+					title={m.images()}
 					description={m.scheduled_prune_images_description()}
 					modeOptions={pruneImageModes}
 					bind:value={$formInputs.pruneImageMode.value}
 					bind:untilValue={$formInputs.pruneImageUntil.value}
 				/>
 				<PruneModeCard
-					title={m.prune_volumes_label()}
+					title={m.resource_volumes_cap()}
 					description={m.scheduled_prune_volumes_description()}
 					modeOptions={pruneVolumeModes}
 					bind:value={$formInputs.pruneVolumeMode.value}
@@ -132,14 +132,14 @@
 					warningDescription={m.scheduled_prune_volumes_warning()}
 				/>
 				<PruneModeCard
-					title={m.prune_networks_label()}
+					title={m.resource_networks_cap()}
 					description={m.scheduled_prune_networks_description()}
 					modeOptions={pruneNetworkModes}
 					bind:value={$formInputs.pruneNetworkMode.value}
 					bind:untilValue={$formInputs.pruneNetworkUntil.value}
 				/>
 				<PruneModeCard
-					title={m.prune_build_cache_label()}
+					title={m.build_cache()}
 					description={m.scheduled_prune_build_cache_description()}
 					modeOptions={pruneBuildCacheModes}
 					bind:value={$formInputs.pruneBuildCacheMode.value}

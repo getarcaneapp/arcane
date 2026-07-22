@@ -107,6 +107,85 @@ async function ensureFacetOpen(page: Page, title: string) {
 }
 
 test.describe('Volumes Page', () => {
+	test('Persisted Size sort does not block navigation', async ({ page, context }) => {
+		await page.goto('/dashboard');
+		await page.evaluate(() => {
+			localStorage.setItem(
+				'arcane-volumes-table',
+				JSON.stringify({ v: [], f: [], g: '', l: 20, s: ['size', 'desc'] })
+			);
+		});
+
+		let releaseSizeSort: () => void = () => undefined;
+		const sizeSortGate = new Promise<void>((resolve) => {
+			releaseSizeSort = resolve;
+		});
+		let sizeSortRequests = 0;
+		await context.route('**/api/environments/*/volumes**', async (route) => {
+			const request = route.request();
+			const url = new URL(request.url());
+			if (
+				request.method() === 'GET' &&
+				/^\/api\/environments\/[^/]+\/volumes$/.test(url.pathname) &&
+				url.searchParams.get('sort') === 'size'
+			) {
+				sizeSortRequests += 1;
+				await sizeSortGate;
+			}
+			await route.continue();
+		});
+
+		try {
+			await page.goto('/volumes');
+			await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible({
+				timeout: 2000
+			});
+			await expect.poll(() => sizeSortRequests).toBeGreaterThan(0);
+		} finally {
+			releaseSizeSort();
+		}
+
+		await expect
+			.poll(() =>
+				page.evaluate(() => {
+					const stored = localStorage.getItem('arcane-volumes-table');
+					const sort = stored ? JSON.parse(stored).s : undefined;
+					return Array.isArray(sort) ? sort.join(':') : '';
+				})
+			)
+			.toBe('size:desc');
+	});
+
+	test('Hidden Size column skips usage loading and resets its sort', async ({ page, context }) => {
+		await page.goto('/dashboard');
+		await page.evaluate(() => {
+			localStorage.setItem(
+				'arcane-volumes-table',
+				JSON.stringify({ v: ['size'], f: [], g: '', l: 20, s: ['size', 'desc'] })
+			);
+		});
+
+		let sizeRequests = 0;
+		await context.route('**/api/environments/*/volumes/sizes', async (route) => {
+			sizeRequests += 1;
+			await route.continue();
+		});
+
+		await page.goto('/volumes');
+		await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
+		await expect(page.getByRole('button', { name: 'Size', exact: true })).toHaveCount(0);
+		await expect
+			.poll(() =>
+				page.evaluate(() => {
+					const stored = localStorage.getItem('arcane-volumes-table');
+					const sort = stored ? JSON.parse(stored).s : undefined;
+					return Array.isArray(sort) ? sort.join(':') : '';
+				})
+			)
+			.toBe('name:asc');
+		expect(sizeRequests).toBe(0);
+	});
+
 	test('Volume Page Display', async ({ page }) => {
 		await page.goto('/volumes');
 

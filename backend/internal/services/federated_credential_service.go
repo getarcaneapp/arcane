@@ -16,6 +16,7 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
+	"github.com/samber/mo"
 	"golang.org/x/sync/singleflight"
 	"gorm.io/gorm"
 
@@ -166,7 +167,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		serviceUser := models.User{
 			Username:         "svc_federated_" + strings.ReplaceAll(uuid.NewString(), "-", ""),
-			DisplayName:      pkgutils.StringPtrFromTrimmed("Federated: " + normalized.Name),
+			DisplayName:      mo.EmptyableToOption(strings.TrimSpace("Federated: " + normalized.Name)).ToPointer(),
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
@@ -552,7 +553,7 @@ func unverifiedTokenExchangeMetadataInternal(rawToken string) (string, string, [
 }
 
 func stringClaimByPathInternal(claims map[string]any, path string) string {
-	value, ok := jwtclaims.GetByPath(claims, path)
+	value, ok := jwtclaims.GetByPath(claims, path).Get()
 	if !ok {
 		return ""
 	}
@@ -560,7 +561,7 @@ func stringClaimByPathInternal(claims map[string]any, path string) string {
 }
 
 func stringSliceClaimInternal(claims map[string]any, path string) []string {
-	value, ok := jwtclaims.GetByPath(claims, path)
+	value, ok := jwtclaims.GetByPath(claims, path).Get()
 	if !ok || value == nil {
 		return nil
 	}
@@ -592,7 +593,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 	req.SubjectMatch = strings.TrimSpace(req.SubjectMatch)
 	req.MatchType = normalizeMatchTypeInternal(req.MatchType)
 	req.Audiences = pkgutils.UniqueNonEmptyStrings(req.Audiences)
-	req.EnvironmentID = pkgutils.StringPtrFromTrimmed(pkgutils.DerefString(req.EnvironmentID))
+	req.EnvironmentID = mo.EmptyableToOption(strings.TrimSpace(mo.PointerToOption(req.EnvironmentID).OrEmpty())).ToPointer()
 	req.TokenTTLSeconds = clampFederatedTokenTTLSecondsInternal(req.TokenTTLSeconds)
 
 	if req.SubjectClaim == "" {
@@ -686,8 +687,8 @@ func applyFederatedRoleScopeUpdateInternal(existing *models.FederatedCredential,
 		existing.RoleID = normalizedRoleID
 	}
 	if environmentID != nil {
-		normalized := pkgutils.StringPtrFromTrimmed(*environmentID)
-		roleChanged = roleChanged || pkgutils.DerefString(existing.EnvironmentID) != pkgutils.DerefString(normalized)
+		normalized := mo.EmptyableToOption(strings.TrimSpace(*environmentID)).ToPointer()
+		roleChanged = roleChanged || mo.PointerToOption(existing.EnvironmentID).OrEmpty() != mo.PointerToOption(normalized).OrEmpty()
 		existing.EnvironmentID = normalized
 	}
 	return roleChanged, nil
@@ -857,11 +858,11 @@ func (s *FederatedCredentialService) logExchangeInternal(ctx context.Context, re
 			Severity:     severity,
 			Title:        title,
 			Description:  "Workload identity federation token exchange",
-			ResourceType: pkgutils.StringPtrFromTrimmed("federated_credential"),
-			ResourceID:   pkgutils.StringPtrFromTrimmed(credentialID),
-			ResourceName: pkgutils.StringPtrFromTrimmed(credentialName),
-			UserID:       pkgutils.StringPtrFromTrimmed(userID),
-			Username:     pkgutils.StringPtrFromTrimmed(username),
+			ResourceType: mo.EmptyableToOption(strings.TrimSpace("federated_credential")).ToPointer(),
+			ResourceID:   mo.EmptyableToOption(strings.TrimSpace(credentialID)).ToPointer(),
+			ResourceName: mo.EmptyableToOption(strings.TrimSpace(credentialName)).ToPointer(),
+			UserID:       mo.EmptyableToOption(strings.TrimSpace(userID)).ToPointer(),
+			Username:     mo.EmptyableToOption(strings.TrimSpace(username)).ToPointer(),
 			Metadata:     metadata,
 		})
 		if err != nil {

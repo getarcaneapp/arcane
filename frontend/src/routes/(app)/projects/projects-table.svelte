@@ -8,7 +8,8 @@
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
+	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
 	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
 	import { capitalizeFirstLetter, formatDateTimeShort } from '$lib/utils/formatting';
@@ -156,12 +157,12 @@
 		{
 			id: 'updates',
 			accessorFn: (row) => getProjectUpdateStatus(row.updateInfo),
-			title: m.containers_update_column(),
+			title: m.updates(),
 			sortable: false,
 			cell: UpdatesCell
 		},
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
-		{ accessorKey: 'serviceCount', title: m.compose_services(), sortable: true }
+		{ accessorKey: 'serviceCount', title: m.services(), sortable: true }
 	] satisfies ColumnSpec<Project>[];
 
 	const mobileFields = [
@@ -169,8 +170,8 @@
 		{ id: 'directory', label: m.common_working_directory(), defaultVisible: true },
 		{ id: 'provider', label: m.projects_col_provider(), defaultVisible: true },
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
-		{ id: 'updates', label: m.containers_update_column(), defaultVisible: true },
-		{ id: 'serviceCount', label: m.compose_services(), defaultVisible: true },
+		{ id: 'updates', label: m.updates(), defaultVisible: true },
+		{ id: 'serviceCount', label: m.services(), defaultVisible: true },
 		{ id: 'createdAt', label: m.common_created(), defaultVisible: true }
 	];
 
@@ -237,13 +238,13 @@
 		/>
 		<a class="font-medium hover:underline" href="/projects/{item.id}">{item.name}</a>
 		{#if item.isArchived}
-			<span class="bg-muted text-muted-foreground rounded px-1.5 py-0.5 text-xs font-medium">{m.projects_archived_badge()}</span>
+			<span class="rounded bg-muted px-1.5 py-0.5 text-xs font-medium text-muted-foreground">{m.projects_archived_badge()}</span>
 		{/if}
 	</div>
 {/snippet}
 
 {#snippet DirectoryCell({ item }: { item: Project })}
-	<span class="text-muted-foreground block max-w-[22rem] truncate">{item.relativePath ?? item.dirName ?? item.path}</span>
+	<span class="block max-w-[22rem] truncate text-muted-foreground">{item.relativePath ?? item.dirName ?? item.path}</span>
 {/snippet}
 
 {#snippet ProviderCell({ item }: { item: Project })}
@@ -251,11 +252,11 @@
 		{#if item.gitOpsManagedBy}
 			<GitBranchIcon class="size-4" />
 			<a class="font-medium hover:underline" href="/environments/{envId}/gitops">
-				{m.projects_provider_git()}
+				{m.git()}
 			</a>
 		{:else}
 			<ProjectsIcon class="size-4" />
-			<span>{m.projects_provider_local()}</span>
+			<span>{m.local()}</span>
 		{/if}
 	</div>
 {/snippet}
@@ -269,11 +270,19 @@
 {/snippet}
 
 {#snippet StatusCell({ item }: { item: Project })}
-	<StatusBadge
-		variant={getStatusVariant(item.status)}
-		text={capitalizeFirstLetter(item.status)}
-		tooltip={getStatusTooltip(item)}
-	/>
+	{@const statusTooltip = getStatusTooltip(item)}
+	{#if statusTooltip}
+		<ArcaneTooltip.Root>
+			<ArcaneTooltip.Trigger>
+				<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+			</ArcaneTooltip.Trigger>
+			<ArcaneTooltip.Content>
+				<p class="max-w-xs text-xs">{statusTooltip}</p>
+			</ArcaneTooltip.Content>
+		</ArcaneTooltip.Root>
+	{:else}
+		<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
+	{/if}
 {/snippet}
 
 {#snippet UpdatesCell({ item }: { item: Project })}
@@ -345,13 +354,13 @@
 				type: 'component',
 				getValue: (item: Project) => ({
 					icon: item.gitOpsManagedBy ? GitBranchIcon : ProjectsIcon,
-					text: item.gitOpsManagedBy ? m.projects_provider_git() : m.projects_provider_local()
+					text: item.gitOpsManagedBy ? m.git() : m.local()
 				}),
 				component: ProviderField,
 				show: mobileFieldVisibility['provider'] ?? true
 			},
 			{
-				label: m.compose_services(),
+				label: m.services(),
 				getValue: (item: Project) => {
 					const serviceCount = item.serviceCount ? Number(item.serviceCount) : (item.services?.length ?? 0);
 					return `${serviceCount} ${Number(serviceCount) === 1 ? 'service' : 'services'}`;
@@ -516,7 +525,7 @@
 
 {#snippet ArchivedToolbarAction()}
 	<div
-		class="bg-muted/30 border-border/60 flex min-h-9 w-full items-center gap-2 rounded-md border px-2.5 py-1.5 md:w-auto md:border-0 md:bg-transparent md:px-1 md:py-0"
+		class="flex min-h-9 w-full items-center gap-2 rounded-md border border-border/60 bg-muted/30 px-2.5 py-1.5 md:w-auto md:border-0 md:bg-transparent md:px-1 md:py-0"
 	>
 		<Switch
 			id="projects-show-archived"
@@ -525,7 +534,7 @@
 				void onToggleArchived?.(checked === true);
 			}}
 		/>
-		<Label for="projects-show-archived" class="text-muted-foreground mb-0 min-w-0 text-sm font-medium">
+		<Label for="projects-show-archived" class="mb-0 min-w-0 text-sm font-medium text-muted-foreground">
 			{m.projects_show_archived()}
 		</Label>
 	</div>

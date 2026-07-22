@@ -1,17 +1,13 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
 	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import { ArrowLeftIcon } from '$lib/icons';
 	import { m } from '$lib/paraglide/messages';
 	import { templateService } from '$lib/services/template-service';
 	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { createForm, preventDefault } from '$lib/utils/settings';
+	import { createForm } from '$lib/utils/settings';
 	import { tryCatch } from '$lib/utils/api';
 	import { toast } from 'svelte-sonner';
-	import CodePanel from '../../../projects/components/CodePanel.svelte';
-	import EditableName from '../../../projects/components/EditableName.svelte';
-	import { ComposeEditorSplit } from '$lib/components/compose';
+	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
 	import { globalVariablesToMap } from '$lib/utils/template-load';
 	import {
 		createNamedTemplateSchema,
@@ -23,11 +19,12 @@
 	let { data } = $props();
 
 	let saving = $state(false);
-	let composeHasErrors = $state(false);
-	let envHasErrors = $state(false);
-	let composeValidationReady = $state(false);
-	let envValidationReady = $state(false);
-	let nameInputRef = $state<HTMLInputElement | null>(null);
+	let validation = $state({
+		composeHasErrors: false,
+		envHasErrors: false,
+		composeValidationReady: false,
+		envValidationReady: false
+	});
 
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
 
@@ -44,14 +41,24 @@
 
 	const hasEditorErrors = $derived(
 		hasTemplateEditorErrors(
-			getTemplateEditorValidationState(composeValidationReady, envValidationReady, composeHasErrors, envHasErrors)
+			getTemplateEditorValidationState(
+				validation.composeValidationReady,
+				validation.envValidationReady,
+				validation.composeHasErrors,
+				validation.envHasErrors
+			)
 		)
 	);
 	const canCreate = $derived(!!$inputs.name.value && !!$inputs.composeContent.value && !hasEditorErrors && !saving);
 
 	async function handleCreate() {
 		const validated = validateTemplateEditorForm(
-			getTemplateEditorValidationState(composeValidationReady, envValidationReady, composeHasErrors, envHasErrors),
+			getTemplateEditorValidationState(
+				validation.composeValidationReady,
+				validation.envValidationReady,
+				validation.composeHasErrors,
+				validation.envHasErrors
+			),
 			form.validate
 		);
 		if (!validated) return;
@@ -75,114 +82,23 @@
 	}
 </script>
 
-<div class="bg-background flex h-full min-h-0 flex-col">
-	<div
-		class="bg-background/95 supports-[backdrop-filter]:bg-background/80 sticky top-0 z-[var(--arcane-z-sticky)] mb-2 border-b backdrop-blur"
-	>
-		<div class="mx-auto flex h-16 max-w-full items-center justify-between gap-4 px-6">
-			<div class="flex min-w-0 items-center gap-4">
-				<ArcaneButton
-					action="base"
-					tone="ghost"
-					size="sm"
-					class="gap-2 bg-transparent"
-					icon={ArrowLeftIcon}
-					customLabel={m.common_back()}
-					onclick={() => goto('/customize/templates')}
-				/>
-				<div class="bg-border hidden h-4 w-px sm:block"></div>
-				<div class="hidden min-w-0 items-center gap-3 sm:flex">
-					<EditableName
-						bind:value={$inputs.name.value}
-						bind:ref={nameInputRef}
-						variant="inline"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.templates_template_name_placeholder()}
-						canEdit={!saving}
-						class="hidden sm:block"
-					/>
-				</div>
-			</div>
-
-			<div class="flex items-center gap-2">
-				<ArcaneButton action="cancel" onclick={() => goto('/customize/templates')} disabled={saving} />
-				<ArcaneButton
-					action="create"
-					customLabel={m.templates_create_template()}
-					onclick={handleCreate}
-					disabled={!canCreate}
-					loading={saving}
-					loadingLabel={m.common_action_creating()}
-				/>
-			</div>
-		</div>
-	</div>
-
-	<div class="flex min-h-0 flex-1 overflow-hidden">
-		<div class="mx-auto flex h-full w-full max-w-full min-w-0 flex-col px-2 pb-6 sm:px-6 sm:pb-6">
-			<form class="flex min-h-0 flex-1 flex-col gap-4" onsubmit={preventDefault(handleCreate)}>
-				<div class="block flex-shrink-0 py-4 sm:hidden">
-					<EditableName
-						bind:value={$inputs.name.value}
-						bind:ref={nameInputRef}
-						variant="block"
-						error={$inputs.name.error ?? undefined}
-						originalValue=""
-						placeholder={m.templates_template_name_placeholder()}
-						canEdit={!saving}
-					/>
-				</div>
-
-				<div class="flex-shrink-0 px-1 pt-1">
-					<div class="max-w-2xl">
-						<FormInput
-							input={$inputs.description}
-							label={m.templates_template_description_label()}
-							placeholder={m.templates_template_description_placeholder()}
-							disabled={saving}
-						/>
-					</div>
-				</div>
-
-				<ComposeEditorSplit>
-					{#snippet compose()}
-						<CodePanel
-							title="compose.yaml"
-							language="yaml"
-							bind:value={$inputs.composeContent.value}
-							error={$inputs.composeContent.error ?? undefined}
-							readOnly={saving}
-							bind:hasErrors={composeHasErrors}
-							bind:validationReady={composeValidationReady}
-							fileId="templates:create:compose"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
-
-					{#snippet env()}
-						<CodePanel
-							title=".env"
-							language="env"
-							bind:value={$inputs.envContent.value}
-							error={$inputs.envContent.error ?? undefined}
-							readOnly={saving}
-							bind:hasErrors={envHasErrors}
-							bind:validationReady={envValidationReady}
-							fileId="templates:create:env"
-							editorContext={{
-								envContent: $inputs.envContent.value,
-								composeContents: [$inputs.composeContent.value],
-								globalVariables: globalVariableMap
-							}}
-						/>
-					{/snippet}
-				</ComposeEditorSplit>
-			</form>
-		</div>
-	</div>
-</div>
+<TemplateEditorWorkspace
+	{inputs}
+	bind:validation
+	fileIdPrefix="templates:create"
+	{globalVariableMap}
+	{saving}
+	onSubmit={handleCreate}
+>
+	{#snippet toolbarActions()}
+		<ArcaneButton action="cancel" onclick={() => goto('/customize/templates')} disabled={saving} />
+		<ArcaneButton
+			action="create"
+			customLabel={m.templates_create_template()}
+			onclick={handleCreate}
+			disabled={!canCreate}
+			loading={saving}
+			loadingLabel={m.common_action_creating()}
+		/>
+	{/snippet}
+</TemplateEditorWorkspace>

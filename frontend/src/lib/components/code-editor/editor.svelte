@@ -849,7 +849,7 @@
 		<span>{diagnosticSummary.warnings} {m.editor_warnings()}</span>
 		<span>{m.editor_schema()}: {diagnosticSummary.schemaStatus}</span>
 		<span>{m.editor_line()} {diagnosticSummary.cursorLine}, {m.editor_column()} {diagnosticSummary.cursorCol}</span>
-		<span>{m.editor_diagnostics()}: {countCurrentDiagnostics()}</span>
+		<span>{m.diagnostics()}: {countCurrentDiagnostics()}</span>
 		{#if !validationReady}
 			<span class="status-muted">{m.editor_validating()}</span>
 		{/if}

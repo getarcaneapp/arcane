@@ -72,8 +72,8 @@
 	const hasLiveStack = $derived((stack?.services ?? 0) > 0);
 	const canViewSource = $derived(sourceState !== 'forbidden');
 	const tabItems = $derived<TabItem[]>([
-		...(hasLiveStack ? [{ value: 'services', label: m.swarm_services_title(), icon: DockIcon }] : []),
-		...(hasLiveStack ? [{ value: 'tasks', label: m.swarm_tasks_title(), icon: JobsIcon }] : []),
+		...(hasLiveStack ? [{ value: 'services', label: m.services(), icon: DockIcon }] : []),
+		...(hasLiveStack ? [{ value: 'tasks', label: m.tasks(), icon: JobsIcon }] : []),
 		...(canViewSource ? [{ value: 'source', label: 'Source', icon: FileTextIcon }] : [])
 	]);
 	const urlTab = useUrlTab<StackTab>({
@@ -139,13 +139,13 @@
 			if (servicesResult.status === 'fulfilled') {
 				services = servicesResult.value;
 			} else {
-				toast.error(m.common_refresh_failed({ resource: `${m.swarm_services_title()} (${stackName})` }));
+				toast.error(m.common_refresh_failed({ resource: `${m.services()} (${stackName})` }));
 			}
 
 			if (tasksResult.status === 'fulfilled') {
 				tasks = tasksResult.value;
 			} else {
-				toast.error(m.common_refresh_failed({ resource: `${m.swarm_tasks_title()} (${stackName})` }));
+				toast.error(m.common_refresh_failed({ resource: `${m.tasks()} (${stackName})` }));
 			}
 			await refreshSource(true);
 		} finally {
@@ -211,13 +211,13 @@
 
 	const statCards: StatCardConfig[] = $derived([
 		{
-			title: m.swarm_services_title(),
+			title: m.services(),
 			value: totalServices,
 			icon: DockIcon,
 			iconColor: 'text-blue-500'
 		},
 		{
-			title: m.swarm_tasks_title(),
+			title: m.tasks(),
 			value: totalTasks,
 			icon: JobsIcon,
 			iconColor: 'text-indigo-500'
@@ -260,7 +260,7 @@
 				<Tabs.Content value="source" class="flex min-h-0 flex-1 flex-col">
 					{#if sourceState === 'available' && source}
 						{@const stackSource = source}
-						<div class="bg-card border-border flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+						<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
 							<ResizableSplit
 								class="min-h-0 flex-1"
 								variant="flush"
@@ -315,7 +315,7 @@
 														/>
 													</div>
 												{:else}
-													<div class="text-muted-foreground flex h-full items-center justify-center p-6 text-center text-sm">
+													<div class="flex h-full items-center justify-center p-6 text-center text-sm text-muted-foreground">
 														No saved `.env` file was stored for this stack.
 													</div>
 												{/if}
@@ -327,7 +327,7 @@
 						</div>
 					{:else if sourceState === 'loading'}
 						<Card.Root variant="subtle">
-							<Card.Content class="text-muted-foreground p-6 text-center text-sm">{m.swarm_stack_source_loading()}</Card.Content>
+							<Card.Content class="p-6 text-center text-sm text-muted-foreground">{m.swarm_stack_source_loading()}</Card.Content>
 						</Card.Root>
 					{:else if sourceState === 'missing'}
 						<Card.Root variant="subtle">

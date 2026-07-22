@@ -1,6 +1,7 @@
 import { queryKeys } from '$lib/query/query-keys';
 import { templateService } from '$lib/services/template-service';
-import type { Variable } from '$lib/types/shared';
+import { variableService } from '$lib/services/variable-service';
+import type { GlobalVariable } from '$lib/types/variable';
 
 type QueryClientLike = {
 	fetchQuery: <T>(options: { queryKey: unknown; queryFn: () => Promise<T> }) => Promise<T>;
@@ -11,7 +12,7 @@ type ParentWithQueryClient = () => Promise<{
 	[key: string]: unknown;
 }>;
 
-export function globalVariablesToMap(globalVariables: Variable[] | null | undefined): Record<string, string> {
+export function globalVariablesToMap(globalVariables: GlobalVariable[] | null | undefined): Record<string, string> {
 	return Object.fromEntries((globalVariables ?? []).map((item) => [item.key, item.value]));
 }
 
@@ -40,8 +41,8 @@ export async function loadTemplateAuthoringData(parent: ParentWithQueryClient) {
 			}),
 		client
 			.fetchQuery({
-				queryKey: queryKeys.templates.globalVariables(),
-				queryFn: () => templateService.getGlobalVariables()
+				queryKey: queryKeys.variables.list(),
+				queryFn: () => variableService.list()
 			})
 			.catch((err) => {
 				console.warn('Failed to load global variables:', err);

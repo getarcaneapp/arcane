@@ -1,13 +1,10 @@
 <script lang="ts">
-	import type { ComponentProps } from 'svelte';
 	import * as Card from '$lib/components/ui/card/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
 	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
 	import { formatDateTimeShort } from '$lib/utils/formatting';
-
-	type BadgeVariant = ComponentProps<typeof StatusBadge>['variant'];
 
 	let {
 		environment,
@@ -43,7 +40,7 @@
 		if (currentStatus === 'pending') {
 			return { text: m.environments_edge_tunnel_negotiating(), variant: 'amber' };
 		}
-		return { text: m.environments_edge_tunnel_disconnected(), variant: 'red' };
+		return { text: m.disconnected(), variant: 'red' };
 	});
 
 	let tunnelTypeBadge = $derived.by((): { text: string; variant: 'blue' | 'purple' | 'gray' } | null => {
@@ -59,14 +56,14 @@
 			return { text: 'gRPC', variant: 'blue' };
 		}
 
-		return { text: m.environments_edge_tunnel_type_inactive(), variant: 'gray' };
+		return { text: m.inactive(), variant: 'gray' };
 	});
 
 	let mtlsCertificateBadge = $derived.by((): { text: string; variant: 'green' | 'amber' | 'red' } | null => {
 		const cert = environment.edgeMTLSCertificate;
 		if (!cert) return null;
 		if (cert.expired) {
-			return { text: m.environments_edge_mtls_certificate_status_expired(), variant: 'red' };
+			return { text: m.expired(), variant: 'red' };
 		}
 		if (cert.expiringSoon) {
 			return { text: m.environments_edge_mtls_certificate_status_expiring_soon(), variant: 'amber' };
@@ -89,8 +86,8 @@
 {#snippet badgeTile(label: string, text: string, variant: BadgeVariant)}
 	<Card.Root variant="subtle">
 		<Card.Content class="flex flex-col gap-1.5 p-4">
-			<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-			<div><StatusBadge {text} {variant} /></div>
+			<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+			<div><Badge {variant} minWidth="20">{text}</Badge></div>
 		</Card.Content>
 	</Card.Root>
 {/snippet}
@@ -98,12 +95,12 @@
 {#snippet tile(label: string, value: string, opts?: { mono?: boolean; subtext?: string })}
 	<Card.Root variant="subtle">
 		<Card.Content class="flex flex-col gap-1 p-4">
-			<div class="text-muted-foreground text-xs font-semibold tracking-wide uppercase">{label}</div>
-			<div class={cn('text-foreground text-sm font-medium', opts?.mono && 'font-mono break-all select-all')}>
+			<div class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{label}</div>
+			<div class={cn('text-sm font-medium text-foreground', opts?.mono && 'font-mono break-all select-all')}>
 				{value}
 			</div>
 			{#if opts?.subtext}
-				<div class="text-muted-foreground text-xs">{opts.subtext}</div>
+				<div class="text-xs text-muted-foreground">{opts.subtext}</div>
 			{/if}
 		</Card.Content>
 	</Card.Root>
@@ -129,7 +126,7 @@
 		<div class="space-y-4 border-t pt-6">
 			<div class="space-y-1">
 				<h3 class="text-sm font-medium">{m.environments_agent_mtls_section_title()}</h3>
-				<p class="text-muted-foreground text-xs">{m.environments_agent_mtls_description()}</p>
+				<p class="text-xs text-muted-foreground">{m.environments_agent_mtls_description()}</p>
 			</div>
 
 			<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -48,12 +48,12 @@
 
 	const formSchema = $derived(
 		z.object({
-			name: z.string().min(1, m.common_field_required({ field: m.api_key_name() })),
+			name: z.string().min(1, m.common_field_required({ field: m.common_name() })),
 			description: z.string().optional(),
 			expiresAt: z.date().optional(),
 			permissions: hidePermissions
 				? z.array(z.string()).default([])
-				: z.array(z.string()).min(1, m.api_key_permissions_required())
+				: z.array(z.string()).min(1, m.pick_at_least_one_permission())
 		})
 	);
 
@@ -108,7 +108,7 @@
 			? (apiKeyToEdit?.name ?? m.api_key_bootstrap_title())
 			: isEditMode
 				? m.api_key_edit_title()
-				: m.api_key_create_title()}
+				: m.create_api_key()}
 	description={isEditMode
 		? isStaticApiKey
 			? m.api_key_static_description()
@@ -121,10 +121,10 @@
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
 			{#if isBootstrapApiKey && !isStaticApiKey}
-				<p class="text-muted-foreground text-sm">{m.api_key_bootstrap_locked_description()}</p>
+				<p class="text-sm text-muted-foreground">{m.api_key_bootstrap_locked_description()}</p>
 			{/if}
 			<FormInput
-				label={m.api_key_name()}
+				label={m.common_name()}
 				type="text"
 				placeholder={m.api_key_name_placeholder()}
 				description={m.api_key_name_description()}
@@ -132,9 +132,9 @@
 				disabled={isReadOnlyApiKey}
 			/>
 			<FormInput
-				label={m.api_key_description_label()}
+				label={m.common_description()}
 				type="text"
-				placeholder={m.api_key_description_placeholder()}
+				placeholder={m.optional_description_placeholder()}
 				description={m.api_key_description_help()}
 				bind:input={$inputs.description}
 				disabled={isReadOnlyApiKey}
@@ -148,14 +148,14 @@
 			/>
 			{#if !isReadOnlyApiKey}
 				{#if hidePermissions}
-					<p class="text-muted-foreground text-sm">{m.api_key_personal_inherits_description()}</p>
+					<p class="text-sm text-muted-foreground">{m.api_key_personal_inherits_description()}</p>
 				{:else if manifest}
 					<div>
-						<label for="permissions" class="text-sm font-medium">{m.roles_permissions_label()}</label>
-						<p class="text-muted-foreground mb-3 text-xs">{m.api_key_permissions_description()}</p>
+						<label for="permissions" class="text-sm font-medium">{m.permissions()}</label>
+						<p class="mb-3 text-xs text-muted-foreground">{m.api_key_permissions_description()}</p>
 						<PermissionPicker {manifest} bind:selected={$inputs.permissions.value} showSearch />
 						{#if $inputs.permissions.error}
-							<p class="text-destructive mt-1 text-xs">{$inputs.permissions.error}</p>
+							<p class="mt-1 text-xs text-destructive">{$inputs.permissions.error}</p>
 						{/if}
 					</div>
 				{/if}
@@ -172,7 +172,7 @@
 			submitDisabled={isLoading}
 			submitLoading={isLoading}
 			onSubmit={handleSubmit}
-			submitLabel={isEditMode ? m.api_key_save_changes() : m.api_key_create_button()}
+			submitLabel={isEditMode ? m.common_save_changes() : m.create_api_key()}
 		/>
 	{/snippet}
 </ResponsiveDialog.Root>

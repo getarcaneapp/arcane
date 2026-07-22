@@ -50,10 +50,10 @@
 <div class="space-y-2.5">
 	<div>
 		<Label for={id} class="text-sm font-medium">
-			{label}{#if required}<span class="text-destructive ml-0.5">*</span>{/if}
+			{label}{#if required}<span class="ml-0.5 text-destructive">*</span>{/if}
 		</Label>
 		{#if description}
-			<p class="text-muted-foreground mt-0.5 text-xs">{description}</p>
+			<p class="mt-0.5 text-xs text-muted-foreground">{description}</p>
 		{/if}
 	</div>
 
@@ -71,9 +71,9 @@
 	/>
 
 	{#if error}
-		<p class="text-destructive text-xs font-medium">{error}</p>
+		<p class="text-xs font-medium text-destructive">{error}</p>
 	{/if}
 	{#if helpText || reserveHelpTextSpace}
-		<p class="text-muted-foreground min-h-[1rem] text-xs">{helpText}</p>
+		<p class="min-h-[1rem] text-xs text-muted-foreground">{helpText}</p>
 	{/if}
 </div>

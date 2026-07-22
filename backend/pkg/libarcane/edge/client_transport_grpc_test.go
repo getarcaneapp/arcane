@@ -49,7 +49,7 @@ func TestGRPCTunnel_RequestResponse(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -94,7 +94,7 @@ func TestGRPCTunnel_RequestResponse(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil
 	}, time.Second, 10*time.Millisecond)
 
@@ -137,7 +137,7 @@ func TestGRPCTunnel_RequestResponseStreamingChunks(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "valid-token"}}})
@@ -200,7 +200,7 @@ func TestGRPCTunnel_RequestResponseStreamingChunks(t *testing.T) {
 	var tunnel *AgentTunnel
 	require.Eventually(t, func() bool {
 		var ok bool
-		tunnel, ok = GetRegistry().Get(envID)
+		tunnel, ok = GetRegistry().Get(envID).Get()
 		return ok && tunnel != nil
 	}, time.Second, 10*time.Millisecond)
 
@@ -337,17 +337,11 @@ func TestGRPCTunnel_InvalidTokenRejected(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "invalid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Register{Register: &tunnelpb.RegisterRequest{AgentToken: "invalid-token"}}})
 	require.NoError(t, err)
-
-	registerResp, err := stream.Recv()
-	require.NoError(t, err)
-	require.NotNil(t, registerResp.GetRegisterResponse())
-	assert.False(t, registerResp.GetRegisterResponse().GetAccepted())
-	assert.Equal(t, "invalid agent token", registerResp.GetRegisterResponse().GetError())
 
 	_, err = stream.Recv()
 	require.Error(t, err)
@@ -387,7 +381,7 @@ func TestGRPCTunnel_FirstMessageMustBeRegister(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	err = stream.Send(&tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_HeartbeatPing{HeartbeatPing: &tunnelpb.HeartbeatPing{}}})
@@ -431,7 +425,7 @@ func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
-	stream, err := client.Connect(ctx)
+	stream, err := client.Connect(testGRPCOutgoingContextInternal(ctx, "valid-token"))
 	require.NoError(t, err)
 
 	require.NoError(t, stream.CloseSend())
@@ -446,7 +440,6 @@ func TestGRPCTunnel_RegisterMessageRequiredOnEOF(t *testing.T) {
 
 func startTestGRPCTunnelServer(ctx context.Context, envID string) (*bufconn.Listener, *grpc.Server, *TunnelServer) {
 	lis := bufconn.Listen(1024 * 1024)
-	grpcServer := grpc.NewServer()
 	tunnelServer := NewTunnelServer(
 		func(ctx context.Context, token string) (string, error) {
 			if token != "valid-token" {
@@ -456,7 +449,12 @@ func startTestGRPCTunnelServer(ctx context.Context, envID string) (*bufconn.List
 		},
 		nil,
 	)
+	grpcServer := grpc.NewServer(tunnelServer.GRPCServerOptions()...)
 	go tunnelServer.StartCleanupLoop(ctx)
 	tunnelpb.RegisterTunnelServiceServer(grpcServer, tunnelServer)
 	return lis, grpcServer, tunnelServer
+}
+
+func testGRPCOutgoingContextInternal(ctx context.Context, token string) context.Context {
+	return metadata.NewOutgoingContext(ctx, metadata.Pairs(strings.ToLower(HeaderAgentToken), token))
 }

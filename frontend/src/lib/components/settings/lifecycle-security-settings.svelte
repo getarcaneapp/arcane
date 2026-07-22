@@ -36,7 +36,7 @@
 			</Card.Title>
 		</div>
 	</Card.Header>
-	<Card.Content class="divide-border/40 divide-y lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+	<Card.Content class="divide-y divide-border/40 lg:p-6 lg:pt-0 [&>*]:py-5 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
 		<SettingsRow
 			label={m.security_lifecycle_enabled_label()}
 			description={m.security_lifecycle_enabled_description()}

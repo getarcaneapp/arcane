@@ -28,7 +28,7 @@
 				tone="ghost"
 				icon={EyeOnIcon}
 				customLabel={m.common_view()}
-				class="border-input hover:bg-card/60 border hover:text-inherit"
+				class="border border-input hover:bg-card/60 hover:text-inherit"
 			/>
 		{/snippet}
 	</DropdownMenu.Trigger>

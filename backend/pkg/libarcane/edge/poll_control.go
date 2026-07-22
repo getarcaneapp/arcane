@@ -1,13 +1,14 @@
 package edge
 
 import (
-	"encoding/json"
+	"github.com/samber/mo"
+
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -31,39 +32,6 @@ const (
 	// TunnelStatusActive indicates that the manager still needs the tunnel and it is already open.
 	TunnelStatusActive = "ACTIVE"
 )
-
-// TunnelPollRequest is a forward-compatible control-plane check-in request.
-type TunnelPollRequest struct {
-	Transport string `json:"transport,omitempty"`
-	Connected bool   `json:"connected,omitempty"`
-}
-
-// TunnelPollResponse is a forward-compatible control-plane response.
-type TunnelPollResponse struct {
-	Status              string `json:"status"`
-	PollIntervalSeconds int    `json:"pollIntervalSeconds"`
-	ActiveTransport     string `json:"activeTransport,omitempty"`
-	Connected           bool   `json:"connected,omitempty"`
-}
-
-// PollRuntimeState describes the most recent poll-based control-plane activity
-// observed for an edge environment.
-type PollRuntimeState struct {
-	LastPollAt          *time.Time
-	PollIntervalSeconds int
-}
-
-// TunnelDemandRegistry tracks short-lived tunnel demand on the manager side.
-type TunnelDemandRegistry struct {
-	demands map[string]time.Time
-	mu      sync.RWMutex
-}
-
-// PollRuntimeRegistry tracks recent poll check-ins from edge agents.
-type PollRuntimeRegistry struct {
-	states map[string]PollRuntimeState
-	mu     sync.RWMutex
-}
 
 func pollRuntimeTTLInternal(state PollRuntimeState) time.Duration {
 	ttl := DefaultPollRuntimeTTL
@@ -183,9 +151,9 @@ func (r *PollRuntimeRegistry) Update(envID string, interval time.Duration, now t
 }
 
 // Get returns the most recent poll runtime state if it is still fresh.
-func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState, bool) {
+func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRuntimeState] {
 	if r == nil || strings.TrimSpace(envID) == "" {
-		return PollRuntimeState{}, false
+		return mo.None[PollRuntimeState]()
 	}
 	if now.IsZero() {
 		now = time.Now()
@@ -195,7 +163,7 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState
 	state, ok := r.states[envID]
 	r.mu.RUnlock()
 	if !ok || state.LastPollAt == nil {
-		return PollRuntimeState{}, false
+		return mo.None[PollRuntimeState]()
 	}
 
 	ttl := pollRuntimeTTLInternal(state)
@@ -205,18 +173,18 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) (PollRuntimeState
 		state, ok = r.states[envID]
 		if !ok || state.LastPollAt == nil {
 			r.mu.Unlock()
-			return PollRuntimeState{}, false
+			return mo.None[PollRuntimeState]()
 		}
 		ttl = pollRuntimeTTLInternal(state)
 		if now.Sub(*state.LastPollAt) > ttl {
 			delete(r.states, envID)
 			r.mu.Unlock()
-			return PollRuntimeState{}, false
+			return mo.None[PollRuntimeState]()
 		}
 		r.mu.Unlock()
 	}
 
-	return state, true
+	return mo.Some(state)
 }
 
 func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error) {
@@ -228,7 +196,7 @@ func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error)
 	defer func() { _ = req.Body.Close() }()
 
 	var pollReq TunnelPollRequest
-	if err := json.NewDecoder(req.Body).Decode(&pollReq); err != nil {
+	if err := json.UnmarshalRead(req.Body, &pollReq); err != nil {
 		if errors.Is(err, http.ErrBodyReadAfterClose) {
 			return &TunnelPollRequest{}, nil
 		}
@@ -245,7 +213,7 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 	hasActiveTunnel := false
 	activeTransport := ""
 
-	if tunnel, ok := s.registry.Get(envID); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
+	if tunnel, ok := s.registry.Get(envID).Get(); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		hasActiveTunnel = true
 		switch tunnel.Conn.(type) {
 		case *GRPCManagerTunnelConn:

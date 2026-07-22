@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
+	"github.com/samber/mo"
 	"go.yaml.in/yaml/v4"
 )
 
@@ -51,7 +52,7 @@ func resolveProjectsDirectoryPath(projectsDirectory string) string {
 		return filepath.Clean(projectsDirectory)
 	}
 
-	if backendRoot, ok := findBackendModuleRoot(); ok {
+	if backendRoot, ok := findBackendModuleRoot().Get(); ok {
 		return filepath.Clean(filepath.Join(backendRoot, projectsDirectory))
 	}
 
@@ -63,10 +64,10 @@ func resolveProjectsDirectoryPath(projectsDirectory string) string {
 	return filepath.Clean(projectsDirectory)
 }
 
-func findBackendModuleRoot() (string, bool) {
+func findBackendModuleRoot() mo.Option[string] {
 	cwd, err := os.Getwd()
 	if err != nil {
-		return "", false
+		return mo.None[string]()
 	}
 
 	candidates := []string{
@@ -76,11 +77,11 @@ func findBackendModuleRoot() (string, bool) {
 
 	for _, candidate := range candidates {
 		if isBackendModuleRoot(candidate) {
-			return candidate, true
+			return mo.Some(candidate)
 		}
 	}
 
-	return "", false
+	return mo.None[string]()
 }
 
 func isBackendModuleRoot(path string) bool {

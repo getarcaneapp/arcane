@@ -179,7 +179,7 @@ func TestSettingsHandler_GetSettings_RemotePreservesAdminResponse(t *testing.T) 
 	require.Equal(t, remoteSettings, output.Body)
 }
 
-func TestTemplateHandler_GetGlobalVariables_RemoteSuccess(t *testing.T) {
+func TestVariableHandler_GetMaterializedVariables_RemoteSuccess(t *testing.T) {
 	expected := base.ApiResponse[[]env.Variable]{
 		Success: true,
 		Data:    []env.Variable{{Key: "FOO", Value: "bar"}},
@@ -190,12 +190,12 @@ func TestTemplateHandler_GetGlobalVariables_RemoteSuccess(t *testing.T) {
 	}))
 	defer server.Close()
 
-	handler := &TemplateHandler{
-		templateService:    &services.TemplateService{},
+	handler := &VariableHandler{
+		variableService:    &services.VariableService{},
 		environmentService: setupRemoteHandlerEnvironmentServiceInternal(t, server),
 	}
 
-	output, err := handler.GetGlobalVariables(adminTestContextInternal(), &GetGlobalVariablesInput{EnvironmentID: "env-remote"})
+	output, err := handler.GetMaterializedVariables(adminTestContextInternal(), &GetGlobalVariablesInput{EnvironmentID: "env-remote"})
 	require.NoError(t, err)
 	require.Equal(t, expected, output.Body)
 }

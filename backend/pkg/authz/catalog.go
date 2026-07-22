@@ -77,6 +77,13 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"update", PermTemplatesUpdate, "Update", ""},
 		{"delete", PermTemplatesDelete, "Delete", ""},
 	}},
+	{"variables", "Variables", PermissionScopeGlobal, []PermissionCatalogAction{
+		{"read", PermVariablesRead, "Read", ""},
+		{"create", PermVariablesCreate, "Create", ""},
+		{"update", PermVariablesUpdate, "Update", ""},
+		{"delete", PermVariablesDelete, "Delete", ""},
+		{"sync", PermVariablesSync, "Sync", ""},
+	}},
 	{"git-repositories", "Git Repositories", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"list", PermGitReposList, "List", ""},
 		{"read", PermGitReposRead, "Read", ""},

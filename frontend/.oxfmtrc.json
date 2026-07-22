@@ -1,0 +1,25 @@
+{
+	"$schema": "./node_modules/oxfmt/configuration_schema.json",
+	"useTabs": true,
+	"singleQuote": true,
+	"trailingComma": "none",
+	"printWidth": 130,
+	"sortPackageJson": false,
+	"svelte": true,
+	"sortTailwindcss": {
+		"stylesheet": "./src/routes/layout.css",
+		"attributes": ["class"],
+		"functions": ["clsx", "cn"],
+		"preserveWhitespace": true
+	},
+	"ignorePatterns": [
+		"package-lock.json",
+		"pnpm-lock.yaml",
+		"yarn.lock",
+		".svelte-kit/**",
+		"build/**",
+		"messages/**",
+		"project.inlang/**",
+		"src/lib/paraglide/**"
+	]
+}

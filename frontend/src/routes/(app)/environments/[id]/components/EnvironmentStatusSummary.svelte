@@ -1,7 +1,6 @@
 <script lang="ts">
 	import { formatDistance } from 'date-fns';
 	import { Badge } from '$lib/components/ui/badge/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
 	import { Spinner } from '$lib/components/ui/spinner/index.js';
 	import { cn } from '$lib/utils';
 	import { m } from '$lib/paraglide/messages';
@@ -103,18 +102,18 @@
 	let heartbeatRelative = $derived(formatRelative(environment.lastHeartbeat, nowTick));
 </script>
 
-<div class="bg-muted/40 flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg px-4 py-3">
+<div class="flex flex-wrap items-center gap-x-4 gap-y-2 rounded-lg bg-muted/40 px-4 py-3">
 	<div class="flex items-center gap-2">
 		<span class={cn('size-2.5 rounded-full transition-colors', statusDotClass)}></span>
 		<span class="text-sm font-semibold">{statusBadge.text}</span>
 	</div>
-	<StatusBadge text={transportBadge.text} variant={transportBadge.variant} />
-	<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+	<Badge variant={transportBadge.variant} minWidth="20">{transportBadge.text}</Badge>
+	<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 		<TagIcon class="size-4 shrink-0" />
 		{#if environment.id === '0'}
 			<span class="font-mono">{localDisplayVersion}</span>
 			{#if versionInformation?.updateAvailable}
-				<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+				<Badge variant="amber">
 					{m.sidebar_update_available()}: {versionInformation.newestVersion}
 				</Badge>
 			{/if}
@@ -124,7 +123,7 @@
 		{:else if remoteVersion}
 			<span class="font-mono">{remoteDisplayVersion}</span>
 			{#if remoteVersion.updateAvailable}
-				<Badge variant="secondary" class="bg-amber-500/10 text-amber-600 hover:bg-amber-500/20 dark:text-amber-400">
+				<Badge variant="amber">
 					{m.sidebar_update_available()}: {remoteVersion.newestVersion}
 				</Badge>
 				{#if remoteVersion.releaseUrl}
@@ -145,12 +144,12 @@
 		{/if}
 	</div>
 	{#if environment.isEdge && environment.lastHeartbeat}
-		<div class="text-muted-foreground flex items-center gap-1.5 text-sm">
+		<div class="flex items-center gap-1.5 text-sm text-muted-foreground">
 			<HealthIcon class="size-4 shrink-0" />
 			<span>{heartbeatRelative}</span>
 		</div>
 	{/if}
-	<div class="text-muted-foreground flex items-center gap-1.5 text-sm sm:ml-auto">
+	<div class="flex items-center gap-1.5 text-sm text-muted-foreground sm:ml-auto">
 		<HashIcon class="size-4 shrink-0" />
 		<span class="font-mono">{environment.id}</span>
 	</div>

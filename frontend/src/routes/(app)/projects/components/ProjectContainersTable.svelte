@@ -6,7 +6,7 @@
 	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
 	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
 	import * as Empty from '$lib/components/ui/empty/index.js';
-	import StatusBadge from '$lib/components/badges/status-badge.svelte';
+	import { Badge } from '$lib/components/ui/badge';
 	import { PortBadge } from '$lib/components/badges/index.js';
 	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
 	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
@@ -316,7 +316,7 @@
 	{#if status}
 		<div class="flex items-center gap-1.5">
 			<Spinner class="size-3.5" />
-			<span class="text-muted-foreground text-xs font-medium">
+			<span class="text-xs font-medium text-muted-foreground">
 				{status === 'starting'
 					? m.common_action_starting()
 					: status === 'stopping'
@@ -327,7 +327,7 @@
 			</span>
 		</div>
 	{:else}
-		<StatusBadge variant={getStatusVariant(item.status)} text={capitalizeFirstLetter(item.status)} />
+		<Badge variant={getStatusVariant(item.status)} minWidth="20">{capitalizeFirstLetter(item.status)}</Badge>
 	{/if}
 {/snippet}
 
@@ -335,16 +335,16 @@
 	{#if item.health}
 		<div class="flex items-center gap-1.5">
 			<HealthIcon class="size-4 text-{getHealthColor(item.health)}-500" />
-			<span class="text-muted-foreground text-sm">{capitalizeFirstLetter(item.health)}</span>
+			<span class="text-sm text-muted-foreground">{capitalizeFirstLetter(item.health)}</span>
 		</div>
 	{:else}
-		<span class="text-muted-foreground text-sm">—</span>
+		<span class="text-sm text-muted-foreground">—</span>
 	{/if}
 {/snippet}
 
 {#snippet PortsCell({ item }: { item: ServiceWithId })}
 	{#if item.serviceConfig?.ports && item.serviceConfig.ports.length > 0}
-		<PortBadge ports={item.serviceConfig.ports as any} wrap={false} />
+		<PortBadge ports={item.serviceConfig.ports} wrap={false} />
 	{:else if item.ports && item.ports.length > 0}
 		{@const parsedPorts = item.ports.map((p) => {
 			const [numsPart, proto] = p.split('/');
@@ -356,7 +356,7 @@
 		})}
 		<PortBadge ports={parsedPorts} wrap={false} />
 	{:else}
-		<span class="text-muted-foreground text-sm">—</span>
+		<span class="text-sm text-muted-foreground">—</span>
 	{/if}
 {/snippet}
 
@@ -428,7 +428,7 @@
 					<InspectIcon class="size-4" />
 					{m.common_inspect()}
 				</DropdownMenu.Item>
-				<!-- fallow-ignore-next-line code-duplication mobile vs desktop row-action menus; items already share ContainerActionMenuItem/RemoveMenuItem, the menu shells differ -->
+				<!-- fallow-ignore-next-line code-duplication -- mobile vs desktop row-action menus; items already share ContainerActionMenuItem/RemoveMenuItem, the menu shells differ -->
 				{#if canDeleteContainer}
 					<DropdownMenu.Separator />
 					<ContainerActionMenuItem
@@ -534,10 +534,10 @@
 	/>
 {:else}
 	<div class="flex h-full items-center justify-center py-12">
-		<Empty.Root class="bg-card/30 rounded-lg py-12 backdrop-blur-sm" role="status" aria-live="polite">
+		<Empty.Root class="rounded-lg bg-card/30 py-12 backdrop-blur-sm" role="status" aria-live="polite">
 			<Empty.Header>
 				<Empty.Media variant="icon">
-					<FolderXIcon class="text-muted-foreground/40 size-10" />
+					<FolderXIcon class="size-10 text-muted-foreground/40" />
 				</Empty.Media>
 				<Empty.Title class="text-base font-medium">{m.compose_no_services_found()}</Empty.Title>
 			</Empty.Header>

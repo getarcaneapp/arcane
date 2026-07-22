@@ -181,7 +181,7 @@
 
 	const imagePruneModes = [
 		{ value: 'dangling', label: m.prune_images_mode_dangling() },
-		{ value: 'all', label: m.prune_images_mode_all() },
+		{ value: 'all', label: m.all_unused() },
 		{ value: 'olderThan', label: m.prune_mode_older_than() }
 	];
 
@@ -278,7 +278,7 @@
 	]);
 </script>
 
-<ResourcePageLayout title={m.images_title()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
+<ResourcePageLayout title={m.images()} subtitle={m.images_subtitle()} {actionButtons} {statCards}>
 	{#snippet mainContent()}
 		{#if resourcesReady}
 			<ImageTable
@@ -335,10 +335,10 @@
 					{#if uploadedFiles.length > 0}
 						<div class="flex flex-col gap-2">
 							{#each uploadedFiles as file, i (file.name)}
-								<div class="border-border bg-muted/50 flex items-center justify-between gap-2 rounded-lg border p-3">
+								<div class="flex items-center justify-between gap-2 rounded-lg border border-border bg-muted/50 p-3">
 									<div class="flex flex-col">
 										<span class="text-sm font-medium">{file.name}</span>
-										<span class="text-muted-foreground text-xs">{displaySize(file.size)}</span>
+										<span class="text-xs text-muted-foreground">{displaySize(file.size)}</span>
 									</div>
 									<ArcaneButton
 										action="base"
@@ -353,7 +353,7 @@
 						</div>
 					{/if}
 					{#if isUploading}
-						<div class="text-muted-foreground flex items-center gap-2 text-sm">
+						<div class="flex items-center gap-2 text-sm text-muted-foreground">
 							<Spinner class="size-4" />{m.images_uploading()}
 						</div>
 					{/if}
@@ -386,7 +386,7 @@
 				</Dialog.Header>
 				<div class="py-4">
 					<PruneModeCard
-						title={m.prune_images_label()}
+						title={m.images()}
 						description={m.prune_images_dialog_description()}
 						modeOptions={imagePruneModes}
 						bind:value={imagePruneMode}
@@ -401,7 +401,7 @@
 						onclick={handlePruneImages}
 						disabled={isPruning}
 						loading={isPruning}
-						customLabel={m.images_prune_action()}
+						customLabel={m.prune_images()}
 						loadingLabel={m.common_action_pruning()}
 					/>
 				</div>

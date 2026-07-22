@@ -167,7 +167,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 	api := humaecho.NewWithGroup(router, apiGroup, humaConfig)
 	api.UseMiddleware(humamiddleware.NewAuthBridge(api, authService, nil, sudoPermResolver{}, nil, &config.Config{}))
 	RegisterHealth(api)
-	RegisterTemplates(api, templateService, nil)
+	RegisterTemplates(api, templateService)
 
 	return router
 }

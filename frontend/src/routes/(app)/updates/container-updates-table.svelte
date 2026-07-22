@@ -61,7 +61,7 @@
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
 		{ accessorKey: 'imageRef', title: m.common_image(), sortable: true, cell: ImageCell },
-		{ accessorKey: 'currentValue', title: m.image_update_current_label(), sortable: false, cell: DigestCol },
+		{ accessorKey: 'currentValue', title: m.common_current(), sortable: false, cell: DigestCol },
 		{ accessorKey: 'latestValue', title: m.image_update_latest_digest_label(), sortable: false, cell: DigestCol },
 		{ accessorKey: 'checkedAt', title: m.common_updated(), sortable: false, cell: CheckedAtCol },
 		{ id: 'actions', title: m.common_actions(), sortable: false, cell: ActionsCell }
@@ -69,7 +69,7 @@
 
 	const mobileFields = [
 		{ id: 'imageRef', label: m.common_image(), defaultVisible: true },
-		{ id: 'currentValue', label: m.image_update_current_label(), defaultVisible: true },
+		{ id: 'currentValue', label: m.common_current(), defaultVisible: true },
 		{ id: 'latestValue', label: m.image_update_latest_digest_label(), defaultVisible: true },
 		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true },
 		{ id: 'actions', label: m.common_actions(), defaultVisible: true }
@@ -100,7 +100,7 @@
 {/snippet}
 
 {#snippet ImageCell({ item }: { item: ContainerUpdateRow })}
-	<!-- fallow-ignore-next-line code-duplication parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
+	<!-- fallow-ignore-next-line code-duplication -- parallel container/project update tables; cells shared via components, thin column wrappers differ by row type -->
 	<code class="text-xs">{item.imageRef}</code>
 {/snippet}
 
@@ -117,7 +117,7 @@
 		<ArcaneButton
 			action="update"
 			size="sm"
-			customLabel={m.containers_update_container()}
+			customLabel={m.update_container()}
 			onclick={() => handleUpdateContainer(item.container)}
 			loading={!!updatingContainerIds[item.containerId]}
 			disabled={!!updatingContainerIds[item.containerId]}
@@ -137,7 +137,7 @@
 		subtitle={(item: ContainerUpdateRow) => item.imageRef}
 		fields={[
 			{
-				label: m.image_update_current_label(),
+				label: m.common_current(),
 				getValue: (item: ContainerUpdateRow) => item.currentValue
 			},
 			{
@@ -150,7 +150,7 @@
 			},
 			{
 				label: m.common_actions(),
-				getValue: () => m.containers_update_container()
+				getValue: () => m.update_container()
 			}
 		]}
 		onclick={(item: ContainerUpdateRow) => {

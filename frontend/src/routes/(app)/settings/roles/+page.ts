@@ -22,14 +22,8 @@ export const load: PageLoad = async ({ parent }) => {
 		queryFn: () => roleService.getRoles(rolesRequestOptions)
 	});
 
-	const permissionsManifest = await queryClient.fetchQuery({
-		queryKey: ['roles', 'permissions-manifest'],
-		queryFn: () => roleService.getPermissionsManifest()
-	});
-
 	return {
 		roles,
-		permissionsManifest,
 		rolesRequestOptions
 	};
 };

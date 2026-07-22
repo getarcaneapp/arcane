@@ -30,7 +30,7 @@
 					{#each container.mounts as mount (mount.destination)}
 						<Card.Root variant="subtle">
 							<Card.Content class="p-4">
-								<div class="border-border mb-4 flex items-center justify-between border-b pb-4">
+								<div class="mb-4 flex items-center justify-between border-b border-border pb-4">
 									<div class="flex items-center gap-3">
 										<div
 											class="rounded-lg p-2 {mount.type === 'volume'
@@ -48,14 +48,14 @@
 											{/if}
 										</div>
 										<div class="min-w-0 flex-1">
-											<div class="text-foreground text-base font-semibold break-all">
+											<div class="text-base font-semibold break-all text-foreground">
 												{mount.type === 'tmpfs'
 													? m.containers_mount_type_tmpfs()
 													: mount.type === 'volume'
 														? mount.name || m.containers_mount_type_volume()
 														: m.containers_mount_type_bind()}
 											</div>
-											<div class="text-muted-foreground text-xs">
+											<div class="text-xs text-muted-foreground">
 												{mount.type} mount
 											</div>
 										</div>
@@ -68,11 +68,11 @@
 								<div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
 									<Card.Root variant="outlined" class="sm:col-span-2">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{m.containers_mount_label_container()}
 											</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{mount.destination}
@@ -82,7 +82,7 @@
 
 									<Card.Root variant="outlined" class="sm:col-span-2">
 										<Card.Content class="flex flex-col p-3">
-											<div class="text-muted-foreground mb-2 text-xs font-semibold">
+											<div class="mb-2 text-xs font-semibold text-muted-foreground">
 												{mount.type === 'volume'
 													? m.containers_mount_label_volume()
 													: mount.type === 'bind'
@@ -90,7 +90,7 @@
 														: m.containers_mount_label_source()}
 											</div>
 											<div
-												class="text-foreground cursor-pointer font-mono text-sm font-medium break-all select-all"
+												class="cursor-pointer font-mono text-sm font-medium break-all text-foreground select-all"
 												title={m.common_click_to_select()}
 											>
 												{mount.source}
@@ -101,8 +101,8 @@
 									{#if mount.type === 'volume' && mount.driver}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_driver()}</div>
-												<div class="text-foreground text-sm font-medium">
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.common_driver()}</div>
+												<div class="text-sm font-medium text-foreground">
 													{mount.driver}
 												</div>
 											</Card.Content>
@@ -112,9 +112,9 @@
 									{#if mount.propagation}
 										<Card.Root variant="outlined">
 											<Card.Content class="flex flex-col p-3">
-												<div class="text-muted-foreground mb-2 text-xs font-semibold">{m.container_propagation()}</div>
-												<div class="text-foreground text-sm font-medium">
-													<!-- fallow-ignore-next-line code-duplication container vs swarm-service storage; typed Mount vs ServiceMount props diverge across the boundary -->
+												<div class="mb-2 text-xs font-semibold text-muted-foreground">{m.container_propagation()}</div>
+												<div class="text-sm font-medium text-foreground">
+													<!-- fallow-ignore-next-line code-duplication -- container vs swarm-service storage; typed Mount vs ServiceMount props diverge across the boundary -->
 													{mount.propagation}
 												</div>
 											</Card.Content>
@@ -127,10 +127,10 @@
 				</div>
 			{:else}
 				<div class="rounded-lg border border-dashed py-12 text-center">
-					<div class="bg-muted/30 mx-auto mb-4 flex size-16 items-center justify-center rounded-full">
-						<VolumesIcon class="text-muted-foreground size-6" />
+					<div class="mx-auto mb-4 flex size-16 items-center justify-center rounded-full bg-muted/30">
+						<VolumesIcon class="size-6 text-muted-foreground" />
 					</div>
-					<div class="text-muted-foreground text-sm">{m.containers_no_mounts_configured()}</div>
+					<div class="text-sm text-muted-foreground">{m.containers_no_mounts_configured()}</div>
 				</div>
 			{/if}
 		</Card.Content>

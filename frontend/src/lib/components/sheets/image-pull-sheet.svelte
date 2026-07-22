@@ -95,7 +95,7 @@
 				bind:input={$inputs.imageRef}
 			/>
 			<FormInput
-				label={m.images_tag()}
+				label={m.tag()}
 				type="text"
 				placeholder={m.images_tag_latest()}
 				description={m.images_tag_description()}

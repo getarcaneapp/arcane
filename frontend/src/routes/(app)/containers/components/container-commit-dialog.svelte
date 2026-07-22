@@ -96,9 +96,9 @@
 				placeholder={m.containers_commit_comment_placeholder()}
 				bind:input={$inputs.comment}
 			/>
-			<FormInput label={m.common_author()} placeholder={m.containers_commit_author_placeholder()} bind:input={$inputs.author} />
+			<FormInput label={m.common_author()} placeholder={m.arcane_placeholder()} bind:input={$inputs.author} />
 			<label class="flex items-center gap-2 text-sm">
-				<input type="checkbox" bind:checked={$inputs.noPause.value} class="accent-primary size-4" />
+				<input type="checkbox" bind:checked={$inputs.noPause.value} class="size-4 accent-primary" />
 				<span>{m.containers_commit_no_pause()}</span>
 			</label>
 		</form>

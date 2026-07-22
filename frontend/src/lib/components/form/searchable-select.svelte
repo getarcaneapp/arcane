@@ -160,7 +160,7 @@
 	</Popover.Trigger>
 	<Popover.Content
 		class={cn(
-			'bg-popover text-popover-foreground backdrop-blur-0 w-[var(--bits-popover-anchor-width)] p-0 backdrop-saturate-100',
+			'backdrop-blur-0 w-[var(--bits-popover-anchor-width)] bg-popover p-0 text-popover-foreground backdrop-saturate-100',
 			contentClass
 		)}
 	>
@@ -201,11 +201,11 @@
 							{#if showCheckboxes}
 								<div
 									class={cn(
-										'border-primary flex size-4 shrink-0 items-center justify-center rounded-sm border',
+										'flex size-4 shrink-0 items-center justify-center rounded-sm border border-primary',
 										isSelected ? 'bg-primary text-primary-foreground' : 'opacity-50 [&_svg]:invisible'
 									)}
 								>
-									<CheckIcon class="text-foreground size-6" />
+									<CheckIcon class="size-6 text-foreground" />
 								</div>
 							{:else}
 								<CheckIcon class={cn('mr-2 size-4', isSelected ? 'opacity-100' : 'opacity-0')} />
@@ -214,7 +214,7 @@
 								{item.label}
 							</span>
 							{#if item.hint}
-								<span class="text-muted-foreground ml-auto text-xs">{item.hint}</span>
+								<span class="ml-auto text-xs text-muted-foreground">{item.hint}</span>
 							{/if}
 						</Command.Item>
 					{/each}

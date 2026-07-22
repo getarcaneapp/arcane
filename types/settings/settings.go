@@ -104,6 +104,11 @@ type Update struct {
 	// Required: false
 	ActivityHistoryMaxEntries *string `json:"activityHistoryMaxEntries,omitempty"`
 
+	// MaxConcurrentActivities is the maximum long-running activities per environment before new ones queue (0 = unlimited).
+	//
+	// Required: false
+	MaxConcurrentActivities *string `json:"maxConcurrentActivities,omitempty"`
+
 	// DefaultDeployPullPolicy is the default image pull policy used for project deploys.
 	//
 	// Required: false

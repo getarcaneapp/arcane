@@ -11,5 +11,5 @@
 	let { repository = $bindable(), tag = $bindable() }: Props = $props();
 </script>
 
-<FormInput label={m.images_tag_repository()} placeholder={m.images_tag_repository_placeholder()} bind:input={repository} />
-<FormInput label={m.images_tag()} placeholder={m.images_tag_latest()} bind:input={tag} />
+<FormInput label={m.resource_repository_cap()} placeholder={m.images_tag_repository_placeholder()} bind:input={repository} />
+<FormInput label={m.tag()} placeholder={m.images_tag_latest()} bind:input={tag} />

@@ -20,7 +20,7 @@
 	let { open = $bindable(false), onSubmit, isLoading }: TemplateRegistryFormProps = $props();
 
 	const formSchema = z.object({
-		url: z.url().min(1, m.templates_registry_url_required()),
+		url: z.url().min(1, m.registry_url_is_required()),
 		enabled: z.boolean().default(true)
 	});
 

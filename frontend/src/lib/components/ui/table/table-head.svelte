@@ -9,7 +9,8 @@
 	bind:this={ref}
 	data-slot="table-head"
 	class={cn(
-		'text-muted-foreground bg-background sticky top-0 z-[var(--arcane-z-sticky)] h-11 px-4 text-left align-middle text-[11px] font-semibold tracking-wide whitespace-nowrap uppercase',
+		'sticky top-0 z-[var(--arcane-z-sticky)] h-10 bg-background/95 px-4 text-left align-middle text-[11px] font-semibold tracking-[0.06em] whitespace-nowrap text-muted-foreground uppercase backdrop-blur-sm',
+		'after:pointer-events-none after:absolute after:inset-x-0 after:bottom-0 after:h-px after:bg-border/70',
 		'first:pl-6 last:pr-6 [&:has([role=checkbox])]:pr-0',
 		className
 	)}

@@ -31,8 +31,8 @@ export function createSettingsForm<T extends z.ZodType<any, any>>(config: Settin
 		onSave,
 		onSuccess,
 		onReset,
-		successMessage = m.common_update_success({ resource: m.settings_title() }),
-		errorMessage = m.common_update_failed({ resource: m.settings_title() })
+		successMessage = m.common_update_success({ resource: m.settings() }),
+		errorMessage = m.common_update_failed({ resource: m.settings() })
 	} = config;
 
 	const { inputs: formInputs, ...form } = createForm(schema, currentSettings);

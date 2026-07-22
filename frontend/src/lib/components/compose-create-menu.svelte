@@ -115,8 +115,8 @@
 			<ArcaneTooltip.Content class="arcane-tooltip-content max-w-[280px]">
 				{#if tooltipVisible}
 					<p class="mb-1 text-sm font-medium">{tooltipTitle}</p>
-					<p class="text-muted-foreground text-xs">{tooltipDescription}</p>
-					<p class="bg-muted mt-1.5 inline-block rounded px-1.5 py-0.5 font-mono text-xs">
+					<p class="text-xs text-muted-foreground">{tooltipDescription}</p>
+					<p class="mt-1.5 inline-block rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
 						{tooltipExample}
 					</p>
 				{/if}
