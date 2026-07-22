@@ -372,6 +372,7 @@ type startMatchingContainersOptionsInternal struct {
 
 func (s *SystemService) startMatchingContainersInternal(ctx context.Context, environmentID string, opts startMatchingContainersOptionsInternal) (*containertypes.ActionResult, error) {
 	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStart, opts.ResourceName, opts.StartMessage)
+	ctx = s.activityService.Track(ctx, activityID)
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		result := &containertypes.ActionResult{
@@ -393,6 +394,7 @@ func (s *SystemService) startMatchingContainersInternal(ctx context.Context, env
 
 func (s *SystemService) StopAllContainers(ctx context.Context, environmentID string) (*containertypes.ActionResult, error) {
 	activityID := s.startSystemContainerActivityInternal(ctx, environmentID, models.ActivityTypeContainerStop, "All containers", "Stopping all containers")
+	ctx = s.activityService.Track(ctx, activityID)
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
 		result := &containertypes.ActionResult{

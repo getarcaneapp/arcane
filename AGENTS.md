@@ -14,7 +14,7 @@ Arcane is a Docker management UI: **Go backend** (Echo + Huma v2), **SvelteKit v
 ## ⚠️ Golden Rules — READ FIRST
 
 1. **ALWAYS update existing code in place.** Never create a new function, service, helper, or API wrapper when one already exists that does the same thing. Find the existing code and modify it.
-2. **NEVER create stub, shim, or pass-through helper functions.** If a `pkg/` helper or service method exists, call it directly. Do not write a thin wrapper that just forwards to it.
+2. **NEVER create stub, shim, or pass-through helper functions.** If a `pkg/` helper or service method exists, call it directly. Do not write a thin wrapper that just forwards to it. This includes refactors: never hollow out an existing exported function into a one-line forwarder to a new `*Internal` variant with a mode flag — keep the real body in the existing function and let the other callsite handle its own difference in behavior.
 3. **NEVER duplicate functionality.** Before writing anything, search `pkg/`, `internal/services/`, and `frontend/src/lib/services/` for existing implementations.
 4. **NEVER create a new API standard.** If the codebase uses Huma v2 typed handlers on Echo, do not introduce Gin, raw `http.HandlerFunc`, or untyped patterns. Extend the existing standard.
 5. If you need a paragraph comment in order to justify a function, it is wrong. Fix the code.

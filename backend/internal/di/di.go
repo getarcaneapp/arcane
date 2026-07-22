@@ -77,5 +77,6 @@ var JobOptions = fx.Options(
 		provideFilesystemWatcherJobInternal,
 		scheduler.NewVulnerabilityScanJob,
 		scheduler.NewAutoHealJob,
+		scheduler.NewActivitySweepJob,
 	),
 )
