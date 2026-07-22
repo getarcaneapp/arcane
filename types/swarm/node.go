@@ -1,7 +1,6 @@
 package swarm
 
 import (
-	"fmt"
 	"time"
 
 	"github.com/moby/moby/api/types/swarm"
@@ -151,54 +150,4 @@ type NodeUpdateRequest struct {
 	//
 	// Required: false
 	Availability *swarm.NodeAvailability `json:"availability,omitempty"`
-}
-
-// NewNodeSummary converts a Docker swarm node into the API-facing NodeSummary shape.
-//
-// It derives manager role labels, reachability, platform strings, and default
-// node-agent state from the Docker SDK value so callers can return a stable,
-// JSON-friendly representation.
-//
-// node is the Docker swarm node to summarize.
-//
-// Returns a NodeSummary populated from node.
-func NewNodeSummary(node swarm.Node) NodeSummary {
-	managerStatus := ""
-	managerAddress := ""
-	reachability := ""
-	if node.ManagerStatus != nil {
-		if node.ManagerStatus.Leader {
-			managerStatus = "leader"
-		} else {
-			managerStatus = "manager"
-		}
-		reachability = string(node.ManagerStatus.Reachability)
-		managerAddress = node.ManagerStatus.Addr
-	}
-
-	platform := ""
-	if node.Description.Platform.OS != "" || node.Description.Platform.Architecture != "" {
-		platform = fmt.Sprintf("%s/%s", node.Description.Platform.OS, node.Description.Platform.Architecture)
-	}
-
-	return NodeSummary{
-		ID:             node.ID,
-		Hostname:       node.Description.Hostname,
-		Role:           string(node.Spec.Role),
-		Availability:   string(node.Spec.Availability),
-		Status:         string(node.Status.State),
-		Address:        node.Status.Addr,
-		ManagerStatus:  managerStatus,
-		ManagerAddress: managerAddress,
-		Reachability:   reachability,
-		Labels:         node.Spec.Labels,
-		SystemLabels:   node.Description.Engine.Labels,
-		EngineVersion:  node.Description.Engine.EngineVersion,
-		Platform:       platform,
-		CreatedAt:      node.CreatedAt,
-		UpdatedAt:      node.UpdatedAt,
-		Agent: NodeAgentStatus{
-			State: NodeAgentStateNone,
-		},
-	}
 }

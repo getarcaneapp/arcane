@@ -85,7 +85,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		containerItems = s.containerService.buildContainerSummaries(filteredContainers, nil, currentContainerID, currentContainerErr)
 	} else {
 		for _, container := range filteredContainers {
-			summary := containertypes.NewSummary(container)
+			summary := dockerutils.NewContainerSummary(container)
 			summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 			containerItems = append(containerItems, summary)
 		}

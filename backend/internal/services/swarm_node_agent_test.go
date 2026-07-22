@@ -1,19 +1,21 @@
-package swarm
+package services
 
 import (
 	"encoding/json"
 	"reflect"
 	"strings"
 	"testing"
+
+	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 )
 
 func TestNodeAgentStatusLegacyJSONCompatibility(t *testing.T) {
-	var status NodeAgentStatus
+	var status swarmtypes.NodeAgentStatus
 	if err := json.Unmarshal([]byte(`{"state":"connected","environmentId":"env-1","connected":true}`), &status); err != nil {
 		t.Fatalf("unmarshal legacy status: %v", err)
 	}
-	if status.State != NodeAgentStateConnected {
-		t.Fatalf("state = %q, want %q", status.State, NodeAgentStateConnected)
+	if status.State != swarmtypes.NodeAgentStateConnected {
+		t.Fatalf("state = %q, want %q", status.State, swarmtypes.NodeAgentStateConnected)
 	}
 	if status.EnvironmentID == nil || *status.EnvironmentID != "env-1" {
 		t.Fatalf("environmentId = %v, want env-1", status.EnvironmentID)
@@ -27,9 +29,9 @@ func TestNodeAgentStatusLegacyJSONCompatibility(t *testing.T) {
 }
 
 func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
-	status := NodeAgentStatus{
-		State: NodeAgentStateAmbiguous,
-		Candidates: []NodeAgentCandidate{{
+	status := swarmtypes.NodeAgentStatus{
+		State: swarmtypes.NodeAgentStateAmbiguous,
+		Candidates: []swarmtypes.NodeAgentCandidate{{
 			EnvironmentID:   "env-1",
 			EnvironmentName: "worker-1",
 			EnvironmentType: "edge",
@@ -53,7 +55,7 @@ func TestNodeAgentStatusAmbiguousJSON(t *testing.T) {
 }
 
 func TestSwarmJoinEnvironmentResultDoesNotExposeToken(t *testing.T) {
-	result := SwarmJoinEnvironmentResult{EnvironmentID: "env-1", State: SwarmJoinEnvironmentResultJoined}
+	result := swarmtypes.SwarmJoinEnvironmentResult{EnvironmentID: "env-1", State: swarmtypes.SwarmJoinEnvironmentResultJoined}
 	encoded, err := json.Marshal(result)
 	if err != nil {
 		t.Fatalf("marshal join result: %v", err)

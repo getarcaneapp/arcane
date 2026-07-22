@@ -356,19 +356,6 @@ type DetailsOptions struct {
 	IncludeUpdateInfo      bool
 }
 
-func AllDetails() DetailsOptions {
-	return DetailsOptions{
-		IncludeComposeContent:  true,
-		IncludeEnvState:        true,
-		IncludeIncludeFiles:    true,
-		IncludeServiceConfigs:  true,
-		IncludeDirectoryFiles:  true,
-		IncludeProjectFiles:    true,
-		IncludeRuntimeServices: true,
-		IncludeUpdateInfo:      true,
-	}
-}
-
 // CreateReponse is the response when a project is created.
 type CreateReponse struct {
 	// ID is the unique identifier of the project.

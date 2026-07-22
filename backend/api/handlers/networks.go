@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
@@ -216,7 +217,7 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 	}
 
 	// Convert to Docker SDK options
-	dockerOptions := input.Body.Options.ToDockerCreateOptions()
+	dockerOptions := dockerutil.NewNetworkCreateOptions(input.Body.Options)
 
 	var response *dockernetwork.CreateResponse
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)

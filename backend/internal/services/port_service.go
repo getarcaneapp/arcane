@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"emperror.dev/errors"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	porttypes "github.com/getarcaneapp/arcane/types/v2/port"
@@ -34,7 +35,7 @@ func (s *PortService) ListPortsPaginated(ctx context.Context, params pagination.
 
 	items := make([]porttypes.PortMapping, 0)
 	for _, rawContainer := range containerList.Items {
-		summary := containertypes.NewSummary(rawContainer)
+		summary := dockerutils.NewContainerSummary(rawContainer)
 		containerName := primaryContainerNameInternal(summary.Names, summary.ID)
 		for _, port := range summary.Ports {
 			items = append(items, porttypes.PortMapping{

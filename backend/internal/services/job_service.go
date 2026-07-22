@@ -183,7 +183,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 	}
 
 	var rescheduleErrors []error
-	for jobID, jobMeta := range meta.GetAllJobMetadata() {
+	for jobID, jobMeta := range jobMetadataRegistry {
 		if !jobMetadataAffectedBySettingInternal(jobMeta, changed) {
 			continue
 		}
@@ -300,7 +300,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 		return nil, errors.New("job service not initialized")
 	}
 
-	allMetadata := meta.GetAllJobMetadata()
+	allMetadata := jobMetadataRegistry
 	jobs := make([]jobschedule.JobStatus, 0, len(allMetadata))
 
 	for _, jobMeta := range allMetadata {
@@ -316,7 +316,7 @@ func (s *JobService) ListJobs(ctx context.Context) (*jobschedule.JobListResponse
 			}
 		}
 
-		jobStatus := jobMeta.ToJobStatus(schedule, nextRun, enabled, prerequisites)
+		jobStatus := toJobStatusInternal(jobMeta, schedule, nextRun, enabled, prerequisites)
 		jobs = append(jobs, jobStatus)
 	}
 
@@ -339,7 +339,7 @@ func (s *JobService) RunJobNowInline(ctx context.Context, jobID string) error {
 	if jobID == "environment-health" && s.RunEnvironmentHealthNow != nil {
 		return s.RunEnvironmentHealthNow(context.WithoutCancel(ctx))
 	}
-	jobMeta, ok := meta.GetJobMetadata(jobID)
+	jobMeta, ok := jobMetadataRegistry[jobID]
 	if ok && jobMeta.IsContinuous && jobMeta.CanRunManually {
 		if s == nil || s.scheduler == nil {
 			return errors.New("job service or scheduler not initialized")
@@ -363,16 +363,16 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 		return nil, errors.New("job service or scheduler not initialized")
 	}
 
-	meta, ok := meta.GetJobMetadata(jobID)
+	jobMeta, ok := jobMetadataRegistry[jobID]
 	if !ok {
 		return nil, errors.Errorf("unknown job: %s", jobID)
 	}
 
-	if !meta.CanRunManually {
+	if !jobMeta.CanRunManually {
 		return nil, errors.Errorf("job %s cannot be run manually", jobID)
 	}
 
-	if s.cfg != nil && s.cfg.AgentMode && meta.ManagerOnly {
+	if s.cfg != nil && s.cfg.AgentMode && jobMeta.ManagerOnly {
 		return nil, errors.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
 	}
 

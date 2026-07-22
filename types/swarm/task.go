@@ -2,8 +2,6 @@ package swarm
 
 import (
 	"time"
-
-	"github.com/moby/moby/api/types/swarm"
 )
 
 type TaskSummary struct {
@@ -76,56 +74,4 @@ type TaskSummary struct {
 	//
 	// Required: true
 	UpdatedAt time.Time `json:"updatedAt"`
-}
-
-// NewTaskSummary converts a Docker swarm task into the API-facing TaskSummary shape.
-//
-// It extracts task identity, service and node names supplied by the caller,
-// container image and container ID details when available, and falls back from
-// the Docker task error field to the task status message when necessary.
-//
-// task is the Docker swarm task to summarize.
-// serviceName is the human-readable service name associated with task.
-// nodeName is the human-readable node name associated with task.
-//
-// Returns a TaskSummary populated from task and the supplied display names.
-func NewTaskSummary(task swarm.Task, serviceName, nodeName string) TaskSummary {
-	name := ""
-	if task.Name != "" {
-		name = task.Name
-	}
-
-	image := ""
-	if task.Spec.ContainerSpec != nil {
-		image = task.Spec.ContainerSpec.Image
-	}
-
-	containerID := ""
-	if task.Status.ContainerStatus != nil {
-		containerID = task.Status.ContainerStatus.ContainerID
-	}
-
-	errorMessage := task.Status.Err
-	if errorMessage == "" {
-		errorMessage = task.Status.Message
-	}
-
-	slot := task.Slot
-
-	return TaskSummary{
-		ID:           task.ID,
-		Name:         name,
-		ServiceID:    task.ServiceID,
-		ServiceName:  serviceName,
-		NodeID:       task.NodeID,
-		NodeName:     nodeName,
-		DesiredState: string(task.DesiredState),
-		CurrentState: string(task.Status.State),
-		Error:        errorMessage,
-		ContainerID:  containerID,
-		Image:        image,
-		Slot:         slot,
-		CreatedAt:    task.CreatedAt,
-		UpdatedAt:    task.UpdatedAt,
-	}
 }

@@ -47,6 +47,19 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
+func allProjectDetailsInternal() projecttypes.DetailsOptions {
+	return projecttypes.DetailsOptions{
+		IncludeComposeContent:  true,
+		IncludeEnvState:        true,
+		IncludeIncludeFiles:    true,
+		IncludeServiceConfigs:  true,
+		IncludeDirectoryFiles:  true,
+		IncludeProjectFiles:    true,
+		IncludeRuntimeServices: true,
+		IncludeUpdateInfo:      true,
+	}
+}
+
 func TestWriteProjectProgressInternal_SuppressedContextSkipsProgress(t *testing.T) {
 	ctx := context.Background()
 	var buf bytes.Buffer
@@ -2068,7 +2081,7 @@ services:
 	includePath := filepath.Join(projectPath, "metadata.yaml")
 	assert.NoFileExists(t, includePath)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
+	details, err := svc.GetProjectDetails(ctx, project.ID, allProjectDetailsInternal())
 	require.NoError(t, err)
 	require.Len(t, details.IncludeFiles, 1)
 	assert.Equal(t, "metadata.yaml", details.IncludeFiles[0].RelativePath)
@@ -3603,7 +3616,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	}
 	require.NoError(t, db.Create(project).Error)
 
-	details, err := svc.GetProjectDetails(ctx, project.ID, projecttypes.AllDetails())
+	details, err := svc.GetProjectDetails(ctx, project.ID, allProjectDetailsInternal())
 	require.NoError(t, err)
 	assert.Equal(t, "BASE=git\nTOKEN=secret\n", details.EnvContent)
 }
@@ -3735,7 +3748,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 		CheckTime:      time.Now().UTC(),
 	}).Error)
 
-	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, projecttypes.AllDetails())
+	details, err := svc.GetProjectDetails(ctx, projectRecord.ID, allProjectDetailsInternal())
 	require.NoError(t, err)
 	require.NotNil(t, details.UpdateInfo)
 	assert.Equal(t, "has_update", details.UpdateInfo.Status)
@@ -5414,7 +5427,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	assert.Equal(t, composeContent, composeFromContent)
 	assert.Equal(t, "TZ=UTC\n", envFromContent)
 
-	details, err := svc.GetProjectDetails(ctx, syncProjectID, projecttypes.AllDetails())
+	details, err := svc.GetProjectDetails(ctx, syncProjectID, allProjectDetailsInternal())
 	require.NoError(t, err)
 	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
 	assert.Equal(t, composeContent, details.ComposeContent)

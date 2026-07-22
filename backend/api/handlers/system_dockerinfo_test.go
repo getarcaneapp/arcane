@@ -1,14 +1,15 @@
-package dockerinfo
+package handlers
 
 import (
 	json "encoding/json/v2"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/types/v2/dockerinfo"
 	"github.com/moby/moby/api/types/system"
 )
 
 func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
-	data, err := json.Marshal(Info{
+	data, err := json.Marshal(dockerinfo.Info{
 		Info: system.Info{
 			Name:              "arcane-host",
 			NCPU:              8,

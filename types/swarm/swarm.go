@@ -36,21 +36,3 @@ type SwarmInfo struct {
 	// Required: true
 	RootRotationInProgress bool `json:"rootRotationInProgress"`
 }
-
-// NewSwarmInfo converts a Docker swarm inspection result into the API-facing SwarmInfo shape.
-//
-// It copies the cluster identifiers, timestamps, spec, and root-rotation state
-// from the Docker SDK type without mutating the source value.
-//
-// s is the Docker swarm value returned by the Docker client.
-//
-// Returns the serialized swarm metadata used by the Arcane API.
-func NewSwarmInfo(s swarm.Swarm) SwarmInfo {
-	return SwarmInfo{
-		ID:                     s.ID,
-		CreatedAt:              s.CreatedAt,
-		UpdatedAt:              s.UpdatedAt,
-		Spec:                   s.Spec,
-		RootRotationInProgress: s.RootRotationInProgress,
-	}
-}

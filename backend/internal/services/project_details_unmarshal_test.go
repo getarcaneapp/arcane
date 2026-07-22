@@ -1,10 +1,11 @@
-package project
+package services
 
 import (
 	json "encoding/json/v2"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 )
 
 func TestDetailsUnmarshalJSONAcceptsUnitBytesStringsAndNumbers(t *testing.T) {
@@ -24,7 +25,7 @@ func TestDetailsUnmarshalJSONAcceptsUnitBytesStringsAndNumbers(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			var details Details
+			var details projecttypes.Details
 			err := json.Unmarshal([]byte(test.payload), &details)
 			if err != nil {
 				t.Fatalf("unmarshal Details: %v", err)

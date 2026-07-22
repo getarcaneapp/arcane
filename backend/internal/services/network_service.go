@@ -333,7 +333,7 @@ func buildTopologyContainerInfoInternal(containers []container.Summary) map[stri
 func (s *NetworkService) convertToNetworkSummaries(rawNets []network.Summary, inUseByID, inUseByName map[string]bool) []networktypes.Summary {
 	items := make([]networktypes.Summary, 0, len(rawNets))
 	for _, n := range rawNets {
-		netDto := networktypes.NewSummary(n)
+		netDto := dockerutil.NewNetworkSummary(n)
 		netDto.InUse = inUseByID[netDto.ID] || inUseByName[netDto.Name]
 		netDto.IsDefault = dockerutil.IsDefaultNetwork(netDto.Name)
 		items = append(items, netDto)

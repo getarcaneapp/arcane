@@ -121,7 +121,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 		}
 	}
 
-	v := volumetypes.NewSummary(vol)
+	v := docker.NewVolumeSummary(vol)
 
 	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, name)
 	if err != nil {
@@ -167,7 +167,7 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 
 	docker.InvalidateVolumeUsageCache(dockerClient)
 
-	return new(volumetypes.NewSummary(vol.Volume)), nil
+	return new(docker.NewVolumeSummary(vol.Volume)), nil
 }
 
 func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force bool, user models.User) error {
@@ -2225,7 +2225,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 
 	items := make([]volumetypes.Volume, 0, len(volumes))
 	for _, v := range volumes {
-		volDto := volumetypes.NewSummary(v)
+		volDto := docker.NewVolumeSummary(v)
 		if !includeInternal && s.isInternalVolumeInternal(volDto) {
 			continue
 		}

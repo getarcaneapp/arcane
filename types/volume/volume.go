@@ -128,34 +128,3 @@ type Create struct {
 	// Required: false
 	Labels map[string]string `json:"labels,omitempty" doc:"User-defined labels"`
 }
-
-// NewSummary creates a Volume from a docker volume.Volume, calculating InUse
-// based on whether the volume has a reference count of 1 or more.
-//
-// InUse is set to true if the volume's UsageData.RefCount is >= 1, false otherwise.
-func NewSummary(v volume.Volume) Volume {
-	mountpoint := v.Mountpoint
-	if v.Options["type"] == "none" && v.Options["device"] != "" {
-		mountpoint = v.Options["device"]
-	}
-
-	dto := Volume{
-		ID:         v.Name,
-		Name:       v.Name,
-		Driver:     v.Driver,
-		Mountpoint: mountpoint,
-		Scope:      v.Scope,
-		Options:    v.Options,
-		Labels:     v.Labels,
-		CreatedAt:  v.CreatedAt,
-		Containers: make([]string, 0),
-	}
-
-	if v.UsageData != nil {
-		dto.InUse = v.UsageData.RefCount >= 1
-		dto.UsageData = v.UsageData
-		dto.Size = v.UsageData.Size
-	}
-
-	return dto
-}

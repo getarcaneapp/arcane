@@ -733,7 +733,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 		return containertypes.Details{}, err
 	}
 
-	details := containertypes.NewDetails(containerInspect)
+	details := dockerutils.NewContainerDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	s.applyContainerDetailsIconInternal(ctx, &details)
@@ -1214,7 +1214,7 @@ func (s *ContainerService) getUpdateInfoMap(ctx context.Context, imageIDs []stri
 func (s *ContainerService) buildContainerSummaries(containers []container.Summary, updateInfoMap map[string]*imagetypes.UpdateInfo, currentContainerID string, currentContainerErr error) []containertypes.Summary {
 	items := make([]containertypes.Summary, 0, len(containers))
 	for _, dc := range containers {
-		summary := containertypes.NewSummary(dc)
+		summary := dockerutils.NewContainerSummary(dc)
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}

@@ -177,7 +177,7 @@ func (s *SwarmService) ListServicesPaginated(ctx context.Context, params paginat
 			}
 			sort.Strings(nodeNames)
 		}
-		items = append(items, swarmtypes.NewServiceSummary(service, nodeNames, networkNameByID))
+		items = append(items, dockerutil.NewSwarmServiceSummary(service, nodeNames, networkNameByID))
 	}
 
 	config := s.buildServicePaginationConfigInternal()
@@ -203,7 +203,7 @@ func (s *SwarmService) GetService(ctx context.Context, serviceID string) (*swarm
 	}
 	service := serviceResult.Service
 
-	inspect := swarmtypes.NewServiceInspect(service)
+	inspect := dockerutil.NewSwarmServiceInspect(service)
 	inspect.Nodes = s.resolveServiceNodeNamesInternal(ctx, dockerClient, serviceID)
 	inspect.NetworkDetails = s.enrichServiceNetworkDetailsInternal(ctx, dockerClient, service.Spec.TaskTemplate.Networks)
 	inspect.Mounts = s.enrichServiceMountsInternal(ctx, dockerClient, service.Spec.TaskTemplate.ContainerSpec)
@@ -514,7 +514,7 @@ func (s *SwarmService) ListNodesPaginated(ctx context.Context, environmentID str
 
 	items := make([]swarmtypes.NodeSummary, 0, len(nodes))
 	for _, node := range nodes {
-		items = append(items, swarmtypes.NewNodeSummary(node))
+		items = append(items, dockerutil.NewSwarmNodeSummary(node))
 	}
 
 	s.enrichNodeAgentStatusesInternal(ctx, environmentID, items)
@@ -558,7 +558,7 @@ func (s *SwarmService) GetNode(ctx context.Context, environmentID, nodeID string
 		return nil, errors.WrapIf(err, "failed to inspect swarm node")
 	}
 
-	items := []swarmtypes.NodeSummary{swarmtypes.NewNodeSummary(nodeResult.Node)}
+	items := []swarmtypes.NodeSummary{dockerutil.NewSwarmNodeSummary(nodeResult.Node)}
 	s.enrichNodeAgentStatusesInternal(ctx, environmentID, items)
 	return new(items[0]), nil
 }
@@ -1165,7 +1165,7 @@ func (s *SwarmService) ListTasksPaginated(ctx context.Context, params pagination
 
 	items := make([]swarmtypes.TaskSummary, 0, len(tasks))
 	for _, task := range tasks {
-		items = append(items, swarmtypes.NewTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
+		items = append(items, dockerutil.NewSwarmTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
 	}
 
 	config := s.buildTaskPaginationConfigInternal()
@@ -1312,7 +1312,7 @@ func (s *SwarmService) GetSwarmInfo(ctx context.Context) (*swarmtypes.SwarmInfo,
 		return nil, errors.WrapIf(err, "failed to inspect swarm")
 	}
 
-	return new(swarmtypes.NewSwarmInfo(infoResult.Swarm)), nil
+	return new(dockerutil.NewSwarmInfo(infoResult.Swarm)), nil
 }
 
 func (s *SwarmService) InitSwarm(ctx context.Context, req swarmtypes.SwarmInitRequest) (*swarmtypes.SwarmInitResponse, error) {
@@ -2132,7 +2132,7 @@ func (s *SwarmService) ListConfigs(ctx context.Context) ([]swarmtypes.ConfigSumm
 
 	items := make([]swarmtypes.ConfigSummary, 0, len(configsResult.Items))
 	for _, cfg := range configsResult.Items {
-		items = append(items, swarmtypes.NewConfigSummary(cfg))
+		items = append(items, dockerutil.NewSwarmConfigSummary(cfg))
 	}
 	return items, nil
 }
@@ -2152,7 +2152,7 @@ func (s *SwarmService) GetConfig(ctx context.Context, configID string) (*swarmty
 		return nil, errors.WrapIf(err, "failed to inspect swarm config")
 	}
 
-	return new(swarmtypes.NewConfigSummary(cfgResult.Config)), nil
+	return new(dockerutil.NewSwarmConfigSummary(cfgResult.Config)), nil
 }
 
 func (s *SwarmService) CreateConfig(ctx context.Context, req swarmtypes.ConfigCreateRequest) (*swarmtypes.ConfigSummary, error) {
@@ -2218,7 +2218,7 @@ func (s *SwarmService) ListSecrets(ctx context.Context) ([]swarmtypes.SecretSumm
 
 	items := make([]swarmtypes.SecretSummary, 0, len(secretsResult.Items))
 	for _, secret := range secretsResult.Items {
-		items = append(items, swarmtypes.NewSecretSummary(secret))
+		items = append(items, dockerutil.NewSwarmSecretSummary(secret))
 	}
 	return items, nil
 }
@@ -2238,7 +2238,7 @@ func (s *SwarmService) GetSecret(ctx context.Context, secretID string) (*swarmty
 		return nil, errors.WrapIf(err, "failed to inspect swarm secret")
 	}
 
-	return new(swarmtypes.NewSecretSummary(secretResult.Secret)), nil
+	return new(dockerutil.NewSwarmSecretSummary(secretResult.Secret)), nil
 }
 
 func (s *SwarmService) CreateSecret(ctx context.Context, req swarmtypes.SecretCreateRequest) (*swarmtypes.SecretSummary, error) {
@@ -2323,7 +2323,7 @@ func (s *SwarmService) listTasksPaginatedWithFiltersInternal(ctx context.Context
 
 	items := make([]swarmtypes.TaskSummary, 0, len(tasksResult.Items))
 	for _, task := range tasksResult.Items {
-		items = append(items, swarmtypes.NewTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
+		items = append(items, dockerutil.NewSwarmTaskSummary(task, serviceNameByID[task.ServiceID], nodeNameByID[task.NodeID]))
 	}
 
 	config := s.buildTaskPaginationConfigInternal()
@@ -2389,7 +2389,7 @@ func (s *SwarmService) summarizeServicesInternal(ctx context.Context, dockerClie
 			}
 			sort.Strings(nodeNames)
 		}
-		summaries = append(summaries, swarmtypes.NewServiceSummary(service, nodeNames, networkNameByID))
+		summaries = append(summaries, dockerutil.NewSwarmServiceSummary(service, nodeNames, networkNameByID))
 	}
 
 	return summaries, nil

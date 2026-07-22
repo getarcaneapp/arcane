@@ -99,7 +99,7 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		return nil, err
 	}
 
-	out := imagetypes.NewDetailSummary(&inspect)
+	out := dockerutils.NewImageDetailSummary(&inspect)
 	if listSize > 0 {
 		out.Size = listSize
 		out.Descriptor.Size = listSize

@@ -27,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/google/uuid"
 	"github.com/moby/moby/client"
 	"github.com/samber/hot"
@@ -140,8 +139,8 @@ func (s *EnvironmentService) schedulerCtxInternal(ctx context.Context) context.C
 // the global environmentHealthInterval (environment health has no per-entity
 // interval); the run body re-reads nothing it can't and self-cancels cleanly when
 // the environment is gone.
-func (s *EnvironmentService) buildHealthJobInternal(envID string) *schedulertypes.GenericJob {
-	return &schedulertypes.GenericJob{
+func (s *EnvironmentService) buildHealthJobInternal(envID string) *GenericJob {
+	return &GenericJob{
 		JobName: environmentHealthJobNameInternal(envID),
 		ScheduleFn: func(ctx context.Context) string {
 			sched := s.settingsService.GetStringSetting(ctx, "environmentHealthInterval", defaultEnvironmentHealthInterval)

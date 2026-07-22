@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/stretchr/testify/require"
 )
 
@@ -336,7 +336,7 @@ func TestJobScheduler_RemoveJob_RemovesEntryAndIsNoopWhenAbsent(t *testing.T) {
 func TestJobScheduler_AddJob_GenericJobWithoutShouldRunIsScheduled(t *testing.T) {
 	js := NewJobScheduler(context.Background(), nil)
 
-	job := &schedulertypes.GenericJob{
+	job := &services.GenericJob{
 		JobName:    "generic-dyn",
 		ScheduleFn: func(context.Context) string { return "@every 1m" },
 		RunFn:      func(context.Context) {},

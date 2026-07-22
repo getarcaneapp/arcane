@@ -17,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -595,8 +596,8 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 	}
 
 	// Get full image name with tag and credentials
-	fullImageName := input.Body.GetFullImageName()
-	credentials := input.Body.GetCredentials()
+	fullImageName := dockerutil.FullImageName(input.Body)
+	credentials := dockerutil.PullCredentials(input.Body)
 
 	return &huma.StreamResponse{
 		Body: func(humaCtx huma.Context) { //nolint:contextcheck // context is obtained from humaCtx.Context()
@@ -760,7 +761,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune images").Error())
 	}
 
-	out := image.NewPruneReport(*report)
+	out := dockerutil.NewImagePruneReport(*report)
 
 	return &PruneImagesOutput{
 		Body: base.ApiResponse[image.PruneReport]{

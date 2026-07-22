@@ -128,15 +128,24 @@ func RegisterGitOpsSyncs(api huma.API, syncService *services.GitOpsSyncService) 
 	registerGitOpsSecuredInternal(api, "browseGitOpsSyncFiles", "GET", "/environments/{id}/gitops-syncs/{syncId}/files", "Browse GitOps sync files", "Browse files in the synced repository", authz.PermGitOpsRead, h.BrowseFiles)
 }
 
+// hasPreDeployConfigInternal reports whether a request carries any pre-deploy
+// lifecycle hook field. A nil pointer means the field is absent from the body.
+func hasPreDeployConfigInternal(scriptPath, runnerImage, environment, extraMounts, networkMode *string, timeoutSeconds *int) bool {
+	return scriptPath != nil ||
+		runnerImage != nil ||
+		environment != nil ||
+		extraMounts != nil ||
+		networkMode != nil ||
+		timeoutSeconds != nil
+}
+
 // requireLifecyclePermissionInternal rejects callers lacking gitops:lifecycle
 // for the target environment when a create/update request configures the
 // pre-deploy lifecycle hook. Configuring the hook lets the caller run an
 // arbitrary container — with host bind mounts, env, and network access — on
 // every sync, so it is gated behind its own permission (seeded only into the
 // Admin built-in role) rather than the broader gitops:create / gitops:update
-// permissions that non-admin roles such as Editor hold. Whether a request
-// touches the hook is decided by the request type itself
-// (gitops.*SyncRequest.HasPreDeployConfig) so the field set has a single owner.
+// permissions that non-admin roles such as Editor hold.
 func requireLifecyclePermissionInternal(ctx context.Context, environmentID string, lifecycleRequested bool) error {
 	if !lifecycleRequested {
 		return nil
@@ -172,7 +181,15 @@ func (h *GitOpsSyncHandler) ListSyncs(ctx context.Context, input *ListGitOpsSync
 
 // CreateSync creates a new GitOps sync.
 func (h *GitOpsSyncHandler) CreateSync(ctx context.Context, input *CreateGitOpsSyncInput) (*CreateGitOpsSyncOutput, error) {
-	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+	lifecycleRequested := hasPreDeployConfigInternal(
+		input.Body.PreDeployScriptPath,
+		input.Body.PreDeployRunnerImage,
+		input.Body.PreDeployEnv,
+		input.Body.PreDeployExtraMounts,
+		input.Body.PreDeployNetworkMode,
+		input.Body.PreDeployTimeoutSec,
+	)
+	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, lifecycleRequested); err != nil {
 		return nil, err
 	}
 
@@ -235,7 +252,15 @@ func (h *GitOpsSyncHandler) GetSync(ctx context.Context, input *GetGitOpsSyncInp
 
 // UpdateSync updates an existing GitOps sync.
 func (h *GitOpsSyncHandler) UpdateSync(ctx context.Context, input *UpdateGitOpsSyncInput) (*UpdateGitOpsSyncOutput, error) {
-	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, input.Body.HasPreDeployConfig()); err != nil {
+	lifecycleRequested := hasPreDeployConfigInternal(
+		input.Body.PreDeployScriptPath,
+		input.Body.PreDeployRunnerImage,
+		input.Body.PreDeployEnv,
+		input.Body.PreDeployExtraMounts,
+		input.Body.PreDeployNetworkMode,
+		input.Body.PreDeployTimeoutSec,
+	)
+	if err := requireLifecyclePermissionInternal(ctx, input.EnvironmentID, lifecycleRequested); err != nil {
 		return nil, err
 	}
 

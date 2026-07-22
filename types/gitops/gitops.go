@@ -575,31 +575,6 @@ type UpdateSyncRequest struct {
 	PreDeployNetworkMode *string `json:"preDeployNetworkMode,omitempty"`
 }
 
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. Configuring the hook is gated behind the dedicated
-// gitops:lifecycle permission (see the GitOps sync handlers), so callers use
-// this to decide whether that authorization check applies. A nil pointer means
-// the field is absent from the request body.
-func (r CreateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
-}
-
-// HasPreDeployConfig reports whether the request carries any pre-deploy
-// lifecycle hook field. See CreateSyncRequest.HasPreDeployConfig.
-func (r UpdateSyncRequest) HasPreDeployConfig() bool {
-	return r.PreDeployScriptPath != nil ||
-		r.PreDeployRunnerImage != nil ||
-		r.PreDeployEnv != nil ||
-		r.PreDeployExtraMounts != nil ||
-		r.PreDeployNetworkMode != nil ||
-		r.PreDeployTimeoutSec != nil
-}
-
 // SyncResult represents the result of a sync operation.
 type SyncResult struct {
 	// Success indicates if the sync was successful.

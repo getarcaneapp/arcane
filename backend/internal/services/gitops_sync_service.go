@@ -395,10 +395,10 @@ func (s *GitOpsSyncService) schedulerCtxInternal(ctx context.Context) context.Co
 // fixed "@every Nm" interval; the run body re-reads the sync each fire (so a row
 // deleted or toggled to AutoSync=false self-cancels cleanly) and delegates to
 // PerformSync, which owns its own timeout and the per-sync in-flight guard.
-func (s *GitOpsSyncService) buildSyncJobInternal(syncID, environmentID string, intervalMinutes int) *schedulertypes.GenericJob {
+func (s *GitOpsSyncService) buildSyncJobInternal(syncID, environmentID string, intervalMinutes int) *GenericJob {
 	interval := max(intervalMinutes, 1)
 	schedule := fmt.Sprintf("@every %dm", interval)
-	return &schedulertypes.GenericJob{
+	return &GenericJob{
 		JobName: gitOpsSyncJobNameInternal(syncID),
 		ScheduleFn: func(_ context.Context) string {
 			return schedule
