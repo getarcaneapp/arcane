@@ -54,7 +54,7 @@ jobs:
         uses: depot/setup-action@v1
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
           cache: true
@@ -103,7 +103,7 @@ jobs:
         uses: actions/checkout@v7.0.0
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
           cache-dependency-path: ${{ matrix.module.name }}/go.sum
@@ -125,7 +125,7 @@ jobs:
         uses: actions/checkout@v7.0.0
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: backend/go.mod
           cache-dependency-path: backend/go.sum
@@ -327,7 +327,7 @@ jobs:
           cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: cli/go.mod
           cache-dependency-path: cli/go.sum
