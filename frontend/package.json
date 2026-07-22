@@ -71,7 +71,7 @@
     "@typescript/native-preview": "7.0.0-dev.20260707.2",
     "fallow": "^3.7.1",
     "isomorphic-dompurify": "^3.19.0",
-    "oxfmt": "^0.58.0",
+    "oxfmt": "^0.59.0",
     "paneforge": "^1.0.2",
     "shadcn-svelte": "^1.4.1",
     "svelte-check-rs": "^0.11.0",
