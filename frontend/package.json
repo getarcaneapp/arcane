@@ -26,7 +26,7 @@
     "@codemirror/merge": "^6.12.2",
     "@codemirror/state": "^6.6.0",
     "@codemirror/view": "^6.43.6",
-    "@fontsource-variable/geist-mono": "^5.2.8",
+    "@fontsource-variable/geist-mono": "^5.3.0",
     "@fontsource-variable/montserrat": "^5.3.0",
     "@internationalized/date": "^3.12.2",
     "@lezer/highlight": "^1.2.3",
