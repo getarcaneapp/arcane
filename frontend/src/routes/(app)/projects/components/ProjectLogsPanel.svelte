@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import LogViewer from '$lib/components/logs/log-viewer.svelte';
-	import LogControls from '$lib/components/logs/log-controls.svelte';
-	import LogPanelTitle from '$lib/components/logs/log-panel-title.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { TerminalIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import LogViewer from '#lib/components/logs/log-viewer.svelte';
+	import LogControls from '#lib/components/logs/log-controls.svelte';
+	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { TerminalIcon } from '#lib/icons';
 
 	let {
 		projectId,

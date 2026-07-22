@@ -1,8 +1,8 @@
-import { arcaneButtonVariants, actionConfigs } from '$lib/components/arcane-button/variants';
-import { m } from '$lib/paraglide/messages';
-import { templateService } from '$lib/services/template-service.js';
-import type { Template } from '$lib/types/swarm';
-import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
+import { arcaneButtonVariants, actionConfigs } from '#lib/components/arcane-button/variants';
+import { m } from '#lib/paraglide/messages';
+import { templateService } from '#lib/services/template-service.js';
+import type { Template } from '#lib/types/swarm';
+import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
 import { toast } from 'svelte-sonner';
 import { parseDocument } from 'yaml';
 import { z } from 'zod/v4';

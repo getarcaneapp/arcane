@@ -1,8 +1,8 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
 import { get } from 'svelte/store';
-import { defaultMobileNavigationSettings, type MobileNavigationSettings } from '$lib/config/navigation-config';
-import settingsStore from '$lib/stores/config-store';
+import { defaultMobileNavigationSettings, type MobileNavigationSettings } from '#lib/config/navigation-config';
+import settingsStore from '#lib/stores/config-store';
 
 // --- Mobile nav state ---
 

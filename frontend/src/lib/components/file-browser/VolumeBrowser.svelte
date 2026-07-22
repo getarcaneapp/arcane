@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { volumeBrowserService } from '$lib/services/volume-browser-service';
-	import { volumeBackupService } from '$lib/services/volume-backup-service';
-	import { queryKeys } from '$lib/query/query-keys';
+	import { volumeBrowserService } from '#lib/services/volume-browser-service';
+	import { volumeBackupService } from '#lib/services/volume-backup-service';
+	import { queryKeys } from '#lib/query/query-keys';
 	import GenericFileBrowser, { type FileProvider } from './GenericFileBrowser.svelte';
 	import { useQueryClient } from '@tanstack/svelte-query';
 

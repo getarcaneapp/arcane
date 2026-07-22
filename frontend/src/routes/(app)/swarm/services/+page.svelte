@@ -1,20 +1,20 @@
 <script lang="ts">
-	import { DockIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
+	import { DockIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
 	import { toast } from 'svelte-sonner';
 	import { untrack } from 'svelte';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { ResourcePageLayout, type StatCardConfig } from '$lib/layouts/index.js';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { parallelRefresh } from '$lib/utils/api';
-	import { createRefreshActionButtons } from '$lib/utils/resource-actions';
-	import type { SwarmServiceCreateSpec } from '$lib/types/swarm';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { ResourcePageLayout, type StatCardConfig } from '#lib/layouts/index.js';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
+	import { parallelRefresh } from '#lib/utils/api';
+	import { createRefreshActionButtons } from '#lib/utils/resource-actions';
+	import type { SwarmServiceCreateSpec } from '#lib/types/swarm';
 	import SwarmServicesTable from './services-table.svelte';
-	import ServiceEditorDialog from '$lib/components/dialogs/service-editor-dialog.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 	let { data } = $props();
 

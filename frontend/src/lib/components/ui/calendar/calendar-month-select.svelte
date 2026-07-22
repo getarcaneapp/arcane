@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { Calendar as CalendarPrimitive } from 'bits-ui';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
-	import { ArrowDownIcon } from '$lib/icons';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
+	import { ArrowDownIcon } from '#lib/icons';
 
 	let {
 		ref = $bindable(null),

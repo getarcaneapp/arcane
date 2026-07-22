@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import { ArrowDownIcon, ArrowRightIcon, FolderOpenIcon } from '$lib/icons';
-	import { cn } from '$lib/utils';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import { ArrowDownIcon, ArrowRightIcon, FolderOpenIcon } from '#lib/icons';
+	import { cn } from '#lib/utils';
 	import type { TreeViewFolderProps } from './types';
 
 	let { name, open = $bindable(false), class: className, icon, children }: TreeViewFolderProps = $props();

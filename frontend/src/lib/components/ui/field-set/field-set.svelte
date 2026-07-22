@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils';
 	import { fieldSetVariants } from './variants';
 	import type { FieldSetRootProps } from './types';
 

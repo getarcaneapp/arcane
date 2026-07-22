@@ -1,6 +1,6 @@
 import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
-import { streamCacheBuster } from '$lib/utils/streaming';
-import type { DashboardSnapshot } from '$lib/types/shared';
+import { streamCacheBuster } from '#lib/utils/streaming';
+import type { DashboardSnapshot } from '#lib/types/shared';
 
 interface GetDashboardOptions {
 	debugAllGood?: boolean;

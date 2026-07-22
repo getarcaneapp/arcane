@@ -2,7 +2,7 @@
 	import type { ArcaneSvelteTable } from './table-features';
 	import DataTableFacetedFilter from './arcane-table-filter.svelte';
 	import DataTableViewOptions from './arcane-table-view-options.svelte';
-	import { Input } from '$lib/components/ui/input/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import {
 		imageUpdateFilters,
 		usageFilters,
@@ -10,14 +10,14 @@
 		vulnerabilitySeverityFilters,
 		projectStatusFilters
 	} from './data.js';
-	import { debounced } from '$lib/utils/ws';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { m } from '$lib/paraglide/messages';
+	import { debounced } from '#lib/utils/ws';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { m } from '#lib/paraglide/messages';
 	import type { Snippet } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { ResetIcon, SearchIcon, FilterIcon } from '$lib/icons';
+	import { cn } from '#lib/utils';
+	import { ResetIcon, SearchIcon, FilterIcon } from '#lib/icons';
 	import type { BulkAction, FilterOption } from './arcane-table.types.svelte';
-	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 
 	let {
 		table,

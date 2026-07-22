@@ -1,13 +1,13 @@
-import { openConfirmDialog } from '$lib/components/confirm-dialog';
-import { m } from '$lib/paraglide/messages';
-import { deployOptionsStore } from '$lib/stores/deploy-options.store.svelte';
-import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
-import { projectService } from '$lib/services/project-service';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { handleApiResultWithCallbacks } from '$lib/utils/api';
-import { tryCatch } from '$lib/utils/api';
-import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-import type { TableActionConfig, TableBulkActionConfig } from '$lib/utils/table-action-types';
+import { openConfirmDialog } from '#lib/components/confirm-dialog';
+import { m } from '#lib/paraglide/messages';
+import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte';
+import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
+import { projectService } from '#lib/services/project-service';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { handleApiResultWithCallbacks } from '#lib/utils/api';
+import { tryCatch } from '#lib/utils/api';
+import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+import type { TableActionConfig, TableBulkActionConfig } from '#lib/utils/table-action-types';
 import { toast } from 'svelte-sonner';
 import type { ActionStatus } from './projects-table.helpers';
 

@@ -1,19 +1,19 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import EnvironmentMultiSelect from '$lib/components/sheets/environment-multi-select.svelte';
-	import { Button } from '$lib/components/ui/button';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { Textarea } from '$lib/components/ui/textarea';
-	import * as RadioGroup from '$lib/components/ui/radio-group/index.js';
-	import type { Environment } from '$lib/types/environment';
-	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '$lib/types/variable';
-	import { parseEnvText, normalizeVariableKeyInput } from '$lib/utils/env-file';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import EnvironmentMultiSelect from '#lib/components/sheets/environment-multi-select.svelte';
+	import { Button } from '#lib/components/ui/button';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import { Textarea } from '#lib/components/ui/textarea';
+	import * as RadioGroup from '#lib/components/ui/radio-group/index.js';
+	import type { Environment } from '#lib/types/environment';
+	import type { GlobalVariable, GlobalVariableCreateDto, GlobalVariableUpdateDto } from '#lib/types/variable';
+	import { parseEnvText, normalizeVariableKeyInput } from '#lib/utils/env-file';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import * as m from '$lib/paraglide/messages.js';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import * as m from '#lib/paraglide/messages.js';
 
 	type VariableFormPayload =
 		| { mode: 'create'; variable: GlobalVariableCreateDto }

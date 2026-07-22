@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Alert from '$lib/components/ui/alert';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Label } from '$lib/components/ui/label';
-	import { authService } from '$lib/services/auth-service';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Label } from '#lib/components/ui/label';
+	import { authService } from '#lib/services/auth-service';
 	import { toast } from 'svelte-sonner';
-	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import { EyeOnIcon, EyeOffIcon, AlertIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	let {

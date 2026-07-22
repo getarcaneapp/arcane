@@ -1,40 +1,40 @@
 <script lang="ts">
-	import type { Project } from '$lib/types/swarm';
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '$lib/icons';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import type { Project } from '#lib/types/swarm';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { BoxIcon, EditIcon, StartIcon, RestartIcon, StopIcon, TrashIcon, RedeployIcon } from '#lib/icons';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter, formatDateTimeShort } from '$lib/utils/formatting';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
-	import { projectService } from '$lib/services/project-service';
-	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '$lib/icons';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { hasAnyLoadingState } from '$lib/utils/bulk-actions';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker';
+	import { capitalizeFirstLetter, formatDateTimeShort } from '#lib/utils/formatting';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
+	import { projectService } from '#lib/services/project-service';
+	import { FolderOpenIcon, LayersIcon, CalendarIcon, ProjectsIcon, GitBranchIcon, RefreshIcon } from '#lib/icons';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import IconImage from '#lib/components/icon-image.svelte';
 	import type { ActionStatus } from './projects-table.helpers';
 	import { createProjectActions } from './projects-table.actions';
-	import ProjectUpdateItem from '$lib/components/project-update-item.svelte';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch/index.js';
+	import ProjectUpdateItem from '#lib/components/project-update-item.svelte';
+	import { Label } from '#lib/components/ui/label';
+	import { Switch } from '#lib/components/ui/switch/index.js';
 	import {
 		getProjectUpdateStatus,
 		getProjectUpdateText,
 		getProjectUpdateTooltip,
 		getProjectUpdateVariant
-	} from '$lib/utils/docker';
+	} from '#lib/utils/docker';
 
 	let {
 		projects = $bindable(),

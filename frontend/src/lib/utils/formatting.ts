@@ -1,8 +1,8 @@
 import Convert from 'ansi-to-html';
 import { format as formatDate, setDefaultOptions, type Locale as DateFnsLocale } from 'date-fns';
 import { z } from 'zod/v4';
-import { setLocale as setParaglideLocale, type Locale } from '$lib/paraglide/runtime';
-import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
+import { setLocale as setParaglideLocale, type Locale } from '#lib/paraglide/runtime';
+import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
 
 // --- String helpers ---
 

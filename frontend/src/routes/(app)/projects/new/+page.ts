@@ -1,4 +1,4 @@
-import { loadTemplateAuthoringData, loadTemplateContent } from '$lib/utils/template-load';
+import { loadTemplateAuthoringData, loadTemplateContent } from '#lib/utils/template-load';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ url, parent }) => {

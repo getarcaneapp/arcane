@@ -1,9 +1,9 @@
-import type { User } from '$lib/types/auth';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
+import type { User } from '#lib/types/auth';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
 import { writable, get } from 'svelte/store';
-import { setLocale } from '$lib/utils/formatting';
-import { applyFontSize, FONT_SIZE_DEFAULT } from '$lib/utils/theme';
-import { timeFormatStore } from '$lib/stores/time-format.store.svelte';
+import { setLocale } from '#lib/utils/formatting';
+import { applyFontSize, FONT_SIZE_DEFAULT } from '#lib/utils/theme';
+import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
 
 const userStore = writable<User | null>(null);
 

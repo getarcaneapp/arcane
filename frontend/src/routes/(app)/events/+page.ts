@@ -1,8 +1,8 @@
-import { eventService } from '$lib/services/event-service';
-import { queryKeys } from '$lib/query/query-keys';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import { resolveInitialTableRequest } from '$lib/utils/tables';
-import { throwPageLoadError } from '$lib/utils/api';
+import { eventService } from '#lib/services/event-service';
+import { queryKeys } from '#lib/query/query-keys';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import { resolveInitialTableRequest } from '#lib/utils/tables';
+import { throwPageLoadError } from '#lib/utils/api';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {

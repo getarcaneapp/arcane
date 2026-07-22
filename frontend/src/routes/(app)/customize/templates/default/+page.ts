@@ -1,6 +1,6 @@
-import type { Template } from '$lib/types/swarm';
-import type { GlobalVariable } from '$lib/types/variable';
-import { loadTemplateAuthoringData } from '$lib/utils/template-load';
+import type { Template } from '#lib/types/swarm';
+import type { GlobalVariable } from '#lib/types/variable';
+import { loadTemplateAuthoringData } from '#lib/utils/template-load';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({

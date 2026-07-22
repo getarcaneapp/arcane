@@ -1,22 +1,22 @@
 <script lang="ts">
-	import CreateContainerDialog from '$lib/components/dialogs/create-container-dialog.svelte';
+	import CreateContainerDialog from '#lib/components/dialogs/create-container-dialog.svelte';
 	import { toast } from 'svelte-sonner';
-	import { containerService } from '$lib/services/container-service';
+	import { containerService } from '#lib/services/container-service';
 	import ContainerTable from './container-table.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import type { ContainerCreateRequest, ContainerStatusCounts } from '$lib/types/docker';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import type { ContainerCreateRequest, ContainerStatusCounts } from '#lib/types/docker';
 	import { createMutation } from '@tanstack/svelte-query';
-	import { BoxIcon } from '$lib/icons';
-	import { queryKeys } from '$lib/query/query-keys';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ContainerListRequestOptions } from '$lib/services/container-service';
+	import { BoxIcon } from '#lib/icons';
+	import { queryKeys } from '#lib/query/query-keys';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ContainerListRequestOptions } from '#lib/services/container-service';
 	import ContainerEnvironmentSync from './components/container-environment-sync.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { data } = $props();
 

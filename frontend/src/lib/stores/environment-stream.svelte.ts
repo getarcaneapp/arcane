@@ -1,6 +1,6 @@
 import { browser } from '$app/env';
-import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
-import type { Environment } from '$lib/types/environment';
+import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+import type { Environment } from '#lib/types/environment';
 
 const MAX_RECONNECT_DELAY = 15_000;
 const MAX_RECONNECT_ATTEMPTS = 20;

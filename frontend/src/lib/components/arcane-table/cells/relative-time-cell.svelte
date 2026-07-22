@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { formatDistanceToNow } from 'date-fns';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { formatDateTime } from '$lib/utils/formatting';
-	import { m } from '$lib/paraglide/messages';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { formatDateTime } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages';
 
 	let { value }: { value: unknown } = $props();
 

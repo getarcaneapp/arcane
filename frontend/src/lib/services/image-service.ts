@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type {
 	ImageSummaryDto,
 	ImageUsageCounts,
@@ -10,13 +10,13 @@ import type {
 	ImageHistoryItemDto,
 	ImageSearchResultDto,
 	ImageTagRequest
-} from '$lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import type { AutoUpdateCheck, AutoUpdateResult } from '$lib/types/automation';
-import type { PruneImagesOptions } from '$lib/types/automation';
-import { transformPaginationParams } from '$lib/utils/tables';
-import { readNdjsonStream } from '$lib/utils/streaming';
-import { m } from '$lib/paraglide/messages';
+} from '#lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+import type { AutoUpdateCheck, AutoUpdateResult } from '#lib/types/automation';
+import type { PruneImagesOptions } from '#lib/types/automation';
+import { transformPaginationParams } from '#lib/utils/tables';
+import { readNdjsonStream } from '#lib/utils/streaming';
+import { m } from '#lib/paraglide/messages';
 
 export type ImagePullResult = {
 	success: boolean;

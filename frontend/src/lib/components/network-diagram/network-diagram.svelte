@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { browser } from '$app/env';
 	import { goto } from '$app/navigation';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { Badge } from '$lib/components/ui/badge';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import { EyeOnIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '$lib/types/docker';
-	import { cn } from '$lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { Badge } from '#lib/components/ui/badge';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import { EyeOnIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import type { NetworkTopologyDto, TopologyEdgeDto, TopologyNodeDto } from '#lib/types/docker';
+	import { cn } from '#lib/utils';
 	import { mode } from 'mode-watcher';
 	import { PersistedState } from 'runed';
 	import { onMount } from 'svelte';

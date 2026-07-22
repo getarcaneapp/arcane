@@ -1,21 +1,21 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { LifecycleIndicator } from '$lib/components/lifecycle-indicator';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import RemoveMenuItem from '$lib/components/arcane-table/cells/remove-menu-item.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { LifecycleIndicator } from '#lib/components/lifecycle-indicator';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import RemoveMenuItem from '#lib/components/arcane-table/cells/remove-menu-item.svelte';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { GitOpsSync } from '$lib/types/automation';
-	import type { ColumnSpec, BulkAction, ArcaneRow } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import { m } from '$lib/paraglide/messages';
-	import { gitOpsSyncService } from '$lib/services/gitops-sync-service';
-	import { toGitCommitUrl } from '$lib/utils/navigation';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { GitOpsSync } from '#lib/types/automation';
+	import type { ColumnSpec, BulkAction, ArcaneRow } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages';
+	import { gitOpsSyncService } from '#lib/services/gitops-sync-service';
+	import { toGitCommitUrl } from '#lib/utils/navigation';
 	import {
 		EditIcon as PencilIcon,
 		StartIcon as PlayIcon,
@@ -24,8 +24,8 @@
 		GitBranchIcon,
 		ProjectsIcon as FolderIcon,
 		HashIcon
-	} from '$lib/icons';
-	import { bulkConfirmAndRun, confirmAndRun } from '$lib/utils/bulk-actions';
+	} from '#lib/icons';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
 
 	type FieldVisibility = Record<string, boolean>;
 

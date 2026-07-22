@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { Label } from '$lib/components/ui/label';
-	import { m } from '$lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import { extractApiErrorMessage } from '$lib/utils/api';
+	import { extractApiErrorMessage } from '#lib/utils/api';
 
 	type SwarmNodeLabelDialogProps = {
 		open: boolean;

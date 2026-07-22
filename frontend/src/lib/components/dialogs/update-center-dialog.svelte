@@ -1,19 +1,19 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as ScrollArea from '$lib/components/ui/scroll-area';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { queryKeys } from '$lib/query/query-keys';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import * as ScrollArea from '#lib/components/ui/scroll-area';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { onDestroy } from 'svelte';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import BaseAPIService from '$lib/services/api-service';
-	import { cn } from '$lib/utils';
-	import { ExternalLinkIcon, SuccessIcon } from '$lib/icons';
-	import type { AppVersionInformation } from '$lib/types/settings';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
+	import BaseAPIService from '#lib/services/api-service';
+	import { cn } from '#lib/utils';
+	import { ExternalLinkIcon, SuccessIcon } from '#lib/icons';
+	import type { AppVersionInformation } from '#lib/types/settings';
 	import { createQuery, useQueryClient } from '@tanstack/svelte-query';
 	import { formatDistanceToNow } from 'date-fns';
-	import ReleaseNotes from '$lib/components/release-notes.svelte';
+	import ReleaseNotes from '#lib/components/release-notes.svelte';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 
 	// open/upgrading have no $bindable fallback: upstream binds can start out

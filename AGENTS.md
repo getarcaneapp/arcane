@@ -207,7 +207,7 @@ just lint frontend                 # Svelte type checking
 | Svelte 4 syntax (`export let`, `on:click`, `$:`) | Svelte 5 runes (`$props()`, `onclick`, `$derived`) |
 | Hardcoded API paths without env ID               | Include `/environments/{id}/`                      |
 | Models without `BaseModel`                       | Embed `models.BaseModel`                           |
-| TypeScript `any`                                 | Proper types from `$lib/types`                     |
+| TypeScript `any`                                 | Proper types from `#lib/types`                     |
 | Hardcoded UI strings                             | Paraglide messages via `m.*()`                     |
 | Wrapping `pkg/` helpers                          | Call existing helpers directly                     |
 | New API standard (raw HTTP, untyped)             | Extend existing Huma typed handlers                |

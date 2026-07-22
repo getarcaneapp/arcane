@@ -1,19 +1,19 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
-	import DigestCell from '$lib/components/arcane-table/cells/digest-cell.svelte';
-	import CheckedAtCell from '$lib/components/arcane-table/cells/checked-at-cell.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-	import type { ContainerSummaryDto } from '$lib/types/docker';
-	import type { ImageUpdateInfoDto } from '$lib/types/docker';
-	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '$lib/services/container-service';
-	import { ContainersIcon, UpdateIcon } from '$lib/icons';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+	import type { ContainerSummaryDto } from '#lib/types/docker';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker';
+	import type { ContainersPaginatedResponse, ContainerListRequestOptions } from '#lib/services/container-service';
+	import { ContainersIcon, UpdateIcon } from '#lib/icons';
 	import { getContainerDisplayName } from '../containers/container-table.helpers';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { confirmAndUpdateContainer } from '$lib/utils/container-actions';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '$lib/utils/image-updates';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { confirmAndUpdateContainer } from '#lib/utils/container-actions';
+	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
 
 	type ContainerUpdateRow = {
 		id: string;

@@ -1,17 +1,17 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import * as Alert from '$lib/components/ui/alert';
-	import SearchableSelect from '$lib/components/form/searchable-select.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import SettingsRow from '$lib/components/settings/settings-row.svelte';
-	import { SecurityIcon, InfoIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import * as Alert from '#lib/components/ui/alert';
+	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import { SecurityIcon, InfoIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
-	import { networkService } from '$lib/services/network-service';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Settings } from '$lib/types/settings';
+	import { networkService } from '#lib/services/network-service';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Settings } from '#lib/types/settings';
 	import type { Readable } from 'svelte/store';
 
 	type TrivySecurityFormValues = Pick<

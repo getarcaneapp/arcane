@@ -1,10 +1,10 @@
-import { m } from '$lib/paraglide/messages';
-import type { ContainerStats, ContainerSummaryDto } from '$lib/types/docker';
-import type { Environment, EnvironmentStatus } from '$lib/types/environment';
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
-import type { ProjectUpdateInfo } from '$lib/types/swarm';
-import type { SwarmServiceModeName, SwarmServiceModeSpec } from '$lib/types/swarm';
-import type { VulnerabilityScanSummary } from '$lib/types/environment';
+import { m } from '#lib/paraglide/messages';
+import type { ContainerStats, ContainerSummaryDto } from '#lib/types/docker';
+import type { Environment, EnvironmentStatus } from '#lib/types/environment';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
+import type { ProjectUpdateInfo } from '#lib/types/swarm';
+import type { SwarmServiceModeName, SwarmServiceModeSpec } from '#lib/types/swarm';
+import type { VulnerabilityScanSummary } from '#lib/types/environment';
 
 // --- Container stats math ---
 

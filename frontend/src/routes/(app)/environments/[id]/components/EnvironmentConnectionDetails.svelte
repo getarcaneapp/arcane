@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge, type BadgeVariant } from '$lib/components/ui/badge';
-	import { cn } from '$lib/utils';
-	import { m } from '$lib/paraglide/messages';
-	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge, type BadgeVariant } from '#lib/components/ui/badge';
+	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
 
 	let {
 		environment,

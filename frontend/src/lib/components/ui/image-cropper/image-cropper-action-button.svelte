@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { Action, ArcaneButtonSize, ArcaneButtonTone } from '$lib/components/arcane-button';
+	import type { Action, ArcaneButtonSize, ArcaneButtonTone } from '#lib/components/arcane-button';
 
 	export type ImageCropperActionButtonProps = {
 		ref?: HTMLElement | null;
@@ -14,7 +14,7 @@
 </script>
 
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	import { ArcaneButton } from '#lib/components/arcane-button';
 
 	let {
 		ref = $bindable(null),

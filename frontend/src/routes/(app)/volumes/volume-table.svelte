@@ -1,32 +1,32 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { goto } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import { formatDateTimeShort, truncateString } from '$lib/utils/formatting';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { VolumeSummaryDto, VolumeSizeInfo } from '$lib/types/docker';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { volumeService } from '$lib/services/volume-service';
-	import { bytes } from '$lib/utils/formatting';
-	import { inUseBadge } from '$lib/utils/mobile-card-badges';
-	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '$lib/icons';
-	import { Spinner } from '$lib/components/ui/spinner';
-	import settingsStore from '$lib/stores/config-store';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { formatDateTimeShort, truncateString } from '#lib/utils/formatting';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { VolumeSummaryDto, VolumeSizeInfo } from '#lib/types/docker';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { volumeService } from '#lib/services/volume-service';
+	import { bytes } from '#lib/utils/formatting';
+	import { inUseBadge } from '#lib/utils/mobile-card-badges';
+	import { TrashIcon, InspectIcon, VolumesIcon, CalendarIcon } from '#lib/icons';
+	import { Spinner } from '#lib/components/ui/spinner';
+	import settingsStore from '#lib/stores/config-store';
 	import { untrack } from 'svelte';
 	import { SvelteMap } from 'svelte/reactivity';
 	import type { ColumnVisibilityState } from '@tanstack/table-core';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 
 	let {
 		volumes = $bindable(),

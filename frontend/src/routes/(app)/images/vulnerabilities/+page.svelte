@@ -1,22 +1,22 @@
 <script lang="ts">
-	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { vulnerabilityService } from '$lib/services/vulnerability-service';
-	import { imageService } from '$lib/services/image-service';
-	import { parallelRefresh } from '$lib/utils/api';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '$lib/types/environment';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { vulnerabilityService } from '#lib/services/vulnerability-service';
+	import { imageService } from '#lib/services/image-service';
+	import { parallelRefresh } from '#lib/utils/api';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
+	import type { EnvironmentVulnerabilitySummary, VulnerabilityWithImage, IgnoredVulnerability } from '#lib/types/environment';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { onMount, untrack } from 'svelte';
 	import SecurityVulnerabilityTable from './security-vulnerability-table.svelte';
 	import IgnoredVulnerabilitiesTable from './ignored-vulnerabilities-table.svelte';
 	import { toast } from 'svelte-sonner';
-	import { InspectIcon } from '$lib/icons';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '$lib/utils/vulnerability';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { InspectIcon } from '#lib/icons';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { mapVulnerabilityPage, mapVulnerabilityRequest } from '#lib/utils/vulnerability';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 

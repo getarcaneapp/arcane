@@ -1,6 +1,6 @@
 <script lang="ts">
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { cn } from '$lib/utils.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { cn } from '#lib/utils.js';
 	import type { TabItem } from './types.ts';
 
 	interface Props {

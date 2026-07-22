@@ -1,23 +1,23 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ContainerRegistry, ContainerRegistryPullUsage } from '$lib/types/docker';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import EnabledStatusCell from '$lib/components/arcane-table/cells/enabled-status-cell.svelte';
-	import CreatedAtCell from '$lib/components/arcane-table/cells/created-at-cell.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { containerRegistryService } from '$lib/services/container-registry-service';
-	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '$lib/icons';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ContainerRegistry, ContainerRegistryPullUsage } from '#lib/types/docker';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import EnabledStatusCell from '#lib/components/arcane-table/cells/enabled-status-cell.svelte';
+	import CreatedAtCell from '#lib/components/arcane-table/cells/created-at-cell.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { containerRegistryService } from '#lib/services/container-registry-service';
+	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '#lib/icons';
+	import { hasPermission } from '#lib/utils/auth';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
 		registries = $bindable(),

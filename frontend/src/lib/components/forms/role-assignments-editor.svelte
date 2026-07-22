@@ -1,19 +1,19 @@
 <script lang="ts">
-	import * as Select from '$lib/components/ui/select';
-	import { Checkbox } from '$lib/components/ui/checkbox';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Badge } from '$lib/components/ui/badge';
+	import * as Select from '#lib/components/ui/select';
+	import { Checkbox } from '#lib/components/ui/checkbox';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Badge } from '#lib/components/ui/badge';
 	import {
 		type Role,
 		BUILT_IN_ROLE_ADMIN,
 		BUILT_IN_ROLE_EDITOR,
 		BUILT_IN_ROLE_DEPLOYER,
 		BUILT_IN_ROLE_VIEWER
-	} from '$lib/types/auth';
-	import type { Environment } from '$lib/types/environment';
-	import { CloseIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { buildGlobalEnvironmentOptions, createRoleEnvironmentLabelers, GLOBAL_ENVIRONMENT_OPTION_ID } from '$lib/utils/options';
+	} from '#lib/types/auth';
+	import type { Environment } from '#lib/types/environment';
+	import { CloseIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { buildGlobalEnvironmentOptions, createRoleEnvironmentLabelers, GLOBAL_ENVIRONMENT_OPTION_ID } from '#lib/utils/options';
 
 	type Assignment = { roleId: string; environmentId?: string };
 

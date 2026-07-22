@@ -1,20 +1,20 @@
 <script lang="ts">
 	import { goto } from '$app/navigation';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { templateService } from '$lib/services/template-service';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { createForm } from '$lib/utils/settings';
-	import { tryCatch } from '$lib/utils/api';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { templateService } from '#lib/services/template-service';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { createForm } from '#lib/utils/settings';
+	import { tryCatch } from '#lib/utils/api';
 	import { toast } from 'svelte-sonner';
 	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		createNamedTemplateSchema,
 		getTemplateEditorValidationState,
 		hasTemplateEditorErrors,
 		validateTemplateEditorForm
-	} from '$lib/utils/template-editor';
+	} from '#lib/utils/template-editor';
 
 	let { data } = $props();
 

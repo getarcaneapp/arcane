@@ -4,28 +4,28 @@
 		getManagementItems,
 		getSwarmNavigationItems,
 		filterByPermissions
-	} from '$lib/config/navigation-config';
+	} from '#lib/config/navigation-config';
 </script>
 
 <script lang="ts">
 	import SidebarItemGroup from './sidebar-itemgroup.svelte';
 	import SidebarUser from './sidebar-user.svelte';
 	import SidebarEnvSwitcher from './sidebar-env-switcher.svelte';
-	import EnvironmentSwitcherDialog from '$lib/components/dialogs/environment-switcher-dialog.svelte';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
+	import EnvironmentSwitcherDialog from '#lib/components/dialogs/environment-switcher-dialog.svelte';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
 	import type { ComponentProps } from 'svelte';
-	import type { PermissionsManifest, User } from '$lib/types/auth';
-	import type { AppVersionInformation } from '$lib/types/settings';
+	import type { PermissionsManifest, User } from '#lib/types/auth';
+	import type { AppVersionInformation } from '#lib/types/settings';
 	import SidebarLogo from './sidebar-logo.svelte';
 	import SidebarUpdatebanner from './sidebar-updatebanner.svelte';
 	import SidebarPinButton from './sidebar-pin-button.svelte';
-	import ActivityCenterTrigger from '$lib/components/activity/activity-center-trigger.svelte';
-	import userStore from '$lib/stores/user-store';
-	import settingsStore from '$lib/stores/config-store';
-	import { m } from '$lib/paraglide/messages';
-	import VersionInfoDialog from '$lib/components/dialogs/version-info-dialog.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import ActivityCenterTrigger from '#lib/components/activity/activity-center-trigger.svelte';
+	import userStore from '#lib/stores/user-store';
+	import settingsStore from '#lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import VersionInfoDialog from '#lib/components/dialogs/version-info-dialog.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { fromStore } from 'svelte/store';
 
 	let {

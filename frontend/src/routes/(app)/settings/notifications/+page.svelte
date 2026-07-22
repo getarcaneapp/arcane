@@ -1,15 +1,15 @@
 <script lang="ts">
-	import * as Tabs from '$lib/components/ui/tabs';
-	import * as Dialog from '$lib/components/ui/dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import * as Tabs from '#lib/components/ui/tabs';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { toast } from 'svelte-sonner';
 	import { getContext, onMount } from 'svelte';
-	import { SettingsPageLayout } from '$lib/layouts';
-	import settingsStore from '$lib/stores/config-store';
-	import { m } from '$lib/paraglide/messages';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
-	import { notificationService } from '$lib/services/notification-service';
-	import type { NotificationSettings } from '$lib/types/notifications';
+	import { SettingsPageLayout } from '#lib/layouts';
+	import settingsStore from '#lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
+	import { notificationService } from '#lib/services/notification-service';
+	import type { NotificationSettings } from '#lib/types/notifications';
 	import {
 		type DiscordFormValues,
 		type EmailFormValues,
@@ -43,8 +43,8 @@
 		gotifyFormValuesToSettings,
 		matrixFormValuesToSettings,
 		genericFormValuesToSettings
-	} from '$lib/types/notifications';
-	import { NotificationsIcon } from '$lib/icons';
+	} from '#lib/types/notifications';
+	import { NotificationsIcon } from '#lib/icons';
 	import { BuiltInProviderForm } from './providers';
 
 	let { data } = $props();
