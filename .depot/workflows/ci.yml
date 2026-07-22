@@ -43,7 +43,7 @@ jobs:
             cgo_enabled: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -102,7 +102,7 @@ jobs:
             args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -126,7 +126,7 @@ jobs:
       PNPM_STORE_DIR: /tmp/arcane-ci-cache/type-check/pnpm-store
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -186,7 +186,7 @@ jobs:
             port: 3002
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -261,7 +261,7 @@ jobs:
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
