@@ -10,7 +10,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"golang.org/x/time/rate"
 )
 
@@ -119,7 +119,7 @@ func PerIPRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			key := clientIPForRateLimitInternal(c)
 			if !limiter.allow(key) {
 				c.Response().Header().Set("Retry-After", "60")
@@ -142,7 +142,7 @@ func PerAgentTokenRateLimit(perMinute int, burst int) echo.MiddlewareFunc {
 	limiter := newIPRateLimiterInternal(rate.Every(time.Minute/time.Duration(perMinute)), burst)
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			req := c.Request()
 			key := strings.TrimSpace(req.Header.Get("X-Arcane-Agent-Token"))
 			if key == "" {
@@ -180,7 +180,7 @@ func PerIPRateLimitForPaths(paths []string, perMinute int, burst int) echo.Middl
 		for p, rl := range limiters {
 			gatedByPath[p] = rl(next)
 		}
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			gated, ok := gatedByPath[c.Path()]
 			if !ok {
 				return next(c)
@@ -190,7 +190,7 @@ func PerIPRateLimitForPaths(paths []string, perMinute int, burst int) echo.Middl
 	}
 }
 
-func clientIPForRateLimitInternal(c echo.Context) string {
+func clientIPForRateLimitInternal(c *echo.Context) string {
 	if ip := strings.TrimSpace(c.RealIP()); ip != "" {
 		return ip
 	}

@@ -13,7 +13,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 //go:embed all:dist
@@ -21,9 +21,11 @@ var frontendFS embed.FS
 
 const indexHtmlFileConstant = "index.html"
 
-// RegisterFrontend mounts the embedded SPA on the Echo instance and configures
-// a custom HTTP error handler that intercepts 404s to serve the SPA index
-// (preserving SvelteKit client-side routing) while keeping /api/* 404s as JSON.
+// RegisterFrontend mounts the embedded SPA as the Echo not-found fallback:
+// any path no API/WS route matched serves a real file when it exists and
+// falls back to index.html otherwise (preserving SvelteKit client-side
+// routing). Unknown /api paths are handled by the API group's own
+// RouteNotFound handler and never reach this route.
 func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
@@ -33,27 +35,9 @@ func RegisterFrontend(e *echo.Echo) error {
 	cacheMaxAge := time.Hour * 24
 	fileServer := NewFileServerWithCaching(http.FS(distFS), int(cacheMaxAge.Seconds()))
 
-	defaultErrorHandler := e.HTTPErrorHandler
-	e.HTTPErrorHandler = func(handlerErr error, c echo.Context) {
-		var he *echo.HTTPError
-		isNotFound := errors.As(handlerErr, &he) && he.Code == http.StatusNotFound
-		if !isNotFound {
-			defaultErrorHandler(handlerErr, c)
-			return
-		}
-
+	e.RouteNotFound("/*", func(c *echo.Context) error {
 		req := c.Request()
-		path := req.URL.Path
-
-		if strings.HasPrefix(path, "/api/") {
-			_ = c.JSON(http.StatusNotFound, map[string]any{
-				"success": false,
-				"error":   "API endpoint not found: " + path,
-			})
-			return
-		}
-
-		requestedPath := strings.TrimPrefix(path, "/")
+		requestedPath := strings.TrimPrefix(req.URL.Path, "/")
 		if requestedPath == "" {
 			requestedPath = indexHtmlFileConstant
 		}
@@ -62,8 +46,9 @@ func RegisterFrontend(e *echo.Echo) error {
 			req.URL.Path = "/"
 		}
 
-		fileServer.ServeHTTP(c.Response().Writer, req)
-	}
+		fileServer.ServeHTTP(c.Response(), req)
+		return nil
+	})
 
 	return nil
 }

@@ -2,7 +2,7 @@
 
 package frontend
 
-import "github.com/labstack/echo/v4"
+import "github.com/labstack/echo/v5"
 
 func RegisterFrontend(e *echo.Echo) error {
 	_ = e

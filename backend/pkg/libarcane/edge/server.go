@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -124,13 +124,13 @@ func (s *TunnelServer) SetConfig(cfg *Config) {
 
 // HandleConnect is the WebSocket handler for edge agent connections.
 // This is registered at /api/tunnel/connect.
-func (s *TunnelServer) HandleConnect(c echo.Context) error {
+func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
 	// Upgrade to WebSocket.
-	conn, err := tunnelUpgrader.Upgrade(c.Response().Writer, req, nil)
+	conn, err := tunnelUpgrader.Upgrade(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade edge tunnel connection", "error", err)
 		return nil
@@ -187,7 +187,7 @@ func (s *TunnelServer) HandleConnect(c echo.Context) error {
 // HandleMTLSEnroll returns manager-generated edge client certificates for the
 // calling environment when generated edge mTLS is enabled. The response includes
 // private key material, so response-body logging must not be enabled here.
-func (s *TunnelServer) HandleMTLSEnroll(c echo.Context) error {
+func (s *TunnelServer) HandleMTLSEnroll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 	c.Response().Header().Set("Cache-Control", "no-store")

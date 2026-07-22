@@ -12,7 +12,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -193,7 +193,7 @@ func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int,
 }
 
 // ProxyHTTPRequest is a helper that proxies an echo context through a tunnel
-func ProxyHTTPRequest(c echo.Context, tunnel *AgentTunnel, targetPath string) error {
+func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) error {
 	req := c.Request()
 	ctx := req.Context()
 

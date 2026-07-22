@@ -19,7 +19,7 @@ import (
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockernetwork "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"

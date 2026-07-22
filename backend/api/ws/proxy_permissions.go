@@ -3,7 +3,7 @@ package ws
 import (
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )

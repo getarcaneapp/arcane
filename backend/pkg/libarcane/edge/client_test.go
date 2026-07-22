@@ -22,8 +22,8 @@ import (
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
-	slogecho "github.com/samber/slog-echo"
+	"github.com/labstack/echo/v5"
+	slogecho "github.com/samber/slog-echo/v2"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -1273,7 +1273,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	}, 5*time.Second, 20*time.Millisecond)
 
 	router := echo.New()
-	router.GET("/proxy-ws", func(c echo.Context) error {
+	router.GET("/proxy-ws", func(c *echo.Context) error {
 		tunnel, ok := GetRegistry().Get(envID).Get()
 		if !ok || tunnel == nil {
 			return c.NoContent(http.StatusServiceUnavailable)
@@ -2136,7 +2136,7 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 
 			router := echo.New()
 			router.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-				return func(c echo.Context) error {
+				return func(c *echo.Context) error {
 					if IsInternalTunnelRequest(c.Request().Context()) {
 						sawInternalTunnelRequest = true
 						return next(c)
@@ -2144,7 +2144,7 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 					return loggerMiddleware(next)(c)
 				}
 			})
-			router.GET("/local/api", func(c echo.Context) error {
+			router.GET("/local/api", func(c *echo.Context) error {
 				return c.String(http.StatusOK, "local response")
 			})
 

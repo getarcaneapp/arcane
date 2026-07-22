@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 func TestJSONV2SerializerUsesV2ResponseSemantics(t *testing.T) {
@@ -84,8 +84,8 @@ func TestJSONV2SerializerUsesStrictV2Decoding(t *testing.T) {
 			if !errors.As(err, &httpErr) {
 				t.Fatalf("deserialize error = %T %v, want *echo.HTTPError", err, err)
 			}
-			if httpErr.Code != http.StatusBadRequest {
-				t.Fatalf("HTTP status = %d, want %d", httpErr.Code, http.StatusBadRequest)
+			if httpErr.StatusCode() != http.StatusBadRequest {
+				t.Fatalf("HTTP status = %d, want %d", httpErr.StatusCode(), http.StatusBadRequest)
 			}
 		})
 	}

@@ -8,7 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -20,7 +20,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 			_ = ctx
 			return "edge://oracle-1", nil, true, nil
 		},
-		authValidator: func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
 			_ = ctx
 			_ = c
 			return authz.SudoPermissionSet(), true
@@ -33,7 +33,7 @@ func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
 func attachMiddleware(router *echo.Echo, mw *EnvironmentMiddleware) *echo.Group {
 	api := router.Group("/api")
 	api.Use(func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			return mw.Handle(c, next)
 		}
 	})
@@ -46,7 +46,7 @@ func TestEnvironmentMiddleware_ReturnsBadGatewayForEdgeResourcesWithoutTunnel(t 
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c echo.Context) error {
+	api.GET("/environments/:id/containers", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -67,7 +67,7 @@ func TestEnvironmentMiddleware_ProxiesDashboardResourcesForRemoteEnvironments(t 
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/dashboard", func(c echo.Context) error {
+	api.GET("/environments/:id/dashboard", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -88,7 +88,7 @@ func TestEnvironmentMiddleware_KeepsEdgeManagementEndpointsLocal(t *testing.T) {
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/settings", func(c echo.Context) error {
+	api.GET("/environments/:id/settings", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -109,7 +109,7 @@ func TestEnvironmentMiddleware_KeepsEdgeMTLSDownloadEndpointsLocal(t *testing.T)
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/deployment/mtls/bundle", func(c echo.Context) error {
+	api.GET("/environments/:id/deployment/mtls/bundle", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -130,7 +130,7 @@ func TestEnvironmentMiddleware_KeepsNotificationEndpointsLocal(t *testing.T) {
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/notifications/settings", func(c echo.Context) error {
+	api.GET("/environments/:id/notifications/settings", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -173,7 +173,7 @@ func TestEnvironmentMiddleware_KeepsWebhookEndpointsLocal(t *testing.T) {
 			api := attachMiddleware(router, middleware)
 
 			localHandlerHit := false
-			api.Add(tt.method, tt.route, func(c echo.Context) error {
+			api.Add(tt.method, tt.route, func(c *echo.Context) error {
 				localHandlerHit = true
 				return c.JSON(http.StatusOK, map[string]any{"success": true})
 			})
@@ -212,7 +212,7 @@ func TestEnvironmentMiddleware_KeepsActivityEndpointsLocal(t *testing.T) {
 			api := attachMiddleware(router, middleware)
 
 			localHandlerHit := false
-			api.Add(tt.method, tt.route, func(c echo.Context) error {
+			api.Add(tt.method, tt.route, func(c *echo.Context) error {
 				localHandlerHit = true
 				return c.JSON(http.StatusOK, map[string]any{"success": true})
 			})
@@ -243,7 +243,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 		localID:   "0",
 		paramName: "id",
 		matcher:   matcher,
-		authValidator: func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
+		authValidator: func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
 			_ = ctx
 			_ = c
 			return authz.NewPermissionSet(), true
@@ -256,7 +256,7 @@ func TestEnvironmentMiddleware_LocalEnvironmentSkipsProxyPermissionCheck(t *test
 	api := attachMiddleware(router, mw)
 
 	localHandlerHit := false
-	api.GET("/environments/:id/containers", func(c echo.Context) error {
+	api.GET("/environments/:id/containers", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})
@@ -374,7 +374,7 @@ func TestEnvironmentMiddleware_KeepsNodeAgentDeploymentCreationLocal(t *testing.
 	api := attachMiddleware(router, middleware)
 
 	localHandlerHit := false
-	api.POST("/environments/:id/swarm/nodes/:nodeId/agent/deployment", func(c echo.Context) error {
+	api.POST("/environments/:id/swarm/nodes/:nodeId/agent/deployment", func(c *echo.Context) error {
 		localHandlerHit = true
 		return c.JSON(http.StatusOK, map[string]any{"success": true})
 	})

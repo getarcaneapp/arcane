@@ -8,7 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // publicCrossOriginBypassPaths are endpoints intentionally reachable cross-origin
@@ -42,7 +42,7 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	// through the edge tunnel from the manager — never from browsers. Mirrors CORSMiddleware.
 	if m.cfg != nil && m.cfg.EdgeAgent {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error { return next(c) }
+			return func(c *echo.Context) error { return next(c) }
 		}
 	}
 
@@ -59,7 +59,7 @@ func (m *CSRFMiddleware) Add() echo.MiddlewareFunc {
 	}
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			req := c.Request()
 			if hasHeaderCredentialInternal(req) {
 				return next(c)

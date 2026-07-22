@@ -6,7 +6,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -29,7 +29,7 @@ func TestSecureCookieContextMiddleware_TrustGating(t *testing.T) {
 		c := e.NewContext(req, rec)
 
 		var observed bool
-		handler := secureCookieContextMiddlewareInternal(nets)(func(c echo.Context) error {
+		handler := secureCookieContextMiddlewareInternal(nets)(func(c *echo.Context) error {
 			observed = cookie.SecureCookieFromContext(c.Request().Context())
 			return nil
 		})
