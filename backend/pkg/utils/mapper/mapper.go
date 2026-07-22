@@ -1,9 +1,45 @@
 package mapper
 
 import (
+	"fmt"
+	"net/netip"
+
 	"emperror.dev/errors"
 	"github.com/jinzhu/copier"
 )
+
+var typeConverters = []copier.TypeConverter{
+	{
+		SrcType: netip.Prefix{},
+		DstType: "",
+		Fn: func(src any) (any, error) {
+			prefix, ok := src.(netip.Prefix)
+			if !ok {
+				return nil, fmt.Errorf("expected netip.Prefix, got %T", src)
+			}
+			if !prefix.IsValid() {
+				return "", nil
+			}
+
+			return prefix.String(), nil
+		},
+	},
+	{
+		SrcType: netip.Addr{},
+		DstType: "",
+		Fn: func(src any) (any, error) {
+			addr, ok := src.(netip.Addr)
+			if !ok {
+				return nil, fmt.Errorf("expected netip.Addr, got %T", src)
+			}
+			if !addr.IsValid() {
+				return "", nil
+			}
+
+			return addr.String(), nil
+		},
+	},
+}
 
 func MapSlice[S any, D any](source []S) ([]D, error) {
 	dest := make([]D, len(source))
@@ -25,7 +61,8 @@ func MapOne[S any, D any](source S) (D, error) {
 
 func MapStruct(source any, destination any) error {
 	return copier.CopyWithOption(destination, source, copier.Option{
-		DeepCopy: true,
+		DeepCopy:   true,
+		Converters: typeConverters,
 	})
 }
 
