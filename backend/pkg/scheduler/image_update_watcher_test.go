@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
 	"github.com/moby/moby/api/types/events"
@@ -162,7 +163,7 @@ func (b *lockedBufferInternal) Write(p []byte) (int, error) {
 func (b *lockedBufferInternal) stringInternal() string {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return b.Buffer.String()
+	return b.String()
 }
 
 func newImageUpdateWatcherForTestInternal(scanner imageUpdateScannerInternal, settings pollingSettingReaderInternal, eventBus *bus.DockerEventBus, backfiller projectImageRefsBackfillerInternal) *ImageUpdateWatcher {
@@ -288,31 +289,7 @@ func TestImageUpdateWatcher_ScanErrorDoesNotStopFutureEvents(t *testing.T) {
 	require.Eventually(t, func() bool { return scanner.countInternal() == 2 }, time.Second, 5*time.Millisecond)
 }
 
-func TestImageUpdateWatcher_RunNowSerializesConcurrentCalls(t *testing.T) {
-	releaseCh := make(chan struct{})
-	scanner := &imageUpdateScannerFakeInternal{
-		startedCh: make(chan int, 2),
-		releaseCh: releaseCh,
-	}
-	settings := &pollingSettingReaderFakeInternal{enabled: true}
-	watcher := newImageUpdateWatcherForTestInternal(scanner, settings, bus.NewDockerEventBus(), nil)
-	markImageUpdateWatcherMetadataReadyForTestInternal(watcher)
-
-	errCh := make(chan error, 2)
-	go func() { errCh <- watcher.RunNow(context.Background()) }()
-	require.Equal(t, 1, <-scanner.startedCh)
-	go func() { errCh <- watcher.RunNow(context.Background()) }()
-
-	time.Sleep(20 * time.Millisecond)
-	require.Equal(t, 1, scanner.countInternal())
-	close(releaseCh)
-	require.Equal(t, 2, <-scanner.startedCh)
-	require.NoError(t, <-errCh)
-	require.NoError(t, <-errCh)
-	require.Equal(t, 1, scanner.maxActiveInternal())
-}
-
-func TestImageUpdateWatcher_RunNowWaiterHonorsCancellation(t *testing.T) {
+func TestImageUpdateWatcher_RunNowReturnsInProgressErrorDuringActiveScan(t *testing.T) {
 	releaseCh := make(chan struct{})
 	scanner := &imageUpdateScannerFakeInternal{
 		startedCh: make(chan int, 1),
@@ -326,13 +303,50 @@ func TestImageUpdateWatcher_RunNowWaiterHonorsCancellation(t *testing.T) {
 	go func() { firstErrCh <- watcher.RunNow(context.Background()) }()
 	require.Equal(t, 1, <-scanner.startedCh)
 
-	waitingCtx, cancel := context.WithCancel(context.Background())
-	cancel()
-	require.ErrorIs(t, watcher.RunNow(waitingCtx), context.Canceled)
+	var inProgress *common.ImageScanInProgressError
+	require.ErrorAs(t, watcher.RunNow(context.Background()), &inProgress)
 	require.Equal(t, 1, scanner.countInternal())
 
 	close(releaseCh)
 	require.NoError(t, <-firstErrCh)
+	require.Equal(t, 1, scanner.maxActiveInternal())
+
+	// The gate is free again after the first scan finishes.
+	require.NoError(t, watcher.RunNow(context.Background()))
+	require.Equal(t, 2, scanner.countInternal())
+}
+
+func TestImageUpdateWatcher_TriggeredScanRetriesAfterManualScanFinishes(t *testing.T) {
+	releaseCh := make(chan struct{})
+	scanner := &imageUpdateScannerFakeInternal{
+		startedCh: make(chan int, 4),
+		releaseCh: releaseCh,
+	}
+	settings := &pollingSettingReaderFakeInternal{enabled: true}
+	eventBus := bus.NewDockerEventBus()
+	watcher := newImageUpdateWatcherForTestInternal(scanner, settings, eventBus, nil)
+	startImageUpdateWatcherForTestInternal(t, watcher)
+
+	// Let the startup scan finish so the gate is free.
+	require.Equal(t, 1, <-scanner.startedCh)
+	releaseCh <- struct{}{}
+	require.Eventually(t, func() bool { return watcher.activeRun.Load() == nil }, time.Second, time.Millisecond)
+
+	// A manual scan takes the gate, then a Docker event fires: the triggered
+	// loop must wait out the manual scan and still run its own scan after.
+	manualErrCh := make(chan error, 1)
+	go func() { manualErrCh <- watcher.RunNow(context.Background()) }()
+	require.Equal(t, 2, <-scanner.startedCh)
+	eventBus.Publish(events.Message{Type: events.ImageEventType, Action: events.ActionPull})
+
+	time.Sleep(30 * time.Millisecond)
+	require.Equal(t, 2, scanner.countInternal())
+	releaseCh <- struct{}{}
+	require.NoError(t, <-manualErrCh)
+
+	require.Equal(t, 3, <-scanner.startedCh)
+	releaseCh <- struct{}{}
+	require.Equal(t, 1, scanner.maxActiveInternal())
 }
 
 func TestImageUpdateWatcher_BackfillGatesFirstScanAndCoalescesEventBurst(t *testing.T) {

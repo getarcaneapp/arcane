@@ -175,7 +175,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 
 	activityCtx := utils.ActivityRuntimeContext(ctx, nil)
 	if _, completeErr := activityService.CompleteActivity(activityCtx, activityID, status, finalMessage, errMessage); completeErr != nil {
-		slog.DebugContext(activityCtx, "failed to complete background activity", "activityId", activityID, "error", completeErr)
+		slog.WarnContext(activityCtx, "failed to complete background activity", "activityId", activityID, "error", completeErr)
 	}
 }
 

@@ -22,6 +22,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
@@ -152,7 +153,6 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
-	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -165,6 +165,21 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
+	if activityID != "" && s.deps.Activity != nil {
+		// Bounded slot wait: an unbounded wait behind other long-running runs
+		// would strand the queued activity row (the completion defer above
+		// flips it to failed on timeout instead).
+		if err = s.deps.Activity.AwaitActivitySlotBounded(ctx, activityID, "0"); err != nil {
+			return out, err
+		}
+	}
+
+	// The engine's per-container docker operations carry no timeouts, so cap
+	// the whole run; the Track ctx stays unbounded for the deferred completion
+	// so user cancellation is still detected there.
+	runCtx, cancelRun := context.WithTimeout(ctx, timeouts.DefaultAutoUpdateApply)
+	defer cancelRun()
+
 	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
 		"phase":       "start",
 		"dryRun":      options.DryRun,
@@ -176,11 +191,11 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Planning pending updates", "Planning updates", 5)
 
 	if len(options.ResourceIds) > 0 {
-		if err = s.applyScopedUpdatesInternal(ctx, options, out); err != nil {
+		if err = s.applyScopedUpdatesInternal(runCtx, options, out); err != nil {
 			return out, err
 		}
 	} else {
-		moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
+		moduleResult, engineErr := s.engineInternal().ApplyPending(runCtx, moduleOptionsFromUpdaterOptionsInternal(options))
 		if moduleResult != nil {
 			out = resultFromModuleInternal(moduleResult)
 			out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
@@ -194,7 +209,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 
 	if !options.DryRun && s.deps.ImageUpdates != nil {
 		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Cleaning up update records", "Cleaning up", 95)
-		if cleanupErr := s.deps.ImageUpdates.CleanupOrphanedRecords(ctx); cleanupErr != nil {
+		if cleanupErr := s.deps.ImageUpdates.CleanupOrphanedRecords(runCtx); cleanupErr != nil {
 			s.loggerInternal().WarnContext(ctx, "cleanup orphaned update records failed", "error", cleanupErr)
 		}
 	}
@@ -524,7 +539,10 @@ func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, erro
 	return s.deps.Docker.GetClient(ctx)
 }
 
-// PullImage pulls an image through Arcane's image service.
+// PullImage pulls an image through Arcane's image service. The pull is
+// bounded by the dockerImagePullTimeout setting — ImageService.PullImage does
+// not bound itself, and an unbounded engine pull would hold the auto-update
+// run (and its activity slot) indefinitely.
 func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progress io.Writer) error {
 	if s == nil || s.deps.ImagePuller == nil {
 		return &common.UpdaterImageServiceUnavailableError{}
@@ -533,15 +551,22 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityID, progress, "Pulling updated images")
 	defer activitylib.FlushWriter(writer)
 
+	pullTimeoutSeconds := 0
+	if s.deps.Settings != nil {
+		pullTimeoutSeconds = s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt()
+	}
+	pullCtx, cancelPull := timeouts.WithTimeout(ctx, pullTimeoutSeconds, timeouts.DefaultDockerImagePull)
+	defer cancelPull()
+
 	if s.deps.Projects != nil {
-		resolved, err := s.deps.Projects.resolveRegistryCredentialsInternal(ctx)
+		resolved, err := s.deps.Projects.resolveRegistryCredentialsInternal(pullCtx)
 		if err != nil {
 			return fmt.Errorf("resolve registry credentials: %w", err)
 		}
-		return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, resolved)
+		return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, resolved)
 	}
 
-	return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, nil)
+	return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, nil)
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
@@ -841,7 +866,9 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 	}
 
 	if _, err := s.deps.Activity.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
-		slog.DebugContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
+		// A lost terminal write strands the activity in running forever, so it
+		// must be loud enough to correlate with a stuck activity panel entry.
+		slog.ErrorContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
 	}
 }
 

@@ -2086,3 +2086,20 @@ type DashboardSnapshotUnavailableError struct{}
 func (e *DashboardSnapshotUnavailableError) Error() string {
 	return "dashboard snapshot not available"
 }
+
+// ActivitySlotWaitTimeoutError is returned when a queued activity gave up
+// waiting for a per-environment concurrency slot, typically because
+// long-running work (e.g. an auto-update run) is holding every slot.
+type ActivitySlotWaitTimeoutError struct{}
+
+func (e *ActivitySlotWaitTimeoutError) Error() string {
+	return "timed out waiting for a free activity slot; other long-running activities are holding all slots"
+}
+
+// ImageScanInProgressError is returned when a manual image update check is
+// requested while another scan is already running.
+type ImageScanInProgressError struct{}
+
+func (e *ImageScanInProgressError) Error() string {
+	return "an image update check is already in progress"
+}

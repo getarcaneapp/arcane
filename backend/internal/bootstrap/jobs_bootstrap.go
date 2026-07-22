@@ -67,6 +67,7 @@ type registerJobsParams struct {
 	FilesystemWatcher      *scheduler.FilesystemWatcherJob
 	VulnerabilityScan      *scheduler.VulnerabilityScanJob
 	AutoHeal               *scheduler.AutoHealJob
+	ActivitySweep          *scheduler.ActivitySweepJob
 }
 
 func registerJobs(params registerJobsParams) {
@@ -107,6 +108,9 @@ func registerJobs(params registerJobsParams) {
 	// and is only rebound on settings changes below.
 	params.Scheduler.RegisterJob(params.VulnerabilityScan)
 	params.Scheduler.RegisterJob(params.AutoHeal)
+	// Internal self-healing sweep (managers and agents alike); intentionally
+	// absent from job_metadata so it stays out of the Jobs UI.
+	params.Scheduler.RegisterJob(params.ActivitySweep)
 
 	// GitOps sync and environment health are no longer single global jobs; each
 	// entity registers its own dynamic job.

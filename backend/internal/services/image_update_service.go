@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
@@ -191,7 +192,9 @@ func (s *ImageUpdateService) completeImageUpdateActivityInternal(ctx context.Con
 	}
 	step := "Image update check complete"
 	if _, err := s.activityService.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage, step); err != nil {
-		slog.DebugContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
+		// A lost terminal write strands the activity in running forever, so it
+		// must be loud enough to correlate with a stuck activity panel entry.
+		slog.ErrorContext(ctx, "failed to complete image update activity", "activityId", activityID, "error", err)
 	}
 }
 
@@ -204,10 +207,7 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	if result, ok := digestPinnedImageUpdateResultInternal(imageRef).Get(); ok {
 		result.ResponseTimeMs = int(time.Since(startTime).Milliseconds())
 		result.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
-		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", 100, "Skipping image update check")
-		if saveErr := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); saveErr != nil {
-			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", saveErr.Error())
-		}
+		s.recordDigestPinnedSkipInternal(ctx, activityID, imageRef, result, 100)
 		if s.eventService != nil {
 			metadata := models.JSON{
 				"action":         "check_update",
@@ -1310,21 +1310,19 @@ func (s *ImageUpdateService) recordBatchImageCheckInternal(ctx context.Context, 
 	}
 }
 
-func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
-	startBatch := time.Now()
-	results := make(map[string]*imageupdate.Response, len(imageRefs))
-	if len(imageRefs) == 0 {
-		return results, nil
+// recordDigestPinnedSkipInternal notes a digest-pinned ref as skipped on the
+// activity stream and persists its unchanged result.
+func (s *ImageUpdateService) recordDigestPinnedSkipInternal(ctx context.Context, activityID, imageRef string, result *imageupdate.Response, progress int) {
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", progress, "Skipping image update check")
+	if err := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); err != nil {
+		slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
 	}
+}
 
-	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
-	ctx = s.activityService.Track(ctx, activityID)
-	activitylib.AwaitHandlerActivitySlot(ctx, s.activityService, activityID, "0")
-	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
-	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
-
-	regRepos, initialResults, images := s.parseAndGroupImagesInternal(imageRefs)
-	maps.Copy(results, initialResults)
+// recordInitialBatchResultsInternal stamps the activity ID on the parse-stage
+// results and persists digest-pinned refs as skipped, since they never reach
+// the registry check stage.
+func (s *ImageUpdateService) recordInitialBatchResultsInternal(ctx context.Context, activityID string, initialResults map[string]*imageupdate.Response) {
 	for imageRef, result := range initialResults {
 		if result == nil {
 			continue
@@ -1337,20 +1335,68 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 			continue
 		}
 
-		s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, imageRef+" — digest pinned, skipped", 5, "Skipping image update check")
-		if err := s.saveUpdateResultWithSnapshotInternal(ctx, imageRef, result, nil); err != nil {
-			slog.WarnContext(ctx, "Failed to save digest-pinned update result", "imageRef", imageRef, "error", err.Error())
+		s.recordDigestPinnedSkipInternal(ctx, activityID, imageRef, result, 5)
+	}
+}
+
+func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs []string, externalCreds []containerregistry.Credential) (results map[string]*imageupdate.Response, err error) {
+	startBatch := time.Now()
+	results = make(map[string]*imageupdate.Response, len(imageRefs))
+	if len(imageRefs) == 0 {
+		return results, nil
+	}
+
+	activityID := s.startImageUpdateActivityInternal(ctx, fmt.Sprintf("%d images", len(imageRefs)), len(imageRefs))
+	ctx = s.activityService.Track(ctx, activityID)
+
+	// A single deferred finalizer owns the terminal activity write so it runs
+	// on success, error, and panic alike — any early return that skipped
+	// completion would strand the row in running forever. It reads the Track
+	// ctx so a user cancellation still records a cancelled status.
+	defer func() {
+		if r := recover(); r != nil {
+			// Don't re-panic: the caller is the long-lived watcher goroutine.
+			err = fmt.Errorf("image update check panicked: %v", r)
+			slog.ErrorContext(ctx, "image update check panicked", "activityId", activityID, "panic", r, "stack", string(debug.Stack()))
+		}
+		if err != nil {
+			s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+err.Error())
+			return
+		}
+		successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)
+		finalMessage := fmt.Sprintf("Image update check completed: %d checked, %d errors", successCount, errorCount)
+		s.completeImageUpdateActivityInternal(ctx, activityID, errorCount == 0, finalMessage)
+	}()
+
+	if activityID != "" {
+		// Bounded slot wait: update-all runs share these slots and can hold
+		// them for a long time; parking here forever would wedge every future
+		// scan behind the watcher's single-flight gate. On timeout the
+		// finalizer above flips the queued row to failed.
+		if slotErr := s.activityService.AwaitActivitySlotBounded(ctx, activityID, "0"); slotErr != nil {
+			return results, slotErr
 		}
 	}
+	s.appendImageUpdateActivityMessageInternal(ctx, activityID, models.ActivityMessageLevelInfo, fmt.Sprintf("Checking %d image references", len(imageRefs)), 5, "Preparing image update check")
+	slog.DebugContext(ctx, "Starting batch image update check", "imageCount", len(imageRefs), "externalCredCount", len(externalCreds))
 
-	composeBuildRefs, err := s.composeBuildImageRefsInternal(ctx)
-	if err != nil {
-		wrappedErr := fmt.Errorf("prepare compose build image references: %w", err)
-		s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+wrappedErr.Error())
-		return results, wrappedErr
+	regRepos, initialResults, images := s.parseAndGroupImagesInternal(imageRefs)
+	maps.Copy(results, initialResults)
+	s.recordInitialBatchResultsInternal(ctx, activityID, initialResults)
+
+	// The aggregate scan gets its own deadline: individual registry RPCs are
+	// bounded, but the batch as a whole (including registry limiter waits)
+	// was not, and a wedged scan holds its activity slot indefinitely.
+	scanCtx, cancelScan := context.WithTimeout(ctx, timeouts.DefaultImageUpdateScan)
+	defer cancelScan()
+
+	composeBuildRefs, composeErr := s.composeBuildImageRefsInternal(scanCtx)
+	if composeErr != nil {
+		err = fmt.Errorf("prepare compose build image references: %w", composeErr)
+		return results, err
 	}
 
-	resolvedCreds := s.resolveBatchCredentialsInternal(ctx, externalCreds)
+	resolvedCreds := s.resolveBatchCredentialsInternal(scanCtx, externalCreds)
 
 	slog.DebugContext(ctx, "Resolved batch registry credentials", "credentialCount", len(resolvedCreds), "registryCount", len(regRepos))
 
@@ -1358,25 +1404,33 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 		results: results,
 		total:   len(images),
 	}
-	g, groupCtx := errgroup.WithContext(ctx)
+	g, groupCtx := errgroup.WithContext(scanCtx)
 	g.SetLimit(10) // Limit concurrency
 
 	for _, img := range images {
-		g.Go(func() error {
+		g.Go(func() (checkErr error) {
+			// x/sync's errgroup does not recover goroutine panics (they crash
+			// the process), so convert them to errors here; the deferred
+			// finalizer then records the failed terminal status.
+			defer func() {
+				if r := recover(); r != nil {
+					checkErr = fmt.Errorf("image update check panicked: %v", r)
+					slog.ErrorContext(groupCtx, "image update check worker panicked", "activityId", activityID, "imageRef", img.canonicalRef, "panic", r, "stack", string(debug.Stack()))
+				}
+			}()
 			return s.checkBatchImageInternal(groupCtx, activityID, resolvedCreds, img, composeBuildRefs, recorder)
 		})
 	}
 
-	if err := g.Wait(); err != nil {
+	if err = g.Wait(); err != nil {
+		if ctx.Err() == nil && errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
+			err = fmt.Errorf("image update check timed out after %s: %w", timeouts.DefaultImageUpdateScan, err)
+		}
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
-		s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+err.Error())
 		return results, err
 	}
 
 	successCount, errorCount := countBatchResultOutcomesInternal(imageRefs, results)
-	finalSuccess := errorCount == 0
-	finalMessage := fmt.Sprintf("Image update check completed: %d checked, %d errors", successCount, errorCount)
-	s.completeImageUpdateActivityInternal(ctx, activityID, finalSuccess, finalMessage)
 	slog.InfoContext(ctx, "Batch image update check completed",
 		"totalImages", len(imageRefs),
 		"successCount", successCount,

@@ -11,9 +11,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -26,6 +28,10 @@ const (
 	defaultActivityHistoryLimit  = 1000
 	defaultActivityMessages      = 500
 	staleImageUpdateCheckAge     = 6 * time.Hour
+	// abandonedActivityGrace is how old an untracked queued/running activity
+	// must be before the periodic sweep fails it. It covers the window between
+	// StartActivity's row creation and the worker's Track call.
+	abandonedActivityGrace = 2 * time.Minute
 )
 
 type ActivityService struct {
@@ -397,6 +403,22 @@ func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, env
 	return nil
 }
 
+// AwaitActivitySlotBounded waits for a concurrency slot like AwaitActivitySlot
+// but gives up after timeouts.DefaultActivitySlotWait, returning
+// ActivitySlotWaitTimeoutError so the caller fails the queued activity loudly
+// instead of parking forever behind long-running slot holders.
+func (s *ActivityService) AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error {
+	slotCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultActivitySlotWait)
+	defer cancel()
+	if err := s.AwaitActivitySlot(slotCtx, activityID, environmentID); err != nil {
+		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+			return &common.ActivitySlotWaitTimeoutError{}
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string, req UpdateActivityRequest) (*activitytypes.Activity, error) {
 	if err := s.checkInitInternal(); err != nil {
 		return nil, err
@@ -548,21 +570,37 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 
 	now := time.Now()
 	var model models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load activity: %w", err)
-		}
+	// A lost terminal write leaves the activity stuck in running forever, so
+	// retry transient DB contention (SQLITE_BUSY under bulk activity writes)
+	// instead of surfacing it once and giving up.
+	const completeWriteAttempts = 3
+	var writeErr error
+	for attempt := 1; attempt <= completeWriteAttempts; attempt++ {
+		writeErr = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
+				return fmt.Errorf("failed to load activity: %w", err)
+			}
 
-		updates := completeActivityUpdatesInternal(model.StartedAt, status, finalMessage, errMessage, finalStep, now)
-		if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to complete activity: %w", err)
+			updates := completeActivityUpdatesInternal(model.StartedAt, status, finalMessage, errMessage, finalStep, now)
+			if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates).Error; err != nil {
+				return fmt.Errorf("failed to complete activity: %w", err)
+			}
+			if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
+				return fmt.Errorf("failed to load completed activity: %w", err)
+			}
+			return nil
+		})
+		if writeErr == nil {
+			break
 		}
-		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load completed activity: %w", err)
+		if attempt == completeWriteAttempts || !isRetryableDBWriteErrorInternal(writeErr) {
+			return nil, writeErr
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		slog.WarnContext(ctx, "retrying activity terminal status write", "activityId", activityID, "attempt", attempt, "error", writeErr)
+		time.Sleep(250 * time.Millisecond * time.Duration(attempt))
+	}
+	if writeErr != nil {
+		return nil, writeErr
 	}
 
 	if strings.TrimSpace(finalMessage) != "" {
@@ -703,6 +741,86 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	}
 
 	return failed, errors.Join(failErrs...)
+}
+
+// isTrackedInternal reports whether activityID has a live work registration in
+// this process (i.e. a worker goroutine called Track and has not completed yet).
+func (s *ActivityService) isTrackedInternal(activityID string) bool {
+	s.runningMu.Lock()
+	defer s.runningMu.Unlock()
+	_, ok := s.running[activityID]
+	return ok
+}
+
+// FailAbandonedActivities marks queued/running activities whose worker is no
+// longer alive in this process as failed, releasing any concurrency slot they
+// still hold. Liveness comes from the running map, not age: every creation
+// path Tracks its activity right after StartActivity, and the short grace
+// period covers that create→Track window. This assumes exactly one Arcane
+// process owns the database (managers and agents each own theirs); running
+// multiple replicas against one database would make each replica sweep the
+// other's live work.
+//
+// The terminal write is status-guarded like CancelActivity's untracked
+// fallback: a worker completing concurrently wins the race and the row is
+// skipped here.
+func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-abandonedActivityGrace)
+	activeStatuses := []models.ActivityStatus{models.ActivityStatusQueued, models.ActivityStatusRunning}
+	var candidates []models.Activity
+	if err := s.db.WithContext(ctx).
+		Where("status IN ? AND started_at < ?", activeStatuses, cutoff).
+		Find(&candidates).Error; err != nil {
+		return 0, fmt.Errorf("find abandoned activities: %w", err)
+	}
+
+	const message = "Activity was marked failed because its worker is no longer running"
+	errMessage := message
+	var swept int64
+	var sweepErrs []error
+	for i := range candidates {
+		activityID := candidates[i].ID
+		if s.isTrackedInternal(activityID) {
+			continue
+		}
+
+		now := time.Now()
+		var finalized models.Activity
+		lostRace := false
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			updates := completeActivityUpdatesInternal(candidates[i].StartedAt, models.ActivityStatusFailed, message, &errMessage, nil, now)
+			result := tx.Model(&models.Activity{}).
+				Where("id = ? AND status IN ?", activityID, activeStatuses).
+				Updates(updates)
+			if result.Error != nil {
+				return fmt.Errorf("fail abandoned activity: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				lostRace = true
+				return nil
+			}
+			if err := tx.First(&finalized, "id = ?", activityID).Error; err != nil {
+				return fmt.Errorf("load failed abandoned activity: %w", err)
+			}
+			return nil
+		}); err != nil {
+			sweepErrs = append(sweepErrs, fmt.Errorf("sweep activity %s: %w", activityID, err))
+			continue
+		}
+		if lostRace {
+			continue
+		}
+
+		s.releaseSlotInternal(activityID)
+		s.publishActivityInternal(activityToDTOInternal(&finalized))
+		swept++
+	}
+
+	return swept, errors.Join(sweepErrs...)
 }
 
 // ResolveOrphanedQueuedActivities fails any activity still queued at startup.

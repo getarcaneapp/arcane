@@ -849,6 +849,36 @@ func TestImageUpdateService_CheckMultipleImagesTimesOutStalledRegistryCheckInter
 	require.Contains(t, activity.LatestMessage, "0 checked, 1 errors")
 }
 
+func TestImageUpdateService_CheckMultipleImagesPanicMarksActivityFailedInternal(t *testing.T) {
+	db := setupImageUpdateTestDB(t)
+	require.NoError(t, db.AutoMigrate(&models.Activity{}, &models.ActivityMessage{}))
+
+	settingsService := newImageUpdateTestSettingsServiceInternal("30", "30")
+	activityService := NewActivityService(db, nil)
+	dockerServer := newImageUpdateRegistryOnlyServer(t, "team/app:1.2.3", digest.FromString("unused").String())
+	defer dockerServer.Close()
+	registryService := NewContainerRegistryService(db, func(context.Context) (RegistryDaemonClient, error) {
+		return &fakeRegistryDaemonClient{
+			distributionInspectFn: func(ctx context.Context, imageRef string, options client.DistributionInspectOptions) (client.DistributionInspectResult, error) {
+				panic("registry check exploded")
+			},
+		}, nil
+	}, nil)
+
+	svc := NewImageUpdateService(db, settingsService, registryService, &DockerClientService{client: newTestDockerClient(t, dockerServer)}, nil, nil, activityService)
+
+	_, err := svc.CheckMultipleImages(context.Background(), []string{"registry.example.com/team/app:1.2.3"}, nil)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "image update check panicked")
+	require.Contains(t, err.Error(), "registry check exploded")
+
+	var activity models.Activity
+	require.NoError(t, db.Where("type = ?", models.ActivityTypeImageUpdateCheck).First(&activity).Error)
+	require.Equal(t, models.ActivityStatusFailed, activity.Status)
+	require.NotNil(t, activity.EndedAt)
+	require.Contains(t, activity.LatestMessage, "Image update check failed")
+}
+
 func TestImageUpdateService_GetAllImageRefsUsesDockerAPITimeoutInternal(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
 	settingsService := newImageUpdateTestSettingsServiceInternal("30", "1")

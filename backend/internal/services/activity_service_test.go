@@ -602,6 +602,55 @@ func TestActivityServiceFailStaleImageUpdateChecksInternal(t *testing.T) {
 	require.Equal(t, models.ActivityStatusSuccess, completed.Status)
 }
 
+func TestActivityServiceFailAbandonedActivitiesInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupActivityServiceTestDBInternal(t)
+	service := NewActivityService(db, nil)
+
+	abandoned, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		LatestMessage: "checking",
+	})
+	require.NoError(t, err)
+	tracked, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeAutoUpdate,
+		LatestMessage: "updating",
+	})
+	require.NoError(t, err)
+	fresh, err := service.StartActivity(ctx, StartActivityRequest{
+		EnvironmentID: "0",
+		Type:          models.ActivityTypeImageUpdateCheck,
+		LatestMessage: "checking",
+	})
+	require.NoError(t, err)
+
+	backdated := time.Now().Add(-10 * time.Minute)
+	require.NoError(t, db.Model(&models.Activity{}).
+		Where("id IN ?", []string{abandoned.ID, tracked.ID}).
+		Update("started_at", backdated).Error)
+	_ = service.Track(ctx, tracked.ID)
+
+	swept, err := service.FailAbandonedActivities(ctx)
+	require.NoError(t, err)
+	require.EqualValues(t, 1, swept)
+
+	var abandonedRow models.Activity
+	require.NoError(t, db.First(&abandonedRow, "id = ?", abandoned.ID).Error)
+	require.Equal(t, models.ActivityStatusFailed, abandonedRow.Status)
+	require.NotNil(t, abandonedRow.EndedAt)
+	require.Contains(t, abandonedRow.LatestMessage, "worker is no longer running")
+
+	var trackedRow models.Activity
+	require.NoError(t, db.First(&trackedRow, "id = ?", tracked.ID).Error)
+	require.Equal(t, models.ActivityStatusRunning, trackedRow.Status)
+
+	var freshRow models.Activity
+	require.NoError(t, db.First(&freshRow, "id = ?", fresh.ID).Error)
+	require.Equal(t, models.ActivityStatusRunning, freshRow.Status)
+}
+
 func TestActivityServiceResolveStaleAutoUpdateActivitiesInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityServiceTestDBInternal(t)
