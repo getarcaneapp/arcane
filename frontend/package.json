@@ -61,7 +61,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@iconify/json": "^2.2.499",
+    "@iconify/json": "^2.2.503",
     "@inlang/paraglide-js": "2.22.0",
     "@sveltejs/adapter-static": "^4.0.0-next.1",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
