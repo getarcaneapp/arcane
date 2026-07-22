@@ -33,7 +33,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jinzhu/copier v0.4.0
-	github.com/klauspost/compress v1.19.0
+	github.com/klauspost/compress v1.19.1
 	github.com/labstack/echo/v4 v4.15.4
 	github.com/libtnb/sqlite v1.2.0
 	github.com/lmittmann/tint v1.2.0
