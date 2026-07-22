@@ -18,7 +18,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.4
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/danielgtaylor/huma/v2 v2.39.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.2+incompatible
 	github.com/docker/compose/v5 v5.3.1
@@ -154,6 +154,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/labstack/echo/v5 v5.2.1 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
