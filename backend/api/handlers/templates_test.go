@@ -141,7 +141,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 		ExpiresAt:        time.Now().Add(time.Hour),
 	}).Error)
 
-	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), nil, "test-secret", &config.Config{})
+	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), nil, "test-secret", &config.Config{}, nil)
 	templateService := services.NewTemplateService(context.Background(), nil, httpClient, nil)
 
 	router := echo.New()

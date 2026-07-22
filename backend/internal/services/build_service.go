@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -258,7 +259,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	}
 	if !ok || source == nil {
 		if contextsource.IsPotentialRemoteBuildContextSource(req.ContextDir) {
-			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
+			return buildtypes.BuildRequest{}, func() error { return nil }, errors.Errorf("unsupported remote build context source %q: only git repository URLs are supported", req.ContextDir)
 		}
 		return req, func() error { return nil }, nil
 	}
@@ -275,7 +276,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	if contextsource.RequiresGitRemoteProbe(source.RepositoryURL) {
 		writeBuildProgressStatusInternal(progressWriter, serviceName, "verifying remote git repository "+source.RepositoryURL)
 		if err := s.probeGitContextInternal(ctx, source.RepositoryURL, authConfig); err != nil {
-			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to verify remote git repository %q: %w", source.RepositoryURL, err)
+			return buildtypes.BuildRequest{}, func() error { return nil }, errors.WrapIff(err, "failed to verify remote git repository %q", source.RepositoryURL)
 		}
 	}
 
@@ -288,7 +289,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	if source.Subdir != "" {
 		if err := buildgit.ValidatePath(repoPath, filepath.FromSlash(source.Subdir)); err != nil {
 			_ = s.cleanupGitContextInternal(repoPath)
-			return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("invalid git build context subdir: %w", err)
+			return buildtypes.BuildRequest{}, func() error { return nil }, errors.WrapIf(err, "invalid git build context subdir")
 		}
 		contextDir = filepath.Join(repoPath, filepath.FromSlash(source.Subdir))
 	}
@@ -296,7 +297,7 @@ func (s *BuildService) resolveBuildRequestInternal(
 	info, err := os.Stat(contextDir)
 	if err != nil {
 		_ = s.cleanupGitContextInternal(repoPath)
-		return buildtypes.BuildRequest{}, func() error { return nil }, fmt.Errorf("failed to stat resolved git build context: %w", err)
+		return buildtypes.BuildRequest{}, func() error { return nil }, errors.WrapIf(err, "failed to stat resolved git build context")
 	}
 	if !info.IsDir() {
 		_ = s.cleanupGitContextInternal(repoPath)
@@ -318,7 +319,7 @@ func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL s
 
 	repository, err := s.gitRepository.FindEnabledRepositoryByURL(ctx, rawURL)
 	if err != nil {
-		return buildgit.AuthConfig{}, false, fmt.Errorf("failed to resolve git repository credentials: %w", err)
+		return buildgit.AuthConfig{}, false, errors.WrapIf(err, "failed to resolve git repository credentials")
 	}
 	if repository == nil {
 		return buildgit.AuthConfig{}, false, nil
@@ -326,7 +327,7 @@ func (s *BuildService) resolveGitBuildAuthInternal(ctx context.Context, rawURL s
 
 	authConfig, err := s.gitRepository.GetAuthConfig(ctx, repository)
 	if err != nil {
-		return buildgit.AuthConfig{}, true, fmt.Errorf("failed to load git repository credentials: %w", err)
+		return buildgit.AuthConfig{}, true, errors.WrapIf(err, "failed to load git repository credentials")
 	}
 
 	return authConfig, true, nil
@@ -412,7 +413,7 @@ func (s *BuildService) ListImageBuildsByEnvironmentPaginated(ctx context.Context
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &builds)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate builds: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate builds")
 	}
 
 	records := make([]imagetypes.BuildRecord, 0, len(builds))
@@ -480,7 +481,7 @@ func (s *BuildService) createBuildRecord(ctx context.Context, environmentID stri
 	}
 
 	if err := s.db.WithContext(ctx).Create(record).Error; err != nil {
-		return nil, fmt.Errorf("failed to create build record: %w", err)
+		return nil, errors.WrapIf(err, "failed to create build record")
 	}
 
 	return record, nil
@@ -516,7 +517,7 @@ func (s *BuildService) completeBuildRecord(
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.ImageBuild{}).Where("id = ?", buildID).Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to update build record: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to update build record")
 		}
 		if result.RowsAffected == 0 {
 			return errors.New("build record not found")

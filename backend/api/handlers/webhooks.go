@@ -2,8 +2,9 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"net/http"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"

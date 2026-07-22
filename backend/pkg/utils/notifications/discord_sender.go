@@ -2,8 +2,8 @@ package notifications
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -34,18 +34,18 @@ func SendDiscord(ctx context.Context, config models.DiscordConfig, message strin
 
 	shoutrrrURL, err := BuildDiscordURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Discord URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Discord URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Discord sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Discord sender")
 	}
 
 	errs := sender.Send(message, nil)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Discord message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Discord message via shoutrrr")
 		}
 	}
 	return nil

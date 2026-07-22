@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -12,9 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
-	"github.com/moby/moby/client"
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -26,6 +24,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	containertypes "github.com/moby/moby/api/types/container"
+	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/client"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 	updatertypes "go.getarcane.app/updater/types"
@@ -76,7 +77,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 	// Verify we can access Docker
 	_, err = s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, &common.DockerSocketAccessError{}
+		return false, errors.New("docker socket is not accessible")
 	}
 
 	// Verify we can find our container
@@ -94,7 +95,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // the updater engine passes an explicit target with the resolved new image.
 func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updatertypes.SelfUpdateTarget) error {
 	if !s.upgrading.CompareAndSwap(false, true) {
-		return &common.UpgradeInProgressError{}
+		return common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
 	}
 	defer s.upgrading.Store(false)
 
@@ -104,13 +105,13 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		var err error
 		containerId, err = s.getCurrentContainerIDInternal()
 		if err != nil {
-			return fmt.Errorf("get current container: %w", err)
+			return errors.WrapIf(err, "get current container")
 		}
 	}
 
 	currentContainer, err := s.findArcaneContainerInternal(ctx, containerId)
 	if err != nil {
-		return fmt.Errorf("inspect container: %w", err)
+		return errors.WrapIf(err, "inspect container")
 	}
 
 	containerName := strings.TrimPrefix(currentContainer.Name, "/")
@@ -155,7 +156,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	// This will run independently of the current container
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// Pull the upgrader image first to ensure it exists
@@ -168,14 +169,14 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 	pullReader, err := dockerClient.ImagePull(pullCtx, upgraderImage, client.ImagePullOptions{})
 	if err != nil {
 		if errors.Is(pullCtx.Err(), context.DeadlineExceeded) {
-			return fmt.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
+			return errors.Errorf("upgrader image pull timed out for %s (increase DOCKER_IMAGE_PULL_TIMEOUT or setting)", upgraderImage)
 		}
-		return fmt.Errorf("pull upgrader image: %w", err)
+		return errors.WrapIf(err, "pull upgrader image")
 	}
 	// Drain and validate the JSON stream to complete the pull.
 	if err := dockerutils.ConsumeJSONMessageStream(pullReader, nil); err != nil {
 		_ = pullReader.Close()
-		return fmt.Errorf("failed to complete upgrader image pull: %w", err)
+		return errors.WrapIf(err, "failed to complete upgrader image pull")
 	}
 	if closeErr := pullReader.Close(); closeErr != nil {
 		slog.Warn("Failed to close upgrader image pull reader", "error", closeErr)
@@ -204,7 +205,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		},
 	)
 	if err != nil {
-		return fmt.Errorf("resolve upgrader docker runtime: %w", err)
+		return errors.WrapIf(err, "resolve upgrader docker runtime")
 	}
 
 	upgradeCmd := []string{binaryPath, "upgrade", "--container", containerName}
@@ -263,13 +264,13 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		Name:       containerName,
 	})
 	if err != nil {
-		return fmt.Errorf("create upgrader container: %w", err)
+		return errors.WrapIf(err, "create upgrader container")
 	}
 
 	// Start the upgrader container - it will run the upgrade and auto-remove
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
-		return fmt.Errorf("start upgrader container: %w", err)
+		return errors.WrapIf(err, "start upgrader container")
 	}
 
 	slog.Info("Upgrade container started", "upgraderId", resp.ID[:12], "upgraderName", containerName)
@@ -318,7 +319,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 
 	scheme, socketPath, err := vuln.ParseDockerHost(dockerHost)
 	if err != nil {
-		return upgraderRuntimeOptionsInternal{}, fmt.Errorf("resolve docker host %q: %w", dockerHost, err)
+		return upgraderRuntimeOptionsInternal{}, errors.WrapIff(err, "resolve docker host %q", dockerHost)
 	}
 
 	if scheme != "unix" {
@@ -333,7 +334,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 		isRunningInDocker,
 	)
 	if err != nil {
-		return upgraderRuntimeOptionsInternal{}, fmt.Errorf("resolve unix socket source: %w", err)
+		return upgraderRuntimeOptionsInternal{}, errors.WrapIf(err, "resolve unix socket source")
 	}
 
 	options.Mounts = append(options.Mounts, mounttypes.Mount{
@@ -349,7 +350,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
 	id, err := cgroup.CurrentContainerID()
 	if err != nil {
-		return "", &common.NotRunningInDockerError{}
+		return "", errors.New("arcane is not running in a Docker container")
 	}
 	return id, nil
 }
@@ -405,19 +406,20 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 		}
 	}
 
-	return containertypes.InspectResponse{}, &common.ArcaneContainerNotFoundError{}
-}
+	return containertypes.InspectResponse{}, common.Classify(common.ErrNotFound, errors.
 
-// --- Fleet-wide "update all environments" orchestration ---
-//
-// Remote agents upgrade first, while the manager is still up and can orchestrate
-// and report live progress. The manager upgrades itself LAST, which recreates its
-// own container. Updates are unconditional: every environment pulls the latest
-// image whether or not it reports an update available. Because the browser loses
-// the backend across that final restart, the orchestration is a persisted
-// EnvironmentUpdateJob: StartUpdateAll runs the agents phase, triggers the manager
-// self-upgrade as the last step and leaves the job in pending_restart; on the next
-// boot ResumeUpdateAllOnStartup finalizes the manager result and closes the job.
+		// --- Fleet-wide "update all environments" orchestration ---
+		//
+		// Remote agents upgrade first, while the manager is still up and can orchestrate
+		// and report live progress. The manager upgrades itself LAST, which recreates its
+		// own container. Updates are unconditional: every environment pulls the latest
+		// image whether or not it reports an update available. Because the browser loses
+		// the backend across that final restart, the orchestration is a persisted
+		// EnvironmentUpdateJob: StartUpdateAll runs the agents phase, triggers the manager
+		// self-upgrade as the last step and leaves the job in pending_restart; on the next
+		// boot ResumeUpdateAllOnStartup finalizes the manager result and closes the job.
+		New("could not find Arcane container"))
+}
 
 const (
 	localEnvironmentIDInternal     = "0"
@@ -442,16 +444,16 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	// job row is the durable guard once committed; this only closes the in-process
 	// window before that row exists.
 	if !s.updatingAll.CompareAndSwap(false, true) {
-		return nil, &common.UpdateAllInProgressError{}
+		return nil, common.Classify(common.ErrUpdateAllInProgress, errors.New("an update-all job is already in progress"))
 	}
 	defer s.updatingAll.Store(false)
 
 	active, err := s.activeUpdateAllJobInternal(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("check for active update-all job: %w", err)
+		return nil, errors.WrapIf(err, "check for active update-all job")
 	}
 	if active != nil {
-		return nil, &common.UpdateAllInProgressError{}
+		return nil, common.Classify(common.ErrUpdateAllInProgress, errors.New("an update-all job is already in progress"))
 	}
 
 	info := s.versionService.GetAppVersionInfo(ctx)
@@ -487,7 +489,7 @@ func (s *SystemUpgradeService) StartUpdateAll(ctx context.Context, user models.U
 	job.Results = append(models.EnvironmentUpdateResults{managerResult}, remoteResults...)
 
 	if err := s.db.WithContext(ctx).Create(job).Error; err != nil {
-		return nil, fmt.Errorf("create update-all job: %w", err)
+		return nil, errors.WrapIf(err, "create update-all job")
 	}
 
 	slog.InfoContext(ctx, "Update-all started; upgrading agents first", "jobId", job.ID, "user", user.Username)
@@ -716,7 +718,7 @@ func updateAllAgentFailureStatusInternal(err error) models.EnvironmentUpdateResu
 		return models.EnvironmentUpdateResultStatusFailed
 	}
 	// The environment answered with a non-success status — reached, not offline.
-	if _, ok := errors.AsType[*remenv.StatusError](err); ok {
+	if _, ok := stderrors.AsType[*remenv.StatusError](err); ok {
 		return models.EnvironmentUpdateResultStatusFailed
 	}
 	return models.EnvironmentUpdateResultStatusSkippedOffline

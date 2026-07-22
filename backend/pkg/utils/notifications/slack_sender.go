@@ -2,8 +2,8 @@ package notifications
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -19,7 +19,7 @@ func BuildSlackURL(config models.SlackConfig) (string, error) {
 	// Parse the token to get the token object
 	token, err := slack.ParseToken(config.Token)
 	if err != nil {
-		return "", fmt.Errorf("invalid Slack token format (expected format: xoxb-... or xoxp-...): %w", err)
+		return "", errors.WrapIf(err, "invalid Slack token format (expected format: xoxb-... or xoxp-...)")
 	}
 
 	slackConfig := &slack.Config{
@@ -44,18 +44,18 @@ func SendSlack(ctx context.Context, config models.SlackConfig, message string) e
 
 	shoutrrrURL, err := BuildSlackURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Slack URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Slack URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Slack sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Slack sender")
 	}
 
 	errs := sender.Send(message, nil)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Slack message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Slack message via shoutrrr")
 		}
 	}
 	return nil

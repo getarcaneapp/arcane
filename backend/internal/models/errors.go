@@ -1,8 +1,12 @@
 package models
 
 import (
-	"errors"
+	stderrors "errors"
 	"net/http"
+
+	"emperror.dev/errors"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 )
 
 type APIErrorCode string
@@ -84,22 +88,6 @@ func NewValidationError(message string, details any) *APIError {
 	return NewAPIErrorWithDetails(message, APIErrorCodeValidationError, http.StatusBadRequest, details)
 }
 
-type NotFoundError struct {
-	Message string
-}
-
-func (e *NotFoundError) Error() string {
-	return e.Message
-}
-
-type ConflictError struct {
-	Message string
-}
-
-func (e *ConflictError) Error() string {
-	return e.Message
-}
-
 type DockerAPIError struct {
 	Message    string
 	StatusCode int
@@ -117,30 +105,43 @@ func (e *DockerAPIError) HTTPStatus() int {
 	return http.StatusInternalServerError
 }
 
-type ValidationError struct {
-	Message string
-	Field   string
-}
-
-func (e *ValidationError) Error() string {
-	return e.Message
-}
-
 func ToAPIError(err error) *APIError {
-	if apiErr, ok := errors.AsType[*APIError](err); ok {
+	if apiErr, ok := stderrors.AsType[*APIError](err); ok {
 		return apiErr
 	}
-	if notFoundErr, ok := errors.AsType[*NotFoundError](err); ok {
-		return NewNotFoundError(notFoundErr.Message)
-	}
-	if conflictErr, ok := errors.AsType[*ConflictError](err); ok {
-		return NewConflictError(conflictErr.Message)
-	}
-	if validationErr, ok := errors.AsType[*ValidationError](err); ok {
-		return NewValidationError(validationErr.Message, map[string]string{"field": validationErr.Field})
-	}
-	if dockerAPIErr, ok := errors.AsType[*DockerAPIError](err); ok {
+	if dockerAPIErr, ok := stderrors.AsType[*DockerAPIError](err); ok {
 		return NewAPIErrorWithDetails(dockerAPIErr.Message, APIErrorCodeDockerAPIError, dockerAPIErr.HTTPStatus(), dockerAPIErr.Details)
 	}
+
+	switch {
+	case errors.Is(err, common.ErrValidation):
+		details := make(map[string]any)
+		keyValues := errors.GetDetails(err)
+		for i := 0; i+1 < len(keyValues); i += 2 {
+			key, ok := keyValues[i].(string)
+			if ok {
+				details[key] = keyValues[i+1]
+			}
+		}
+		if len(details) == 0 {
+			details = nil
+		}
+		return NewValidationError(err.Error(), details)
+	case errors.Is(err, common.ErrBadRequest):
+		return NewAPIError(err.Error(), APIErrorCodeBadRequest, http.StatusBadRequest)
+	case errors.Is(err, common.ErrUnauthorized):
+		return NewAPIError(err.Error(), APIErrorCodeUnauthorized, http.StatusUnauthorized)
+	case errors.Is(err, common.ErrForbidden):
+		return NewAPIError(err.Error(), APIErrorCodeForbidden, http.StatusForbidden)
+	case errors.Is(err, common.ErrNotFound):
+		return NewNotFoundError(err.Error())
+	case errors.Is(err, common.ErrConflict):
+		return NewConflictError(err.Error())
+	case errors.Is(err, common.ErrTimeout):
+		return NewAPIError(err.Error(), APIErrorCodeTimeout, http.StatusGatewayTimeout)
+	case errors.Is(err, common.ErrUnavailable):
+		return NewAPIError(err.Error(), APIErrorCodeInternalServerError, http.StatusServiceUnavailable)
+	}
+
 	return NewInternalServerError(err.Error())
 }

@@ -2,11 +2,11 @@ package scheduler
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
 	"github.com/samber/mo"
@@ -90,7 +90,7 @@ func (js *JobScheduler) RunBusWatcherNow(ctx context.Context, watcherID string) 
 	watcher, ok := js.watchers[watcherID]
 	js.mu.Unlock()
 	if !ok {
-		return fmt.Errorf("bus watcher %s is not manually runnable", watcherID)
+		return errors.Errorf("bus watcher %s is not manually runnable", watcherID)
 	}
 
 	return watcher.RunNow(ctx)

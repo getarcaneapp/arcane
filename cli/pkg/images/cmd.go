@@ -33,7 +33,6 @@ package images
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -44,6 +43,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/fatih/color"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -97,7 +98,7 @@ var imagesListCmd = &cobra.Command{
 		// Parse the path to handle query params
 		u, err := url.Parse(path)
 		if err != nil {
-			return fmt.Errorf("failed to parse endpoint path: %w", err)
+			return errors.WrapIf(err, "failed to parse endpoint path")
 		}
 		q := u.Query()
 
@@ -114,20 +115,20 @@ var imagesListCmd = &cobra.Command{
 		u.RawQuery = q.Encode()
 		path, err = cmdutil.ApplyPaginationParams(cmd, u.String(), "images", "limit", imagesLimit, 0, "start", imagesStart)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		log.Debugf("Listing images from: %s", path)
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list images: %w", err)
+			return errors.WrapIf(err, "failed to list images")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(body))
@@ -146,7 +147,7 @@ var imagesListCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 		result.Data = filterImagesByUsage(result.Data, imagesInUseOnly, imagesUnusedOnly)
 		result.Pagination.TotalItems = int64(len(result.Data))
@@ -154,7 +155,7 @@ var imagesListCmd = &cobra.Command{
 		if cmdutil.JSONOutputEnabled(cmd) {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -208,13 +209,13 @@ var imagesGetCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to get image: %w", err)
+			return errors.WrapIf(err, "failed to get image")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(body))
@@ -230,7 +231,7 @@ var imagesGetCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		output.Header("Image Details")
@@ -303,7 +304,7 @@ var imagesRemoveCmd = &cobra.Command{
 		if removeForce {
 			u, err := url.Parse(path)
 			if err != nil {
-				return fmt.Errorf("failed to parse path: %w", err)
+				return errors.WrapIf(err, "failed to parse path")
 			}
 			q := u.Query()
 			q.Set("force", "true")
@@ -315,17 +316,17 @@ var imagesRemoveCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to remove image: %w", err)
+			return errors.WrapIf(err, "failed to remove image")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return fmt.Errorf("failed to remove image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+			return errors.Errorf("failed to remove image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(body))
@@ -343,7 +344,7 @@ var imagesRemoveCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		output.Success("%s", result.Data.Message)
@@ -378,19 +379,19 @@ var imagesPullCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), path, requestBody)
 		if err != nil {
-			return fmt.Errorf("failed to pull image: %w", err)
+			return errors.WrapIf(err, "failed to pull image")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return fmt.Errorf("failed to pull image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+			return errors.Errorf("failed to pull image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 		}
 
 		// Stream the response
 		if cmdutil.JSONOutputEnabled(cmd) {
 			_, err = io.Copy(cmd.OutOrStdout(), resp.Body)
 			if err != nil {
-				return fmt.Errorf("failed to read pull stream: %w", err)
+				return errors.WrapIf(err, "failed to read pull stream")
 			}
 			return nil
 		}
@@ -416,14 +417,14 @@ var imagesPullCmd = &cobra.Command{
 				if err == io.EOF {
 					break
 				}
-				return fmt.Errorf("failed to decode stream: %w", err)
+				return errors.WrapIf(err, "failed to decode stream")
 			}
 
 			if event.Error != "" {
 				if progressUI != nil {
 					progressUI.Stop()
 				}
-				return fmt.Errorf("pull error: %s", event.Error)
+				return errors.Errorf("pull error: %s", event.Error)
 			}
 
 			if event.Status == "Downloading" && event.ProgressDetail.Total > 0 {
@@ -504,17 +505,17 @@ var imagesPruneCmd = &cobra.Command{
 		}
 
 		if err != nil {
-			return fmt.Errorf("failed to prune images: %w", err)
+			return errors.WrapIf(err, "failed to prune images")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return fmt.Errorf("failed to prune images (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
+			return errors.Errorf("failed to prune images (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errBody)))
 		}
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(body))
@@ -533,7 +534,7 @@ var imagesPruneCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		output.Success("Pruned %d images, reclaimed %s", len(result.Data.ImagesDeleted), size.Capacity(result.Data.SpaceReclaimed).String())
@@ -559,13 +560,13 @@ var imagesCountsCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to get image counts: %w", err)
+			return errors.WrapIf(err, "failed to get image counts")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		body, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(body))
@@ -581,7 +582,7 @@ var imagesCountsCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(body, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		output.Header("Image Usage Counts")
@@ -617,12 +618,12 @@ var imagesUploadCmd = &cobra.Command{
 		// Open the file
 		file, err := os.Open(filePath)
 		if err != nil {
-			return fmt.Errorf("failed to open file: %w", err)
+			return errors.WrapIf(err, "failed to open file")
 		}
 		defer func() { _ = file.Close() }()
 		fileInfo, err := file.Stat()
 		if err != nil {
-			return fmt.Errorf("failed to stat file: %w", err)
+			return errors.WrapIf(err, "failed to stat file")
 		}
 
 		pr, pw := io.Pipe()
@@ -643,15 +644,15 @@ var imagesUploadCmd = &cobra.Command{
 		go func() {
 			part, err := writer.CreateFormFile("file", filepath.Base(filePath))
 			if err != nil {
-				_ = pw.CloseWithError(fmt.Errorf("failed to create form file: %w", err))
+				_ = pw.CloseWithError(errors.WrapIf(err, "failed to create form file"))
 				return
 			}
 			if _, err := io.Copy(part, file); err != nil {
-				_ = pw.CloseWithError(fmt.Errorf("failed to copy file: %w", err))
+				_ = pw.CloseWithError(errors.WrapIf(err, "failed to copy file"))
 				return
 			}
 			if err := writer.Close(); err != nil {
-				_ = pw.CloseWithError(fmt.Errorf("failed to close multipart writer: %w", err))
+				_ = pw.CloseWithError(errors.WrapIf(err, "failed to close multipart writer"))
 				return
 			}
 			_ = pw.Close()
@@ -664,18 +665,18 @@ var imagesUploadCmd = &cobra.Command{
 
 		resp, err := c.RequestRaw(cmd.Context(), http.MethodPost, path, requestBody, headers)
 		if err != nil {
-			return fmt.Errorf("failed to upload image: %w", err)
+			return errors.WrapIf(err, "failed to upload image")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 			errorBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-			return fmt.Errorf("failed to upload image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errorBody)))
+			return errors.Errorf("failed to upload image (status %d): %s", resp.StatusCode, strings.TrimSpace(string(errorBody)))
 		}
 
 		respBody, err := io.ReadAll(resp.Body)
 		if err != nil {
-			return fmt.Errorf("failed to read response: %w", err)
+			return errors.WrapIf(err, "failed to read response")
 		}
 
 		log.Debugf("Response body: %s", string(respBody))
@@ -691,11 +692,11 @@ var imagesUploadCmd = &cobra.Command{
 		}
 
 		if err := json.Unmarshal(respBody, &result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if !result.Success {
-			return fmt.Errorf("upload failed: %s", string(respBody))
+			return errors.Errorf("upload failed: %s", string(respBody))
 		}
 
 		output.Success("Image uploaded successfully")
@@ -770,19 +771,19 @@ func resolveImageID(ctx context.Context, c *client.Client, identifier string, al
 		}
 	}
 
-	return "", fmt.Errorf("image %q not found; use the image ID or run `arcane images list`", trimmed)
+	return "", errors.Errorf("image %q not found; use the image ID or run `arcane images list`", trimmed)
 }
 
 func resolveImageByID(ctx context.Context, c *client.Client, identifier string) (string, bool, error) {
 	resp, err := c.Get(ctx, types.Endpoints.Image(c.EnvID(), identifier))
 	if err != nil {
-		return "", false, fmt.Errorf("failed to resolve image %q: %w", identifier, err)
+		return "", false, errors.WrapIff(err, "failed to resolve image %q", identifier)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return "", false, fmt.Errorf("failed to read image response: %w", err)
+		return "", false, errors.WrapIf(err, "failed to read image response")
 	}
 
 	if resp.StatusCode == http.StatusOK {
@@ -791,16 +792,16 @@ func resolveImageByID(ctx context.Context, c *client.Client, identifier string) 
 			Data    image.DetailSummary `json:"data"`
 		}
 		if err := json.Unmarshal(body, &result); err != nil {
-			return "", false, fmt.Errorf("failed to parse image response: %w", err)
+			return "", false, errors.WrapIf(err, "failed to parse image response")
 		}
 		if result.Data.ID == "" {
-			return "", false, fmt.Errorf("image lookup for %q returned empty ID", identifier)
+			return "", false, errors.Errorf("image lookup for %q returned empty ID", identifier)
 		}
 		return result.Data.ID, true, nil
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
-		return "", false, fmt.Errorf("failed to resolve image %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
+		return "", false, errors.Errorf("failed to resolve image %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	return "", false, nil
@@ -827,17 +828,17 @@ func searchImageMatches(ctx context.Context, c *client.Client, term, trimmed str
 	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Images(c.EnvID()), url.QueryEscape(term), 200)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search images: %w", err)
+		return nil, errors.WrapIf(err, "failed to search images")
 	}
 
 	searchBody, err := io.ReadAll(searchResp.Body)
 	_ = searchResp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read images response: %w", err)
+		return nil, errors.WrapIf(err, "failed to read images response")
 	}
 
 	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("failed to search images (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
+		return nil, errors.Errorf("failed to search images (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
 	}
 
 	var result struct {
@@ -845,7 +846,7 @@ func searchImageMatches(ctx context.Context, c *client.Client, term, trimmed str
 		Data    []image.Summary `json:"data"`
 	}
 	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse images response: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse images response")
 	}
 
 	return filterImageMatches(result.Data, trimmed), nil
@@ -907,10 +908,10 @@ func selectImageMatchID(matches []image.Summary, trimmed string, allowPrompt boo
 	}
 
 	if !allowPrompt {
-		return "", false, fmt.Errorf("multiple images match %q; use the image ID or run `arcane images list`", trimmed)
+		return "", false, errors.Errorf("multiple images match %q; use the image ID or run `arcane images list`", trimmed)
 	}
 	if len(matches) > maxPromptOptions {
-		return "", false, fmt.Errorf("multiple images match %q (%d results); refine your query or use the image ID", trimmed, len(matches))
+		return "", false, errors.Errorf("multiple images match %q (%d results); refine your query or use the image ID", trimmed, len(matches))
 	}
 
 	options := make([]string, 0, len(matches))

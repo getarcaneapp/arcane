@@ -5,12 +5,12 @@ import (
 
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/labstack/echo/v4"
 )
@@ -363,10 +363,10 @@ func DoRequest(ctx context.Context, envID, method, path string, body []byte) (in
 
 	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok {
-		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
+		return 0, nil, errors.Errorf("no active tunnel for environment %s", envID)
 	}
 	if tunnel.Conn.IsClosed() {
-		return 0, nil, fmt.Errorf("tunnel for environment %s is closed", envID)
+		return 0, nil, errors.Errorf("tunnel for environment %s is closed", envID)
 	}
 
 	headers := make(map[string]string)

@@ -4,9 +4,10 @@ import (
 	jsonv1 "encoding/json"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"net/http"
+
+	"emperror.dev/errors"
 
 	"github.com/labstack/echo/v4"
 )

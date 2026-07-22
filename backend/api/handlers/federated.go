@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -253,13 +254,13 @@ func writeFederatedTokenExchangeErrorInternal(c echo.Context, err error) error {
 	description := "token exchange rejected"
 
 	switch {
-	case common.IsErrorFederatedCredentialInvalidRequest(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalidRequest):
 		code = "invalid_request"
 		description = "invalid token exchange request"
-	case common.IsErrorFederatedCredentialInvalidGrant(err),
-		common.IsErrorFederatedCredentialNotFound(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalidGrant),
+		errors.Is(err, common.ErrFederatedCredentialNotFound):
 		code = "invalid_grant"
-	case common.IsErrorFederatedCredentialInvalid(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalid):
 		code = "invalid_request"
 	default:
 		code = "server_error"
@@ -274,12 +275,12 @@ func writeFederatedTokenExchangeErrorInternal(c echo.Context, err error) error {
 
 func federatedCredentialManagementErrorInternal(err error) error {
 	switch {
-	case common.IsErrorFederatedCredentialNotFound(err):
+	case errors.Is(err, common.ErrFederatedCredentialNotFound):
 		return huma.Error404NotFound("federated credential not found")
-	case common.IsErrorFederatedCredentialInvalid(err),
-		common.IsErrorFederatedCredentialInvalidRequest(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalid),
+		errors.Is(err, common.ErrFederatedCredentialInvalidRequest):
 		return huma.Error400BadRequest("invalid federated credential")
-	case common.IsErrorFederatedCredentialPermissionEscalation(err):
+	case errors.Is(err, common.ErrFederatedCredentialPermissionEscalation):
 		return huma.Error403Forbidden("permission denied")
 	default:
 		return huma.Error500InternalServerError("federated credential operation failed")

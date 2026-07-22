@@ -13,6 +13,7 @@ import (
 	"sync"
 	"testing"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -129,7 +130,7 @@ func TestUpdateVariable_SecretToPlainRequiresReplacementValue(t *testing.T) {
 	plain := false
 	_, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{IsSecret: &plain})
 	require.Error(t, err)
-	require.True(t, common.IsGlobalVariableSecretValueRequiredError(err))
+	require.True(t, errors.Is(err, common.ErrGlobalVariableSecretValueRequired))
 
 	replacement := "public-value"
 	updated, err := service.UpdateVariable(ctx, created.ID, envtypes.UpdateGlobalVariableRequest{
@@ -171,7 +172,7 @@ func TestResolveEffectiveVariables_EnvScopedOverridesAllEnv(t *testing.T) {
 	_, err = service.CreateVariable(ctx, envtypes.CreateGlobalVariableRequest{
 		Key: "NO_SCOPE", Value: "x", AllEnvironments: false, EnvironmentIDs: []string{},
 	})
-	require.True(t, common.IsGlobalVariableScopeRequiredError(err), "expected GlobalVariableScopeRequiredError, got %v", err)
+	require.True(t, errors.Is(err, common.ErrGlobalVariableScopeRequired), "expected GlobalVariableScopeRequiredError, got %v", err)
 
 	forA, err := service.resolveEffectiveVariablesInternal(ctx, "env-a")
 	require.NoError(t, err)
@@ -188,7 +189,7 @@ func TestWriteLocalEnvFile_RejectsNewlineInjectionKey(t *testing.T) {
 	err := service.WriteLocalEnvFile(context.Background(), []envtypes.Variable{
 		{Key: "BENIGN\nINJECTED", Value: "x"},
 	})
-	require.True(t, common.IsInvalidEnvKeyError(err), "expected InvalidEnvKeyError, got %v", err)
+	require.True(t, errors.Is(err, common.ErrInvalidEnvKey), "expected InvalidEnvKeyError, got %v", err)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, ".env.global"))
 	require.True(t, os.IsNotExist(statErr), ".env.global must not be written on validation failure")

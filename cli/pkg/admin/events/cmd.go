@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -41,24 +42,24 @@ var listCmd = &cobra.Command{
 		path := types.Endpoints.Events()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list events: %w", err)
+			return errors.WrapIf(err, "failed to list events")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -103,24 +104,24 @@ var listEnvCmd = &cobra.Command{
 		path := types.Endpoints.EventsEnvironment(c.EnvID())
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "events", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list environment events: %w", err)
+			return errors.WrapIf(err, "failed to list environment events")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[event.Event]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -177,11 +178,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Event(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete event: %w", err)
+			return errors.WrapIf(err, "failed to delete event")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete event: %w", err)
+			return errors.WrapIf(err, "failed to delete event")
 		}
 
 		output.Success("Event deleted successfully")

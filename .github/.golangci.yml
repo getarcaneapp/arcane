@@ -88,9 +88,17 @@ linters:
     - whitespace
     - zerologlint
   settings:
+    forbidigo:
+      forbid:
+        - pattern: ^errors\.(Wrap|Wrapf|WithStack)$
+          msg: use WrapIf, WrapIff, or WithStackIf so an existing stack is preserved
     gomoddirectives:
       # replace directives (=> ../cli, => ../types). Allow them.
       replace-local: true
+    importas:
+      alias:
+        - pkg: errors
+          alias: stderrors
   exclusions:
     generated: lax
     presets:

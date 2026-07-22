@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	stdimage "image"
 	"image/jpeg"
@@ -13,6 +12,8 @@ import (
 	"mime/multipart"
 	"net/http"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -218,27 +219,27 @@ func RegisterAuth(api huma.API, userService *services.UserService, authService *
 func (h *AuthHandler) Login(ctx context.Context, input *LoginInput) (*LoginOutput, error) {
 	localAuthEnabled, err := h.authService.IsLocalAuthEnabled(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.AuthSettingsCheckError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to check authentication settings")
 	}
 	if !localAuthEnabled {
-		return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
+		return nil, huma.Error400BadRequest("Local authentication is disabled")
 	}
 
 	userModel, tokenPair, err := h.authService.Login(ctx, input.Body.Username, input.Body.Password, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
-			return nil, huma.Error401Unauthorized((&common.InvalidCredentialsError{}).Error())
+			return nil, huma.Error401Unauthorized("Invalid username or password")
 		case errors.Is(err, services.ErrLocalAuthDisabled):
-			return nil, huma.Error400BadRequest((&common.LocalAuthDisabledError{}).Error())
+			return nil, huma.Error400BadRequest("Local authentication is disabled")
 		default:
-			return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Authentication failed")
 		}
 	}
 
 	userResp, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
@@ -288,17 +289,17 @@ func (h *AuthHandler) Logout(ctx context.Context, input *struct{}) (*LogoutOutpu
 func (h *AuthHandler) GetCurrentUser(ctx context.Context, input *struct{}) (*GetCurrentUserOutput, error) {
 	userID, exists := humamw.GetUserIDFromContext(ctx)
 	if !exists {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 
 	userModel, err := h.userService.GetUser(ctx, userID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &GetCurrentUserOutput{
@@ -314,10 +315,10 @@ func (h *AuthHandler) RefreshToken(ctx context.Context, input *RefreshTokenInput
 	tokenPair, err := h.authService.RefreshToken(ctx, input.Body.RefreshToken, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
 		switch {
-		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken), common.IsTokenValidationError(err), common.IsSessionRevokedError(err), errors.Is(err, services.ErrTokenVersionMismatch):
-			return nil, huma.Error401Unauthorized((&common.InvalidTokenError{}).Error())
+		case errors.Is(err, services.ErrInvalidToken), errors.Is(err, services.ErrExpiredToken), errors.Is(err, common.ErrTokenValidation), errors.Is(err, common.ErrSessionRevoked), errors.Is(err, services.ErrTokenVersionMismatch):
+			return nil, huma.Error401Unauthorized("Invalid or expired refresh token")
 		default:
-			return nil, huma.Error500InternalServerError((&common.TokenRefreshError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Failed to refresh token")
 		}
 	}
 
@@ -352,7 +353,7 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	}
 
 	if input.Body.CurrentPassword == "" {
-		return nil, huma.Error400BadRequest((&common.PasswordRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Current password is required")
 	}
 
 	currentSessionID, _ := humamw.GetCurrentSessionIDFromContext(ctx)
@@ -360,9 +361,9 @@ func (h *AuthHandler) ChangePassword(ctx context.Context, input *ChangePasswordI
 	if err != nil {
 		switch {
 		case errors.Is(err, services.ErrInvalidCredentials):
-			return nil, huma.Error401Unauthorized((&common.IncorrectPasswordError{}).Error())
+			return nil, huma.Error401Unauthorized("Current password is incorrect")
 		default:
-			return nil, huma.Error500InternalServerError((&common.PasswordChangeError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Failed to change password")
 		}
 	}
 
@@ -415,7 +416,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 	userModel, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	if input.Body.DisplayName != nil {
@@ -440,12 +441,12 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 
 	updated, err := h.userService.UpdateUser(ctx, userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updated)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &UpdateMyProfileOutput{
@@ -508,12 +509,12 @@ func (h *AuthHandler) UploadMyAvatar(ctx context.Context, input *UploadMyAvatarI
 	// Reload user so the response reflects the new AvatarURL
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &UploadMyAvatarOutput{
@@ -550,12 +551,12 @@ func (h *AuthHandler) DeleteMyAvatar(ctx context.Context, input *struct{}) (*Del
 
 	updatedUser, err := h.userService.GetUser(ctx, currentUser.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get user information")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &DeleteMyAvatarOutput{

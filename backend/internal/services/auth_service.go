@@ -4,11 +4,13 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"time"
+
+	"emperror.dev/emperror"
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -20,14 +22,14 @@ import (
 	"github.com/samber/hot"
 )
 
-var (
-	ErrInvalidCredentials   = errors.New("invalid credentials")
-	ErrUserNotFound         = errors.New("user not found")
-	ErrInvalidToken         = errors.New("invalid token")
-	ErrExpiredToken         = errors.New("token expired")
-	ErrTokenVersionMismatch = errors.New("token version mismatch")
-	ErrLocalAuthDisabled    = errors.New("local authentication is disabled")
-	ErrOidcAuthDisabled     = errors.New("OIDC authentication is disabled")
+const (
+	ErrInvalidCredentials   = errors.Sentinel("invalid credentials")
+	ErrUserNotFound         = errors.Sentinel("user not found")
+	ErrInvalidToken         = errors.Sentinel("invalid token")
+	ErrExpiredToken         = errors.Sentinel("token expired")
+	ErrTokenVersionMismatch = errors.Sentinel("token version mismatch")
+	ErrLocalAuthDisabled    = errors.Sentinel("local authentication is disabled")
+	ErrOidcAuthDisabled     = errors.Sentinel("OIDC authentication is disabled")
 )
 
 type TokenPair struct {
@@ -78,6 +80,7 @@ type AuthService struct {
 	jwtSecret       []byte
 	refreshExpiry   time.Duration
 	config          *config.Config
+	errorHandler    emperror.ErrorHandler
 	// tokenCache is a per-process in-memory cache. In horizontally-scaled
 	// deployments, RevokeSession / ChangePassword / InvalidateUserTokenCache
 	// only purge the local instance; peers continue to accept the token until
@@ -85,10 +88,13 @@ type AuthService struct {
 	tokenCache *hot.HotCache[string, verifiedTokenEntry]
 }
 
-func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, roleService *RoleService, jwtSecret string, cfg *config.Config) *AuthService {
+func NewAuthService(userService *UserService, settingsService *SettingsService, eventService *EventService, sessionService *SessionService, roleService *RoleService, jwtSecret string, cfg *config.Config, errorHandler emperror.ErrorHandler) *AuthService {
 	// Production managers must supply an explicit, non-default JWT_SECRET (fail
 	// closed, mirroring the ENCRYPTION_KEY guard). Dev and agent mode auto-generate.
 	requireExplicitSecret := cfg.Environment == config.AppEnvironmentProduction && !cfg.AgentMode
+	if errorHandler == nil {
+		errorHandler = emperror.NoopHandler{}
+	}
 	return &AuthService{
 		userService:     userService,
 		settingsService: settingsService,
@@ -98,6 +104,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 		jwtSecret:       jwtclaims.CheckOrGenerateJwtSecret(jwtSecret, requireExplicitSecret),
 		refreshExpiry:   cfg.JWTRefreshExpiry,
 		config:          cfg,
+		errorHandler:    errorHandler,
 		tokenCache: hot.NewHotCache[string, verifiedTokenEntry](hot.LRU, 4096).
 			WithTTL(15 * time.Second).
 			WithJanitor().
@@ -108,7 +115,7 @@ func NewAuthService(userService *UserService, settingsService *SettingsService, 
 func (s *AuthService) getAuthSettings(ctx context.Context) (*AuthSettings, error) {
 	settings, err := s.settingsService.GetSettings(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get settings: %w", err)
+		return nil, errors.WrapIf(err, "failed to get settings")
 	}
 
 	timeoutMinutes, _ := s.GetSessionTimeout(ctx)
@@ -254,7 +261,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	if s.userService.NeedsPasswordUpgrade(user.PasswordHash) {
 		s.runInBackground(ctx, "upgrade_password_hash", func(ctx context.Context) error {
 			if err := s.userService.UpgradePasswordHash(ctx, user.ID, password); err != nil {
-				return fmt.Errorf("failed to upgrade password hash for user %s: %w", user.ID, err)
+				return errors.WrapIff(err, "failed to upgrade password hash for user %s", user.ID)
 			}
 			slog.InfoContext(ctx, "Successfully upgraded password hash from bcrypt to Argon2", "user", user.Username)
 			return nil
@@ -268,7 +275,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
 		if _, err := s.userService.UpdateUser(ctx, userCopy); err != nil {
-			return fmt.Errorf("failed to update user's last login time: %w", err)
+			return errors.WrapIf(err, "failed to update user's last login time")
 		}
 		return nil
 	})
@@ -510,7 +517,7 @@ func (s *AuthService) syncOidcRoleAssignments(ctx context.Context, user *models.
 	groups := s.extractOidcGroups(ctx, userInfo, tokenResp)
 	mappings, err := s.roleService.ListOidcMappings(ctx)
 	if err != nil {
-		return fmt.Errorf("list oidc mappings: %w", err)
+		return errors.WrapIf(err, "list oidc mappings")
 	}
 
 	groupSet := make(map[string]struct{}, len(groups))
@@ -625,7 +632,7 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	token, err := jwt.ParseWithClaims(refreshToken, &refreshClaims{},
 		func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return s.jwtSecret, nil
 		})
@@ -639,11 +646,11 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 
 	claims, ok := token.Claims.(*refreshClaims)
 	if !ok {
-		return nil, &common.InvalidTokenClaimsError{}
+		return nil, common.Classify(common.ErrTokenValidation, errors.New("Invalid token claims"))
 	}
 
 	if claims.Subject != "refresh" {
-		return nil, &common.RefreshTokenSubjectError{}
+		return nil, common.Classify(common.ErrTokenValidation, errors.New("Not a refresh token"))
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
@@ -651,16 +658,16 @@ func (s *AuthService) RefreshToken(ctx context.Context, refreshToken string, met
 	}
 
 	if claims.UserID == "" {
-		return nil, &common.MissingTokenUserIDError{}
+		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing user ID in token"))
 	}
 	if claims.ID == "" {
-		return nil, &common.MissingRefreshTokenIDError{}
+		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing refresh token ID"))
 	}
 	if claims.SessionID == "" {
-		return nil, &common.MissingTokenSessionIDError{}
+		return nil, common.Classify(common.ErrTokenValidation, errors.New("Missing session ID in token"))
 	}
 	if s.sessionService == nil {
-		return nil, &common.SessionServiceUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
 
 	session, err := s.sessionService.GetSessionByID(ctx, claims.SessionID)
@@ -691,7 +698,7 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 	token, err := jwt.ParseWithClaims(accessToken, &userClaims{},
 		func(t *jwt.Token) (any, error) {
 			if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-				return nil, fmt.Errorf("unexpected signing method: %v", t.Header["alg"])
+				return nil, errors.Errorf("unexpected signing method: %v", t.Header["alg"])
 			}
 			return s.jwtSecret, nil
 		})
@@ -708,15 +715,15 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 
 	claims, ok := token.Claims.(*userClaims)
 	if !ok {
-		return nil, "", &common.InvalidTokenClaimsError{}
+		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Invalid token claims"))
 	}
 
 	if claims.Subject != "access" {
-		return nil, "", &common.AccessTokenSubjectError{}
+		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Not an access token"))
 	}
 
 	if claims.ID == "" {
-		return nil, "", &common.MissingTokenUserIDError{}
+		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Missing user ID in token"))
 	}
 
 	if claims.AppVersion != "" && claims.AppVersion != config.Version {
@@ -724,10 +731,10 @@ func (s *AuthService) VerifyToken(ctx context.Context, accessToken string) (*mod
 		return nil, "", ErrTokenVersionMismatch
 	}
 	if claims.SessionID == "" {
-		return nil, "", &common.MissingTokenSessionIDError{}
+		return nil, "", common.Classify(common.ErrTokenValidation, errors.New("Missing session ID in token"))
 	}
 	if s.sessionService == nil {
-		return nil, "", &common.SessionServiceUnavailableError{}
+		return nil, "", common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
 
 	tokenHash := hashTokenInternal(accessToken)
@@ -769,7 +776,7 @@ func hashTokenInternal(token string) string {
 
 func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPassword, newPassword, currentSessionID string) error {
 	if s.sessionService == nil {
-		return &common.SessionServiceUnavailableError{}
+		return common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
 
 	user, err := s.userService.GetUserByID(ctx, userID)
@@ -785,7 +792,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 
 	hashedPassword, err := s.userService.hashPassword(newPassword)
 	if err != nil {
-		return fmt.Errorf("failed to hash password: %w", err)
+		return errors.WrapIf(err, "failed to hash password")
 	}
 
 	user.PasswordHash = hashedPassword
@@ -855,7 +862,7 @@ func (s *AuthService) LogoutAllOtherSessions(ctx context.Context, userID, curren
 
 func (s *AuthService) createSessionAndTokensInternal(ctx context.Context, user *models.User, meta auth.SessionMeta) (*TokenPair, error) {
 	if s.sessionService == nil {
-		return nil, &common.SessionServiceUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
 	refreshExpiry := time.Now().Add(s.refreshExpiry)
 	session, refreshJTI, err := s.sessionService.CreateSession(ctx, user.ID, refreshExpiry, meta)
@@ -924,7 +931,7 @@ func (s *AuthService) buildTokenPairInternal(ctx context.Context, user *models.U
 
 func (s *AuthService) IssueFederatedToken(ctx context.Context, user *models.User, credentialID string, ttlSeconds int) (*TokenPair, error) {
 	if s.sessionService == nil {
-		return nil, &common.SessionServiceUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("Session service is not configured"))
 	}
 	if user == nil {
 		return nil, ErrUserNotFound
@@ -991,7 +998,7 @@ func validateSessionActiveInternal(session *models.UserSession) error {
 		return ErrInvalidToken
 	}
 	if session.RevokedAt != nil {
-		return &common.SessionRevokedError{}
+		return common.Classify(common.ErrSessionRevoked, errors.New("Session has been revoked"))
 	}
 	if time.Now().After(session.ExpiresAt) {
 		return ErrExpiredToken
@@ -1019,8 +1026,13 @@ func (s *AuthService) runInBackground(ctx context.Context, name string, fn func(
 
 	go func() {
 		defer func() {
-			if r := recover(); r != nil {
-				slog.ErrorContext(bgCtx, "Background task panicked", "task", name, "panic", r)
+			if panicErr := emperror.Recover(recover()); panicErr != nil {
+				panicErr = errors.WithDetails(errors.WrapIf(panicErr, "Background task panicked"), "task", name)
+				if contextHandler, ok := s.errorHandler.(emperror.ErrorHandlerContext); ok {
+					contextHandler.HandleContext(bgCtx, panicErr)
+				} else {
+					s.errorHandler.Handle(panicErr)
+				}
 			}
 		}()
 

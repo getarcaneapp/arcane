@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -15,6 +14,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/google/uuid"
 	"github.com/samber/mo"
@@ -62,12 +63,12 @@ func NewSettingsService(ctx context.Context, db *database.DB) (*SettingsService,
 
 	err := svc.LoadDatabaseSettings(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to load settings: %w", err)
+		return nil, errors.WrapIf(err, "failed to load settings")
 	}
 
 	err = svc.setupInstanceID(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to setup instance ID: %w", err)
+		return nil, errors.WrapIf(err, "failed to setup instance ID")
 	}
 
 	return svc, nil
@@ -95,7 +96,7 @@ func (s *SettingsService) LoadDatabaseSettings(ctx context.Context) (err error) 
 
 func (s *SettingsService) refreshSettingsCacheInternal(ctx context.Context) error {
 	if err := s.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to refresh settings cache: %w", err)
+		return errors.WrapIf(err, "failed to refresh settings cache")
 	}
 
 	return nil
@@ -233,14 +234,14 @@ func (s *SettingsService) loadDatabaseSettingsInternal(ctx context.Context, db *
 		WithContext(queryCtx).
 		Find(&loaded).Error
 	if err != nil {
-		return nil, fmt.Errorf("failed to load configuration from the database: %w", err)
+		return nil, errors.WrapIf(err, "failed to load configuration from the database")
 	}
 
 	for _, v := range loaded {
 		err = dest.UpdateField(v.Key, v.Value, false)
 
 		if err != nil && !errors.Is(err, models.SettingKeyNotFoundError{}) {
-			return nil, fmt.Errorf("failed to process settings for key '%s': %w", v.Key, err)
+			return nil, errors.WrapIff(err, "failed to process settings for key '%s'", v.Key)
 		}
 	}
 
@@ -256,7 +257,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 	// Fetch all settings once to avoid N+1 queries for internal keys
 	var allSettings []models.SettingVariable
 	if err := db.WithContext(ctx).Find(&allSettings).Error; err != nil {
-		return nil, fmt.Errorf("failed to load settings for env config: %w", err)
+		return nil, errors.WrapIf(err, "failed to load settings for env config")
 	}
 	settingsMap := make(map[string]string, len(allSettings))
 	for _, s := range allSettings {
@@ -496,7 +497,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			}
 
 			if err := cfg.UpdateField(key, value, false); err != nil {
-				return nil, false, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+				return nil, false, false, false, false, false, nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 			}
 
 			valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: value})
@@ -508,7 +509,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 		}
 
 		if err := libarcane.ValidateCronSetting(key, value); err != nil {
-			return nil, false, false, false, false, false, nil, fmt.Errorf("invalid cron expression for %s: %w", key, err)
+			return nil, false, false, false, false, false, nil, errors.WrapIff(err, "invalid cron expression for %s", key)
 		}
 
 		if key == "accentColor" && value != "" && value != "default" && !settings.SafeAccentColor.MatchString(value) {
@@ -531,7 +532,7 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 			continue
 		}
 		if err != nil {
-			return nil, false, false, false, false, false, nil, fmt.Errorf("failed to update in-memory config for key '%s': %w", key, err)
+			return nil, false, false, false, false, false, nil, errors.WrapIff(err, "failed to update in-memory config for key '%s'", key)
 		}
 
 		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: key, Value: valueToSave})
@@ -580,7 +581,7 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, setting := range values {
 			if err := tx.Save(&setting).Error; err != nil {
-				return fmt.Errorf("failed to update setting %s: %w", setting.Key, err)
+				return errors.WrapIff(err, "failed to update setting %s", setting.Key)
 			}
 		}
 		return nil
@@ -596,7 +597,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 		if secret == "" {
 			current, err := s.GetSettings(ctx)
 			if err != nil {
-				return fmt.Errorf("failed to load current settings for secret: %w", err)
+				return errors.WrapIf(err, "failed to load current settings for secret")
 			}
 			if current.OidcClientSecret.Value != "" {
 				// Keep existing secret, don't update
@@ -605,7 +606,7 @@ func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates se
 		}
 
 		if err := s.updateSettingValueNoRefreshInternal(ctx, "oidcClientSecret", secret); err != nil {
-			return fmt.Errorf("failed to update oidcClientSecret: %w", err)
+			return errors.WrapIf(err, "failed to update oidcClientSecret")
 		}
 	}
 
@@ -624,13 +625,13 @@ func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {
 			switch {
 			case errors.Is(err, gorm.ErrRecordNotFound):
 				if err := tx.Create(&defaultSetting).Error; err != nil {
-					return fmt.Errorf("failed to create default setting %s: %w", defaultSetting.Key, err)
+					return errors.WrapIff(err, "failed to create default setting %s", defaultSetting.Key)
 				}
 			case err != nil:
-				return fmt.Errorf("failed to check for existing setting %s: %w", defaultSetting.Key, err)
+				return errors.WrapIff(err, "failed to check for existing setting %s", defaultSetting.Key)
 			case defaultSetting.Key == "trivyImage" && existing.Value != defaultSetting.Value:
 				if err := tx.Model(&existing).Update("value", defaultSetting.Value).Error; err != nil {
-					return fmt.Errorf("failed to enforce default setting %s: %w", defaultSetting.Key, err)
+					return errors.WrapIff(err, "failed to enforce default setting %s", defaultSetting.Key)
 				}
 			}
 		}
@@ -655,7 +656,7 @@ func (s *SettingsService) PruneUnknownSettings(ctx context.Context) error {
 
 	result := s.db.WithContext(ctx).Where("key NOT IN ?", keys).Delete(&models.SettingVariable{})
 	if result.Error != nil {
-		return fmt.Errorf("failed to prune unknown settings: %w", result.Error)
+		return errors.WrapIf(result.Error, "failed to prune unknown settings")
 	}
 
 	if result.RowsAffected > 0 {
@@ -745,15 +746,15 @@ func (s *SettingsService) upsertEnvSetting(ctx context.Context, tx *gorm.DB, key
 	case errors.Is(err, gorm.ErrRecordNotFound):
 		newVar := models.SettingVariable{Key: key, Value: envVal}
 		if err := tx.Create(&newVar).Error; err != nil {
-			return fmt.Errorf("persist env setting %s: %w", key, err)
+			return errors.WrapIff(err, "persist env setting %s", key)
 		}
 		slog.DebugContext(ctx, "Created setting from environment", "key", key)
 	case err != nil:
-		return fmt.Errorf("check setting %s: %w", key, err)
+		return errors.WrapIff(err, "check setting %s", key)
 	default:
 		if existing.Value != envVal {
 			if err := tx.Model(&existing).Update("value", envVal).Error; err != nil {
-				return fmt.Errorf("update env setting %s: %w", key, err)
+				return errors.WrapIff(err, "update env setting %s", key)
 			}
 			slog.DebugContext(ctx, "Updated setting from environment", "key", key)
 		}
@@ -794,12 +795,12 @@ func (s *SettingsService) setupInstanceID(ctx context.Context) error {
 
 	createdInstanceID, err := uuid.NewRandom()
 	if err != nil {
-		return fmt.Errorf("failed to created a new instance ID: %w", err)
+		return errors.WrapIf(err, "failed to created a new instance ID")
 	}
 
 	err = s.UpdateSetting(ctx, "instanceId", createdInstanceID.String())
 	if err != nil {
-		return fmt.Errorf("failed to set instance ID in database: %w", err)
+		return errors.WrapIf(err, "failed to set instance ID in database")
 	}
 
 	return nil
@@ -887,7 +888,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		err := tx.Where("key = ?", keyName).First(&sv).Error
 
 		if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
-			return fmt.Errorf("failed to load encryption key: %w", err)
+			return errors.WrapIf(err, "failed to load encryption key")
 		}
 
 		// If already present and non-empty, return it
@@ -901,7 +902,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		// Generate uuid -> sha256 -> base64 key (32 bytes raw -> 44 chars base64)
 		u, genErr := uuid.NewRandom()
 		if genErr != nil {
-			return fmt.Errorf("failed to generate encryption key: %w", genErr)
+			return errors.WrapIf(genErr, "failed to generate encryption key")
 		}
 		sum := sha256.Sum256([]byte(u.String()))
 		generatedKey := base64.StdEncoding.EncodeToString(sum[:])
@@ -909,7 +910,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 
 		if notFound {
 			if createErr := tx.Create(&models.SettingVariable{Key: keyName, Value: generatedKey}).Error; createErr != nil {
-				return fmt.Errorf("failed to persist encryption key: %w", createErr)
+				return errors.WrapIf(createErr, "failed to persist encryption key")
 			}
 			return nil
 		}
@@ -918,7 +919,7 @@ func (s *SettingsService) EnsureEncryptionKey(ctx context.Context) (string, erro
 		if updErr := tx.Model(&models.SettingVariable{}).
 			Where("key = ?", keyName).
 			Update("value", generatedKey).Error; updErr != nil {
-			return fmt.Errorf("failed to update encryption key: %w", updErr)
+			return errors.WrapIf(updErr, "failed to update encryption key")
 		}
 		return nil
 	})
@@ -944,7 +945,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to load projectsDirectory setting: %w", err)
+		return errors.WrapIf(err, "failed to load projectsDirectory setting")
 	}
 
 	value := strings.TrimSpace(projectsDirSetting.Value)
@@ -965,12 +966,12 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 		cwd, _ := os.Getwd()
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
-			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+			return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
 		}
 		slog.InfoContext(ctx, "Normalizing projects directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
 
 		if err := s.UpdateSetting(ctx, "projectsDirectory", absPath); err != nil {
-			return fmt.Errorf("failed to update projectsDirectory: %w", err)
+			return errors.WrapIf(err, "failed to update projectsDirectory")
 		}
 
 		slog.InfoContext(ctx, "Successfully normalized projects directory")
@@ -998,7 +999,7 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to load buildsDirectory setting: %w", err)
+		return errors.WrapIf(err, "failed to load buildsDirectory setting")
 	}
 
 	value := strings.TrimSpace(buildsDirSetting.Value)
@@ -1011,12 +1012,12 @@ func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 		cwd, _ := os.Getwd()
 		absPath, absErr := filepath.Abs(value)
 		if absErr != nil {
-			return fmt.Errorf("failed to resolve relative path to absolute: %w", absErr)
+			return errors.WrapIf(absErr, "failed to resolve relative path to absolute")
 		}
 		slog.InfoContext(ctx, "Normalizing builds directory from relative to absolute path", "from", value, "to", absPath, "base", cwd)
 
 		if err := s.UpdateSetting(ctx, buildsKey, absPath); err != nil {
-			return fmt.Errorf("failed to update buildsDirectory: %w", err)
+			return errors.WrapIf(err, "failed to update buildsDirectory")
 		}
 
 		slog.InfoContext(ctx, "Successfully normalized builds directory")

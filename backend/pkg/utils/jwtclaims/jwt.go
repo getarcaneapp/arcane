@@ -4,9 +4,10 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/samber/mo"
 	"github.com/samber/mo/result"
@@ -121,7 +122,7 @@ func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
 	if isDefault {
 		secretBytes := make([]byte, 32)
 		if _, err := rand.Read(secretBytes); err != nil {
-			panic(fmt.Errorf("failed to generate random JWT secret: %w", err))
+			panic(errors.WrapIf(err, "failed to generate random JWT secret"))
 		}
 		return secretBytes
 	}

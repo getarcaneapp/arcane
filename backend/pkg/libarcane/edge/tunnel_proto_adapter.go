@@ -1,10 +1,10 @@
 package edge
 
 import (
-	"errors"
-	"fmt"
 	"maps"
 	"math"
+
+	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 )
@@ -112,9 +112,9 @@ func tunnelMessageToManagerProto(msg *TunnelMessage) (*tunnelpb.ManagerMessage, 
 		MessageTypeCommandAck,
 		MessageTypeCommandOutput,
 		MessageTypeCommandComplete:
-		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
+		return nil, errors.Errorf("unsupported manager message type: %s", msg.Type)
 	default:
-		return nil, fmt.Errorf("unsupported manager message type: %s", msg.Type)
+		return nil, errors.Errorf("unsupported manager message type: %s", msg.Type)
 	}
 }
 
@@ -209,7 +209,7 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 			EOF:      payload.FileChunk.GetEof(),
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported manager payload type %T", payload)
+		return nil, errors.Errorf("unsupported manager payload type %T", payload)
 	}
 }
 
@@ -265,7 +265,7 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		}}}, nil
 	case MessageTypeEvent:
 		if msg.Event == nil {
-			return nil, fmt.Errorf("event payload is required for message type: %s", msg.Type)
+			return nil, errors.Errorf("event payload is required for message type: %s", msg.Type)
 		}
 		return &tunnelpb.AgentMessage{Payload: &tunnelpb.AgentMessage_Event{Event: &tunnelpb.EventLog{
 			Type:         msg.Event.Type,
@@ -321,9 +321,9 @@ func tunnelMessageToAgentProto(msg *TunnelMessage) (*tunnelpb.AgentMessage, erro
 		MessageTypeCommandRequest,
 		MessageTypeStreamOpen,
 		MessageTypeCancelRequest:
-		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
+		return nil, errors.Errorf("unsupported agent message type: %s", msg.Type)
 	default:
-		return nil, fmt.Errorf("unsupported agent message type: %s", msg.Type)
+		return nil, errors.Errorf("unsupported agent message type: %s", msg.Type)
 	}
 }
 
@@ -419,7 +419,7 @@ func agentProtoToTunnelMessage(msg *tunnelpb.AgentMessage) (*TunnelMessage, erro
 			Error: payload.StreamClose.GetError(),
 		}, nil
 	default:
-		return nil, fmt.Errorf("unsupported agent payload type %T", payload)
+		return nil, errors.Errorf("unsupported agent payload type %T", payload)
 	}
 }
 
@@ -434,7 +434,7 @@ func cloneHeaderMap(in map[string]string) map[string]string {
 
 func intToInt32(value int, field string) (int32, error) {
 	if value < math.MinInt32 || value > math.MaxInt32 {
-		return 0, fmt.Errorf("%s value %d is out of int32 range", field, value)
+		return 0, errors.Errorf("%s value %d is out of int32 range", field, value)
 	}
 	return int32(value), nil
 }

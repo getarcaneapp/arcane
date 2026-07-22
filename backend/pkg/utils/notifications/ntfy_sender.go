@@ -2,10 +2,11 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -97,12 +98,12 @@ func SendNtfy(ctx context.Context, config models.NtfyConfig, message string) err
 
 	shoutrrrURL, err := BuildNtfyURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Ntfy URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Ntfy URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Ntfy sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Ntfy sender")
 	}
 
 	params := &shoutrrrTypes.Params{}
@@ -110,7 +111,7 @@ func SendNtfy(ctx context.Context, config models.NtfyConfig, message string) err
 	errs := sender.Send(message, params)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Ntfy message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Ntfy message via shoutrrr")
 		}
 	}
 	return nil

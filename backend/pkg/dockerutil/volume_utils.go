@@ -2,10 +2,11 @@ package docker
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
@@ -165,7 +166,7 @@ func fetchVolumeUsageDataInternal(ctx context.Context, dockerClient *client.Clie
 		Verbose: true,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to get disk usage: %w", err)
+		return nil, errors.WrapIf(err, "failed to get disk usage")
 	}
 
 	slog.DebugContext(ctx, "disk usage returned volumes", "volume_count", len(diskUsage.Volumes.Items))
@@ -193,7 +194,7 @@ func FilterContainersUsingVolume(containers []container.Summary, volumeName stri
 func GetContainersUsingVolume(ctx context.Context, dockerClient *client.Client, volumeName string) ([]string, error) {
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+		return nil, errors.WrapIf(err, "failed to list containers")
 	}
 
 	containerIDs := FilterContainersUsingVolume(containerList.Items, volumeName)

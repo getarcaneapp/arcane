@@ -7,7 +7,6 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/category"
@@ -78,7 +77,7 @@ func filterCustomizeCategoriesInternal(ps *authz.PermissionSet, categories []cat
 // Search searches customization options by query.
 func (h *CustomizeHandler) Search(ctx context.Context, input *SearchCustomizeInput) (*SearchCustomizeOutput, error) {
 	if strings.TrimSpace(input.Body.Query) == "" {
-		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
 	ps, _ := humamw.PermissionsFromContext(ctx)

@@ -3,12 +3,12 @@ package edge
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/url"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"google.golang.org/grpc"
@@ -50,7 +50,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	if c.useTLSForManagerGRPC() {
 		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
 		if err != nil {
-			return fmt.Errorf("failed to configure edge gRPC TLS: %w", err)
+			return errors.WrapIf(err, "failed to configure edge gRPC TLS")
 		}
 		if tlsConfig == nil {
 			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
@@ -64,12 +64,12 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 
 	conn, err := grpc.NewClient(managerAddr, dialOpts...)
 	if err != nil {
-		return fmt.Errorf("failed to dial manager gRPC endpoint: %w", err)
+		return errors.WrapIf(err, "failed to dial manager gRPC endpoint")
 	}
 	defer func() { _ = conn.Close() }()
 
 	if err := c.waitForGRPCReadyInternal(ctx, conn); err != nil {
-		return fmt.Errorf("manager gRPC endpoint is not ready: %w", err)
+		return errors.WrapIf(err, "manager gRPC endpoint is not ready")
 	}
 
 	streamCtx, streamCancel := context.WithCancel(metadata.NewOutgoingContext(ctx, metadata.Pairs(
@@ -82,7 +82,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	method := c.grpcConnectMethodInternal()
 	stream, err := c.openTunnelConnectStreamInternal(streamCtx, conn, method)
 	if err != nil {
-		return fmt.Errorf("failed to open tunnel stream: %w", err)
+		return errors.WrapIf(err, "failed to open tunnel stream")
 	}
 
 	tunnelConn := NewGRPCAgentTunnelConn(stream, streamCancel)
@@ -90,7 +90,7 @@ func (c *TunnelClient) connectAndServeGRPC(ctx context.Context) error {
 	setActiveAgentTunnelConn(tunnelConn)
 	defer clearActiveAgentTunnelConn(tunnelConn)
 	if err := tunnelConn.Send(c.registerMessageInternal()); err != nil {
-		return fmt.Errorf("failed to send register message: %w", err)
+		return errors.WrapIf(err, "failed to send register message")
 	}
 
 	registerMsg, err := c.awaitGRPCRegistrationInternal(ctx)
@@ -132,7 +132,7 @@ func (c *TunnelClient) waitForGRPCReadyInternal(ctx context.Context, conn *grpc.
 
 		if !conn.WaitForStateChange(readyCtx, state) {
 			if errors.Is(readyCtx.Err(), context.DeadlineExceeded) {
-				return fmt.Errorf("timed out waiting for manager gRPC endpoint after %s", timeout)
+				return errors.Errorf("timed out waiting for manager gRPC endpoint after %s", timeout)
 			}
 			return readyCtx.Err()
 		}

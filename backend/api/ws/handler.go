@@ -3,7 +3,6 @@ package ws
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +13,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"emperror.dev/errors"
+
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/samber/hot"
@@ -22,7 +23,6 @@ import (
 	"github.com/shirou/gopsutil/v4/host"
 	"github.com/shirou/gopsutil/v4/mem"
 
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -361,7 +361,7 @@ func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resource
 func (h *WebSocketHandler) ProjectLogs(c echo.Context) error {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ProjectIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})
 	}
 
 	params := parseLogStreamParamsInternal(c)
@@ -569,7 +569,7 @@ func mapLogLinesInternal[T any](ctx context.Context, lines <-chan string, transf
 func (h *WebSocketHandler) ContainerLogs(c echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
 	params := parseLogStreamParamsInternal(c)
@@ -639,7 +639,7 @@ func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
 func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
 	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
@@ -754,7 +754,7 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
-		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": (&common.ContainerIDRequiredError{}).Error()})
+		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
 	shell := queryParamWithDefaultInternal(c, "shell", "/bin/sh")
@@ -808,14 +808,14 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		h.writeExecErrorInternal(conn, &common.ExecCreationError{Err: err})
+		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error creating exec"))
 		return
 	}
 
 	// Attach to exec
 	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		h.writeExecErrorInternal(conn, &common.ExecAttachError{Err: err})
+		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error attaching to exec"))
 		return
 	}
 	cleanup := h.execCleanupFuncInternal(ctx, execSession, execID, containerID)

@@ -3,8 +3,8 @@ package handlers
 import (
 	"context"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -130,7 +130,7 @@ func (h *GitRepositoryHandler) ListRepositories(ctx context.Context, input *List
 
 	repositories, paginationResp, err := h.repoService.GetRepositoriesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.GitRepositoryListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list git repositories").Error())
 	}
 
 	return &ListGitRepositoriesOutput{
@@ -149,11 +149,11 @@ func (h *GitRepositoryHandler) CreateRepository(ctx context.Context, input *Crea
 	repo, err := h.repoService.CreateRepository(ctx, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryCreationError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to create git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -169,11 +169,11 @@ func (h *GitRepositoryHandler) GetRepository(ctx context.Context, input *GetGitR
 	repo, err := h.repoService.GetRepositoryByID(ctx, input.ID)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryRetrievalError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to retrieve git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -191,11 +191,11 @@ func (h *GitRepositoryHandler) UpdateRepository(ctx context.Context, input *Upda
 	repo, err := h.repoService.UpdateRepository(ctx, input.ID, input.Body, actor)
 	if err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryUpdateError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to update git repository")
 	}
 
 	body, mapErr := mapOneAPIResponseInternal[*models.GitRepository, gitops.GitRepository](repo, func(err error) string {
-		return (&common.GitRepositoryMappingError{Err: err}).Error()
+		return "Failed to map git repository"
 	})
 	if mapErr != nil {
 		return nil, mapErr
@@ -212,7 +212,7 @@ func (h *GitRepositoryHandler) DeleteRepository(ctx context.Context, input *Dele
 
 	if err := h.repoService.DeleteRepository(ctx, input.ID, actor); err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositoryDeletionError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), "Failed to delete git repository")
 	}
 
 	return &DeleteGitRepositoryOutput{
@@ -230,7 +230,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 	actor := currentActorInternal(ctx)
 
 	if err := h.repoService.TestConnection(ctx, input.ID, input.Branch, actor); err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &TestGitRepositoryOutput{
@@ -247,7 +247,7 @@ func (h *GitRepositoryHandler) TestRepository(ctx context.Context, input *TestGi
 func (h *GitRepositoryHandler) ListBranches(ctx context.Context, input *ListBranchesInput) (*ListBranchesOutput, error) {
 	branches, err := h.repoService.ListBranches(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &ListBranchesOutput{
@@ -268,7 +268,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 
 	result, err := h.repoService.BrowseFiles(ctx, input.ID, input.Branch, input.Path)
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.GitRepositoryTestError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to test git repository connection").Error())
 	}
 
 	return &BrowseFilesOutput{
@@ -283,7 +283,7 @@ func (h *GitRepositoryHandler) BrowseFiles(ctx context.Context, input *BrowseFil
 func (h *GitRepositoryHandler) SyncRepositories(ctx context.Context, input *SyncGitRepositoriesInput) (*SyncGitRepositoriesOutput, error) {
 	if err := h.repoService.SyncRepositories(ctx, input.Body.Repositories); err != nil {
 		apiErr := models.ToAPIError(err)
-		return nil, huma.NewError(apiErr.HTTPStatus(), (&common.GitRepositorySyncError{Err: err}).Error())
+		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to sync git repositories").Error())
 	}
 
 	return &SyncGitRepositoriesOutput{

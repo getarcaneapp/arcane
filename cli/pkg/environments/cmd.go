@@ -2,11 +2,12 @@ package environments
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"sort"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"charm.land/lipgloss/v2"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -62,24 +63,24 @@ var listCmd = &cobra.Command{
 		path := types.Endpoints.Environments()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "environments", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list environments: %w", err)
+			return errors.WrapIf(err, "failed to list environments")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -132,11 +133,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Environment(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete environment: %w", err)
+			return errors.WrapIf(err, "failed to delete environment")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete environment: %w", err)
+			return errors.WrapIf(err, "failed to delete environment")
 		}
 
 		output.Success("Environment deleted successfully")
@@ -157,19 +158,19 @@ var getCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.Environment(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get environment: %w", err)
+			return errors.WrapIf(err, "failed to get environment")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -198,11 +199,11 @@ var testCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.EnvironmentTest(args[0]), nil)
 		if err != nil {
-			return fmt.Errorf("failed to test environment: %w", err)
+			return errors.WrapIf(err, "failed to test environment")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to test environment: %w", err)
+			return errors.WrapIf(err, "failed to test environment")
 		}
 
 		if jsonOutput {
@@ -232,7 +233,7 @@ var switchCmd = &cobra.Command{
 
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return errors.WrapIf(err, "failed to load config")
 		}
 
 		c, err := client.NewFromConfig()
@@ -243,13 +244,13 @@ var switchCmd = &cobra.Command{
 		path := fmt.Sprintf("%s?limit=%d", types.Endpoints.Environments(), 200)
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list environments: %w", err)
+			return errors.WrapIf(err, "failed to list environments")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if len(result.Data) == 0 {
@@ -321,7 +322,7 @@ var switchCmd = &cobra.Command{
 
 		cfg.DefaultEnvironment = selected.ID
 		if err := config.Save(cfg); err != nil {
-			return fmt.Errorf("failed to save config: %w", err)
+			return errors.WrapIf(err, "failed to save config")
 		}
 
 		output.Success("Default environment set to %s", selected.ID)
@@ -363,22 +364,22 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Environment(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update environment: %w", err)
+			return errors.WrapIf(err, "failed to update environment")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update environment: %w", err)
+			return errors.WrapIf(err, "failed to update environment")
 		}
 
 		var result base.ApiResponse[environment.Environment]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(buildEnvironmentPayloadInternal(result.Data), "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -406,11 +407,11 @@ var versionCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.EnvironmentVersion(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get environment version: %w", err)
+			return errors.WrapIf(err, "failed to get environment version")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to get environment version: %w", err)
+			return errors.WrapIf(err, "failed to get environment version")
 		}
 
 		var result struct {
@@ -424,13 +425,13 @@ var versionCmd = &cobra.Command{
 			UpdateAvailable bool   `json:"updateAvailable"`
 		}
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

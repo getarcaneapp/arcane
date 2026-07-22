@@ -2,14 +2,15 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
-	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/emperror"
+	"emperror.dev/errors"
 
 	ref "github.com/distribution/reference"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -94,7 +95,7 @@ func (s *ImageUpdateService) dockerClientInternal(ctx context.Context) (*client.
 	}
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 	return dockerClient, nil
 }
@@ -110,7 +111,7 @@ func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) 
 		Select("id", "build_image_refs_json").
 		Where("build_image_refs_json IS NOT NULL AND build_image_refs_json <> ''").
 		Find(&projectRows).Error; err != nil {
-		return nil, fmt.Errorf("load project build image references: %w", err)
+		return nil, errors.WrapIf(err, "load project build image references")
 	}
 
 	for i := range projectRows {
@@ -390,7 +391,7 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 	if err != nil {
 		partial := digestResult // may contain auth metadata even on error
 		if partial == nil {
-			return nil, nil, fmt.Errorf("failed to get remote digest: %w", err)
+			return nil, nil, errors.WrapIf(err, "failed to get remote digest")
 		}
 		return &imageupdate.Response{
 			Error:          err.Error(),
@@ -400,13 +401,13 @@ func (s *ImageUpdateService) checkDigestUpdateWithSnapshotInternal(ctx context.C
 			AuthUsername:   partial.AuthUsername,
 			AuthRegistry:   partial.AuthRegistry,
 			UsedCredential: partial.UsedCredential,
-		}, nil, fmt.Errorf("failed to get remote digest: %w", err)
+		}, nil, errors.WrapIf(err, "failed to get remote digest")
 	}
 
 	if snapshot == nil {
 		snapshot, err = s.inspectLocalImageSnapshotInternal(ctx, imageRef, composeBuildRefs)
 		if err != nil {
-			return nil, nil, fmt.Errorf("failed to get local digest: %w", err)
+			return nil, nil, errors.WrapIf(err, "failed to get local digest")
 		}
 	}
 
@@ -560,7 +561,7 @@ func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageI
 		return ref, nil
 	}
 
-	return "", fmt.Errorf("image not found: no local image or running container found for %s", imageID)
+	return "", errors.Errorf("image not found: no local image or running container found for %s", imageID)
 }
 
 func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, dockerClient client.APIClient, imageID string) (string, error) {
@@ -603,7 +604,7 @@ func (s *ImageUpdateService) resolveImageRefFromContainers(ctx context.Context, 
 			return c.Image, nil
 		}
 	}
-	return "", fmt.Errorf("no container found using image %s", imageID)
+	return "", errors.Errorf("no container found using image %s", imageID)
 }
 
 func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit int) ([]string, error) {
@@ -617,7 +618,7 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 
 	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker images: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker images")
 	}
 
 	return dedupeImageRefsFromSummariesInternal(imageList.Items, limit), nil
@@ -654,7 +655,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 
 	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
 	if err != nil {
-		return nil, fmt.Errorf("failed to inspect image: %w", err)
+		return nil, errors.WrapIf(err, "failed to inspect image")
 	}
 
 	var allDigests []string
@@ -720,7 +721,7 @@ func (s *ImageUpdateService) CheckImageUpdateByID(ctx context.Context, imageID s
 		if logErr := s.eventService.LogImageEvent(ctx, models.EventTypeImageScan, imageID, "", systemUser.ID, systemUser.Username, "0", metadata); logErr != nil {
 			slog.WarnContext(ctx, "Failed to log image update check by ID error event", "imageID", imageID, "error", logErr.Error())
 		}
-		return nil, fmt.Errorf("failed to get image reference: %w", err)
+		return nil, errors.WrapIf(err, "failed to get image reference")
 	}
 	result, err := s.CheckImageUpdate(ctx, imageRef)
 	if err != nil {
@@ -948,7 +949,7 @@ func (s *ImageUpdateService) saveUpdateResultByIDInternal(ctx context.Context, i
 
 	dockerImage, err := dockerClient.ImageInspect(apiCtx, imageID)
 	if err != nil {
-		return fmt.Errorf("failed to inspect image: %w", err)
+		return errors.WrapIf(err, "failed to inspect image")
 	}
 
 	repo, tag := extractRepoAndTagFromImage(dockerImage.InspectResponse)
@@ -980,7 +981,7 @@ func (s *ImageUpdateService) getImageIDByRef(ctx context.Context, imageRef strin
 
 	inspectResponse, err := dockerClient.ImageInspect(apiCtx, imageRef)
 	if err != nil {
-		return "", fmt.Errorf("image not found: %w", err)
+		return "", errors.WrapIf(err, "image not found")
 	}
 	return inspectResponse.ID, nil
 }
@@ -992,7 +993,7 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 
 	snapshot, err := s.inspectLocalImageSnapshotInternal(ctx, imageRef, nil)
 	if err != nil {
-		return fmt.Errorf("inspect pulled image: %w", err)
+		return errors.WrapIf(err, "inspect pulled image")
 	}
 
 	checkTime := time.Now().UTC()
@@ -1018,13 +1019,13 @@ func (s *ImageUpdateService) MarkImageRefUpToDateAfterPull(ctx context.Context, 
 				if err := tx.Model(&models.ImageUpdateRecord{}).
 					Where("id LIKE 'ref::%' AND tag = ? AND repository IN ?", lookup.tag, repositories).
 					Update("has_update", false).Error; err != nil {
-					return fmt.Errorf("clear stale image updates: %w", err)
+					return errors.WrapIf(err, "clear stale image updates")
 				}
 			}
 		}
 
 		if err := savePreparedUpdateResultWithTxInternal(tx, snapshot.ImageID, snapshot.Repository, snapshot.Tag, result); err != nil {
-			return fmt.Errorf("save pulled image update state: %w", err)
+			return errors.WrapIf(err, "save pulled image update state")
 		}
 
 		return nil
@@ -1042,7 +1043,7 @@ func (s *ImageUpdateService) getStoredUpdateByImageIDInternal(ctx context.Contex
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, false, nil
 		}
-		return nil, false, fmt.Errorf("get stored image update by image id: %w", err)
+		return nil, false, errors.WrapIf(err, "get stored image update by image id")
 	}
 
 	return &record, true, nil
@@ -1054,7 +1055,7 @@ func (s *ImageUpdateService) GetUnnotifiedUpdates(ctx context.Context) (map[stri
 	if err := s.db.WithContext(ctx).
 		Where("has_update = ? AND notification_sent = ?", true, false).
 		Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("failed to get unnotified updates: %w", err)
+		return nil, errors.WrapIf(err, "failed to get unnotified updates")
 	}
 
 	result := make(map[string]*models.ImageUpdateRecord)
@@ -1354,10 +1355,10 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 	// completion would strand the row in running forever. It reads the Track
 	// ctx so a user cancellation still records a cancelled status.
 	defer func() {
-		if r := recover(); r != nil {
+		if panicErr := emperror.Recover(recover()); panicErr != nil {
 			// Don't re-panic: the caller is the long-lived watcher goroutine.
-			err = fmt.Errorf("image update check panicked: %v", r)
-			slog.ErrorContext(ctx, "image update check panicked", "activityId", activityID, "panic", r, "stack", string(debug.Stack()))
+			err = errors.WrapIf(panicErr, "image update check panicked")
+			slog.ErrorContext(ctx, "image update check panicked", "activityId", activityID, "error", err)
 		}
 		if err != nil {
 			s.completeImageUpdateActivityInternal(ctx, activityID, false, "Image update check failed: "+err.Error())
@@ -1392,7 +1393,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	composeBuildRefs, composeErr := s.composeBuildImageRefsInternal(scanCtx)
 	if composeErr != nil {
-		err = fmt.Errorf("prepare compose build image references: %w", composeErr)
+		err = errors.WrapIf(composeErr, "prepare compose build image references")
 		return results, err
 	}
 
@@ -1413,9 +1414,9 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 			// the process), so convert them to errors here; the deferred
 			// finalizer then records the failed terminal status.
 			defer func() {
-				if r := recover(); r != nil {
-					checkErr = fmt.Errorf("image update check panicked: %v", r)
-					slog.ErrorContext(groupCtx, "image update check worker panicked", "activityId", activityID, "imageRef", img.canonicalRef, "panic", r, "stack", string(debug.Stack()))
+				if panicErr := emperror.Recover(recover()); panicErr != nil {
+					checkErr = errors.WrapIf(panicErr, "image update check panicked")
+					slog.ErrorContext(groupCtx, "image update check worker panicked", "activityId", activityID, "imageRef", img.canonicalRef, "error", checkErr)
 				}
 			}()
 			return s.checkBatchImageInternal(groupCtx, activityID, resolvedCreds, img, composeBuildRefs, recorder)
@@ -1424,7 +1425,7 @@ func (s *ImageUpdateService) CheckMultipleImages(ctx context.Context, imageRefs 
 
 	if err = g.Wait(); err != nil {
 		if ctx.Err() == nil && errors.Is(scanCtx.Err(), context.DeadlineExceeded) {
-			err = fmt.Errorf("image update check timed out after %s: %w", timeouts.DefaultImageUpdateScan, err)
+			err = errors.WrapIff(err, "image update check timed out after %s", timeouts.DefaultImageUpdateScan)
 		}
 		slog.ErrorContext(ctx, "Batch check error", "error", err)
 		return results, err
@@ -1518,7 +1519,7 @@ func (s *ImageUpdateService) sendBatchImageUpdateNotificationsInternal(ctx conte
 func (s *ImageUpdateService) CheckAllImages(ctx context.Context, limit int, externalCreds []containerregistry.Credential) (map[string]*imageupdate.Response, error) {
 	imageRefs, err := s.getAllImageRefsInternal(ctx, limit)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get image references: %w", err)
+		return nil, errors.WrapIf(err, "failed to get image references")
 	}
 
 	if len(imageRefs) == 0 {
@@ -1553,7 +1554,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 
 	dockerImagesResult, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
 	if err != nil {
-		return fmt.Errorf("failed to list Docker images: %w", err)
+		return errors.WrapIf(err, "failed to list Docker images")
 	}
 	dockerImages := dockerImagesResult.Items
 
@@ -1569,7 +1570,7 @@ func (s *ImageUpdateService) CleanupOrphanedRecords(ctx context.Context) error {
 		result = s.db.WithContext(ctx).Where("id NOT IN ?", dockerImageIDs).Delete(&models.ImageUpdateRecord{})
 	}
 	if result.Error != nil {
-		return fmt.Errorf("failed to delete orphaned records: %w", result.Error)
+		return errors.WrapIf(result.Error, "failed to delete orphaned records")
 	}
 
 	if result.RowsAffected > 0 {

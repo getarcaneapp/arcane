@@ -2,11 +2,12 @@ package cmdutil
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 const maxErrorBodyBytes = 4096
@@ -49,7 +50,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 		return errors.New("nil decode target")
 	}
 	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 	return nil
 }
@@ -58,7 +59,7 @@ func DecodeJSON[T any](resp *http.Response, out *T) error {
 func PrintJSON(v any) error {
 	b, err := json.MarshalIndent(v, "", "  ")
 	if err != nil {
-		return fmt.Errorf("failed to marshal JSON: %w", err)
+		return errors.WrapIf(err, "failed to marshal JSON")
 	}
 	fmt.Println(string(b))
 	return nil

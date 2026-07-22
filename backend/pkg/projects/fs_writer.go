@@ -1,7 +1,6 @@
 package projects
 
 import (
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
@@ -9,6 +8,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/sys/atomic"
@@ -55,14 +56,14 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	// Security: Validate dirPath is absolute and clean to prevent path traversal
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve directory path: %w", err)
+		return errors.WrapIf(err, "failed to resolve directory path")
 	}
 	dirPath = filepath.Clean(absPath)
 
 	// Security: Validate dirPath is within projectsRoot
 	rootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return fmt.Errorf("failed to resolve projects root: %w", err)
+		return errors.WrapIf(err, "failed to resolve projects root")
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
@@ -71,7 +72,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	}
 
 	if err := os.MkdirAll(dirPath, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return errors.WrapIf(err, "failed to create directory")
 	}
 
 	var composePath string
@@ -82,7 +83,7 @@ func WriteComposeFile(projectsRoot, dirPath, content string) error {
 	}
 
 	if err := atomic.WriteFile(composePath, []byte(content), pkgutils.FilePerm); err != nil {
-		return fmt.Errorf("failed to write compose file: %w", err)
+		return errors.WrapIf(err, "failed to write compose file")
 	}
 
 	return nil
@@ -92,14 +93,14 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	// Security: Validate dirPath is absolute and clean to prevent path traversal
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve directory path: %w", err)
+		return errors.WrapIf(err, "failed to resolve directory path")
 	}
 	dirPath = filepath.Clean(absPath)
 
 	// Security: Validate dirPath is within projectsRoot
 	rootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return fmt.Errorf("failed to resolve projects root: %w", err)
+		return errors.WrapIf(err, "failed to resolve projects root")
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
@@ -108,11 +109,11 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	}
 
 	if err := os.MkdirAll(dirPath, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return errors.WrapIf(err, "failed to create directory")
 	}
 
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
-		return fmt.Errorf("invalid project file name %q", fileName)
+		return errors.Errorf("invalid project file name %q", fileName)
 	}
 
 	targetPath := filepath.Join(dirPath, fileName)
@@ -121,7 +122,7 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 	if fileName == EffectiveEnvFileName {
 		resolvedPath, resolvedPerm, isSymlink, resolveErr := resolveEnvFileWriteTargetInternal(targetPath)
 		if resolveErr != nil {
-			return fmt.Errorf("failed to resolve project file %s write target: %w", fileName, resolveErr)
+			return errors.WrapIff(resolveErr, "failed to resolve project file %s write target", fileName)
 		}
 		if isSymlink {
 			writePath = resolvedPath
@@ -134,11 +135,11 @@ func WriteProjectFile(projectsRoot, dirPath, fileName, content string) error {
 		return nil
 	}
 	if readErr != nil && !errors.Is(readErr, os.ErrNotExist) {
-		return fmt.Errorf("failed to read project file %s: %w", fileName, readErr)
+		return errors.WrapIff(readErr, "failed to read project file %s", fileName)
 	}
 
 	if err := atomic.WriteFile(writePath, []byte(content), writePerm); err != nil {
-		return fmt.Errorf("failed to write project file %s: %w", fileName, err)
+		return errors.WrapIff(err, "failed to write project file %s", fileName)
 	}
 
 	return nil
@@ -150,7 +151,7 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 		if errors.Is(err, os.ErrNotExist) {
 			return envPath, pkgutils.FilePerm, false, nil
 		}
-		return "", 0, false, fmt.Errorf("inspect env file: %w", err)
+		return "", 0, false, errors.WrapIf(err, "inspect env file")
 	}
 	if info.Mode()&os.ModeSymlink == 0 {
 		return envPath, pkgutils.FilePerm, false, nil
@@ -158,14 +159,14 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 
 	resolvedPath, err := filepath.EvalSymlinks(envPath)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("resolve env file symlink: %w", err)
+		return "", 0, false, errors.WrapIf(err, "resolve env file symlink")
 	}
 	targetInfo, err := os.Stat(resolvedPath)
 	if err != nil {
-		return "", 0, false, fmt.Errorf("inspect env file symlink target: %w", err)
+		return "", 0, false, errors.WrapIf(err, "inspect env file symlink target")
 	}
 	if !targetInfo.Mode().IsRegular() {
-		return "", 0, false, fmt.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
+		return "", 0, false, errors.Errorf("env file symlink target is not a regular file: %s", resolvedPath)
 	}
 
 	return resolvedPath, targetInfo.Mode().Perm(), true, nil
@@ -174,13 +175,13 @@ func resolveEnvFileWriteTargetInternal(envPath string) (writePath string, perm o
 func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
 	absPath, err := filepath.Abs(dirPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve directory path: %w", err)
+		return errors.WrapIf(err, "failed to resolve directory path")
 	}
 	dirPath = filepath.Clean(absPath)
 
 	rootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return fmt.Errorf("failed to resolve projects root: %w", err)
+		return errors.WrapIf(err, "failed to resolve projects root")
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
@@ -189,12 +190,12 @@ func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
 	}
 
 	if fileName == "" || filepath.Base(fileName) != fileName || strings.Contains(fileName, string(filepath.Separator)) {
-		return fmt.Errorf("invalid project file name %q", fileName)
+		return errors.Errorf("invalid project file name %q", fileName)
 	}
 
 	targetPath := filepath.Join(dirPath, fileName)
 	if err := os.Remove(targetPath); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to remove project file %s: %w", fileName, err)
+		return errors.WrapIff(err, "failed to remove project file %s", fileName)
 	}
 
 	return nil
@@ -211,7 +212,7 @@ func EnsureEnvFile(projectsRoot, dirPath string) error {
 	if _, err := os.Stat(envPath); err == nil {
 		return nil
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("failed to stat env file: %w", err)
+		return errors.WrapIf(err, "failed to stat env file")
 	}
 
 	return WriteEnvFile(projectsRoot, dirPath, "")
@@ -246,11 +247,11 @@ func WriteProjectFiles(projectsRoot, dirPath, composeContent string, envContent 
 func WriteTemplateFile(filePath, content string) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("failed to create template directory: %w", err)
+		return errors.WrapIf(err, "failed to create template directory")
 	}
 
 	if err := atomic.WriteFile(filePath, []byte(content), pkgutils.FilePerm); err != nil {
-		return fmt.Errorf("failed to write template file: %w", err)
+		return errors.WrapIf(err, "failed to write template file")
 	}
 
 	return nil
@@ -260,11 +261,11 @@ func WriteTemplateFile(filePath, content string) error {
 func WriteFileWithPerm(filePath, content string, perm os.FileMode) error {
 	dir := filepath.Dir(filePath)
 	if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return errors.WrapIf(err, "failed to create directory")
 	}
 
 	if err := atomic.WriteFile(filePath, []byte(content), perm); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return errors.WrapIf(err, "failed to write file")
 	}
 
 	return nil
@@ -290,7 +291,7 @@ func RollbackRenamedProjectDirectory(oldPath, newPath string) (pathsMissing bool
 		}
 	case !oldExists && newExists:
 		if err := os.Rename(newPath, oldPath); err != nil {
-			return false, fmt.Errorf("rollback project directory rename: %w", err)
+			return false, errors.WrapIf(err, "rollback project directory rename")
 		}
 	case !oldExists && !newExists:
 		pathsMissing = true
@@ -308,14 +309,14 @@ func relocateRenameConflictDirectoryInternal(path string) (string, error) {
 		if _, err := os.Stat(conflictPath); err == nil {
 			continue
 		} else if !os.IsNotExist(err) {
-			return "", fmt.Errorf("check conflict path: %w", err)
+			return "", errors.WrapIf(err, "check conflict path")
 		}
 		if err := os.Rename(path, conflictPath); err != nil {
-			return "", fmt.Errorf("relocate project rename target path: %w", err)
+			return "", errors.WrapIf(err, "relocate project rename target path")
 		}
 		return conflictPath, nil
 	}
-	return "", fmt.Errorf("relocate project rename target path: no available conflict path for %s", path)
+	return "", errors.Errorf("relocate project rename target path: no available conflict path for %s", path)
 }
 
 // SyncFile represents a file to be written during directory sync
@@ -334,13 +335,13 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 	// Security: Validate projectPath is within projectsRoot
 	rootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve projects root: %w", err)
+		return nil, errors.WrapIf(err, "failed to resolve projects root")
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve project path: %w", err)
+		return nil, errors.WrapIf(err, "failed to resolve project path")
 	}
 	projectAbs = filepath.Clean(projectAbs)
 
@@ -350,7 +351,7 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 
 	// Ensure project directory exists
 	if err := os.MkdirAll(projectAbs, pkgutils.DirPerm); err != nil {
-		return nil, fmt.Errorf("failed to create project directory: %w", err)
+		return nil, errors.WrapIf(err, "failed to create project directory")
 	}
 
 	writtenPaths := make([]string, 0, len(files))
@@ -361,22 +362,22 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 		targetPathClean := filepath.Clean(targetPath)
 
 		if !IsSafeSubdirectory(projectAbs, targetPathClean) {
-			return nil, fmt.Errorf("file path %s would escape project directory", file.RelativePath)
+			return nil, errors.Errorf("file path %s would escape project directory", file.RelativePath)
 		}
 
 		// Create parent directories
 		parentDir := filepath.Dir(targetPathClean)
 		if err := os.MkdirAll(parentDir, pkgutils.DirPerm); err != nil {
-			return nil, fmt.Errorf("failed to create directory for %s: %w", file.RelativePath, err)
+			return nil, errors.WrapIff(err, "failed to create directory for %s", file.RelativePath)
 		}
 
 		info, err := os.Stat(targetPathClean)
 		if err == nil && info.IsDir() {
 			if err := os.RemoveAll(targetPathClean); err != nil {
-				return nil, fmt.Errorf("failed to replace directory at %s: %w", file.RelativePath, err)
+				return nil, errors.WrapIff(err, "failed to replace directory at %s", file.RelativePath)
 			}
 		} else if err != nil && !os.IsNotExist(err) {
-			return nil, fmt.Errorf("failed to inspect target path for %s: %w", file.RelativePath, err)
+			return nil, errors.WrapIff(err, "failed to inspect target path for %s", file.RelativePath)
 		}
 
 		// Write the file. Honor the source's executable bit so scripts arrive
@@ -386,7 +387,7 @@ func WriteSyncedDirectory(projectsRoot, projectPath string, files []SyncFile) ([
 			perm = 0o755
 		}
 		if err := atomic.WriteFile(targetPathClean, file.Content, perm); err != nil {
-			return nil, fmt.Errorf("failed to write file %s: %w", file.RelativePath, err)
+			return nil, errors.WrapIff(err, "failed to write file %s", file.RelativePath)
 		}
 
 		writtenPaths = append(writtenPaths, file.RelativePath)
@@ -403,13 +404,13 @@ func CleanupRemovedFiles(projectsRoot, projectPath string, oldFiles, newFiles []
 	// Security: Validate projectPath is within projectsRoot
 	rootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return fmt.Errorf("failed to resolve projects root: %w", err)
+		return errors.WrapIf(err, "failed to resolve projects root")
 	}
 	rootAbs = filepath.Clean(rootAbs)
 
 	projectAbs, err := filepath.Abs(projectPath)
 	if err != nil {
-		return fmt.Errorf("failed to resolve project path: %w", err)
+		return errors.WrapIf(err, "failed to resolve project path")
 	}
 	projectAbs = filepath.Clean(projectAbs)
 

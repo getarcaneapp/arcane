@@ -2,10 +2,10 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"sort"
 	"time"
+
+	"emperror.dev/errors"
 
 	dockercontainer "github.com/moby/moby/api/types/container"
 	"golang.org/x/sync/errgroup"
@@ -273,7 +273,7 @@ func (s *DashboardService) getPendingResourceUpdatesCountInternal(ctx context.Co
 
 	containers, _, _, _, err := s.dockerService.GetAllContainers(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to load containers for update counts: %w", err)
+		return 0, errors.WrapIf(err, "failed to load containers for update counts")
 	}
 
 	filteredContainers := filterInternalContainers(containers, false)
@@ -313,7 +313,7 @@ func (s *DashboardService) getPendingContainerUpdatesCountForImageIDsInternal(ct
 		Where("id IN ? AND has_update = ?", imageIDs, true).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("failed to count pending container updates: %w", err)
+		return 0, errors.WrapIf(err, "failed to count pending container updates")
 	}
 
 	return int(count), nil
@@ -326,7 +326,7 @@ func (s *DashboardService) getPendingProjectUpdatesCountInternal(ctx context.Con
 
 	count, err := s.projectService.countProjectsByUpdateStatusInternal(ctx, "has_update")
 	if err != nil {
-		return 0, fmt.Errorf("failed to count projects with updates: %w", err)
+		return 0, errors.WrapIf(err, "failed to count projects with updates")
 	}
 
 	return count, nil
@@ -351,7 +351,7 @@ func (s *DashboardService) getExpiringAPIKeysCountInternal(ctx context.Context) 
 		Where("expires_at <= ?", time.Now().Add(defaultDashboardAPIKeyExpiryWindow)).
 		Count(&count).Error
 	if err != nil {
-		return 0, fmt.Errorf("failed to count expiring API keys: %w", err)
+		return 0, errors.WrapIf(err, "failed to count expiring API keys")
 	}
 
 	return int(count), nil

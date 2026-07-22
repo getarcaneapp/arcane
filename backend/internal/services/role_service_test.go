@@ -5,6 +5,7 @@ import (
 	"slices"
 	"testing"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -51,7 +52,7 @@ func TestValidatePermissionsAgainstCallerRejectsEscalation(t *testing.T) {
 		authz.PermUsersDelete,
 	})
 	require.Error(t, err)
-	require.True(t, common.IsRolePermissionEscalationError(err))
+	require.True(t, errors.Is(err, common.ErrRolePermissionEscalation))
 
 	require.NoError(t, roleSvc.ValidatePermissionsAgainstCaller(caller, []string{authz.PermRolesRead}))
 	require.NoError(t, roleSvc.ValidatePermissionsAgainstCaller(authz.SudoPermissionSet(), []string{authz.PermUsersDelete}))
@@ -65,7 +66,7 @@ func TestValidatePermissionsAgainstCallerRejectsEnvOnlyGrantForGlobalRole(t *tes
 
 	err := roleSvc.ValidatePermissionsAgainstCaller(caller, []string{authz.PermContainersStart})
 	require.Error(t, err)
-	require.True(t, common.IsRolePermissionEscalationError(err))
+	require.True(t, errors.Is(err, common.ErrRolePermissionEscalation))
 }
 
 func TestValidatePermissionsAgainstCallerRejectsUnknownPermissionBeforeEscalation(t *testing.T) {
@@ -76,8 +77,8 @@ func TestValidatePermissionsAgainstCallerRejectsUnknownPermissionBeforeEscalatio
 	// not as an opaque escalation 403 or a silent pass.
 	err := roleSvc.ValidatePermissionsAgainstCaller(authz.SudoPermissionSet(), []string{"containrs:start"})
 	require.Error(t, err)
-	require.True(t, common.IsUnknownPermissionError(err))
-	require.False(t, common.IsRolePermissionEscalationError(err))
+	require.True(t, errors.Is(err, common.ErrUnknownPermission))
+	require.False(t, errors.Is(err, common.ErrRolePermissionEscalation))
 }
 
 func TestBackfillLegacyRoleAssignmentsIsNoOpWhenColumnAbsent(t *testing.T) {
@@ -174,7 +175,7 @@ func TestSetUserAssignmentsRejectsUnknownRole(t *testing.T) {
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
-	require.True(t, common.IsInvalidRoleAssignmentError(err))
+	require.True(t, errors.Is(err, common.ErrInvalidRoleAssignment))
 }
 
 func TestReplaceOidcAssignmentsRejectsUnknownRole(t *testing.T) {
@@ -186,7 +187,7 @@ func TestReplaceOidcAssignmentsRejectsUnknownRole(t *testing.T) {
 		{RoleID: "role_does_not_exist"},
 	})
 	require.Error(t, err)
-	require.True(t, common.IsInvalidRoleAssignmentError(err))
+	require.True(t, errors.Is(err, common.ErrInvalidRoleAssignment))
 }
 
 func TestReplaceOidcAssignmentsRejectsUnknownEnvironment(t *testing.T) {
@@ -201,7 +202,7 @@ func TestReplaceOidcAssignmentsRejectsUnknownEnvironment(t *testing.T) {
 		{RoleID: authz.BuiltInRoleViewer, EnvironmentID: &missingEnv},
 	})
 	require.Error(t, err)
-	require.True(t, common.IsInvalidRoleAssignmentError(err))
+	require.True(t, errors.Is(err, common.ErrInvalidRoleAssignment))
 }
 
 func TestEffectiveGlobalAdminCountIncludesCustomAllPermissionsRole(t *testing.T) {
@@ -222,7 +223,7 @@ func TestEffectiveGlobalAdminCountIncludesCustomAllPermissionsRole(t *testing.T)
 
 	err = roleSvc.SetUserAssignments(ctx, user.ID, nil)
 	require.Error(t, err)
-	require.True(t, common.IsNoGlobalAdminRemainsError(err))
+	require.True(t, errors.Is(err, common.ErrNoGlobalAdminRemains))
 }
 
 func TestEffectiveGlobalAdminCountIgnoresEnvScopedAndServiceAccounts(t *testing.T) {

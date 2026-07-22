@@ -5,10 +5,11 @@ import (
 
 	"context"
 	"crypto/subtle"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -215,7 +216,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 			})
 		}
 
-		if common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+		if errors.Is(err, common.ErrSessionRevoked) || errors.Is(err, common.ErrTokenValidation) {
 			cookie.ClearTokenCookie(c.Response().Writer, req)
 			return c.JSON(http.StatusUnauthorized, models.APIError{
 				Code:    models.APIErrorCodeUnauthorized,

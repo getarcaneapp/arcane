@@ -1,10 +1,10 @@
 package projects
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/samber/mo"
 )
@@ -125,7 +125,7 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	// Calculate relative path
 	relPath, err := filepath.Rel(pm.containerPrefix, cleaned)
 	if err != nil {
-		return "", fmt.Errorf("failed to calculate relative path: %w", err)
+		return "", errors.WrapIf(err, "failed to calculate relative path")
 	}
 
 	// Only translate paths within container prefix
@@ -164,7 +164,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) erro
 
 			hostPath, err := pm.ContainerToHost(volume.Source)
 			if err != nil {
-				return fmt.Errorf("failed to translate volume source %q: %w", volume.Source, err)
+				return errors.WrapIff(err, "failed to translate volume source %q", volume.Source)
 			}
 
 			volume.Source = hostPath
@@ -178,7 +178,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) erro
 		if secret.File != "" {
 			hostPath, err := pm.ContainerToHost(secret.File)
 			if err != nil {
-				return fmt.Errorf("failed to translate secret file %q: %w", secret.File, err)
+				return errors.WrapIff(err, "failed to translate secret file %q", secret.File)
 			}
 			secret.File = hostPath
 			project.Secrets[name] = secret
@@ -190,7 +190,7 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) erro
 		if config.File != "" {
 			hostPath, err := pm.ContainerToHost(config.File)
 			if err != nil {
-				return fmt.Errorf("failed to translate config file %q: %w", config.File, err)
+				return errors.WrapIff(err, "failed to translate config file %q", config.File)
 			}
 			config.File = hostPath
 			project.Configs[name] = config

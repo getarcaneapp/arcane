@@ -2,8 +2,8 @@ package notifications
 
 import (
 	"context"
-	"errors"
-	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -31,7 +31,7 @@ func BuildTelegramURL(config models.TelegramConfig) (string, error) {
 			q.Set("parsemode", config.ParseMode)
 			url.RawQuery = q.Encode()
 		default:
-			return "", fmt.Errorf("invalid parse mode: %s (must be Markdown, HTML, MarkdownV2, or None)", config.ParseMode)
+			return "", errors.Errorf("invalid parse mode: %s (must be Markdown, HTML, MarkdownV2, or None)", config.ParseMode)
 		}
 	}
 
@@ -49,18 +49,18 @@ func SendTelegram(ctx context.Context, config models.TelegramConfig, message str
 
 	shoutrrrURL, err := BuildTelegramURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Telegram URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Telegram URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Telegram sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Telegram sender")
 	}
 
 	errs := sender.Send(message, nil)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Telegram message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Telegram message via shoutrrr")
 		}
 	}
 	return nil

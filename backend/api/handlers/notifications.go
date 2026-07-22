@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"net/http"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -175,7 +175,7 @@ func (h *NotificationHandler) GetAllNotificationSettings(ctx context.Context, in
 	}
 	settings, err := h.notificationService.GetAllSettings(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NotificationSettingsListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list notification settings").Error())
 	}
 
 	responses := make([]notification.Response, len(settings))
@@ -199,7 +199,7 @@ func (h *NotificationHandler) GetNotificationSettings(ctx context.Context, input
 
 	settings, err := h.notificationService.GetSettingsByProvider(ctx, provider)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.NotificationSettingsNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("Settings not found")
 	}
 
 	response := notification.Response{
@@ -218,7 +218,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 	}
 	provider := models.NotificationProvider(input.Body.Provider)
 	if !models.IsValidNotificationProvider(provider) {
-		return nil, huma.Error400BadRequest((&common.InvalidNotificationProviderError{}).Error())
+		return nil, huma.Error400BadRequest("invalid provider")
 	}
 
 	settings, err := h.notificationService.CreateOrUpdateSettings(
@@ -228,7 +228,7 @@ func (h *NotificationHandler) CreateOrUpdateNotificationSettings(ctx context.Con
 		models.JSON(input.Body.Config),
 	)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NotificationSettingsUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update notification settings").Error())
 	}
 
 	response := notification.Response{
@@ -248,7 +248,7 @@ func (h *NotificationHandler) DeleteNotificationSettings(ctx context.Context, in
 	provider := models.NotificationProvider(input.Provider)
 
 	if err := h.notificationService.DeleteSettings(ctx, provider); err != nil {
-		return nil, huma.Error500InternalServerError((&common.NotificationSettingsDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete notification settings").Error())
 	}
 
 	return &DeleteNotificationSettingsOutput{
@@ -271,7 +271,7 @@ func (h *NotificationHandler) TestNotification(ctx context.Context, input *TestN
 
 	warning, err := h.notificationService.TestNotification(ctx, input.EnvironmentID, provider, testType)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NotificationTestError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to send test notification").Error())
 	}
 
 	return &TestNotificationOutput{

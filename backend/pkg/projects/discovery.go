@@ -1,14 +1,14 @@
 package projects
 
 import (
-	"errors"
-	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 type DiscoveredProjectDir struct {
@@ -71,7 +71,7 @@ func DiscoverProjectDirectories(root string, followSymlinks bool, maxDepth int) 
 		return nil, err
 	}
 	if !isDir {
-		return nil, fmt.Errorf("project root is not a directory: %s", root)
+		return nil, errors.Errorf("project root is not a directory: %s", root)
 	}
 
 	discovered := make([]DiscoveredProjectDir, 0)

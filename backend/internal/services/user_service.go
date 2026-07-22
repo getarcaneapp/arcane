@@ -5,10 +5,11 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"golang.org/x/crypto/argon2"
 	"golang.org/x/crypto/bcrypt"
@@ -47,7 +48,7 @@ type UserService struct {
 	argon2Params *Argon2Params
 }
 
-var ErrCannotRemoveLastAdmin = errors.New("cannot remove the last admin user")
+const ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
 
 func NewUserService(db *database.DB) *UserService {
 	return &UserService{
@@ -145,7 +146,7 @@ func (s *UserService) validateArgon2Password(encodedHash, password string) error
 func (s *UserService) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Create(user).Error; err != nil {
-			return fmt.Errorf("failed to create user: %w", err)
+			return errors.WrapIf(err, "failed to create user")
 		}
 		return nil
 	})
@@ -180,10 +181,10 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
-			return fmt.Errorf("failed to load user: %w", err)
+			return errors.WrapIf(err, "failed to load user")
 		}
 		if err := tx.Save(user).Error; err != nil {
-			return fmt.Errorf("failed to update user: %w", err)
+			return errors.WrapIf(err, "failed to update user")
 		}
 		return nil
 	})
@@ -211,7 +212,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
-			return fmt.Errorf("failed to load user for OIDC merge: %w", err)
+			return errors.WrapIf(err, "failed to load user for OIDC merge")
 		}
 
 		// If already linked to a different subject, abort
@@ -229,9 +230,9 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 		if err := tx.Save(&u).Error; err != nil {
 			// Bubble up uniqueness violations with a clearer message
 			if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
-				return fmt.Errorf("oidc subject is already linked to another user: %w", err)
+				return errors.WrapIf(err, "oidc subject is already linked to another user")
 			}
-			return fmt.Errorf("failed to persist OIDC merge: %w", err)
+			return errors.WrapIf(err, "failed to persist OIDC merge")
 		}
 		out = &u
 		return nil
@@ -246,7 +247,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// Hash password outside transaction to minimize lock time
 	hashedPassword, err := s.hashPassword("arcane-admin")
 	if err != nil {
-		return fmt.Errorf("failed to hash default admin password: %w", err)
+		return errors.WrapIf(err, "failed to hash default admin password")
 	}
 
 	// Step 1: ensure the default admin user row exists. If the users table is
@@ -257,7 +258,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		var count int64
 		if err := tx.Model(&models.User{}).Count(&count).Error; err != nil {
-			return fmt.Errorf("failed to count users: %w", err)
+			return errors.WrapIf(err, "failed to count users")
 		}
 
 		if count == 0 {
@@ -271,7 +272,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 				RequiresPasswordChange: true,
 			}
 			if err := tx.Create(userModel).Error; err != nil {
-				return fmt.Errorf("failed to create default admin user: %w", err)
+				return errors.WrapIf(err, "failed to create default admin user")
 			}
 			adminUserID = userModel.ID
 			slog.InfoContext(ctx, "👑 Default admin user created!")
@@ -289,7 +290,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return nil
 			}
-			return fmt.Errorf("failed to look up default admin user: %w", err)
+			return errors.WrapIf(err, "failed to look up default admin user")
 		}
 		adminUserID = existing.ID
 		return nil
@@ -309,7 +310,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	// wired up.
 	assignments, err := s.roleService.ListUserAssignments(ctx, adminUserID)
 	if err != nil {
-		return fmt.Errorf("failed to list default admin assignments: %w", err)
+		return errors.WrapIf(err, "failed to list default admin assignments")
 	}
 	for _, a := range assignments {
 		if a.RoleID == authz.BuiltInRoleAdmin && a.EnvironmentID == nil {
@@ -327,7 +328,7 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 		manual = append(manual, models.UserRoleAssignment{RoleID: a.RoleID, EnvironmentID: a.EnvironmentID})
 	}
 	if err := s.roleService.SetUserAssignments(ctx, adminUserID, manual); err != nil {
-		return fmt.Errorf("failed to grant default admin global role: %w", err)
+		return errors.WrapIf(err, "failed to grant default admin global role")
 	}
 	slog.InfoContext(ctx, "Default admin granted global Admin role assignment", "user_id", adminUserID)
 	return nil
@@ -360,11 +361,11 @@ func (s *UserService) DeleteUser(ctx context.Context, id string) error {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrUserNotFound
 			}
-			return fmt.Errorf("failed to load user: %w", err)
+			return errors.WrapIf(err, "failed to load user")
 		}
 
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
+			return errors.WrapIf(err, "failed to delete user")
 		}
 		return nil
 	})
@@ -381,14 +382,14 @@ func (s *UserService) NeedsPasswordUpgrade(hash string) bool {
 func (s *UserService) UpgradePasswordHash(ctx context.Context, userID, password string) error {
 	newHash, err := s.hashPassword(password)
 	if err != nil {
-		return fmt.Errorf("failed to create new hash: %w", err)
+		return errors.WrapIf(err, "failed to create new hash")
 	}
 
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Model(&models.User{}).
 			Where("id = ?", userID).
 			Update("password_hash", newHash).Error; err != nil {
-			return fmt.Errorf("failed to update password hash: %w", err)
+			return errors.WrapIf(err, "failed to update password hash")
 		}
 		return nil
 	})
@@ -410,7 +411,7 @@ func (s *UserService) ListUsersPaginated(ctx context.Context, params pagination.
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, query, &users)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate users: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate users")
 	}
 
 	result := s.toUserResponseDtosInternal(ctx, users)
@@ -534,7 +535,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 			MimeType: mimeType,
 		}
 		if err := tx.Save(&avatar).Error; err != nil {
-			return fmt.Errorf("failed to save avatar data: %w", err)
+			return errors.WrapIf(err, "failed to save avatar data")
 		}
 
 		err := tx.Model(&models.User{}).
@@ -543,7 +544,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 				"has_avatar": true,
 			}).Error
 		if err != nil {
-			return fmt.Errorf("failed to update user avatar flag: %w", err)
+			return errors.WrapIf(err, "failed to update user avatar flag")
 		}
 		return nil
 	})
@@ -553,7 +554,7 @@ func (s *UserService) UploadAvatar(ctx context.Context, userID string, data []by
 func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Where("user_id = ?", userID).Delete(&models.UserAvatar{}).Error; err != nil {
-			return fmt.Errorf("failed to delete avatar data: %w", err)
+			return errors.WrapIf(err, "failed to delete avatar data")
 		}
 
 		err := tx.Model(&models.User{}).
@@ -562,7 +563,7 @@ func (s *UserService) DeleteAvatar(ctx context.Context, userID string) error {
 				"has_avatar": false,
 			}).Error
 		if err != nil {
-			return fmt.Errorf("failed to update user avatar flag: %w", err)
+			return errors.WrapIf(err, "failed to update user avatar flag")
 		}
 		return nil
 	})

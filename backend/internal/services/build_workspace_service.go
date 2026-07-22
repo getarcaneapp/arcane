@@ -2,14 +2,14 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"path"
 	"path/filepath"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"log/slog"
 
@@ -37,7 +37,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 
 	cleaned, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
+		return nil, errors.WrapIf(err, "invalid path")
 	}
 
 	targetPath, err := joinBuildRoot(root, cleaned)
@@ -47,7 +47,7 @@ func (s *BuildWorkspaceService) ListDirectory(ctx context.Context, dirPath strin
 
 	entries, err := os.ReadDir(targetPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list directory: %w", err)
+		return nil, errors.WrapIf(err, "failed to list directory")
 	}
 
 	results := make([]volumetypes.FileEntry, 0, len(entries))
@@ -97,7 +97,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 
 	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid path: %w", err)
+		return nil, "", errors.WrapIf(err, "invalid path")
 	}
 
 	fullPath, err := joinBuildRoot(root, cleaned)
@@ -107,7 +107,7 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to stat file: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to stat file")
 	}
 	if info.IsDir() {
 		return nil, "", errors.New("path is a directory")
@@ -119,13 +119,13 @@ func (s *BuildWorkspaceService) GetFileContent(ctx context.Context, filePath str
 
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to open file: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to open file")
 	}
 	defer func() { _ = file.Close() }()
 
 	content, err := io.ReadAll(io.LimitReader(file, maxBytes))
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read file: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to read file")
 	}
 
 	mimeType := http.DetectContentType(content)
@@ -141,7 +141,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 
 	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("invalid path: %w", err)
+		return nil, 0, errors.WrapIf(err, "invalid path")
 	}
 
 	fullPath, err := joinBuildRoot(root, cleaned)
@@ -151,7 +151,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to stat file: %w", err)
+		return nil, 0, errors.WrapIf(err, "failed to stat file")
 	}
 	if info.IsDir() {
 		return nil, 0, errors.New("path is a directory")
@@ -159,7 +159,7 @@ func (s *BuildWorkspaceService) DownloadFile(ctx context.Context, filePath strin
 
 	file, err := os.Open(fullPath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("failed to open file: %w", err)
+		return nil, 0, errors.WrapIf(err, "failed to open file")
 	}
 
 	return file, info.Size(), nil
@@ -179,7 +179,7 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 
 	cleaned, err := utils.SanitizeBrowsePath(destPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 
 	dirPath, err := joinBuildRoot(root, cleaned)
@@ -188,18 +188,18 @@ func (s *BuildWorkspaceService) UploadFile(ctx context.Context, destPath string,
 	}
 
 	if err := os.MkdirAll(dirPath, 0o755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return errors.WrapIf(err, "failed to create directory")
 	}
 
 	targetFile := filepath.Join(dirPath, safeFilename)
 	file, err := os.Create(targetFile)
 	if err != nil {
-		return fmt.Errorf("failed to create file: %w", err)
+		return errors.WrapIf(err, "failed to create file")
 	}
 	defer func() { _ = file.Close() }()
 
 	if _, err := io.Copy(file, content); err != nil {
-		return fmt.Errorf("failed to write file: %w", err)
+		return errors.WrapIf(err, "failed to write file")
 	}
 
 	return nil
@@ -214,7 +214,7 @@ func (s *BuildWorkspaceService) CreateDirectory(ctx context.Context, dirPath str
 
 	cleaned, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 
 	fullPath, err := joinBuildRoot(root, cleaned)
@@ -227,7 +227,7 @@ func (s *BuildWorkspaceService) CreateDirectory(ctx context.Context, dirPath str
 	}
 
 	if err := os.MkdirAll(fullPath, 0o755); err != nil {
-		return fmt.Errorf("failed to create directory: %w", err)
+		return errors.WrapIf(err, "failed to create directory")
 	}
 
 	return nil
@@ -242,7 +242,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 
 	cleaned, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 
 	if cleaned == "/" {
@@ -255,7 +255,7 @@ func (s *BuildWorkspaceService) DeleteFile(ctx context.Context, filePath string)
 	}
 
 	if err := os.RemoveAll(fullPath); err != nil {
-		return fmt.Errorf("failed to delete path: %w", err)
+		return errors.WrapIf(err, "failed to delete path")
 	}
 
 	return nil
@@ -277,7 +277,7 @@ func (s *BuildWorkspaceService) resolveRoot() (string, error) {
 
 	cleaned := filepath.Clean(root)
 	if err := os.MkdirAll(cleaned, 0o755); err != nil {
-		return "", fmt.Errorf("failed to ensure builds directory: %w", err)
+		return "", errors.WrapIf(err, "failed to ensure builds directory")
 	}
 
 	return cleaned, nil

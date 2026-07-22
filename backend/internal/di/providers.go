@@ -8,6 +8,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	arcanelogging "github.com/getarcaneapp/arcane/backend/v2/internal/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
@@ -53,8 +54,8 @@ func provideVolumeServiceInternal(lc fx.Lifecycle, db *database.DB, docker *serv
 	return service
 }
 
-func provideAuthServiceInternal(user *services.UserService, settings *services.SettingsService, event *services.EventService, session *services.SessionService, role *services.RoleService, cfg *config.Config) *services.AuthService {
-	return services.NewAuthService(user, settings, event, session, role, cfg.JWTSecret, cfg)
+func provideAuthServiceInternal(user *services.UserService, settings *services.SettingsService, event *services.EventService, session *services.SessionService, role *services.RoleService, cfg *config.Config, errorHandler *arcanelogging.SlogErrorHandler) *services.AuthService {
+	return services.NewAuthService(user, settings, event, session, role, cfg.JWTSecret, cfg, errorHandler)
 }
 
 func provideContainerRegistryServiceInternal(db *database.DB, docker *services.DockerClientService, kv *services.KVService) *services.ContainerRegistryService {

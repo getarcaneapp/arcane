@@ -233,7 +233,7 @@ func TestVerifyToken_InvalidSubject(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "refresh", "u1", "bob", []string{"user"}, "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
-	require.ErrorAs(t, err, new(*common.AccessTokenSubjectError))
+	require.ErrorIs(t, err, common.ErrTokenValidation)
 }
 
 func TestVerifyToken_InvalidSignature(t *testing.T) {
@@ -257,7 +257,7 @@ func TestVerifyToken_MissingUserID(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", "", "bob", []string{"user"}, "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
-	require.ErrorAs(t, err, new(*common.MissingTokenUserIDError))
+	require.ErrorIs(t, err, common.ErrTokenValidation)
 }
 
 func TestGenerateUsernameFromEmail(t *testing.T) {
@@ -421,7 +421,7 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.True(t, common.IsSessionRevokedError(err))
+	require.True(t, errors.Is(err, common.ErrSessionRevoked))
 }
 
 func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
@@ -441,7 +441,7 @@ func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", time.Now().Add(5*time.Minute))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.ErrorAs(t, err, new(*common.MissingTokenSessionIDError))
+	require.ErrorIs(t, err, common.ErrTokenValidation)
 }
 
 func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
@@ -464,7 +464,7 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.True(t, common.IsSessionRevokedError(err))
+	require.True(t, errors.Is(err, common.ErrSessionRevoked))
 }
 
 func TestRefreshToken_RotatesJTI(t *testing.T) {
@@ -519,7 +519,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
 
 	_, err = s.RefreshToken(context.Background(), token, auth.SessionMeta{})
-	require.True(t, common.IsSessionRevokedError(err))
+	require.True(t, errors.Is(err, common.ErrSessionRevoked))
 }
 
 func TestChangePassword_RevokesAllSessions(t *testing.T) {

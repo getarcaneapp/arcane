@@ -2,12 +2,13 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"path"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/labstack/echo/v4"
 	echomiddleware "github.com/labstack/echo/v4/middleware"

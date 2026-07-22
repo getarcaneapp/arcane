@@ -2379,9 +2379,7 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	})
 
 	require.Error(t, err)
-
-	var conflictErr *common.ProjectFileConflictError
-	assert.ErrorAs(t, err, &conflictErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileConflict)
 	assert.NoFileExists(t, filepath.Join(project.Path, "notes.txt"))
 }
 
@@ -2422,9 +2420,7 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	})
 
 	require.Error(t, err)
-
-	var conflictErr *common.ProjectFileConflictError
-	assert.ErrorAs(t, err, &conflictErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileConflict)
 	assert.NoFileExists(t, filepath.Join(project.Path, "notes.txt"))
 }
 
@@ -2466,9 +2462,7 @@ services:
 	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "../metadata.yaml")
 	require.Error(t, err)
 	assert.Empty(t, includeFile)
-
-	var forbiddenErr *common.ProjectFileForbiddenError
-	assert.ErrorAs(t, err, &forbiddenErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileForbidden)
 }
 
 func TestProjectService_GetProjectFileContent_RejectsSymlinkInclude(t *testing.T) {
@@ -2512,9 +2506,7 @@ services:
 	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "evil-link")
 	require.Error(t, err)
 	assert.Empty(t, includeFile)
-
-	var forbiddenErr *common.ProjectFileForbiddenError
-	assert.ErrorAs(t, err, &forbiddenErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileForbidden)
 }
 
 func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkInclude(t *testing.T) {
@@ -2558,9 +2550,7 @@ services:
 	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "subdir/secret.yaml")
 	require.Error(t, err)
 	assert.Empty(t, includeFile)
-
-	var forbiddenErr *common.ProjectFileForbiddenError
-	assert.ErrorAs(t, err, &forbiddenErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileForbidden)
 }
 
 func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkProjectFile(t *testing.T) {
@@ -2597,9 +2587,7 @@ func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkProjectF
 	includeFile, err := svc.GetProjectFileContent(ctx, project.ID, "subdir/secret.yaml")
 	require.Error(t, err)
 	assert.Empty(t, includeFile)
-
-	var forbiddenErr *common.ProjectFileForbiddenError
-	assert.ErrorAs(t, err, &forbiddenErr)
+	assert.ErrorIs(t, err, common.ErrProjectFileForbidden)
 }
 
 func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation(t *testing.T) {
@@ -4184,8 +4172,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 	err = svc.ArchiveProject(ctx, "project-running", models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"})
 	require.Error(t, err)
-	var stoppedErr *common.ProjectMustBeStoppedError
-	assert.ErrorAs(t, err, &stoppedErr)
+	assert.ErrorIs(t, err, common.ErrProjectMustBeStopped)
 
 	var stored models.Project
 	require.NoError(t, db.First(&stored, "id = ?", "project-running").Error)
@@ -4989,7 +4976,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 
 	// Replace the standard compose.yaml with two custom-named compose files. The
 	// directory still holds compose content, but DetectComposeFile can't pick one
-	// and returns common.AmbiguousComposeFileError. The reconcile must NOT delete the
+	// and returns common.ErrComposeFileNotFound. The reconcile must NOT delete the
 	// record: the project's files are intact on disk and it may be deployable.
 	require.NoError(t, os.Remove(filepath.Join(projectPath, "compose.yaml")))
 	composeBody := []byte("services:\n  app:\n    image: nginx:alpine\n")
@@ -5747,8 +5734,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	})
 
 	require.Error(t, err)
-	var conflictErr *common.ProjectFileConflictError
-	require.ErrorAs(t, err, &conflictErr)
+	require.ErrorIs(t, err, common.ErrProjectFileConflict)
 	require.DirExists(t, originalPath)
 	require.NoDirExists(t, filepath.Join(projectsDir, "bar"))
 	require.FileExists(t, filepath.Join(originalPath, "external.txt"))

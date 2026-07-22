@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"mime/multipart"
@@ -10,10 +10,10 @@ import (
 	"net/url"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/containerd/platforms"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -381,7 +381,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 
 	images, paginationResp, err := h.imageService.ListImagesPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ImageListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list images").Error())
 	}
 
 	if images == nil {
@@ -401,7 +401,7 @@ func (h *ImageHandler) ListImages(ctx context.Context, input *ListImagesInput) (
 func (h *ImageHandler) GetImage(ctx context.Context, input *GetImageInput) (*GetImageOutput, error) {
 	out, err := h.imageService.GetImageDetail(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ImageNotFoundError{Err: err}).Error())
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Image not found").Error())
 	}
 
 	return &GetImageOutput{
@@ -570,7 +570,7 @@ func (h *ImageHandler) RemoveImage(ctx context.Context, input *RemoveImageInput)
 	}
 
 	if err := h.imageService.RemoveImage(ctx, input.ImageID, input.Force, *user); err != nil {
-		return nil, huma.Error500InternalServerError((&common.ImageRemovalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove image").Error())
 	}
 
 	return &RemoveImageOutput{
@@ -692,7 +692,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 // ListImageBuilds returns a paginated list of image build history entries.
 func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuildsInput) (*ListImageBuildsOutput, error) {
 	if input.EnvironmentID == "" {
-		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
 
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
@@ -705,7 +705,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 
 	builds, paginationResp, err := h.buildService.ListImageBuildsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.BuildHistoryListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list build history").Error())
 	}
 
 	if builds == nil {
@@ -724,7 +724,7 @@ func (h *ImageHandler) ListImageBuilds(ctx context.Context, input *ListImageBuil
 // GetImageBuild returns a single build history entry.
 func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildInput) (*GetImageBuildOutput, error) {
 	if input.EnvironmentID == "" {
-		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
 
 	if input.BuildID == "" {
@@ -736,7 +736,7 @@ func (h *ImageHandler) GetImageBuild(ctx context.Context, input *GetImageBuildIn
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, huma.Error404NotFound("build not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.BuildHistoryRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve build history").Error())
 	}
 
 	return &GetImageBuildOutput{
@@ -757,7 +757,7 @@ func (h *ImageHandler) PruneImages(ctx context.Context, input *PruneImagesInput)
 		Until: until,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ImagePruneError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune images").Error())
 	}
 
 	out := image.NewPruneReport(*report)
@@ -832,20 +832,20 @@ func (h *ImageHandler) GetImageUsageCounts(ctx context.Context, input *GetImageU
 
 	_, iu, un, tot, err := h.dockerService.GetAllImages(ctx)
 	if err != nil {
-		errs = append(errs, fmt.Errorf("get images: %w", err))
+		errs = append(errs, errors.WrapIf(err, "get images"))
 	} else {
 		inuse, unused, total = iu, un, tot
 	}
 
 	sz, err := h.imageService.GetTotalImageSize(ctx)
 	if err != nil {
-		errs = append(errs, fmt.Errorf("get total image size: %w", err))
+		errs = append(errs, errors.WrapIf(err, "get total image size"))
 	} else {
 		totalSize = sz
 	}
 
 	if len(errs) > 0 {
-		return nil, huma.Error500InternalServerError((&common.ImageUsageCountsError{Err: errors.Join(errs...)}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(stderrors.Join(errs...), "Failed to get image usage counts").Error())
 	}
 
 	return &GetImageUsageCountsOutput{
@@ -871,7 +871,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	// Get file from multipart form
 	files := input.RawBody.File["file"]
 	if len(files) == 0 {
-		return nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
+		return nil, huma.Error400BadRequest("No file uploaded")
 	}
 
 	fileHeader := files[0]
@@ -880,7 +880,7 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	// Validate file extension
 	lowerName := strings.ToLower(fileName)
 	if !strings.HasSuffix(lowerName, ".tar") && !strings.HasSuffix(lowerName, ".tar.gz") && !strings.HasSuffix(lowerName, ".tgz") && !strings.HasSuffix(lowerName, ".tar.xz") {
-		return nil, huma.Error400BadRequest((&common.InvalidFileFormatError{}).Error())
+		return nil, huma.Error400BadRequest("Invalid file format. Only Docker image tar archives are allowed (.tar, .tar.gz, .tgz, .tar.xz)")
 	}
 
 	// Get max upload size from settings
@@ -895,14 +895,14 @@ func (h *ImageHandler) UploadImage(ctx context.Context, input *UploadImageInput)
 	// Open the file
 	file, err := fileHeader.Open()
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to read upload").Error())
 	}
 	defer func() { _ = file.Close() }()
 
 	// Load the image
 	result, err := h.imageService.LoadImageFromReader(ctx, file, fileName, *user, maxSizeBytes)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ImageLoadError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load image").Error())
 	}
 
 	return &UploadImageOutput{

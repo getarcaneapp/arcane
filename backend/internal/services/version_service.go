@@ -3,12 +3,13 @@ package services
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	ref "github.com/distribution/reference"
 	containertypes "github.com/moby/moby/api/types/container"
@@ -93,17 +94,17 @@ func (s *VersionService) getLatestReleaseInternal(_ context.Context) (latestRele
 func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latestRelease, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, versionCheckURL, nil)
 	if err != nil {
-		return latestRelease{}, fmt.Errorf("create GitHub request: %w", err)
+		return latestRelease{}, errors.WrapIf(err, "create GitHub request")
 	}
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return latestRelease{}, fmt.Errorf("get latest release: %w", err)
+		return latestRelease{}, errors.WrapIf(err, "get latest release")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		return latestRelease{}, fmt.Errorf("GitHub API returned status %d", resp.StatusCode)
+		return latestRelease{}, errors.Errorf("GitHub API returned status %d", resp.StatusCode)
 	}
 
 	var payload struct {
@@ -112,7 +113,7 @@ func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latest
 		PublishedAt string `json:"published_at"`
 	}
 	if err := json.UnmarshalRead(resp.Body, &payload); err != nil {
-		return latestRelease{}, fmt.Errorf("decode payload: %w", err)
+		return latestRelease{}, errors.WrapIf(err, "decode payload")
 	}
 	if payload.TagName == "" {
 		return latestRelease{}, errors.New("GitHub API returned empty tag name")

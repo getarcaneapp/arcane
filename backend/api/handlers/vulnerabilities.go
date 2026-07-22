@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -261,7 +261,7 @@ func (h *VulnerabilityHandler) ScanImage(ctx context.Context, input *ScanImageIn
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	result, err := h.vulnerabilityService.ScanImage(runtimeCtx, input.EnvironmentID, input.ImageID, *user)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to scan image for vulnerabilities").Error())
 	}
 
 	return &ScanImageOutput{
@@ -288,7 +288,7 @@ func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetS
 
 	summaries, err := h.vulnerabilityService.GetScanSummariesByImageIDs(ctx, imageIDs)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to scan image for vulnerabilities").Error())
 	}
 
 	return &GetScanSummariesOutput{
@@ -305,11 +305,11 @@ func (h *VulnerabilityHandler) GetScanSummaries(ctx context.Context, input *GetS
 func (h *VulnerabilityHandler) GetScanResult(ctx context.Context, input *GetScanResultInput) (*GetScanResultOutput, error) {
 	result, err := h.vulnerabilityService.GetScanResult(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if result == nil {
-		return nil, huma.Error404NotFound((&common.VulnerabilityScanNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("Vulnerability scan not found")
 	}
 
 	return &GetScanResultOutput{
@@ -324,11 +324,11 @@ func (h *VulnerabilityHandler) GetScanResult(ctx context.Context, input *GetScan
 func (h *VulnerabilityHandler) GetScanSummary(ctx context.Context, input *GetScanSummaryInput) (*GetScanSummaryOutput, error) {
 	summary, err := h.vulnerabilityService.GetScanSummary(ctx, input.ImageID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if summary == nil {
-		return nil, huma.Error404NotFound((&common.VulnerabilityScanNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("Vulnerability scan not found")
 	}
 
 	return &GetScanSummaryOutput{
@@ -351,7 +351,7 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 
 	items, paginationResp, err := h.vulnerabilityService.ListVulnerabilities(ctx, input.ImageID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if items == nil {
@@ -371,7 +371,7 @@ func (h *VulnerabilityHandler) ListImageVulnerabilities(ctx context.Context, inp
 func (h *VulnerabilityHandler) GetEnvironmentSummary(ctx context.Context, input *GetEnvironmentSummaryInput) (*GetEnvironmentSummaryOutput, error) {
 	summary, err := h.vulnerabilityService.GetEnvironmentSummary(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if summary == nil {
@@ -401,7 +401,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 
 	items, paginationResp, err := h.vulnerabilityService.ListAllVulnerabilities(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if items == nil {
@@ -421,7 +421,7 @@ func (h *VulnerabilityHandler) ListAllVulnerabilities(ctx context.Context, input
 func (h *VulnerabilityHandler) ListAllVulnerabilityImageOptions(ctx context.Context, input *ListAllVulnerabilityImageOptionsInput) (*ListAllVulnerabilityImageOptionsOutput, error) {
 	items, err := h.vulnerabilityService.ListAllVulnerabilityImageOptions(ctx, input.Severity)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.VulnerabilityScanRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve vulnerability scan").Error())
 	}
 
 	if items == nil {

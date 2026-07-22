@@ -4,13 +4,14 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"maps"
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 )
 
 const (
@@ -147,7 +148,7 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 
 	httpReq, err := http.NewRequestWithContext(ctx, req.Method, req.URL, bodyReader)
 	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("failed to create request: %w", err)}
+		return nil, &TransportError{Err: errors.WrapIf(err, "failed to create request")}
 	}
 
 	for key, value := range req.Headers {
@@ -162,7 +163,7 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 
 	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, &TransportError{Err: fmt.Errorf("failed to read response body: %w", err)}
+		return nil, &TransportError{Err: errors.WrapIf(err, "failed to read response body")}
 	}
 
 	return &Response{

@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -116,7 +116,7 @@ func (h *UpdaterHandler) RunUpdater(ctx context.Context, input *RunUpdaterInput)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.ApplyPending(runtimeCtx, options)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
 	return &RunUpdaterOutput{
@@ -148,7 +148,7 @@ func (h *UpdaterHandler) GetUpdaterHistory(ctx context.Context, input *GetUpdate
 
 	history, err := h.updaterService.GetHistory(ctx, limit)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterHistoryError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get updater history").Error())
 	}
 
 	return &GetUpdaterHistoryOutput{
@@ -164,7 +164,7 @@ func (h *UpdaterHandler) UpdateContainer(ctx context.Context, input *UpdateConta
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	out, err := h.updaterService.UpdateSingleContainer(runtimeCtx, input.ContainerID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UpdaterRunError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to run updater").Error())
 	}
 
 	return &UpdateContainerOutput{

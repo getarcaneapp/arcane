@@ -2,7 +2,7 @@ package git
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
@@ -123,13 +124,13 @@ func (c *Client) getAuth(config AuthConfig) (transport.AuthMethod, error) {
 		if config.SSHKey != "" {
 			publicKeys, err := ssh.NewPublicKeys("git", []byte(config.SSHKey), "")
 			if err != nil {
-				return nil, fmt.Errorf("failed to create ssh auth: %w", err)
+				return nil, errors.WrapIf(err, "failed to create ssh auth")
 			}
 
 			// Configure host key verification based on mode
 			hostKeyCallback, err := c.getSSHHostKeyCallback(config.SSHHostKeyVerification)
 			if err != nil {
-				return nil, fmt.Errorf("failed to configure SSH host key verification: %w", err)
+				return nil, errors.WrapIf(err, "failed to configure SSH host key verification")
 			}
 			publicKeys.HostKeyCallbackHelper = ssh.HostKeyCallbackHelper{
 				HostKeyCallback: hostKeyCallback,
@@ -170,14 +171,14 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 	// Ensure the directory exists
 	dir := filepath.Dir(knownHostsPath)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
-		return nil, fmt.Errorf("failed to create known_hosts directory: %w", err)
+		return nil, errors.WrapIf(err, "failed to create known_hosts directory")
 	}
 
 	// Create the file if it doesn't exist
 	if _, err := os.Stat(knownHostsPath); os.IsNotExist(err) {
 		file, err := os.OpenFile(knownHostsPath, os.O_CREATE|os.O_WRONLY, 0o600)
 		if err != nil {
-			return nil, fmt.Errorf("failed to create known_hosts file: %w", err)
+			return nil, errors.WrapIf(err, "failed to create known_hosts file")
 		}
 		if err := file.Close(); err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: failed to close known_hosts file %s: %v\n", knownHostsPath, err)
@@ -198,9 +199,9 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 				return nil // Host key matches
 			}
 			// Check if it's a "key mismatch" error vs "unknown host"
-			if keyErr, ok := errors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
+			if keyErr, ok := stderrors.AsType[*knownhosts.KeyError](err); ok && len(keyErr.Want) > 0 {
 				// Host is known but key doesn't match - this is a security concern
-				return fmt.Errorf("host key mismatch for %s (possible MITM attack): %w", hostname, err)
+				return errors.WrapIff(err, "host key mismatch for %s (possible MITM attack)", hostname)
 			}
 			// Otherwise, host is unknown - we'll add it
 		}
@@ -251,23 +252,23 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	// Acquire exclusive lock to prevent concurrent writes
 	fileLock := flock.New(knownHostsPath)
 	if err := fileLock.Lock(); err != nil {
-		return fmt.Errorf("failed to acquire lock on known_hosts file: %w", err)
+		return errors.WrapIf(err, "failed to acquire lock on known_hosts file")
 	}
 	defer fileLock.Unlock() //nolint:errcheck
 
 	// Append to the file
 	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 	if err != nil {
-		return fmt.Errorf("failed to open known_hosts file: %w", err)
+		return errors.WrapIf(err, "failed to open known_hosts file")
 	}
 	defer func() {
 		if cerr := file.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close known_hosts file: %w", cerr)
+			err = errors.WrapIf(cerr, "failed to close known_hosts file")
 		}
 	}()
 
 	if _, err := file.WriteString(line + "\n"); err != nil {
-		return fmt.Errorf("failed to write to known_hosts file: %w", err)
+		return errors.WrapIf(err, "failed to write to known_hosts file")
 	}
 
 	return nil
@@ -292,11 +293,11 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	}
 	// Ensure the work directory exists
 	if err := os.MkdirAll(workDir, 0o755); err != nil {
-		return "", fmt.Errorf("failed to create work dir: %w", err)
+		return "", errors.WrapIf(err, "failed to create work dir")
 	}
 	tmpDir, err := os.MkdirTemp(workDir, "gitops-*")
 	if err != nil {
-		return "", fmt.Errorf("failed to create temp dir: %w", err)
+		return "", errors.WrapIf(err, "failed to create temp dir")
 	}
 
 	authMethod, err := c.getAuth(auth)
@@ -328,7 +329,7 @@ func (c *Client) Clone(ctx context.Context, url, branch string, auth AuthConfig)
 	_, err = git.PlainCloneContext(ctx, tmpDir, false, cloneOptions)
 	if err != nil {
 		_ = os.RemoveAll(tmpDir)
-		return "", fmt.Errorf("failed to clone repository: %w", err)
+		return "", errors.WrapIf(err, "failed to clone repository")
 	}
 
 	return tmpDir, nil
@@ -341,12 +342,12 @@ func (c *Client) GetCurrentCommit(ctx context.Context, repoPath string) (string,
 	}
 	repo, err := git.PlainOpen(repoPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to open repository: %w", err)
+		return "", errors.WrapIf(err, "failed to open repository")
 	}
 
 	ref, err := repo.Head()
 	if err != nil {
-		return "", fmt.Errorf("failed to get HEAD: %w", err)
+		return "", errors.WrapIf(err, "failed to get HEAD")
 	}
 
 	return ref.Hash().String(), nil
@@ -454,7 +455,7 @@ func (c *Client) listRemoteReferences(ctx context.Context, url string, auth Auth
 
 	refs, err := rem.ListContext(listCtx, listOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list remote references: %w", err)
+		return nil, errors.WrapIf(err, "failed to list remote references")
 	}
 
 	return refs, nil
@@ -469,7 +470,7 @@ func ValidatePath(repoPath, requestedPath string) error {
 	// Check if the requested path is within the repo using relative path validation
 	rel, err := filepath.Rel(cleanRepoPath, cleanRequestedPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 	if strings.HasPrefix(rel, "..") || strings.Contains(rel, string(filepath.Separator)+".."+string(filepath.Separator)) {
 		return errors.New("path traversal attempt detected")
@@ -493,7 +494,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 	// Check if path exists
 	info, err := os.Stat(fullPath)
 	if err != nil {
-		return nil, fmt.Errorf("path not found: %w", err)
+		return nil, errors.WrapIf(err, "path not found")
 	}
 
 	if !info.IsDir() {
@@ -502,7 +503,7 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 
 	entries, err := os.ReadDir(fullPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read directory: %w", err)
+		return nil, errors.WrapIf(err, "failed to read directory")
 	}
 
 	var nodes []gitops.FileTreeNode
@@ -596,7 +597,7 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 	fullPath := filepath.Join(repoPath, filePath)
 	content, err := os.ReadFile(fullPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to read file: %w", err)
+		return "", errors.WrapIf(err, "failed to read file")
 	}
 	return string(content), nil
 }
@@ -640,7 +641,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 
 	// Validate compose path
 	if err := ValidatePath(repoPath, composePath); err != nil {
-		return nil, fmt.Errorf("invalid compose path: %w", err)
+		return nil, errors.WrapIf(err, "invalid compose path")
 	}
 
 	// Get the directory containing the compose file
@@ -648,7 +649,7 @@ func (c *Client) WalkDirectory(ctx context.Context, repoPath, composePath string
 
 	root, err := os.OpenRoot(syncDir)
 	if err != nil {
-		return nil, fmt.Errorf("sync directory not found: %w", err)
+		return nil, errors.WrapIf(err, "sync directory not found")
 	}
 	defer func() { _ = root.Close() }()
 
@@ -710,14 +711,14 @@ func (c *Client) walkSyncEntry(
 
 func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, result *DirectoryWalkResult, limits syncWalkLimits) error {
 	if limits.maxFiles > 0 && result.TotalFiles >= limits.maxFiles {
-		return fmt.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
+		return errors.Errorf("file count limit exceeded (max %d files)", limits.maxFiles)
 	}
 
 	if limits.maxBinarySize > 0 {
 		if info, err := d.Info(); err == nil && info.Size() > limits.maxBinarySize {
 			isBinary, err := c.isBinarySyncFile(root, path)
 			if err != nil {
-				return fmt.Errorf("failed to inspect file %s: %w", path, err)
+				return errors.WrapIff(err, "failed to inspect file %s", path)
 			}
 			if isBinary {
 				result.SkippedBinaries++
@@ -728,7 +729,7 @@ func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, resul
 
 	content, err := root.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("failed to read file %s: %w", path, err)
+		return errors.WrapIff(err, "failed to read file %s", path)
 	}
 
 	fileSize := int64(len(content))
@@ -740,7 +741,7 @@ func (c *Client) appendSyncFile(root *os.Root, path string, d fs.DirEntry, resul
 	}
 
 	if limits.maxTotalSize > 0 && result.TotalSize+fileSize > limits.maxTotalSize {
-		return fmt.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
+		return errors.Errorf("total size limit exceeded (max %d bytes)", limits.maxTotalSize)
 	}
 
 	executable := false

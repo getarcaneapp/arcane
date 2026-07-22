@@ -3,8 +3,9 @@ package edge
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"io"
+
+	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
