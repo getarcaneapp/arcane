@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"maps"
@@ -16,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/compose-spec/compose-go/v2/dotenv"
 	"github.com/samber/hot"
@@ -185,12 +185,12 @@ func loadCachedEnvFileInternal(_ context.Context, envCache *hot.HotCache[string,
 			return nil, err
 		}
 		if info.IsDir() {
-			return nil, fmt.Errorf("path is a directory: %s", path)
+			return nil, errors.Errorf("path is a directory: %s", path)
 		}
 
 		parsed, err := parseProjectEnvFileExistingInternal(path, contextEnv)
 		if err != nil {
-			return nil, fmt.Errorf("parse env file: %w", err)
+			return nil, errors.WrapIf(err, "parse env file")
 		}
 		entry.exists = true
 		entry.mtime = info.ModTime()
@@ -246,7 +246,7 @@ func cloneEnvMapInternal(src EnvMap) EnvMap {
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
 	f, err := os.Open(path)
 	if err != nil {
-		return nil, fmt.Errorf("open file: %w", err)
+		return nil, errors.WrapIf(err, "open file")
 	}
 	defer func() { _ = f.Close() }()
 	return parseEnvWithContext(f, contextEnv)
@@ -275,7 +275,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 	originalExists := readErr == nil
 	if readErr != nil && !os.IsNotExist(readErr) {
 		if !errors.Is(readErr, os.ErrPermission) {
-			return fmt.Errorf("prepare env file for compose validation: %w", readErr)
+			return errors.WrapIf(readErr, "prepare env file for compose validation")
 		}
 		// The file exists but is permission-locked (e.g. chmod 000, foreign-owned).
 		// Its contents can't be verified or safely overwritten, so leave it
@@ -296,7 +296,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 			content = *effectiveEnvContent
 		}
 		if writeErr := WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
-			return fmt.Errorf("prepare env file for compose validation: %w", writeErr)
+			return errors.WrapIf(writeErr, "prepare env file for compose validation")
 		}
 
 		defer func() {
@@ -312,7 +312,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 
 			if restoreErr != nil && !os.IsNotExist(restoreErr) {
 				if err == nil {
-					err = fmt.Errorf("restore env file after compose validation: %w", restoreErr)
+					err = errors.WrapIf(restoreErr, "restore env file after compose validation")
 				}
 			}
 		}()
@@ -334,13 +334,13 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse git env content: %w", err)
+		return "", errors.WrapIf(err, "parse git env content")
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	_, err = ParseProjectEnvContent(overrideContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse override env content: %w", err)
+		return "", errors.WrapIf(err, "parse override env content")
 	}
 
 	switch {
@@ -370,13 +370,13 @@ func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, e
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse git env content: %w", err)
+		return "", errors.WrapIf(err, "parse git env content")
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	localEnv, err := ParseProjectEnvContent(localContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse local env content: %w", err)
+		return "", errors.WrapIf(err, "parse local env content")
 	}
 
 	override := make(EnvMap)
@@ -394,13 +394,13 @@ func buildOverrideEnvContentInternal(gitContent, effectiveContent string) (strin
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse git env content: %w", err)
+		return "", errors.WrapIf(err, "parse git env content")
 	}
 	maps.Copy(contextEnv, gitEnv)
 
 	effectiveEnv, err := ParseProjectEnvContent(effectiveContent, contextEnv)
 	if err != nil {
-		return "", fmt.Errorf("parse effective env content: %w", err)
+		return "", errors.WrapIf(err, "parse effective env content")
 	}
 
 	override := make(EnvMap)
@@ -509,7 +509,7 @@ func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unread
 		}
 		return WriteProjectFile(projectsDirectory, projectPath, OverrideEnvFileName, content)
 	default:
-		return fmt.Errorf("write managed env file: unsupported file name %q", fileName)
+		return errors.Errorf("write managed env file: unsupported file name %q", fileName)
 	}
 }
 
@@ -528,7 +528,7 @@ func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
 	// Use compose-go's dotenv parser with lookup support for variable expansion
 	envMap, err := dotenv.ParseWithLookup(r, lookupFn)
 	if err != nil {
-		return nil, fmt.Errorf("parse env: %w", err)
+		return nil, errors.WrapIf(err, "parse env")
 	}
 
 	return envMap, nil
@@ -551,7 +551,7 @@ func readOptionalProjectFileInternal(projectPath, fileName string) (content stri
 	if errors.Is(readErr, os.ErrPermission) {
 		return "", false, true, nil
 	}
-	return "", false, false, fmt.Errorf("read %s: %w", fileName, readErr)
+	return "", false, false, errors.WrapIff(readErr, "read %s", fileName)
 }
 
 // formatEnvMapInternal serializes env maps into Arcane's canonical generated

@@ -2,13 +2,13 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -70,7 +70,7 @@ func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, e
 		client.WithHost(host),
 	)
 	if err != nil {
-		return "", fmt.Errorf("failed to create Docker probe client: %w", err)
+		return "", errors.WrapIf(err, "failed to create Docker probe client")
 	}
 	defer closeDockerClientInternal(probeClient, "failed to close probe Docker client")
 
@@ -79,7 +79,7 @@ func detectDockerAPIVersionInternal(ctx context.Context, host string) (string, e
 
 	pingResult, err := probeClient.Ping(ctx, client.PingOptions{})
 	if err != nil {
-		return "", fmt.Errorf("failed to negotiate Docker API version: %w", err)
+		return "", errors.WrapIf(err, "failed to negotiate Docker API version")
 	}
 
 	apiVersion := strings.TrimSpace(pingResult.APIVersion)
@@ -97,7 +97,7 @@ func newDockerClientWithAPIVersionInternal(host string, apiVersion string) (*cli
 		client.WithAPIVersion(apiVersion),
 	)
 	if err != nil {
-		return nil, fmt.Errorf("failed to configure Docker client API version %s: %w", apiVersion, err)
+		return nil, errors.WrapIff(err, "failed to configure Docker client API version %s", apiVersion)
 	}
 
 	return configuredClient, nil
@@ -126,7 +126,7 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 
 	cli, err := newDockerClientInternal(ctx, s.config.DockerHost)
 	if err != nil {
-		return nil, fmt.Errorf("failed to create Docker client: %w", err)
+		return nil, errors.WrapIf(err, "failed to create Docker client")
 	}
 
 	s.mu.Lock()
@@ -150,7 +150,7 @@ func (s *DockerClientService) GetClient(ctx context.Context) (*client.Client, er
 func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 	apiVersion, err := detectDockerAPIVersionInternal(ctx, s.config.DockerHost)
 	if err != nil {
-		return fmt.Errorf("failed to refresh Docker client: %w", err)
+		return errors.WrapIf(err, "failed to refresh Docker client")
 	}
 
 	s.mu.Lock()
@@ -163,7 +163,7 @@ func (s *DockerClientService) RefreshClient(ctx context.Context) error {
 
 	cli, err := newDockerClientWithAPIVersionInternal(s.config.DockerHost, apiVersion)
 	if err != nil {
-		return fmt.Errorf("failed to refresh Docker client: %w", err)
+		return errors.WrapIf(err, "failed to refresh Docker client")
 	}
 
 	s.mu.Lock()
@@ -278,7 +278,7 @@ func sleepDockerEventBackoffInternal(ctx context.Context, eventBackoff *backoff.
 func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]container.Summary, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
@@ -287,7 +287,7 @@ func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]con
 
 	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker containers: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker containers")
 	}
 	return containerList.Items, nil
 }
@@ -295,7 +295,7 @@ func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]con
 func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.Summary, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
@@ -304,7 +304,7 @@ func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.S
 
 	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker images: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker images")
 	}
 	return imageList.Items, nil
 }
@@ -312,7 +312,7 @@ func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.S
 func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]network.Summary, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
@@ -321,7 +321,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 
 	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker networks")
 	}
 	return networkList.Items, nil
 }
@@ -329,7 +329,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.VolumeListResult, error) {
 	dockerClient, err := s.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
@@ -338,7 +338,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 
 	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker volumes: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker volumes")
 	}
 	return &volResp, nil
 }

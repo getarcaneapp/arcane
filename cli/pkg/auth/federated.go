@@ -2,7 +2,6 @@ package auth
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -10,6 +9,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/ci"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -50,7 +51,7 @@ GitHub Actions example:
 
 		cfg, err := config.Load()
 		if err != nil {
-			return fmt.Errorf("failed to load config: %w", err)
+			return errors.WrapIf(err, "failed to load config")
 		}
 		if strings.TrimSpace(server) != "" {
 			cfg.ServerURL = strings.TrimSpace(server)
@@ -84,7 +85,7 @@ GitHub Actions example:
 			cfg.APIKey = ""
 			cfg.RefreshToken = ""
 			if err := config.Save(cfg); err != nil {
-				return fmt.Errorf("failed to save federated token: %w", err)
+				return errors.WrapIf(err, "failed to save federated token")
 			}
 		}
 
@@ -100,7 +101,7 @@ GitHub Actions example:
 				"persisted":       persist,
 			}, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 		case exportOutput:
@@ -146,7 +147,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, a
 	if strings.TrimSpace(tokenFile) != "" {
 		data, err := os.ReadFile(strings.TrimSpace(tokenFile))
 		if err != nil {
-			return "", "", fmt.Errorf("failed to read token file: %w", err)
+			return "", "", errors.WrapIf(err, "failed to read token file")
 		}
 		token = strings.TrimSpace(string(data))
 		if token == "" {
@@ -159,7 +160,7 @@ func resolveFederatedSubjectTokenInternal(cmd *cobra.Command, provider string, a
 	if tokenStdin || stdinHasDataInternal() {
 		data, err := io.ReadAll(os.Stdin)
 		if err != nil {
-			return "", "", fmt.Errorf("failed to read token from stdin: %w", err)
+			return "", "", errors.WrapIf(err, "failed to read token from stdin")
 		}
 		token = strings.TrimSpace(string(data))
 		if token == "" {
@@ -185,21 +186,21 @@ func exchangeFederatedTokenInternal(cmd *cobra.Command, c *client.Client, subjec
 		"Content-Type": "application/x-www-form-urlencoded",
 	})
 	if err != nil {
-		return nil, fmt.Errorf("federated token exchange failed: %w", err)
+		return nil, errors.WrapIf(err, "federated token exchange failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxFederatedErrorBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read federated token response: %w", err)
+		return nil, errors.WrapIf(err, "failed to read federated token response")
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("federated token exchange failed (status %d): %s", resp.StatusCode, redactedFederatedExchangeMessageInternal(body))
+		return nil, errors.Errorf("federated token exchange failed (status %d): %s", resp.StatusCode, redactedFederatedExchangeMessageInternal(body))
 	}
 
 	var tokenResp federatedtypes.FederatedTokenResponse
 	if err := json.Unmarshal(body, &tokenResp); err != nil {
-		return nil, fmt.Errorf("failed to parse federated token response: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse federated token response")
 	}
 	return &tokenResp, nil
 }

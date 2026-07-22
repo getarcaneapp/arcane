@@ -1,8 +1,9 @@
 package api
 
 import (
-	"errors"
 	"net/http"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"

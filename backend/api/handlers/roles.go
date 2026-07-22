@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -202,7 +203,7 @@ func (h *RoleHandler) ListRoles(ctx context.Context, input *ListRolesInput) (*Li
 func (h *RoleHandler) GetRole(ctx context.Context, input *GetRoleInput) (*GetRoleOutput, error) {
 	role, err := h.roleService.GetRole(ctx, input.ID)
 	if err != nil {
-		if common.IsRoleNotFoundError(err) {
+		if errors.Is(err, common.ErrRoleNotFound) {
 			return nil, huma.Error404NotFound("role not found")
 		}
 		return nil, huma.Error500InternalServerError("failed to get role: " + err.Error())
@@ -216,19 +217,19 @@ func (h *RoleHandler) CreateRole(ctx context.Context, input *CreateRoleInput) (*
 	callerPS, _ := humamw.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsRolePermissionEscalationError(err):
+		case errors.Is(err, common.ErrRolePermissionEscalation):
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
 	}
 	role, err := h.roleService.CreateRole(ctx, input.Body.Name, input.Body.Description, input.Body.Permissions)
 	if err != nil {
-		if common.IsRoleNameTakenError(err) {
+		if errors.Is(err, common.ErrRoleNameTaken) {
 			return nil, huma.Error409Conflict("role name already in use")
 		}
-		if common.IsUnknownPermissionError(err) {
+		if errors.Is(err, common.ErrUnknownPermission) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to create role: " + err.Error())
@@ -242,9 +243,9 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 	callerPS, _ := humamw.PermissionsFromContext(ctx)
 	if err := h.roleService.ValidatePermissionsAgainstCaller(callerPS, input.Body.Permissions); err != nil {
 		switch {
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsRolePermissionEscalationError(err):
+		case errors.Is(err, common.ErrRolePermissionEscalation):
 			return nil, huma.Error403Forbidden(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to validate role permissions: " + err.Error())
@@ -252,13 +253,13 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 	role, err := h.roleService.UpdateRole(ctx, input.ID, input.Body.Name, input.Body.Description, input.Body.Permissions)
 	if err != nil {
 		switch {
-		case common.IsRoleNotFoundError(err):
+		case errors.Is(err, common.ErrRoleNotFound):
 			return nil, huma.Error404NotFound("role not found")
-		case common.IsRoleBuiltInError(err):
+		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be modified")
-		case common.IsRoleNameTakenError(err):
+		case errors.Is(err, common.ErrRoleNameTaken):
 			return nil, huma.Error409Conflict("role name already in use")
-		case common.IsUnknownPermissionError(err):
+		case errors.Is(err, common.ErrUnknownPermission):
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to update role: " + err.Error())
@@ -271,11 +272,11 @@ func (h *RoleHandler) UpdateRole(ctx context.Context, input *UpdateRoleInput) (*
 func (h *RoleHandler) DeleteRole(ctx context.Context, input *DeleteRoleInput) (*DeleteRoleOutput, error) {
 	if err := h.roleService.DeleteRole(ctx, input.ID); err != nil {
 		switch {
-		case common.IsRoleNotFoundError(err):
+		case errors.Is(err, common.ErrRoleNotFound):
 			return nil, huma.Error404NotFound("role not found")
-		case common.IsRoleBuiltInError(err):
+		case errors.Is(err, common.ErrRoleBuiltIn):
 			return nil, huma.Error403Forbidden("built-in roles cannot be deleted")
-		case common.IsNoGlobalAdminRemainsError(err):
+		case errors.Is(err, common.ErrNoGlobalAdminRemains):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to delete role: " + err.Error())
@@ -312,9 +313,9 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	}
 	if err := h.roleService.SetUserAssignments(ctx, input.UserID, desired); err != nil {
 		switch {
-		case common.IsInvalidRoleAssignmentError(err):
+		case errors.Is(err, common.ErrInvalidRoleAssignment):
 			return nil, huma.Error400BadRequest(err.Error())
-		case common.IsNoGlobalAdminRemainsError(err):
+		case errors.Is(err, common.ErrNoGlobalAdminRemains):
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to set assignments: " + err.Error())

@@ -2,16 +2,16 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/http"
 	"os"
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -259,7 +259,7 @@ func (h *SettingsHandler) GetPublicSettings(ctx context.Context, input *GetPubli
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
 	return &GetPublicSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, false)}, nil
@@ -299,7 +299,7 @@ func (h *SettingsHandler) GetSettings(ctx context.Context, input *GetSettingsInp
 
 	var settingsDto []settings.PublicSetting
 	if err := mapper.MapStructList(settingsList, &settingsDto); err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map settings")
 	}
 
 	return &GetSettingsOutput{Body: h.appendRuntimeSettingsInternal(settingsDto, true)}, nil
@@ -353,7 +353,7 @@ func (h *SettingsHandler) validateSettingsUpdateInput(input settings.Update) err
 func (h *SettingsHandler) updateSettingsForRemoteEnvironment(ctx context.Context, input *UpdateSettingsInput) (*UpdateSettingsOutput, error) {
 	// Check if trying to update auth settings on non-local environment.
 	if hasAuthSettingsUpdateInternal(input.Body) {
-		return nil, huma.Error403Forbidden((&common.AuthSettingsUpdateError{}).Error())
+		return nil, huma.Error403Forbidden("Authentication settings can only be updated from the main environment")
 	}
 
 	apiResp, err := proxyRemoteJSONInternal[base.ApiResponse[[]settings.SettingDto]](ctx, h.environmentService, input.EnvironmentID, http.MethodPut, "/api/environments/0/settings", input.Body)
@@ -384,7 +384,7 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.SettingsUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update settings")
 	}
 
 	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))
@@ -421,7 +421,7 @@ func hasAuthSettingsUpdateInternal(req settings.Update) bool {
 // Search searches settings by query.
 func (h *SettingsHandler) Search(ctx context.Context, input *SearchSettingsInput) (*SearchSettingsOutput, error) {
 	if strings.TrimSpace(input.Body.Query) == "" {
-		return nil, huma.Error400BadRequest((&common.QueryParameterRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Query parameter is required")
 	}
 
 	ps, _ := humamw.PermissionsFromContext(ctx)

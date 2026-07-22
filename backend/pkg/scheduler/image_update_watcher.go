@@ -2,12 +2,12 @@ package scheduler
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -186,7 +186,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 	run := &imageUpdateScanRunInternal{done: make(chan struct{})}
 	for !w.activeRun.CompareAndSwap(nil, run) {
 		if w.activeRun.Load() != nil {
-			return &common.ImageScanInProgressError{}
+			return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
 		}
 		// Lost the CAS to a run that has since been released; retry.
 	}
@@ -213,7 +213,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 
 	results, err := w.imageUpdateService.CheckAllImages(ctx, 0, creds)
 	if err != nil {
-		return fmt.Errorf("image scan failed: %w", err)
+		return errors.WrapIf(err, "image scan failed")
 	}
 
 	total := len(results)
@@ -282,8 +282,7 @@ func (w *ImageUpdateWatcher) runTriggeredScansInternal(ctx context.Context) {
 			return
 		}
 		err := w.RunNow(ctx)
-		var inProgress *common.ImageScanInProgressError
-		if errors.As(err, &inProgress) {
+		if errors.Is(err, common.ErrImageScanInProgress) {
 			// A manual scan holds the gate; wait it out and re-queue the
 			// trigger so this scan attempt is not lost.
 			if !w.waitForActiveScanInternal(ctx) {

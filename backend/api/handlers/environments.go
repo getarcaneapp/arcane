@@ -15,9 +15,9 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
@@ -391,7 +391,7 @@ func (h *EnvironmentHandler) ListEnvironments(ctx context.Context, input *ListEn
 
 	envs, paginationResp, err := h.environmentService.ListEnvironmentsPaginated(ctx, params, accessibleEnvIDs)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to fetch environments")
 	}
 	for i := range envs {
 		h.applyEdgeRuntimeStateInternal(&envs[i])
@@ -467,7 +467,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create environment").Error())
 	}
 
 	// Generate API key for environment
@@ -493,7 +493,7 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 
@@ -515,7 +515,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 
 	created, err := h.environmentService.CreateEnvironment(ctx, env, &user.ID, &user.Username)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create environment").Error())
 	}
 
 	// Sync registries and git repositories in background (intentionally detached from request context)
@@ -525,7 +525,7 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](created)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 
@@ -543,12 +543,12 @@ func (h *EnvironmentHandler) createEnvironmentLegacyInternal(ctx context.Context
 func (h *EnvironmentHandler) GetEnvironment(ctx context.Context, input *GetEnvironmentInput) (*GetEnvironmentOutput, error) {
 	env, err := h.environmentService.GetEnvironmentByID(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.EnvironmentNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("Environment not found")
 	}
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](env)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 	if env.IsEdge {
@@ -580,14 +580,14 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}
 	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
 	if updateErr != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentUpdateError{Err: updateErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update environment")
 	}
 
 	h.triggerPostUpdateTasksInternal(ctx, input.ID, updated, &input.Body)
 
 	out, mapErr := mapper.MapOne[*models.Environment, environment.Environment](updated)
 	if mapErr != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map environment")
 	}
 	h.applyEdgeRuntimeStateInternal(&out)
 
@@ -629,7 +629,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		// Re-map with updated environment data
 		out, mapErr = mapper.MapOne[*models.Environment, environment.Environment](updated)
 		if mapErr != nil {
-			return nil, huma.Error500InternalServerError((&common.EnvironmentMappingError{Err: mapErr}).Error())
+			return nil, huma.Error500InternalServerError("Failed to map environment")
 		}
 		h.applyEdgeRuntimeStateInternal(&out)
 
@@ -654,7 +654,7 @@ func (h *EnvironmentHandler) applyEdgeRuntimeStateInternal(env *environment.Envi
 // DeleteEnvironment deletes an environment.
 func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *DeleteEnvironmentInput) (*DeleteEnvironmentOutput, error) {
 	if input.ID == localDockerEnvironmentID {
-		return nil, huma.Error400BadRequest((&common.LocalEnvironmentDeletionError{}).Error())
+		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
 
 	user, _ := humamw.GetCurrentUserFromContext(ctx)
@@ -664,7 +664,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		username = new(user.Username)
 	}
 	if err := h.environmentService.DeleteEnvironment(ctx, input.ID, userID, username); err != nil {
-		return nil, huma.Error500InternalServerError((&common.EnvironmentDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete environment").Error())
 	}
 
 	return &DeleteEnvironmentOutput{
@@ -707,7 +707,7 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 // UpdateHeartbeat updates the heartbeat for an environment.
 func (h *EnvironmentHandler) UpdateHeartbeat(ctx context.Context, input *UpdateHeartbeatInput) (*UpdateHeartbeatOutput, error) {
 	if err := h.environmentService.UpdateEnvironmentHeartbeat(ctx, input.ID); err != nil {
-		return nil, huma.Error500InternalServerError((&common.HeartbeatUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update heartbeat")
 	}
 
 	return &UpdateHeartbeatOutput{
@@ -732,7 +732,7 @@ func (h *EnvironmentHandler) PairAgent(ctx context.Context, input *PairAgentInpu
 	}
 
 	if err := h.settingsService.SetStringSetting(ctx, "agentToken", h.cfg.AgentToken); err != nil {
-		return nil, huma.Error500InternalServerError((&common.AgentTokenPersistenceError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to persist agent token")
 	}
 
 	return &PairAgentOutput{

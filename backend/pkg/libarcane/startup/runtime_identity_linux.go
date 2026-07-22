@@ -4,12 +4,12 @@ package startup
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"os"
 	"os/exec"
 	"os/signal"
 	"syscall"
+
+	"emperror.dev/errors"
 
 	"github.com/samber/mo"
 )
@@ -17,7 +17,7 @@ import (
 func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityRequest) error {
 	executable, err := os.Executable()
 	if err != nil {
-		return fmt.Errorf("resolve executable: %w", err)
+		return errors.WrapIf(err, "resolve executable")
 	}
 
 	groups := runtimeIdentitySupplementaryGroupsInternal(req.DockerHost, resolveSocketGroupInternal)
@@ -36,7 +36,7 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 	}
 
 	if err := cmd.Start(); err != nil {
-		return fmt.Errorf("start runtime identity child: %w", err)
+		return errors.WrapIf(err, "start runtime identity child")
 	}
 
 	sigCh := make(chan os.Signal, 2)
@@ -70,7 +70,7 @@ func reexecWithRuntimeIdentityInternal(ctx context.Context, req runtimeIdentityR
 				os.Exit(exitErr.ExitCode())
 			}
 
-			return fmt.Errorf("wait for runtime identity child: %w", err)
+			return errors.WrapIf(err, "wait for runtime identity child")
 		}
 	}
 }

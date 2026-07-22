@@ -2,8 +2,6 @@ package projects
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"maps"
 	"math"
@@ -12,6 +10,9 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+
+	"emperror.dev/emperror"
+	"emperror.dev/errors"
 
 	interp "github.com/compose-spec/compose-go/v2/interpolation"
 	"github.com/compose-spec/compose-go/v2/loader"
@@ -125,17 +126,20 @@ func DetectComposeFile(dir string) (string, error) {
 	case len(dirMatchedCandidates) == 1:
 		return dirMatchedCandidates[0], nil
 	case len(dirMatchedCandidates) > 1:
-		return "", &common.AmbiguousComposeFileError{Dir: dir}
+		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+
 	case len(composeNamedCandidates) == 1:
 		return composeNamedCandidates[0], nil
 	case len(composeNamedCandidates) > 1:
-		return "", &common.AmbiguousComposeFileError{Dir: dir}
+		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+
 	case len(customCandidates) == 1:
 		return customCandidates[0], nil
 	case len(customCandidates) > 1:
-		return "", &common.AmbiguousComposeFileError{Dir: dir}
+		return "", errors.Errorf("multiple custom compose files found in %q", dir)
+
 	default:
-		return "", &common.ComposeFileNotFoundError{Dir: dir}
+		return "", common.Classify(common.ErrComposeFileNotFound, errors.Errorf("no compose file found in %q", dir))
 	}
 }
 
@@ -205,7 +209,7 @@ func lenientCastSizeInternal(value string) (any, error) {
 		n = b
 	}
 	if n > math.MaxInt || n < math.MinInt {
-		return nil, fmt.Errorf("size %d out of range for platform int", n)
+		return nil, errors.Errorf("size %d out of range for platform int", n)
 	}
 	return int(n), nil
 }
@@ -270,13 +274,13 @@ func loadComposeProjectInternal(
 	lenient bool,
 ) (project *composetypes.Project, err error) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
+		if panicErr := emperror.Recover(recover()); panicErr != nil {
 			slog.WarnContext(ctx,
 				"panic while loading compose project; compose file may contain invalid syntax",
 				"path", composeFile,
-				"error", recovered,
+				"error", panicErr,
 			)
-			err = fmt.Errorf("load compose project panic for %s: %v", composeFile, recovered)
+			err = errors.WrapIff(panicErr, "load compose project panic for %s", composeFile)
 			project = nil
 		}
 	}()
@@ -340,7 +344,7 @@ func loadComposeProjectInternal(
 		}
 	})
 	if err != nil {
-		return nil, fmt.Errorf("load compose project: %w", err)
+		return nil, errors.WrapIf(err, "load compose project")
 	}
 
 	for _, configFile := range cfg.ConfigFiles {
@@ -355,7 +359,7 @@ func loadComposeProjectInternal(
 	// Translate container paths to host paths for Docker execution
 	if pathMapper != nil {
 		if err := pathMapper.TranslateVolumeSources(project); err != nil {
-			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
+			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
 		}
 	}
 

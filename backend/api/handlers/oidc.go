@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -252,7 +253,7 @@ func RegisterOidc(api huma.API, authService *services.AuthService, oidcService *
 func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) (*GetOidcStatusOutput, error) {
 	status, err := h.authService.GetOidcConfigurationStatus(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.OidcStatusError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve OIDC status").Error())
 	}
 
 	return &GetOidcStatusOutput{
@@ -264,7 +265,7 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
 	config, err := h.authService.GetOidcConfig(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.OidcConfigError{}).Error())
+		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
 
 	appUrl := ""
@@ -291,10 +292,10 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlInput) (*GetOidcAuthUrlOutput, error) {
 	enabled, err := h.authService.IsOidcEnabled(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
+		return nil, huma.Error500InternalServerError("Failed to check OIDC status")
 	}
 	if !enabled {
-		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
+		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 
 	appUrl := ""
@@ -313,7 +314,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 
 	authUrl, stateCookieValue, err := h.oidcService.GenerateAuthURL(ctx, input.Body.RedirectUri, origin, mobileRedirectURI)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
 	}
 
 	// Build state cookie (600 seconds = 10 minutes)
@@ -331,7 +332,7 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcCallbackInput) (*HandleOidcCallbackOutput, error) {
 	// Validate state cookie
 	if input.OidcStateCookie == "" {
-		return nil, huma.Error400BadRequest((&common.OidcStateCookieError{}).Error())
+		return nil, huma.Error400BadRequest("Missing or invalid OIDC state cookie")
 	}
 
 	appUrl := ""
@@ -352,13 +353,13 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	userInfo, tokenResp, err := h.oidcService.HandleCallback(ctx, input.Body.Code, input.Body.State, input.OidcStateCookie, origin, mobileRedirectURI)
 	if err != nil {
 		slog.WarnContext(ctx, "OIDC callback failed", "error", err, "origin", origin, "state_present", input.Body.State != "", "code_present", input.Body.Code != "")
-		return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "OIDC callback failed").Error())
 	}
 
 	// Complete login
 	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
 	// Build cookies: clear the state cookie always; only set the session
@@ -374,7 +375,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 
 	userDto, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &HandleOidcCallbackOutput{
@@ -393,16 +394,16 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 func (h *OidcHandler) InitiateDeviceAuth(ctx context.Context, _ *InitiateDeviceAuthInput) (*InitiateDeviceAuthOutput, error) {
 	enabled, err := h.authService.IsOidcEnabled(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.OidcStatusCheckError{}).Error())
+		return nil, huma.Error500InternalServerError("Failed to check OIDC status")
 	}
 	if !enabled {
-		return nil, huma.Error400BadRequest((&common.OidcDisabledError{}).Error())
+		return nil, huma.Error400BadRequest("OIDC authentication is disabled")
 	}
 
 	response, err := h.oidcService.InitiateDeviceAuth(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "Device authorization initiation failed", "error", err)
-		return nil, huma.Error500InternalServerError((&common.OidcAuthUrlGenerationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
 	}
 
 	return &InitiateDeviceAuthOutput{
@@ -430,13 +431,13 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 			return nil, huma.Error403Forbidden("access_denied")
 		default:
 			slog.WarnContext(ctx, "Device token exchange failed", "error", err)
-			return nil, huma.Error400BadRequest((&common.OidcCallbackError{Err: err}).Error())
+			return nil, huma.Error400BadRequest(errors.WithMessage(err, "OIDC callback failed").Error())
 		}
 	}
 
 	userModel, tokenPair, err := h.authService.OidcLogin(ctx, *userInfo, tokenResp, sessionMetaFromContextInternal(ctx, input.UserAgent))
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.AuthFailedError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Authentication failed")
 	}
 
 	maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
@@ -446,7 +447,7 @@ func (h *OidcHandler) ExchangeDeviceToken(ctx context.Context, input *ExchangeDe
 
 	userDto, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &ExchangeDeviceTokenOutput{
@@ -490,7 +491,7 @@ func (h *OidcHandler) CreateOidcRoleMapping(ctx context.Context, input *CreateOi
 	}
 	mapping, err := h.roleService.CreateOidcMapping(ctx, claimValue, roleID, input.Body.EnvironmentID)
 	if err != nil {
-		if common.IsInvalidRoleAssignmentError(err) {
+		if errors.Is(err, common.ErrInvalidRoleAssignment) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to create mapping: " + err.Error())
@@ -512,13 +513,13 @@ func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOi
 	}
 	mapping, err := h.roleService.UpdateOidcMapping(ctx, input.ID, claimValue, roleID, input.Body.EnvironmentID)
 	if err != nil {
-		if common.IsOidcMappingNotFoundError(err) {
+		if errors.Is(err, common.ErrOidcMappingNotFound) {
 			return nil, huma.Error404NotFound("mapping not found")
 		}
-		if common.IsOidcMappingEnvManagedError(err) {
+		if errors.Is(err, common.ErrOidcMappingEnvManaged) {
 			return nil, huma.Error409Conflict(err.Error())
 		}
-		if common.IsInvalidRoleAssignmentError(err) {
+		if errors.Is(err, common.ErrInvalidRoleAssignment) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to update mapping: " + err.Error())
@@ -531,10 +532,10 @@ func (h *OidcHandler) UpdateOidcRoleMapping(ctx context.Context, input *UpdateOi
 
 func (h *OidcHandler) DeleteOidcRoleMapping(ctx context.Context, input *DeleteOidcRoleMappingInput) (*DeleteOidcRoleMappingOutput, error) {
 	if err := h.roleService.DeleteOidcMapping(ctx, input.ID); err != nil {
-		if common.IsOidcMappingNotFoundError(err) {
+		if errors.Is(err, common.ErrOidcMappingNotFound) {
 			return nil, huma.Error404NotFound("mapping not found")
 		}
-		if common.IsOidcMappingEnvManagedError(err) {
+		if errors.Is(err, common.ErrOidcMappingEnvManaged) {
 			return nil, huma.Error409Conflict(err.Error())
 		}
 		return nil, huma.Error500InternalServerError("failed to delete mapping: " + err.Error())

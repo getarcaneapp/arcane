@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -90,10 +92,9 @@ func TestValidateCredentialTargetChange(t *testing.T) {
 
 			switch {
 			case tt.wantField != "":
-				var validationErr *models.ValidationError
-				require.ErrorAs(t, err, &validationErr)
-				assert.Equal(t, tt.wantField, validationErr.Field)
-				assert.Equal(t, "Changing credential target requires re-supplying or clearing the token", validationErr.Message)
+				require.ErrorIs(t, err, common.ErrValidation)
+				assert.Contains(t, errors.GetDetails(err), tt.wantField)
+				assert.Equal(t, "Changing credential target requires re-supplying or clearing the token", err.Error())
 			case len(tt.wantFields) > 0:
 				var apiErr *models.APIError
 				require.ErrorAs(t, err, &apiErr)

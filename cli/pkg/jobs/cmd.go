@@ -2,8 +2,9 @@ package jobs
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -35,22 +36,22 @@ var getCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get job schedules: %w", err)
+			return errors.WrapIf(err, "failed to get job schedules")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to get job schedules: %w", err)
+			return errors.WrapIf(err, "failed to get job schedules")
 		}
 
 		var cfg jobschedule.Config
 		if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			b, err := json.MarshalIndent(cfg, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(b))
 			return nil
@@ -97,19 +98,19 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.JobSchedules(c.EnvID()), req)
 		if err != nil {
-			return fmt.Errorf("failed to update job schedules: %w", err)
+			return errors.WrapIf(err, "failed to update job schedules")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[jobschedule.Config]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			b, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(b))
 			return nil

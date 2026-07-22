@@ -2,13 +2,13 @@ package projects
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 )
@@ -17,15 +17,15 @@ func ReadFolderComposeTemplate(baseDir, folder string) (string, *string, string,
 	folderPath := filepath.Join(baseDir, folder)
 	composePath, err := DetectComposeFile(folderPath)
 	if err != nil {
-		if _, ok := errors.AsType[*common.ComposeFileNotFoundError](err); ok {
+		if errors.Is(err, common.ErrComposeFileNotFound) {
 			return "", nil, "", false, nil
 		}
-		return "", nil, "", false, fmt.Errorf("detect compose file: %w", err)
+		return "", nil, "", false, errors.WrapIf(err, "detect compose file")
 	}
 
 	b, err := os.ReadFile(composePath)
 	if err != nil {
-		return "", nil, "", false, fmt.Errorf("read compose %s: %w", composePath, err)
+		return "", nil, "", false, errors.WrapIff(err, "read compose %s", composePath)
 	}
 
 	var envPtr *string
@@ -60,11 +60,11 @@ func Slugify(in string) string {
 func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, composePath, envPath string, err error) {
 	baseDir, derr := GetTemplatesDirectory(ctx, templatesDir)
 	if derr != nil {
-		return "", "", "", fmt.Errorf("ensure templates dir: %w", derr)
+		return "", "", "", errors.WrapIf(derr, "ensure templates dir")
 	}
 	dir = filepath.Join(baseDir, base)
 	if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-		return "", "", "", fmt.Errorf("failed to create template directory: %w", err)
+		return "", "", "", errors.WrapIf(err, "failed to create template directory")
 	}
 	composePath = filepath.Join(dir, "compose.yaml")
 	envPath = filepath.Join(dir, ".env.example")
@@ -94,7 +94,7 @@ func WriteTemplateFiles(composePath, envPath, composeContent, envContent string)
 func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) error {
 	templatesDir, err := GetTemplatesDirectory(ctx, configuredTemplatesDir)
 	if err != nil {
-		return fmt.Errorf("get templates directory: %w", err)
+		return errors.WrapIf(err, "get templates directory")
 	}
 
 	composePath := filepath.Join(templatesDir, ".compose.template")
@@ -105,28 +105,28 @@ func EnsureDefaultTemplates(ctx context.Context, configuredTemplatesDir string) 
 	// Write default compose template if it doesn't exist
 	if _, err := os.Stat(composePath); os.IsNotExist(err) {
 		if err := WriteTemplateFile(composePath, getDefaultComposeTemplate()); err != nil {
-			return fmt.Errorf("write default compose template: %w", err)
+			return errors.WrapIf(err, "write default compose template")
 		}
 	}
 
 	// Write default swarm stack template if it doesn't exist
 	if _, err := os.Stat(swarmStackPath); os.IsNotExist(err) {
 		if err := WriteTemplateFile(swarmStackPath, DefaultSwarmStackTemplate()); err != nil {
-			return fmt.Errorf("write default swarm stack template: %w", err)
+			return errors.WrapIf(err, "write default swarm stack template")
 		}
 	}
 
 	// Write default swarm stack env template if it doesn't exist
 	if _, err := os.Stat(swarmStackEnvPath); os.IsNotExist(err) {
 		if err := WriteTemplateFile(swarmStackEnvPath, DefaultSwarmStackEnvTemplate()); err != nil {
-			return fmt.Errorf("write default swarm stack env template: %w", err)
+			return errors.WrapIf(err, "write default swarm stack env template")
 		}
 	}
 
 	// Write default env template if it doesn't exist
 	if _, err := os.Stat(envPath); os.IsNotExist(err) {
 		if err := WriteTemplateFile(envPath, getDefaultEnvTemplate()); err != nil {
-			return fmt.Errorf("write default env template: %w", err)
+			return errors.WrapIf(err, "write default env template")
 		}
 	}
 

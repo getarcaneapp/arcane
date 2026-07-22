@@ -2,11 +2,11 @@ package libarcane
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"slices"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -205,7 +205,7 @@ func ConnectContainerExtraNetworksForDockerAPI(ctx context.Context, dockerClient
 			EndpointConfig: copyEndpointSettingsInternal(endpoints[networkName]),
 		})
 		if err != nil {
-			return fmt.Errorf("connect network %s: %w", networkName, err)
+			return errors.WrapIff(err, "connect network %s", networkName)
 		}
 	}
 

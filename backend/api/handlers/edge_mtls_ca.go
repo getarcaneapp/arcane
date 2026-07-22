@@ -3,12 +3,12 @@ package handlers
 import (
 	"crypto/x509"
 	"encoding/pem"
-	"errors"
-	"fmt"
 	"math"
 	"os"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -33,10 +33,10 @@ func generatedEdgeMTLSCAPathInternal(cfg *config.Config) (string, error) {
 	}
 	caPath, err := edge.GeneratedManagerMTLSCAPath(edgeCfg)
 	if err != nil {
-		return "", fmt.Errorf("resolve edge mTLS CA path: %w", err)
+		return "", errors.WrapIf(err, "resolve edge mTLS CA path")
 	}
 	if _, err := os.Stat(caPath); err != nil {
-		return "", fmt.Errorf("stat edge mTLS CA: %w", err)
+		return "", errors.WrapIf(err, "stat edge mTLS CA")
 	}
 
 	return caPath, nil
@@ -61,10 +61,10 @@ func generatedEdgeMTLSClientCertPathInternal(cfg *config.Config, envID string) (
 
 	certPath, err := edge.GeneratedManagerClientMTLSCertPath(edgeCfg, envID)
 	if err != nil {
-		return "", fmt.Errorf("resolve generated edge mTLS client certificate path: %w", err)
+		return "", errors.WrapIf(err, "resolve generated edge mTLS client certificate path")
 	}
 	if _, err := os.Stat(certPath); err != nil {
-		return "", fmt.Errorf("stat generated edge mTLS client certificate: %w", err)
+		return "", errors.WrapIf(err, "stat generated edge mTLS client certificate")
 	}
 
 	return certPath, nil
@@ -78,7 +78,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 
 	certPEM, err := os.ReadFile(certPath)
 	if err != nil {
-		return nil, fmt.Errorf("read generated edge mTLS client certificate: %w", err)
+		return nil, errors.WrapIf(err, "read generated edge mTLS client certificate")
 	}
 
 	block, _ := pem.Decode(certPEM)
@@ -88,7 +88,7 @@ func readGeneratedEdgeMTLSCertificateInfoInternal(cfg *config.Config, envID stri
 
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("parse generated edge mTLS client certificate: %w", err)
+		return nil, errors.WrapIf(err, "parse generated edge mTLS client certificate")
 	}
 
 	expiresAt := cert.NotAfter.UTC()

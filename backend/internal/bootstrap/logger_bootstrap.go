@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/lmittmann/tint"
 	slogGorm "github.com/orandin/slog-gorm"
 
@@ -23,6 +24,51 @@ type requestLogHandler struct {
 type attrFilterHandler struct {
 	handler  slog.Handler
 	dropKeys map[string]struct{}
+}
+
+type stackAttrHandler struct {
+	handler slog.Handler
+	attrs   []slog.Attr
+}
+
+func (h *stackAttrHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	return h.handler.Enabled(ctx, level)
+}
+
+func (h *stackAttrHandler) Handle(ctx context.Context, r slog.Record) error {
+	if r.Level < slog.LevelError {
+		return h.handler.Handle(ctx, r)
+	}
+
+	attrs := append([]slog.Attr(nil), h.attrs...)
+	r.Attrs(func(attr slog.Attr) bool {
+		attrs = append(attrs, attr)
+		return true
+	})
+
+	var stackTracer interface{ StackTrace() errors.StackTrace }
+	for _, attr := range attrs {
+		attr.Value = attr.Value.Resolve()
+		if attr.Value.Kind() != slog.KindAny {
+			continue
+		}
+		err, ok := attr.Value.Any().(error)
+		if ok && errors.As(err, &stackTracer) {
+			r.AddAttrs(slog.String("stack", fmt.Sprintf("%+v", stackTracer.StackTrace())))
+			break
+		}
+	}
+
+	return h.handler.Handle(ctx, r)
+}
+
+func (h *stackAttrHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	boundAttrs := append(append([]slog.Attr(nil), h.attrs...), attrs...)
+	return &stackAttrHandler{handler: h.handler.WithAttrs(attrs), attrs: boundAttrs}
+}
+
+func (h *stackAttrHandler) WithGroup(name string) slog.Handler {
+	return &stackAttrHandler{handler: h.handler.WithGroup(name), attrs: h.attrs}
 }
 
 func (h *requestLogHandler) Enabled(ctx context.Context, level slog.Level) bool {
@@ -178,6 +224,7 @@ func SetupSlogLogger(cfg *config.Config) {
 	}
 
 	h = &requestLogHandler{handler: h}
+	h = &stackAttrHandler{handler: h}
 
 	slog.SetDefault(slog.New(h))
 }

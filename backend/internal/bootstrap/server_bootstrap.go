@@ -3,12 +3,13 @@ package bootstrap
 import (
 	"context"
 	"crypto/tls"
-	"errors"
 	"log/slog"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"

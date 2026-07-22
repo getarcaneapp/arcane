@@ -2,13 +2,13 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -169,7 +169,7 @@ func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*Li
 
 	users, paginationResp, err := h.userService.ListUsersPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list users").Error())
 	}
 
 	return &ListUsersOutput{
@@ -191,7 +191,7 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 
 	hashedPassword, err := h.userService.HashPassword(input.Body.Password)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.PasswordHashError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to hash password")
 	}
 
 	userModel := &models.User{
@@ -211,12 +211,12 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 
 	createdUser, err := h.userService.CreateUser(ctx, userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to create user")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *createdUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &CreateUserOutput{
@@ -231,12 +231,12 @@ func (h *UserHandler) CreateUser(ctx context.Context, input *CreateUserInput) (*
 func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUserOutput, error) {
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("User not found")
 	}
 
 	out, err := h.userService.ToUserResponseDto(ctx, *userModel)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &GetUserOutput{
@@ -251,7 +251,7 @@ func (h *UserHandler) GetUser(ctx context.Context, input *GetUserInput) (*GetUse
 func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*UpdateUserOutput, error) {
 	userModel, err := h.userService.GetUserByID(ctx, input.UserID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("User not found")
 	}
 
 	normalizedEmail, err := normalizeOptionalEmailInternal(input.Body.Email)
@@ -279,7 +279,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	if input.Body.Password != nil && *input.Body.Password != "" {
 		hashedPassword, err := h.userService.HashPassword(*input.Body.Password)
 		if err != nil {
-			return nil, huma.Error500InternalServerError((&common.PasswordHashError{Err: err}).Error())
+			return nil, huma.Error500InternalServerError("Failed to hash password")
 		}
 		userModel.PasswordHash = hashedPassword
 	}
@@ -292,9 +292,9 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
 		}
 		if errors.Is(err, services.ErrUserNotFound) {
-			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("User not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.UserUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
 
 	if h.authService != nil {
@@ -303,7 +303,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 
 	out, err := h.userService.ToUserResponseDto(ctx, *updatedUser)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.UserMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to map user")
 	}
 
 	return &UpdateUserOutput{
@@ -321,9 +321,9 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 			return nil, huma.Error409Conflict(services.ErrCannotRemoveLastAdmin.Error())
 		}
 		if errors.Is(err, services.ErrUserNotFound) {
-			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("User not found")
 		}
-		return nil, huma.Error500InternalServerError((&common.UserDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to delete user")
 	}
 
 	if h.authService != nil {
@@ -345,7 +345,7 @@ func (h *UserHandler) GetUserAvatar(ctx context.Context, input *GetUserAvatarInp
 	data, mimeType, err := h.userService.GetAvatar(ctx, input.UserID)
 	if err != nil {
 		if errors.Is(err, services.ErrUserNotFound) {
-			return nil, huma.Error404NotFound((&common.UserNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("User not found")
 		}
 		return nil, huma.Error500InternalServerError("failed to retrieve avatar")
 	}

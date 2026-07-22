@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -279,7 +280,7 @@ func (h *VariableHandler) GetMaterializedVariables(ctx context.Context, input *G
 
 	vars, err := h.variableService.ReadLocalEnvFile(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.GlobalVariablesRetrievalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to retrieve global variables").Error())
 	}
 
 	return &GetGlobalVariablesOutput{
@@ -302,10 +303,10 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 	}
 
 	if err := h.variableService.WriteLocalEnvFile(ctx, input.Body.Variables); err != nil {
-		if common.IsInvalidEnvKeyError(err) {
+		if errors.Is(err, common.ErrInvalidEnvKey) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.GlobalVariablesUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to update global variables").Error())
 	}
 
 	return &UpdateGlobalVariablesOutput{
@@ -320,11 +321,11 @@ func (h *VariableHandler) UpdateMaterializedVariables(ctx context.Context, input
 
 func variableMutationHTTPErrorInternal(err error) error {
 	switch {
-	case common.IsInvalidEnvKeyError(err), common.IsGlobalVariableSecretValueRequiredError(err), common.IsGlobalVariableScopeRequiredError(err):
+	case errors.Is(err, common.ErrInvalidEnvKey), errors.Is(err, common.ErrGlobalVariableSecretValueRequired), errors.Is(err, common.ErrGlobalVariableScopeRequired):
 		return huma.Error400BadRequest(err.Error())
-	case common.IsGlobalVariableNotFoundError(err):
+	case errors.Is(err, common.ErrGlobalVariableNotFound):
 		return huma.Error404NotFound(err.Error())
-	case common.IsGlobalVariableConflictError(err):
+	case errors.Is(err, common.ErrGlobalVariableConflict):
 		return huma.Error409Conflict(err.Error())
 	default:
 		return huma.Error500InternalServerError(err.Error())

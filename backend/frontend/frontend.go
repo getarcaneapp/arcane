@@ -4,13 +4,14 @@ package frontend
 
 import (
 	"embed"
-	"errors"
 	"fmt"
 	"io/fs"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/labstack/echo/v4"
 )
@@ -26,7 +27,7 @@ const indexHtmlFileConstant = "index.html"
 func RegisterFrontend(e *echo.Echo) error {
 	distFS, err := fs.Sub(frontendFS, "dist")
 	if err != nil {
-		return fmt.Errorf("failed to create sub FS: %w", err)
+		return errors.WrapIf(err, "failed to create sub FS")
 	}
 
 	cacheMaxAge := time.Hour * 24

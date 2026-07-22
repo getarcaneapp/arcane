@@ -3,12 +3,12 @@
 package api
 
 import (
-	"errors"
 	"net/http"
 	"time"
 
+	"emperror.dev/errors"
+
 	"github.com/getarcaneapp/arcane/backend/v2/buildables"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
@@ -70,23 +70,20 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 		if err != nil {
 			switch {
 			case errors.Is(err, services.ErrInvalidCredentials):
-				return c.JSON(http.StatusUnauthorized, base.ErrorResponse{Error: (&common.InvalidCredentialsError{}).Error()})
+				return c.JSON(http.StatusUnauthorized, base.ErrorResponse{Error: "Invalid username or password"})
 			case errors.Is(err, services.ErrLocalAuthDisabled):
-				return c.JSON(http.StatusBadRequest, base.ErrorResponse{Error: (&common.LocalAuthDisabledError{}).Error()})
+				return c.JSON(http.StatusBadRequest, base.ErrorResponse{Error: "Local authentication is disabled"})
 			default:
-				return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: (&common.AuthFailedError{Err: err}).Error()})
+				return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Authentication failed"})
 			}
 		}
 
 		var userResp user.User
 		if mapErr := mapper.MapStruct(userModel, &userResp); mapErr != nil {
-			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: (&common.UserMappingError{Err: mapErr}).Error()})
+			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "Failed to map user"})
 		}
 
-		maxAge := int(time.Until(tokenPair.ExpiresAt).Seconds())
-		if maxAge < 0 {
-			maxAge = 0
-		}
+		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)
 		maxAge += 60
 
 		c.Response().Header().Set("Set-Cookie", cookie.BuildTokenCookieStringFor(maxAge, tokenPair.AccessToken, cookie.SecureCookieFromRequest(c.Request())))

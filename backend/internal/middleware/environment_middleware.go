@@ -5,8 +5,6 @@ import (
 
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -14,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -121,7 +120,7 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 		if !ok {
 			return c.JSON(http.StatusUnauthorized, map[string]any{
 				"success": false,
-				"data":    map[string]any{"error": (&common.EnvironmentUnauthorizedError{}).Error()},
+				"data":    map[string]any{"error": "Authentication required to access remote environments"},
 			})
 		}
 		perms = ps
@@ -131,14 +130,14 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 	if err != nil || apiURL == "" {
 		return c.JSON(http.StatusNotFound, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": (&common.EnvironmentNotFoundError{}).Error()},
+			"data":    map[string]any{"error": "Environment not found"},
 		})
 	}
 
 	if !enabled {
 		return c.JSON(http.StatusBadRequest, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": (&common.EnvironmentDisabledError{}).Error()},
+			"data":    map[string]any{"error": (errors.New("Environment is disabled")).Error()},
 		})
 	}
 
@@ -150,7 +149,7 @@ func (m *EnvironmentMiddleware) Handle(c echo.Context, next echo.HandlerFunc) er
 	if m.proxyPermissionDenied(c, perms, envID) {
 		return c.JSON(http.StatusForbidden, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": (&common.EnvironmentForbiddenError{}).Error()},
+			"data":    map[string]any{"error": "You don't have permission to perform this action on this environment"},
 		})
 	}
 
@@ -417,7 +416,7 @@ func (m *EnvironmentMiddleware) abortEdgeTunnelUnavailable(c echo.Context) error
 	return c.JSON(http.StatusBadGateway, map[string]any{
 		"success": false,
 		"data": map[string]any{
-			"error": (&common.EdgeAgentNotConnectedError{}).Error(),
+			"error": "Edge agent is not connected",
 		},
 	})
 }
@@ -447,9 +446,9 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 
 	req, err := m.createProxyRequest(c, target, accessToken)
 	if err != nil {
-		errMessage := (&common.EnvironmentProxyRequestCreationError{Err: err}).Error()
-		if invalidTargetErr, ok := errors.AsType[*common.EnvironmentInvalidProxyTargetError](err); ok {
-			errMessage = invalidTargetErr.Error()
+		errMessage := errors.WithMessage(err, "Failed to create proxy request").Error()
+		if errors.Is(err, common.ErrEnvironmentInvalidProxyTarget) {
+			errMessage = err.Error()
 		}
 		return c.JSON(http.StatusInternalServerError, map[string]any{
 			"success": false,
@@ -461,7 +460,7 @@ func (m *EnvironmentMiddleware) proxyHTTP(c echo.Context, target string, accessT
 	if err != nil {
 		return c.JSON(http.StatusBadGateway, map[string]any{
 			"success": false,
-			"data":    map[string]any{"error": (&common.EnvironmentProxyRequestFailedError{Err: err}).Error()},
+			"data":    map[string]any{"error": errors.WithMessage(err, "Proxy request failed").Error()},
 		})
 	}
 	defer func() { _ = resp.Body.Close() }()
@@ -475,7 +474,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string
 	srcReq := c.Request()
 	validatedTarget, err := httputils.ValidateOutboundHTTPURL(target)
 	if err != nil {
-		return nil, &common.EnvironmentInvalidProxyTargetError{Err: err}
+		return nil, common.Classify(common.ErrEnvironmentInvalidProxyTarget, errors.WrapIf(err, "Invalid proxy target URL"))
 	}
 
 	var bodyBytes []byte
@@ -484,7 +483,7 @@ func (m *EnvironmentMiddleware) createProxyRequest(c echo.Context, target string
 		bodyBytes, err = io.ReadAll(srcReq.Body)
 		_ = srcReq.Body.Close()
 		if err != nil {
-			return nil, fmt.Errorf("failed to read request body: %w", err)
+			return nil, errors.WrapIf(err, "failed to read request body")
 		}
 	}
 

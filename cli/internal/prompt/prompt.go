@@ -1,9 +1,10 @@
 package prompt
 
 import (
-	"errors"
 	"fmt"
 	"os"
+
+	"emperror.dev/errors"
 
 	"charm.land/bubbles/v2/list"
 	tea "charm.land/bubbletea/v2"
@@ -18,7 +19,7 @@ func IsInteractive() bool {
 // Select prompts the user to select from a list of options and returns the zero-based index.
 func Select(label string, options []string) (int, error) {
 	if len(options) == 0 {
-		return -1, fmt.Errorf("no %s options available", label)
+		return -1, errors.Errorf("no %s options available", label)
 	}
 	if !IsInteractive() {
 		return -1, errors.New("interactive terminal required")

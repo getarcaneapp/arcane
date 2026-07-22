@@ -3,14 +3,14 @@ package edge
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
 	"strings"
 	"time"
+
+	"emperror.dev/emperror"
+	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
@@ -501,7 +501,7 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 		select {
 		case pending.ResponseCh <- msg:
 		default:
-			err := fmt.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
+			err := errors.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed pending request with full response channel", "id", msg.ID)
@@ -522,7 +522,7 @@ func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, m
 		case <-ctx.Done():
 			return
 		case <-time.After(streamDeliveryTimeout):
-			err := fmt.Errorf("stream delivery timed out for pending request %s", msg.ID)
+			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed slow pending stream consumer",
@@ -645,11 +645,10 @@ func (s *TunnelServer) loggingStreamInterceptorInternal() grpc.StreamServerInter
 func (s *TunnelServer) recoveryStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
-			if recovered := recover(); recovered != nil {
+			if panicErr := emperror.Recover(recover()); panicErr != nil {
 				slog.ErrorContext(ss.Context(), "panic in gRPC tunnel stream",
 					"method", info.FullMethod,
-					"panic", recovered,
-					"stack", string(debug.Stack()),
+					"error", panicErr,
 				)
 				err = status.Error(codes.Internal, "internal tunnel error")
 			}

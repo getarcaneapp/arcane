@@ -3,11 +3,12 @@ package activity
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -17,7 +18,7 @@ import (
 // ErrCanceled is the cancellation cause set on an activity's work context when a
 // user requests cancellation. Completion paths read context.Cause to record a
 // cancelled (rather than failed) terminal status.
-var ErrCanceled = errors.New("activity cancelled by user")
+const ErrCanceled = errors.Sentinel("activity cancelled by user")
 
 // cancelledMessage is the latest-message recorded when work is cancelled.
 const cancelledMessage = "Cancelled by user"

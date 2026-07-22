@@ -2,12 +2,12 @@ package handlers
 
 import (
 	"context"
-	"errors"
 	"net/http"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/apikey"
@@ -181,7 +181,7 @@ func (h *ApiKeyHandler) ListApiKeys(ctx context.Context, input *ListApiKeysInput
 
 	apiKeys, paginationResp, err := h.apiKeyService.ListApiKeys(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
 	return &ListApiKeysOutput{
@@ -207,7 +207,7 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 		if errors.Is(err, services.ErrApiKeyPermissionEscalation) {
 			return nil, huma.Error403Forbidden(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
 	return &CreateApiKeyOutput{
@@ -222,7 +222,7 @@ func (h *ApiKeyHandler) CreateApiKey(ctx context.Context, input *CreateApiKeyInp
 func (h *ApiKeyHandler) GetApiKey(ctx context.Context, input *GetApiKeyInput) (*GetApiKeyOutput, error) {
 	apiKey, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 
 	return &GetApiKeyOutput{
@@ -243,7 +243,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 	apiKey, err := h.apiKeyService.UpdateApiKey(ctx, callerPerms, input.ID, input.Body)
 	if err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("static API keys cannot be updated")
@@ -254,7 +254,7 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 		if errors.Is(err, services.ErrApiKeyPersonalNoGrants) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyUpdateError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to update API key")
 	}
 
 	return &UpdateApiKeyOutput{
@@ -269,12 +269,12 @@ func (h *ApiKeyHandler) UpdateApiKey(ctx context.Context, input *UpdateApiKeyInp
 func (h *ApiKeyHandler) DeleteApiKey(ctx context.Context, input *DeleteApiKeyInput) (*DeleteApiKeyOutput, error) {
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("static API keys cannot be deleted")
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
 	return &DeleteApiKeyOutput{
@@ -296,7 +296,7 @@ func (h *ApiKeyHandler) ListMyApiKeys(ctx context.Context, input *struct{}) (*Li
 
 	keys, err := h.apiKeyService.ListApiKeysByUser(ctx, user.ID)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list API keys").Error())
 	}
 
 	return &ListMyApiKeysOutput{
@@ -324,7 +324,7 @@ func (h *ApiKeyHandler) CreateMyApiKey(ctx context.Context, input *CreateMyApiKe
 
 	apiKey, err := h.apiKeyService.CreatePersonalApiKey(ctx, user.ID, input.Body)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ApiKeyCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to create API key")
 	}
 
 	return &CreateApiKeyOutput{
@@ -352,20 +352,20 @@ func (h *ApiKeyHandler) DeleteMyApiKey(ctx context.Context, input *DeleteApiKeyI
 
 	existing, err := h.apiKeyService.GetApiKey(ctx, input.ID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 	if existing.UserID == nil || *existing.UserID != user.ID {
-		return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+		return nil, huma.Error404NotFound("API key not found")
 	}
 
 	if err := h.apiKeyService.DeleteApiKey(ctx, input.ID); err != nil {
 		if errors.Is(err, services.ErrApiKeyNotFound) {
-			return nil, huma.Error404NotFound((&common.ApiKeyNotFoundError{}).Error())
+			return nil, huma.Error404NotFound("API key not found")
 		}
 		if errors.Is(err, services.ErrApiKeyProtected) {
 			return nil, huma.Error403Forbidden("this API key cannot be deleted")
 		}
-		return nil, huma.Error500InternalServerError((&common.ApiKeyDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError("Failed to delete API key")
 	}
 
 	return &DeleteApiKeyOutput{

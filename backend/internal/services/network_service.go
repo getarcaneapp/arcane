@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -36,12 +37,12 @@ func NewNetworkService(db *database.DB, dockerService *DockerClientService, even
 func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*network.Inspect, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	networkInspect, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("network not found: %w", err)
+		return nil, errors.WrapIf(err, "network not found")
 	}
 
 	return new(networkInspect.Network), nil
@@ -50,19 +51,19 @@ func (s *NetworkService) GetNetworkByID(ctx context.Context, id string) (*networ
 func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.Topology, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+		return nil, errors.WrapIf(err, "failed to list containers")
 	}
 
 	containerInfoByID := buildTopologyContainerInfoInternal(containerList.Items)
 
 	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list Docker networks: %w", err)
+		return nil, errors.WrapIf(err, "failed to list Docker networks")
 	}
 
 	topology := &networktypes.Topology{
@@ -83,7 +84,7 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 		g.Go(func() error {
 			inspected, err := libarcane.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
 			if err != nil {
-				return fmt.Errorf("failed to inspect network %s: %w", rawNetwork.Name, err)
+				return errors.WrapIff(err, "failed to inspect network %s", rawNetwork.Name)
 			}
 
 			inspectedNetworks[i] = struct {
@@ -174,13 +175,13 @@ func (s *NetworkService) CreateNetwork(ctx context.Context, name string, options
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	response, err := dockerClient.NetworkCreate(ctx, name, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", "", name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to create network: %w", err)
+		return nil, errors.WrapIf(err, "failed to create network")
 	}
 
 	metadata := models.JSON{
@@ -209,7 +210,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, "", user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	networkInfo, err := libarcane.NetworkInspectWithCompatibility(ctx, dockerClient, id, client.NetworkInspectOptions{})
@@ -222,7 +223,7 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 
 	if _, err := dockerClient.NetworkRemove(ctx, id, client.NetworkRemoveOptions{}); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeNetworkError, "network", id, networkName, user.ID, user.Username, "0", err, models.JSON{"action": "delete"})
-		return fmt.Errorf("failed to remove network: %w", err)
+		return errors.WrapIf(err, "failed to remove network")
 	}
 
 	metadata := models.JSON{
@@ -239,14 +240,14 @@ func (s *NetworkService) RemoveNetwork(ctx context.Context, id string, user mode
 func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneReport, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	filterArgs := make(client.Filters)
 
 	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
-		return nil, fmt.Errorf("failed to prune networks: %w", err)
+		return nil, errors.WrapIf(err, "failed to prune networks")
 	}
 	pruneReport := report.Report
 
@@ -264,12 +265,12 @@ func (s *NetworkService) PruneNetworks(ctx context.Context) (*network.PruneRepor
 func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagination.QueryParams) ([]networktypes.Summary, pagination.Response, networktypes.UsageCounts, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	containerList, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list containers: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to list containers")
 	}
 	containers := containerList.Items
 
@@ -277,7 +278,7 @@ func (s *NetworkService) ListNetworksPaginated(ctx context.Context, params pagin
 
 	networkList, err := libarcane.NetworkListWithCompatibility(ctx, dockerClient, client.NetworkListOptions{})
 	if err != nil {
-		return nil, pagination.Response{}, networktypes.UsageCounts{}, fmt.Errorf("failed to list Docker networks: %w", err)
+		return nil, pagination.Response{}, networktypes.UsageCounts{}, errors.WrapIf(err, "failed to list Docker networks")
 	}
 	rawNets := networkList.Items
 

@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"maps"
 	"net/netip"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	composegoloader "github.com/compose-spec/compose-go/v2/loader"
 	composegotypes "github.com/compose-spec/compose-go/v2/types"
@@ -160,7 +161,7 @@ func DeployStack(ctx context.Context, dockerClient *dockerclient.Client, opts St
 				continue
 			}
 			if _, err := dockerClient.ServiceRemove(ctx, svc.ID, dockerclient.ServiceRemoveOptions{}); err != nil {
-				return fmt.Errorf("failed to remove swarm service %s: %w", name, err)
+				return errors.WrapIff(err, "failed to remove swarm service %s", name)
 			}
 		}
 	}
@@ -264,7 +265,7 @@ func RenderStackConfig(ctx context.Context, opts StackRenderOptions) (*StackRend
 
 	rendered, err := project.MarshalYAML()
 	if err != nil {
-		return nil, fmt.Errorf("failed to render compose project: %w", err)
+		return nil, errors.WrapIf(err, "failed to render compose project")
 	}
 
 	return &StackRenderResult{
@@ -286,7 +287,7 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, overri
 
 	envMap, err := parseEnvContent(envContent)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse env content: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse env content")
 	}
 
 	workingDir := strings.TrimSpace(providedWorkingDir)
@@ -322,7 +323,7 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, overri
 		}
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to load compose project: %w", err)
+		return nil, errors.WrapIf(err, "failed to load compose project")
 	}
 
 	project = project.WithoutUnnecessaryResources()
@@ -333,7 +334,7 @@ func loadComposeProject(ctx context.Context, projectName, composeContent, overri
 	// Translate container paths to host paths for Docker execution
 	if pathMapper != nil {
 		if err := pathMapper.TranslateVolumeSources(project); err != nil {
-			return nil, fmt.Errorf("failed to translate paths for docker host: %w", err)
+			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
 		}
 	}
 
@@ -344,7 +345,7 @@ func listStackServices(ctx context.Context, dockerClient *dockerclient.Client, s
 	filter := make(dockerclient.Filters).Add("label", fmt.Sprintf("%s=%s", swarmtypes.StackNamespaceLabel, stackName))
 	servicesResult, err := dockerClient.ServiceList(ctx, dockerclient.ServiceListOptions{Filters: filter})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list swarm services: %w", err)
+		return nil, errors.WrapIf(err, "failed to list swarm services")
 	}
 	services := servicesResult.Items
 
@@ -376,7 +377,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 			continue
 		}
 		if !cerrdefs.IsNotFound(err) {
-			return nil, fmt.Errorf("failed to inspect network %s: %w", stackedName, err)
+			return nil, errors.WrapIff(err, "failed to inspect network %s", stackedName)
 		}
 
 		driver := strings.TrimSpace(cfg.Driver)
@@ -398,7 +399,7 @@ func ensureSwarmNetworks(ctx context.Context, dockerClient *dockerclient.Client,
 		}
 
 		if _, err := dockerClient.NetworkCreate(ctx, stackedName, createOpts); err != nil {
-			return nil, fmt.Errorf("failed to create network %s: %w", stackedName, err)
+			return nil, errors.WrapIff(err, "failed to create network %s", stackedName)
 		}
 	}
 
@@ -449,7 +450,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 		if _, err := dockerClient.VolumeInspect(ctx, name, dockerclient.VolumeInspectOptions{}); err == nil {
 			continue
 		} else if !cerrdefs.IsNotFound(err) {
-			return fmt.Errorf("failed to inspect volume %s: %w", name, err)
+			return errors.WrapIff(err, "failed to inspect volume %s", name)
 		}
 
 		driver := cfg.Driver
@@ -463,7 +464,7 @@ func ensureSwarmVolumesInternal(ctx context.Context, dockerClient *dockerclient.
 			DriverOpts: cfg.DriverOpts,
 			Labels:     labels,
 		}); err != nil {
-			return fmt.Errorf("failed to create volume %s: %w", name, err)
+			return errors.WrapIff(err, "failed to create volume %s", name)
 		}
 	}
 	return nil
@@ -520,7 +521,7 @@ func createConfigResourceInternal(dockerClient *dockerclient.Client) func(contex
 
 		resp, err := dockerClient.ConfigCreate(ctx, dockerclient.ConfigCreateOptions{Spec: spec})
 		if err != nil {
-			return resourceMeta{}, fmt.Errorf("failed to create config %s: %w", managedName, err)
+			return resourceMeta{}, errors.WrapIff(err, "failed to create config %s", managedName)
 		}
 		return resourceMeta{ID: resp.ID, Name: managedName}, nil
 	}
@@ -535,7 +536,7 @@ func createSecretResourceInternal(dockerClient *dockerclient.Client) func(contex
 
 		resp, err := dockerClient.SecretCreate(ctx, dockerclient.SecretCreateOptions{Spec: spec})
 		if err != nil {
-			return resourceMeta{}, fmt.Errorf("failed to create secret %s: %w", managedName, err)
+			return resourceMeta{}, errors.WrapIff(err, "failed to create secret %s", managedName)
 		}
 		return resourceMeta{ID: resp.ID, Name: managedName}, nil
 	}
@@ -565,7 +566,7 @@ func ensureManagedFileResourceInternal(
 ) (resourceMeta, error) {
 	data, err := resolveFileObjectContent(fileObject, workingDir)
 	if err != nil {
-		return resourceMeta{}, fmt.Errorf("failed to load %s %s: %w", opts.ResourceType, name, err)
+		return resourceMeta{}, errors.WrapIff(err, "failed to load %s %s", opts.ResourceType, name)
 	}
 
 	hash := hashManagedResource(data)
@@ -573,7 +574,7 @@ func ensureManagedFileResourceInternal(
 	if meta, err := opts.Inspect(ctx, managedName); err == nil {
 		return meta, nil
 	} else if !cerrdefs.IsNotFound(err) {
-		return resourceMeta{}, fmt.Errorf("failed to inspect %s %s: %w", opts.ResourceType, managedName, err)
+		return resourceMeta{}, errors.WrapIff(err, "failed to inspect %s %s", opts.ResourceType, managedName)
 	}
 
 	resourceLabels := mergeLabels(labels, stackLabels)
@@ -699,7 +700,7 @@ func createSwarmService(
 		opts.EncodedRegistryAuth = encodedRegistryAuth
 	}
 	if _, err := dockerClient.ServiceCreate(ctx, opts); err != nil {
-		return fmt.Errorf("failed to create swarm service %s: %w", spec.Name, err)
+		return errors.WrapIff(err, "failed to create swarm service %s", spec.Name)
 	}
 	return nil
 }
@@ -740,11 +741,11 @@ func updateSwarmService(
 		if strings.Contains(err.Error(), "service does not have a previous spec") {
 			opts.RegistryAuthFrom = ""
 			if _, retryErr := dockerClient.ServiceUpdate(ctx, existing.ID, opts); retryErr != nil {
-				return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, retryErr)
+				return errors.WrapIff(retryErr, "failed to update swarm service %s", spec.Name)
 			}
 			return nil
 		}
-		return fmt.Errorf("failed to update swarm service %s: %w", spec.Name, err)
+		return errors.WrapIff(err, "failed to update swarm service %s", spec.Name)
 	}
 	return nil
 }
@@ -1028,7 +1029,7 @@ func resolveFileObjectContent(fileConfig composegotypes.FileObjectConfig, workin
 	if fileConfig.Environment != "" {
 		value, ok := os.LookupEnv(fileConfig.Environment)
 		if !ok {
-			return nil, fmt.Errorf("environment variable %s not set", fileConfig.Environment)
+			return nil, errors.Errorf("environment variable %s not set", fileConfig.Environment)
 		}
 		return []byte(value), nil
 	}
@@ -1047,7 +1048,7 @@ func resolvePathWithinWorkingDirInternal(workingDir, path string) (string, error
 	if !filepath.IsAbs(baseDir) {
 		absBaseDir, err := filepath.Abs(baseDir)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve working directory %q: %w", workingDir, err)
+			return "", errors.WrapIff(err, "failed to resolve working directory %q", workingDir)
 		}
 		baseDir = absBaseDir
 	}
@@ -1060,17 +1061,17 @@ func resolvePathWithinWorkingDirInternal(workingDir, path string) (string, error
 	if !filepath.IsAbs(resolvedPath) {
 		absResolvedPath, err := filepath.Abs(resolvedPath)
 		if err != nil {
-			return "", fmt.Errorf("failed to resolve config file path %q: %w", path, err)
+			return "", errors.WrapIff(err, "failed to resolve config file path %q", path)
 		}
 		resolvedPath = absResolvedPath
 	}
 
 	relativePath, err := filepath.Rel(baseDir, resolvedPath)
 	if err != nil {
-		return "", fmt.Errorf("failed to validate config file path %q: %w", path, err)
+		return "", errors.WrapIff(err, "failed to validate config file path %q", path)
 	}
 	if relativePath == ".." || strings.HasPrefix(relativePath, ".."+string(filepath.Separator)) {
-		return "", fmt.Errorf("config file path %q escapes the working directory", path)
+		return "", errors.Errorf("config file path %q escapes the working directory", path)
 	}
 
 	return resolvedPath, nil
@@ -1270,7 +1271,7 @@ func normalizeResolveImageMode(value string) (string, error) {
 	case resolveImageAlways, resolveImageChanged, resolveImageNever:
 		return mode, nil
 	default:
-		return "", fmt.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
+		return "", errors.Errorf("invalid resolve image mode %q: expected always, changed, or never", value)
 	}
 }
 
@@ -1363,7 +1364,7 @@ func resolveRegistryAuthForSpec(
 
 	encodedRegistryAuth, err := registryAuthForImage(ctx, image)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve registry auth for image %s: %w", image, err)
+		return "", errors.WrapIff(err, "failed to resolve registry auth for image %s", image)
 	}
 
 	return encodedRegistryAuth, nil
@@ -1389,7 +1390,7 @@ func listStaleConfigResourcesInternal(dockerClient *dockerclient.Client) func(co
 	return func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 		configsResult, err := dockerClient.ConfigList(ctx, dockerclient.ConfigListOptions{Filters: filters})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list stack configs: %w", err)
+			return nil, errors.WrapIf(err, "failed to list stack configs")
 		}
 
 		return collectStaleManagedResourcesInternal(configsResult.Items, func(cfg swarm.Config) staleManagedResourceInternal {
@@ -1402,7 +1403,7 @@ func listStaleSecretResourcesInternal(dockerClient *dockerclient.Client) func(co
 	return func(ctx context.Context, filters dockerclient.Filters) ([]staleManagedResourceInternal, error) {
 		secretsResult, err := dockerClient.SecretList(ctx, dockerclient.SecretListOptions{Filters: filters})
 		if err != nil {
-			return nil, fmt.Errorf("failed to list stack secrets: %w", err)
+			return nil, errors.WrapIf(err, "failed to list stack secrets")
 		}
 
 		return collectStaleManagedResourcesInternal(secretsResult.Items, func(secret swarm.Secret) staleManagedResourceInternal {
@@ -1462,7 +1463,7 @@ func cleanupStaleManagedResourcesInternal(ctx context.Context, stackName string,
 			if isStaleSwarmResourceStillInUse(err) {
 				continue
 			}
-			return fmt.Errorf("failed to remove stale stack %s %s: %w", opts.ResourceType, resource.Name, err)
+			return errors.WrapIff(err, "failed to remove stale stack %s %s", opts.ResourceType, resource.Name)
 		}
 	}
 

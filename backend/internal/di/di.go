@@ -2,6 +2,7 @@
 package di
 
 import (
+	arcanelogging "github.com/getarcaneapp/arcane/backend/v2/internal/logging"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"go.uber.org/fx"
@@ -12,6 +13,7 @@ var ServiceOptions = fx.Options(
 	fx.Provide(
 		// Infrastructure values consumed by services.
 		provideResourcesFSInternal,
+		arcanelogging.NewSlogErrorHandler,
 
 		// Services constructed directly through their public constructors.
 		services.NewEventService,

@@ -2,9 +2,10 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -44,16 +45,16 @@ func TestSystemUpgradeService_Initialization(t *testing.T) {
 // TestSystemUpgradeService_ErrorVariables tests that error variables are properly defined
 func TestSystemUpgradeService_ErrorVariables(t *testing.T) {
 	// Test that all expected errors exist and are not nil
-	require.Error(t, &common.NotRunningInDockerError{})
-	require.Error(t, &common.ArcaneContainerNotFoundError{})
-	require.Error(t, &common.UpgradeInProgressError{})
-	require.Error(t, &common.DockerSocketAccessError{})
+	require.Error(t, errors.New("arcane is not running in a Docker container"))
+	require.Error(t, common.Classify(common.ErrNotFound, errors.New("could not find Arcane container")))
+	require.Error(t, common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress")))
+	require.Error(t, errors.New("docker socket is not accessible"))
 
 	// Test error messages
-	require.Equal(t, "arcane is not running in a Docker container", (&common.NotRunningInDockerError{}).Error())
-	require.Equal(t, "could not find Arcane container", (&common.ArcaneContainerNotFoundError{}).Error())
-	require.Equal(t, "an upgrade is already in progress", (&common.UpgradeInProgressError{}).Error())
-	require.Equal(t, "docker socket is not accessible", (&common.DockerSocketAccessError{}).Error())
+	require.Equal(t, "arcane is not running in a Docker container", (errors.New("arcane is not running in a Docker container")).Error())
+	require.Equal(t, "could not find Arcane container", (common.Classify(common.ErrNotFound, errors.New("could not find Arcane container"))).Error())
+	require.Equal(t, "an upgrade is already in progress", (common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))).Error())
+	require.Equal(t, "docker socket is not accessible", (errors.New("docker socket is not accessible")).Error())
 }
 
 // TestSystemUpgradeService_UpgradingFlag_ConcurrentAccess tests upgrading flag
@@ -125,12 +126,12 @@ func TestSystemUpgradeService_ConcurrentUpgradeAttempts(t *testing.T) {
 // TestSystemUpgradeService_UpgradeInProgressError tests the upgrade in progress sentinel error
 func TestSystemUpgradeService_UpgradeInProgressError(t *testing.T) {
 	// This tests the specific error that the handler checks for
-	// The handler uses common.IsUpgradeInProgressError for conflict detection.
+	// The handler uses errors.Is with common.ErrUpgradeInProgress for conflict detection.
 
-	err := &common.UpgradeInProgressError{}
+	err := common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
 	require.Equal(t, "an upgrade is already in progress", err.Error())
 
-	require.True(t, common.IsUpgradeInProgressError(err))
+	require.True(t, errors.Is(err, common.ErrUpgradeInProgress))
 }
 
 // TestSystemUpgradeService_AtomicOperations tests atomic.Bool operations

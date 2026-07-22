@@ -2,9 +2,9 @@ package bootstrap
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 )
@@ -14,7 +14,7 @@ func initializeDBAndMigrate(ctx context.Context, cfg *config.Config) (*database.
 		AllowDowngrade: cfg.AllowDowngrade,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to initialize database: %w", err)
+		return nil, errors.WrapIf(err, "failed to initialize database")
 	}
 
 	slog.Info("Database initialized successfully")

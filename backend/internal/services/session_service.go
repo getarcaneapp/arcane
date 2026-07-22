@@ -5,10 +5,10 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -43,7 +43,7 @@ func (s *SessionService) CreateSession(ctx context.Context, userID string, expir
 	}
 
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, "", fmt.Errorf("failed to create user session: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to create user session")
 	}
 
 	return session, refreshJTI, nil
@@ -63,7 +63,7 @@ func (s *SessionService) CreateFederatedSession(ctx context.Context, userID stri
 	}
 
 	if err := s.db.WithContext(ctx).Create(session).Error; err != nil {
-		return nil, fmt.Errorf("failed to create federated user session: %w", err)
+		return nil, errors.WrapIf(err, "failed to create federated user session")
 	}
 
 	return session, nil
@@ -79,7 +79,7 @@ func (s *SessionService) GetSessionByID(ctx context.Context, sessionID string) (
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrInvalidToken
 		}
-		return nil, fmt.Errorf("failed to get user session: %w", err)
+		return nil, errors.WrapIf(err, "failed to get user session")
 	}
 	return &session, nil
 }
@@ -101,7 +101,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			if errors.Is(err, gorm.ErrRecordNotFound) {
 				return ErrInvalidToken
 			}
-			return fmt.Errorf("failed to get user session for rotation: %w", err)
+			return errors.WrapIf(err, "failed to get user session for rotation")
 		}
 		if err := validateSessionActiveInternal(&session); err != nil {
 			return err
@@ -121,7 +121,7 @@ func (s *SessionService) RotateRefreshToken(ctx context.Context, sessionID strin
 			Where("id = ? AND refresh_token_hash = ? AND revoked_at IS NULL", session.ID, session.RefreshTokenHash).
 			Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to rotate refresh token: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to rotate refresh token")
 		}
 		if result.RowsAffected != 1 {
 			return ErrInvalidToken
@@ -151,7 +151,7 @@ func (s *SessionService) RevokeSession(ctx context.Context, sessionID string) er
 	if err := s.db.WithContext(ctx).Model(&models.UserSession{}).
 		Where("id = ? AND revoked_at IS NULL", sessionID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return fmt.Errorf("failed to revoke user session: %w", err)
+		return errors.WrapIf(err, "failed to revoke user session")
 	}
 	return nil
 }
@@ -163,7 +163,7 @@ func (s *SessionService) DeleteExpiredSessions(ctx context.Context, revokedReten
 		Where("expires_at < ? OR (revoked_at IS NOT NULL AND revoked_at < ?)", now, revokedCutoff).
 		Delete(&models.UserSession{})
 	if result.Error != nil {
-		return 0, fmt.Errorf("failed to delete expired user sessions: %w", result.Error)
+		return 0, errors.WrapIf(result.Error, "failed to delete expired user sessions")
 	}
 	return result.RowsAffected, nil
 }
@@ -187,7 +187,7 @@ func (s *SessionService) RevokeAllUserSessionsExcept(ctx context.Context, userID
 		query = query.Where("id <> ?", exceptSessionID)
 	}
 	if err := query.Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return fmt.Errorf("failed to revoke user sessions: %w", err)
+		return errors.WrapIf(err, "failed to revoke user sessions")
 	}
 	return nil
 }

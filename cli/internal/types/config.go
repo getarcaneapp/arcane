@@ -1,9 +1,10 @@
 package types
 
 import (
-	"errors"
 	"maps"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 // PaginationResourceConfig defines pagination options for a specific resource.

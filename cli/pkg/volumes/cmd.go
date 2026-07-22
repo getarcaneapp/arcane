@@ -3,12 +3,13 @@ package volumes
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -62,18 +63,18 @@ var listCmd = &cobra.Command{
 		path := types.Endpoints.Volumes(c.EnvID())
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "volumes", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list volumes: %w", err)
+			return errors.WrapIf(err, "failed to list volumes")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[volume.Volume]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 		result.Data = filterVolumesByUsage(result.Data, inUseOnlyFlag, unusedOnlyFlag)
 		result.Pagination.TotalItems = int64(len(result.Data))
@@ -81,7 +82,7 @@ var listCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -129,7 +130,7 @@ var getCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -180,11 +181,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Volume(c.EnvID(), resolved.Name))
 		if err != nil {
-			return fmt.Errorf("failed to delete volume: %w", err)
+			return errors.WrapIf(err, "failed to delete volume")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete volume: %w", err)
+			return errors.WrapIf(err, "failed to delete volume")
 		}
 
 		output.Success("Volume %s deleted successfully", resolved.Name)
@@ -229,22 +230,22 @@ var pruneCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.VolumesPrune(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to prune volumes: %w", err)
+			return errors.WrapIf(err, "failed to prune volumes")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to prune volumes: %w", err)
+			return errors.WrapIf(err, "failed to prune volumes")
 		}
 
 		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -284,21 +285,21 @@ func runVolumeDataCommand(cmd *cobra.Command, cfg volumeDataCommandConfig) error
 
 	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var result base.ApiResponse[any]
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 	if err != nil {
 		if jsonOutput {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
-		return fmt.Errorf("%s: %w", cfg.marshalMessage, err)
+		return errors.WrapIff(err, "%s", cfg.marshalMessage)
 	}
 
 	if jsonOutput {
@@ -330,19 +331,19 @@ var usageCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.VolumeUsage(c.EnvID(), resolved.Name))
 		if err != nil {
-			return fmt.Errorf("failed to get volume usage: %w", err)
+			return errors.WrapIf(err, "failed to get volume usage")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -351,7 +352,7 @@ var usageCmd = &cobra.Command{
 		output.Header("Volume Usage: %s", resolved.Name)
 		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal volume usage: %w", err)
+			return errors.WrapIf(err, "failed to marshal volume usage")
 		}
 		fmt.Println(string(resultBytes))
 		return nil
@@ -396,22 +397,22 @@ var createCmd = &cobra.Command{
 		path := types.Endpoints.Volumes(c.EnvID())
 		resp, err := c.Post(cmd.Context(), path, req)
 		if err != nil {
-			return fmt.Errorf("failed to create volume: %w", err)
+			return errors.WrapIf(err, "failed to create volume")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create volume: %w", err)
+			return errors.WrapIf(err, "failed to create volume")
 		}
 
 		var result base.ApiResponse[volume.Volume]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -475,46 +476,46 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 
 	resp, err := c.Get(ctx, types.Endpoints.Volume(c.EnvID(), trimmed))
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve volume %q: %w", trimmed, err)
+		return nil, errors.WrapIff(err, "failed to resolve volume %q", trimmed)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read volume response: %w", err)
+		return nil, errors.WrapIf(err, "failed to read volume response")
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		var result base.ApiResponse[volume.Volume]
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, fmt.Errorf("failed to parse volume response: %w", err)
+			return nil, errors.WrapIf(err, "failed to parse volume response")
 		}
 		return &result.Data, nil
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
-		return nil, fmt.Errorf("failed to resolve volume %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, errors.Errorf("failed to resolve volume %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Volumes(c.EnvID()), url.QueryEscape(trimmed), 200)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search volumes: %w", err)
+		return nil, errors.WrapIf(err, "failed to search volumes")
 	}
 
 	searchBody, err := io.ReadAll(searchResp.Body)
 	_ = searchResp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read volumes response: %w", err)
+		return nil, errors.WrapIf(err, "failed to read volumes response")
 	}
 
 	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("failed to search volumes (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
+		return nil, errors.Errorf("failed to search volumes (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
 	}
 
 	var result base.Paginated[volume.Volume]
 	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse volumes response: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse volumes response")
 	}
 
 	identifierLower := strings.ToLower(trimmed)
@@ -531,10 +532,10 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 
 	if len(matches) > 1 {
 		if !allowPrompt {
-			return nil, fmt.Errorf("multiple volumes match %q; use the volume name or run `arcane volumes list`", trimmed)
+			return nil, errors.Errorf("multiple volumes match %q; use the volume name or run `arcane volumes list`", trimmed)
 		}
 		if len(matches) > maxPromptOptions {
-			return nil, fmt.Errorf("multiple volumes match %q (%d results); refine your query or use the volume name", trimmed, len(matches))
+			return nil, errors.Errorf("multiple volumes match %q (%d results); refine your query or use the volume name", trimmed, len(matches))
 		}
 
 		options := make([]string, 0, len(matches))
@@ -552,7 +553,7 @@ func resolveVolume(ctx context.Context, c *client.Client, identifier string, all
 		return &matches[choice], nil
 	}
 
-	return nil, fmt.Errorf("volume %q not found; use the volume name or run `arcane volumes list`", trimmed)
+	return nil, errors.Errorf("volume %q not found; use the volume name or run `arcane volumes list`", trimmed)
 }
 
 func volumeMatches(item volume.Volume, identifierLower, original string) bool {

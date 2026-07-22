@@ -2,13 +2,13 @@ package edge
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/gorilla/websocket"
 )
@@ -27,7 +27,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
 		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
 		if err != nil {
-			return fmt.Errorf("failed to configure edge websocket TLS: %w", err)
+			return errors.WrapIf(err, "failed to configure edge websocket TLS")
 		}
 		dialer.TLSClientConfig = tlsConfig
 	}
@@ -44,9 +44,9 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 		if resp != nil {
 			defer func() { _ = resp.Body.Close() }()
 			body, _ := io.ReadAll(resp.Body)
-			return fmt.Errorf("failed to connect to manager websocket endpoint: %w, status: %d, body: %s", err, resp.StatusCode, string(body))
+			return errors.WrapIff(err, "failed to connect to manager websocket endpoint (status: %d, body: %s)", resp.StatusCode, string(body))
 		}
-		return fmt.Errorf("failed to connect to manager websocket endpoint: %w", err)
+		return errors.WrapIf(err, "failed to connect to manager websocket endpoint")
 	}
 	defer func() { _ = conn.Close() }()
 
@@ -55,7 +55,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	setActiveAgentTunnelConn(tunnelConn)
 	defer clearActiveAgentTunnelConn(tunnelConn)
 	if err := tunnelConn.Send(c.registerMessageInternal()); err != nil {
-		return fmt.Errorf("failed to send websocket register message: %w", err)
+		return errors.WrapIf(err, "failed to send websocket register message")
 	}
 	registerMsg, err := c.awaitRegistrationInternal(ctx)
 	if err != nil {

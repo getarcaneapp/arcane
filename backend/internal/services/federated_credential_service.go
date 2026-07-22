@@ -4,8 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"net/url"
@@ -13,6 +11,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/google/uuid"
@@ -93,7 +93,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	}
 	if issuer == "" {
 		logReason = "missing_issuer"
-		return nil, &common.FederatedCredentialInvalidGrantError{}
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 	}
 
 	credentials, err := s.listEnabledCredentialsForIssuerInternal(ctx, issuer)
@@ -103,13 +103,13 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	}
 	if len(credentials) == 0 {
 		logReason = "issuer_not_allowed"
-		return nil, &common.FederatedCredentialInvalidGrantError{}
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 	}
 
 	verifiedToken, verifiedClaims, err := s.verifySubjectTokenInternal(ctx, issuer, req.SubjectToken)
 	if err != nil {
 		logReason = "token_verification_failed"
-		return nil, fmt.Errorf("%w: %w", &common.FederatedCredentialInvalidGrantError{}, err)
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.WrapIf(err, "invalid federated token grant"))
 	}
 	if subject == "" {
 		subject = stringClaimByPathInternal(verifiedClaims, defaultFederatedSubjectClaim)
@@ -121,7 +121,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	credential := selectMatchingCredentialInternal(credentials, verifiedToken.Audience, verifiedClaims)
 	if credential == nil {
 		logReason = "no_matching_credential"
-		return nil, &common.FederatedCredentialInvalidGrantError{}
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 	}
 	matchedCredential = credential
 	if err := s.recordTokenReplayGuardInternal(ctx, issuer, req.SubjectToken, verifiedClaims, verifiedToken.Expiry); err != nil {
@@ -132,7 +132,7 @@ func (s *FederatedCredentialService) ExchangeToken(ctx context.Context, req fede
 	user, err := s.userService.GetUserByID(ctx, credential.IdentityUserID)
 	if err != nil {
 		logReason = "identity_user_missing"
-		return nil, fmt.Errorf("%w: %w", &common.FederatedCredentialInvalidGrantError{}, err)
+		return nil, common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.WrapIf(err, "invalid federated token grant"))
 	}
 	matchedUser = user
 
@@ -171,7 +171,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			IsServiceAccount: true,
 		}
 		if err := tx.Create(&serviceUser).Error; err != nil {
-			return fmt.Errorf("failed to create federated service user: %w", err)
+			return errors.WrapIf(err, "failed to create federated service user")
 		}
 
 		created = models.FederatedCredential{
@@ -190,7 +190,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			ExpiresAt:       normalized.ExpiresAt,
 		}
 		if err := tx.Create(&created).Error; err != nil {
-			return fmt.Errorf("failed to create federated credential: %w", err)
+			return errors.WrapIf(err, "failed to create federated credential")
 		}
 
 		assignment := models.UserRoleAssignment{
@@ -200,7 +200,7 @@ func (s *FederatedCredentialService) Create(ctx context.Context, callerUserID st
 			Source:        models.RoleAssignmentSourceManual,
 		}
 		if err := tx.Create(&assignment).Error; err != nil {
-			return fmt.Errorf("failed to create federated role assignment: %w", err)
+			return errors.WrapIf(err, "failed to create federated role assignment")
 		}
 
 		return nil
@@ -234,7 +234,7 @@ func (s *FederatedCredentialService) List(ctx context.Context, params pagination
 
 	resp, err := pagination.PaginateAndSortDB(params, query, &credentials)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate federated credentials: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate federated credentials")
 	}
 
 	result := make([]federatedtypes.FederatedCredential, len(credentials))
@@ -253,9 +253,9 @@ func (s *FederatedCredentialService) Get(ctx context.Context, id string) (*feder
 		Where("id = ?", id).
 		First(&credential).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &common.FederatedCredentialNotFoundError{}
+			return nil, common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return nil, fmt.Errorf("failed to get federated credential: %w", err)
+		return nil, errors.WrapIf(err, "failed to get federated credential")
 	}
 	return new(toFederatedCredentialDTOInternal(&credential)), nil
 }
@@ -264,9 +264,9 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 	var credential models.FederatedCredential
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &common.FederatedCredentialNotFoundError{}
+			return nil, common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return nil, fmt.Errorf("failed to load federated credential: %w", err)
+		return nil, errors.WrapIf(err, "failed to load federated credential")
 	}
 
 	updated, roleChanged, err := applyFederatedCredentialUpdateInternal(credential, req)
@@ -282,7 +282,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 
 	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Save(&updated).Error; err != nil {
-			return fmt.Errorf("failed to update federated credential: %w", err)
+			return errors.WrapIf(err, "failed to update federated credential")
 		}
 		if revokeActiveSessions {
 			if err := revokeFederatedCredentialSessionsInternal(tx, updated.ID); err != nil {
@@ -292,7 +292,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 		if roleChanged {
 			if err := tx.Where("user_id = ? AND source = ?", updated.IdentityUserID, models.RoleAssignmentSourceManual).
 				Delete(&models.UserRoleAssignment{}).Error; err != nil {
-				return fmt.Errorf("failed to clear federated role assignment: %w", err)
+				return errors.WrapIf(err, "failed to clear federated role assignment")
 			}
 			assignment := models.UserRoleAssignment{
 				UserID:        updated.IdentityUserID,
@@ -301,7 +301,7 @@ func (s *FederatedCredentialService) Update(ctx context.Context, callerUserID st
 				Source:        models.RoleAssignmentSourceManual,
 			}
 			if err := tx.Create(&assignment).Error; err != nil {
-				return fmt.Errorf("failed to update federated role assignment: %w", err)
+				return errors.WrapIf(err, "failed to update federated role assignment")
 			}
 		}
 		return nil
@@ -320,17 +320,17 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 	var credential models.FederatedCredential
 	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&credential).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return &common.FederatedCredentialNotFoundError{}
+			return common.Classify(common.ErrFederatedCredentialNotFound, errors.New("federated credential not found"))
 		}
-		return fmt.Errorf("failed to load federated credential: %w", err)
+		return errors.WrapIf(err, "failed to load federated credential")
 	}
 
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
 		if err := tx.Delete(&models.FederatedCredential{}, "id = ?", credential.ID).Error; err != nil {
-			return fmt.Errorf("failed to delete federated credential: %w", err)
+			return errors.WrapIf(err, "failed to delete federated credential")
 		}
 		if err := tx.Delete(&models.User{}, "id = ?", credential.IdentityUserID).Error; err != nil {
-			return fmt.Errorf("failed to delete federated service user: %w", err)
+			return errors.WrapIf(err, "failed to delete federated service user")
 		}
 		return nil
 	})
@@ -345,18 +345,18 @@ func (s *FederatedCredentialService) Delete(ctx context.Context, id string) erro
 
 func validateTokenExchangeRequestInternal(req federatedtypes.TokenExchangeRequest) error {
 	if req.GrantType != federatedtypes.TokenExchangeGrantType {
-		return &common.FederatedCredentialInvalidRequestError{}
+		return common.Classify(common.ErrFederatedCredentialInvalidRequest, errors.New("invalid federated token exchange request"))
 	}
 	if strings.TrimSpace(req.SubjectToken) == "" {
-		return &common.FederatedCredentialInvalidRequestError{}
+		return common.Classify(common.ErrFederatedCredentialInvalidRequest, errors.New("invalid federated token exchange request"))
 	}
 	switch req.SubjectTokenType {
 	case federatedtypes.SubjectTokenTypeJWT, federatedtypes.SubjectTokenTypeIDToken:
 	default:
-		return &common.FederatedCredentialInvalidRequestError{}
+		return common.Classify(common.ErrFederatedCredentialInvalidRequest, errors.New("invalid federated token exchange request"))
 	}
 	if req.RequestedTokenType != "" && req.RequestedTokenType != federatedtypes.RequestedTokenTypeAccessJWT {
-		return &common.FederatedCredentialInvalidRequestError{}
+		return common.Classify(common.ErrFederatedCredentialInvalidRequest, errors.New("invalid federated token exchange request"))
 	}
 	return nil
 }
@@ -368,7 +368,7 @@ func (s *FederatedCredentialService) listEnabledCredentialsForIssuerInternal(ctx
 		Order("created_at ASC").
 		Order("id ASC").
 		Find(&credentials).Error; err != nil {
-		return nil, fmt.Errorf("failed to list federated credentials for issuer: %w", err)
+		return nil, errors.WrapIf(err, "failed to list federated credentials for issuer")
 	}
 
 	now := time.Now()
@@ -404,14 +404,14 @@ func (s *FederatedCredentialService) verifySubjectTokenInternal(ctx context.Cont
 
 func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.Context, issuer string, rawToken string, claims map[string]any, expiresAt time.Time) error {
 	if expiresAt.IsZero() || time.Now().After(expiresAt) {
-		return &common.FederatedCredentialInvalidGrantError{}
+		return common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 	}
 
 	now := time.Now()
 	if err := s.db.WithContext(ctx).
 		Where("expires_at < ?", now).
 		Delete(&models.FederatedTokenReplay{}).Error; err != nil {
-		return fmt.Errorf("failed to prune federated token replay records: %w", err)
+		return errors.WrapIf(err, "failed to prune federated token replay records")
 	}
 
 	replay := models.FederatedTokenReplay{
@@ -421,9 +421,9 @@ func (s *FederatedCredentialService) recordTokenReplayGuardInternal(ctx context.
 	}
 	if err := s.db.WithContext(ctx).Create(&replay).Error; err != nil {
 		if isUniqueConstraintErrorInternal(err) {
-			return &common.FederatedCredentialInvalidGrantError{}
+			return common.Classify(common.ErrFederatedCredentialInvalidGrant, errors.New("invalid federated token grant"))
 		}
-		return fmt.Errorf("failed to record federated token replay guard: %w", err)
+		return errors.WrapIf(err, "failed to record federated token replay guard")
 	}
 	return nil
 }
@@ -460,7 +460,7 @@ func (s *FederatedCredentialService) providerForIssuerInternal(ctx context.Conte
 		providerCtx := oidc.ClientContext(context.WithoutCancel(ctx), s.httpClient)
 		provider, err := oidc.NewProvider(providerCtx, issuer)
 		if err != nil {
-			return nil, fmt.Errorf("failed to discover federated issuer: %w", err)
+			return nil, errors.WrapIf(err, "failed to discover federated issuer")
 		}
 
 		s.providerMu.Lock()
@@ -600,7 +600,7 @@ func normalizeCreateFederatedCredentialInternal(req federatedtypes.CreateFederat
 		req.SubjectClaim = defaultFederatedSubjectClaim
 	}
 	if req.Name == "" || req.SubjectMatch == "" || req.RoleID == "" || len(req.Audiences) == 0 {
-		return req, &common.FederatedCredentialInvalidError{}
+		return req, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	if err := validateIssuerURLInternal(req.IssuerURL); err != nil {
 		return req, err
@@ -615,7 +615,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 	if req.Name != nil {
 		name := strings.TrimSpace(*req.Name)
 		if name == "" {
-			return existing, false, &common.FederatedCredentialInvalidError{}
+			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}
 		existing.Name = name
 	}
@@ -635,7 +635,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 	if req.Audiences != nil {
 		audiences := pkgutils.UniqueNonEmptyStrings(req.Audiences)
 		if len(audiences) == 0 {
-			return existing, false, &common.FederatedCredentialInvalidError{}
+			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}
 		existing.Audiences = models.StringSlice(audiences)
 	}
@@ -649,7 +649,7 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 	if req.SubjectMatch != nil {
 		subjectMatch := strings.TrimSpace(*req.SubjectMatch)
 		if subjectMatch == "" {
-			return existing, false, &common.FederatedCredentialInvalidError{}
+			return existing, false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}
 		existing.SubjectMatch = subjectMatch
 	}
@@ -674,14 +674,14 @@ func applyFederatedCredentialUpdateInternal(existing models.FederatedCredential,
 
 func applyFederatedRoleScopeUpdateInternal(existing *models.FederatedCredential, roleID *string, environmentID *string) (bool, error) {
 	if existing == nil {
-		return false, &common.FederatedCredentialInvalidError{}
+		return false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 
 	roleChanged := false
 	if roleID != nil {
 		normalizedRoleID := strings.TrimSpace(*roleID)
 		if normalizedRoleID == "" {
-			return false, &common.FederatedCredentialInvalidError{}
+			return false, common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 		}
 		roleChanged = roleChanged || normalizedRoleID != existing.RoleID
 		existing.RoleID = normalizedRoleID
@@ -706,17 +706,17 @@ func normalizeMatchTypeInternal(matchType string) string {
 func validateIssuerURLInternal(rawURL string) error {
 	parsed, err := url.Parse(rawURL)
 	if err != nil || parsed == nil || parsed.Host == "" || parsed.Scheme != "https" {
-		return fmt.Errorf("%w: issuerUrl must be an HTTPS URL", &common.FederatedCredentialInvalidError{})
+		return common.Classify(common.ErrFederatedCredentialInvalid, errors.WithStackIf(errors.New("invalid federated credential: issuerUrl must be an HTTPS URL")))
 	}
 	return nil
 }
 
 func validateSubjectMatchInternal(matchType, subjectMatch string) error {
 	if strings.TrimSpace(subjectMatch) == "" {
-		return &common.FederatedCredentialInvalidError{}
+		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	if normalizeMatchTypeInternal(matchType) == federatedtypes.MatchTypeGlob && strings.TrimSpace(subjectMatch) == "*" {
-		return &common.FederatedCredentialInvalidError{}
+		return common.Classify(common.ErrFederatedCredentialInvalid, errors.New("invalid federated credential"))
 	}
 	return nil
 }
@@ -728,19 +728,19 @@ func (s *FederatedCredentialService) validateRoleGrantAgainstUserInternal(ctx co
 
 	user, err := s.userService.GetUserByID(ctx, userID)
 	if err != nil {
-		return fmt.Errorf("load user for federated role validation: %w", err)
+		return errors.WrapIf(err, "load user for federated role validation")
 	}
 
 	ps, err := s.roleService.ResolvePermissions(ctx, user)
 	if err != nil {
-		return fmt.Errorf("resolve user permissions: %w", err)
+		return errors.WrapIf(err, "resolve user permissions")
 	}
 
 	if err := s.roleService.ValidateRoleAssignmentAgainstCaller(ctx, ps, roleID, environmentID); err != nil {
-		if common.IsRolePermissionEscalationError(err) {
-			return fmt.Errorf("%w: %w", &common.FederatedCredentialPermissionEscalationError{}, err)
+		if errors.Is(err, common.ErrRolePermissionEscalation) {
+			return common.Classify(common.ErrFederatedCredentialPermissionEscalation, errors.WrapIf(err, "cannot map a federated credential to a role you do not hold"))
 		}
-		return fmt.Errorf("%w: %w", &common.FederatedCredentialInvalidError{}, err)
+		return common.Classify(common.ErrFederatedCredentialInvalid, errors.WrapIf(err, "invalid federated credential"))
 	}
 	return nil
 }
@@ -754,7 +754,7 @@ func revokeFederatedCredentialSessionsInternal(tx *gorm.DB, credentialID string)
 	if err := tx.Model(&models.UserSession{}).
 		Where("federated_credential_id = ? AND revoked_at IS NULL", credentialID).
 		Updates(map[string]any{"revoked_at": now, "updated_at": now}).Error; err != nil {
-		return fmt.Errorf("failed to revoke federated credential sessions: %w", err)
+		return errors.WrapIf(err, "failed to revoke federated credential sessions")
 	}
 	return nil
 }

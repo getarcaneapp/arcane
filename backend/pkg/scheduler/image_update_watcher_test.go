@@ -303,8 +303,7 @@ func TestImageUpdateWatcher_RunNowReturnsInProgressErrorDuringActiveScan(t *test
 	go func() { firstErrCh <- watcher.RunNow(context.Background()) }()
 	require.Equal(t, 1, <-scanner.startedCh)
 
-	var inProgress *common.ImageScanInProgressError
-	require.ErrorAs(t, watcher.RunNow(context.Background()), &inProgress)
+	require.ErrorIs(t, watcher.RunNow(context.Background()), common.ErrImageScanInProgress)
 	require.Equal(t, 1, scanner.countInternal())
 
 	close(releaseCh)

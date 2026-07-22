@@ -6,11 +6,13 @@ import (
 	"strings"
 	"testing"
 
+	"emperror.dev/errors"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -75,10 +77,9 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredTokenWo
 	}, models.User{})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "token", validationErr.Field)
-	assert.Contains(t, validationErr.Message, "repository URL")
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "token")
+	assert.Contains(t, err.Error(), "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)
 	require.NoError(t, loadErr)
@@ -100,10 +101,9 @@ func TestGitRepositoryService_UpdateRepository_RejectsURLChangeWhenStoredSSHKeyW
 	}, models.User{})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "sshKey", validationErr.Field)
-	assert.Contains(t, validationErr.Message, "repository URL")
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "sshKey")
+	assert.Contains(t, err.Error(), "repository URL")
 
 	stored, loadErr := svc.GetRepositoryByID(context.Background(), repo.ID)
 	require.NoError(t, loadErr)

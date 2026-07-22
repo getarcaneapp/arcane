@@ -4,12 +4,13 @@ import (
 	"github.com/samber/mo"
 
 	json "encoding/json/v2"
-	"errors"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/labstack/echo/v4"

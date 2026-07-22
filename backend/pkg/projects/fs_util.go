@@ -3,13 +3,14 @@ package projects
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -302,7 +303,7 @@ func DirectorySyncContentsChanged(projectPath string, syncFiles []SyncFile, oldS
 		}
 		return false, err
 	} else if !info.IsDir() {
-		return false, fmt.Errorf("project path is not a directory: %s", projectPath)
+		return false, errors.Errorf("project path is not a directory: %s", projectPath)
 	}
 
 	newFileSet := make(map[string]struct{}, len(syncFiles))
@@ -601,7 +602,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 	// Get absolute path of the true projects root for validation
 	projectsRootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve projects root directory: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
 	}
 	projectsRootAbs = filepath.Clean(projectsRootAbs)
 
@@ -612,7 +613,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 		// Validate candidate is within the allowed projects root
 		candidateAbs, absErr := filepath.Abs(candidate)
 		if absErr != nil {
-			return "", "", fmt.Errorf("failed to resolve candidate path: %w", absErr)
+			return "", "", errors.WrapIf(absErr, "failed to resolve candidate path")
 		}
 		candidateAbs = filepath.Clean(candidateAbs)
 
@@ -646,7 +647,7 @@ func CreateUniqueDir(projectsRoot, basePath, name string, perm os.FileMode) (pat
 // already exists. Callers that must not auto-rename (e.g. GitOps creates, which
 // must never mint "-N" duplicate projects on a broken binding) use this to fail
 // loudly instead of suffixing.
-var ErrProjectDirExists = errors.New("project directory already exists")
+const ErrProjectDirExists = errors.Sentinel("project directory already exists")
 
 // CreateExactDir creates basePath (the sanitized project directory) under
 // projectsRoot WITHOUT any "-N" collision suffixing. It returns ErrProjectDirExists
@@ -661,13 +662,13 @@ func CreateExactDir(projectsRoot, basePath, name string, perm os.FileMode) (path
 
 	projectsRootAbs, err := filepath.Abs(projectsRoot)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve projects root directory: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve projects root directory")
 	}
 	projectsRootAbs = filepath.Clean(projectsRootAbs)
 
 	candidateAbs, err := filepath.Abs(basePath)
 	if err != nil {
-		return "", "", fmt.Errorf("failed to resolve candidate path: %w", err)
+		return "", "", errors.WrapIf(err, "failed to resolve candidate path")
 	}
 	candidateAbs = filepath.Clean(candidateAbs)
 

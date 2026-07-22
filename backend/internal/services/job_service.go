@@ -2,12 +2,12 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	stderrors "errors"
 	"log/slog"
 	"sort"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -117,7 +117,7 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 			continue
 		}
 		if _, err := parser.Parse(*field.update); err != nil {
-			return jobschedule.Config{}, fmt.Errorf("invalid cron expression for %s: %w", field.key, err)
+			return jobschedule.Config{}, errors.WrapIff(err, "invalid cron expression for %s", field.key)
 		}
 	}
 
@@ -146,24 +146,22 @@ func (s *JobService) UpdateJobSchedules(ctx context.Context, updates jobschedule
 		return nil
 	})
 	if err != nil {
-		return jobschedule.Config{}, fmt.Errorf("failed to update job schedules: %w", err)
+		return jobschedule.Config{}, errors.WrapIf(err, "failed to update job schedules")
 	}
 
 	// Refresh settings cache so jobs reading from SettingsService see new values.
 	if changed {
 		if err := s.settings.LoadDatabaseSettings(ctx); err != nil {
 			restoreErr := s.restoreJobSchedulesInternal(ctx, previousValues, changedKeys)
-			return jobschedule.Config{}, errors.Join(
-				fmt.Errorf("failed to reload settings after job schedule update: %w", err),
-				restoreErr,
+			return jobschedule.Config{}, stderrors.Join(errors.
+				WrapIf(err, "failed to reload settings after job schedule update"), restoreErr,
 			)
 		}
 
 		if err := s.RescheduleJobsForSettingKeys(ctx, changedKeys); err != nil {
 			restoreErr := s.restoreJobSchedulesInternal(ctx, previousValues, changedKeys)
-			return jobschedule.Config{}, errors.Join(
-				fmt.Errorf("failed to apply job schedule update: %w", err),
-				restoreErr,
+			return jobschedule.Config{}, stderrors.Join(errors.
+				WrapIf(err, "failed to apply job schedule update"), restoreErr,
 			)
 		}
 	}
@@ -198,7 +196,7 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 		}
 	}
 
-	return errors.Join(rescheduleErrors...)
+	return stderrors.Join(rescheduleErrors...)
 }
 
 // jobRescheduleContextInternal prefers the app lifecycle context so cron jobs
@@ -235,23 +233,23 @@ func (s *JobService) rescheduleAffectedJobInternal(ctx context.Context, jobID st
 
 	job, ok := s.scheduler.GetJob(jobID).Get()
 	if !ok {
-		return fmt.Errorf("job %s not found in scheduler", jobID)
+		return errors.Errorf("job %s not found in scheduler", jobID)
 	}
 
 	slog.DebugContext(ctx, "Processing job setting change", "job", jobID, "settingsKey", jobMeta.SettingsKey, "enabledKey", jobMeta.EnabledKey)
 	rescheduleCtx := s.jobRescheduleContextInternal(ctx)
 	if err := s.scheduler.RescheduleJob(rescheduleCtx, job); err != nil {
-		return fmt.Errorf("reschedule job %s: %w", jobID, err)
+		return errors.WrapIff(err, "reschedule job %s", jobID)
 	}
 
 	runtimeState, ok := s.scheduler.GetJobRuntimeState(jobID).Get()
 	if !ok {
-		return fmt.Errorf("job %s has no runtime scheduler state", jobID)
+		return errors.Errorf("job %s has no runtime scheduler state", jobID)
 	}
 
 	expectedSchedule := job.Schedule(rescheduleCtx)
 	if runtimeState.Schedule != expectedSchedule {
-		return fmt.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule)
+		return errors.Errorf("job %s runtime schedule %q does not match requested schedule %q", jobID, runtimeState.Schedule, expectedSchedule)
 	}
 	return nil
 }
@@ -269,15 +267,15 @@ func (s *JobService) restoreJobSchedulesInternal(ctx context.Context, previousVa
 		}
 		return nil
 	}); err != nil {
-		return fmt.Errorf("failed to restore previous job schedules: %w", err)
+		return errors.WrapIf(err, "failed to restore previous job schedules")
 	}
 
 	if err := s.settings.LoadDatabaseSettings(ctx); err != nil {
-		return fmt.Errorf("failed to reload restored job schedules: %w", err)
+		return errors.WrapIf(err, "failed to reload restored job schedules")
 	}
 
 	if err := s.RescheduleJobsForSettingKeys(ctx, changedKeys); err != nil {
-		return fmt.Errorf("failed to restore runtime job schedules: %w", err)
+		return errors.WrapIf(err, "failed to restore runtime job schedules")
 	}
 
 	return nil
@@ -367,20 +365,20 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 
 	meta, ok := meta.GetJobMetadata(jobID)
 	if !ok {
-		return nil, fmt.Errorf("unknown job: %s", jobID)
+		return nil, errors.Errorf("unknown job: %s", jobID)
 	}
 
 	if !meta.CanRunManually {
-		return nil, fmt.Errorf("job %s cannot be run manually", jobID)
+		return nil, errors.Errorf("job %s cannot be run manually", jobID)
 	}
 
 	if s.cfg != nil && s.cfg.AgentMode && meta.ManagerOnly {
-		return nil, fmt.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
+		return nil, errors.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
 	}
 
 	job, ok := s.scheduler.GetJob(jobID).Get()
 	if !ok {
-		return nil, fmt.Errorf("job %s not found in scheduler", jobID)
+		return nil, errors.Errorf("job %s not found in scheduler", jobID)
 	}
 
 	return job, nil

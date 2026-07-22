@@ -3,12 +3,12 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -90,8 +90,7 @@ func TestGitOpsSyncService_GetSyncByID_ReturnsNotFoundError(t *testing.T) {
 
 	_, err := svc.GetSyncByID(ctx, "0", "missing-sync")
 
-	var notFound *models.NotFoundError
-	require.ErrorAs(t, err, &notFound)
+	require.ErrorIs(t, err, common.ErrNotFound)
 }
 
 func TestGitOpsSyncService_CleanupOrphanedSyncsOnStartup_DeletesOnlyOrphans(t *testing.T) {
@@ -340,8 +339,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 	}
 
 	_, _, _, _, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
-	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-	require.ErrorAs(t, err, &bindingErr)
+	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
 	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
@@ -374,8 +372,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 
 	result := &gitops.SyncResult{}
 	_, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
-	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-	require.ErrorAs(t, err, &bindingErr)
+	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
 	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
@@ -1148,8 +1145,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 
 	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
 	require.Error(t, err)
-	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-	require.ErrorAs(t, err, &bindingErr)
+	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.Nil(t, project)
 	assert.Nil(t, syncedFiles)
 	assert.False(t, created)
@@ -1207,8 +1203,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 
 	project, syncedFiles, created, changed, err := svc.syncProjectDirectoryInternal(ctx, sync, syncFiles, models.User{})
 	require.Error(t, err)
-	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-	require.ErrorAs(t, err, &bindingErr)
+	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.Nil(t, project)
 	assert.Nil(t, syncedFiles)
 	assert.False(t, created)
@@ -1250,8 +1245,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	result := &gitops.SyncResult{}
 	project, err := svc.getOrCreateProjectInternal(ctx, sync, sync.ID, "services:\n  app:\n    image: nginx:alpine\n", nil, nil, "", result, models.User{})
 	require.Error(t, err)
-	var bindingErr *common.GitOpsSyncProjectBindingBrokenError
-	require.ErrorAs(t, err, &bindingErr)
+	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 	require.Nil(t, project)
 
 	var projectCount int64
@@ -1573,9 +1567,8 @@ func TestValidateLifecycleConfig_RejectsScriptWithoutSyncDirectoryOnCreate(t *te
 		syncDirectory: new(false),
 	})
 	require.Error(t, err)
-	validationErr, ok := errors.AsType[*models.ValidationError](err)
-	require.True(t, ok, "expected *models.ValidationError, got %T", err)
-	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
 }
 
 func TestValidateLifecycleConfig_AcceptsScriptWithSyncDirectoryOnCreate(t *testing.T) {
@@ -1597,9 +1590,8 @@ func TestValidateLifecycleConfig_RejectsLifecycleHookForSwarmStack(t *testing.T)
 		syncDirectory: new(true),
 	})
 	require.Error(t, err)
-	validationErr, ok := errors.AsType[*models.ValidationError](err)
-	require.True(t, ok, "expected *models.ValidationError, got %T", err)
-	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
 	require.Contains(t, err.Error(), "project syncs")
 }
 
@@ -1612,9 +1604,8 @@ func TestValidateLifecycleConfig_RejectsSwarmTargetChangeWithExistingLifecycleHo
 		targetType: new("swarm_stack"),
 	})
 	require.Error(t, err)
-	validationErr, ok := errors.AsType[*models.ValidationError](err)
-	require.True(t, ok, "expected *models.ValidationError, got %T", err)
-	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
 	require.Contains(t, err.Error(), "project syncs")
 }
 
@@ -1637,21 +1628,18 @@ func TestValidateLifecycleConfig_RejectsSyncDirectoryToggleOffWhileScriptStillSe
 		syncDirectory: new(false),
 	})
 	require.Error(t, err)
-	validationErr, ok := errors.AsType[*models.ValidationError](err)
-	require.True(t, ok, "expected *models.ValidationError, got %T", err)
-	require.Equal(t, "preDeployScriptPath", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.Contains(t, errors.GetDetails(err), "preDeployScriptPath")
 }
 
 func TestRedeployAfterSyncFailedError_FormatAndUnwrap(t *testing.T) {
 	cause := errors.New("pre-deploy hook bombed")
-	err := &common.RedeployAfterSyncFailedError{Err: cause}
+	err := common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(cause, "redeploy failed"))
 
 	require.Equal(t, "redeploy failed: pre-deploy hook bombed", err.Error())
 	require.True(t, errors.Is(err, cause), "Unwrap should expose the cause for errors.Is")
 
-	typed, ok := errors.AsType[*common.RedeployAfterSyncFailedError](err)
-	require.True(t, ok)
-	require.Equal(t, cause, typed.Err)
+	require.ErrorIs(t, err, common.ErrRedeployAfterSyncFailed)
 }
 
 func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
@@ -1675,7 +1663,7 @@ func TestMarkSyncRedeployFailedInternal_PersistsErrorOnSyncRow(t *testing.T) {
 
 	result := &gitops.SyncResult{Success: true}
 	syncedFiles := []string{"compose.yml", "scripts/pre-deploy.sh"}
-	hookErr := &common.RedeployAfterSyncFailedError{Err: errors.New("pre-deploy hook failed: exit 1")}
+	hookErr := common.Classify(common.ErrRedeployAfterSyncFailed, errors.WrapIf(errors.New("pre-deploy hook failed: exit 1"), "redeploy failed"))
 
 	svc.markSyncRedeployFailedInternal(ctx, sync, sync.ID, "abc123", syncedFiles, hookErr, models.User{BaseModel: models.BaseModel{ID: "user"}, Username: "tester"}, result)
 

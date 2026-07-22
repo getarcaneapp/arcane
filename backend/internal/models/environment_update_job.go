@@ -3,8 +3,9 @@ package models
 import (
 	"database/sql/driver"
 	json "encoding/json/v2"
-	"fmt"
 	"time"
+
+	"emperror.dev/errors"
 )
 
 // EnvironmentUpdateJobStatus is the lifecycle status of a fleet-wide "update all
@@ -82,7 +83,7 @@ func (r *EnvironmentUpdateResults) Scan(value any) error {
 	case string:
 		return json.Unmarshal([]byte(v), r)
 	default:
-		return fmt.Errorf("unsupported scan type for EnvironmentUpdateResults: %T", value)
+		return errors.Errorf("unsupported scan type for EnvironmentUpdateResults: %T", value)
 	}
 }
 

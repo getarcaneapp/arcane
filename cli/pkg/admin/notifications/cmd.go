@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -43,19 +44,19 @@ var settingsGetCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.NotificationsSettings(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get settings: %w", err)
+			return errors.WrapIf(err, "failed to get settings")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result []notification.Response
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -101,11 +102,11 @@ var settingsDeleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.NotificationSettingsProvider(c.EnvID(), args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete notification settings: %w", err)
+			return errors.WrapIf(err, "failed to delete notification settings")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete notification settings: %w", err)
+			return errors.WrapIf(err, "failed to delete notification settings")
 		}
 
 		output.Success("Notification settings for %s deleted successfully", args[0])
@@ -126,11 +127,11 @@ var testProviderCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.NotificationsTestProvider(c.EnvID(), args[0]), nil)
 		if err != nil {
-			return fmt.Errorf("failed to test notification provider: %w", err)
+			return errors.WrapIf(err, "failed to test notification provider")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("notification test failed: %w", err)
+			return errors.WrapIf(err, "notification test failed")
 		}
 
 		if jsonOutput {

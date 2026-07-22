@@ -1,10 +1,10 @@
 package cmdutil
 
 import (
-	"fmt"
 	"net/url"
 	"strconv"
 
+	"emperror.dev/errors"
 	"github.com/spf13/cobra"
 )
 
@@ -22,7 +22,7 @@ func ApplyPaginationParams(
 ) (string, error) {
 	parsed, err := url.Parse(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse path: %w", err)
+		return "", errors.WrapIf(err, "failed to parse path")
 	}
 
 	query := parsed.Query()

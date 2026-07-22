@@ -2,11 +2,12 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"strings"
 	"sync"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -461,7 +462,7 @@ func (s *SystemService) completeSystemContainerActivityInternal(ctx context.Cont
 func (s *SystemService) pruneContainersInternal(ctx context.Context, options system.PruneContainersOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	filterArgs := make(client.Filters)
@@ -474,7 +475,7 @@ func (s *SystemService) pruneContainersInternal(ctx context.Context, options sys
 
 	report, err := dockerClient.ContainerPrune(ctx, client.ContainerPruneOptions{Filters: filterArgs})
 	if err != nil {
-		return fmt.Errorf("failed to prune containers: %w", err)
+		return errors.WrapIf(err, "failed to prune containers")
 	}
 
 	result.ContainersPruned = report.Report.ContainersDeleted
@@ -486,7 +487,7 @@ func (s *SystemService) pruneContainersInternal(ctx context.Context, options sys
 func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.PruneImagesOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	filterArgs := make(client.Filters)
@@ -504,12 +505,12 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 		filterArgs = filterArgs.Add("dangling", "false")
 		filterArgs = filterArgs.Add("until", options.Until)
 	default:
-		return fmt.Errorf("unsupported image prune mode: %s", options.Mode)
+		return errors.Errorf("unsupported image prune mode: %s", options.Mode)
 	}
 
 	report, err := dockerClient.ImagePrune(ctx, client.ImagePruneOptions{Filters: filterArgs})
 	if err != nil {
-		return fmt.Errorf("failed to prune images: %w", err)
+		return errors.WrapIf(err, "failed to prune images")
 	}
 
 	slog.InfoContext(ctx, "Image pruning completed", "images_deleted", len(report.Report.ImagesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
@@ -540,9 +541,9 @@ func (s *SystemService) pruneImagesInternal(ctx context.Context, options system.
 func (s *SystemService) pruneBuildCacheInternal(ctx context.Context, options system.PruneBuildCacheOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed (connection): %w", err).Error())
+		result.Errors = append(result.Errors, errors.WrapIf(err, "build cache pruning failed (connection)").Error())
 		slog.ErrorContext(ctx, "Error connecting to Docker for build cache prune", "error", err.Error())
-		return fmt.Errorf("failed to connect to Docker for build cache prune: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker for build cache prune")
 	}
 
 	pruneOptions := client.BuildCachePruneOptions{
@@ -559,9 +560,9 @@ func (s *SystemService) pruneBuildCacheInternal(ctx context.Context, options sys
 	slog.DebugContext(ctx, "starting build cache pruning", "mode", options.Mode, "until", options.Until)
 	report, err := dockerClient.BuildCachePrune(ctx, pruneOptions)
 	if err != nil {
-		result.Errors = append(result.Errors, fmt.Errorf("build cache pruning failed: %w", err).Error())
+		result.Errors = append(result.Errors, errors.WrapIf(err, "build cache pruning failed").Error())
 		slog.ErrorContext(ctx, "Error pruning build cache", "error", err.Error())
-		return fmt.Errorf("failed to prune build cache: %w", err)
+		return errors.WrapIf(err, "failed to prune build cache")
 	}
 
 	slog.InfoContext(ctx, "build cache pruning completed", "cache_entries_deleted", len(report.Report.CachesDeleted), "bytes_reclaimed", report.Report.SpaceReclaimed)
@@ -589,7 +590,7 @@ func (s *SystemService) pruneVolumesInternal(ctx context.Context, options system
 func (s *SystemService) pruneNetworksInternal(ctx context.Context, options system.PruneNetworksOptions, result *system.PruneAllResult) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	filterArgs := make(client.Filters)
@@ -602,7 +603,7 @@ func (s *SystemService) pruneNetworksInternal(ctx context.Context, options syste
 
 	report, err := dockerClient.NetworkPrune(ctx, client.NetworkPruneOptions{Filters: filterArgs})
 	if err != nil {
-		return fmt.Errorf("failed to prune networks: %w", err)
+		return errors.WrapIf(err, "failed to prune networks")
 	}
 
 	slog.InfoContext(ctx, "Network prune completed", "networks_deleted", len(report.Report.NetworksDeleted))

@@ -1,9 +1,9 @@
 package cmdutil
 
 import (
-	"errors"
-	"fmt"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	runtimectx "github.com/getarcaneapp/arcane/cli/v2/internal/runtime"
@@ -68,6 +68,6 @@ func ResolveOutputMode(mode string) (runtimectx.OutputMode, error) {
 	case runtimectx.OutputModeText, runtimectx.OutputModeJSON:
 		return runtimectx.OutputMode(normalized), nil
 	default:
-		return "", fmt.Errorf("invalid output mode %q", mode)
+		return "", errors.Errorf("invalid output mode %q", mode)
 	}
 }

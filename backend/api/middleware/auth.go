@@ -2,10 +2,11 @@ package middleware
 
 import (
 	"context"
-	"errors"
 	"log/slog"
 	"net/http"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -338,7 +339,7 @@ func handleBearerAuthInternal(api huma.API, ctx huma.Context, authService *servi
 		_ = huma.WriteErr(api, ctx, http.StatusUnauthorized, "Application has been updated. Refreshing session.")
 		return nil, true
 	}
-	if common.IsSessionRevokedError(err) || common.IsTokenValidationError(err) {
+	if errors.Is(err, common.ErrSessionRevoked) || errors.Is(err, common.ErrTokenValidation) {
 		for _, cookieHeader := range cookie.BuildClearTokenCookieStringsFor(cookie.SecureCookieFromContext(ctx.Context())) {
 			ctx.AppendHeader("Set-Cookie", cookieHeader)
 		}

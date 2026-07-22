@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -61,4 +62,18 @@ func TestRequestLogHandler(t *testing.T) {
 
 		assert.Contains(t, buf.String(), "msg=\"plain record\" component=scheduler")
 	})
+}
+
+func TestStackAttrHandlerAddsStackToErrorRecords(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(&stackAttrHandler{
+		handler: slog.NewTextHandler(&buf, &slog.HandlerOptions{Level: slog.LevelDebug}),
+	})
+	err := errors.New("boom")
+
+	logger.InfoContext(t.Context(), "info", "error", err)
+	assert.NotContains(t, buf.String(), "stack=")
+
+	logger.ErrorContext(t.Context(), "failed", "err", err)
+	assert.Contains(t, buf.String(), "stack=")
 }

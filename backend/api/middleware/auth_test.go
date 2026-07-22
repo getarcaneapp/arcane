@@ -142,7 +142,7 @@ func TestNewAuthBridge_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t 
 	sessionSvc := services.NewSessionService(db)
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, &config.Config{JWTRefreshExpiry: 24 * time.Hour})
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, &config.Config{JWTRefreshExpiry: 24 * time.Hour}, nil)
 	bearerToken := mintAuthBridgeTestTokenInternal(t, userSvc, sessionSvc, jwtSecret, "u-loopback")
 
 	ps := authz.NewPermissionSet()
@@ -321,7 +321,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-logout"},
@@ -409,7 +409,7 @@ func TestNewAuthBridge_VersionMismatchIsRecoverable(t *testing.T) {
 
 	jwtSecret := "test-secret-please-do-not-use-in-prod"
 	cfg := &config.Config{JWTRefreshExpiry: 24 * time.Hour}
-	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg)
+	authSvc := services.NewAuthService(userSvc, nil, nil, sessionSvc, nil, jwtSecret, cfg, nil)
 
 	_, err := userSvc.CreateUser(context.Background(), &models.User{
 		BaseModel: models.BaseModel{ID: "u-ver"},

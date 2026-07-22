@@ -375,8 +375,7 @@ func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
 
 	_, err := service.FetchRaw(context.Background(), "http://127.0.0.1:8080/registry.json")
 	require.Error(t, err)
-	var unsafeErr *common.UnsafeRemoteURLError
-	require.ErrorAs(t, err, &unsafeErr)
+	require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
 }
 
 func TestSyncFilesystemTemplatesInternal_PopulatesIconURL(t *testing.T) {

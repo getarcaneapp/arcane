@@ -2,11 +2,11 @@ package notifications
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -70,18 +70,18 @@ func SendPushover(ctx context.Context, config models.PushoverConfig, message str
 
 	shoutrrrURL, err := BuildPushoverURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Pushover URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Pushover URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Pushover sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Pushover sender")
 	}
 
 	errs := sender.Send(message, nil)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Pushover message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Pushover message via shoutrrr")
 		}
 	}
 	return nil

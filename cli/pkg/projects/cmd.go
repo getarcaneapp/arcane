@@ -3,7 +3,6 @@ package projects
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -80,19 +81,19 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	resp, err := c.Get(cmd.Context(), path)
 	if err != nil {
-		return fmt.Errorf("failed to list projects: %w", err)
+		return errors.WrapIf(err, "failed to list projects")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var result base.Paginated[project.Details]
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	if jsonOutput {
 		resultBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
 		fmt.Println(string(resultBytes))
 		return nil
@@ -150,12 +151,12 @@ func buildProjectsListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateF
 	var err error
 	path, err = cmdutil.ApplyPaginationParams(cmd, path, "projects", "limit", limitFlag, 20, "start", startFlag)
 	if err != nil {
-		return "", fmt.Errorf("failed to build pagination query: %w", err)
+		return "", errors.WrapIf(err, "failed to build pagination query")
 	}
 
 	parsed, err := url.Parse(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse path: %w", err)
+		return "", errors.WrapIf(err, "failed to parse path")
 	}
 
 	query := parsed.Query()
@@ -212,11 +213,11 @@ var destroyCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.ProjectDestroy(c.EnvID(), resolved.ID))
 		if err != nil {
-			return fmt.Errorf("failed to destroy project: %w", err)
+			return errors.WrapIf(err, "failed to destroy project")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to destroy project: %w", err)
+			return errors.WrapIf(err, "failed to destroy project")
 		}
 
 		output.Success("Project %s destroyed successfully", resolved.Name)
@@ -244,13 +245,13 @@ var getCmd = &cobra.Command{
 		if !complete {
 			resp, err := c.Get(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID))
 			if err != nil {
-				return fmt.Errorf("failed to get project: %w", err)
+				return errors.WrapIf(err, "failed to get project")
 			}
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[project.Details]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resolved = &result.Data
 		}
@@ -258,7 +259,7 @@ var getCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -370,11 +371,11 @@ func runProjectPostAction(cmd *cobra.Command, projectRef string, cfg projectPost
 
 	resp, err := c.Post(cmd.Context(), cfg.endpoint(c.EnvID(), resolved.ID), nil)
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 	defer func() { _ = resp.Body.Close() }()
 	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 
 	output.Success(cfg.successMessage, resolved.Name)
@@ -393,7 +394,7 @@ var createCmd = &cobra.Command{
 
 		composeBytes, err := os.ReadFile(createFile)
 		if err != nil {
-			return fmt.Errorf("failed to read compose file: %w", err)
+			return errors.WrapIf(err, "failed to read compose file")
 		}
 
 		body := project.CreateProject{
@@ -404,7 +405,7 @@ var createCmd = &cobra.Command{
 		if createEnvFile != "" {
 			envBytes, err := os.ReadFile(createEnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to read env file: %w", err)
+				return errors.WrapIf(err, "failed to read env file")
 			}
 			body.EnvContent = new(string(envBytes))
 		}
@@ -414,22 +415,22 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.Projects(c.EnvID()), body)
 		if err != nil {
-			return fmt.Errorf("failed to create project: %w", err)
+			return errors.WrapIf(err, "failed to create project")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create project: %w", err)
+			return errors.WrapIf(err, "failed to create project")
 		}
 
 		var result base.ApiResponse[project.CreateReponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -470,7 +471,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("file") {
 			composeBytes, err := os.ReadFile(updateFile)
 			if err != nil {
-				return fmt.Errorf("failed to read compose file: %w", err)
+				return errors.WrapIf(err, "failed to read compose file")
 			}
 			body.ComposeContent = new(string(composeBytes))
 		}
@@ -478,28 +479,28 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("env-file") {
 			envBytes, err := os.ReadFile(updateEnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to read env file: %w", err)
+				return errors.WrapIf(err, "failed to read env file")
 			}
 			body.EnvContent = new(string(envBytes))
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Project(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return fmt.Errorf("failed to update project: %w", err)
+			return errors.WrapIf(err, "failed to update project")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update project: %w", err)
+			return errors.WrapIf(err, "failed to update project")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[project.Details]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -528,7 +529,7 @@ var updateIncludesCmd = &cobra.Command{
 
 		content, err := os.ReadFile(includesFile)
 		if err != nil {
-			return fmt.Errorf("failed to read include file: %w", err)
+			return errors.WrapIf(err, "failed to read include file")
 		}
 
 		body := project.UpdateIncludeFile{
@@ -538,21 +539,21 @@ var updateIncludesCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ProjectIncludes(c.EnvID(), resolved.ID), body)
 		if err != nil {
-			return fmt.Errorf("failed to update include file: %w", err)
+			return errors.WrapIf(err, "failed to update include file")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update include file: %w", err)
+			return errors.WrapIf(err, "failed to update include file")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[project.Details]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -575,19 +576,19 @@ var countsCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ProjectsCounts(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get project counts: %w", err)
+			return errors.WrapIf(err, "failed to get project counts")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[map[string]any]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -663,25 +664,25 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 
 	resp, err := c.Get(ctx, types.Endpoints.Project(c.EnvID(), trimmed))
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to resolve project %q: %w", trimmed, err)
+		return nil, false, errors.WrapIff(err, "failed to resolve project %q", trimmed)
 	}
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read project response: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to read project response")
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		var result base.ApiResponse[project.Details]
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			return nil, false, fmt.Errorf("failed to parse project response: %w", err)
+			return nil, false, errors.WrapIf(err, "failed to parse project response")
 		}
 		return &result.Data, true, nil
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, fmt.Errorf("failed to resolve project %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+		return nil, false, errors.Errorf("failed to resolve project %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 	}
 
 	identifierLower := strings.ToLower(trimmed)
@@ -689,22 +690,22 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Projects(c.EnvID()), url.QueryEscape(trimmed), 200)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to search projects: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to search projects")
 	}
 
 	searchBody, err := io.ReadAll(searchResp.Body)
 	_ = searchResp.Body.Close()
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read projects response: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to read projects response")
 	}
 
 	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, false, fmt.Errorf("failed to search projects (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
+		return nil, false, errors.Errorf("failed to search projects (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
 	}
 
 	var result base.Paginated[project.Details]
 	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, false, fmt.Errorf("failed to parse projects response: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to parse projects response")
 	}
 
 	matches := make([]project.Details, 0)
@@ -720,10 +721,10 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 
 	if len(matches) > 1 {
 		if !allowPrompt {
-			return nil, false, fmt.Errorf("multiple projects match %q; use the project ID or run `arcane projects list`", trimmed)
+			return nil, false, errors.Errorf("multiple projects match %q; use the project ID or run `arcane projects list`", trimmed)
 		}
 		if len(matches) > maxPromptOptions {
-			return nil, false, fmt.Errorf("multiple projects match %q (%d results); refine your query or use the project ID", trimmed, len(matches))
+			return nil, false, errors.Errorf("multiple projects match %q (%d results); refine your query or use the project ID", trimmed, len(matches))
 		}
 
 		options := make([]string, 0, len(matches))
@@ -737,7 +738,7 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 		return &matches[choice], false, nil
 	}
 
-	return nil, false, fmt.Errorf("project %q not found; use the project ID or run `arcane projects list`", trimmed)
+	return nil, false, errors.Errorf("project %q not found; use the project ID or run `arcane projects list`", trimmed)
 }
 
 func projectMatches(item project.Details, identifierLower, original string) bool {
