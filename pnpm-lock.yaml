@@ -214,8 +214,8 @@ importers:
         specifier: ^2.2.499
         version: 2.2.499
       '@inlang/paraglide-js':
-        specifier: 2.21.0
-        version: 2.21.0(@typescript/typescript6@6.0.2)
+        specifier: 2.22.0
+        version: 2.22.0(@typescript/typescript6@6.0.2)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       '@sveltejs/adapter-static':
         specifier: '>=4.0.0-next.1'
         version: 4.0.0-next.1(@sveltejs/kit@3.0.0-next.8(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.4)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.4)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))
@@ -710,13 +710,16 @@ packages:
   '@iconify/utils@3.1.3':
     resolution: {integrity: sha512-LPKOXPn/zV+zis1oOfGWogaXVpqUybF3ZS6SCZIsz8vg0ivVp9+fVqyYB7xq0aiST/VhUQYGO1qo6uoYSiEJqw==}
 
-  '@inlang/paraglide-js@2.21.0':
-    resolution: {integrity: sha512-t+OOui1i5p73zQ2Dk28yFzu6rZhh7hsDOCHjkXDmSwFFsUsS5HyUD4CvPJ+wf02qgmlCMu2z1qffJ5aWwgx1CA==}
+  '@inlang/paraglide-js@2.22.0':
+    resolution: {integrity: sha512-GSzG7KEKcYAhwuPNJczIPB+DzyndYxr4lsXAkkB7xh00jTrt80NF2KfgjEAkxuJvWcnscqXf7y7d1Q0SWtSu7A==}
     hasBin: true
     peerDependencies:
       typescript: '>=5.6'
+      vite: '>=5.0.0'
     peerDependenciesMeta:
       typescript:
+        optional: true
+      vite:
         optional: true
 
   '@inlang/recommend-sherlock@0.2.1':
@@ -1892,8 +1895,8 @@ packages:
     resolution: {integrity: sha512-/GmXpo9F9W+f8n4Ivr2iH+7h7wL7jLbLKWkMlpflcCRb6kGjBfTlASEXaZ9qUgNTn4VgS0P2pwxxzQ4EM6Ulgg==}
     engines: {node: '>=22'}
 
-  kysely@0.29.3:
-    resolution: {integrity: sha512-VHtBdW6XB/pgoTSqraM3UAa2rYoYdNXqnNPpX+8XXP+cwYbVEFuAp3HyPt1vpNfU9l7Y2kpUrA9QDPsy8uUqOQ==}
+  kysely@0.29.4:
+    resolution: {integrity: sha512-y5mVgQNkMbs1eK9Xyc0pmNdabN2wHhRYY/5r4W5HrUT1rYCEPeVNSj1RUJeSDKT3U0p+mXCvLgkrFuIafYI6BA==}
     engines: {node: '>=22.0.0'}
 
   leac@0.6.0:
@@ -3213,7 +3216,7 @@ snapshots:
       '@iconify/types': 2.0.0
       import-meta-resolve: 4.2.0
 
-  '@inlang/paraglide-js@2.21.0(@typescript/typescript6@6.0.2)':
+  '@inlang/paraglide-js@2.22.0(@typescript/typescript6@6.0.2)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))':
     dependencies:
       '@inlang/recommend-sherlock': 0.2.1
       '@inlang/sdk': 2.10.2
@@ -3224,6 +3227,7 @@ snapshots:
       urlpattern-polyfill: 10.1.0
     optionalDependencies:
       typescript: '@typescript/typescript6@6.0.2'
+      vite: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
     transitivePeerDependencies:
       - babel-plugin-macros
 
@@ -3235,8 +3239,8 @@ snapshots:
     dependencies:
       '@lix-js/sdk': 0.4.10
       '@sinclair/typebox': 0.31.30
-      kysely: 0.29.3
-      sqlite-wasm-kysely: 0.3.0(kysely@0.29.3)
+      kysely: 0.29.4
+      sqlite-wasm-kysely: 0.3.0(kysely@0.29.4)
       uuid: 14.0.1
     transitivePeerDependencies:
       - babel-plugin-macros
@@ -3315,8 +3319,8 @@ snapshots:
       dedent: 1.5.1
       human-id: 4.2.0
       js-sha256: 0.11.1
-      kysely: 0.29.3
-      sqlite-wasm-kysely: 0.3.0(kysely@0.29.3)
+      kysely: 0.29.4
+      sqlite-wasm-kysely: 0.3.0(kysely@0.29.4)
       uuid: 14.0.1
     transitivePeerDependencies:
       - babel-plugin-macros
@@ -4297,7 +4301,7 @@ snapshots:
 
   ky@2.0.2: {}
 
-  kysely@0.29.3: {}
+  kysely@0.29.4: {}
 
   leac@0.6.0: {}
 
@@ -4809,10 +4813,10 @@ snapshots:
 
   source-map-js@1.2.1: {}
 
-  sqlite-wasm-kysely@0.3.0(kysely@0.29.3):
+  sqlite-wasm-kysely@0.3.0(kysely@0.29.4):
     dependencies:
       '@sqlite.org/sqlite-wasm': 3.48.0-build4
-      kysely: 0.29.3
+      kysely: 0.29.4
 
   string-argv@0.3.2: {}
 
