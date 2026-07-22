@@ -161,6 +161,15 @@ func normalizeRequestLogErrorInternal(a slog.Attr) slog.Attr {
 	return a
 }
 
+func replaceErrorAttrInternal(_ []string, a slog.Attr) slog.Attr {
+	if a.Value.Kind() == slog.KindAny {
+		if err, ok := a.Value.Any().(error); ok {
+			return slog.String(a.Key, err.Error())
+		}
+	}
+	return a
+}
+
 func (h *requestLogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
 	return &requestLogHandler{handler: h.handler.WithAttrs(attrs)}
 }
@@ -215,11 +224,15 @@ func SetupSlogLogger(cfg *config.Config) {
 
 	var h slog.Handler
 	if cfg.LogJson {
-		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: lv})
+		h = slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
+			Level:       lv,
+			ReplaceAttr: replaceErrorAttrInternal,
+		})
 	} else {
 		h = tint.NewTextHandler(os.Stdout, &tint.Options{
-			Level:      lv,
-			TimeFormat: "Jan 02 15:04:05.000",
+			Level:       lv,
+			TimeFormat:  "Jan 02 15:04:05.000",
+			ReplaceAttr: replaceErrorAttrInternal,
 		})
 	}
 
