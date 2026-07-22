@@ -247,8 +247,8 @@ importers:
         specifier: ^1.0.2
         version: 1.0.2(svelte@5.56.7)
       shadcn-svelte:
-        specifier: ^1.4.1
-        version: 1.4.1(svelte@5.56.7)
+        specifier: ^1.4.2
+        version: 1.4.2(svelte@5.56.7)
       svelte-check-rs:
         specifier: ^0.11.0
         version: 0.11.0(@typescript/native-preview@7.0.0-dev.20260707.2)
@@ -2317,8 +2317,8 @@ packages:
     engines: {node: '>=10'}
     hasBin: true
 
-  shadcn-svelte@1.4.1:
-    resolution: {integrity: sha512-lpvnuHJOMf/CRlOMo5h7HpmdpcWmqVoPyvnCcgpJWJWzVkiwmisF80mR54GIAExSTSk1g4+ere3QrSty2PCIIg==}
+  shadcn-svelte@1.4.2:
+    resolution: {integrity: sha512-j7oDhXRmFuZ8bAhvF7Y65moMi9qM0iA68j5wEDNBiH0be9NWOEg1qo7myDeIf+h2oUSLBYHpVmeJIKYBmNT4Kg==}
     hasBin: true
     peerDependencies:
       svelte: ^5.0.0
@@ -4594,7 +4594,7 @@ snapshots:
 
   semver@7.8.5: {}
 
-  shadcn-svelte@1.4.1(svelte@5.56.7):
+  shadcn-svelte@1.4.2(svelte@5.56.7):
     dependencies:
       commander: 14.0.3
       node-fetch-native: 1.6.7
