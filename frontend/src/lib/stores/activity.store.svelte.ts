@@ -1,11 +1,11 @@
-import { activityService } from '$lib/services/activity-service';
-import { LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
+import { activityService } from '#lib/services/activity-service';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import {
 	createEnvironmentStreamStore,
 	environmentDisplayName,
 	streamErrorMessage,
 	type StreamEnvStateBase
-} from '$lib/stores/environment-stream.svelte';
+} from '#lib/stores/environment-stream.svelte';
 import type {
 	Activity,
 	ActivityBatchGroup,
@@ -17,11 +17,11 @@ import type {
 	ActivityStatus,
 	ActivityStreamEvent,
 	ActivityType
-} from '$lib/types/activity.type';
-import type { Environment } from '$lib/types/environment';
-import userStore from '$lib/stores/user-store';
+} from '#lib/types/activity.type';
+import type { Environment } from '#lib/types/environment';
+import userStore from '#lib/stores/user-store';
 import { get } from 'svelte/store';
-import { discardPendingActivityToasts, queueActivityCompletionToast } from '$lib/components/activity/activity-completion-toasts';
+import { discardPendingActivityToasts, queueActivityCompletionToast } from '#lib/components/activity/activity-completion-toasts';
 
 const ACTIVITY_LIST_LIMIT = 50;
 const ACTIVITY_DETAIL_LIMIT = 500;

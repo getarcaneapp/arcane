@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import { m } from '$lib/paraglide/messages';
-	import { MobileNavDrawerIcon } from '$lib/icons';
+	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { MobileNavDrawerIcon } from '#lib/icons';
 
 	let {
 		showLabels = true,

@@ -1,4 +1,4 @@
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 import ky, { HTTPError as KyHTTPError, NetworkError, TimeoutError, type Options as KyOptions, type SearchParamsOption } from 'ky';
 import { toast } from 'svelte-sonner';
 

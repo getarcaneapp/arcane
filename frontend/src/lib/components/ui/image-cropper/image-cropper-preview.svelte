@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Avatar from '$lib/components/ui/avatar';
-	import { UploadIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
+	import * as Avatar from '#lib/components/ui/avatar';
+	import { UploadIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
 	import { useImageCropperPreview } from './image-cropper-state.svelte.js';
 	import type { ImageCropperPreviewProps } from './types';
 

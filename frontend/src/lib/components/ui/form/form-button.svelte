@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 
 	interface Props {
 		ref?: HTMLButtonElement | null;

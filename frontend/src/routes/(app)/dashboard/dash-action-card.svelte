@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowRightIcon, type IconType } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { ArrowRightIcon, type IconType } from '#lib/icons';
 
 	type StatusVariant =
 		| 'red'

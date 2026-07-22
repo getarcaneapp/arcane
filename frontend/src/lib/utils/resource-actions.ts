@@ -1,4 +1,4 @@
-import type { ActionButton } from '$lib/layouts';
+import type { ActionButton } from '#lib/layouts';
 
 type CreateRefreshActionOptions = {
 	canCreate: boolean;

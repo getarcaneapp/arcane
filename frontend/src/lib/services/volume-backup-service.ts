@@ -1,8 +1,8 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { BackupEntry } from '$lib/types/shared';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import type { BackupEntry } from '#lib/types/shared';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 export type VolumeBackupListResponse = Paginated<BackupEntry> & { warnings?: string[] };
 

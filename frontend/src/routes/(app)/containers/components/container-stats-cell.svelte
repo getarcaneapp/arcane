@@ -6,8 +6,8 @@
 </script>
 
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
-	import { bytes } from '$lib/utils/formatting';
+	import { m } from '#lib/paraglide/messages';
+	import { bytes } from '#lib/utils/formatting';
 
 	interface Props {
 		value?: number;

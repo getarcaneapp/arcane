@@ -1,4 +1,4 @@
-import type { PermissionsManifest } from '$lib/types/auth';
+import type { PermissionsManifest } from '#lib/types/auth';
 
 export function normalizePermissionSelection(manifest: PermissionsManifest, selected: string[]): string[] {
 	const requiredByPermission = new Map<string, string[]>();

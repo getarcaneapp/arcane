@@ -1,7 +1,7 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
 	import {
 		UsersIcon,
 		EnvironmentsIcon,
@@ -11,22 +11,22 @@
 		AddIcon,
 		CloseIcon,
 		TagIcon
-	} from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '$lib/types/swarm';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { Badge } from '$lib/components/ui/badge';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	} from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import type { SwarmNodeAgentDeployment, SwarmNodeSummary } from '#lib/types/swarm';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { Badge } from '#lib/components/ui/badge';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { goto } from '$app/navigation';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import SwarmNodeAgentDialog from './swarm-node-agent-dialog.svelte';
 	import SwarmNodeLabelDialog from './swarm-node-label-dialog.svelte';
 	import { getSwarmNodeAgentActionLabel, getSwarmNodeAgentLabel, getSwarmNodeAgentVariant } from './agent-status';

@@ -1,35 +1,35 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar';
-	import { ActionButtonGroup, type ActionButton } from '$lib/components/action-button-group/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as AlertDialog from '$lib/components/ui/alert-dialog';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { cn } from '$lib/utils';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { ActionButtonGroup, type ActionButton } from '#lib/components/action-button-group/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as AlertDialog from '#lib/components/ui/alert-dialog';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { cn } from '#lib/utils';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service.js';
-	import { settingsService } from '$lib/services/settings-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import type { Environment, EnvironmentStatus } from '$lib/types/environment';
-	import { hasPermission } from '$lib/utils/auth';
-	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
-	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
-	import { createSettingsForm } from '$lib/utils/settings-form';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service.js';
+	import { settingsService } from '#lib/services/settings-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import type { AppVersionInformation } from '#lib/types/settings';
+	import type { Environment, EnvironmentStatus } from '#lib/types/environment';
+	import { hasPermission } from '#lib/utils/auth';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker';
+	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
+	import { createSettingsForm } from '#lib/utils/settings-form';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
 	import GeneralTab from './components/GeneralTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
-	import TrivySecuritySettings from '$lib/components/settings/trivy-security-settings.svelte';
-	import LifecycleSecuritySettings from '$lib/components/settings/lifecycle-security-settings.svelte';
-	import { useEasyJoinCandidates } from '$lib/hooks/use-easy-join-candidates.svelte';
+	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
+	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
+	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
 	import {
 		ArrowLeftIcon,
@@ -43,7 +43,7 @@
 		JobsIcon,
 		ResetIcon,
 		ConnectionIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	let { data } = $props();
 	let { environment, settings, versionInformation } = $derived(data);

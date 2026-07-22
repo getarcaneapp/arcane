@@ -1,8 +1,8 @@
-import { projectService } from '$lib/services/project-service';
-import { variableService } from '$lib/services/variable-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { queryKeys } from '$lib/query/query-keys';
-import { throwPageLoadError } from '$lib/utils/api';
+import { projectService } from '#lib/services/project-service';
+import { variableService } from '#lib/services/variable-service';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { queryKeys } from '#lib/query/query-keys';
+import { throwPageLoadError } from '#lib/utils/api';
 import type { QueryClient } from '@tanstack/svelte-query';
 import type { PageLoad } from './$types';
 

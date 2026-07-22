@@ -1,4 +1,4 @@
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 
 export function inUseBadge(visible: boolean) {
 	return (item: { inUse?: boolean }) =>

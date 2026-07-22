@@ -1,14 +1,14 @@
 <script lang="ts">
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
 	import { page } from '$app/state';
-	import { useSidebar } from '$lib/components/ui/sidebar/context.svelte.js';
-	import type { ShortcutKey } from '$lib/utils/navigation';
+	import { useSidebar } from '#lib/components/ui/sidebar/context.svelte.js';
+	import type { ShortcutKey } from '#lib/utils/navigation';
 	import type { Snippet } from 'svelte';
-	import { ArrowRightIcon } from '$lib/icons';
+	import { ArrowRightIcon } from '#lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
-	import settingsStore from '$lib/stores/config-store';
+	import settingsStore from '#lib/stores/config-store';
 
 	let {
 		items,

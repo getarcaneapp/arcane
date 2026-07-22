@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { Progress } from '$lib/components/ui/progress/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { ArrowDownIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import type { ActivityBatchGroup, ActivityStatus } from '$lib/types/activity.type';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { ArrowDownIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import type { ActivityBatchGroup, ActivityStatus } from '#lib/types/activity.type';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
 
 	let {

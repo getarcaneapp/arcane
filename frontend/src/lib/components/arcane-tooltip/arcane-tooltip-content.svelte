@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 	import type { ComponentProps, Snippet } from 'svelte';
 
 	export type ArcaneTooltipContentProps = WithoutChildrenOrChild<ComponentProps<typeof Tooltip.Content>>;

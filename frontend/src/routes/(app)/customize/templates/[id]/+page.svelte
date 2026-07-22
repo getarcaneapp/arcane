@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { Badge } from '$lib/components/ui/badge';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import CodeEditor from '#lib/components/code-editor/editor.svelte';
 	import TemplateEditorWorkspace from '../components/template-editor-workspace.svelte';
-	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { goto, refreshAll } from '$app/navigation';
-	import { m } from '$lib/paraglide/messages.js';
-	import { templateService } from '$lib/services/template-service';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { m } from '#lib/paraglide/messages.js';
+	import { templateService } from '#lib/services/template-service';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { createForm } from '$lib/utils/settings';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import { createForm } from '#lib/utils/settings';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		createNamedTemplateSchema,
 		getTemplateEditorSaveState,
 		resetTemplateEditorFields,
 		runTemplateEditorSave
-	} from '$lib/utils/template-editor';
+	} from '#lib/utils/template-editor';
 	import {
 		EllipsisIcon,
 		CodeIcon,
@@ -32,7 +32,7 @@
 		ExternalLinkIcon,
 		MoveToFolderIcon,
 		TrashIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	let { data } = $props();
 

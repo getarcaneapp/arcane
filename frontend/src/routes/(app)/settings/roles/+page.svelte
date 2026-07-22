@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ShieldAlertIcon } from '$lib/icons';
+	import { ShieldAlertIcon } from '#lib/icons';
 	import { goto } from '$app/navigation';
 	import { untrack } from 'svelte';
 	import RolesTable from './roles-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import { m } from '$lib/paraglide/messages';
-	import { roleService } from '$lib/services/role-service';
-	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
-	import userStore from '$lib/stores/user-store';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import { m } from '#lib/paraglide/messages';
+	import { roleService } from '#lib/services/role-service';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import userStore from '#lib/stores/user-store';
 
 	let { data } = $props();
 

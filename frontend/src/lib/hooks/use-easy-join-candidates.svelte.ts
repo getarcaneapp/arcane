@@ -1,6 +1,6 @@
-import { swarmService } from '$lib/services/swarm-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { SwarmJoinCandidate } from '$lib/types/swarm';
+import { swarmService } from '#lib/services/swarm-service';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import type { SwarmJoinCandidate } from '#lib/types/swarm';
 
 export function useEasyJoinCandidates() {
 	let candidates = $state<SwarmJoinCandidate[]>([]);

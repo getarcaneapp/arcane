@@ -1,14 +1,14 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import * as Accordion from '$lib/components/ui/accordion/index.js';
-	import type { VolumeCreateRequest } from '$lib/types/docker';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import * as Accordion from '#lib/components/ui/accordion/index.js';
+	import type { VolumeCreateRequest } from '#lib/types/docker';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { parseKeyValuePairs } from '$lib/utils/form-parsers';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { parseKeyValuePairs } from '#lib/utils/form-parsers';
 	import SelectWithLabel from '../form/select-with-label.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	type CreateVolumeFormProps = {
 		open: boolean;

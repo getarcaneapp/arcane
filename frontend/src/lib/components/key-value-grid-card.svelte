@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
-	import { m } from '$lib/paraglide/messages';
+	import * as Card from '#lib/components/ui/card';
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail';
+	import { m } from '#lib/paraglide/messages';
 
 	interface Props {
 		icon: any;

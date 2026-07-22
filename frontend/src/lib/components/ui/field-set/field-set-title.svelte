@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils';
 	import type { FieldSetTitleProps } from './types';
 
 	let { ref = $bindable(null), class: className, level = 3, children, ...rest }: FieldSetTitleProps = $props();

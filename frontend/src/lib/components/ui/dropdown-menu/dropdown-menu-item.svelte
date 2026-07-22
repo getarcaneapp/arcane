@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils.js';
+	import { cn } from '#lib/utils.js';
 	import { DropdownMenu as DropdownMenuPrimitive } from 'bits-ui';
 	import { getContext } from 'svelte';
 	import { dropdownMenuContextKey, type DropdownMenuContext } from './dropdown-menu-context';

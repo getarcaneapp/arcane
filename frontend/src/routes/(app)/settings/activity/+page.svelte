@@ -1,13 +1,13 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import settingsStore from '$lib/stores/config-store';
-	import { m } from '$lib/paraglide/messages';
-	import { SettingsPageLayout } from '$lib/layouts';
-	import { Label } from '$lib/components/ui/label';
-	import { ActivityIcon } from '$lib/icons';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import { createSettingsForm } from '$lib/utils/settings-form';
+	import settingsStore from '#lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import { SettingsPageLayout } from '#lib/layouts';
+	import { Label } from '#lib/components/ui/label';
+	import { ActivityIcon } from '#lib/icons';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import { createSettingsForm } from '#lib/utils/settings-form';
 
 	let { data } = $props();
 

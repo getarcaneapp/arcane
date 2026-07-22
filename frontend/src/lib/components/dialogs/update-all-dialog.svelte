@@ -1,20 +1,20 @@
 <script lang="ts">
-	import * as Dialog from '$lib/components/ui/dialog';
-	import * as ScrollArea from '$lib/components/ui/scroll-area';
-	import { Button } from '$lib/components/ui/button';
-	import Spinner from '$lib/components/ui/spinner/spinner.svelte';
-	import { cn } from '$lib/utils';
-	import { m } from '$lib/paraglide/messages';
+	import * as Dialog from '#lib/components/ui/dialog';
+	import * as ScrollArea from '#lib/components/ui/scroll-area';
+	import { Button } from '#lib/components/ui/button';
+	import Spinner from '#lib/components/ui/spinner/spinner.svelte';
+	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
 	import systemUpgradeService, {
 		type UpdateAllJob,
 		type UpdateAllEnvironmentStatus
-	} from '$lib/services/api/system-upgrade-service';
-	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '$lib/icons';
-	import BaseAPIService from '$lib/services/api-service';
-	import ReleaseNotes from '$lib/components/release-notes.svelte';
-	import type { AppVersionInformation } from '$lib/types/settings';
+	} from '#lib/services/api/system-upgrade-service';
+	import { SuccessIcon, ClockIcon, AlertIcon, AlertTriangleIcon, ExternalLinkIcon } from '#lib/icons';
+	import BaseAPIService from '#lib/services/api-service';
+	import ReleaseNotes from '#lib/components/release-notes.svelte';
+	import type { AppVersionInformation } from '#lib/types/settings';
 	import { formatDistanceToNow } from 'date-fns';
 	import VersionUpdateSummary from './version-update-summary.svelte';
 

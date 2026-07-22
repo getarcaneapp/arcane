@@ -1,19 +1,19 @@
 <script lang="ts">
-	import { UsersIcon } from '$lib/icons';
+	import { UsersIcon } from '#lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import UserTable from './user-table.svelte';
-	import UserFormSheet from '$lib/components/sheets/user-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { User } from '$lib/types/auth';
-	import type { CreateUser } from '$lib/types/auth';
-	import { m } from '$lib/paraglide/messages';
-	import { userService } from '$lib/services/user-service';
-	import { roleService } from '$lib/services/role-service';
-	import userStore from '$lib/stores/user-store';
+	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { User } from '#lib/types/auth';
+	import type { CreateUser } from '#lib/types/auth';
+	import { m } from '#lib/paraglide/messages';
+	import { userService } from '#lib/services/user-service';
+	import { roleService } from '#lib/services/role-service';
+	import userStore from '#lib/stores/user-store';
 	import { untrack } from 'svelte';
-	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
 
 	let { data } = $props();
 

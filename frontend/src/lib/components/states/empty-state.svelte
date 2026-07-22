@@ -1,7 +1,7 @@
 <script lang="ts">
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import type { IconType } from '$lib/icons';
+	import * as Empty from '#lib/components/ui/empty/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import type { IconType } from '#lib/icons';
 	import type { Snippet } from 'svelte';
 	import type { ClassValue } from 'svelte/elements';
 

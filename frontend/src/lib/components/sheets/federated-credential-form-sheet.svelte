@@ -1,18 +1,18 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Select from '$lib/components/ui/select';
-	import * as Alert from '$lib/components/ui/alert';
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import RoleScopeSelects from '$lib/components/sheets/role-scope-selects.svelte';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import { Label } from '$lib/components/ui/label';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '$lib/types/auth';
-	import type { Environment } from '$lib/types/environment';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Select from '#lib/components/ui/select';
+	import * as Alert from '#lib/components/ui/alert';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import RoleScopeSelects from '#lib/components/sheets/role-scope-selects.svelte';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import { Label } from '#lib/components/ui/label';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import type { CreateFederatedCredential, FederatedCredential, FederatedCredentialMatchType, Role } from '#lib/types/auth';
+	import type { Environment } from '#lib/types/environment';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import * as m from '$lib/paraglide/messages.js';
-	import { InfoIcon } from '$lib/icons';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import * as m from '#lib/paraglide/messages.js';
+	import { InfoIcon } from '#lib/icons';
 
 	type Props = {
 		open: boolean;

@@ -1,11 +1,11 @@
 <script lang="ts">
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 	import { tick } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import { InfoIcon, EditIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import { InfoIcon, EditIcon } from '#lib/icons';
 
 	let {
 		value = $bindable(),

@@ -1,9 +1,9 @@
 import { toast } from 'svelte-sonner';
-import { openConfirmDialog } from '$lib/components/confirm-dialog';
-import { markActivityToastShown } from '$lib/components/activity/activity-completion-toasts';
-import { runWithActivityBatchId } from '$lib/services/api-service';
-import { handleApiResultWithCallbacks, tryCatch, type Result } from '$lib/utils/api';
-import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+import { openConfirmDialog } from '#lib/components/confirm-dialog';
+import { markActivityToastShown } from '#lib/components/activity/activity-completion-toasts';
+import { runWithActivityBatchId } from '#lib/services/api-service';
+import { handleApiResultWithCallbacks, tryCatch, type Result } from '#lib/utils/api';
+import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 /**
  * Shared helpers for table bulk operations (start/stop/remove/prune/…). These

@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { Label } from '$lib/components/ui/label/index.js';
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '$lib/icons';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { AlertIcon, LockIcon, UserIcon, GithubIcon, OpenIdIcon } from '#lib/icons';
 	import { goto } from '$app/navigation';
-	import userStore from '$lib/stores/user-store';
-	import { m } from '$lib/paraglide/messages';
-	import { authService } from '$lib/services/auth-service';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { getApplicationLogo } from '$lib/utils/docker';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import userStore from '#lib/stores/user-store';
+	import { m } from '#lib/paraglide/messages';
+	import { authService } from '#lib/services/auth-service';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { getApplicationLogo } from '#lib/utils/docker';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { onMount } from 'svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 

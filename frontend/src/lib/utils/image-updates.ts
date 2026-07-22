@@ -1,5 +1,5 @@
-import type { ImageUpdateInfoDto } from '$lib/types/docker';
-import { formatDateTimeShort } from '$lib/utils/formatting';
+import type { ImageUpdateInfoDto } from '#lib/types/docker';
+import { formatDateTimeShort } from '#lib/utils/formatting';
 
 export function formatImageUpdateValue(updateInfo: ImageUpdateInfoDto | undefined, mode: 'current' | 'latest') {
 	if (!updateInfo) return '-';

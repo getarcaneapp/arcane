@@ -1,12 +1,12 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import { cn } from '$lib/utils';
-	import { m } from '$lib/paraglide/messages';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Collapsible from '$lib/components/ui/collapsible';
-	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '$lib/utils/ws';
-	import { diagnosticsService } from '$lib/services/diagnostics-service';
-	import type { Diagnostics, PprofProfile } from '$lib/types/diagnostics';
+	import { cn } from '#lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible';
+	import { createDiagnosticsWebSocket, ReconnectingWebSocket } from '#lib/utils/ws';
+	import { diagnosticsService } from '#lib/services/diagnostics-service';
+	import type { Diagnostics, PprofProfile } from '#lib/types/diagnostics';
 	import {
 		ActivityIcon,
 		CpuIcon,
@@ -16,10 +16,10 @@
 		RefreshIcon,
 		DownloadIcon,
 		ArrowDownIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import DiagnosticStat from './diagnostic-stat.svelte';
 	import DiagnosticLogPanel from './diagnostic-log-panel.svelte';
-	import { formatTime } from '$lib/utils/formatting';
+	import { formatTime } from '#lib/utils/formatting';
 
 	let {}: PageProps = $props();
 

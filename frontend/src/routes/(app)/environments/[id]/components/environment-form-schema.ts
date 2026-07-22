@@ -1,5 +1,5 @@
 import { z } from 'zod/v4';
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 
 export const environmentFormSchema = z
 	.object({

@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import ApiKeyTable from './api-key-table.svelte';
-	import ApiKeyFormSheet from '$lib/components/sheets/api-key-form-sheet.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '$lib/types/auth';
-	import { apiKeyService } from '$lib/services/api-key-service';
-	import { SettingsPageLayout, type SettingsActionButton } from '$lib/layouts/index.js';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Snippet } from '$lib/components/ui/snippet/index.js';
-	import * as m from '$lib/paraglide/messages.js';
+	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ApiKey, ApiKeyCreated, CreateApiKey } from '#lib/types/auth';
+	import { apiKeyService } from '#lib/services/api-key-service';
+	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Snippet } from '#lib/components/ui/snippet/index.js';
+	import * as m from '#lib/paraglide/messages.js';
 	import { untrack } from 'svelte';
-	import { ApiKeyIcon } from '$lib/icons';
+	import { ApiKeyIcon } from '#lib/icons';
 
 	let { data } = $props();
 

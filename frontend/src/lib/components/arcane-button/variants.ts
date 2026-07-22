@@ -1,6 +1,6 @@
 import { tv, type VariantProps } from 'tailwind-variants';
 
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 import {
 	StopIcon,
 	StartIcon,
@@ -29,7 +29,7 @@ import {
 	TagIcon,
 	ScanIcon,
 	ImagesIcon
-} from '$lib/icons';
+} from '#lib/icons';
 
 export const arcaneButtonVariants = tv({
 	base:

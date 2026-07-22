@@ -1,7 +1,7 @@
 import { get, writable } from 'svelte/store';
 import { z } from 'zod/v4';
-import type { ApplicationTheme } from '$lib/types/settings';
-import type { IconCatalog } from '$lib/types/settings';
+import type { ApplicationTheme } from '#lib/types/settings';
+import type { IconCatalog } from '#lib/types/settings';
 
 // --- Local vs environment settings classification ---
 

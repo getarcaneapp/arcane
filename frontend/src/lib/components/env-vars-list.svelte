@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { KeyValueCard, KeyValueGrid } from '$lib/components/resource-detail';
+	import { KeyValueCard, KeyValueGrid } from '#lib/components/resource-detail';
 
 	interface Props {
 		envVars: string[];

@@ -1,14 +1,14 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
-	import DigestCell from '$lib/components/arcane-table/cells/digest-cell.svelte';
-	import CheckedAtCell from '$lib/components/arcane-table/cells/checked-at-cell.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Project } from '$lib/types/swarm';
-	import type { ImageUpdateInfoDto } from '$lib/types/docker';
-	import { ProjectsIcon, ImagesIcon } from '$lib/icons';
-	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '$lib/utils/image-updates';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
+	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Project } from '#lib/types/swarm';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker';
+	import { ProjectsIcon, ImagesIcon } from '#lib/icons';
+	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
 
 	type ProjectUpdateRow = {
 		id: string;

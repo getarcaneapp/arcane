@@ -6,9 +6,9 @@ import type {
 	GitRepositoryTestResponse,
 	BranchesResponse,
 	BrowseResponse
-} from '$lib/types/automation';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '#lib/types/automation';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 class GitRepositoryService extends BaseAPIService {
 	async getRepositories(options?: SearchPaginationSortRequest): Promise<Paginated<GitRepository>> {

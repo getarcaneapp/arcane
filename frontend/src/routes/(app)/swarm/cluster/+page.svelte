@@ -1,28 +1,28 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { Textarea } from '$lib/components/ui/textarea/index.js';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { useEnvironmentRefresh } from '$lib/hooks/use-environment-refresh.svelte';
-	import { EyeOffIcon, EyeOnIcon, LockIcon, SettingsIcon, UsersIcon } from '$lib/icons';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
+	import * as Card from '#lib/components/ui/card';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Textarea } from '#lib/components/ui/textarea/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
+	import { EyeOffIcon, EyeOnIcon, LockIcon, SettingsIcon, UsersIcon } from '#lib/icons';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import type {
 		SwarmInfo,
 		SwarmInitRequest,
 		SwarmJoinRequest,
 		SwarmJoinTokensResponse,
 		SwarmUpdateRequest
-	} from '$lib/types/swarm';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	} from '#lib/types/swarm';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import { toast } from 'svelte-sonner';
 	import EasyJoinDialog from './easy-join-dialog.svelte';
 

@@ -1,12 +1,12 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import { m } from '$lib/paraglide/messages';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { getApplicationLogo } from '$lib/utils/docker';
-	import { accentColorPreviewStore } from '$lib/utils/theme';
-	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '$lib/icons';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import type { AppVersionInformation } from '#lib/types/settings';
+	import { m } from '#lib/paraglide/messages';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { getApplicationLogo } from '#lib/utils/docker';
+	import { accentColorPreviewStore } from '#lib/utils/theme';
+	import { ExternalLinkIcon, GithubIcon, BookOpenIcon } from '#lib/icons';
 
 	interface Props {
 		open: boolean;

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import { Progress } from '$lib/components/ui/progress/index.js';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { TerminalIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { TerminalIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	type LayerStats = {
 		total: number;

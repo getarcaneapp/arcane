@@ -1,15 +1,15 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
 	import { createQuery } from '@tanstack/svelte-query';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import UpdateCenterDialog from '$lib/components/dialogs/update-center-dialog.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { queryKeys } from '$lib/query/query-keys';
-	import systemUpgradeService from '$lib/services/api/system-upgrade-service';
-	import type { AppVersionInformation } from '$lib/types/settings';
-	import type { Environment } from '$lib/types/environment';
-	import { toastUpgradeError } from '$lib/utils/api';
-	import { DownloadIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { queryKeys } from '#lib/query/query-keys';
+	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
+	import type { AppVersionInformation } from '#lib/types/settings';
+	import type { Environment } from '#lib/types/environment';
+	import { toastUpgradeError } from '#lib/utils/api';
+	import { DownloadIcon } from '#lib/icons';
 
 	// open/upgrading have no $bindable fallback: they bind to per-environment
 	// record entries that start out undefined, and binding undefined to a

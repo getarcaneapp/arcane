@@ -1,25 +1,25 @@
 <script lang="ts">
 	import { createMutation, createQuery } from '@tanstack/svelte-query';
 	import { untrack } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { queryKeys } from '$lib/query/query-keys';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { TabBar, type TabItem } from '$lib/components/tab-bar';
-	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '$lib/layouts/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { queryKeys } from '#lib/query/query-keys';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
+	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import ContainerUpdatesTable from './container-updates-table.svelte';
 	import ProjectUpdatesTable from './project-updates-table.svelte';
-	import { imageService } from '$lib/services/image-service';
-	import { containerService, type ContainerListRequestOptions } from '$lib/services/container-service';
-	import { projectService } from '$lib/services/project-service';
-	import type { ContainersPaginatedResponse } from '$lib/services/container-service';
-	import type { ImageUpdateInfoDto } from '$lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Project } from '$lib/types/swarm';
-	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '$lib/icons';
+	import { imageService } from '#lib/services/image-service';
+	import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service';
+	import { projectService } from '#lib/services/project-service';
+	import type { ContainersPaginatedResponse } from '#lib/services/container-service';
+	import type { ImageUpdateInfoDto } from '#lib/types/docker';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Project } from '#lib/types/swarm';
+	import { ContainersIcon, ProjectsIcon, UpdateIcon } from '#lib/icons';
 	import { toast } from 'svelte-sonner';
-	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '$lib/utils/docker';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { ensureStandaloneContainerUpdatesFilter, ensureUpdatesFilter } from '#lib/utils/docker';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 

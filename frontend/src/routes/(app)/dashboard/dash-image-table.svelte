@@ -1,18 +1,18 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
-	import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-	import type { ImageSummaryDto } from '$lib/types/docker';
-	import { bytes } from '$lib/utils/formatting';
-	import type { ColumnSpec } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+	import type { ImageSummaryDto } from '#lib/types/docker';
+	import { bytes } from '#lib/utils/formatting';
+	import type { ColumnSpec } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
 	import DashTableCardHeader from './dash-table-card-header.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
 	import { goto } from '$app/navigation';
-	import { useResponsiveTableLimit } from '$lib/hooks/use-responsive-table-limit.svelte';
-	import { ImagesIcon } from '$lib/icons';
+	import { useResponsiveTableLimit } from '#lib/hooks/use-responsive-table-limit.svelte';
+	import { ImagesIcon } from '#lib/icons';
 
 	let {
 		images = $bindable(),

@@ -1,19 +1,19 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { Badge } from '#lib/components/ui/badge';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
 	import { formatDistanceToNow } from 'date-fns';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Event } from '$lib/types/shared';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import RelativeTimeCell from '$lib/components/arcane-table/cells/relative-time-cell.svelte';
-	import EventDetailPanel from '$lib/components/events/event-detail-panel.svelte';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Event } from '#lib/types/shared';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import RelativeTimeCell from '#lib/components/arcane-table/cells/relative-time-cell.svelte';
+	import EventDetailPanel from '#lib/components/events/event-detail-panel.svelte';
 	import {
 		eventSeverityIconVariant,
 		eventSeverityLabel,
@@ -21,12 +21,12 @@
 		eventTypeFilters,
 		eventTypeIcon,
 		eventTypeLabel
-	} from '$lib/components/events/events-labels';
-	import { m } from '$lib/paraglide/messages';
-	import { eventService } from '$lib/services/event-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '$lib/icons';
+	} from '#lib/components/events/events-labels';
+	import { m } from '#lib/paraglide/messages';
+	import { eventService } from '#lib/services/event-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { TrashIcon, NotificationsIcon, TagIcon, EnvironmentsIcon, UserIcon } from '#lib/icons';
 
 	let {
 		events = $bindable(),

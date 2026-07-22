@@ -1,12 +1,12 @@
 import { goto, refreshAll } from '$app/navigation';
 import BaseAPIService, { APIError } from './api-service';
-import userStore from '$lib/stores/user-store';
-import type { User } from '$lib/types/auth';
-import type { OidcStatusInfo } from '$lib/types/settings';
-import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '$lib/types/auth';
+import userStore from '#lib/stores/user-store';
+import type { User } from '#lib/types/auth';
+import type { OidcStatusInfo } from '#lib/types/settings';
+import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig } from '#lib/types/auth';
 import type { QueryClient } from '@tanstack/svelte-query';
-import { activityStore } from '$lib/stores/activity.store.svelte';
-import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
+import { activityStore } from '#lib/stores/activity.store.svelte';
+import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';

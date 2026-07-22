@@ -1,5 +1,5 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 import type {
 	VolumeSummaryDto,
 	VolumeDetailDto,
@@ -7,9 +7,9 @@ import type {
 	VolumeUsageCounts,
 	VolumeCreateRequest,
 	VolumeSizeInfo
-} from '$lib/types/docker';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+} from '#lib/types/docker';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 export type VolumesPaginatedResponse = Paginated<VolumeSummaryDto, VolumeUsageCounts>;
 

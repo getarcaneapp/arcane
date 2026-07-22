@@ -1,5 +1,5 @@
 <script lang="ts" module>
-	import type { BackupEntry, FileEntry } from '$lib/types/shared';
+	import type { BackupEntry, FileEntry } from '#lib/types/shared';
 
 	export interface FileProvider {
 		list: (path: string) => Promise<FileEntry[]>;
@@ -24,26 +24,26 @@
 </script>
 
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { onMount } from 'svelte';
 	import FileList from './FileList.svelte';
 	import FileBreadcrumb from './FileBreadcrumb.svelte';
-	import { UploadIcon, MoveToFolderIcon, InfoIcon } from '$lib/icons';
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	import { UploadIcon, MoveToFolderIcon, InfoIcon } from '#lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button';
 	import CreateFolderDialog from './CreateFolderDialog.svelte';
 	import FileUploadDialog from './FileUploadDialog.svelte';
 	import FilePreview from './FilePreview.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import * as Select from '$lib/components/ui/select';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Label } from '$lib/components/ui/label';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import * as Select from '#lib/components/ui/select';
+	import * as Alert from '#lib/components/ui/alert';
+	import { Label } from '#lib/components/ui/label';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { provider, rootLabel, persistKey }: { provider: FileProvider; rootLabel?: string; persistKey?: string } = $props();
 

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import type { IconType } from '$lib/icons';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import { cn } from '$lib/utils';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import type { IconType } from '#lib/icons';
+	import { Skeleton } from '#lib/components/ui/skeleton';
+	import { cn } from '#lib/utils';
 
 	interface Props {
 		icon: IconType;

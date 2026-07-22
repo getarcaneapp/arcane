@@ -1,10 +1,10 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { containerService } from '$lib/services/container-service';
-import { settingsService } from '$lib/services/settings-service';
-import { projectService } from '$lib/services/project-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { queryKeys } from '$lib/query/query-keys';
+import { containerService } from '#lib/services/container-service';
+import { settingsService } from '#lib/services/settings-service';
+import { projectService } from '#lib/services/project-service';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { queryKeys } from '#lib/query/query-keys';
 
 export const load: PageLoad = async ({ params, parent }) => {
 	const { queryClient } = await parent();

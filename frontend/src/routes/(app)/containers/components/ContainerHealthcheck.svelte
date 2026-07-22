@@ -1,11 +1,11 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { m } from '$lib/paraglide/messages';
-	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '$lib/types/docker';
-	import { HealthIcon, SettingsIcon, FileTextIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import { Badge } from '#lib/components/ui/badge';
+	import { m } from '#lib/paraglide/messages';
+	import type { ContainerDetailsDto, ContainerHealthLogEntry, ContainerHealthcheckDto } from '#lib/types/docker';
+	import { HealthIcon, SettingsIcon, FileTextIcon } from '#lib/icons';
 	import { formatDistanceToNow } from 'date-fns';
-	import { formatDateTime } from '$lib/utils/formatting';
+	import { formatDateTime } from '#lib/utils/formatting';
 
 	interface Props {
 		container: ContainerDetailsDto;

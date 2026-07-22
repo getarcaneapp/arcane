@@ -1,13 +1,13 @@
 <script lang="ts">
 	import type { Snippet } from 'svelte';
-	import { UiConfigDisabledTag } from '$lib/components/badges/index.js';
-	import StatCard from '$lib/components/stat-card.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
+	import { UiConfigDisabledTag } from '#lib/components/badges/index.js';
+	import StatCard from '#lib/components/stat-card.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { getContext } from 'svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { EllipsisIcon, ResetIcon, type IconType } from '$lib/icons';
-	import { cn } from '$lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { EllipsisIcon, ResetIcon, type IconType } from '#lib/icons';
+	import { cn } from '#lib/utils';
 	import type { SettingsActionButton, SettingsPageType, SettingsStatCard } from './types.js';
 
 	interface Props {

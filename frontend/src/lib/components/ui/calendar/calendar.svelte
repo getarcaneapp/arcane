@@ -14,7 +14,7 @@
 	import Month from './calendar-month.svelte';
 	import Nav from './calendar-nav.svelte';
 	import Caption from './calendar-caption.svelte';
-	import { cn, type WithoutChildrenOrChild } from '$lib/utils.js';
+	import { cn, type WithoutChildrenOrChild } from '#lib/utils.js';
 	import type { ButtonVariant } from '../button/button.svelte';
 	import { isEqualMonth, type DateValue } from '@internationalized/date';
 	import type { Snippet } from 'svelte';

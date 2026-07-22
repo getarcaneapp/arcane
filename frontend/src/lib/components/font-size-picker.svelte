@@ -1,13 +1,13 @@
 <script lang="ts">
-	import * as Slider from '$lib/components/ui/slider/index.js';
-	import userStore from '$lib/stores/user-store';
-	import { userService } from '$lib/services/user-service';
-	import { applyFontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_DEFAULT } from '$lib/utils/theme';
-	import { debounced } from '$lib/utils/ws';
-	import { queryKeys } from '$lib/query/query-keys';
+	import * as Slider from '#lib/components/ui/slider/index.js';
+	import userStore from '#lib/stores/user-store';
+	import { userService } from '#lib/services/user-service';
+	import { applyFontSize, FONT_SIZE_MIN, FONT_SIZE_MAX, FONT_SIZE_DEFAULT } from '#lib/utils/theme';
+	import { debounced } from '#lib/utils/ws';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { useQueryClient } from '@tanstack/svelte-query';
 	import { get } from 'svelte/store';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 
 	let { id = 'fontSizePicker', class: className = '' }: { id?: string; class?: string } = $props();
 

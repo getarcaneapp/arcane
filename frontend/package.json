@@ -1,9 +1,12 @@
 {
   "name": "arcane-frontend",
   "private": true,
-  "version": "2.5.0",
-  "type": "module",
-  "scripts": {
+	"version": "2.5.0",
+	"type": "module",
+	"imports": {
+		"#lib/*": "./src/lib/*"
+	},
+	"scripts": {
     "dev": "vite dev --port 3000 --host",
     "build": "vite build",
     "preview": "vite preview --port 3000",

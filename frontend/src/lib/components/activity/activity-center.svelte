@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
-	import ResponsiveDialog from '$lib/components/ui/responsive-dialog/responsive-dialog.svelte';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { Input } from '$lib/components/ui/input/index.js';
+	import ResponsiveDialog from '#lib/components/ui/responsive-dialog/responsive-dialog.svelte';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import ActivityListItem from './activity-list-item.svelte';
 	import ActivityBatchItem from './activity-batch-item.svelte';
 	import ActivityDetailPanel from './activity-detail-panel.svelte';
 	import ActivityFilterPopover from './activity-filter-popover.svelte';
-	import { activityStore } from '$lib/stores/activity.store.svelte';
-	import type { Activity, ActivityGroup } from '$lib/types/activity.type';
-	import { ActivityIcon, AlertTriangleIcon, CloseIcon, EllipsisIcon, RefreshIcon, SearchIcon, TrashIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import type { Activity, ActivityGroup } from '#lib/types/activity.type';
+	import { ActivityIcon, AlertTriangleIcon, CloseIcon, EllipsisIcon, RefreshIcon, SearchIcon, TrashIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityCompletionToastsEnabled } from './activity-completion-toasts';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	onMount(() => {
 		void activityStore.start();

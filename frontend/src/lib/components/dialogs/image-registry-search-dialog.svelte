@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import { imageService } from '$lib/services/image-service';
-	import { m } from '$lib/paraglide/messages';
-	import type { ImageSearchResultDto } from '$lib/types/docker';
-	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '$lib/icons';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as InputGroup from '#lib/components/ui/input-group/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import { imageService } from '#lib/services/image-service';
+	import { m } from '#lib/paraglide/messages';
+	import type { ImageSearchResultDto } from '#lib/types/docker';
+	import { SearchIcon, DownloadIcon, VerifiedCheckIcon } from '#lib/icons';
 	import { toast } from 'svelte-sonner';
 
 	type Props = {

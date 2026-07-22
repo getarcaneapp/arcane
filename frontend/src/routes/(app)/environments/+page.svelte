@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import NewEnvironmentSheet from '$lib/components/sheets/new-environment-sheet.svelte';
+	import NewEnvironmentSheet from '#lib/components/sheets/new-environment-sheet.svelte';
 	import EnvironmentTable from './environment-table.svelte';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service';
 	import { untrack } from 'svelte';
-	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { simpleRefresh } from '$lib/utils/api';
-	import { hasPermission } from '$lib/utils/auth';
-	import { DownloadIcon, UpdateIcon } from '$lib/icons';
-	import UpdateAllDialog from '$lib/components/dialogs/update-all-dialog.svelte';
+	import { ResourcePageLayout, type ActionButton } from '#lib/layouts/index.js';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { simpleRefresh } from '#lib/utils/api';
+	import { hasPermission } from '#lib/utils/auth';
+	import { DownloadIcon, UpdateIcon } from '#lib/icons';
+	import UpdateAllDialog from '#lib/components/dialogs/update-all-dialog.svelte';
 
 	let { data } = $props();
 

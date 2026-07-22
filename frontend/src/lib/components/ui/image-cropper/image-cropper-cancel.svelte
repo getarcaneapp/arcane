@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { useImageCropperCancel } from './image-cropper-state.svelte.js';
 	import ActionButton, { type ImageCropperActionButtonProps } from './image-cropper-action-button.svelte';
 

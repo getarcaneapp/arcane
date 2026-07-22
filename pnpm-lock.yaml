@@ -22,7 +22,7 @@ overrides:
   uuid: '>=11.1.1'
   fast-uri: '>=3.1.2'
   ws: '>=8.20.1'
-  '@sveltejs/kit': ^3.0.0-next.8
+  '@sveltejs/kit': ^3.0.0-next.11
   '@sveltejs/adapter-static': '>=4.0.0-next.1'
   dompurify: '>=3.4.11'
   ts-deepmerge: '>=8.0.0'
@@ -123,7 +123,7 @@ importers:
         specifier: ^1.2.3
         version: 1.2.3
       '@sveltejs/kit':
-        specifier: ^3.0.0-next.8
+        specifier: ^3.0.0-next.11
         version: 3.0.0-next.11(@sveltejs/vite-plugin-svelte@7.2.0(svelte@5.56.7)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)))(@typescript/typescript6@6.0.2)(svelte@5.56.7)(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
       '@tanstack/svelte-query':
         specifier: ^6.1.37
@@ -1078,11 +1078,6 @@ packages:
     peerDependencies:
       svelte: ^5.1.0
 
-  '@sveltejs/acorn-typescript@1.0.10':
-    resolution: {integrity: sha512-4WfKk68eTih+MiJD4fSbxN7E8kVBmTMPWHUPYjvl2N0rMs53YLTT8/YjKU5Dtnz5LqDjl7LEw4U7lXR2W3J5WA==}
-    peerDependencies:
-      acorn: ^8.9.0
-
   '@sveltejs/acorn-typescript@1.0.11':
     resolution: {integrity: sha512-LFuZUkjJ9iF7JZye/aG5XM0SFcQ5VyL0oVX4WJ9dc0Va3R3s0OauX1BESVCb+YN/ol8TAfqGDDAQsTG627Y5kw==}
     peerDependencies:
@@ -1091,7 +1086,7 @@ packages:
   '@sveltejs/adapter-static@4.0.0-next.1':
     resolution: {integrity: sha512-B8Go4HflODgz7wjwblL4KCg8nlIB5Twj0LZOTULai7ssfs/yKaPQxtQphwn5zrbo+k7gLL/ddf+Ak4BmsYYwmw==}
     peerDependencies:
-      '@sveltejs/kit': ^3.0.0-next.8
+      '@sveltejs/kit': ^3.0.0-next.11
 
   '@sveltejs/kit@3.0.0-next.11':
     resolution: {integrity: sha512-FkdeE/92YK4WvNaZ7tPRsZYp4eflxhuFKEbRfhFPWNBsPNqtLrJZWox0g6u3eUxGOZV5WDatk/6nQfzsocijHg==}
@@ -2292,7 +2287,7 @@ packages:
   runed@0.35.1:
     resolution: {integrity: sha512-2F4Q/FZzbeJTFdIS/PuOoPRSm92sA2LhzTnv6FXhCoENb3huf5+fDuNOg1LNvGOouy3u/225qxmuJvcV3IZK5Q==}
     peerDependencies:
-      '@sveltejs/kit': ^3.0.0-next.8
+      '@sveltejs/kit': ^3.0.0-next.11
       svelte: ^5.7.0
     peerDependenciesMeta:
       '@sveltejs/kit':
@@ -2301,7 +2296,7 @@ packages:
   runed@0.37.1:
     resolution: {integrity: sha512-MeFY73xBW8IueWBm012nNFIGy19WUGPLtknavyUPMpnyt350M47PhGSGrGoSLbidwn+Zlt/O0cp8/OZE3LASWA==}
     peerDependencies:
-      '@sveltejs/kit': ^3.0.0-next.8
+      '@sveltejs/kit': ^3.0.0-next.11
       svelte: ^5.7.0
       zod: ^4.1.0
     peerDependenciesMeta:
@@ -2435,7 +2430,7 @@ packages:
   sveltekit-superforms@2.30.2:
     resolution: {integrity: sha512-6sR70ZfjFMAfdNure/Bu26o1rY32+WGxebko1L8jUFS+qZw5fxIHBPkUaTpNBkOIlJZ/UJwoNCYCm5xK2Z7Kqw==}
     peerDependencies:
-      '@sveltejs/kit': ^3.0.0-next.8
+      '@sveltejs/kit': ^3.0.0-next.11
       svelte: 3.x || 4.x || >=5.0.0-next.51
 
   symbol-tree@3.2.4:
@@ -3407,10 +3402,6 @@ snapshots:
   '@svelte-put/shortcut@4.2.0(svelte@5.56.7)':
     dependencies:
       svelte: 5.56.7
-
-  '@sveltejs/acorn-typescript@1.0.10(acorn@8.17.0)':
-    dependencies:
-      acorn: 8.17.0
 
   '@sveltejs/acorn-typescript@1.0.11(acorn@8.17.0)':
     dependencies:
@@ -4738,14 +4729,14 @@ snapshots:
     dependencies:
       '@jridgewell/remapping': 2.3.5
       '@jridgewell/sourcemap-codec': 1.5.5
-      '@sveltejs/acorn-typescript': 1.0.10(acorn@8.17.0)
+      '@sveltejs/acorn-typescript': 1.0.11(acorn@8.17.0)
       '@types/estree': 1.0.9
       '@types/trusted-types': 2.0.7
       acorn: 8.17.0
       aria-query: 5.3.1
       axobject-query: 4.1.0
       clsx: 2.1.1
-      devalue: 5.8.1
+      devalue: 5.8.2
       esm-env: 1.2.2
       esrap: 2.2.13
       is-reference: 3.0.3
