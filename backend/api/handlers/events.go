@@ -16,7 +16,7 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/event"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // EventHandler handles event management endpoints.
@@ -79,7 +79,7 @@ type DeleteEventOutput struct {
 // direct agents when no edge tunnel is active. This route is not part of the
 // Huma/OpenAPI surface and authenticates only with the configured agent token.
 func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventService, cfg *config.Config) {
-	g.POST("/events", func(c echo.Context) error {
+	g.POST("/events", func(c *echo.Context) error {
 		if eventService == nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
 				Success: false,

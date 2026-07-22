@@ -6,8 +6,8 @@ import (
 	"strings"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
 )
 
 type CORSMiddleware struct {
@@ -24,7 +24,7 @@ func (m *CORSMiddleware) Add() echo.MiddlewareFunc {
 	// requests through the edge tunnel from the manager — never from browsers.
 	if m.cfg != nil && m.cfg.EdgeAgent {
 		return func(next echo.HandlerFunc) echo.HandlerFunc {
-			return func(c echo.Context) error { return next(c) }
+			return func(c *echo.Context) error { return next(c) }
 		}
 	}
 

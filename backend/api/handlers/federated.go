@@ -12,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // FederatedCredentialHandler provides Huma-based federated credential
@@ -75,7 +75,7 @@ type DeleteFederatedCredentialOutput struct {
 // endpoint. It intentionally uses Echo because the standard requires form
 // encoding while the rest of Arcane's Huma API is JSON-first.
 func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *services.FederatedCredentialService) {
-	g.POST("/auth/federated/token", func(c echo.Context) error {
+	g.POST("/auth/federated/token", func(c *echo.Context) error {
 		if federatedCredentialService == nil {
 			return c.JSON(http.StatusInternalServerError, federatedTokenExchangeError{
 				Error:            "server_error",
@@ -249,7 +249,7 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 	}, nil
 }
 
-func writeFederatedTokenExchangeErrorInternal(c echo.Context, err error) error {
+func writeFederatedTokenExchangeErrorInternal(c *echo.Context, err error) error {
 	var code string
 	description := "token exchange rejected"
 

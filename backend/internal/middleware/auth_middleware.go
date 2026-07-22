@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // Echo context keys, kept aligned with api/middleware/auth.go constants so
@@ -105,7 +105,7 @@ func (m *AuthMiddleware) WithAdminRequired() *AuthMiddleware {
 // AuthMiddleware (i.e., chain it AFTER auth).
 func RequirePermission(perm string) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			ps, _ := c.Get(echoCtxKeyUserPermissions).(*authz.PermissionSet)
 			envID := ""
 			if authz.IsEnvScoped(perm) {
@@ -124,7 +124,7 @@ func RequirePermission(perm string) echo.MiddlewareFunc {
 
 func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			reqCtx := c.Request().Context()
 			if m.cfg != nil && m.cfg.AgentMode {
 				return m.agentAuth(reqCtx, c, next)
@@ -134,7 +134,7 @@ func (m *AuthMiddleware) Add() echo.MiddlewareFunc {
 	}
 }
 
-func (m *AuthMiddleware) agentAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
+func (m *AuthMiddleware) agentAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc) error {
 	if isPreflightInternal(c) {
 		return next(c)
 	}
@@ -179,7 +179,7 @@ func agentTokenMatchesInternal(presented, configured string) bool {
 	return subtle.ConstantTimeCompare([]byte(presented), []byte(configured)) == 1
 }
 
-func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc) error {
+func (m *AuthMiddleware) managerAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc) error {
 	req := c.Request()
 	if agentToken := req.Header.Get(pkgutils.HeaderAgentToken); agentToken != "" {
 		if env, ok := m.resolveEnvironmentAccessToken(ctx, agentToken).Get(); ok {
@@ -217,7 +217,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 		}
 
 		if errors.Is(err, common.ErrSessionRevoked) || errors.Is(err, common.ErrTokenValidation) {
-			cookie.ClearTokenCookie(c.Response().Writer, req)
+			cookie.ClearTokenCookie(c.Response(), req)
 			return c.JSON(http.StatusUnauthorized, models.APIError{
 				Code:    models.APIErrorCodeUnauthorized,
 				Message: "Session expired. Please log in again.",
@@ -250,7 +250,7 @@ func (m *AuthMiddleware) managerAuth(ctx context.Context, c echo.Context, next e
 
 // apiKeyHeaderAuth authenticates an X-API-Key credential: a user-owned API key
 // first, then an environment access token presented through the same header.
-func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c echo.Context, next echo.HandlerFunc, apiKey string) error {
+func (m *AuthMiddleware) apiKeyHeaderAuth(ctx context.Context, c *echo.Context, next echo.HandlerFunc, apiKey string) error {
 	if m.apiKeyValidator != nil {
 		user, key, err := m.apiKeyValidator.ValidateApiKeyWithID(ctx, apiKey)
 		if err == nil && user != nil {
@@ -328,11 +328,11 @@ func (m *AuthMiddleware) resolveEnvironmentAccessToken(ctx context.Context, toke
 	return mo.Some(env)
 }
 
-func isPreflightInternal(c echo.Context) bool {
+func isPreflightInternal(c *echo.Context) bool {
 	return c.Request().Method == http.MethodOptions
 }
 
-func agentSudoInternal(c echo.Context) {
+func agentSudoInternal(c *echo.Context) {
 	agentUser := &models.User{
 		BaseModel: models.BaseModel{ID: "agent"},
 		Email:     new("agent@getarcane.app"),
@@ -344,7 +344,7 @@ func agentSudoInternal(c echo.Context) {
 	c.Set(echoCtxKeyAuthMethod, "agent_token")
 }
 
-func environmentScopedInternal(c echo.Context, env *models.Environment) {
+func environmentScopedInternal(c *echo.Context, env *models.Environment) {
 	envUser := &models.User{
 		BaseModel: models.BaseModel{ID: "environment:" + env.ID},
 		Username:  env.Name,
@@ -355,7 +355,7 @@ func environmentScopedInternal(c echo.Context, env *models.Environment) {
 	c.Set(echoCtxKeyAuthMethod, "environment_access_token")
 }
 
-func extractBearerOrCookieTokenInternal(c echo.Context) string {
+func extractBearerOrCookieTokenInternal(c *echo.Context) string {
 	req := c.Request()
 	authHeader := req.Header.Get("Authorization")
 	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {

@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"

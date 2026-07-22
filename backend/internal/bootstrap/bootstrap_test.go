@@ -17,7 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	libcrypto "go.getarcane.app/sys/crypto"
@@ -243,10 +243,10 @@ func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
 
 	handlerEntered := make(chan struct{})
 	router := echo.New()
-	router.GET("/stream", func(c echo.Context) error {
+	router.GET("/stream", func(c *echo.Context) error {
 		c.Response().Header().Set("Content-Type", "application/x-json-stream")
 		c.Response().WriteHeader(http.StatusOK)
-		c.Response().Flush()
+		c.Response().(http.Flusher).Flush()
 		close(handlerEntered)
 		<-c.Request().Context().Done()
 		return nil

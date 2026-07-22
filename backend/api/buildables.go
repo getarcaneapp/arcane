@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/user"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // SetupBuildablesRoutes registers buildable feature routes based on EnabledFeatures.
@@ -28,7 +28,7 @@ func SetupBuildablesRoutes(apiGroup *echo.Group, authService *services.AuthServi
 func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthService) {
 	authGroup := apiGroup.Group("/auth")
 
-	authGroup.GET("/auto-login-config", func(c echo.Context) error {
+	authGroup.GET("/auto-login-config", func(c *echo.Context) error {
 		if authService == nil {
 			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "service not available"})
 		}
@@ -44,7 +44,7 @@ func registerAutoLoginRoutes(apiGroup *echo.Group, authService *services.AuthSer
 		})
 	})
 
-	authGroup.POST("/auto-login", func(c echo.Context) error {
+	authGroup.POST("/auto-login", func(c *echo.Context) error {
 		if authService == nil {
 			return c.JSON(http.StatusInternalServerError, base.ErrorResponse{Error: "service not available"})
 		}

@@ -13,7 +13,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -188,7 +188,7 @@ func (r *PollRuntimeRegistry) Get(envID string, now time.Time) mo.Option[PollRun
 	return mo.Some(state)
 }
 
-func decodeTunnelPollRequestInternal(c echo.Context) (*TunnelPollRequest, error) {
+func decodeTunnelPollRequestInternal(c *echo.Context) (*TunnelPollRequest, error) {
 	if c == nil || c.Request() == nil || c.Request().Body == nil {
 		return &TunnelPollRequest{}, nil
 	}
@@ -234,7 +234,7 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 }
 
 // HandlePoll is the HTTP control-plane endpoint used by poll-mode agents.
-func (s *TunnelServer) HandlePoll(c echo.Context) error {
+func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 

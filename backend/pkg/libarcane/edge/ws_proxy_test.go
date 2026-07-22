@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -92,7 +92,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 
 	// Setup Manager
 	router := echo.New()
-	router.GET("/proxy-ws", func(c echo.Context) error {
+	router.GET("/proxy-ws", func(c *echo.Context) error {
 		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 
@@ -159,7 +159,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 	}()
 
 	router := echo.New()
-	router.GET("/proxy-ws", func(c echo.Context) error {
+	router.GET("/proxy-ws", func(c *echo.Context) error {
 		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
 	})
 	proxyServer := httptest.NewServer(router)

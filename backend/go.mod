@@ -18,7 +18,7 @@ require (
 	github.com/containerd/errdefs v1.0.0
 	github.com/containerd/platforms v1.0.0-rc.4
 	github.com/coreos/go-oidc/v3 v3.20.0
-	github.com/danielgtaylor/huma/v2 v2.38.0
+	github.com/danielgtaylor/huma/v2 v2.39.0
 	github.com/distribution/reference v0.6.0
 	github.com/docker/cli v29.6.2+incompatible
 	github.com/docker/compose/v5 v5.3.1
@@ -34,7 +34,7 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/compress v1.19.1
-	github.com/labstack/echo/v4 v4.15.4
+	github.com/labstack/echo/v5 v5.3.1
 	github.com/libtnb/sqlite v1.2.0
 	github.com/lmittmann/tint v1.2.0
 	github.com/moby/buildkit v0.31.2
@@ -48,7 +48,7 @@ require (
 	github.com/robfig/cron/v3 v3.0.1
 	github.com/samber/hot v0.13.0
 	github.com/samber/mo v1.17.0
-	github.com/samber/slog-echo v1.23.0
+	github.com/samber/slog-echo/v2 v2.0.0
 	github.com/shirou/gopsutil/v4 v4.26.6
 	github.com/spf13/cobra v1.10.2
 	github.com/stretchr/testify v1.11.1
@@ -154,6 +154,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
+	github.com/labstack/echo/v4 v4.15.4 // indirect
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect

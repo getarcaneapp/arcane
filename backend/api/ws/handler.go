@@ -16,7 +16,7 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
 	"github.com/shirou/gopsutil/v4/disk"
@@ -97,7 +97,7 @@ type wsLogStream struct {
 	seq             atomic.Uint64
 }
 
-func getContextUserIDInternal(c echo.Context) string {
+func getContextUserIDInternal(c *echo.Context) string {
 	if val := c.Get("userID"); val != nil {
 		if userID, ok := val.(string); ok {
 			return userID
@@ -106,7 +106,7 @@ func getContextUserIDInternal(c echo.Context) string {
 	return ""
 }
 
-func buildWSConnectionInfoInternal(c echo.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
+func buildWSConnectionInfoInternal(c *echo.Context, kind, resourceID string) systemtypes.WebSocketConnectionInfo {
 	return systemtypes.WebSocketConnectionInfo{
 		Kind:       kind,
 		EnvID:      c.Param("id"),
@@ -260,7 +260,7 @@ type logStreamParams struct {
 	batched    bool
 }
 
-func parseLogStreamParamsInternal(c echo.Context) logStreamParams {
+func parseLogStreamParamsInternal(c *echo.Context) logStreamParams {
 	req := c.Request()
 	tail, _ := httputil.GetQueryParam(req, "tail", false)
 	if tail == "" {
@@ -281,7 +281,7 @@ func parseLogStreamParamsInternal(c echo.Context) logStreamParams {
 	}
 }
 
-func queryParamWithDefaultInternal(c echo.Context, key, def string) string {
+func queryParamWithDefaultInternal(c *echo.Context, key, def string) string {
 	if v := c.QueryParam(key); v != "" {
 		return v
 	}
@@ -293,12 +293,12 @@ func queryParamWithDefaultInternal(c echo.Context, key, def string) string {
 // and serves the client. The caller-supplied hubBuilder constructs the underlying *wsLogStream
 // when no hub already exists for streamKey.
 func (h *WebSocketHandler) serveLogStreamInternal(
-	c echo.Context,
+	c *echo.Context,
 	kind, resourceID string,
 	params logStreamParams,
 	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
 ) {
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return
 	}
@@ -358,7 +358,7 @@ func broadcastLogStreamErrorInternal(resourceLabel, errorPrefix string, resource
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/projects/{projectId}/logs [get]
-func (h *WebSocketHandler) ProjectLogs(c echo.Context) error {
+func (h *WebSocketHandler) ProjectLogs(c *echo.Context) error {
 	projectID := c.Param("projectId")
 	if strings.TrimSpace(projectID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Project ID is required"})
@@ -566,7 +566,7 @@ func mapLogLinesInternal[T any](ctx context.Context, lines <-chan string, transf
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/logs [get]
-func (h *WebSocketHandler) ContainerLogs(c echo.Context) error {
+func (h *WebSocketHandler) ContainerLogs(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
@@ -606,7 +606,7 @@ func (h *WebSocketHandler) ContainerLogs(c echo.Context) error {
 //	@Param			format		query	string	false	"Output format (text or json)"	default(text)
 //	@Param			batched		query	bool	false	"Batch log messages"			default(false)
 //	@Router			/api/environments/{id}/ws/swarm/services/{serviceId}/logs [get]
-func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
+func (h *WebSocketHandler) ServiceLogs(c *echo.Context) error {
 	serviceID := c.Param("serviceId")
 	if strings.TrimSpace(serviceID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Service ID is required"})
@@ -636,13 +636,13 @@ func (h *WebSocketHandler) ServiceLogs(c echo.Context) error {
 //	@Param			id			path	string	true	"Environment ID"
 //	@Param			containerId	path	string	true	"Container ID"
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/stats [get]
-func (h *WebSocketHandler) ContainerStats(c echo.Context) error {
+func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
 		return nil
@@ -751,7 +751,7 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 //	@Param			containerId	path	string	true	"Container ID"
 //	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
-func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
+func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	containerID := c.Param("containerId")
 	if strings.TrimSpace(containerID) == "" {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
@@ -759,7 +759,7 @@ func (h *WebSocketHandler) ContainerExec(c echo.Context) error {
 
 	shell := queryParamWithDefaultInternal(c, "shell", "/bin/sh")
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return nil
 	}
@@ -1243,7 +1243,7 @@ func (h *WebSocketHandler) getCachedCgroupLimitsInternal() *cgroup.Limits {
 //	@Tags			WebSocket
 //	@Param			id	path	string	true	"Environment ID"
 //	@Router			/api/environments/{id}/ws/system/stats [get]
-func (h *WebSocketHandler) SystemStats(c echo.Context) error {
+func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	clientIP := c.RealIP()
 
 	count, allowed := h.checkRateLimitInternal(clientIP)
@@ -1255,7 +1255,7 @@ func (h *WebSocketHandler) SystemStats(c echo.Context) error {
 	}
 	defer h.releaseRateLimitInternal(clientIP, count)
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return nil
 	}

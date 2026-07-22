@@ -10,9 +10,9 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/labstack/echo/v4"
-	echomiddleware "github.com/labstack/echo/v4/middleware"
-	slogecho "github.com/samber/slog-echo"
+	"github.com/labstack/echo/v5"
+	echomiddleware "github.com/labstack/echo/v5/middleware"
+	slogecho "github.com/samber/slog-echo/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
@@ -49,7 +49,7 @@ var loggerSkipPatterns = []string{
 	"GET /api/app-images/*",
 }
 
-func shouldLogRequestInternal(c echo.Context) bool {
+func shouldLogRequestInternal(c *echo.Context, _ error) bool {
 	mp := c.Request().Method + " " + c.Request().URL.Path
 	for _, pat := range loggerSkipPatterns {
 		if pat == mp {
@@ -81,7 +81,7 @@ func requestLoggerMiddlewareInternal() echo.MiddlewareFunc {
 	})
 
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			if edge.IsInternalTunnelRequest(c.Request().Context()) {
 				return next(c)
 			}
@@ -110,7 +110,7 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 		return ps
 	}
-	return func(ctx context.Context, c echo.Context) (*authz.PermissionSet, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
@@ -165,8 +165,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	deps := p.HandlerDeps
 
 	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
 
 	trustedProxyNets := parseTrustedProxyCIDRsInternal(cfg.TrustedProxies)
 	if cfg.TrustedProxies != "" && len(trustedProxyNets) == 0 {
@@ -262,6 +260,20 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		}
 	}
 
+	// Unknown API endpoints respond with JSON 404. This must be registered
+	// after every apiGroup.Use call: each Use re-registers the group's
+	// auto-404 routes, which would overwrite these. Without an explicit
+	// handler those auto-404 routes return echo v5's unexported sentinel
+	// error, which slog-echo rewrites into a 500.
+	apiNotFound := func(c *echo.Context) error {
+		return c.JSON(http.StatusNotFound, map[string]any{
+			"success": false,
+			"error":   "API endpoint not found: " + c.Request().URL.Path,
+		})
+	}
+	apiGroup.RouteNotFound("", apiNotFound)
+	apiGroup.RouteNotFound("/*", apiNotFound)
+
 	if err := frontend.RegisterFrontend(e); err != nil {
 		if errors.Is(err, frontend.ErrFrontendNotIncluded) {
 			slog.Debug("Frontend not included in this build; skipping frontend registration")
@@ -302,7 +314,7 @@ func parseTrustedProxyCIDRsInternal(raw string) []*net.IPNet {
 // __Host- cookies over plain HTTP.
 func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			req := c.Request()
 			secure := req.TLS != nil
 			if !secure && len(trustedProxyNets) > 0 &&

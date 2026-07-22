@@ -15,7 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 )
 
@@ -305,7 +305,7 @@ const scalarDocsHTML = `<!doctype html>
 
 // registerScalarDocs adds the Scalar API documentation endpoint.
 func registerScalarDocs(apiGroup *echo.Group) {
-	apiGroup.GET("/docs", func(c echo.Context) error {
+	apiGroup.GET("/docs", func(c *echo.Context) error {
 		return c.HTML(http.StatusOK, scalarDocsHTML)
 	})
 }
@@ -314,8 +314,6 @@ func registerScalarDocs(apiGroup *echo.Group) {
 // No services are required - this is purely for schema generation.
 func SetupAPIForSpec() huma.API {
 	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
 	apiGroup := e.Group("/api")
 
 	humaConfig := huma.DefaultConfig("Arcane API", config.Version)
