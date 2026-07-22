@@ -114,8 +114,8 @@ importers:
         specifier: ^5.2.8
         version: 5.2.8
       '@fontsource-variable/montserrat':
-        specifier: ^5.2.8
-        version: 5.2.8
+        specifier: ^5.3.0
+        version: 5.3.0
       '@internationalized/date':
         specifier: ^3.12.2
         version: 3.12.2
@@ -678,8 +678,8 @@ packages:
   '@fontsource-variable/geist-mono@5.2.8':
     resolution: {integrity: sha512-KI5bj+hkkRiHttYHmccotUZ80ZuZyai+RwI1d7UId0clkx/jXxlo8qYK8j54WzmpBjtMoEMPyllV7faDcj+6RA==}
 
-  '@fontsource-variable/montserrat@5.2.8':
-    resolution: {integrity: sha512-d8wykq7GCKhEOlLwEuQIOK3w3qsXNxwDlH0meru4AZZzQ4/+rZyvHWKL6BBtHdmbovSHEEQDkwkD8qYUKlcFtQ==}
+  '@fontsource-variable/montserrat@5.3.0':
+    resolution: {integrity: sha512-7PaZoxaxrWLAyrhO46v65An9LhUhfkTExWLhfbywYZCnZEgg/W1rEHnlNmZKjNZ3nJTVYyicqxlJt10z/26yTA==}
 
   '@hapi/address@5.1.1':
     resolution: {integrity: sha512-A+po2d/dVoY7cYajycYI43ZbYMXukuopIsqCjh5QzsBCipDtdofHntljDlpccMjIfTy6UOkg+5KPriwYch2bXA==}
@@ -3095,7 +3095,7 @@ snapshots:
 
   '@fontsource-variable/geist-mono@5.2.8': {}
 
-  '@fontsource-variable/montserrat@5.2.8': {}
+  '@fontsource-variable/montserrat@5.3.0': {}
 
   '@hapi/address@5.1.1':
     dependencies:
