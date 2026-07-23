@@ -5,6 +5,7 @@ run:
 linters:
   default: none
   enable:
+    - shimbad
     - arangolint
     - asasalint
     - asciicheck
@@ -88,6 +89,11 @@ linters:
     - whitespace
     - zerologlint
   settings:
+    custom:
+      shimbad:
+        type: module
+        description: Detects suspicious Go function implementations.
+        original-url: https://go.ofkm.dev/shimbad
     forbidigo:
       forbid:
         - pattern: ^errors\.(Wrap|Wrapf|WithStack)$
@@ -130,6 +136,9 @@ linters:
       - third_party$
       - builtin$
       - examples$
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
 formatters:
   enable:
     - gofmt

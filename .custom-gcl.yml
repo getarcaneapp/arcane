@@ -1,0 +1,7 @@
+version: v2.12.2
+name: golangci-lint-custom
+destination: ./.bin
+
+plugins:
+  - module: go.ofkm.dev/shimbad
+    version: v0.1.1
