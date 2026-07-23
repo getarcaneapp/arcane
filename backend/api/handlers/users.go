@@ -9,6 +9,7 @@ import (
 
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -81,6 +82,18 @@ type GetUserAvatarOutput struct {
 	CacheControl        string `header:"Cache-Control"`
 	XContentTypeOptions string `header:"X-Content-Type-Options"`
 	Body                []byte
+}
+
+type GetMyPreferencesOutput struct {
+	Body base.ApiResponse[user.Preferences]
+}
+
+type UpdateMyPreferencesInput struct {
+	Body user.Preferences
+}
+
+type UpdateMyPreferencesOutput struct {
+	Body base.ApiResponse[base.MessageResponse]
 }
 
 // ============================================================================
@@ -157,11 +170,84 @@ func RegisterUsers(api huma.API, userService *services.UserService, authService 
 		Tags:        []string{"Users"},
 		Security:    []map[string][]string{},
 	}, h.GetUserAvatar)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "getMyPreferences",
+		Method:      "GET",
+		Path:        "/auth/me/prefs",
+		Summary:     "Get preferences",
+		Description: "Get the current user's saved preferences",
+		Tags:        []string{"Users"},
+		Security:    defaultOperationSecurityInternal(),
+	}, h.GetMyPreferences)
+
+	huma.Register(api, huma.Operation{
+		OperationID: "updateMyPreferences",
+		Method:      "PATCH",
+		Path:        "/auth/me/prefs",
+		Summary:     "Update preferences",
+		Description: "Partially update the current user's saved preferences",
+		Tags:        []string{"Users"},
+		Security:    defaultOperationSecurityInternal(),
+	}, h.UpdateMyPreferences)
 }
 
 // ============================================================================
 // Handler Methods
 // ============================================================================
+
+func (h *UserHandler) GetMyPreferences(ctx context.Context, _ *struct{}) (*GetMyPreferencesOutput, error) {
+	currentUser, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("User service is unavailable")
+	}
+
+	prefs, err := h.userService.GetPreferences(ctx, currentUser.ID)
+	if err != nil {
+		if errors.Is(err, services.ErrUserNotFound) {
+			return nil, huma.Error404NotFound("User not found")
+		}
+		return nil, huma.Error500InternalServerError("Failed to get preferences")
+	}
+
+	return &GetMyPreferencesOutput{
+		Body: base.ApiResponse[user.Preferences]{
+			Success: true,
+			Data:    prefs,
+		},
+	}, nil
+}
+
+func (h *UserHandler) UpdateMyPreferences(ctx context.Context, input *UpdateMyPreferencesInput) (*UpdateMyPreferencesOutput, error) {
+	currentUser, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if h.userService == nil {
+		return nil, huma.Error500InternalServerError("User service is unavailable")
+	}
+
+	if err := h.userService.UpdatePreferences(ctx, currentUser.ID, input.Body); err != nil {
+		switch {
+		case errors.Is(err, common.ErrValidation):
+			return nil, huma.Error400BadRequest(err.Error())
+		case errors.Is(err, services.ErrUserNotFound):
+			return nil, huma.Error404NotFound("User not found")
+		default:
+			return nil, huma.Error500InternalServerError("Failed to update preferences")
+		}
+	}
+
+	return &UpdateMyPreferencesOutput{
+		Body: base.ApiResponse[base.MessageResponse]{
+			Success: true,
+			Data:    base.MessageResponse{Message: "Preferences updated"},
+		},
+	}, nil
+}
 
 // ListUsers returns a paginated list of users.
 func (h *UserHandler) ListUsers(ctx context.Context, input *ListUsersInput) (*ListUsersOutput, error) {

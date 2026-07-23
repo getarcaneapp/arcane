@@ -10,7 +10,7 @@ export const load: PageLoad = async ({ params, parent }) => {
 
 	const environmentId = params.id;
 
-	const syncRequestOptions = resolveInitialTableRequest('arcane-gitops-syncs-table', {
+	const syncRequestOptions = await resolveInitialTableRequest('arcane-gitops-syncs-table', {
 		pagination: {
 			page: 1,
 			limit: 20

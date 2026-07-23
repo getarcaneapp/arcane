@@ -12,12 +12,11 @@
 	import { debounced } from '#lib/utils/ws';
 	import { hasPermission } from '#lib/utils/auth';
 	import { m } from '#lib/paraglide/messages';
-	import { PersistedState } from 'runed';
-	import { onMount, untrack } from 'svelte';
-	import type { CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte';
+	import { untrack } from 'svelte';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Template } from '#lib/types/swarm';
 	import { SearchIcon, TemplateIcon } from '#lib/icons';
+	import { tablePreferences } from '#lib/stores/table-preferences.store.svelte';
 
 	let {
 		templates = $bindable(),
@@ -32,8 +31,6 @@
 	let searchValue = $state(untrack(() => requestOptions.search ?? ''));
 	let typeFilter = $state(untrack(() => (requestOptions.filters?.['type'] as string) ?? 'all'));
 
-	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
-
 	const currentPage = $derived(templates.pagination?.currentPage ?? requestOptions.pagination?.page ?? 1);
 	const totalPages = $derived(templates.pagination?.totalPages ?? 1);
 	const totalItems = $derived(templates.pagination?.totalItems ?? 0);
@@ -42,14 +39,6 @@
 	const canCreateTemplate = $derived(hasPermission('templates:create'));
 
 	const typeFilterLabel = $derived(templateTypeFilters.find((f) => f.value === typeFilter)?.label ?? m.common_all());
-
-	onMount(() => {
-		prefs = new PersistedState<CompactTablePrefs>(
-			'arcane-template-gallery',
-			{ v: [], f: [], g: '', l: pageSize },
-			{ syncTabs: false }
-		);
-	});
 
 	async function refetch() {
 		templates = await templateService.getTemplates(requestOptions);
@@ -62,7 +51,7 @@
 			search: search || undefined,
 			pagination: { page: 1, limit: pageSize }
 		};
-		if (prefs) prefs.current = { ...prefs.current, g: search };
+		tablePreferences.update('arcane-template-gallery', { g: search });
 		refetch();
 	}
 
@@ -81,7 +70,7 @@
 			filters,
 			pagination: { page: 1, limit: pageSize }
 		};
-		if (prefs) prefs.current = { ...prefs.current, f: value === 'all' ? [] : [['type', value]] };
+		tablePreferences.update('arcane-template-gallery', { f: value === 'all' ? [] : [['type', value]] });
 		refetch();
 	}
 
@@ -93,7 +82,7 @@
 	}
 
 	function setPageSize(limit: number) {
-		if (prefs) prefs.current = { ...prefs.current, l: limit };
+		tablePreferences.update('arcane-template-gallery', { l: limit });
 		requestOptions = { ...requestOptions, pagination: { page: 1, limit } };
 		refetch();
 	}

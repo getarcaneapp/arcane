@@ -15,6 +15,7 @@ import { authService } from '#lib/services/auth-service';
 import { tryCatch } from '#lib/utils/api';
 import { QueryClient } from '@tanstack/svelte-query';
 import { queryKeys } from '#lib/query/query-keys';
+import { tablePreferences } from '#lib/stores/table-preferences.store.svelte';
 
 export const ssr = false;
 
@@ -61,6 +62,7 @@ export const load = async () => {
 
 	const nextAuthenticatedUserId = user?.id ?? null;
 	if (authenticatedUserId !== undefined && authenticatedUserId !== nextAuthenticatedUserId) {
+		tablePreferences.reset();
 		authService.resetAuthenticatedState(queryClient, { restartMountedStores: user !== null });
 	}
 	authenticatedUserId = nextAuthenticatedUserId;
@@ -90,13 +92,15 @@ export const load = async () => {
 		const [loadedSettings, loadedSwarmStatus, loadedPermissionsManifest] = await Promise.all([
 			settingsService.getSettings().catch(() => null),
 			swarmService.getSwarmStatus().catch(() => null),
-			permissionsManifestRequest
+			permissionsManifestRequest,
+			tablePreferences.ready()
 		]);
 		settings = loadedSettings;
 		swarmEnabled = loadedSwarmStatus?.enabled === true;
 		permissionsManifest = loadedPermissionsManifest;
 		permissionsManifestLoadFailed = loadedPermissionsManifest === null;
 	} else {
+		tablePreferences.reset();
 		// Initialize empty environment store for unauthenticated users
 		await environmentStore.initialize([]);
 

@@ -65,8 +65,11 @@ function buildContainersResponse(containers: MockContainer[], start: number, lim
 }
 
 test('grouped containers do not split the same project across pages', async ({ page, context }) => {
+	const response = await page.request.patch('/api/auth/me/prefs', {
+		data: { tables: { 'arcane-container-table': null } }
+	});
+	expect(response.ok(), `Failed to clear container preferences: ${response.status()}`).toBeTruthy();
 	await page.addInitScript(() => {
-		localStorage.removeItem('arcane-container-table');
 		localStorage.setItem('container-groups-collapsed', JSON.stringify({ immich: false }));
 		localStorage.removeItem('collapsible-cards-expanded');
 	});

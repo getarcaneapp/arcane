@@ -79,9 +79,12 @@ function containerDetails(id: string, name: string) {
 }
 
 async function mockEnvironmentCatalog(page: Page) {
+	const response = await page.request.patch('/api/auth/me/prefs', {
+		data: { tables: { 'arcane-container-table': null } }
+	});
+	expect(response.ok(), `Failed to clear container preferences: ${response.status()}`).toBeTruthy();
 	await page.addInitScript(() => {
 		localStorage.removeItem('selectedEnvironmentId');
-		localStorage.removeItem('arcane-container-table');
 	});
 	await page.context().route(/\/api\/environments(?:\?.*)?$/, async (route) => {
 		await route.fulfill({

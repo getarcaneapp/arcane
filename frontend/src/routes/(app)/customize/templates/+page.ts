@@ -14,7 +14,7 @@ export const load: PageLoad = async ({
 }> => {
 	const { queryClient } = await parent();
 
-	const templateRequestOptions = resolveInitialTableRequest('arcane-template-gallery', {
+	const templateRequestOptions = await resolveInitialTableRequest('arcane-template-gallery', {
 		pagination: { page: 1, limit: 20 },
 		sort: { column: 'name', direction: 'asc' }
 	} satisfies SearchPaginationSortRequest);

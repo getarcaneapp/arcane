@@ -3,7 +3,7 @@ import { resolveInitialListPageRequest } from '#lib/utils/tables';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async () => {
-	const requestOptions = resolveInitialListPageRequest('arcane-swarm-services-table', {
+	const requestOptions = await resolveInitialListPageRequest('arcane-swarm-services-table', {
 		column: 'name',
 		direction: 'asc'
 	});

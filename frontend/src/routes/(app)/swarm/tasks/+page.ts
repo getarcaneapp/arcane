@@ -6,7 +6,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ url }) => {
 	const searchParam = url.searchParams.get('search') || '';
 	const nodeId = url.searchParams.get('nodeId') || '';
-	const requestOptions = resolveInitialTableRequest('arcane-swarm-tasks-table', {
+	const requestOptions = await resolveInitialTableRequest('arcane-swarm-tasks-table', {
 		pagination: {
 			page: 1,
 			limit: 20

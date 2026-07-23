@@ -11,7 +11,7 @@ export const load: PageLoad = async ({ parent, url }) => {
 	const envId = await environmentStore.getCurrentEnvironmentId();
 	const showArchived = url.searchParams.get('archived') === 'true';
 
-	const projectRequestOptions = resolveInitialTableRequest('arcane-project-table', {
+	const projectRequestOptions = await resolveInitialTableRequest('arcane-project-table', {
 		pagination: {
 			page: 1,
 			limit: 20

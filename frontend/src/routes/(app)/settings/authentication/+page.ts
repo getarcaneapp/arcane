@@ -10,7 +10,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const parentData = await parent();
 	const { queryClient } = parentData;
-	const federatedCredentialRequestOptions = resolveInitialTableRequest('arcane-federated-credentials-table', {
+	const federatedCredentialRequestOptions = await resolveInitialTableRequest('arcane-federated-credentials-table', {
 		pagination: {
 			page: 1,
 			limit: 20

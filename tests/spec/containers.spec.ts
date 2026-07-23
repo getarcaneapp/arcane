@@ -165,9 +165,13 @@ test.describe('Containers Page network IP addresses', () => {
 		page,
 		context
 	}) => {
-		await page.addInitScript(() => {
-			localStorage.removeItem('arcane-container-table');
+		const response = await page.request.patch('/api/auth/me/prefs', {
+			data: { tables: { 'arcane-container-table': null } }
 		});
+		expect(
+			response.ok(),
+			`Failed to clear container preferences: ${response.status()}`
+		).toBeTruthy();
 
 		await context.route('**/api/environments/*/containers**', async (route) => {
 			if (route.request().method() !== 'GET') {

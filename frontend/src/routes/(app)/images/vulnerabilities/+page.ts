@@ -11,7 +11,7 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
-	const vulnerabilityRequestOptions = resolveInitialTableRequest('arcane-security-vuln-table', {
+	const vulnerabilityRequestOptions = await resolveInitialTableRequest('arcane-security-vuln-table', {
 		pagination: {
 			page: 1,
 			limit: 20

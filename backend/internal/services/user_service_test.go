@@ -2,8 +2,10 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -184,4 +186,78 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 			require.Equal(t, timeFormat, dto.TimeFormat)
 		})
 	}
+}
+
+func TestUserTablePreferences(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := context.Background()
+	firstUser := createTestUser(t, userSvc, "user-1", "first-user")
+	secondUser := createTestUser(t, userSvc, "user-2", "second-user")
+	volumeSearch := "volume search"
+	volumeSort := user.TableSortPreference{"name", "asc"}
+
+	require.NoError(t, userSvc.UpdatePreferences(ctx, firstUser.ID, user.Preferences{
+		Tables: user.TablePreferences{
+			"arcane-volumes-table": {
+				GlobalSearch: &volumeSearch,
+				Sort:         &volumeSort,
+			},
+		},
+	}))
+
+	prefs, err := userSvc.GetPreferences(ctx, firstUser.ID)
+	require.NoError(t, err)
+	require.Contains(t, prefs.Tables, "arcane-volumes-table")
+
+	imageSearch := "alpine"
+	pageSize := 50
+	require.NoError(t, userSvc.UpdatePreferences(ctx, firstUser.ID, user.Preferences{
+		Tables: user.TablePreferences{
+			"arcane-volumes-table": {PageSize: &pageSize},
+			"arcane-images-table":  {GlobalSearch: &imageSearch},
+		},
+	}))
+	otherUserSearch := "other user"
+	require.NoError(t, userSvc.UpdatePreferences(ctx, secondUser.ID, user.Preferences{
+		Tables: user.TablePreferences{
+			"arcane-volumes-table": {GlobalSearch: &otherUserSearch},
+		},
+	}))
+
+	prefs, err = userSvc.GetPreferences(ctx, firstUser.ID)
+	require.NoError(t, err)
+	volumePrefs := prefs.Tables["arcane-volumes-table"]
+	require.NotNil(t, volumePrefs)
+	require.Nil(t, volumePrefs.GlobalSearch)
+	require.Equal(t, 50, *volumePrefs.PageSize)
+	require.Contains(t, prefs.Tables, "arcane-images-table")
+
+	updatedDisplayName := "Updated user"
+	firstUser.DisplayName = &updatedDisplayName
+	_, err = userSvc.UpdateUser(ctx, firstUser)
+	require.NoError(t, err)
+	prefs, err = userSvc.GetPreferences(ctx, firstUser.ID)
+	require.NoError(t, err)
+	require.Contains(t, prefs.Tables, "arcane-volumes-table")
+	require.Contains(t, prefs.Tables, "arcane-images-table")
+
+	require.NoError(t, userSvc.UpdatePreferences(ctx, firstUser.ID, user.Preferences{
+		Tables: user.TablePreferences{"arcane-volumes-table": nil},
+	}))
+	prefs, err = userSvc.GetPreferences(ctx, firstUser.ID)
+	require.NoError(t, err)
+	require.NotContains(t, prefs.Tables, "arcane-volumes-table")
+	require.Contains(t, prefs.Tables, "arcane-images-table")
+
+	secondUserPrefs, err := userSvc.GetPreferences(ctx, secondUser.ID)
+	require.NoError(t, err)
+	require.Contains(t, secondUserPrefs.Tables, "arcane-volumes-table")
+
+	oversizedSearch := strings.Repeat("x", tablePreferenceValueMaxBytes)
+	err = userSvc.UpdatePreferences(ctx, firstUser.ID, user.Preferences{
+		Tables: user.TablePreferences{
+			"arcane-too-large-table": {GlobalSearch: &oversizedSearch},
+		},
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
 }

@@ -9,9 +9,7 @@
 	import type { ColumnSpec } from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
 	import { m } from '#lib/paraglide/messages';
-	import { PersistedState } from 'runed';
 	import {
-		type CompactTablePrefs,
 		type FieldSpec,
 		type GroupedData,
 		type GroupSelectionState,
@@ -31,6 +29,7 @@
 	import ArcaneTableCell from './arcane-table-cell.svelte';
 	import ArcaneTableDesktopView from './arcane-table-desktop-view.svelte';
 	import ArcaneTableMobileView from './arcane-table-mobile-view.svelte';
+	import { tablePreferences } from '#lib/stores/table-preferences.store.svelte';
 
 	let {
 		items,
@@ -122,7 +121,6 @@
 
 	const enablePersist = $derived(!!persistKey);
 	const getEffectiveLimit = () => requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? DEFAULT_LIMIT;
-	let prefs = $state<PersistedState<CompactTablePrefs> | null>(null);
 
 	// Expandable row state
 	let expandedRows = $state<Set<string>>(new Set());
@@ -151,100 +149,102 @@
 	const canNext = $derived(currentPage < totalPages);
 
 	onMount(() => {
-		// Initialize prefs first
-		if (persistKey && !prefs) {
-			prefs = new PersistedState<CompactTablePrefs>(
-				persistKey,
-				{ v: [], f: [], g: '', l: getEffectiveLimit() },
-				{ syncTabs: false }
-			);
-		}
-
-		// Then restore preferences
-		if (!enablePersist) {
+		if (!enablePersist || !persistKey) {
 			preferencesReady = true;
 			return;
 		}
-		const snapshot = extractPersistedPreferences(prefs?.current, getEffectiveLimit());
 
-		const patchedVisibility = { ...columnVisibility };
-		applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
-		columnVisibility = patchedVisibility;
+		let cancelled = false;
+		const preferenceKey = persistKey;
+		void (async () => {
+			await tablePreferences.ready();
+			if (cancelled) return;
 
-		let shouldRefresh = false;
-		const { restoredFilters, filtersMap } = snapshot;
-		if (restoredFilters.length) {
-			columnFilters = restoredFilters;
-		}
-		if (Object.keys(filtersMap).length > 0) {
-			if (!filterMapsEqual(filtersMap, requestOptions?.filters)) {
+			const snapshot = extractPersistedPreferences(tablePreferences.get(preferenceKey), getEffectiveLimit());
+
+			const patchedVisibility = { ...columnVisibility };
+			applyHiddenPatch(patchedVisibility, snapshot.hiddenColumns);
+			columnVisibility = patchedVisibility;
+
+			let shouldRefresh = false;
+			const { restoredFilters, filtersMap } = snapshot;
+			if (restoredFilters.length) {
+				columnFilters = restoredFilters;
+			}
+			if (Object.keys(filtersMap).length > 0) {
+				if (!filterMapsEqual(filtersMap, requestOptions?.filters)) {
+					requestOptions = {
+						...requestOptions,
+						filters: filtersMap,
+						pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
+					};
+					shouldRefresh = true;
+				}
+			} else if (requestOptions?.filters && Object.keys(requestOptions.filters).length > 0) {
 				requestOptions = {
 					...requestOptions,
-					filters: filtersMap,
+					filters: undefined,
 					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
-		} else if (requestOptions?.filters && Object.keys(requestOptions.filters).length > 0) {
-			requestOptions = {
-				...requestOptions,
-				filters: undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-			};
-			shouldRefresh = true;
-		}
 
-		const persistedSearch = snapshot.search;
-		const currentSearch = (requestOptions?.search ?? '').trim();
-		// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
-		const effectiveSearch = currentSearch || persistedSearch;
-		if (effectiveSearch !== globalFilter) {
-			globalFilter = effectiveSearch;
-		}
-		if (effectiveSearch !== currentSearch) {
-			requestOptions = {
-				...requestOptions,
-				search: effectiveSearch || undefined,
-				pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
-			};
-			shouldRefresh = true;
-		}
-
-		const persistedLimit = snapshot.limit ?? getEffectiveLimit();
-		const currentLimit = requestOptions?.pagination?.limit ?? getEffectiveLimit();
-		if (persistedLimit !== currentLimit) {
-			requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
-			shouldRefresh = true;
-		}
-
-		const persistedSort = snapshot.sort;
-		const currentSort = requestOptions?.sort;
-		if (persistedSort) {
-			const restoredSort =
-				patchedVisibility[persistedSort.column] === false && hiddenSortFallback ? hiddenSortFallback : persistedSort;
-			if (restoredSort !== persistedSort && prefs) {
-				prefs.current = { ...prefs.current, s: encodeSort(restoredSort) };
+			const persistedSearch = snapshot.search;
+			const currentSearch = (requestOptions?.search ?? '').trim();
+			// Incoming requestOptions.search (e.g. from URL param) takes priority over persisted state
+			const effectiveSearch = currentSearch || persistedSearch;
+			if (effectiveSearch !== globalFilter) {
+				globalFilter = effectiveSearch;
 			}
-			if (currentSort?.column !== restoredSort.column || currentSort?.direction !== restoredSort.direction) {
+			if (effectiveSearch !== currentSearch) {
 				requestOptions = {
 					...requestOptions,
-					sort: restoredSort,
+					search: effectiveSearch || undefined,
 					pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
 				};
 				shouldRefresh = true;
 			}
-		}
-		if (shouldRefresh) onRefresh(requestOptions);
 
-		if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
-			mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
-		}
+			const persistedLimit = snapshot.limit ?? getEffectiveLimit();
+			const currentLimit = requestOptions?.pagination?.limit ?? getEffectiveLimit();
+			if (persistedLimit !== currentLimit) {
+				requestOptions = { ...requestOptions, pagination: { page: 1, limit: persistedLimit } };
+				shouldRefresh = true;
+			}
 
-		if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
-			customSettings = { ...snapshot.customSettings };
-		}
+			const persistedSort = snapshot.sort;
+			const currentSort = requestOptions?.sort;
+			if (persistedSort) {
+				const restoredSort =
+					patchedVisibility[persistedSort.column] === false && hiddenSortFallback ? hiddenSortFallback : persistedSort;
+				if (restoredSort !== persistedSort) {
+					tablePreferences.update(preferenceKey, { s: encodeSort(restoredSort) });
+				}
+				if (currentSort?.column !== restoredSort.column || currentSort?.direction !== restoredSort.direction) {
+					requestOptions = {
+						...requestOptions,
+						sort: restoredSort,
+						pagination: { page: 1, limit: requestOptions?.pagination?.limit ?? getEffectiveLimit() }
+					};
+					shouldRefresh = true;
+				}
+			}
+			if (shouldRefresh) onRefresh(requestOptions);
 
-		preferencesReady = true;
+			if (mobileFields.length && !Object.keys(mobileFieldVisibility).length) {
+				mobileFieldVisibility = buildMobileVisibility(mobileFields, snapshot.mobileVisibility);
+			}
+
+			if (snapshot.customSettings && Object.keys(snapshot.customSettings).length > 0) {
+				customSettings = { ...snapshot.customSettings };
+			}
+
+			preferencesReady = true;
+		})();
+
+		return () => {
+			cancelled = true;
+		};
 	});
 
 	function updatePagination(patch: Partial<{ page: number; limit: number }>) {
@@ -265,7 +265,7 @@
 
 	function setPageSize(limit: number) {
 		// Persist page size
-		if (enablePersist && prefs) prefs.current = { ...prefs.current, l: limit };
+		if (enablePersist && persistKey) tablePreferences.update(persistKey, { l: limit });
 		updatePagination({ limit, page: 1 });
 	}
 
@@ -461,11 +461,8 @@
 			const sortState = first
 				? { column: String(first.id), direction: (first.desc ? 'desc' : 'asc') as 'asc' | 'desc' }
 				: undefined;
-			if (enablePersist && prefs) {
-				prefs.current = {
-					...prefs.current,
-					s: encodeSort(sortState)
-				};
+			if (enablePersist && persistKey) {
+				tablePreferences.update(persistKey, { s: encodeSort(sortState) });
 			}
 			if (sortState) {
 				requestOptions = {
@@ -490,8 +487,8 @@
 		},
 		onColumnFiltersChange: (updater) => {
 			columnFilters = typeof updater === 'function' ? updater(columnFilters) : updater;
-			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, f: encodeFilters(columnFilters) };
+			if (enablePersist && persistKey) {
+				tablePreferences.update(persistKey, { f: encodeFilters(columnFilters) });
 			}
 			requestOptions = {
 				...requestOptions,
@@ -507,8 +504,8 @@
 			const nextVisibility = typeof updater === 'function' ? updater(columnVisibility) : updater;
 			columnVisibility = nextVisibility;
 			// Persist visibility
-			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, v: encodeHidden(columnVisibility) };
+			if (enablePersist && persistKey) {
+				tablePreferences.update(persistKey, { v: encodeHidden(columnVisibility) });
 			}
 
 			const activeSort = requestOptions?.sort;
@@ -522,8 +519,8 @@
 						limit: requestOptions?.pagination?.limit ?? items?.pagination?.itemsPerPage ?? 10
 					}
 				};
-				if (enablePersist && prefs) {
-					prefs.current = { ...prefs.current, s: encodeSort(hiddenSortFallback) };
+				if (enablePersist && persistKey) {
+					tablePreferences.update(persistKey, { s: encodeSort(hiddenSortFallback) });
 				}
 				onRefresh(requestOptions);
 			}
@@ -537,8 +534,8 @@
 				pagination: { page: 1, limit }
 			};
 			// Persist global filter
-			if (enablePersist && prefs) {
-				prefs.current = { ...prefs.current, g: globalFilter };
+			if (enablePersist && persistKey) {
+				tablePreferences.update(persistKey, { g: globalFilter });
 			}
 			onRefresh(requestOptions);
 		}
@@ -555,8 +552,8 @@
 			[fieldId]: !mobileFieldVisibility[fieldId]
 		};
 		// Persist mobile field visibility
-		if (enablePersist && prefs) {
-			prefs.current = { ...prefs.current, m: encodeMobileVisibility(mobileFieldVisibility) };
+		if (enablePersist && persistKey) {
+			tablePreferences.update(persistKey, { m: encodeMobileVisibility(mobileFieldVisibility) });
 		}
 	}
 
@@ -667,7 +664,7 @@
 	let persistTimeout: ReturnType<typeof setTimeout> | null = null;
 
 	$effect(() => {
-		if (!enablePersist || !prefs) return;
+		if (!enablePersist || !persistKey || !preferencesReady) return;
 
 		// Read current settings without creating dependency on the stringified value
 		const currentSettings = customSettings;
@@ -681,9 +678,9 @@
 
 		persistTimeout = setTimeout(() => {
 			untrack(() => {
-				if (prefs && settingsJson !== lastPersistedSettings) {
+				if (settingsJson !== lastPersistedSettings) {
 					lastPersistedSettings = settingsJson;
-					prefs.current = { ...prefs.current, c: currentSettings };
+					tablePreferences.update(persistKey, { c: currentSettings });
 				}
 			});
 		}, 100);

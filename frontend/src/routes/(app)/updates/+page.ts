@@ -13,14 +13,14 @@ export const load: PageLoad = async ({ parent }) => {
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
 	const containerRequestOptions = ensureStandaloneContainerUpdatesFilter(
-		resolveInitialTableRequest('arcane-updates-container-table', {
+		await resolveInitialTableRequest('arcane-updates-container-table', {
 			pagination: { page: 1, limit: 100 },
 			sort: { column: 'created', direction: 'desc' }
 		} satisfies SearchPaginationSortRequest)
 	) as ContainerListRequestOptions;
 
 	const projectRequestOptions = ensureUpdatesFilter(
-		resolveInitialTableRequest('arcane-updates-project-table', {
+		await resolveInitialTableRequest('arcane-updates-project-table', {
 			pagination: { page: 1, limit: 20 },
 			sort: { column: 'name', direction: 'asc' }
 		} satisfies SearchPaginationSortRequest)

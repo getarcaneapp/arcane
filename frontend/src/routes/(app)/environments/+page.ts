@@ -8,7 +8,7 @@ import { throwPageLoadError } from '#lib/utils/api';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 
-	const environmentRequestOptions = resolveInitialTableRequest('arcane-environments-table', {
+	const environmentRequestOptions = await resolveInitialTableRequest('arcane-environments-table', {
 		pagination: {
 			page: 1,
 			limit: 20

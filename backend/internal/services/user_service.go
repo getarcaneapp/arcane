@@ -5,9 +5,12 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	json "encoding/json/v2"
 	"fmt"
 	"log/slog"
+	"sort"
 	"strings"
+	"unicode/utf8"
 
 	"emperror.dev/errors"
 
@@ -16,6 +19,7 @@ import (
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -49,6 +53,13 @@ type UserService struct {
 }
 
 const ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
+
+const (
+	tablePreferenceKeyMaxLength    = 200
+	tablePreferenceValueMaxBytes   = 16 * 1024
+	tablePreferencesTotalMaxBytes  = 256 * 1024
+	tablePreferencePatchMaxEntries = 200
+)
 
 func NewUserService(db *database.DB) *UserService {
 	return &UserService{
@@ -164,6 +175,130 @@ func (s *UserService) GetUserByID(ctx context.Context, id string) (*models.User,
 	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "id = ?", id)
 }
 
+func (s *UserService) GetPreferences(ctx context.Context, userID string) (user.Preferences, error) {
+	var userModel models.User
+	if err := s.db.WithContext(ctx).
+		Select("table_prefs").
+		Where("id = ?", userID).
+		First(&userModel).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return user.Preferences{}, ErrUserNotFound
+		}
+		return user.Preferences{}, fmt.Errorf("get preferences: %w", err)
+	}
+
+	prefs := user.Preferences{Tables: user.TablePreferences{}}
+	if userModel.TablePrefs == nil {
+		return prefs, nil
+	}
+	prefs.Tables = userModel.TablePrefs
+	return prefs, nil
+}
+
+func (s *UserService) UpdatePreferences(ctx context.Context, userID string, prefs user.Preferences) error {
+	if len(prefs.Tables) == 0 {
+		return nil
+	}
+	if len(prefs.Tables) > tablePreferencePatchMaxEntries {
+		return common.Classify(common.ErrValidation, fmt.Errorf("preference patch exceeds %d table entries", tablePreferencePatchMaxEntries))
+	}
+
+	keys := make([]string, 0, len(prefs.Tables))
+	for key := range prefs.Tables {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+
+	var expression string
+	var sizeExpression string
+	var setExpressionFormat string
+	var deleteExpressionFormat string
+	switch s.db.Name() {
+	case "postgres":
+		expression = "COALESCE(table_prefs, '{}'::jsonb)"
+		sizeExpression = "octet_length(CAST(table_prefs AS text))"
+		setExpressionFormat = "(%s || jsonb_build_object(?, CAST(? AS jsonb)))"
+		deleteExpressionFormat = "(%s - ?)"
+	case "sqlite":
+		expression = "COALESCE(table_prefs, '{}')"
+		sizeExpression = "length(CAST(table_prefs AS BLOB))"
+		setExpressionFormat = "json_set(%s, '$.' || json_quote(?), json(?))"
+		deleteExpressionFormat = "json_remove(%s, '$.' || json_quote(?))"
+	default:
+		return fmt.Errorf("update preferences: unsupported database dialect %q", s.db.Name())
+	}
+
+	args := make([]any, 0, len(keys)*2)
+	for _, key := range keys {
+		if !strings.HasPrefix(key, "arcane-") || utf8.RuneCountInString(key) > tablePreferenceKeyMaxLength {
+			return common.Classify(common.ErrValidation, fmt.Errorf("table preference key must start with arcane- and be at most %d characters", tablePreferenceKeyMaxLength))
+		}
+
+		value := prefs.Tables[key]
+		if value == nil {
+			expression = fmt.Sprintf(deleteExpressionFormat, expression)
+			args = append(args, key)
+			continue
+		}
+
+		valueJSON, err := encodeTablePreferenceInternal(key, value)
+		if err != nil {
+			return err
+		}
+
+		expression = fmt.Sprintf(setExpressionFormat, expression)
+		args = append(args, key, string(valueJSON))
+	}
+
+	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		result := tx.Model(&models.User{}).
+			Where("id = ?", userID).
+			UpdateColumn("table_prefs", gorm.Expr(expression, args...))
+		if result.Error != nil {
+			return fmt.Errorf("update preferences: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrUserNotFound
+		}
+
+		var storedBytes int64
+		if err := tx.Model(&models.User{}).
+			Select(sizeExpression).
+			Where("id = ?", userID).
+			Scan(&storedBytes).Error; err != nil {
+			return fmt.Errorf("measure preferences: %w", err)
+		}
+		if storedBytes > tablePreferencesTotalMaxBytes {
+			return common.Classify(common.ErrValidation, fmt.Errorf("table preferences exceed %d bytes", tablePreferencesTotalMaxBytes))
+		}
+		return nil
+	})
+}
+
+func encodeTablePreferenceInternal(key string, value *user.TablePreference) ([]byte, error) {
+	if value.Sort != nil {
+		column, direction := value.Sort[0], value.Sort[1]
+		if strings.TrimSpace(column) == "" || (direction != "asc" && direction != "desc") {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("table preference %q has an invalid sort", key))
+		}
+	}
+	for _, filter := range value.Filters {
+		column, ok := filter[0].(string)
+		if !ok || strings.TrimSpace(column) == "" {
+			return nil, common.Classify(common.ErrValidation, fmt.Errorf("table preference %q has an invalid filter", key))
+		}
+	}
+
+	valueJSON, err := json.Marshal(value)
+	if err != nil {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("encode table preference %q: %w", key, err))
+	}
+	if len(valueJSON) > tablePreferenceValueMaxBytes {
+		return nil, common.Classify(common.ErrValidation, fmt.Errorf("table preference %q exceeds %d bytes", key, tablePreferenceValueMaxBytes))
+	}
+	return valueJSON, nil
+}
+
 func (s *UserService) GetUserByOidcSubjectId(ctx context.Context, subjectId string) (*models.User, error) {
 	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "oidc_subject_id = ?", subjectId)
 }
@@ -183,7 +318,7 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*model
 			}
 			return errors.WrapIf(err, "failed to load user")
 		}
-		if err := tx.Save(user).Error; err != nil {
+		if err := tx.Omit("table_prefs").Save(user).Error; err != nil {
 			return errors.WrapIf(err, "failed to update user")
 		}
 		return nil
@@ -227,7 +362,7 @@ func (s *UserService) AttachOidcSubjectTransactional(ctx context.Context, userID
 			updateFn(&u)
 		}
 
-		if err := tx.Save(&u).Error; err != nil {
+		if err := tx.Omit("table_prefs").Save(&u).Error; err != nil {
 			// Bubble up uniqueness violations with a clearer message
 			if strings.Contains(strings.ToLower(err.Error()), "unique") || strings.Contains(strings.ToLower(err.Error()), "duplicate key") {
 				return errors.WrapIf(err, "oidc subject is already linked to another user")

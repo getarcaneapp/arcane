@@ -1,8 +1,8 @@
 import { browser } from '$app/env';
-import { PersistedState } from 'runed';
-import { decodeSort, type CompactTablePrefs } from '#lib/components/arcane-table/arcane-table.types.svelte';
+import { decodeSort } from '#lib/components/arcane-table/arcane-table.types.svelte';
 import { TABLE_PAGE_SIZE_ALL, TABLE_PAGE_SIZE_OPTIONS } from '#lib/constants/table-pagination';
 import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { tablePreferences } from '#lib/stores/table-preferences.store.svelte';
 import type { FilterMap, FilterValue, SearchPaginationSortRequest } from '#lib/types/shared';
 
 const DEFAULT_LIMIT = 20;
@@ -62,11 +62,11 @@ function normalizeSearch(value: unknown): string | undefined {
 	return trimmed.length > 0 ? trimmed : undefined;
 }
 
-export function resolveInitialTableRequest(
+export async function resolveInitialTableRequest(
 	persistKey: string,
 	defaults: SearchPaginationSortRequest,
 	options: { deferredSortColumns?: readonly string[] } = {}
-): SearchPaginationSortRequest {
+): Promise<SearchPaginationSortRequest> {
 	const base = cloneRequest(defaults);
 	const fallbackLimit = base.pagination?.limit ?? DEFAULT_LIMIT;
 
@@ -82,12 +82,8 @@ export function resolveInitialTableRequest(
 	if (!browser) return base;
 
 	try {
-		const persisted = new PersistedState<CompactTablePrefs>(
-			persistKey,
-			{ v: [], f: [], g: '', l: fallbackLimit },
-			{ syncTabs: false }
-		);
-		const current = persisted.current ?? {};
+		await tablePreferences.ready();
+		const current = tablePreferences.get(persistKey) ?? {};
 
 		const filters = buildFilterMap(current.f);
 		if (Object.keys(filters).length > 0) {
@@ -117,11 +113,11 @@ export function resolveInitialTableRequest(
 	return base;
 }
 
-export function resolveInitialListPageRequest(
+export async function resolveInitialListPageRequest(
 	persistKey: string,
 	sort: NonNullable<SearchPaginationSortRequest['sort']>,
 	limit = 20
-): SearchPaginationSortRequest {
+): Promise<SearchPaginationSortRequest> {
 	return resolveInitialTableRequest(persistKey, {
 		pagination: {
 			page: 1,
@@ -145,7 +141,7 @@ export async function resolveListPageLoadContext(
 ) {
 	const parentData = (await parent()) as { queryClient: QueryClientLike };
 	const envId = await environmentStore.getCurrentEnvironmentId();
-	const requestOptions = resolveInitialListPageRequest(persistKey, sort, limit);
+	const requestOptions = await resolveInitialListPageRequest(persistKey, sort, limit);
 
 	return {
 		queryClient: parentData.queryClient,

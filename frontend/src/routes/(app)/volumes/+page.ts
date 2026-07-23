@@ -9,7 +9,7 @@ export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 	const envId = await environmentStore.getCurrentEnvironmentId();
 
-	const volumeRequestOptions = resolveInitialTableRequest(
+	const volumeRequestOptions = await resolveInitialTableRequest(
 		'arcane-volumes-table',
 		{
 			pagination: {

@@ -8,7 +8,7 @@ type StackSourceState = 'loading' | 'available' | 'missing' | 'forbidden' | 'err
 
 export const load: PageLoad = async ({ params }) => {
 	const stackName = decodeURIComponent(params.name);
-	const servicesRequestOptions = resolveInitialTableRequest(`arcane-swarm-stack-services-table-${stackName}`, {
+	const servicesRequestOptions = await resolveInitialTableRequest(`arcane-swarm-stack-services-table-${stackName}`, {
 		pagination: {
 			page: 1,
 			limit: 20
@@ -18,7 +18,7 @@ export const load: PageLoad = async ({ params }) => {
 			direction: 'asc'
 		}
 	} satisfies SearchPaginationSortRequest);
-	const tasksRequestOptions = resolveInitialTableRequest(`arcane-swarm-stack-tasks-table-${stackName}`, {
+	const tasksRequestOptions = await resolveInitialTableRequest(`arcane-swarm-stack-tasks-table-${stackName}`, {
 		pagination: {
 			page: 1,
 			limit: 20

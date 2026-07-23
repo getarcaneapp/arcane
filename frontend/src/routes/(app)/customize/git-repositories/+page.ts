@@ -7,7 +7,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 
-	const repositoryRequestOptions = resolveInitialTableRequest('arcane-git-repositories-table', {
+	const repositoryRequestOptions = await resolveInitialTableRequest('arcane-git-repositories-table', {
 		pagination: {
 			page: 1,
 			limit: 20

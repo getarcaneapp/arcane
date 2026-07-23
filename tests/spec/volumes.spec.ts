@@ -3,8 +3,36 @@ import { fetchVolumeCountsWithRetry } from '../utils/fetch.util';
 import { VolumeUsageCounts } from 'types/volumes.type';
 
 let volumeCount: VolumeUsageCounts = { inuse: 0, unused: 0, total: 0 };
+const VOLUMES_PREFERENCE_KEY = 'arcane-volumes-table';
+
+async function setVolumesPreference(page: Page, prefs: Record<string, unknown>) {
+	const response = await page.request.patch('/api/auth/me/prefs', {
+		data: { tables: { [VOLUMES_PREFERENCE_KEY]: prefs } }
+	});
+	if (!response.ok()) {
+		throw new Error(
+			`Failed to seed volume preferences: ${response.status()} ${await response.text()}`
+		);
+	}
+}
+
+async function getPersistedVolumesSort(page: Page): Promise<string> {
+	const response = await page.request.get('/api/auth/me/prefs');
+	if (!response.ok()) return '';
+	const body = await response.json();
+	const sort = body?.data?.tables?.[VOLUMES_PREFERENCE_KEY]?.s;
+	return Array.isArray(sort) ? sort.join(':') : '';
+}
 
 test.beforeEach(async ({ page }) => {
+	const response = await page.request.patch('/api/auth/me/prefs', {
+		data: { tables: { [VOLUMES_PREFERENCE_KEY]: null } }
+	});
+	if (!response.ok()) {
+		throw new Error(
+			`Failed to clear volume preferences: ${response.status()} ${await response.text()}`
+		);
+	}
 	await page.goto('/volumes');
 	volumeCount = await fetchVolumeCountsWithRetry(page);
 });
@@ -108,13 +136,7 @@ async function ensureFacetOpen(page: Page, title: string) {
 
 test.describe('Volumes Page', () => {
 	test('Persisted Size sort does not block navigation', async ({ page, context }) => {
-		await page.goto('/dashboard');
-		await page.evaluate(() => {
-			localStorage.setItem(
-				'arcane-volumes-table',
-				JSON.stringify({ v: [], f: [], g: '', l: 20, s: ['size', 'desc'] })
-			);
-		});
+		await setVolumesPreference(page, { v: [], f: [], g: '', l: 20, s: ['size', 'desc'] });
 
 		let releaseSizeSort: () => void = () => undefined;
 		const sizeSortGate = new Promise<void>((resolve) => {
@@ -145,25 +167,11 @@ test.describe('Volumes Page', () => {
 			releaseSizeSort();
 		}
 
-		await expect
-			.poll(() =>
-				page.evaluate(() => {
-					const stored = localStorage.getItem('arcane-volumes-table');
-					const sort = stored ? JSON.parse(stored).s : undefined;
-					return Array.isArray(sort) ? sort.join(':') : '';
-				})
-			)
-			.toBe('size:desc');
+		await expect.poll(() => getPersistedVolumesSort(page)).toBe('size:desc');
 	});
 
 	test('Hidden Size column skips usage loading and resets its sort', async ({ page, context }) => {
-		await page.goto('/dashboard');
-		await page.evaluate(() => {
-			localStorage.setItem(
-				'arcane-volumes-table',
-				JSON.stringify({ v: ['size'], f: [], g: '', l: 20, s: ['size', 'desc'] })
-			);
-		});
+		await setVolumesPreference(page, { v: ['size'], f: [], g: '', l: 20, s: ['size', 'desc'] });
 
 		let sizeRequests = 0;
 		await context.route('**/api/environments/*/volumes/sizes', async (route) => {
@@ -174,15 +182,7 @@ test.describe('Volumes Page', () => {
 		await page.goto('/volumes');
 		await expect(page.getByRole('heading', { name: 'Volumes', level: 1 })).toBeVisible();
 		await expect(page.getByRole('button', { name: 'Size', exact: true })).toHaveCount(0);
-		await expect
-			.poll(() =>
-				page.evaluate(() => {
-					const stored = localStorage.getItem('arcane-volumes-table');
-					const sort = stored ? JSON.parse(stored).s : undefined;
-					return Array.isArray(sort) ? sort.join(':') : '';
-				})
-			)
-			.toBe('name:asc');
+		await expect.poll(() => getPersistedVolumesSort(page)).toBe('name:asc');
 		expect(sizeRequests).toBe(0);
 	});
 

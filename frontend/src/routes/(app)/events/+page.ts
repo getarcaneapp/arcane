@@ -8,7 +8,7 @@ import type { PageLoad } from './$types';
 export const load: PageLoad = async ({ parent }) => {
 	const { queryClient } = await parent();
 
-	const eventRequestOptions = resolveInitialTableRequest('arcane-events-table', {
+	const eventRequestOptions = await resolveInitialTableRequest('arcane-events-table', {
 		pagination: {
 			page: 1,
 			limit: 20

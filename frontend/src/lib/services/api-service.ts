@@ -193,6 +193,7 @@ const skipAuthPathsInternal = [
 	'/auth/oidc/callback',
 	'/auth/auto-login',
 	'/auth/auto-login-config',
+	'/auth/me/prefs',
 	'/settings/public'
 ];
 
