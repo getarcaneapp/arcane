@@ -6,6 +6,7 @@
 	import AppSidebar from '#lib/components/sidebar/sidebar.svelte';
 	import MobileNav from '#lib/components/mobile-nav/mobile-nav.svelte';
 	import ActivityCenter from '#lib/components/activity/activity-center.svelte';
+	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '#lib/utils/navigation';
@@ -135,3 +136,5 @@
 {#if canReadActivities}
 	<ActivityCenter />
 {/if}
+
+<OperationWatchDialog />

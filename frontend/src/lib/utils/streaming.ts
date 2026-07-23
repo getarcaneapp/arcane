@@ -15,10 +15,16 @@ export function streamCacheBuster(): string {
 	return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
+/**
+ * Reads an NDJSON stream, invoking the callbacks per parsed line. A callback
+ * returning `true` stops reading and cancels the stream — used by operation
+ * streams whose terminal {"done":true} frame marks completion, since proxies
+ * do not always propagate the network EOF promptly.
+ */
 export async function readNdjsonStream(
 	body: ReadableStream<Uint8Array>,
-	onMessage?: (data: any) => void,
-	onLine?: (data: any) => void
+	onMessage?: (data: any) => boolean | void,
+	onLine?: (data: any) => boolean | void
 ): Promise<void> {
 	const reader = body.getReader();
 	const decoder = new TextDecoder();
@@ -43,8 +49,12 @@ export async function readNdjsonStream(
 				continue;
 			}
 
-			onLine?.(obj);
-			onMessage?.(obj);
+			const stopFromLine = onLine?.(obj) === true;
+			const stopFromMessage = onMessage?.(obj) === true;
+			if (stopFromLine || stopFromMessage) {
+				await reader.cancel().catch(() => {});
+				return;
+			}
 		}
 	}
 }

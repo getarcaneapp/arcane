@@ -371,7 +371,7 @@ func (s *LifecycleService) ensureRunnerImageInternal(ctx context.Context, docker
 	}
 	defer func() { _ = pullReader.Close() }()
 
-	if err := dockerutils.ConsumeJSONMessageStream(pullReader, nil); err != nil {
+	if err := dockerutils.RenderJSONMessageStream(pullReader, io.Discard); err != nil {
 		return errors.WrapIf(err, "failed to complete runner image pull")
 	}
 	return nil

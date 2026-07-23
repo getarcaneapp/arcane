@@ -78,12 +78,7 @@
 		</div>
 
 		{#if isActive}
-			<div class="flex items-center gap-2">
-				<Progress value={group.progress ?? 0} class="h-1.5 rounded-full" />
-				<span class="w-9 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
-					{m.activity_progress_percent({ progress: group.progress ?? 0 })}
-				</span>
-			</div>
+			<Progress value={100} indeterminate class="h-1.5 rounded-full" />
 		{/if}
 	</div>
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/http"
 	"strings"
 
 	"emperror.dev/errors"
@@ -206,6 +207,19 @@ func RunHandlerActivity(ctx context.Context, activityService Service, opts Handl
 	err := action(workCtx)
 	CompleteHandlerActivity(workCtx, activityService, activityID, opts.SuccessMessage, err)
 	return activityID, err
+}
+
+// WriteDoneLine writes the terminal success frame of an operation NDJSON
+// stream. Clients resolve on this frame rather than relying on the network
+// EOF, which proxies do not always propagate promptly.
+func WriteDoneLine(writer io.Writer) {
+	if writer == nil {
+		return
+	}
+	_, _ = io.WriteString(writer, `{"done":true}`+"\n")
+	if flusher, ok := writer.(http.Flusher); ok {
+		flusher.Flush()
+	}
 }
 
 func WriteStartedLine(writer io.Writer, activityID string) {

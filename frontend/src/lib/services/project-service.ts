@@ -106,7 +106,7 @@ class ProjectService extends BaseAPIService {
 	private async readProjectStream(
 		body: ReadableStream<Uint8Array>,
 		onLine?: (data: any) => void,
-		onMessage?: (data: any) => void
+		onMessage?: (data: any) => boolean | void
 	): Promise<void> {
 		await readNdjsonStream(body, onMessage, onLine);
 	}
@@ -132,6 +132,8 @@ class ProjectService extends BaseAPIService {
 			if (obj?.error) {
 				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || messages.streamFailed());
 			}
+			// The terminal frame marks success; don't wait on the network EOF.
+			return obj?.done === true;
 		});
 	}
 
@@ -226,9 +228,17 @@ class ProjectService extends BaseAPIService {
 		await this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectId}/unarchive`));
 	}
 
-	async redeployProject(projectName: string): Promise<Project> {
+	async redeployProject(projectId: string, onLine?: (data: any) => void): Promise<Project> {
 		const envId = await environmentStore.getCurrentEnvironmentId();
-		return this.handleResponse(this.api.post(`/environments/${envId}/projects/${projectName}/redeploy`));
+		const url = `/api/environments/${envId}/projects/${projectId}/redeploy`;
+
+		await this.postProjectStream(url, {}, onLine, {
+			startFailed: (status) => m.progress_deploy_failed_to_start({ status }),
+			streamFailed: () => m.progress_deploy_failed()
+		});
+
+		// The redeploy stream doesn't return the project object; fetch fresh details.
+		return this.getProject(projectId);
 	}
 
 	private async streamProjectPull(projectId: string, onLine?: (data: any) => void): Promise<void> {
@@ -240,7 +250,12 @@ class ProjectService extends BaseAPIService {
 			throw new Error(`Failed to start project image pull (${res.status})`);
 		}
 
-		await this.readProjectStream(res.body, onLine);
+		await this.readProjectStream(res.body, onLine, (obj) => {
+			if (obj?.error) {
+				throw new Error(typeof obj.error === 'string' ? obj.error : obj.error?.message || m.images_pull_failed());
+			}
+			return obj?.done === true;
+		});
 	}
 
 	buildProjectImages(

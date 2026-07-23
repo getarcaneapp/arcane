@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"strings"
 	"time"
 
@@ -350,7 +351,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	}
 	defer func() { _ = reader.Close() }()
 
-	return docker.ConsumeJSONMessageStream(reader, nil)
+	return docker.RenderJSONMessageStream(reader, os.Stdout)
 }
 
 func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string) error {

@@ -9,16 +9,20 @@ import (
 	"github.com/docker/cli/cli/command"
 	clitypes "github.com/docker/cli/cli/config/types"
 	"github.com/docker/cli/cli/flags"
+	"github.com/docker/compose/v5/cmd/display"
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/compose/v5/pkg/compose"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/registry"
 	"github.com/moby/moby/client"
+
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 )
 
 type Client struct {
 	svc       api.Compose
 	dockerCli command.Cli
+	logWriter io.WriteCloser
 }
 
 func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig) (*Client, error) {
@@ -39,14 +43,32 @@ func NewClient(ctx context.Context, authConfigs map[string]registry.AuthConfig) 
 	}
 
 	composeCLI := wrapDockerCLIWithInspectCompatibilityInternal(cli)
-	svc, err := compose.NewComposeService(composeCLI,
+
+	serviceOptions := []compose.Option{
 		compose.WithPrompt(compose.AlwaysOkPrompt()),
-	)
+	}
+
+	// When the caller streams operation output, render compose's own progress
+	// events exactly as `docker compose --progress=plain` prints them.
+	var logWriter io.WriteCloser
+	if progressWriter, ok := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer); ok && progressWriter != nil {
+		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+		serviceOptions = append(serviceOptions,
+			compose.WithEventProcessor(display.Plain(logWriter)),
+			compose.WithOutputStream(logWriter),
+			compose.WithErrorStream(logWriter),
+		)
+	}
+
+	svc, err := compose.NewComposeService(composeCLI, serviceOptions...)
 	if err != nil {
+		if logWriter != nil {
+			_ = logWriter.Close()
+		}
 		return nil, err
 	}
 
-	return &Client{svc: svc, dockerCli: composeCLI}, nil
+	return &Client{svc: svc, dockerCli: composeCLI, logWriter: logWriter}, nil
 }
 
 func buildComposeAuthConfigsInternal(authConfigs map[string]registry.AuthConfig) map[string]clitypes.AuthConfig {
@@ -102,7 +124,13 @@ func wrapDockerCLIWithInspectCompatibilityInternal(cli command.Cli) command.Cli 
 }
 
 func (c *Client) Close() error {
-	if c == nil || c.dockerCli == nil {
+	if c == nil {
+		return nil
+	}
+	if c.logWriter != nil {
+		_ = c.logWriter.Close()
+	}
+	if c.dockerCli == nil {
 		return nil
 	}
 	if apiClient := c.dockerCli.Client(); apiClient != nil {

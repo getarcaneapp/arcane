@@ -5,8 +5,9 @@ const ROUTES = {
 };
 
 const STREAM_SUCCESS =
-	'{"type":"build","phase":"begin","service":"manual","status":"build started"}\n' +
-	'{"type":"build","phase":"complete","service":"manual","status":"build complete"}\n';
+	'{"log":"#1 [internal] load build definition from Dockerfile"}\n' +
+	'{"log":"#8 naming to docker.io/e2e/build done"}\n' +
+	'{"done":true}\n';
 
 const FIELD_LABELS = {
 	cacheTo: 'Cache To',

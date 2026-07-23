@@ -6,17 +6,22 @@
 	import { toast } from 'svelte-sonner';
 	import { tryCatch } from '#lib/utils/api';
 	import { handleApiResultWithCallbacks } from '#lib/utils/api';
-	import { ArcaneButton, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
+	import { ArcaneButton, arcaneButtonVariants, type ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 	import DeploySplitButton from '#lib/components/deploy-split-button/deploy-split-button.svelte';
+	import * as ButtonGroup from '#lib/components/ui/button-group/index.js';
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { cn } from '#lib/utils';
 	import { m } from '#lib/paraglide/messages';
 	import settingsStore from '#lib/stores/config-store';
 	import { deployOptionsStore } from '#lib/stores/deploy-options.store.svelte';
 	import { containerService } from '#lib/services/container-service';
 	import { projectService, type DeployProjectOptions } from '#lib/services/project-service';
+	import { activityToastOptions, activityIdFromStreamFrame, extractActivityId } from '#lib/utils/activity-toast';
+	import { operationWatchStore } from '#lib/stores/operation-watch.store.svelte';
+	import { attachProjectLogsToWatch } from '#lib/utils/watch-logs';
 	import type { Project } from '#lib/types/swarm';
 	import type { ContainerDetailsDto } from '#lib/types/docker';
-	import { EllipsisIcon } from '#lib/icons';
+	import { ArrowDownIcon, EllipsisIcon, TerminalIcon } from '#lib/icons';
 	import { createMutation } from '@tanstack/svelte-query';
 	import { hasPermission } from '#lib/utils/auth';
 	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
@@ -38,6 +43,7 @@
 
 	let {
 		id,
+		name,
 		type = 'container',
 		itemState = 'stopped',
 		desktopVariant = 'labels',
@@ -146,15 +152,27 @@
 		onSettled: () => setLoading('restart', false)
 	}));
 
+	// Set from the redeploy stream's started frame so the success toast can link
+	// to the activity.
+	let redeployActivityId = $state<string | undefined>(undefined);
+
 	const redeployMutation = createMutation(() => ({
 		mutationKey: ['action', 'redeploy', type, id],
-		mutationFn: () =>
+		mutationFn: ({ watch = false }: { watch?: boolean } = {}) =>
 			tryCatch(
-				(type === 'container' ? containerService.redeployContainer(id) : projectService.redeployProject(id)) as Promise<
-					ContainerDetailsDto | Project
-				>
+				(type === 'container'
+					? containerService.redeployContainer(id)
+					: projectService.redeployProject(id, (frame) => {
+							redeployActivityId = activityIdFromStreamFrame(frame) ?? redeployActivityId;
+							if (watch) {
+								operationWatchStore.onLine(frame);
+							}
+						})) as Promise<ContainerDetailsDto | Project>
 			),
-		onMutate: () => setLoading('redeploy', true),
+		onMutate: () => {
+			redeployActivityId = undefined;
+			setLoading('redeploy', true);
+		},
 		onSettled: () => setLoading('redeploy', false)
 	}));
 
@@ -263,7 +281,14 @@
 								action: type === 'project' ? m.compose_destroy() : m.common_remove(),
 								type: type
 							}),
-							onSuccess: async () => {
+							onSuccess: async (data) => {
+								const activityId = extractActivityId(data);
+								if (activityId) {
+									toast.success(
+										type === 'project' ? m.compose_destroy_success() : m.containers_remove_success(),
+										activityToastOptions(activityId)
+									);
+								}
 								await refreshAll();
 								goto(type === 'project' ? '/projects' : '/containers');
 							}
@@ -279,31 +304,55 @@
 				]
 			});
 		} else if (action === 'redeploy') {
-			openConfirmDialog({
-				title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
-				message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
-				confirm: {
-					label: m.common_redeploy(),
-					action: async () => {
-						const result = await redeployMutation.mutateAsync();
-						handleApiResultWithCallbacks({
-							result,
-							message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
-							onSuccess: async (data) => {
-								const containerData = data as ContainerDetailsDto;
-								if (type === 'container' && containerData?.id) {
-									goto(`/containers/${containerData.id}`);
-								} else if (type === 'container') {
-									goto('/containers');
-								} else {
-									onActionComplete('running');
-								}
-							}
-						});
-					}
-				}
-			});
+			confirmRedeploy(false);
 		}
+	}
+
+	function confirmRedeploy(watch: boolean) {
+		openConfirmDialog({
+			title: type === 'container' ? m.container_confirm_redeploy_title() : m.common_confirm_redeploy_title(),
+			message: type === 'container' ? m.container_confirm_redeploy_message() : m.common_confirm_redeploy_message(),
+			confirm: {
+				label: m.common_redeploy(),
+				action: async () => {
+					const operationStartedAt = Math.floor(Date.now() / 1000);
+					if (watch) {
+						operationWatchStore.start(`${m.common_redeploy()} — ${name ?? id}`);
+					}
+					const result = await redeployMutation.mutateAsync({ watch });
+					if (watch && result.error) {
+						operationWatchStore.fail(
+							result.error.message || m.common_action_failed_with_type({ action: m.common_redeploy(), type })
+						);
+						return;
+					}
+					if (watch) {
+						enterInteractiveWatchInternal(operationStartedAt);
+					}
+					handleApiResultWithCallbacks({
+						result,
+						message: m.common_action_failed_with_type({ action: m.common_redeploy(), type }),
+						onSuccess: async (data) => {
+							const activityId = type === 'container' ? extractActivityId(data) : redeployActivityId;
+							if (activityId && !watch) {
+								toast.success(
+									type === 'project' ? m.compose_redeploy_success() : m.container_redeploy_success(),
+									activityToastOptions(activityId)
+								);
+							}
+							const containerData = data as ContainerDetailsDto;
+							if (type === 'container' && containerData?.id) {
+								goto(`/containers/${containerData.id}`);
+							} else if (type === 'container') {
+								goto('/containers');
+							} else {
+								onActionComplete('running');
+							}
+						}
+					});
+				}
+			}
+		});
 	}
 
 	async function handleStart() {
@@ -318,20 +367,49 @@
 		});
 	}
 
-	async function handleDeploy(options?: DeployProjectOptions) {
+	async function handleDeploy(options?: DeployProjectOptions, watch = false) {
 		setLoading('start', true);
 
+		const operationStartedAt = Math.floor(Date.now() / 1000);
+		if (watch) {
+			operationWatchStore.start(`${deployButtonLabel} — ${name ?? id}`);
+		}
+
 		try {
-			await projectService.deployProject(id, () => {}, options ?? deployOptionsStore.getRequestOptions());
+			await projectService.deployProject(
+				id,
+				watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {},
+				options ?? deployOptionsStore.getRequestOptions()
+			);
+			if (watch) {
+				enterInteractiveWatchInternal(operationStartedAt);
+			}
 			await refreshAll();
 			itemState = 'running';
 			onActionComplete('running');
 		} catch (e: any) {
 			const message = e?.message || m.common_action_failed_with_type({ action: m.common_start(), type });
-			toast.error(message);
+			if (watch) {
+				operationWatchStore.fail(message);
+			} else {
+				toast.error(message);
+			}
 		} finally {
 			setLoading('start', false);
 		}
+	}
+
+	// Interactive mode: like a non-detached `docker compose up`, the deploy
+	// output is followed by the containers' live logs — everything they wrote
+	// since the operation began — and dismissing the dialog is the Ctrl-C:
+	// the project is brought down.
+	function enterInteractiveWatchInternal(operationStartedAt: number) {
+		operationWatchStore.append(`Attaching to ${name ?? id}`);
+		const detach = attachProjectLogsToWatch(id, operationStartedAt);
+		operationWatchStore.setOnClose(() => {
+			detach();
+			void handleStop();
+		});
 	}
 
 	async function handleStop() {
@@ -339,7 +417,14 @@
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_stop(), type }),
-			onSuccess: async () => {
+			onSuccess: async (data) => {
+				const activityId = extractActivityId(data);
+				if (activityId) {
+					toast.success(
+						type === 'project' ? m.compose_stop_success() : m.containers_stop_success(),
+						activityToastOptions(activityId)
+					);
+				}
 				itemState = 'stopped';
 				onActionComplete('stopped');
 			}
@@ -351,26 +436,41 @@
 		await handleApiResultWithCallbacks({
 			result,
 			message: m.common_action_failed_with_type({ action: m.common_restart(), type }),
-			onSuccess: async () => {
+			onSuccess: async (data) => {
+				const activityId = extractActivityId(data);
+				if (activityId) {
+					toast.success(
+						type === 'project' ? m.compose_restart_success() : m.containers_restart_success(),
+						activityToastOptions(activityId)
+					);
+				}
 				itemState = 'running';
 				onActionComplete('running');
 			}
 		});
 	}
 
-	async function handleProjectPull() {
+	async function handleProjectPull(watch = false) {
 		setLoading('pull', true);
+
+		if (watch) {
+			operationWatchStore.start(`${m.pull()} — ${name ?? id}`);
+		}
 
 		try {
 			projectService
-				.pullProjectImages(id, () => {})
+				.pullProjectImages(id, watch ? (frame: unknown) => operationWatchStore.onLine(frame) : () => {})
 				.then(async () => {
 					await refreshAll();
 					onActionComplete(itemState);
 				})
 				.catch((error: any) => {
 					const message = error?.message || m.images_pull_failed();
-					toast.error(message);
+					if (watch) {
+						operationWatchStore.fail(message);
+					} else {
+						toast.error(message);
+					}
 				});
 		} finally {
 			setLoading('pull', false);
@@ -405,12 +505,43 @@
 	}
 </script>
 
+{#snippet WatchDropdown(onWatch: () => void, disabled: boolean, size: 'default' | 'icon' = 'default')}
+	<DropdownMenu.Root>
+		<DropdownMenu.Trigger
+			class={cn(arcaneButtonVariants({ tone: 'outline-primary', size: 'icon' }), size === 'icon' && 'size-9 rounded-md')}
+			aria-label={m.common_open_menu()}
+			{disabled}
+			onclick={(event) => event.stopPropagation()}
+			onpointerdown={(event) => event.stopPropagation()}
+		>
+			<ArrowDownIcon class="size-4" />
+		</DropdownMenu.Trigger>
+		<DropdownMenu.Content align="end">
+			<DropdownMenu.Item onclick={() => onWatch()}>
+				<TerminalIcon class="size-4" />
+				{m.watch_output()}
+			</DropdownMenu.Item>
+		</DropdownMenu.Content>
+	</DropdownMenu.Root>
+{/snippet}
+
 {#snippet RedeployActionButton(size: 'default' | 'icon' = 'default', showLabel = true)}
 	{#if canRedeploy}
 		{#if disableRedeploy}
 			<span class="inline-flex" title={m.common_redeploy_disabled_arcane_self()}>
 				<ArcaneButton action="redeploy" {size} {showLabel} disabled />
 			</span>
+		{:else if type === 'project'}
+			<ButtonGroup.Root>
+				<ArcaneButton
+					action="redeploy"
+					{size}
+					{showLabel}
+					onclick={() => confirmAction('redeploy')}
+					loading={uiLoading.redeploy}
+				/>
+				{@render WatchDropdown(() => confirmRedeploy(true), !!uiLoading.redeploy, size)}
+			</ButtonGroup.Root>
 		{:else}
 			<ArcaneButton action="redeploy" {size} {showLabel} onclick={() => confirmAction('redeploy')} loading={uiLoading.redeploy} />
 		{/if}
@@ -441,6 +572,7 @@
 				{showLabel}
 				customLabel={deployButtonLabel}
 				onDeploy={() => handleDeploy()}
+				onDeployWatch={() => handleDeploy(undefined, true)}
 				loading={uiLoading.start}
 			/>
 		{/if}
@@ -477,7 +609,10 @@
 			{/if}
 
 			{#if canPull}
-				<ArcaneButton action="pull" {size} {showLabel} onclick={() => handleProjectPull()} loading={uiLoading.pull} />
+				<ButtonGroup.Root>
+					<ArcaneButton action="pull" {size} {showLabel} onclick={() => handleProjectPull()} loading={uiLoading.pull} />
+					{@render WatchDropdown(() => handleProjectPull(true), !!uiLoading.pull, size)}
+				</ButtonGroup.Root>
 			{/if}
 		{/if}
 
@@ -571,7 +706,7 @@
 							</DropdownMenu.Item>
 						{/if}
 						{#if canPull}
-							<DropdownMenu.Item onclick={handleProjectPull} disabled={uiLoading.pull}>
+							<DropdownMenu.Item onclick={() => handleProjectPull()} disabled={uiLoading.pull}>
 								{m.pull()}
 							</DropdownMenu.Item>
 						{/if}
