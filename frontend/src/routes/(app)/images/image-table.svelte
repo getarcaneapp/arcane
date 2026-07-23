@@ -1,36 +1,36 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
 	import { goto } from '$app/navigation';
 	import { onDestroy } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import { inUseBadge } from '$lib/utils/mobile-card-badges';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import ImageUpdateItem from '$lib/components/image-update-item.svelte';
-	import VulnerabilityScanItem from '$lib/components/vulnerability/vulnerability-scan-item.svelte';
-	import UniversalMobileCard from '$lib/components/arcane-table/cards/universal-mobile-card.svelte';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { inUseBadge } from '#lib/utils/mobile-card-badges';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import ImageUpdateItem from '#lib/components/image-update-item.svelte';
+	import VulnerabilityScanItem from '#lib/components/vulnerability/vulnerability-scan-item.svelte';
+	import UniversalMobileCard from '#lib/components/arcane-table/cards/universal-mobile-card.svelte';
 	import ImageTagDialog from './components/image-tag-dialog.svelte';
-	import * as Tooltip from '$lib/components/ui/tooltip';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { ImageSummaryDto, ImageUpdateInfoDto } from '$lib/types/docker';
-	import type { VulnerabilityScanSummary } from '$lib/types/environment';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service';
-	import { vulnerabilityService } from '$lib/services/vulnerability-service';
-	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '$lib/utils/docker';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
-	import InUseStatus from '$lib/components/arcane-table/cells/in-use-status.svelte';
-	import UnixCreatedCell from '$lib/components/arcane-table/cells/unix-created-cell.svelte';
+	import * as Tooltip from '#lib/components/ui/tooltip';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { ImageSummaryDto, ImageUpdateInfoDto } from '#lib/types/docker';
+	import type { VulnerabilityScanSummary } from '#lib/types/environment';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service';
+	import { vulnerabilityService } from '#lib/services/vulnerability-service';
+	import { isLikelyStaleFailedSummary, isVulnerabilityScanInProgress } from '#lib/utils/docker';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
+	import InUseStatus from '#lib/components/arcane-table/cells/in-use-status.svelte';
+	import UnixCreatedCell from '#lib/components/arcane-table/cells/unix-created-cell.svelte';
 
 	import {
 		DownloadIcon,
@@ -43,7 +43,7 @@
 		ProjectsIcon,
 		ContainersIcon,
 		TagIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	let {
 		images = $bindable(),

@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -11,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -342,9 +343,8 @@ func TestContainerRegistryService_CreateRegistry_RejectsUnsupportedRegistryType(
 	})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "registryType", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "registryType")
 }
 
 func TestContainerRegistryService_CreateRegistry_RejectsEmptyUsernameForGeneric(t *testing.T) {
@@ -358,9 +358,8 @@ func TestContainerRegistryService_CreateRegistry_RejectsEmptyUsernameForGeneric(
 	})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "username", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "username")
 }
 
 func TestContainerRegistryService_CreateRegistry_RejectsEmptyTokenForGeneric(t *testing.T) {
@@ -374,9 +373,8 @@ func TestContainerRegistryService_CreateRegistry_RejectsEmptyTokenForGeneric(t *
 	})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "token", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "token")
 }
 
 func TestContainerRegistryService_CreateRegistry_AcceptsValidGenericCredentials(t *testing.T) {
@@ -409,9 +407,8 @@ func TestContainerRegistryService_UpdateRegistry_RejectsBlankingUsername(t *test
 	})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "username", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "username")
 }
 
 func TestContainerRegistryService_UpdateRegistry_KeepsExistingTokenWhenNotProvided(t *testing.T) {
@@ -462,9 +459,8 @@ func TestContainerRegistryService_UpdateRegistry_RejectsTargetChangeWhenStoredTo
 			})
 			require.Error(t, err)
 
-			var validationErr *models.ValidationError
-			require.ErrorAs(t, err, &validationErr)
-			assert.Equal(t, "token", validationErr.Field)
+			require.ErrorIs(t, err, common.ErrValidation)
+			assert.Contains(t, errors.GetDetails(err), "token")
 
 			stored, loadErr := svc.GetRegistryByID(context.Background(), registry.ID)
 			require.NoError(t, loadErr)
@@ -533,9 +529,8 @@ func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *
 	})
 	require.Error(t, err)
 
-	var validationErr *models.ValidationError
-	require.ErrorAs(t, err, &validationErr)
-	assert.Equal(t, "registryType", validationErr.Field)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "registryType")
 }
 
 func TestContainerRegistryService_UpdateRegistry_AllowsSameRegistryType(t *testing.T) {
@@ -1066,9 +1061,8 @@ func TestContainerRegistryService_CreateRegistry_RejectsInvalidRepositoryNames(t
 				RepositoryNames: []string{repositoryName},
 			})
 			require.Error(t, err)
-			var validationErr *models.ValidationError
-			require.ErrorAs(t, err, &validationErr)
-			assert.Equal(t, "repositoryNames", validationErr.Field)
+			require.ErrorIs(t, err, common.ErrValidation)
+			assert.Contains(t, errors.GetDetails(err), "repositoryNames")
 		})
 	}
 }

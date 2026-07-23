@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
-	import { volumeBackupService, type VolumeBackupListResponse } from '$lib/services/volume-backup-service';
-	import { volumeService } from '$lib/services/volume-service';
-	import type { BackupEntry } from '$lib/types/shared';
+	import { m } from '#lib/paraglide/messages';
+	import { volumeBackupService, type VolumeBackupListResponse } from '#lib/services/volume-backup-service';
+	import { volumeService } from '#lib/services/volume-service';
+	import type { BackupEntry } from '#lib/types/shared';
 	import { onMount } from 'svelte';
 	import {
 		LoadingSpinnerIcon,
@@ -15,25 +15,25 @@
 		RestartIcon,
 		FileTextIcon,
 		AlertIcon
-	} from '$lib/icons';
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	} from '#lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button';
 	import { toast } from 'svelte-sonner';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { SearchPaginationSortRequest } from '$lib/types/shared';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '$lib/components/arcane-table';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu';
-	import RowActionsMenu from '$lib/components/file-browser/row-actions-menu.svelte';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog';
-	import { Input } from '$lib/components/ui/input';
-	import { ScrollArea } from '$lib/components/ui/scroll-area';
-	import * as Checkbox from '$lib/components/ui/checkbox';
-	import * as Alert from '$lib/components/ui/alert';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu';
+	import RowActionsMenu from '#lib/components/file-browser/row-actions-menu.svelte';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
+	import { Input } from '#lib/components/ui/input';
+	import { ScrollArea } from '#lib/components/ui/scroll-area';
+	import * as Checkbox from '#lib/components/ui/checkbox';
+	import * as Alert from '#lib/components/ui/alert';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 
 	let { volumeName }: { volumeName: string } = $props();
 

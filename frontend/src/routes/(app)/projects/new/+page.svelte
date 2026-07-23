@@ -1,27 +1,27 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { ArrowLeftIcon } from '$lib/icons';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { ArrowLeftIcon } from '#lib/icons';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '$lib/utils/settings';
-	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { projectService } from '$lib/services/project-service.js';
-	import ComposeCreateMenu from '$lib/components/compose-create-menu.svelte';
-	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
+	import { preventDefault, createForm } from '#lib/utils/settings';
+	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { projectService } from '#lib/services/project-service.js';
+	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
+	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import CodePanel from '../components/CodePanel.svelte';
 	import EditableName from '../components/EditableName.svelte';
 	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
 	import EditorTabStrip from '../components/EditorTabStrip.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { ComposeEditorSplit } from '$lib/components/compose';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import { Switch } from '$lib/components/ui/switch';
-	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
-	import type { ProjectFileDraft } from '$lib/types/project-files';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { ComposeEditorSplit } from '#lib/components/compose';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import { Switch } from '#lib/components/ui/switch';
+	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { globalVariablesToMap } from '#lib/utils/template-load';
+	import type { ProjectFileDraft } from '#lib/types/project-files';
 	import {
 		isProjectFileSelectionUnder,
 		planProjectFileCreate,
@@ -43,12 +43,12 @@
 		extractComposeYamlName,
 		submitComposeResourceForm,
 		templateNameSlug
-	} from '$lib/utils/compose-flow';
+	} from '#lib/utils/compose-flow';
 	import {
 		getTemplateEditorValidationState,
 		hasTemplateEditorErrors,
 		validateTemplateEditorForm
-	} from '$lib/utils/template-editor';
+	} from '#lib/utils/template-editor';
 
 	let { data } = $props();
 

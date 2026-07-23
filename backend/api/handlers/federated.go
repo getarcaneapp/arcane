@@ -4,6 +4,7 @@ import (
 	"context"
 	"net/http"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -11,7 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // FederatedCredentialHandler provides Huma-based federated credential
@@ -74,7 +75,7 @@ type DeleteFederatedCredentialOutput struct {
 // endpoint. It intentionally uses Echo because the standard requires form
 // encoding while the rest of Arcane's Huma API is JSON-first.
 func RegisterFederatedTokenExchange(g *echo.Group, federatedCredentialService *services.FederatedCredentialService) {
-	g.POST("/auth/federated/token", func(c echo.Context) error {
+	g.POST("/auth/federated/token", func(c *echo.Context) error {
 		if federatedCredentialService == nil {
 			return c.JSON(http.StatusInternalServerError, federatedTokenExchangeError{
 				Error:            "server_error",
@@ -248,18 +249,18 @@ func (h *FederatedCredentialHandler) DeleteFederatedCredential(ctx context.Conte
 	}, nil
 }
 
-func writeFederatedTokenExchangeErrorInternal(c echo.Context, err error) error {
+func writeFederatedTokenExchangeErrorInternal(c *echo.Context, err error) error {
 	var code string
 	description := "token exchange rejected"
 
 	switch {
-	case common.IsErrorFederatedCredentialInvalidRequest(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalidRequest):
 		code = "invalid_request"
 		description = "invalid token exchange request"
-	case common.IsErrorFederatedCredentialInvalidGrant(err),
-		common.IsErrorFederatedCredentialNotFound(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalidGrant),
+		errors.Is(err, common.ErrFederatedCredentialNotFound):
 		code = "invalid_grant"
-	case common.IsErrorFederatedCredentialInvalid(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalid):
 		code = "invalid_request"
 	default:
 		code = "server_error"
@@ -274,12 +275,12 @@ func writeFederatedTokenExchangeErrorInternal(c echo.Context, err error) error {
 
 func federatedCredentialManagementErrorInternal(err error) error {
 	switch {
-	case common.IsErrorFederatedCredentialNotFound(err):
+	case errors.Is(err, common.ErrFederatedCredentialNotFound):
 		return huma.Error404NotFound("federated credential not found")
-	case common.IsErrorFederatedCredentialInvalid(err),
-		common.IsErrorFederatedCredentialInvalidRequest(err):
+	case errors.Is(err, common.ErrFederatedCredentialInvalid),
+		errors.Is(err, common.ErrFederatedCredentialInvalidRequest):
 		return huma.Error400BadRequest("invalid federated credential")
-	case common.IsErrorFederatedCredentialPermissionEscalation(err):
+	case errors.Is(err, common.ErrFederatedCredentialPermissionEscalation):
 		return huma.Error403Forbidden("permission denied")
 	default:
 		return huma.Error500InternalServerError("federated credential operation failed")

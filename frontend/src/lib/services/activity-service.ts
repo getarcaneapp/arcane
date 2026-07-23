@@ -1,9 +1,9 @@
 import BaseAPIService, { handleUnauthorizedResponseInternal } from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '$lib/types/activity.type';
-import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
-import { streamCacheBuster } from '$lib/utils/streaming';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import type { Activity, ActivityClearHistoryResult, ActivityDetail } from '#lib/types/activity.type';
+import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
+import { streamCacheBuster } from '#lib/utils/streaming';
 
 class ActivityService extends BaseAPIService {
 	private async resolveEnvironmentId(environmentId?: string): Promise<string> {

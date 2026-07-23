@@ -2,13 +2,14 @@ package scheduler
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"sync"
 	"sync/atomic"
 	"time"
 
+	"emperror.dev/errors"
+
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
@@ -167,7 +168,11 @@ func (w *ImageUpdateWatcher) RefreshSchedule() {
 	}
 }
 
-// RunNow performs the same full-host image scan used by automatic watcher triggers.
+// RunNow performs the same full-host image scan used by automatic watcher
+// triggers. It does not wait behind an active scan: a request during one
+// returns ImageScanInProgressError immediately instead of parking
+// (potentially forever, given the detached run-now context) on the
+// single-flight gate. The triggered-scan loop waits and retries itself.
 func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 	if w == nil || w.settingsService == nil || w.imageUpdateService == nil || w.environmentService == nil || w.metadataReady == nil {
 		return errors.New("image update watcher is not initialized")
@@ -179,20 +184,11 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 	}
 
 	run := &imageUpdateScanRunInternal{done: make(chan struct{})}
-	for {
-		activeRun := w.activeRun.Load()
-		if activeRun == nil && w.activeRun.CompareAndSwap(nil, run) {
-			break
+	for !w.activeRun.CompareAndSwap(nil, run) {
+		if w.activeRun.Load() != nil {
+			return common.Classify(common.ErrImageScanInProgress, errors.New("an image update check is already in progress"))
 		}
-		if activeRun == nil {
-			continue
-		}
-
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-activeRun.done:
-		}
+		// Lost the CAS to a run that has since been released; retry.
 	}
 	defer func() {
 		w.activeRun.Store(nil)
@@ -217,7 +213,7 @@ func (w *ImageUpdateWatcher) RunNow(ctx context.Context) error {
 
 	results, err := w.imageUpdateService.CheckAllImages(ctx, 0, creds)
 	if err != nil {
-		return fmt.Errorf("image scan failed: %w", err)
+		return errors.WrapIf(err, "image scan failed")
 	}
 
 	total := len(results)
@@ -285,7 +281,17 @@ func (w *ImageUpdateWatcher) runTriggeredScansInternal(ctx context.Context) {
 		if !w.waitForDebounceInternal(ctx) {
 			return
 		}
-		if err := w.RunNow(ctx); err != nil && !errors.Is(err, context.Canceled) {
+		err := w.RunNow(ctx)
+		if errors.Is(err, common.ErrImageScanInProgress) {
+			// A manual scan holds the gate; wait it out and re-queue the
+			// trigger so this scan attempt is not lost.
+			if !w.waitForActiveScanInternal(ctx) {
+				return
+			}
+			w.Trigger()
+			continue
+		}
+		if err != nil && !errors.Is(err, context.Canceled) {
 			slog.ErrorContext(ctx, "image update watcher scan failed", "error", err)
 		}
 	}
@@ -329,6 +335,21 @@ func (w *ImageUpdateWatcher) runScheduledPollsInternal(ctx context.Context) {
 		case <-timer.C:
 			w.Trigger()
 		}
+	}
+}
+
+// waitForActiveScanInternal blocks until any in-flight scan releases the
+// single-flight gate. It returns false when ctx is cancelled first.
+func (w *ImageUpdateWatcher) waitForActiveScanInternal(ctx context.Context) bool {
+	activeRun := w.activeRun.Load()
+	if activeRun == nil {
+		return true
+	}
+	select {
+	case <-ctx.Done():
+		return false
+	case <-activeRun.done:
+		return true
 	}
 }
 

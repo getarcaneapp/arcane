@@ -1,4 +1,4 @@
-import { settingsService } from '$lib/services/settings-service';
+import { settingsService } from '#lib/services/settings-service';
 
 export const load = async ({ parent }) => {
 	try {

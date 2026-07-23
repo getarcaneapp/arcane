@@ -4,11 +4,12 @@ import (
 	jsonv1 "encoding/json"
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"net/http"
 
-	"github.com/labstack/echo/v4"
+	"emperror.dev/errors"
+
+	"github.com/labstack/echo/v5"
 )
 
 type jsonV2Serializer struct{}
@@ -16,7 +17,7 @@ type jsonV2Serializer struct{}
 // Preserve the established numeric wire format for duration fields in third-party API types.
 var jsonV2APIOptions = jsonv1.FormatDurationAsNano(true)
 
-func (jsonV2Serializer) Serialize(c echo.Context, value any, indent string) error {
+func (jsonV2Serializer) Serialize(c *echo.Context, value any, indent string) error {
 	if indent != "" {
 		return json.MarshalWrite(c.Response(), value, jsonV2APIOptions, jsontext.WithIndent(indent))
 	}
@@ -24,7 +25,7 @@ func (jsonV2Serializer) Serialize(c echo.Context, value any, indent string) erro
 	return json.MarshalWrite(c.Response(), value, jsonV2APIOptions)
 }
 
-func (jsonV2Serializer) Deserialize(c echo.Context, value any) error {
+func (jsonV2Serializer) Deserialize(c *echo.Context, value any) error {
 	err := json.UnmarshalRead(c.Request().Body, value, jsonV2APIOptions)
 	if err == nil {
 		return nil
@@ -41,7 +42,7 @@ func (jsonV2Serializer) Deserialize(c echo.Context, value any) error {
 				semanticErr.JSONPointer,
 				semanticErr.ByteOffset,
 			),
-		).SetInternal(err)
+		).Wrap(err)
 	}
 
 	var syntacticErr *jsontext.SyntacticError
@@ -49,7 +50,7 @@ func (jsonV2Serializer) Deserialize(c echo.Context, value any) error {
 		return echo.NewHTTPError(
 			http.StatusBadRequest,
 			fmt.Sprintf("Syntax error: offset=%v, error=%v", syntacticErr.ByteOffset, syntacticErr.Error()),
-		).SetInternal(err)
+		).Wrap(err)
 	}
 
 	return err

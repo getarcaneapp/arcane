@@ -5,7 +5,6 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -98,13 +99,13 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	slog.DebugContext(ctx, "volume service: get volume", "volume", name)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	volResult, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	vol := volResult.Volume
 	if err != nil {
-		return nil, fmt.Errorf("volume not found: %w", err)
+		return nil, errors.WrapIf(err, "volume not found")
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
@@ -140,19 +141,19 @@ func (s *VolumeService) CreateVolume(ctx context.Context, options client.VolumeC
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	created, err := dockerClient.VolumeCreate(ctx, options)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", "", options.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver})
-		return nil, fmt.Errorf("failed to create volume: %w", err)
+		return nil, errors.WrapIf(err, "failed to create volume")
 	}
 
 	vol, err := dockerClient.VolumeInspect(ctx, created.Volume.Name, client.VolumeInspectOptions{})
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", created.Volume.Name, created.Volume.Name, user.ID, user.Username, "0", err, models.JSON{"action": "create", "driver": options.Driver, "step": "inspect"})
-		return nil, fmt.Errorf("failed to inspect created volume: %w", err)
+		return nil, errors.WrapIf(err, "failed to inspect created volume")
 	}
 
 	metadata := models.JSON{
@@ -174,7 +175,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// Stop any read-only browse helper first; a helper mounting the volume would
@@ -187,7 +188,7 @@ func (s *VolumeService) DeleteVolume(ctx context.Context, name string, force boo
 		Force: force,
 	}); err != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeVolumeError, "volume", name, name, user.ID, user.Username, "0", err, models.JSON{"action": "delete", "force": force})
-		return fmt.Errorf("failed to remove volume: %w", err)
+		return errors.WrapIf(err, "failed to remove volume")
 	}
 
 	metadata := models.JSON{
@@ -212,7 +213,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	slog.DebugContext(ctx, "volume service: prune volumes with options", "all", all)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// Stop all read-only browse helpers first; a helper mounting a volume marks it
@@ -229,7 +230,7 @@ func (s *VolumeService) PruneVolumesWithOptions(ctx context.Context, all bool) (
 	volumePruneOptions := buildVolumePruneOptionsInternal(all, preserveTrivyCache)
 	volumePruneResult, err := dockerClient.VolumePrune(ctx, volumePruneOptions)
 	if err != nil {
-		return nil, fmt.Errorf("failed to prune volumes: %w", err)
+		return nil, errors.WrapIf(err, "failed to prune volumes")
 	}
 
 	metadata := buildVolumePruneMetadataInternal(all, len(volumePruneResult.Report.VolumesDeleted), volumePruneResult.Report.SpaceReclaimed, preserveTrivyCache)
@@ -291,10 +292,10 @@ func buildVolumePruneMetadataInternal(all bool, volumesDeleted int, spaceReclaim
 func (s *VolumeService) isBrowsableVolumeInternal(ctx context.Context, volumeName string) error {
 	vol, err := s.GetVolumeByName(ctx, volumeName)
 	if err != nil {
-		return fmt.Errorf("failed to inspect volume: %w", err)
+		return errors.WrapIf(err, "failed to inspect volume")
 	}
 	if vol.Options["type"] == "none" || strings.Contains(vol.Options["o"], "bind") {
-		return fmt.Errorf("volume %q uses a custom mount configuration and cannot be browsed", volumeName)
+		return errors.Errorf("volume %q uses a custom mount configuration and cannot be browsed", volumeName)
 	}
 	return nil
 }
@@ -308,7 +309,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
-		return nil, fmt.Errorf("invalid path: %w", err)
+		return nil, errors.WrapIf(err, "invalid path")
 	}
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
@@ -322,7 +323,7 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 	cmd := []string{"sh", "-c", fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c \"%%s %%Y %%f %%A\" -- \"$f\" 2>/dev/null) || continue; printf \"%%s\\0%%s\\0\" \"$f\" \"$out\"; done", quotedPath)}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list directory: %w", err)
+		return nil, errors.WrapIf(err, "failed to list directory")
 	}
 
 	lines := strings.Split(stdout, "\x00")
@@ -395,7 +396,7 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("invalid path: %w", err)
+		return nil, "", errors.WrapIf(err, "invalid path")
 	}
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
@@ -408,7 +409,7 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 	cmd := []string{"head", "-c", strconv.FormatInt(maxBytes, 10), targetPath}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
-		return nil, "", fmt.Errorf("failed to read file: %w", err)
+		return nil, "", errors.WrapIf(err, "failed to read file")
 	}
 
 	content := []byte(stdout)
@@ -426,7 +427,7 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return nil, 0, fmt.Errorf("invalid path: %w", err)
+		return nil, 0, errors.WrapIf(err, "invalid path")
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -452,7 +453,7 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 		}
 		dockerClient, err = dockerService.GetClient(ctx)
 		if err != nil {
-			return "", fmt.Errorf("failed to get docker client: %w", err)
+			return "", errors.WrapIf(err, "failed to get docker client")
 		}
 	}
 
@@ -480,7 +481,7 @@ func getVolumeHelperImageInternal(ctx context.Context, dockerService *DockerClie
 		return fallback.Image, nil
 	}
 
-	return "", fmt.Errorf("failed to resolve helper image: tools image unavailable and arcane fallback not found (pull error: %w)", pullErr)
+	return "", errors.WrapIf(pullErr, "failed to resolve helper image: tools image unavailable and arcane fallback not found")
 }
 
 func resolveBackupStorageMountFromMountsInternal(mounts []container.MountPoint, target string, readOnly bool) mo.Option[backupStorageMountInternal] {
@@ -634,12 +635,12 @@ func (s *VolumeService) createBackupTempContainerWithMountInternal(ctx context.C
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create backup temp container: %w", err)
+		return "", nil, errors.WrapIf(err, "failed to create backup temp container")
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, fmt.Errorf("failed to start backup temp container: %w", err)
+		return "", nil, errors.WrapIf(err, "failed to start backup temp container")
 	}
 
 	cleanup := func() {
@@ -749,12 +750,12 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return "", nil, fmt.Errorf("failed to create temp container: %w", err)
+		return "", nil, errors.WrapIf(err, "failed to create temp container")
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return "", nil, fmt.Errorf("failed to start temp container: %w", err)
+		return "", nil, errors.WrapIf(err, "failed to start temp container")
 	}
 
 	cleanup := func() {
@@ -838,7 +839,7 @@ func (s *VolumeService) ReapIdleHelpers(ctx context.Context, idleTimeout time.Du
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get docker client for idle helper reap: %w", err)
+		return 0, errors.WrapIf(err, "failed to get docker client for idle helper reap")
 	}
 
 	staleIDs := s.collectStaleHelperIDsInternal(time.Now(), idleTimeout)
@@ -887,7 +888,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to get docker client for helper stop: %w", err)
+		return errors.WrapIf(err, "failed to get docker client for helper stop")
 	}
 
 	containerID := s.takeHelperIDInternal(volumeName)
@@ -896,7 +897,7 @@ func (s *VolumeService) StopHelper(ctx context.Context, volumeName string) error
 	}
 
 	if _, err := dockerClient.ContainerRemove(ctx, containerID, volumehelper.RemoveOptions()); err != nil {
-		return fmt.Errorf("failed to remove helper container: %w", err)
+		return errors.WrapIf(err, "failed to remove helper container")
 	}
 
 	return nil
@@ -920,12 +921,12 @@ func (s *VolumeService) CleanupOrphanedVolumeHelpers(ctx context.Context) (int, 
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return 0, fmt.Errorf("failed to get docker client for orphan helper cleanup: %w", err)
+		return 0, errors.WrapIf(err, "failed to get docker client for orphan helper cleanup")
 	}
 
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return 0, fmt.Errorf("failed to list containers for orphan helper cleanup: %w", err)
+		return 0, errors.WrapIf(err, "failed to list containers for orphan helper cleanup")
 	}
 
 	removedCount := 0
@@ -991,7 +992,7 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 
 	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
 	if err != nil {
-		return stdout.String(), stderr.String(), fmt.Errorf("failed to inspect exec result: %w", err)
+		return stdout.String(), stderr.String(), errors.WrapIf(err, "failed to inspect exec result")
 	}
 
 	if inspect.ExitCode != 0 {
@@ -1000,9 +1001,9 @@ func (s *VolumeService) execInContainerInternal(ctx context.Context, containerID
 			execErr = strings.TrimSpace(stdout.String())
 		}
 		if execErr != "" {
-			return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d: %s", inspect.ExitCode, execErr)
+			return stdout.String(), stderr.String(), errors.Errorf("command exited with code %d: %s", inspect.ExitCode, execErr)
 		}
-		return stdout.String(), stderr.String(), fmt.Errorf("command exited with code %d", inspect.ExitCode)
+		return stdout.String(), stderr.String(), errors.Errorf("command exited with code %d", inspect.ExitCode)
 	}
 
 	return stdout.String(), stderr.String(), nil
@@ -1013,7 +1014,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(filePath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 	// Prevent deleting root
 	if sanitizedPath == "/" {
@@ -1032,7 +1033,7 @@ func (s *VolumeService) DeleteFile(ctx context.Context, volumeName, filePath str
 		return err
 	}
 	if stderr != "" {
-		return fmt.Errorf("delete failed: %s", stderr)
+		return errors.Errorf("delete failed: %s", stderr)
 	}
 
 	actingUser := user
@@ -1054,7 +1055,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(dirPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, false)
@@ -1069,7 +1070,7 @@ func (s *VolumeService) CreateDirectory(ctx context.Context, volumeName, dirPath
 		return err
 	}
 	if stderr != "" {
-		return fmt.Errorf("mkdir failed: %s", stderr)
+		return errors.Errorf("mkdir failed: %s", stderr)
 	}
 
 	actingUser := user
@@ -1091,7 +1092,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 
 	sanitizedPath, err := utils.SanitizeBrowsePath(destPath)
 	if err != nil {
-		return fmt.Errorf("invalid path: %w", err)
+		return errors.WrapIf(err, "invalid path")
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -1135,7 +1136,7 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		Content:         &buf,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to upload: %w", err)
+		return errors.WrapIf(err, "failed to upload")
 	}
 
 	actingUser := user
@@ -1167,7 +1168,7 @@ func (s *VolumeService) ensureBackupVolumeInternal(ctx context.Context) error {
 			Name: s.backupVolumeName,
 		})
 		if err != nil {
-			return fmt.Errorf("failed to create backup volume: %w", err)
+			return errors.WrapIf(err, "failed to create backup volume")
 		}
 	}
 	return nil
@@ -1211,12 +1212,12 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to create backup container: %w", err)
+		return nil, errors.WrapIf(err, "failed to create backup container")
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return nil, fmt.Errorf("failed to start backup container: %w", err)
+		return nil, errors.WrapIf(err, "failed to start backup container")
 	}
 
 	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
@@ -1227,7 +1228,7 @@ func (s *VolumeService) CreateBackup(ctx context.Context, volumeName string, use
 		}
 	case status := <-waitResult.Result:
 		if status.StatusCode != 0 {
-			return nil, fmt.Errorf("backup container exited with status %d", status.StatusCode)
+			return nil, errors.Errorf("backup container exited with status %d", status.StatusCode)
 		}
 	}
 
@@ -1403,7 +1404,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 
 	// Validate backup belongs to volume
 	if backup.VolumeName != volumeName {
-		return fmt.Errorf("backup does not belong to volume %s", volumeName)
+		return errors.Errorf("backup does not belong to volume %s", volumeName)
 	}
 
 	// Check if volume is in use by running containers
@@ -1411,12 +1412,12 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	if err != nil {
 		slog.WarnContext(ctx, "could not check volume usage", "volume", volumeName, "error", err.Error())
 	} else if inUse {
-		return fmt.Errorf("volume is in use by %d container(s): restoring while containers are running may cause data corruption. Stop the containers first or use selective file restore", len(containerIDs))
+		return errors.Errorf("volume is in use by %d container(s): restoring while containers are running may cause data corruption. Stop the containers first or use selective file restore", len(containerIDs))
 	}
 
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
 	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
+		return errors.WrapIf(err, "failed to create pre-restore backup")
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -1458,12 +1459,12 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create restore container: %w", err)
+		return errors.WrapIf(err, "failed to create restore container")
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return fmt.Errorf("failed to start restore container: %w", err)
+		return errors.WrapIf(err, "failed to start restore container")
 	}
 
 	waitResult := dockerClient.ContainerWait(ctx, resp.ID, client.ContainerWaitOptions{Condition: container.WaitConditionNotRunning})
@@ -1477,7 +1478,7 @@ func (s *VolumeService) RestoreBackup(ctx context.Context, volumeName, backupID 
 	}
 
 	if waitBody.StatusCode != 0 {
-		return fmt.Errorf("restore container exited with code %d (volume may be partially wiped)", waitBody.StatusCode)
+		return errors.Errorf("restore container exited with code %d (volume may be partially wiped)", waitBody.StatusCode)
 	}
 
 	metadata := models.JSON{
@@ -1499,13 +1500,13 @@ func (s *VolumeService) sanitizeBackupPathInternal(input string) (string, error)
 	}
 	cleaned := path.Clean(trimmed)
 	if cleaned == "." || cleaned == "/" {
-		return "", fmt.Errorf("invalid path: %s", input)
+		return "", errors.Errorf("invalid path: %s", input)
 	}
 	if path.IsAbs(cleaned) {
 		cleaned = strings.TrimPrefix(cleaned, "/")
 	}
 	if cleaned == "" || cleaned == "." || cleaned == "/" || strings.HasPrefix(cleaned, "..") || strings.Contains(cleaned, "/../") {
-		return "", fmt.Errorf("invalid path: %s", input)
+		return "", errors.Errorf("invalid path: %s", input)
 	}
 	return cleaned, nil
 }
@@ -1513,7 +1514,7 @@ func (s *VolumeService) sanitizeBackupPathInternal(input string) (string, error)
 func (s *VolumeService) sanitizeBackupIDInternal(backupID string) (string, error) {
 	cleaned, err := s.sanitizeBackupPathInternal(backupID)
 	if err != nil {
-		return "", fmt.Errorf("invalid backup id: %w", err)
+		return "", errors.WrapIf(err, "invalid backup id")
 	}
 	if strings.Contains(cleaned, "/") {
 		return "", errors.New("invalid backup id: path separators not allowed")
@@ -1574,7 +1575,7 @@ func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, file
 		return false, err
 	}
 	if strings.TrimSpace(stderr) != "" {
-		return false, fmt.Errorf("failed to list backup contents: %s", strings.TrimSpace(stderr))
+		return false, errors.Errorf("failed to list backup contents: %s", strings.TrimSpace(stderr))
 	}
 
 	for line := range strings.SplitSeq(stdout, "\n") {
@@ -1674,7 +1675,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	// Create pre-restore backup for safety (consistent with RestoreBackup behavior)
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
 	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
+		return errors.WrapIf(err, "failed to create pre-restore backup")
 	}
 	slog.DebugContext(ctx, "created pre-restore backup", "volume", volumeName, "pre_backup_id", preBackup.ID)
 
@@ -1726,12 +1727,12 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		HostConfig: hostConfig,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create restore container: %w", err)
+		return errors.WrapIf(err, "failed to create restore container")
 	}
 
 	if _, err := dockerClient.ContainerStart(ctx, resp.ID, client.ContainerStartOptions{}); err != nil {
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-		return fmt.Errorf("failed to start restore container: %w", err)
+		return errors.WrapIf(err, "failed to start restore container")
 	}
 
 	cleanup := func() {
@@ -1742,7 +1743,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	cmd := append([]string{"tar", "-xzf", path.Join("/backups", filename), "-C", "/volume", "--"}, tarPaths...)
 	_, stderr, err := s.execInContainerInternal(ctx, resp.ID, cmd)
 	if err != nil {
-		return fmt.Errorf("failed to restore files: %w", err)
+		return errors.WrapIf(err, "failed to restore files")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore files stderr", "backup_id", backupID, "stderr", strings.TrimSpace(stderr))
@@ -1814,31 +1815,31 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 	tmpFile, err := os.CreateTemp("", "arcane-restore-*.tar.gz")
 	if err != nil {
-		return fmt.Errorf("failed to buffer upload: %w", err)
+		return errors.WrapIf(err, "failed to buffer upload")
 	}
 	defer func() {
 		_ = tmpFile.Close()
 		_ = os.Remove(tmpFile.Name())
 	}()
 	if _, err := io.Copy(tmpFile, archive); err != nil {
-		return fmt.Errorf("failed to buffer upload: %w", err)
+		return errors.WrapIf(err, "failed to buffer upload")
 	}
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to read buffered upload: %w", err)
+		return errors.WrapIf(err, "failed to read buffered upload")
 	}
 	gzr, err := gzip.NewReader(tmpFile)
 	if err != nil {
-		return fmt.Errorf("invalid archive: %w", err)
+		return errors.WrapIf(err, "invalid archive")
 	}
 	if _, err := tar.NewReader(gzr).Next(); err != nil {
 		_ = gzr.Close()
-		return fmt.Errorf("invalid archive: %w", err)
+		return errors.WrapIf(err, "invalid archive")
 	}
 	_ = gzr.Close()
 
 	preBackup, err := s.CreateBackup(ctx, volumeName, user)
 	if err != nil {
-		return fmt.Errorf("failed to create pre-restore backup: %w", err)
+		return errors.WrapIf(err, "failed to create pre-restore backup")
 	}
 
 	dockerClient, err := s.dockerService.GetClient(ctx)
@@ -1855,26 +1856,26 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	tmpDir := fmt.Sprintf("/volume/.restore_tmp_%d", time.Now().UnixNano())
 	_, stderr, err := s.execInContainerInternal(ctx, containerID, []string{"mkdir", "-p", tmpDir})
 	if err != nil {
-		return fmt.Errorf("failed to create temp restore dir: %w", err)
+		return errors.WrapIf(err, "failed to create temp restore dir")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore temp dir stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
 	}
 
 	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("failed to read buffered upload: %w", err)
+		return errors.WrapIf(err, "failed to read buffered upload")
 	}
 	_, err = dockerClient.CopyToContainer(ctx, containerID, client.CopyToContainerOptions{
 		DestinationPath: tmpDir,
 		Content:         tmpFile,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to restore from uploaded archive: %w", err)
+		return errors.WrapIf(err, "failed to restore from uploaded archive")
 	}
 
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", fmt.Sprintf("test -n \"$(find %s -mindepth 1 -maxdepth 1 -print -quit)\"", tmpDir)})
 	if err != nil {
-		return fmt.Errorf("uploaded archive appears empty or invalid: %w", err)
+		return errors.WrapIf(err, "uploaded archive appears empty or invalid")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore validate stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1882,7 +1883,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", "rm -rf /volume/* /volume/.[!.]* /volume/..?* 2>/dev/null || true"})
 	if err != nil {
-		return fmt.Errorf("failed to clear volume before restore: %w", err)
+		return errors.WrapIf(err, "failed to clear volume before restore")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore clear stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1891,7 +1892,7 @@ func (s *VolumeService) UploadAndRestore(ctx context.Context, volumeName string,
 	moveCmd := fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 -exec mv -- {} /volume/ \\; && rmdir %s", tmpDir, tmpDir)
 	_, stderr, err = s.execInContainerInternal(ctx, containerID, []string{"sh", "-c", moveCmd})
 	if err != nil {
-		return fmt.Errorf("failed to move restored files into place: %w", err)
+		return errors.WrapIf(err, "failed to move restored files into place")
 	}
 	if strings.TrimSpace(stderr) != "" {
 		slog.DebugContext(ctx, "volume service: restore move stderr", "volume", volumeName, "stderr", strings.TrimSpace(stderr))
@@ -1913,17 +1914,17 @@ func (s *VolumeService) GetVolumeUsage(ctx context.Context, name string) (bool, 
 	slog.DebugContext(ctx, "volume service: get volume usage", "volume", name)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return false, nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	vol, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
 	if err != nil {
-		return false, nil, fmt.Errorf("volume not found: %w", err)
+		return false, nil, errors.WrapIf(err, "volume not found")
 	}
 
 	containerIDs, err := docker.GetContainersUsingVolume(ctx, dockerClient, vol.Volume.Name)
 	if err != nil {
-		return false, nil, fmt.Errorf("failed to get containers using volume: %w", err)
+		return false, nil, errors.WrapIf(err, "failed to get containers using volume")
 	}
 
 	inUse := len(containerIDs) > 0
@@ -1946,12 +1947,12 @@ func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSi
 
 	dockerClient, err := s.dockerService.GetClient(apiCtx)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	usageVolumes, err := docker.GetVolumeUsageData(apiCtx, dockerClient)
 	if err != nil {
-		return nil, fmt.Errorf("failed to get volume usage data: %w", err)
+		return nil, errors.WrapIf(err, "failed to get volume usage data")
 	}
 
 	result := make(map[string]VolumeSizeData, len(usageVolumes))
@@ -1993,7 +1994,7 @@ func (s *VolumeService) enrichVolumesWithUsageDataInternal(volumes []volume.Volu
 func (s *VolumeService) buildVolumeContainerMapInternal(ctx context.Context, dockerClient *client.Client) (map[string][]string, error) {
 	containers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list containers: %w", err)
+		return nil, errors.WrapIf(err, "failed to list containers")
 	}
 
 	volumeContainerMap := make(map[string][]string)
@@ -2160,7 +2161,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	slog.DebugContext(ctx, "volume service: list volumes paginated", "search", params.Search, "sort", params.Sort, "order", params.Order, "start", params.Start, "limit", params.Limit, "include_internal", includeInternal)
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to connect to Docker: %w", err)
+		return nil, pagination.Response{}, volumetypes.UsageCounts{}, errors.WrapIf(err, "failed to connect to Docker")
 	}
 
 	// Run volume list and container list in parallel for better performance
@@ -2193,7 +2194,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	// Wait for both results
 	volResult := <-volChan
 	if volResult.err != nil {
-		return nil, pagination.Response{}, volumetypes.UsageCounts{}, fmt.Errorf("failed to list Docker volumes: %w", volResult.err)
+		return nil, pagination.Response{}, volumetypes.UsageCounts{}, errors.WrapIf(volResult.err, "failed to list Docker volumes")
 	}
 
 	containerResult := <-containerChan
@@ -2275,7 +2276,7 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 	})
 	if err != nil {
 		cleanup()
-		return nil, 0, fmt.Errorf("failed to download: %w", err)
+		return nil, 0, errors.WrapIf(err, "failed to download")
 	}
 	reader := copyResult.Content
 
@@ -2284,7 +2285,7 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 	if err != nil {
 		_ = reader.Close()
 		cleanup()
-		return nil, 0, fmt.Errorf("failed to read tar stream: %w", err)
+		return nil, 0, errors.WrapIf(err, "failed to read tar stream")
 	}
 	if hdr.FileInfo().IsDir() {
 		_ = reader.Close()

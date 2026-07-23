@@ -2,13 +2,13 @@
 	import { page } from '$app/state';
 	import { goto, beforeNavigate } from '$app/navigation';
 	import { setContext } from 'svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import settingsStore from '$lib/stores/config-store';
-	import { IsMobile } from '$lib/hooks/is-mobile.svelte.js';
-	import { cn } from '$lib/utils';
-	import MobileFloatingFormActions from '$lib/components/form/mobile-floating-form-actions.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { SettingsIcon, ArrowRightIcon, ArrowLeftIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import settingsStore from '#lib/stores/config-store';
+	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
+	import { cn } from '#lib/utils';
+	import MobileFloatingFormActions from '#lib/components/form/mobile-floating-form-actions.svelte';
 
 	let { children }: LayoutProps = $props();
 

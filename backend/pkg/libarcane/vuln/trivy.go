@@ -6,11 +6,11 @@ package vuln
 import (
 	"encoding/base64"
 	json "encoding/json/v2"
-	"fmt"
 	"net/url"
 	"runtime"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	containertypes "github.com/moby/moby/api/types/container"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -93,7 +93,7 @@ func ParseDockerHost(dockerHost string) (scheme string, socketPath string, err e
 
 	parsed, err := url.Parse(dockerHost)
 	if err != nil {
-		return "", "", fmt.Errorf("parse docker host %q: %w", dockerHost, err)
+		return "", "", errors.WrapIff(err, "parse docker host %q", dockerHost)
 	}
 
 	scheme = strings.ToLower(strings.TrimSpace(parsed.Scheme))
@@ -101,13 +101,13 @@ func ParseDockerHost(dockerHost string) (scheme string, socketPath string, err e
 	case "unix":
 		socketPath = strings.TrimSpace(parsed.Path)
 		if socketPath == "" {
-			return "", "", fmt.Errorf("docker host %q is missing a unix socket path", dockerHost)
+			return "", "", errors.Errorf("docker host %q is missing a unix socket path", dockerHost)
 		}
 		return scheme, socketPath, nil
 	case "tcp", "http", "https":
 		return scheme, "", nil
 	default:
-		return "", "", fmt.Errorf("unsupported docker host scheme %q", scheme)
+		return "", "", errors.Errorf("unsupported docker host scheme %q", scheme)
 	}
 }
 

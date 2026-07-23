@@ -2,11 +2,11 @@ package runtime
 
 import (
 	"context"
-	"fmt"
 	"strings"
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/config"
 	clitypes "github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -51,7 +51,7 @@ type AppContext struct {
 func New(opts Options) (*AppContext, error) {
 	cfg, err := config.Load()
 	if err != nil {
-		return nil, fmt.Errorf("failed to load config: %w", err)
+		return nil, errors.WrapIf(err, "failed to load config")
 	}
 
 	mode := opts.OutputMode
@@ -61,7 +61,7 @@ func New(opts Options) (*AppContext, error) {
 	switch mode {
 	case OutputModeText, OutputModeJSON:
 	default:
-		return nil, fmt.Errorf("invalid output mode %q (expected text or json)", mode)
+		return nil, errors.Errorf("invalid output mode %q (expected text or json)", mode)
 	}
 
 	return &AppContext{

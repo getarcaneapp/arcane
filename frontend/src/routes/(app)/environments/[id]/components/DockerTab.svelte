@@ -1,12 +1,12 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import SettingsRow from '$lib/components/settings/settings-row.svelte';
-	import PruneModeCard from '$lib/components/prune/prune-mode-card.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { DockerBrandIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import PruneModeCard from '#lib/components/prune/prune-mode-card.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { DockerBrandIcon } from '#lib/icons';
 	import type { DockerTabProps } from './tab-props';
 
 	let { formInputs, shellSelectValue, handleShellSelectChange, shellOptions }: DockerTabProps = $props();

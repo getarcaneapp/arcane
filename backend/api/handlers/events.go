@@ -7,16 +7,16 @@ import (
 	"net/http"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/event"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // EventHandler handles event management endpoints.
@@ -79,7 +79,7 @@ type DeleteEventOutput struct {
 // direct agents when no edge tunnel is active. This route is not part of the
 // Huma/OpenAPI surface and authenticates only with the configured agent token.
 func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventService, cfg *config.Config) {
-	g.POST("/events", func(c echo.Context) error {
+	g.POST("/events", func(c *echo.Context) error {
 		if eventService == nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
 				Success: false,
@@ -117,7 +117,7 @@ func RegisterAgentEventIngestion(g *echo.Group, eventService *services.EventServ
 		if _, err := eventService.CreateEvent(c.Request().Context(), input); err != nil {
 			return c.JSON(http.StatusInternalServerError, base.ApiResponse[base.MessageResponse]{
 				Success: false,
-				Data:    base.MessageResponse{Message: (&common.EventCreationError{Err: err}).Error()},
+				Data:    base.MessageResponse{Message: errors.WithMessage(err, "Failed to create event").Error()},
 			})
 		}
 
@@ -204,7 +204,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 
 	events, paginationResp, err := h.eventService.ListEventsPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EventListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
 	}
 
 	return &ListEventsOutput{
@@ -220,7 +220,7 @@ func (h *EventHandler) ListEvents(ctx context.Context, input *ListEventsInput) (
 func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput) (*GetEventStatsOutput, error) {
 	counts, err := h.eventService.GetEventSeverityCounts(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EventStatsError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to load event statistics").Error())
 	}
 
 	return &GetEventStatsOutput{
@@ -234,7 +234,7 @@ func (h *EventHandler) GetEventStats(ctx context.Context, _ *GetEventStatsInput)
 // GetEventsByEnvironment returns events for a specific environment.
 func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEventsByEnvironmentInput) (*GetEventsByEnvironmentOutput, error) {
 	if input.EnvironmentID == "" {
-		return nil, huma.Error400BadRequest((&common.EnvironmentIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Environment ID is required")
 	}
 
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
@@ -248,7 +248,7 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 
 	events, paginationResp, err := h.eventService.GetEventsByEnvironmentPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.EventListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list events").Error())
 	}
 
 	return &GetEventsByEnvironmentOutput{
@@ -263,11 +263,11 @@ func (h *EventHandler) GetEventsByEnvironment(ctx context.Context, input *GetEve
 // DeleteEvent deletes an event.
 func (h *EventHandler) DeleteEvent(ctx context.Context, input *DeleteEventInput) (*DeleteEventOutput, error) {
 	if input.EventID == "" {
-		return nil, huma.Error400BadRequest((&common.EventIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Event ID is required")
 	}
 
 	if err := h.eventService.DeleteEvent(ctx, input.EventID); err != nil {
-		return nil, huma.Error500InternalServerError((&common.EventDeletionError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to delete event").Error())
 	}
 
 	return &DeleteEventOutput{

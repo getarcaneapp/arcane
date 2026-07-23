@@ -1,4 +1,4 @@
-import type { Locale } from '$lib/paraglide/runtime';
+import type { Locale } from '#lib/paraglide/runtime';
 
 // --- RBAC: roles, permissions, assignments ---
 

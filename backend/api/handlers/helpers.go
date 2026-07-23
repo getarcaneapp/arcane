@@ -3,13 +3,14 @@ package handlers
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
+	stderrors "errors"
 	"mime/multipart"
 	"strings"
 
+	"emperror.dev/errors"
+
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
@@ -76,7 +77,7 @@ func toPaginationResponseInternal(p pagination.Response) base.PaginationResponse
 func requireUserInternal(ctx context.Context) (*models.User, error) {
 	user, exists := humamw.GetCurrentUserFromContext(ctx)
 	if !exists || user == nil {
-		return nil, huma.Error401Unauthorized((&common.NotAuthenticatedError{}).Error())
+		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
 	return user, nil
 }
@@ -84,13 +85,13 @@ func requireUserInternal(ctx context.Context) (*models.User, error) {
 func openUploadedFileInternal(form multipart.Form) (multipart.File, *multipart.FileHeader, error) {
 	files := form.File["file"]
 	if len(files) == 0 {
-		return nil, nil, huma.Error400BadRequest((&common.NoFileUploadedError{}).Error())
+		return nil, nil, huma.Error400BadRequest("No file uploaded")
 	}
 
 	fileHeader := files[0]
 	file, err := fileHeader.Open()
 	if err != nil {
-		return nil, nil, huma.Error500InternalServerError((&common.FileUploadReadError{Err: err}).Error())
+		return nil, nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to read upload").Error())
 	}
 
 	return file, fileHeader, nil
@@ -217,15 +218,15 @@ func marshalRemoteRequestBodyInternal(requestBody any) ([]byte, error) {
 }
 
 func translateRemoteProxyErrorInternal(err error) error {
-	if transportErr, ok := errors.AsType[*remenv.TransportError](err); ok {
+	if transportErr, ok := stderrors.AsType[*remenv.TransportError](err); ok {
 		return huma.Error502BadGateway("failed to proxy request to environment: " + transportErr.Error())
 	}
 
-	if statusErr, ok := errors.AsType[*remenv.StatusError](err); ok {
+	if statusErr, ok := stderrors.AsType[*remenv.StatusError](err); ok {
 		return huma.NewError(statusErr.StatusCode, "environment returned error: "+string(statusErr.Body), nil)
 	}
 
-	if decodeErr, ok := errors.AsType[*remenv.DecodeError](err); ok {
+	if decodeErr, ok := stderrors.AsType[*remenv.DecodeError](err); ok {
 		return huma.Error500InternalServerError("failed to decode environment response: " + decodeErr.Error())
 	}
 

@@ -2,10 +2,11 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -60,12 +61,12 @@ func BuildMatrixURL(config models.MatrixConfig) (string, error) {
 func SendMatrix(ctx context.Context, config models.MatrixConfig, message string) error {
 	shoutrrrURL, err := BuildMatrixURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Matrix URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Matrix URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Matrix sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Matrix sender")
 	}
 
 	params := &shoutrrrTypes.Params{}
@@ -73,7 +74,7 @@ func SendMatrix(ctx context.Context, config models.MatrixConfig, message string)
 	errs := sender.Send(message, params)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Matrix message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Matrix message via shoutrrr")
 		}
 	}
 	return nil

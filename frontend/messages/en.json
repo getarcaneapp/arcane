@@ -2562,6 +2562,7 @@
   "build_push_reference_label": "Image reference",
   "build_push_registry_required": "Select a registry",
   "build_push_repository_required": "Select a repository name",
+  "build_push_repository_invalid": "Select a repository name configured for this registry",
   "build_push_tag_required": "Tag is required",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Path to Dockerfile (relative to context)",

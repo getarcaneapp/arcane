@@ -1,6 +1,6 @@
 <script lang="ts">
 	import CodeMirror from 'svelte-codemirror-editor';
-	import * as Command from '$lib/components/ui/command';
+	import * as Command from '#lib/components/ui/command';
 	import { autocompletion, type Completion, type CompletionContext } from '@codemirror/autocomplete';
 	import { javascript } from '@codemirror/lang-javascript';
 	import { json } from '@codemirror/lang-json';
@@ -23,8 +23,8 @@
 	import { keymap, hoverTooltip, EditorView, ViewPlugin, closeHoverTooltips, hasHoverTooltips } from '@codemirror/view';
 	import { type Extension } from '@codemirror/state';
 	import { browser } from '$app/env';
-	import { m } from '$lib/paraglide/messages';
-	import configStore from '$lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import configStore from '#lib/stores/config-store';
 	import { mode } from 'mode-watcher';
 	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';

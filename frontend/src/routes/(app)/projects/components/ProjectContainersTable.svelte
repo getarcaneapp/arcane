@@ -1,32 +1,32 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import ContainerActionMenuItem from '$lib/components/arcane-table/cells/container-action-menu-item.svelte';
-	import * as Empty from '$lib/components/ui/empty/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { PortBadge } from '$lib/components/badges/index.js';
-	import { UniversalMobileCard } from '$lib/components/arcane-table/index.js';
-	import { getStatusVariant, getThemedIconUrl } from '$lib/utils/docker';
-	import { capitalizeFirstLetter } from '$lib/utils/formatting';
-	import type { RuntimeService } from '$lib/types/swarm';
-	import type { ColumnSpec, BulkAction } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import ContainerActionMenuItem from '#lib/components/arcane-table/cells/container-action-menu-item.svelte';
+	import * as Empty from '#lib/components/ui/empty/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { PortBadge } from '#lib/components/badges/index.js';
+	import { UniversalMobileCard } from '#lib/components/arcane-table/index.js';
+	import { getStatusVariant, getThemedIconUrl } from '#lib/utils/docker';
+	import { capitalizeFirstLetter } from '#lib/utils/formatting';
+	import type { RuntimeService } from '#lib/types/swarm';
+	import type { ColumnSpec, BulkAction } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
 	import { goto } from '$app/navigation';
-	import { containerService } from '$lib/services/container-service';
-	import { projectService } from '$lib/services/project-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import IconImage from '$lib/components/icon-image.svelte';
+	import { containerService } from '#lib/services/container-service';
+	import { projectService } from '#lib/services/project-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import IconImage from '#lib/components/icon-image.svelte';
 	import { mode } from 'mode-watcher';
 	import { toast } from 'svelte-sonner';
-	import { handleApiResultWithCallbacks, tryCatch } from '$lib/utils/api';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { bulkConfirmAndRun, hasAnyLoadingState } from '$lib/utils/bulk-actions';
-	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '$lib/utils/container-actions';
+	import { handleApiResultWithCallbacks, tryCatch } from '#lib/utils/api';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { bulkConfirmAndRun, hasAnyLoadingState } from '#lib/utils/bulk-actions';
+	import { confirmAndRemoveContainer, runContainerLifecycleAction } from '#lib/utils/container-actions';
 	import {
 		StartIcon,
 		StopIcon,
@@ -37,7 +37,7 @@
 		InspectIcon,
 		FolderXIcon,
 		BoxIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	interface Props {
 		services?: RuntimeService[];

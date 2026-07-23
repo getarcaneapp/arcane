@@ -1,9 +1,9 @@
-import { templateService } from '$lib/services/template-service';
-import { variableService } from '$lib/services/variable-service';
-import { queryKeys } from '$lib/query/query-keys';
+import { templateService } from '#lib/services/template-service';
+import { variableService } from '#lib/services/variable-service';
+import { queryKeys } from '#lib/query/query-keys';
 import { error } from '@sveltejs/kit';
-import type { Template, TemplateContentData } from '$lib/types/swarm';
-import type { GlobalVariable } from '$lib/types/variable';
+import type { Template, TemplateContentData } from '#lib/types/swarm';
+import type { GlobalVariable } from '#lib/types/variable';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({

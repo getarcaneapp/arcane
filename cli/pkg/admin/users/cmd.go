@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/charmbracelet/x/term"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -103,24 +104,24 @@ var listCmd = &cobra.Command{
 		path := types.Endpoints.Users()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "users", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list users: %w", err)
+			return errors.WrapIf(err, "failed to list users")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[user.User]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -169,7 +170,7 @@ var createCmd = &cobra.Command{
 			fmt.Print("Password: ")
 			bytePassword, err := term.ReadPassword(os.Stdin.Fd())
 			if err != nil {
-				return fmt.Errorf("failed to read password: %w", err)
+				return errors.WrapIf(err, "failed to read password")
 			}
 			userCreatePassword = string(bytePassword)
 			fmt.Println()
@@ -188,22 +189,22 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.Users(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create user: %w", err)
+			return errors.WrapIf(err, "failed to create user")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create user: %w", err)
+			return errors.WrapIf(err, "failed to create user")
 		}
 
 		var result base.ApiResponse[user.User]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -230,19 +231,19 @@ var getCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.User(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get user: %w", err)
+			return errors.WrapIf(err, "failed to get user")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[user.User]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -298,11 +299,11 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.User(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update user: %w", err)
+			return errors.WrapIf(err, "failed to update user")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update user: %w", err)
+			return errors.WrapIf(err, "failed to update user")
 		}
 
 		if jsonOutput {
@@ -345,11 +346,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.User(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
+			return errors.WrapIf(err, "failed to delete user")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete user: %w", err)
+			return errors.WrapIf(err, "failed to delete user")
 		}
 
 		output.Success("User deleted successfully")

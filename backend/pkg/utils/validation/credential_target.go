@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"slices"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
 
@@ -40,10 +42,7 @@ func ValidateCredentialTargetChange(
 
 	slices.Sort(missingFields)
 	if len(missingFields) == 1 {
-		return &models.ValidationError{
-			Field:   missingFields[0],
-			Message: fmt.Sprintf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]),
-		}
+		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]), "field", missingFields[0]))
 	}
 
 	return models.NewValidationError(

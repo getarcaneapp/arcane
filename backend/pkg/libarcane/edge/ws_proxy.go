@@ -8,7 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -32,11 +32,11 @@ var wsUpgraderForProxy = websocket.Upgrader{
 
 // ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel.
 // This handles logs, stats, and other streaming endpoints.
-func ProxyWebSocketRequest(c echo.Context, tunnel *AgentTunnel, targetPath string) error {
+func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) error {
 	req := c.Request()
 	ctx := req.Context()
 
-	clientWS, err := wsUpgraderForProxy.Upgrade(c.Response().Writer, req, nil)
+	clientWS, err := wsUpgraderForProxy.Upgrade(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade WebSocket for edge proxy", "error", err)
 		return nil

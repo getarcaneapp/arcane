@@ -6,6 +6,7 @@ package oidcmappings
 import (
 	"fmt"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -54,13 +55,13 @@ var listCmd = &cobra.Command{
 		}
 		resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMappings())
 		if err != nil {
-			return fmt.Errorf("failed to list OIDC mappings: %w", err)
+			return errors.WrapIf(err, "failed to list OIDC mappings")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]roletypes.OidcRoleMapping]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to list OIDC mappings: %w", err)
+			return errors.WrapIf(err, "failed to list OIDC mappings")
 		}
 
 		if jsonOutput {
@@ -106,12 +107,12 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.OidcRoleMappings(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to create OIDC mapping")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		var result base.ApiResponse[roletypes.OidcRoleMapping]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to create OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to create OIDC mapping")
 		}
 
 		if jsonOutput {
@@ -169,11 +170,11 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.OidcRoleMapping(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to update OIDC mapping")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to update OIDC mapping")
 		}
 		output.Success("OIDC mapping updated")
 		return nil
@@ -203,11 +204,11 @@ var deleteCmd = &cobra.Command{
 		}
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.OidcRoleMapping(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to delete OIDC mapping")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete OIDC mapping: %w", err)
+			return errors.WrapIf(err, "failed to delete OIDC mapping")
 		}
 		output.Success("OIDC mapping deleted")
 		return nil
@@ -221,12 +222,12 @@ func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMap
 	}
 	resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMapping(id))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load current mapping: %w", err)
+		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}
 	defer func() { _ = resp.Body.Close() }()
 	var result base.ApiResponse[roletypes.OidcRoleMapping]
 	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-		return nil, fmt.Errorf("failed to load current mapping: %w", err)
+		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}
 	return &result.Data, nil
 }

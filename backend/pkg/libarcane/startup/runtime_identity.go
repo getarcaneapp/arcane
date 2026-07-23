@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"emperror.dev/errors"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/samber/mo"
 )
@@ -96,7 +97,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	if inContainer {
 		mountpoints, err := loadMountpointsInternal(mountInfoPath)
 		if err != nil {
-			return fmt.Errorf("load mountpoints: %w", err)
+			return errors.WrapIf(err, "load mountpoints")
 		}
 
 		if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
@@ -129,12 +130,12 @@ func loadRuntimeIdentityRequestInternal(cfg *RuntimeIdentityConfig, inContainer 
 
 	uid, credentialUID, err := parseRuntimeIdentityValueInternal(puid, "PUID")
 	if err != nil {
-		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PUID %q: %w", puid, err)
+		return runtimeIdentityRequest{}, "", errors.WrapIff(err, "invalid PUID %q", puid)
 	}
 
 	gid, credentialGID, err := parseRuntimeIdentityValueInternal(pgid, "PGID")
 	if err != nil {
-		return runtimeIdentityRequest{}, "", fmt.Errorf("invalid PGID %q: %w", pgid, err)
+		return runtimeIdentityRequest{}, "", errors.WrapIff(err, "invalid PGID %q", pgid)
 	}
 
 	return runtimeIdentityRequest{
@@ -193,12 +194,12 @@ func ensureRuntimeDockerConfigInternal(cfg *RuntimeIdentityConfig, setenv func(s
 	}
 
 	if err := os.MkdirAll(configDir, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("create docker config directory: %w", err)
+		return errors.WrapIf(err, "create docker config directory")
 	}
 
 	if configDir == defaultDockerConfigDir && os.Geteuid() == 0 {
 		if err := os.Chown(configDir, uid, gid); err != nil {
-			return fmt.Errorf("chown docker config directory: %w", err)
+			return errors.WrapIf(err, "chown docker config directory")
 		}
 	}
 
@@ -227,7 +228,7 @@ func configureRuntimeDockerConfigEnvInternal(cfg *RuntimeIdentityConfig, setenv 
 	configDir = defaultDockerConfigDir
 	cfg.DockerConfig = configDir
 	if err := setenv("DOCKER_CONFIG", configDir); err != nil {
-		return "", fmt.Errorf("set DOCKER_CONFIG: %w", err)
+		return "", errors.WrapIf(err, "set DOCKER_CONFIG")
 	}
 
 	return configDir, nil
@@ -284,40 +285,40 @@ func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struc
 
 func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
 	if err := os.MkdirAll(dataDirectory, pkgutils.DirPerm); err != nil {
-		return fmt.Errorf("create data directory: %w", err)
+		return errors.WrapIf(err, "create data directory")
 	}
 
 	if err := os.Chown(dataDirectory, uid, gid); err != nil {
-		return fmt.Errorf("chown data directory: %w", err)
+		return errors.WrapIf(err, "chown data directory")
 	}
 
 	entries, err := os.ReadDir(dataDirectory)
 	if err != nil {
-		return fmt.Errorf("read data directory: %w", err)
+		return errors.WrapIf(err, "read data directory")
 	}
 
 	for _, entry := range entries {
 		entryPath := filepath.Join(dataDirectory, entry.Name())
 		if _, mounted := mountpoints[entryPath]; mounted {
 			if err := os.Lchown(entryPath, uid, gid); err != nil {
-				return fmt.Errorf("chown mounted %s: %w", entryPath, err)
+				return errors.WrapIff(err, "chown mounted %s", entryPath)
 			}
 			continue
 		}
 		if projectsDir != "" && filepath.Clean(entryPath) == projectsDir {
 			if err := lchownFn(entryPath, uid, gid); err != nil {
-				return fmt.Errorf("chown %s: %w", entryPath, err)
+				return errors.WrapIff(err, "chown %s", entryPath)
 			}
 			continue
 		}
 		if err := chownRecursiveInternal(entryPath, uid, gid, mountpoints, projectsDir); err != nil {
-			return fmt.Errorf("chown %s: %w", entryPath, err)
+			return errors.WrapIff(err, "chown %s", entryPath)
 		}
 	}
 
 	if _, mounted := mountpoints[buildsDirectory]; mounted {
 		if err := os.Lchown(buildsDirectory, uid, gid); err != nil {
-			return fmt.Errorf("chown mounted builds directory: %w", err)
+			return errors.WrapIf(err, "chown mounted builds directory")
 		}
 		return nil
 	}
@@ -326,11 +327,11 @@ func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[str
 		if os.IsNotExist(err) {
 			return nil
 		}
-		return fmt.Errorf("stat builds directory: %w", err)
+		return errors.WrapIf(err, "stat builds directory")
 	}
 
 	if err := chownRecursiveInternal(buildsDirectory, uid, gid, mountpoints, projectsDir); err != nil {
-		return fmt.Errorf("chown builds directory: %w", err)
+		return errors.WrapIf(err, "chown builds directory")
 	}
 
 	return nil
@@ -351,16 +352,16 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {
-			return fmt.Errorf("create sqlite directory %s: %w", dir, err)
+			return errors.WrapIff(err, "create sqlite directory %s", dir)
 		}
 	}
 
 	file, err := os.OpenFile(sqlitePath, os.O_CREATE|os.O_RDWR, pkgutils.FilePerm)
 	if err != nil {
-		return fmt.Errorf("create sqlite file %s: %w", sqlitePath, err)
+		return errors.WrapIff(err, "create sqlite file %s", sqlitePath)
 	}
 	if err := file.Close(); err != nil {
-		return fmt.Errorf("close sqlite file %s: %w", sqlitePath, err)
+		return errors.WrapIff(err, "close sqlite file %s", sqlitePath)
 	}
 
 	return nil
@@ -377,7 +378,7 @@ func sqliteDatabasePathInternal(databaseURL string) (string, bool, error) {
 
 	parsed, err := url.Parse(value)
 	if err != nil {
-		return "", false, fmt.Errorf("parse sqlite database url: %w", err)
+		return "", false, errors.WrapIf(err, "parse sqlite database url")
 	}
 
 	// For relative URLs like "file:data/arcane.db", url.Parse puts the path in

@@ -1,15 +1,15 @@
 <script lang="ts">
-	import SheetFooterActions from '$lib/components/sheets/sheet-footer-actions.svelte';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Alert from '$lib/components/ui/alert/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import RepoTagFields from '$lib/components/form/repo-tag-fields.svelte';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { containerService } from '$lib/services/container-service';
-	import { m } from '$lib/paraglide/messages';
+	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Alert from '#lib/components/ui/alert/index.js';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import RepoTagFields from '#lib/components/form/repo-tag-fields.svelte';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { containerService } from '#lib/services/container-service';
+	import { m } from '#lib/paraglide/messages';
 	import { toast } from 'svelte-sonner';
 	import { z } from 'zod/v4';
-	import { InfoIcon } from '$lib/icons';
+	import { InfoIcon } from '#lib/icons';
 
 	type Props = {
 		open: boolean;

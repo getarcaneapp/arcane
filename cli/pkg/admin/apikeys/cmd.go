@@ -1,11 +1,12 @@
 package apikeys
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -51,14 +52,14 @@ func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, e
 		case 3:
 			env := parts[2]
 			if parts[0] == "" || parts[1] == "" || env == "" {
-				return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+				return nil, errors.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
 			}
 			out = append(out, apikey.PermissionGrant{
 				Permission:    parts[0] + ":" + parts[1],
 				EnvironmentID: &env,
 			})
 		default:
-			return nil, fmt.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
+			return nil, errors.Errorf("invalid --permission value %q (expected `resource:action[:envId]`)", raw)
 		}
 	}
 	return out, nil
@@ -85,18 +86,18 @@ var listCmd = &cobra.Command{
 		path := types.Endpoints.ApiKeys()
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "apikeys", "limit", limitFlag, 20, "start", startFlag)
 		if err != nil {
-			return fmt.Errorf("failed to build pagination query: %w", err)
+			return errors.WrapIf(err, "failed to build pagination query")
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to list API keys: %w", err)
+			return errors.WrapIf(err, "failed to list API keys")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[apikey.ApiKey]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to list API keys: %w", err)
+			return errors.WrapIf(err, "failed to list API keys")
 		}
 
 		if jsonOutput {
@@ -160,20 +161,20 @@ var createCmd = &cobra.Command{
 		if expiresAtRaw, _ := cmd.Flags().GetString("expires-at"); expiresAtRaw != "" {
 			parsed, err := time.Parse(time.RFC3339, expiresAtRaw)
 			if err != nil {
-				return fmt.Errorf("invalid --expires-at format (use RFC3339): %w", err)
+				return errors.WrapIf(err, "invalid --expires-at format (use RFC3339)")
 			}
 			createReq.ExpiresAt = &parsed
 		}
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ApiKeys(), createReq)
 		if err != nil {
-			return fmt.Errorf("failed to create API key: %w", err)
+			return errors.WrapIf(err, "failed to create API key")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[apikey.ApiKeyCreatedDto]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to create API key: %w", err)
+			return errors.WrapIf(err, "failed to create API key")
 		}
 
 		if jsonOutput {
@@ -216,17 +217,17 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.ApiKey(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete API key: %w", err)
+			return errors.WrapIf(err, "failed to delete API key")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete API key: %w", err)
+			return errors.WrapIf(err, "failed to delete API key")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
 			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return fmt.Errorf("failed to delete API key: %w", err)
+				return errors.WrapIf(err, "failed to delete API key")
 			}
 			return cmdutil.PrintJSON(result.Data)
 		}
@@ -249,13 +250,13 @@ var getCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ApiKey(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get API key: %w", err)
+			return errors.WrapIf(err, "failed to get API key")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[apikey.ApiKey]
 		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-			return fmt.Errorf("failed to get API key: %w", err)
+			return errors.WrapIf(err, "failed to get API key")
 		}
 
 		if jsonOutput {
@@ -313,7 +314,7 @@ var updateCmd = &cobra.Command{
 		if cmd.Flags().Changed("expires-at") && apikeyUpdateExpiresAt != "" {
 			parsedTime, err := time.Parse(time.RFC3339, apikeyUpdateExpiresAt)
 			if err != nil {
-				return fmt.Errorf("invalid expires-at format (use RFC3339): %w", err)
+				return errors.WrapIf(err, "invalid expires-at format (use RFC3339)")
 			}
 			req.ExpiresAt = &parsedTime
 		}
@@ -329,17 +330,17 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ApiKey(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update API key: %w", err)
+			return errors.WrapIf(err, "failed to update API key")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update API key: %w", err)
+			return errors.WrapIf(err, "failed to update API key")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
 			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
-				return fmt.Errorf("failed to update API key: %w", err)
+				return errors.WrapIf(err, "failed to update API key")
 			}
 			return cmdutil.PrintJSON(result.Data)
 		}

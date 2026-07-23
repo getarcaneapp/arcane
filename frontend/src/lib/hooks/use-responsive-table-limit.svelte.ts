@@ -1,4 +1,4 @@
-import type { SearchPaginationSortRequest } from '$lib/types/shared';
+import type { SearchPaginationSortRequest } from '#lib/types/shared';
 import { IsMobile } from './is-mobile.svelte';
 
 const MOBILE_ROWS = 4;

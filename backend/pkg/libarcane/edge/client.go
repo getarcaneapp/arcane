@@ -3,7 +3,6 @@ package edge
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,6 +10,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
@@ -208,6 +209,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 					"manager_ws_url", managerWSURL,
 				)
 				if wsErr := c.connectAndServeWebSocket(ctx); wsErr != nil {
+					// Keep both transport failures in the chain for errors.Is/errors.As traversal.
 					return fmt.Errorf("gRPC edge tunnel failed: %w; websocket fallback failed: %w", err, wsErr)
 				}
 				return nil
@@ -382,19 +384,19 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 		return nil, ctx.Err()
 	case <-timer.C:
 		_ = conn.Close()
-		return nil, fmt.Errorf("timed out waiting for tunnel registration response after %s", timeout)
+		return nil, errors.Errorf("timed out waiting for tunnel registration response after %s", timeout)
 	case result := <-recvCh:
 		if result.err != nil {
-			return nil, fmt.Errorf("failed to receive tunnel registration response: %w", result.err)
+			return nil, errors.WrapIf(result.err, "failed to receive tunnel registration response")
 		}
 		if result.msg == nil {
 			return nil, errors.New("received empty tunnel registration response")
 		}
 		if result.msg.Type != MessageTypeRegisterResponse {
-			return nil, fmt.Errorf("unexpected first tunnel message: %s", result.msg.Type)
+			return nil, errors.Errorf("unexpected first tunnel message: %s", result.msg.Type)
 		}
 		if !result.msg.Accepted {
-			return nil, fmt.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
+			return nil, errors.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
 		c.sessionID = result.msg.SessionID
 		return result.msg, nil
@@ -449,7 +451,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 		default:
 			msg, err := conn.Receive()
 			if err != nil {
-				return fmt.Errorf("failed to receive message: %w", err)
+				return errors.WrapIf(err, "failed to receive message")
 			}
 
 			switch msg.Type {
@@ -483,7 +485,7 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 				slog.DebugContext(ctx, "Received heartbeat ack")
 			case MessageTypeRegisterResponse:
 				if !msg.Accepted {
-					return fmt.Errorf("manager rejected tunnel registration: %s", msg.Error)
+					return errors.Errorf("manager rejected tunnel registration: %s", msg.Error)
 				}
 				slog.InfoContext(ctx, "Edge gRPC tunnel connected to manager",
 					"manager_addr", c.managerGRPCAddr,

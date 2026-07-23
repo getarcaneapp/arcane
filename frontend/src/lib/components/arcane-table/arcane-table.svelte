@@ -4,11 +4,11 @@
 	import { arcaneTableFeatures, type ArcaneColumnDef, type ArcaneRow, type ArcaneTable } from './table-features';
 	import DataTableToolbar from './arcane-table-toolbar.svelte';
 	import { onMount, untrack } from 'svelte';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Snippet } from 'svelte';
 	import type { ColumnSpec } from './arcane-table.types.svelte';
 	import TableCheckbox from './arcane-table-checkbox.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import { m } from '#lib/paraglide/messages';
 	import { PersistedState } from 'runed';
 	import {
 		type CompactTablePrefs,

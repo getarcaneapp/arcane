@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
@@ -16,7 +16,7 @@ func newProxyAuthzMiddleware(matcher *authz.PermissionMatcher) *EnvironmentMiddl
 	return &EnvironmentMiddleware{localID: "0", paramName: "id", matcher: matcher}
 }
 
-func newProxyRequestContext(method, path string) echo.Context {
+func newProxyRequestContext(method, path string) *echo.Context {
 	e := echo.New()
 	req := httptest.NewRequest(method, path, nil)
 	return e.NewContext(req, httptest.NewRecorder())

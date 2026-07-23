@@ -12,7 +12,7 @@ import (
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 )
 
@@ -59,8 +59,8 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 
 // DiagnosticsStream pushes a fresh diagnostics snapshot on connect and then every
 // diagnosticsStreamInterval until the client disconnects.
-func (h *WebSocketHandler) DiagnosticsStream(c echo.Context) error {
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return nil
 	}
@@ -93,8 +93,8 @@ func (h *WebSocketHandler) DiagnosticsStream(c echo.Context) error {
 }
 
 // ServerLogsStream replays the recent backend log backlog then streams new entries live.
-func (h *WebSocketHandler) ServerLogsStream(c echo.Context) error {
-	conn, err := h.wsUpgrader.Upgrade(c.Response().Writer, c.Request(), nil)
+func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
 		return nil
 	}

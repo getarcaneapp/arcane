@@ -1,5 +1,5 @@
 import { apiClient } from './api-service';
-import type { SettingsSearchResponse, SettingsCategory } from '$lib/types/shared';
+import type { SettingsSearchResponse, SettingsCategory } from '#lib/types/shared';
 
 class SettingsSearchService {
 	private baseUrl = '/settings';

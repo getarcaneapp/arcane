@@ -1,4 +1,4 @@
-import { m } from '$lib/paraglide/messages';
+import { m } from '#lib/paraglide/messages';
 import {
 	GlobeIcon,
 	FolderOpenIcon,
@@ -10,7 +10,7 @@ import {
 	UpdateIcon,
 	StartIcon,
 	StopIcon
-} from '$lib/icons';
+} from '#lib/icons';
 import type { FilterOption } from './arcane-table.types.svelte';
 
 export const usageFilters: FilterOption[] = [

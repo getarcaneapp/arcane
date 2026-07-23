@@ -1,8 +1,8 @@
 <script lang="ts">
 	import { userPrefersMode, setMode } from 'mode-watcher';
-	import { m } from '$lib/paraglide/messages';
-	import { SunIcon, MoonIcon, MonitorIcon } from '$lib/icons';
-	import { cn } from '$lib/utils';
+	import { m } from '#lib/paraglide/messages';
+	import { SunIcon, MoonIcon, MonitorIcon } from '#lib/icons';
+	import { cn } from '#lib/utils';
 
 	type Props = {
 		disabled?: boolean;

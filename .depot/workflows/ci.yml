@@ -43,7 +43,7 @@ jobs:
             cgo_enabled: "1"
     steps:
       - name: Checkout
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -53,7 +53,7 @@ jobs:
         uses: depot/setup-action@v1
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.path }}/go.mod
           cache: true
@@ -102,10 +102,10 @@ jobs:
             args: --config=../.github/.golangci.yml
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: ${{ matrix.module.name }}/go.mod
           cache: true
@@ -122,11 +122,9 @@ jobs:
   type-check:
     name: Type Check
     runs-on: depot-ubuntu-latest
-    env:
-      PNPM_STORE_DIR: /tmp/arcane-ci-cache/type-check/pnpm-store
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -135,16 +133,7 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 26
-
-      - name: Mount pnpm store
-        uses: depot/cache-mount@v1
-        with:
-          path: /tmp/arcane-ci-cache
-          name: getarcaneapp-arcane-main-ci-type-check
-          write-lock: /tmp/arcane-ci-cache
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir "$PNPM_STORE_DIR"
+          cache: pnpm
 
       - name: Setup Just
         uses: extractions/setup-just@v4
@@ -164,9 +153,6 @@ jobs:
   e2e-tests:
     name: E2E Tests (${{ matrix.database.name }})
     runs-on: depot-ubuntu-24.04-4
-    env:
-      PNPM_STORE_DIR: /tmp/arcane-ci-cache/e2e/${{ matrix.database.name }}/pnpm-store
-      PLAYWRIGHT_CACHE_ROOT: /tmp/arcane-ci-cache/e2e/${{ matrix.database.name }}/playwright
     permissions:
       contents: read
       actions: write
@@ -186,7 +172,7 @@ jobs:
             port: 3002
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -200,24 +186,22 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 26
-
-      - name: Mount test dependency cache
-        uses: depot/cache-mount@v1
-        with:
-          path: /tmp/arcane-ci-cache
-          name: getarcaneapp-arcane-main-ci-e2e-${{ matrix.database.name }}
-          write-lock: /tmp/arcane-ci-cache
-
-      - name: Configure test dependency cache
-        run: |
-          pnpm config set store-dir "$PNPM_STORE_DIR"
-          echo "PLAYWRIGHT_BROWSERS_PATH=$PLAYWRIGHT_CACHE_ROOT/${{ hashFiles('pnpm-lock.yaml', 'tests/package.json') }}" >> "$GITHUB_ENV"
+          cache: pnpm
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
 
       - name: Setup depot buildx driver
         run: depot configure-docker
+
+      - name: Cache Playwright Browsers
+        uses: actions/cache@v6
+        id: playwright-cache
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('tests/pnpm-lock.yaml', 'tests/package.json') }}
+          restore-keys: |
+            ${{ runner.os }}-playwright-
 
       - name: Pull and save test images
         run: |
@@ -253,15 +237,13 @@ jobs:
   cli-e2e-tests:
     name: CLI E2E Tests (proxy)
     runs-on: depot-ubuntu-24.04-4
-    env:
-      PNPM_STORE_DIR: /tmp/arcane-ci-cache/cli-e2e/pnpm-store
     permissions:
       contents: read
       actions: write
       id-token: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@v7.0.0
+        uses: actions/checkout@v7
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v6
@@ -272,23 +254,14 @@ jobs:
         uses: actions/setup-node@v6
         with:
           node-version: 26
+          cache: pnpm
 
       - name: Setup Go
-        uses: actions/setup-go@v6
+        uses: actions/setup-go@v7
         with:
           go-version-file: cli/go.mod
           cache: true
           cache-dependency-path: cli/go.sum
-
-      - name: Mount dependency cache
-        uses: depot/cache-mount@v1
-        with:
-          path: /tmp/arcane-ci-cache
-          name: getarcaneapp-arcane-main-ci-cli-e2e
-          write-lock: /tmp/arcane-ci-cache
-
-      - name: Configure pnpm store
-        run: pnpm config set store-dir "$PNPM_STORE_DIR"
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1

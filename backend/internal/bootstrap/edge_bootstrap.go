@@ -3,16 +3,17 @@ package bootstrap
 import (
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"log/slog"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 )
 
 // registerEdgeTunnelRoutes configures the manager-side edge tunnel server.
@@ -60,7 +61,7 @@ func registerEdgeTunnelRoutes(
 		if len(evt.MetadataJSON) > 0 {
 			metadata = models.JSON{}
 			if err := json.Unmarshal(evt.MetadataJSON, &metadata); err != nil {
-				return fmt.Errorf("failed to decode event metadata: %w", err)
+				return errors.WrapIf(err, "failed to decode event metadata")
 			}
 		}
 
@@ -79,7 +80,7 @@ func registerEdgeTunnelRoutes(
 		}
 		_, err := eventService.CreateEvent(ctx, req)
 		if err != nil {
-			return fmt.Errorf("failed to persist synced event: %w", err)
+			return errors.WrapIf(err, "failed to persist synced event")
 		}
 		return nil
 	}
@@ -221,7 +222,7 @@ func createEdgeConnectionEvent(ctx context.Context, eventService *services.Event
 		EnvironmentID: &envID,
 	})
 	if err != nil {
-		return fmt.Errorf("failed to create edge lifecycle event: %w", err)
+		return errors.WrapIf(err, "failed to create edge lifecycle event")
 	}
 
 	return nil

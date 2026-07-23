@@ -19,7 +19,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -141,7 +141,7 @@ func newTemplateFetchTestRouter(t *testing.T, httpClient *http.Client) *echo.Ech
 		ExpiresAt:        time.Now().Add(time.Hour),
 	}).Error)
 
-	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), nil, "test-secret", &config.Config{})
+	authService := services.NewAuthService(userService, nil, nil, services.NewSessionService(databaseDB), nil, "test-secret", &config.Config{}, nil)
 	templateService := services.NewTemplateService(context.Background(), nil, httpClient, nil)
 
 	router := echo.New()

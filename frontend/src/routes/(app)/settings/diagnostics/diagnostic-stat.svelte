@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
-	import type { IconType } from '$lib/icons';
+	import { cn } from '#lib/utils';
+	import type { IconType } from '#lib/icons';
 
 	interface Props {
 		label: string;

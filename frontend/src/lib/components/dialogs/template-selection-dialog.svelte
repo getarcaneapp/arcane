@@ -1,15 +1,15 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Card } from '$lib/components/ui/card/index.js';
-	import { Badge } from '$lib/components/ui/badge/index.js';
-	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
-	import type { Template } from '$lib/types/swarm';
-	import { Label } from '$lib/components/ui/label/index.js';
-	import * as Select from '$lib/components/ui/select/index.js';
-	import * as Collapsible from '$lib/components/ui/collapsible/index.js';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Card } from '#lib/components/ui/card/index.js';
+	import { Badge } from '#lib/components/ui/badge/index.js';
+	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
+	import type { Template } from '#lib/types/swarm';
+	import { Label } from '#lib/components/ui/label/index.js';
+	import * as Select from '#lib/components/ui/select/index.js';
+	import * as Collapsible from '#lib/components/ui/collapsible/index.js';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import IconImage from '#lib/components/icon-image.svelte';
 	import {
 		ArrowDownIcon,
 		ArrowRightIcon,
@@ -18,11 +18,11 @@
 		DownloadIcon,
 		SettingsIcon,
 		FileTextIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 
 	import { toast } from 'svelte-sonner';
-	import { m } from '$lib/paraglide/messages';
-	import { templateService } from '$lib/services/template-service';
+	import { m } from '#lib/paraglide/messages';
+	import { templateService } from '#lib/services/template-service';
 	import { createMutation } from '@tanstack/svelte-query';
 
 	interface Props {

@@ -1,14 +1,14 @@
 package models
 
 import (
-	"errors"
-	"fmt"
 	"reflect"
 	"slices"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 )
 
 const (
@@ -331,7 +331,7 @@ func (s *Settings) UpdateField(key string, value string, noSensitive bool) error
 
 	valueField := rv.Field(field.index).FieldByName("Value")
 	if !valueField.CanSet() {
-		return fmt.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
+		return errors.Errorf("field Value in SettingVariable is not settable for config key '%s'", key)
 	}
 
 	valueField.SetString(value)

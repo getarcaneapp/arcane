@@ -2,11 +2,12 @@ package notifications
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
@@ -61,12 +62,12 @@ func BuildGotifyURL(config models.GotifyConfig) (string, error) {
 func SendGotify(ctx context.Context, config models.GotifyConfig, message string) error {
 	shoutrrrURL, err := BuildGotifyURL(config)
 	if err != nil {
-		return fmt.Errorf("failed to build shoutrrr Gotify URL: %w", err)
+		return errors.WrapIf(err, "failed to build shoutrrr Gotify URL")
 	}
 
 	sender, err := shoutrrr.CreateSender(shoutrrrURL)
 	if err != nil {
-		return fmt.Errorf("failed to create shoutrrr Gotify sender: %w", err)
+		return errors.WrapIf(err, "failed to create shoutrrr Gotify sender")
 	}
 
 	params := &shoutrrrTypes.Params{}
@@ -74,7 +75,7 @@ func SendGotify(ctx context.Context, config models.GotifyConfig, message string)
 	errs := sender.Send(message, params)
 	for _, err := range errs {
 		if err != nil {
-			return fmt.Errorf("failed to send Gotify message via shoutrrr: %w", err)
+			return errors.WrapIf(err, "failed to send Gotify message via shoutrrr")
 		}
 	}
 	return nil

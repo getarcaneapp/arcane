@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import CodeEditor from '$lib/components/code-editor/editor.svelte';
-	import { ComposeEditorSplit } from '$lib/components/compose';
-	import { CodeIcon, VariableIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import * as Card from '#lib/components/ui/card';
+	import CodeEditor from '#lib/components/code-editor/editor.svelte';
+	import { ComposeEditorSplit } from '#lib/components/compose';
+	import { CodeIcon, VariableIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 
 	interface ValidationState {
 		composeHasErrors: boolean;

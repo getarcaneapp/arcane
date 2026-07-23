@@ -2,9 +2,10 @@ package services
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -47,7 +48,7 @@ func (s *GitRepositoryService) GetRepositoriesPaginated(ctx context.Context, par
 
 	out, paginationResp, err := pagination.PaginateSortAndMapDB[models.GitRepository, gitops.GitRepository](params, q, &repositories)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to list git repositories: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to list git repositories")
 	}
 
 	return out, paginationResp, nil
@@ -59,7 +60,7 @@ func (s *GitRepositoryService) GetRepositoryByID(ctx context.Context, id string)
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("repository not found")
 		}
-		return nil, fmt.Errorf("failed to get repository: %w", err)
+		return nil, errors.WrapIf(err, "failed to get repository")
 	}
 	return &repository, nil
 }
@@ -70,7 +71,7 @@ func (s *GitRepositoryService) GetRepositoryByName(ctx context.Context, name str
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("repository not found")
 		}
-		return nil, fmt.Errorf("failed to get repository: %w", err)
+		return nil, errors.WrapIf(err, "failed to get repository")
 	}
 	return &repository, nil
 }
@@ -97,7 +98,7 @@ func (s *GitRepositoryService) FindEnabledRepositoryByURL(ctx context.Context, r
 		query = query.Where("url = ? OR url = ? OR url LIKE ? OR url LIKE ?", rawURL, normalizedURL, likePrefix+"%", likePrefix+"/%")
 	}
 	if err := query.Find(&repositories).Error; err != nil {
-		return nil, fmt.Errorf("failed to list repositories: %w", err)
+		return nil, errors.WrapIf(err, "failed to list repositories")
 	}
 
 	for i := range repositories {
@@ -133,7 +134,7 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 	if req.Token != "" {
 		encrypted, err := crypto.Encrypt(req.Token)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt token: %w", err)
+			return nil, errors.WrapIf(err, "failed to encrypt token")
 		}
 		repository.Token = encrypted
 	}
@@ -141,13 +142,13 @@ func (s *GitRepositoryService) CreateRepository(ctx context.Context, req models.
 	if req.SSHKey != "" {
 		encrypted, err := crypto.Encrypt(req.SSHKey)
 		if err != nil {
-			return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
+			return nil, errors.WrapIf(err, "failed to encrypt SSH key")
 		}
 		repository.SSHKey = encrypted
 	}
 
 	if err := s.db.WithContext(ctx).Create(&repository).Error; err != nil {
-		return nil, fmt.Errorf("failed to create repository: %w", err)
+		return nil, errors.WrapIf(err, "failed to create repository")
 	}
 
 	// Log event
@@ -219,7 +220,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		} else {
 			encrypted, err := crypto.Encrypt(*req.Token)
 			if err != nil {
-				return nil, fmt.Errorf("failed to encrypt token: %w", err)
+				return nil, errors.WrapIf(err, "failed to encrypt token")
 			}
 			updates["token"] = encrypted
 		}
@@ -231,7 +232,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 		} else {
 			encrypted, err := crypto.Encrypt(*req.SSHKey)
 			if err != nil {
-				return nil, fmt.Errorf("failed to encrypt SSH key: %w", err)
+				return nil, errors.WrapIf(err, "failed to encrypt SSH key")
 			}
 			updates["ssh_key"] = encrypted
 		}
@@ -239,7 +240,7 @@ func (s *GitRepositoryService) UpdateRepository(ctx context.Context, id string, 
 
 	if len(updates) > 0 {
 		if err := s.db.WithContext(ctx).Model(repository).Updates(updates).Error; err != nil {
-			return nil, fmt.Errorf("failed to update repository: %w", err)
+			return nil, errors.WrapIf(err, "failed to update repository")
 		}
 
 		// Log event
@@ -263,11 +264,11 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 	// Check if repository is used by any syncs
 	var count int64
 	if err := s.db.WithContext(ctx).Model(&models.GitOpsSync{}).Where("repository_id = ?", id).Count(&count).Error; err != nil {
-		return fmt.Errorf("failed to check repository usage: %w", err)
+		return errors.WrapIf(err, "failed to check repository usage")
 	}
 
 	if count > 0 {
-		return fmt.Errorf("repository is used by %d sync configuration(s)", count)
+		return errors.Errorf("repository is used by %d sync configuration(s)", count)
 	}
 
 	// Get repository info before deleting
@@ -277,7 +278,7 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 	}
 
 	if err := s.db.WithContext(ctx).Where("id = ?", id).Delete(&models.GitRepository{}).Error; err != nil {
-		return fmt.Errorf("failed to delete repository: %w", err)
+		return errors.WrapIf(err, "failed to delete repository")
 	}
 
 	// Log event
@@ -354,7 +355,7 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 	if repository.Token != "" {
 		token, err := crypto.Decrypt(repository.Token)
 		if err != nil {
-			return authConfig, fmt.Errorf("failed to decrypt token: %w", err)
+			return authConfig, errors.WrapIf(err, "failed to decrypt token")
 		}
 		authConfig.Token = token
 	}
@@ -362,7 +363,7 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 	if repository.SSHKey != "" {
 		sshKey, err := crypto.Decrypt(repository.SSHKey)
 		if err != nil {
-			return authConfig, fmt.Errorf("failed to decrypt SSH key: %w", err)
+			return authConfig, errors.WrapIf(err, "failed to decrypt SSH key")
 		}
 		authConfig.SSHKey = sshKey
 	}
@@ -387,7 +388,7 @@ func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]g
 
 	branches, err := s.gitClient.ListBranches(listCtx, repository.URL, authConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to list branches: %w", err)
+		return nil, errors.WrapIf(err, "failed to list branches")
 	}
 
 	var result []gitops.BranchInfo
@@ -419,7 +420,7 @@ func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path
 	// Clone the repository
 	repoPath, err := s.gitClient.Clone(ctx, repository.URL, branch, authConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to clone repository: %w", err)
+		return nil, errors.WrapIf(err, "failed to clone repository")
 	}
 	defer func() {
 		if cleanupErr := s.gitClient.Cleanup(repoPath); cleanupErr != nil {
@@ -466,7 +467,7 @@ func (s *GitRepositoryService) SyncRepositories(ctx context.Context, syncItems [
 func (s *GitRepositoryService) getExistingRepositoriesMap(ctx context.Context) (map[string]*models.GitRepository, error) {
 	var existing []models.GitRepository
 	if err := s.db.WithContext(ctx).Find(&existing).Error; err != nil {
-		return nil, fmt.Errorf("failed to get existing repositories: %w", err)
+		return nil, errors.WrapIf(err, "failed to get existing repositories")
 	}
 
 	existingMap := make(map[string]*models.GitRepository)
@@ -490,7 +491,7 @@ func (s *GitRepositoryService) updateExistingRepository(ctx context.Context, ite
 	if needsUpdate {
 		// Use Save to trigger GORM callbacks including UpdatedAt
 		if err := s.db.WithContext(ctx).Save(existing).Error; err != nil {
-			return fmt.Errorf("failed to update repository %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to update repository %s", item.ID)
 		}
 	}
 
@@ -538,14 +539,14 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 	if item.Token != "" {
 		encryptedToken, err = crypto.Encrypt(item.Token)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt token for repository %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to encrypt token for repository %s", item.ID)
 		}
 	}
 
 	if item.SSHKey != "" {
 		encryptedSSHKey, err = crypto.Encrypt(item.SSHKey)
 		if err != nil {
-			return fmt.Errorf("failed to encrypt SSH key for repository %s: %w", item.ID, err)
+			return errors.WrapIff(err, "failed to encrypt SSH key for repository %s", item.ID)
 		}
 	}
 
@@ -568,7 +569,7 @@ func (s *GitRepositoryService) createNewRepository(ctx context.Context, item git
 	repo.ID = item.ID
 
 	if err := s.db.WithContext(ctx).Create(&repo).Error; err != nil {
-		return fmt.Errorf("failed to create repository %s: %w", item.ID, err)
+		return errors.WrapIff(err, "failed to create repository %s", item.ID)
 	}
 
 	return nil
@@ -578,7 +579,7 @@ func (s *GitRepositoryService) deleteUnsynced(ctx context.Context, existingMap m
 	for id := range existingMap {
 		if !syncedIDs[id] {
 			if err := s.db.WithContext(ctx).Delete(&models.GitRepository{}, "id = ?", id).Error; err != nil {
-				return fmt.Errorf("failed to delete repository %s: %w", id, err)
+				return errors.WrapIff(err, "failed to delete repository %s", id)
 			}
 		}
 	}

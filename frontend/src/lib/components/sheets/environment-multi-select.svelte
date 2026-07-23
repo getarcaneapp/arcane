@@ -1,6 +1,6 @@
 <script lang="ts">
-	import { Switch } from '$lib/components/ui/switch';
-	import type { Environment } from '$lib/types/environment';
+	import { Switch } from '#lib/components/ui/switch';
+	import type { Environment } from '#lib/types/environment';
 
 	let {
 		environments,

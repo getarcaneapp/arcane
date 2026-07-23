@@ -4,8 +4,6 @@ import (
 	"bufio"
 	"context"
 	json "encoding/json/v2"
-	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/netip"
@@ -13,6 +11,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	containertypes "github.com/moby/moby/api/types/container"
 	networktypes "github.com/moby/moby/api/types/network"
@@ -211,7 +211,7 @@ func fetchDockerAPIJSONInternal(ctx context.Context, apiClient client.APIClient,
 		return nil, err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("docker api GET %s failed with %s: %s", resourcePath, resp.Status, strings.TrimSpace(string(body)))
+		return nil, errors.Errorf("docker api GET %s failed with %s: %s", resourcePath, resp.Status, strings.TrimSpace(string(body)))
 	}
 
 	return body, nil

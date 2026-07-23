@@ -1,4 +1,4 @@
-import { IsTablet } from '$lib/hooks/is-tablet.svelte.js';
+import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 import { getContext, setContext } from 'svelte';
 import { PersistedState } from 'runed';
 import { SIDEBAR_KEYBOARD_SHORTCUT } from './constants.js';

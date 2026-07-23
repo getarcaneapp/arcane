@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import type { FileEntry, FileContentResponse } from '$lib/types/shared';
-import { downloadBlob, filenameFromPath } from '$lib/utils/browser-download';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import type { FileEntry, FileContentResponse } from '#lib/types/shared';
+import { downloadBlob, filenameFromPath } from '#lib/utils/browser-download';
 
 class VolumeBrowserService extends BaseAPIService {
 	async listDirectory(volumeName: string, path: string = '/'): Promise<FileEntry[]> {

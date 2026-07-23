@@ -1,35 +1,35 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import * as Card from '#lib/components/ui/card';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import { goto } from '$app/navigation';
-	import { Badge } from '$lib/components/ui/badge';
-	import { bytes, formatDateTimeShort } from '$lib/utils/formatting';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import { Badge } from '#lib/components/ui/badge';
+	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import { toast } from 'svelte-sonner';
 	import { onDestroy } from 'svelte';
-	import { ArcaneButton } from '$lib/components/arcane-button';
-	import { m } from '$lib/paraglide/messages';
-	import { imageService } from '$lib/services/image-service.js';
-	import { vulnerabilityService } from '$lib/services/vulnerability-service.js';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
+	import { ArcaneButton } from '#lib/components/arcane-button';
+	import { m } from '#lib/paraglide/messages';
+	import { imageService } from '#lib/services/image-service.js';
+	import { vulnerabilityService } from '#lib/services/vulnerability-service.js';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import {
 		startVulnerabilityScanPolling,
 		stabilizeFailedVulnerabilitySummary,
 		isVulnerabilityScanInProgress
-	} from '$lib/utils/docker';
-	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
+	} from '#lib/utils/docker';
+	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
 	import ImageAttestationsPanel from './image-attestations-panel.svelte';
 	import ImageHistoryPanel from './image-history-panel.svelte';
 	import ImageTagDialog from '../components/image-tag-dialog.svelte';
-	import VulnerabilityScanPanel from '$lib/components/vulnerability/vulnerability-scan-panel.svelte';
-	import type { VulnerabilityScanResult } from '$lib/types/environment';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import { toastVulnerabilityScanStatus } from '$lib/utils/vulnerability';
-	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ShieldCheckIcon } from '$lib/icons';
-	import { cn } from '$lib/utils';
+	import VulnerabilityScanPanel from '#lib/components/vulnerability/vulnerability-scan-panel.svelte';
+	import type { VulnerabilityScanResult } from '#lib/types/environment';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import { toastVulnerabilityScanStatus } from '#lib/utils/vulnerability';
+	import { VolumesIcon, ClockIcon, TagIcon, CpuIcon, ShieldCheckIcon } from '#lib/icons';
+	import { cn } from '#lib/utils';
 
 	let { data } = $props();
 	let { image } = $derived(data);

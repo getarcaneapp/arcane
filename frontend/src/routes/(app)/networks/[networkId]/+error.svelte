@@ -1,6 +1,6 @@
 <script lang="ts">
-	import ResourceErrorPage from '$lib/components/resource-error-page.svelte';
-	import { m } from '$lib/paraglide/messages';
+	import ResourceErrorPage from '#lib/components/resource-error-page.svelte';
+	import { m } from '#lib/paraglide/messages';
 </script>
 
 <ResourceErrorPage

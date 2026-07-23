@@ -2,12 +2,13 @@ package upgrade
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -73,7 +74,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Connect to Docker
 	dockerClient, err := client.New(client.FromEnv)
 	if err != nil {
-		return fmt.Errorf("failed to connect to Docker: %w", err)
+		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 	defer func() { _ = dockerClient.Close() }()
 
@@ -83,7 +84,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		slog.Info("Auto-detecting Arcane container...")
 		targetContainer, err = findArcaneContainer(ctx, dockerClient)
 		if err != nil {
-			return fmt.Errorf("failed to find Arcane container: %w", err)
+			return errors.WrapIf(err, "failed to find Arcane container")
 		}
 		containerName = strings.TrimPrefix(targetContainer.Name, "/")
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
@@ -92,7 +93,7 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		targetContainer = inspectResult.Container
 		err = inspectErr
 		if err != nil {
-			return fmt.Errorf("failed to inspect container %s: %w", containerName, err)
+			return errors.WrapIff(err, "failed to inspect container %s", containerName)
 		}
 	}
 
@@ -106,13 +107,13 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// Pull the new image
 	slog.Info("Pulling new image", "image", imageToPull)
 	if err := pullImage(ctx, dockerClient, imageToPull); err != nil {
-		return fmt.Errorf("failed to pull image: %w", err)
+		return errors.WrapIf(err, "failed to pull image")
 	}
 
 	// Perform the upgrade
 	slog.Info("Starting container upgrade", "container", containerName)
 	if err := upgradeContainer(ctx, dockerClient, targetContainer, imageToPull); err != nil {
-		return fmt.Errorf("failed to upgrade container: %w", err)
+		return errors.WrapIf(err, "failed to upgrade container")
 	}
 
 	slog.Info("Upgrade completed successfully", "container", containerName, "image", imageToPull)
@@ -363,7 +364,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {
-		return fmt.Errorf("prepare host config: %w", err)
+		return errors.WrapIf(err, "prepare host config")
 	}
 	if sanitizedMemorySwappiness {
 		slog.Info("Stripped unsupported host config field for recreate",
@@ -430,14 +431,14 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	fmt.Println("PROGRESS:65:Renaming old container")
 	slog.Info("Renaming old container", "from", originalName, "to", oldName)
 	if _, err := dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: oldName}); err != nil {
-		return fmt.Errorf("rename old container: %w", err)
+		return errors.WrapIf(err, "rename old container")
 	}
 
 	fmt.Println("PROGRESS:70:Stopping old container")
 	slog.Info("Stopping old container", "name", oldName)
 	if _, err := dockerClient.ContainerStop(ctx, oldContainer.ID, client.ContainerStopOptions{Timeout: new(10)}); err != nil {
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return fmt.Errorf("stop old container: %w", err)
+		return errors.WrapIf(err, "stop old container")
 	}
 
 	fmt.Println("PROGRESS:75:Creating new container")
@@ -452,7 +453,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		// Try to restart and restore old container on failure
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return fmt.Errorf("create new container: %w", err)
+		return errors.WrapIf(err, "create new container")
 	}
 
 	fmt.Println("PROGRESS:80:Starting new container")
@@ -462,7 +463,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, client.ContainerRemoveOptions{Force: true})
 		_, _ = dockerClient.ContainerStart(ctx, oldContainer.ID, client.ContainerStartOptions{})
 		_, _ = dockerClient.ContainerRename(ctx, oldContainer.ID, client.ContainerRenameOptions{NewName: originalName})
-		return fmt.Errorf("start new container: %w", err)
+		return errors.WrapIf(err, "start new container")
 	}
 
 	// Wait a moment for the new container to initialize

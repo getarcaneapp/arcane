@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { Progress } from '$lib/components/ui/progress/index.js';
-	import { Badge } from '$lib/components/ui/badge';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { activityStore } from '$lib/stores/activity.store.svelte';
-	import type { Activity, ActivityMessage } from '$lib/types/activity.type';
-	import { ActivityIcon, CloseIcon, TerminalIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { Progress } from '#lib/components/ui/progress/index.js';
+	import { Badge } from '#lib/components/ui/badge';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import type { Activity, ActivityMessage } from '#lib/types/activity.type';
+	import { ActivityIcon, CloseIcon, TerminalIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
-	import { formatDateTime, formatTime } from '$lib/utils/formatting';
+	import { formatDateTime, formatTime } from '#lib/utils/formatting';
 
 	let { activity }: { activity: Activity } = $props();
 

@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -35,19 +36,19 @@ var statusCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.UpdaterStatus(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get updater status: %w", err)
+			return errors.WrapIf(err, "failed to get updater status")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Status]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -75,19 +76,19 @@ var runCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.UpdaterRun(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to run updater: %w", err)
+			return errors.WrapIf(err, "failed to run updater")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[updater.Result]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -115,19 +116,19 @@ var historyCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.UpdaterHistory(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get updater history: %w", err)
+			return errors.WrapIf(err, "failed to get updater history")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]updater.Result]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

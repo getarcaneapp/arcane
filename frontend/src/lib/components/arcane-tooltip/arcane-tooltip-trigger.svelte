@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Tooltip from '$lib/components/ui/tooltip/index.js';
-	import * as Popover from '$lib/components/ui/popover/index.js';
+	import * as Tooltip from '#lib/components/ui/tooltip/index.js';
+	import * as Popover from '#lib/components/ui/popover/index.js';
 	import { getArcaneTooltipContext } from './context.svelte.js';
 	import { Tooltip as TooltipPrimitive } from 'bits-ui';
-	import { cn } from '$lib/utils.js';
+	import { cn } from '#lib/utils.js';
 
 	type ChildProps = { props: Record<string, unknown> };
 	type TriggerEventProps = { onclick?: (event: MouseEvent) => void };

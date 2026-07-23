@@ -3,7 +3,6 @@ package templates
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,6 +12,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -85,13 +86,13 @@ var listCmd = &cobra.Command{
 			path = types.Endpoints.TemplatesAll()
 			resp, err := c.Get(cmd.Context(), path)
 			if err != nil {
-				return fmt.Errorf("failed to list templates: %w", err)
+				return errors.WrapIf(err, "failed to list templates")
 			}
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[[]template.Template]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 
 			templates = result.Data
@@ -101,18 +102,18 @@ var listCmd = &cobra.Command{
 			path = types.Endpoints.Templates()
 			path, err = cmdutil.ApplyPaginationParams(cmd, path, "templates", "limit", limitFlag, 20, "start", startFlag)
 			if err != nil {
-				return fmt.Errorf("failed to build pagination query: %w", err)
+				return errors.WrapIf(err, "failed to build pagination query")
 			}
 
 			resp, err := c.Get(cmd.Context(), path)
 			if err != nil {
-				return fmt.Errorf("failed to list templates: %w", err)
+				return errors.WrapIf(err, "failed to list templates")
 			}
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.Paginated[template.Template]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 
 			templates = result.Data
@@ -123,7 +124,7 @@ var listCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(jsonPayload, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -166,19 +167,19 @@ var defaultCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesDefault())
 		if err != nil {
-			return fmt.Errorf("failed to get default templates: %w", err)
+			return errors.WrapIf(err, "failed to get default templates")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.DefaultTemplatesResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -204,19 +205,19 @@ var contentCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplateContent(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to get template content: %w", err)
+			return errors.WrapIf(err, "failed to get template content")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.TemplateContent]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -250,19 +251,19 @@ var registriesCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
 		if err != nil {
-			return fmt.Errorf("failed to list registries: %w", err)
+			return errors.WrapIf(err, "failed to list registries")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]template.TemplateRegistry]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -302,19 +303,19 @@ var variablesCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesVariables())
 		if err != nil {
-			return fmt.Errorf("failed to list variables: %w", err)
+			return errors.WrapIf(err, "failed to list variables")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]env.Variable]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -360,11 +361,11 @@ var deleteCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.Template(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete template: %w", err)
+			return errors.WrapIf(err, "failed to delete template")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete template: %w", err)
+			return errors.WrapIf(err, "failed to delete template")
 		}
 
 		output.Success("Template deleted successfully")
@@ -396,11 +397,11 @@ var deleteRegistryCmd = &cobra.Command{
 
 		resp, err := c.Delete(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to delete registry: %w", err)
+			return errors.WrapIf(err, "failed to delete registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to delete registry: %w", err)
+			return errors.WrapIf(err, "failed to delete registry")
 		}
 
 		output.Success("Template registry deleted successfully")
@@ -427,7 +428,7 @@ var getCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -462,37 +463,37 @@ func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (
 
 	resp, err := c.Get(ctx, types.Endpoints.Template(trimmed))
 	if err != nil {
-		return nil, fmt.Errorf("failed to get template: %w", err)
+		return nil, errors.WrapIf(err, "failed to get template")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusOK {
 		var result base.ApiResponse[template.Template]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, errors.WrapIf(err, "failed to parse response")
 		}
 		return &result.Data, nil
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return nil, fmt.Errorf("failed to get template: request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, errors.Errorf("failed to get template: request failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	listResp, err := c.Get(ctx, types.Endpoints.TemplatesAll())
 	if err != nil {
-		return nil, fmt.Errorf("failed to search templates: %w", err)
+		return nil, errors.WrapIf(err, "failed to search templates")
 	}
 	defer func() { _ = listResp.Body.Close() }()
 
 	if listResp.StatusCode < http.StatusOK || listResp.StatusCode >= http.StatusMultipleChoices {
 		body, _ := io.ReadAll(io.LimitReader(listResp.Body, 4096))
-		return nil, fmt.Errorf("failed to search templates: request failed with status %d: %s", listResp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, errors.Errorf("failed to search templates: request failed with status %d: %s", listResp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var listResult base.ApiResponse[[]template.Template]
 	if err := json.NewDecoder(listResp.Body).Decode(&listResult); err != nil {
-		return nil, fmt.Errorf("failed to parse template list: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse template list")
 	}
 
 	lowerIdentifier := strings.ToLower(trimmed)
@@ -539,19 +540,19 @@ func resolveTemplate(ctx context.Context, c *client.Client, identifier string) (
 		return selectTemplateMatch(trimmed, topTemplatesFromRankedMatches(ranked, maxTemplatePromptOptions))
 	}
 
-	return nil, fmt.Errorf("template %q not found", trimmed)
+	return nil, errors.Errorf("template %q not found", trimmed)
 }
 
 func selectTemplateMatch(identifier string, matches []template.Template) (*template.Template, error) {
 	if len(matches) == 0 {
-		return nil, fmt.Errorf("template %q not found", identifier)
+		return nil, errors.Errorf("template %q not found", identifier)
 	}
 	if len(matches) == 1 {
 		return &matches[0], nil
 	}
 
 	if !prompt.IsInteractive() || len(matches) > maxTemplatePromptOptions {
-		return nil, fmt.Errorf("ambiguous template %q: %s", identifier, formatTemplateCandidates(matches))
+		return nil, errors.Errorf("ambiguous template %q: %s", identifier, formatTemplateCandidates(matches))
 	}
 
 	ordered := make([]template.Template, len(matches))
@@ -823,7 +824,7 @@ var createCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		content, err := os.ReadFile(templateCreateFile)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", templateCreateFile, err)
+			return errors.WrapIff(err, "failed to read file %s", templateCreateFile)
 		}
 
 		req := template.CreateRequest{
@@ -835,7 +836,7 @@ var createCmd = &cobra.Command{
 		if templateCreateEnvFile != "" {
 			envContent, err := os.ReadFile(templateCreateEnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to read env file %s: %w", templateCreateEnvFile, err)
+				return errors.WrapIff(err, "failed to read env file %s", templateCreateEnvFile)
 			}
 			req.EnvContent = string(envContent)
 		}
@@ -847,19 +848,19 @@ var createCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.Templates(), req)
 		if err != nil {
-			return fmt.Errorf("failed to create template: %w", err)
+			return errors.WrapIf(err, "failed to create template")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.Template]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -886,7 +887,7 @@ var updateCmd = &cobra.Command{
 		if templateUpdateFile != "" {
 			content, err := os.ReadFile(templateUpdateFile)
 			if err != nil {
-				return fmt.Errorf("failed to read file %s: %w", templateUpdateFile, err)
+				return errors.WrapIff(err, "failed to read file %s", templateUpdateFile)
 			}
 			req.Content = string(content)
 		}
@@ -894,7 +895,7 @@ var updateCmd = &cobra.Command{
 		if templateUpdateEnvFile != "" {
 			envContent, err := os.ReadFile(templateUpdateEnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to read env file %s: %w", templateUpdateEnvFile, err)
+				return errors.WrapIff(err, "failed to read env file %s", templateUpdateEnvFile)
 			}
 			req.EnvContent = string(envContent)
 		}
@@ -906,19 +907,19 @@ var updateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Template(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update template: %w", err)
+			return errors.WrapIf(err, "failed to update template")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.Template]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -944,25 +945,25 @@ var downloadCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplateDownload(args[0]), nil)
 		if err != nil {
-			return fmt.Errorf("failed to download template: %w", err)
+			return errors.WrapIf(err, "failed to download template")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to download template: %w", err)
+			return errors.WrapIf(err, "failed to download template")
 		}
 
 		var result base.ApiResponse[template.TemplateContent]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if templateDownloadOutput != "" {
 			dir := filepath.Dir(templateDownloadOutput)
 			if err := os.MkdirAll(dir, 0o755); err != nil {
-				return fmt.Errorf("failed to create directory %s: %w", dir, err)
+				return errors.WrapIff(err, "failed to create directory %s", dir)
 			}
 			if err := os.WriteFile(templateDownloadOutput, []byte(result.Data.Content), 0o600); err != nil {
-				return fmt.Errorf("failed to write file %s: %w", templateDownloadOutput, err)
+				return errors.WrapIff(err, "failed to write file %s", templateDownloadOutput)
 			}
 			output.Success("Template downloaded to %s", templateDownloadOutput)
 			return nil
@@ -980,7 +981,7 @@ var defaultsSaveCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		content, err := os.ReadFile(templateDefaultsSaveFile)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", templateDefaultsSaveFile, err)
+			return errors.WrapIff(err, "failed to read file %s", templateDefaultsSaveFile)
 		}
 
 		req := template.SaveDefaultTemplatesRequest{
@@ -990,7 +991,7 @@ var defaultsSaveCmd = &cobra.Command{
 		if templateDefaultsEnvFile != "" {
 			envContent, err := os.ReadFile(templateDefaultsEnvFile)
 			if err != nil {
-				return fmt.Errorf("failed to read env file %s: %w", templateDefaultsEnvFile, err)
+				return errors.WrapIff(err, "failed to read env file %s", templateDefaultsEnvFile)
 			}
 			req.EnvContent = string(envContent)
 		}
@@ -1002,21 +1003,21 @@ var defaultsSaveCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.TemplatesDefault(), req)
 		if err != nil {
-			return fmt.Errorf("failed to save default templates: %w", err)
+			return errors.WrapIf(err, "failed to save default templates")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to save default templates: %w", err)
+			return errors.WrapIf(err, "failed to save default templates")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[template.DefaultTemplatesResponse]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -1035,12 +1036,12 @@ var variablesUpdateCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		content, err := os.ReadFile(templateVarsUpdateFile)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", templateVarsUpdateFile, err)
+			return errors.WrapIff(err, "failed to read file %s", templateVarsUpdateFile)
 		}
 
 		var variables []env.Variable
 		if err := json.Unmarshal(content, &variables); err != nil {
-			return fmt.Errorf("failed to parse variables JSON: %w", err)
+			return errors.WrapIf(err, "failed to parse variables JSON")
 		}
 
 		c, err := client.NewFromConfig()
@@ -1050,21 +1051,21 @@ var variablesUpdateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplatesVariables(), variables)
 		if err != nil {
-			return fmt.Errorf("failed to update variables: %w", err)
+			return errors.WrapIf(err, "failed to update variables")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update variables: %w", err)
+			return errors.WrapIf(err, "failed to update variables")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[[]env.Variable]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -1095,19 +1096,19 @@ var registriesUpdateCmd = &cobra.Command{
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]), req)
 		if err != nil {
-			return fmt.Errorf("failed to update registry: %w", err)
+			return errors.WrapIf(err, "failed to update registry")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.TemplateRegistry]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -1132,21 +1133,21 @@ var fetchCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplateFetch())
 		if err != nil {
-			return fmt.Errorf("failed to fetch templates: %w", err)
+			return errors.WrapIf(err, "failed to fetch templates")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to fetch templates: %w", err)
+			return errors.WrapIf(err, "failed to fetch templates")
 		}
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

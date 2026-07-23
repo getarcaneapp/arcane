@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
-	import { Badge } from '$lib/components/ui/badge';
-	import { m } from '$lib/paraglide/messages';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { type TabItem } from '$lib/components/tab-bar/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import { Badge } from '#lib/components/ui/badge';
+	import { m } from '#lib/paraglide/messages';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { type TabItem } from '#lib/components/tab-bar/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
 	import { toast } from 'svelte-sonner';
-	import { tryCatch } from '$lib/utils/api';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { swarmService } from '$lib/services/swarm-service';
+	import { tryCatch } from '#lib/utils/api';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { swarmService } from '#lib/services/swarm-service';
 	import type {
 		RawServiceNetworkAttachment,
 		RawServiceVirtualIP,
@@ -23,16 +23,16 @@
 		SwarmServiceMount,
 		SwarmServicePort,
 		SwarmServiceModeSpec
-	} from '$lib/types/swarm';
-	import ServiceEditorDialog from '$lib/components/dialogs/service-editor-dialog.svelte';
+	} from '#lib/types/swarm';
+	import ServiceEditorDialog from '#lib/components/dialogs/service-editor-dialog.svelte';
 	import ServiceOverview from '../components/ServiceOverview.svelte';
 	import ServiceLogsPanel from '../components/ServiceLogsPanel.svelte';
 	import ServiceTasksPanel from '../components/ServiceTasksPanel.svelte';
 	import ServiceConfiguration from '../components/ServiceConfiguration.svelte';
 	import ServiceNetwork from '../components/ServiceNetwork.svelte';
 	import ServiceStorage from '../components/ServiceStorage.svelte';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import ResourceNotFound from '$lib/components/resource-not-found.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
 	import {
 		DockIcon,
 		FileTextIcon,
@@ -43,16 +43,16 @@
 		EditIcon,
 		RedeployIcon,
 		TrashIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import {
 		getSwarmServiceModeFromSpec,
 		getSwarmServiceModeLabel,
 		getSwarmServiceModeVariant,
 		isSwarmServiceModeScalable
-	} from '$lib/utils/docker';
-	import { hasPermission } from '$lib/utils/auth';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	} from '#lib/utils/docker';
+	import { hasPermission } from '#lib/utils/auth';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let { data } = $props();
 	let service = $derived(data?.service as SwarmServiceInspect);

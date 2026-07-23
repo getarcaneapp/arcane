@@ -1,10 +1,10 @@
 <script lang="ts">
-	import * as Popover from '$lib/components/ui/popover/index.js';
-	import { activityStore } from '$lib/stores/activity.store.svelte';
-	import type { ActivityStatus, ActivityType } from '$lib/types/activity.type';
-	import { CheckIcon, FilterIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
-	import { cn } from '$lib/utils';
+	import * as Popover from '#lib/components/ui/popover/index.js';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import type { ActivityStatus, ActivityType } from '#lib/types/activity.type';
+	import { CheckIcon, FilterIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { cn } from '#lib/utils';
 	import { activityStatusLabel, activityTypeLabel } from './activity-labels';
 
 	const statuses: ActivityStatus[] = ['queued', 'running', 'success', 'failed', 'cancelled'];

@@ -1,9 +1,9 @@
 <script lang="ts">
-	import PruneConfirmationDialogContent from '$lib/components/dialogs/prune-confirmation-dialog-content.svelte';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import type { SystemPruneRequest } from '$lib/types/automation';
-	import type { Settings } from '$lib/types/settings';
+	import PruneConfirmationDialogContent from '#lib/components/dialogs/prune-confirmation-dialog-content.svelte';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import type { SystemPruneRequest } from '#lib/types/automation';
+	import type { Settings } from '#lib/types/settings';
 
 	interface Props {
 		open: boolean;

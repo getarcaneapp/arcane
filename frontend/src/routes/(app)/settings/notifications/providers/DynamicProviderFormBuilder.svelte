@@ -1,9 +1,9 @@
 <script lang="ts" generics="T extends object">
-	import { Label } from '$lib/components/ui/label';
-	import Textarea from '$lib/components/ui/textarea/textarea.svelte';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import SwitchWithLabel from '$lib/components/form/labeled-switch.svelte';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
+	import { Label } from '#lib/components/ui/label';
+	import Textarea from '#lib/components/ui/textarea/textarea.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import type {
 		ProviderFieldKey,
 		ProviderFormField,

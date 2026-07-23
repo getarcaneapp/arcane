@@ -1,4 +1,4 @@
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 
 /**
  * Creates an effect that triggers a callback when the environment changes.

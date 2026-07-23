@@ -1,13 +1,13 @@
-import userStore from '$lib/stores/user-store';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
+import userStore from '#lib/stores/user-store';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
 import {
 	canReachAccessSurface,
 	getFallbackAccessSurfaces,
 	getRouteAccessSurfaces,
 	pathMatchesAccessSurface
-} from '$lib/utils/access-policy';
-import { GLOBAL_SCOPE, SUDO_PERMISSION } from '$lib/types/auth';
-import type { PermissionsManifest, User } from '$lib/types/auth';
+} from '#lib/utils/access-policy';
+import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
+import type { PermissionsManifest, User } from '#lib/types/auth';
 
 // --- Store-backed permission checks (for .svelte / runtime) ---
 

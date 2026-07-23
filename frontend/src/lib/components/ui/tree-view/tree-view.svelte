@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { cn } from '$lib/utils';
+	import { cn } from '#lib/utils';
 	import type { TreeViewRootProps } from './types';
 
 	let { children, class: className }: TreeViewRootProps = $props();

@@ -1,8 +1,8 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { cn } from '$lib/utils.js';
-	import { ArrowLeftIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { cn } from '#lib/utils.js';
+	import { ArrowLeftIcon } from '#lib/icons';
 	import { useSidebar } from './context.svelte.js';
 
 	let {

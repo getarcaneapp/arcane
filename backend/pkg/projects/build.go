@@ -1,10 +1,10 @@
 package projects
 
 import (
-	"fmt"
 	"path/filepath"
 	"strings"
 
+	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	contextsource "go.getarcane.app/builds/pkg/utils/contextsource"
 )
@@ -16,13 +16,13 @@ func ResolveBuildContext(workingDir string, svc composetypes.ServiceConfig, serv
 	if contextDir == "" {
 		contextDir = workingDir
 	} else if _, isGitContext, err := contextsource.ParseGitBuildContextSource(contextDir); err != nil {
-		return "", fmt.Errorf("invalid build context for service %s: %w", serviceName, err)
+		return "", errors.WrapIff(err, "invalid build context for service %s", serviceName)
 	} else if !isGitContext && !filepath.IsAbs(contextDir) {
 		contextDir = filepath.Join(workingDir, contextDir)
 	}
 
 	if contextDir == "" {
-		return "", fmt.Errorf("build context not set for service %s", serviceName)
+		return "", errors.Errorf("build context not set for service %s", serviceName)
 	}
 
 	return contextDir, nil

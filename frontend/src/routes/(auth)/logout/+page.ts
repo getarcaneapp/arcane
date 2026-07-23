@@ -1,6 +1,6 @@
 import { redirect } from '@sveltejs/kit';
 import type { PageLoad } from './$types';
-import { authService } from '$lib/services/auth-service';
+import { authService } from '#lib/services/auth-service';
 
 export const load: PageLoad = async ({ fetch, parent }) => {
 	const { queryClient } = await parent();

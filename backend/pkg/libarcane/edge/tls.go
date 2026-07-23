@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	json "encoding/json/v2"
 	"encoding/pem"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -24,6 +23,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
@@ -64,7 +65,7 @@ func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
 
 	caPool, err := loadCertPoolInternal(strings.TrimSpace(cfg.EdgeMTLSCAFile))
 	if err != nil {
-		return nil, fmt.Errorf("failed to load edge mTLS CA file: %w", err)
+		return nil, errors.WrapIf(err, "failed to load edge mTLS CA file")
 	}
 
 	// ClientAuth is intentionally VerifyClientCertIfGiven even when
@@ -87,7 +88,7 @@ func BuildManagerServerTLSConfig(cfg *Config) (*tls.Config, error) {
 func NewManagerHTTPClient(cfg *Config, timeout time.Duration) (*http.Client, error) {
 	baseTransport, ok := http.DefaultTransport.(*http.Transport)
 	if !ok {
-		return nil, &common.DefaultTransportTypeError{}
+		return nil, errors.New("http.DefaultTransport is not *http.Transport")
 	}
 	transport := baseTransport.Clone()
 	tlsConfig, err := buildManagerClientTLSConfigInternal(cfg)
@@ -165,15 +166,15 @@ func GenerateManagerClientMTLSAssetsWithContext(ctx context.Context, cfg *Config
 
 	caPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read generated CA certificate: %w", err)
+		return nil, errors.WrapIf(err, "failed to read generated CA certificate")
 	}
 	clientCertPEM, err := os.ReadFile(clientCertPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read generated client certificate: %w", err)
+		return nil, errors.WrapIf(err, "failed to read generated client certificate")
 	}
 	clientKeyPEM, err := os.ReadFile(clientKeyPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read generated client key: %w", err)
+		return nil, errors.WrapIf(err, "failed to read generated client key")
 	}
 
 	return &GeneratedMTLSAssets{
@@ -243,7 +244,7 @@ func readMTLSEnrollmentMarkerInternal(path string) (time.Time, error) {
 	}
 	enrolledAt, err := time.Parse(time.RFC3339Nano, trimmed)
 	if err != nil {
-		return time.Time{}, fmt.Errorf("failed to parse edge mTLS enrollment marker %s: %w", path, err)
+		return time.Time{}, errors.WrapIff(err, "failed to parse edge mTLS enrollment marker %s", path)
 	}
 	return enrolledAt, nil
 }
@@ -284,7 +285,7 @@ func EnsureAgentMTLSAssets(ctx context.Context, cfg *Config) error {
 		if !needsEnrollment {
 			if !fileExistsInternal(filepath.Join(assetsDir, generatedMTLSEnrolledName)) {
 				if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
-					return fmt.Errorf("failed to write edge mTLS enrollment marker: %w", err)
+					return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 				}
 			}
 			setAgentMTLSAssetPathsInternal(cfg, assetsDir)
@@ -314,12 +315,12 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 
 	httpClient, err := NewManagerHTTPClient(cfg, 30*time.Second)
 	if err != nil {
-		return fmt.Errorf("failed to configure edge mTLS enrollment client: %w", err)
+		return errors.WrapIf(err, "failed to configure edge mTLS enrollment client")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, managerBaseURL+"/api/tunnel/mtls/enroll", nil)
 	if err != nil {
-		return fmt.Errorf("failed to create edge mTLS enrollment request: %w", err)
+		return errors.WrapIf(err, "failed to create edge mTLS enrollment request")
 	}
 	req.Header.Set(HeaderAgentToken, cfg.AgentToken)
 	req.Header.Set(HeaderAPIKey, cfg.AgentToken)
@@ -327,25 +328,25 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("edge mTLS enrollment request failed: %w", err)
+		return errors.WrapIf(err, "edge mTLS enrollment request failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(io.LimitReader(resp.Body, maxEnrollResponseBytes))
-		return fmt.Errorf("edge mTLS enrollment failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return errors.Errorf("edge mTLS enrollment failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	var enrollResp enrollMTLSResponse
 	if err := json.UnmarshalRead(io.LimitReader(resp.Body, maxEnrollResponseBytes), &enrollResp); err != nil {
-		return fmt.Errorf("failed to decode edge mTLS enrollment response: %w", err)
+		return errors.WrapIf(err, "failed to decode edge mTLS enrollment response")
 	}
 	if len(enrollResp.Files) == 0 {
 		return errors.New("edge mTLS enrollment response did not include any files")
 	}
 
 	if err := os.MkdirAll(assetsDir, common.DirPerm); err != nil {
-		return fmt.Errorf("failed to create edge mTLS asset dir: %w", err)
+		return errors.WrapIf(err, "failed to create edge mTLS asset dir")
 	}
 	for _, file := range enrollResp.Files {
 		fileName := filepath.Base(file.Name)
@@ -355,15 +356,15 @@ func enrollAgentMTLSAssetsInternal(ctx context.Context, cfg *Config, assetsDir, 
 			perm = 0o600
 		}
 		if err := atomic.WriteFile(targetPath, []byte(file.Content), perm); err != nil {
-			return fmt.Errorf("failed to write edge mTLS asset %s: %w", file.Name, err)
+			return errors.WrapIff(err, "failed to write edge mTLS asset %s", file.Name)
 		}
 	}
 	needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 	if needsEnrollment {
-		return fmt.Errorf("edge mTLS enrollment wrote unusable assets: %s", reason)
+		return errors.Errorf("edge mTLS enrollment wrote unusable assets: %s", reason)
 	}
 	if err := atomic.WriteFile(filepath.Join(assetsDir, generatedMTLSEnrolledName), []byte(time.Now().UTC().Format(time.RFC3339)+"\n"), 0o600); err != nil {
-		return fmt.Errorf("failed to write edge mTLS enrollment marker: %w", err)
+		return errors.WrapIf(err, "failed to write edge mTLS enrollment marker")
 	}
 
 	setAgentMTLSAssetPathsInternal(cfg, assetsDir)
@@ -386,7 +387,7 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 	if caFile := strings.TrimSpace(cfg.EdgeMTLSCAFile); caFile != "" {
 		pool, err := loadSystemOrCustomCertPoolInternal(caFile)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load edge mTLS CA file: %w", err)
+			return nil, errors.WrapIf(err, "failed to load edge mTLS CA file")
 		}
 		tlsConfig.RootCAs = pool
 	}
@@ -397,7 +398,7 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 		keyPath := strings.TrimSpace(cfg.EdgeMTLSKeyFile)
 		needsEnrollment, reason := agentMTLSAssetsNeedEnrollmentInternal(certPath, keyPath, time.Now())
 		if needsEnrollment {
-			err := fmt.Errorf("edge mTLS client certificate is unusable: %s", reason)
+			err := errors.Errorf("edge mTLS client certificate is unusable: %s", reason)
 			if mode == EdgeMTLSModeOptional {
 				slog.Warn("Ignoring unusable optional edge mTLS client certificate; falling back to token auth", "cert_path", certPath, "error", err.Error())
 				return tlsConfig, nil
@@ -410,7 +411,7 @@ func buildManagerClientTLSConfigInternal(cfg *Config) (*tls.Config, error) {
 				slog.Warn("Failed to load optional edge mTLS client certificate; falling back to token auth", "cert_path", certPath, "error", err.Error())
 				return tlsConfig, nil
 			}
-			return nil, fmt.Errorf("failed to load edge mTLS client certificate: %w", err)
+			return nil, errors.WrapIf(err, "failed to load edge mTLS client certificate")
 		}
 		tlsConfig.Certificates = []tls.Certificate{cert}
 	}
@@ -456,7 +457,7 @@ func ValidateManagerMTLSConfig(cfg *Config) error {
 
 	_, err := loadCertPoolInternal(cfg.EdgeMTLSCAFile)
 	if err != nil {
-		return fmt.Errorf("failed to load edge mTLS CA file: %w", err)
+		return errors.WrapIf(err, "failed to load edge mTLS CA file")
 	}
 	return nil
 }
@@ -619,7 +620,7 @@ func verifiedPeerCertificateEnvironmentIDMatchesInternal(state *tls.ConnectionSt
 			return nil
 		}
 	}
-	return fmt.Errorf("verified edge mTLS client certificate does not match environment %s", strings.TrimSpace(envID))
+	return errors.Errorf("verified edge mTLS client certificate does not match environment %s", strings.TrimSpace(envID))
 }
 
 func edgeMTLSAppURLInternal(cfg *Config) string {
@@ -660,7 +661,7 @@ func edgeMTLSAssetsDirInternal(cfg *Config) (string, error) {
 
 	resolved, err := filepath.Abs(baseDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve edge mTLS assets dir: %w", err)
+		return "", errors.WrapIf(err, "failed to resolve edge mTLS assets dir")
 	}
 	return resolved, nil
 }
@@ -680,14 +681,14 @@ func edgeAgentMTLSAssetsDirInternal(cfg *Config) (string, error) {
 
 	resolved, err := filepath.Abs(baseDir)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve edge agent mTLS assets dir: %w", err)
+		return "", errors.WrapIf(err, "failed to resolve edge agent mTLS assets dir")
 	}
 	return resolved, nil
 }
 
 func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, string, bool, error) {
 	if err := os.MkdirAll(assetsDir, common.DirPerm); err != nil {
-		return "", "", false, fmt.Errorf("failed to create edge mTLS assets dir: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to create edge mTLS assets dir")
 	}
 
 	unlock, err := lockEdgeMTLSPathInternal(ctx, assetsDir, ".ca.lock")
@@ -706,7 +707,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 
 	privateKey, err := certgen.GenerateP384PrivateKey()
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to generate CA private key: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to generate CA private key")
 	}
 
 	template, err := certgen.NewEdgeMTLSCATemplate()
@@ -716,7 +717,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to create CA certificate: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to create CA certificate")
 	}
 
 	if err := writePEMFileInternal(caCertPath, "CERTIFICATE", certDER, common.FilePerm); err != nil {
@@ -724,7 +725,7 @@ func ensureManagerCAInternal(ctx context.Context, assetsDir string) (string, str
 	}
 	caKeyDER, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to marshal CA private key: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to marshal CA private key")
 	}
 	if err := writeCAKeyFileInternal(caKeyPath, caKeyDER); err != nil {
 		return "", "", false, err
@@ -752,7 +753,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 
 	caCertPEM, err := os.ReadFile(caCertPath)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to read CA certificate: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to read CA certificate")
 	}
 	caKeyPEM, err := readCAKeyPEMInternal(caKeyPath)
 	if err != nil {
@@ -765,7 +766,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 	}
 	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to parse CA certificate: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to parse CA certificate")
 	}
 
 	caKeyBlock, _ := pem.Decode(caKeyPEM)
@@ -774,13 +775,13 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 	}
 	caKey, err := x509.ParseECPrivateKey(caKeyBlock.Bytes)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to parse CA private key: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to parse CA private key")
 	}
 
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	clientDir := filepath.Join(assetsDir, generatedClientMTLSSubdir, safeEnvID)
 	if err := os.MkdirAll(clientDir, common.DirPerm); err != nil {
-		return "", "", false, fmt.Errorf("failed to create client cert dir: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to create client cert dir")
 	}
 	unlock, err := lockEdgeMTLSPathInternal(ctx, clientDir, ".client.lock")
 	if err != nil {
@@ -804,7 +805,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 
 	privateKey, err := certgen.GenerateP384PrivateKey()
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to generate client private key: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to generate client private key")
 	}
 	uriSAN, dnsSANs := buildGeneratedClientSANsInternal(envName, safeEnvID, appURL)
 	template, err := certgen.NewEdgeMTLSClientTemplate(expectedCommonName, uriSAN, dnsSANs)
@@ -814,7 +815,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 
 	certDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &privateKey.PublicKey, caKey)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to create client certificate: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to create client certificate")
 	}
 
 	if err := writePEMFileInternal(clientCertPath, "CERTIFICATE", certDER, common.FilePerm); err != nil {
@@ -822,7 +823,7 @@ func ensureClientCertificateInternal(ctx context.Context, assetsDir string, envI
 	}
 	clientKeyDER, err := x509.MarshalECPrivateKey(privateKey)
 	if err != nil {
-		return "", "", false, fmt.Errorf("failed to marshal client private key: %w", err)
+		return "", "", false, errors.WrapIf(err, "failed to marshal client private key")
 	}
 	if err := writePEMFileInternal(clientKeyPath, "EC PRIVATE KEY", clientKeyDER, 0o600); err != nil {
 		return "", "", false, err
@@ -900,11 +901,11 @@ func validateGeneratedCAInternal(certPath, keyPath string) error {
 	}
 	keyBlock, _ := pem.Decode(keyPEM)
 	if keyBlock == nil {
-		return fmt.Errorf("failed to parse CA private key PEM %s", keyPath)
+		return errors.Errorf("failed to parse CA private key PEM %s", keyPath)
 	}
 	privateKey, err := x509.ParseECPrivateKey(keyBlock.Bytes)
 	if err != nil {
-		return fmt.Errorf("failed to parse CA private key %s: %w", keyPath, err)
+		return errors.WrapIff(err, "failed to parse CA private key %s", keyPath)
 	}
 	if privateKey.Curve != elliptic.P384() {
 		return errors.New("generated CA private key is not ECDSA P-384")
@@ -925,10 +926,10 @@ func validateGeneratedClientCertificateInternal(certPath, keyPath string, expect
 		return errors.New("generated client certificate is not currently valid")
 	}
 	if strings.TrimSpace(expectedCommonName) != "" && cert.Subject.CommonName != expectedCommonName {
-		return fmt.Errorf("generated client certificate common name %q does not match expected %q", cert.Subject.CommonName, expectedCommonName)
+		return errors.Errorf("generated client certificate common name %q does not match expected %q", cert.Subject.CommonName, expectedCommonName)
 	}
 	if expectedURISAN != nil && !certificateHasURISANInternal(cert, expectedURISAN) {
-		return fmt.Errorf("generated client certificate URI SAN does not match expected %s", expectedURISAN.String())
+		return errors.Errorf("generated client certificate URI SAN does not match expected %s", expectedURISAN.String())
 	}
 	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
 	if !ok || publicKey.Curve != elliptic.P384() {
@@ -996,27 +997,27 @@ func agentMTLSAssetsNeedEnrollmentInternal(certPath string, keyPath string, now 
 
 func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecdsa.PrivateKey, label string) error {
 	if cert == nil {
-		return fmt.Errorf("%s certificate is required", label)
+		return errors.Errorf("%s certificate is required", label)
 	}
 	if privateKey == nil {
-		return fmt.Errorf("%s private key is required", label)
+		return errors.Errorf("%s private key is required", label)
 	}
 
 	publicKey, ok := cert.PublicKey.(*ecdsa.PublicKey)
 	if !ok {
-		return fmt.Errorf("%s certificate public key is not ECDSA", label)
+		return errors.Errorf("%s certificate public key is not ECDSA", label)
 	}
 
 	certPublicKeyDER, err := x509.MarshalPKIXPublicKey(publicKey)
 	if err != nil {
-		return fmt.Errorf("failed to marshal %s certificate public key: %w", label, err)
+		return errors.WrapIff(err, "failed to marshal %s certificate public key", label)
 	}
 	privatePublicKeyDER, err := x509.MarshalPKIXPublicKey(&privateKey.PublicKey)
 	if err != nil {
-		return fmt.Errorf("failed to marshal %s private key public key: %w", label, err)
+		return errors.WrapIff(err, "failed to marshal %s private key public key", label)
 	}
 	if !bytes.Equal(certPublicKeyDER, privatePublicKeyDER) {
-		return fmt.Errorf("%s certificate public key does not match private key", label)
+		return errors.Errorf("%s certificate public key does not match private key", label)
 	}
 
 	return nil
@@ -1025,15 +1026,15 @@ func validateCertificateKeyPairInternal(cert *x509.Certificate, privateKey *ecds
 func readCertificateInternal(path string) (*x509.Certificate, error) {
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read certificate %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to read certificate %s", path)
 	}
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, fmt.Errorf("failed to parse certificate PEM %s", path)
+		return nil, errors.Errorf("failed to parse certificate PEM %s", path)
 	}
 	cert, err := x509.ParseCertificate(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse certificate %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to parse certificate %s", path)
 	}
 	return cert, nil
 }
@@ -1041,15 +1042,15 @@ func readCertificateInternal(path string) (*x509.Certificate, error) {
 func readECPrivateKeyInternal(path string) (*ecdsa.PrivateKey, error) {
 	pemBytes, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read private key %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to read private key %s", path)
 	}
 	block, _ := pem.Decode(pemBytes)
 	if block == nil {
-		return nil, fmt.Errorf("failed to parse private key PEM %s", path)
+		return nil, errors.Errorf("failed to parse private key PEM %s", path)
 	}
 	privateKey, err := x509.ParseECPrivateKey(block.Bytes)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse EC private key %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to parse EC private key %s", path)
 	}
 	return privateKey, nil
 }
@@ -1057,7 +1058,7 @@ func readECPrivateKeyInternal(path string) (*ecdsa.PrivateKey, error) {
 func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) (func(), error) {
 	absDir, err := filepath.Abs(dir)
 	if err != nil {
-		return nil, fmt.Errorf("failed to resolve edge mTLS lock dir: %w", err)
+		return nil, errors.WrapIf(err, "failed to resolve edge mTLS lock dir")
 	}
 	lockName = strings.TrimSpace(lockName)
 	if lockName == "" {
@@ -1068,7 +1069,7 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 	muValue, _ := managerCALocks.LoadOrStore(lockPath, &sync.Mutex{})
 	mu, ok := muValue.(*sync.Mutex)
 	if !ok {
-		return nil, &common.ManagerCALockTypeError{}
+		return nil, errors.New("manager CA lock value is not *sync.Mutex")
 	}
 
 	deadline := time.Now().Add(managerCALockTimeout)
@@ -1090,7 +1091,7 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 		}
 		if !os.IsExist(err) {
 			mu.Unlock()
-			return nil, fmt.Errorf("failed to acquire edge mTLS CA lock: %w", err)
+			return nil, errors.WrapIf(err, "failed to acquire edge mTLS CA lock")
 		}
 		if time.Now().After(deadline) {
 			if removeStaleEdgeMTLSLockInternal(lockPath) {
@@ -1098,7 +1099,7 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 				continue
 			}
 			mu.Unlock()
-			return nil, fmt.Errorf("timed out waiting for edge mTLS CA lock %s", lockPath)
+			return nil, errors.Errorf("timed out waiting for edge mTLS CA lock %s", lockPath)
 		}
 		mu.Unlock()
 		if err := waitForEdgeMTLSLockPollInternal(ctx); err != nil {
@@ -1113,7 +1114,7 @@ func waitForEdgeMTLSLockPollInternal(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		return fmt.Errorf("cancelled waiting for edge mTLS CA lock: %w", ctx.Err())
+		return errors.WrapIf(ctx.Err(), "cancelled waiting for edge mTLS CA lock")
 	case <-timer.C:
 		return nil
 	}
@@ -1144,7 +1145,7 @@ func readEdgeMTLSLockInfoInternal(lockPath string) (*edgeMTLSLockInfo, error) {
 	}
 	pid, err := strconv.Atoi(fields[0])
 	if err != nil {
-		return nil, fmt.Errorf("parse edge mTLS lock PID: %w", err)
+		return nil, errors.WrapIf(err, "parse edge mTLS lock PID")
 	}
 	if pid <= 0 {
 		return nil, errors.New("edge mTLS lock PID must be positive")
@@ -1178,7 +1179,7 @@ func edgeMTLSLockPIDAliveInternal(pid int) bool {
 func writePEMFileInternal(path string, blockType string, bytes []byte, perm os.FileMode) error {
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: blockType, Bytes: bytes})
 	if pemBytes == nil {
-		return fmt.Errorf("failed to encode PEM file %s", path)
+		return errors.Errorf("failed to encode PEM file %s", path)
 	}
 	return atomic.WriteFile(path, pemBytes, perm)
 }
@@ -1200,7 +1201,7 @@ func writeCAKeyFileInternal(path string, derBytes []byte) error {
 
 	ciphertext, err := caKeyEncryptInternal(string(pemBytes))
 	if err != nil {
-		return fmt.Errorf("failed to encrypt edge mTLS CA private key: %w", err)
+		return errors.WrapIf(err, "failed to encrypt edge mTLS CA private key")
 	}
 	if ciphertext == "" {
 		return errors.New("failed to encrypt edge mTLS CA private key: encrypted payload is empty")
@@ -1214,16 +1215,16 @@ func writeCAKeyFileInternal(path string, derBytes []byte) error {
 func readCAKeyPEMInternal(path string) ([]byte, error) {
 	raw, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("failed to read CA private key %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to read CA private key %s", path)
 	}
 	trimmed := strings.TrimSpace(string(raw))
 	if !strings.HasPrefix(trimmed, caKeyEncryptedPrefix) {
-		return nil, fmt.Errorf("CA private key %s is not in the expected encrypted envelope format", path)
+		return nil, errors.Errorf("CA private key %s is not in the expected encrypted envelope format", path)
 	}
 	ciphertext := strings.TrimPrefix(trimmed, caKeyEncryptedPrefix)
 	plaintext, err := libcrypto.Decrypt(ciphertext)
 	if err != nil {
-		return nil, fmt.Errorf("failed to decrypt CA private key %s: %w", path, err)
+		return nil, errors.WrapIff(err, "failed to decrypt CA private key %s", path)
 	}
 	return []byte(plaintext), nil
 }

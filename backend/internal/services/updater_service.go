@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -11,20 +11,22 @@ import (
 	"strings"
 	"time"
 
-	"github.com/compose-spec/compose-go/v2/loader"
-	"github.com/moby/moby/api/types/container"
-	"github.com/moby/moby/client"
-	"github.com/samber/mo"
+	"emperror.dev/errors"
 
+	"github.com/compose-spec/compose-go/v2/loader"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/client"
+	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
 	moduleapi "go.getarcane.app/updater/api"
 	updaterdigest "go.getarcane.app/updater/pkg/digest"
@@ -152,7 +154,6 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
-	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
@@ -165,6 +166,21 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
+	if activityID != "" && s.deps.Activity != nil {
+		// Bounded slot wait: an unbounded wait behind other long-running runs
+		// would strand the queued activity row (the completion defer above
+		// flips it to failed on timeout instead).
+		if err = s.deps.Activity.AwaitActivitySlotBounded(ctx, activityID, "0"); err != nil {
+			return out, err
+		}
+	}
+
+	// The engine's per-container docker operations carry no timeouts, so cap
+	// the whole run; the Track ctx stays unbounded for the deferred completion
+	// so user cancellation is still detected there.
+	runCtx, cancelRun := context.WithTimeout(ctx, timeouts.DefaultAutoUpdateApply)
+	defer cancelRun()
+
 	s.recordAutoUpdateEventInternal(ctx, models.EventSeverityInfo, models.JSON{
 		"phase":       "start",
 		"dryRun":      options.DryRun,
@@ -176,11 +192,11 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 	s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Planning pending updates", "Planning updates", 5)
 
 	if len(options.ResourceIds) > 0 {
-		if err = s.applyScopedUpdatesInternal(ctx, options, out); err != nil {
+		if err = s.applyScopedUpdatesInternal(runCtx, options, out); err != nil {
 			return out, err
 		}
 	} else {
-		moduleResult, engineErr := s.engineInternal().ApplyPending(ctx, moduleOptionsFromUpdaterOptionsInternal(options))
+		moduleResult, engineErr := s.engineInternal().ApplyPending(runCtx, moduleOptionsFromUpdaterOptionsInternal(options))
 		if moduleResult != nil {
 			out = resultFromModuleInternal(moduleResult)
 			out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
@@ -194,7 +210,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 
 	if !options.DryRun && s.deps.ImageUpdates != nil {
 		s.appendAutoUpdateActivityMessageInternal(ctx, activityID, "Cleaning up update records", "Cleaning up", 95)
-		if cleanupErr := s.deps.ImageUpdates.CleanupOrphanedRecords(ctx); cleanupErr != nil {
+		if cleanupErr := s.deps.ImageUpdates.CleanupOrphanedRecords(runCtx); cleanupErr != nil {
 			s.loggerInternal().WarnContext(ctx, "cleanup orphaned update records failed", "error", cleanupErr)
 		}
 	}
@@ -221,7 +237,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 		return err
 	}
 	if len(containerIDs) == 0 {
-		return fmt.Errorf("no containers matched the requested %s resources", strings.TrimSpace(options.Type))
+		return errors.Errorf("no containers matched the requested %s resources", strings.TrimSpace(options.Type))
 	}
 
 	engineOpts := moduletypes.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
@@ -245,14 +261,14 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 				Status:       updater.StatusFailed,
 				Error:        engineErr.Error(),
 			})
-			engineErrs = append(engineErrs, fmt.Errorf("%s: %w", containerID, engineErr))
+			engineErrs = append(engineErrs, errors.WrapIff(engineErr, "%s", containerID))
 		}
 	}
 	s.logResultItemsInternal(ctx, out)
 	out.Success = out.Failed == 0
 	// Engine errors propagate like the unscoped path's engine error does —
 	// the remaining containers were still attempted and recorded above.
-	return errors.Join(engineErrs...)
+	return stderrors.Join(engineErrs...)
 }
 
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
@@ -276,7 +292,7 @@ func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, 
 	case "image":
 		return s.containerIDsForImagesInternal(ctx, requested)
 	default:
-		return nil, fmt.Errorf("unsupported scoped update type %q", options.Type)
+		return nil, errors.Errorf("unsupported scoped update type %q", options.Type)
 	}
 }
 
@@ -305,7 +321,7 @@ func (s *UpdaterService) containerIDsForProjectsInternal(ctx context.Context, pr
 
 	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
+		return nil, errors.WrapIf(err, "list containers")
 	}
 
 	var ids []string
@@ -342,7 +358,7 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 
 	containers, _, _, _, err := s.deps.Docker.GetAllContainers(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list containers: %w", err)
+		return nil, errors.WrapIf(err, "list containers")
 	}
 
 	var ids []string
@@ -406,7 +422,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 		query = query.Limit(limit)
 	}
 	if err := query.Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("get history: %w", err)
+		return nil, errors.WrapIf(err, "get history")
 	}
 	return records, nil
 }
@@ -420,7 +436,7 @@ func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldID
 // TriggerSelfUpdateViaCLI triggers Arcane's detached CLI self-update path.
 func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, containerID, containerName string, labelMap map[string]string) error {
 	if !labels.IsArcaneContainer(labelMap) {
-		return fmt.Errorf("%s: container is not an Arcane self-update target", source)
+		return errors.Errorf("%s: container is not an Arcane self-update target", source)
 	}
 	return s.TriggerSelfUpdate(ctx, moduletypes.SelfUpdateTarget{
 		ContainerID:   containerID,
@@ -519,40 +535,50 @@ func autoUpdateEventTitleInternal(phase string, metadata models.JSON) string {
 // DockerClient returns Arcane's configured Docker client for the updater engine.
 func (s *UpdaterService) DockerClient(ctx context.Context) (*client.Client, error) {
 	if s == nil || s.deps.Docker == nil {
-		return nil, &common.UpdaterDockerServiceUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("docker service unavailable"))
 	}
 	return s.deps.Docker.GetClient(ctx)
 }
 
-// PullImage pulls an image through Arcane's image service.
+// PullImage pulls an image through Arcane's image service. The pull is
+// bounded by the dockerImagePullTimeout setting — ImageService.PullImage does
+// not bound itself, and an unbounded engine pull would hold the auto-update
+// run (and its activity slot) indefinitely.
 func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progress io.Writer) error {
 	if s == nil || s.deps.ImagePuller == nil {
-		return &common.UpdaterImageServiceUnavailableError{}
+		return common.Classify(common.ErrUnavailable, errors.New("image service unavailable"))
 	}
 	activityID := activityIDFromContextInternal(ctx)
 	writer := activitylib.NewWriter(ctx, s.deps.Activity, activityID, progress, "Pulling updated images")
 	defer activitylib.FlushWriter(writer)
 
+	pullTimeoutSeconds := 0
+	if s.deps.Settings != nil {
+		pullTimeoutSeconds = s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt()
+	}
+	pullCtx, cancelPull := timeouts.WithTimeout(ctx, pullTimeoutSeconds, timeouts.DefaultDockerImagePull)
+	defer cancelPull()
+
 	if s.deps.Projects != nil {
-		resolved, err := s.deps.Projects.resolveRegistryCredentialsInternal(ctx)
+		resolved, err := s.deps.Projects.resolveRegistryCredentialsInternal(pullCtx)
 		if err != nil {
-			return fmt.Errorf("resolve registry credentials: %w", err)
+			return errors.WrapIf(err, "resolve registry credentials")
 		}
-		return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, resolved)
+		return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, resolved)
 	}
 
-	return s.deps.ImagePuller.PullImage(ctx, imageRef, writer, s.deps.SystemUser, nil)
+	return s.deps.ImagePuller.PullImage(pullCtx, imageRef, writer, s.deps.SystemUser, nil)
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
 func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes.ImageUpdateRecord, error) {
 	if s == nil || s.deps.DB == nil {
-		return nil, &common.UpdaterDatabaseUnavailableError{}
+		return nil, common.Classify(common.ErrUnavailable, errors.New("database unavailable"))
 	}
 
 	var records []models.ImageUpdateRecord
 	if err := s.deps.DB.WithContext(ctx).Where("has_update = ?", true).Find(&records).Error; err != nil {
-		return nil, fmt.Errorf("query pending image updates: %w", err)
+		return nil, errors.WrapIf(err, "query pending image updates")
 	}
 
 	// Flush pending "Updates Available" notifications before the engine
@@ -579,7 +605,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes
 // ClearImageUpdateRecord clears a pending image update record after it is handled.
 func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record moduletypes.ImageUpdateRecord) error {
 	if s == nil {
-		return &common.UpdaterServiceUnavailableError{}
+		return common.Classify(common.ErrUnavailable, errors.New("updater service unavailable"))
 	}
 	return s.clearImageUpdateRecordForModuleInternal(ctx, record)
 }
@@ -611,14 +637,14 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 // ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
 func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (moduletypes.ComposeProject, error) {
 	if s == nil || s.deps.Projects == nil {
-		return moduletypes.ComposeProject{}, &common.UpdaterProjectServiceUnavailableError{}
+		return moduletypes.ComposeProject{}, common.Classify(common.ErrUnavailable, errors.New("project service unavailable"))
 	}
 	project, err := s.deps.Projects.GetProjectByComposeName(ctx, composeName)
 	if err != nil {
 		return moduletypes.ComposeProject{}, err
 	}
 	if project == nil {
-		return moduletypes.ComposeProject{}, fmt.Errorf("compose project not found: %s", composeName)
+		return moduletypes.ComposeProject{}, errors.Errorf("compose project not found: %s", composeName)
 	}
 	return moduletypes.ComposeProject{ID: project.ID, Name: project.Name}, nil
 }
@@ -626,7 +652,7 @@ func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName s
 // UpdateServices redeploys selected services through Arcane's project service.
 func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, services []string) error {
 	if s == nil || s.deps.Projects == nil {
-		return &common.UpdaterProjectServiceUnavailableError{}
+		return common.Classify(common.ErrUnavailable, errors.New("project service unavailable"))
 	}
 	return s.deps.Projects.UpdateProjectServices(ctx, projectID, services, s.deps.SystemUser)
 }
@@ -638,7 +664,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target moduletyp
 		if instanceType == "" {
 			instanceType = "server"
 		}
-		return fmt.Errorf("%s self-update requires CLI upgrade service", instanceType)
+		return errors.Errorf("%s self-update requires CLI upgrade service", instanceType)
 	}
 
 	// A server self-update stops this process before the run can complete its
@@ -649,7 +675,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target moduletyp
 	}
 
 	if err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
-		return fmt.Errorf("CLI upgrade failed: %w", err)
+		return errors.WrapIf(err, "CLI upgrade failed")
 	}
 	return nil
 }
@@ -841,7 +867,9 @@ func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context,
 	}
 
 	if _, err := s.deps.Activity.CompleteActivity(utils.ActivityRuntimeContext(ctx, nil), activityID, status, message, errMessage); err != nil {
-		slog.DebugContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
+		// A lost terminal write strands the activity in running forever, so it
+		// must be loud enough to correlate with a stuck activity panel entry.
+		slog.ErrorContext(ctx, "failed to complete auto-update activity", "activityId", activityID, "error", err)
 	}
 }
 
@@ -1012,12 +1040,12 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 	successfulSources := 0
 
 	if s.deps.Docker == nil {
-		errs = append(errs, &common.UpdaterDockerServiceUnavailableError{})
+		errs = append(errs, common.Classify(common.ErrUnavailable, errors.New("docker service unavailable")))
 	} else {
 		dcli, err := s.deps.Docker.GetClient(ctx)
 		if err != nil || dcli == nil {
 			if err == nil {
-				err = &common.UpdaterDockerClientUnavailableError{}
+				err = common.Classify(common.ErrUnavailable, errors.New("docker client unavailable"))
 			}
 			errs = append(errs, err)
 			s.loggerInternal().DebugContext(ctx, "collectUsedImages: docker connection unavailable", "error", err)
@@ -1039,7 +1067,7 @@ func (s *UpdaterService) CollectUsedImages(ctx context.Context) (map[string]stru
 	}
 
 	if successfulSources == 0 {
-		return nil, errors.Join(errs...)
+		return nil, stderrors.Join(errs...)
 	}
 
 	s.loggerInternal().DebugContext(ctx, "collectUsedImages: collected used images", "count", len(out))

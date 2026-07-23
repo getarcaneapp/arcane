@@ -1,10 +1,10 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Label } from '$lib/components/ui/label';
-	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Label } from '#lib/components/ui/label';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import type { BuildFormInputsStore, BuildProviderOption } from './build-form.types';
 
 	let {

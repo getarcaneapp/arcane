@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
-	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -12,6 +11,8 @@ import (
 	"net/url"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -88,7 +89,7 @@ func (s *EventService) CreateEvent(ctx context.Context, req CreateEventRequest) 
 
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(event).Error; err != nil {
-			return fmt.Errorf("failed to create event: %w", err)
+			return errors.WrapIf(err, "failed to create event")
 		}
 		return nil
 	})
@@ -176,7 +177,7 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	managerEventsURL, err := managerEventEndpointURL(s.cfg.GetManagerBaseURL())
 	if err != nil {
-		return fmt.Errorf("manager API URL is invalid for manager event sync: %w", err)
+		return errors.WrapIf(err, "manager API URL is invalid for manager event sync")
 	}
 
 	payload := CreateEventRequest{
@@ -198,19 +199,19 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return fmt.Errorf("failed to marshal event payload: %w", err)
+		return errors.WrapIf(err, "failed to marshal event payload")
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, managerEventsURL, bytes.NewReader(body))
 	if err != nil {
-		return fmt.Errorf("failed to create manager event request: %w", err)
+		return errors.WrapIf(err, "failed to create manager event request")
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set(pkgutils.HeaderAgentToken, s.cfg.AgentToken)
 
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("failed to send event to manager: %w", err)
+		return errors.WrapIf(err, "failed to send event to manager")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -220,9 +221,9 @@ func (s *EventService) forwardEventToManagerHTTP(ctx context.Context, eventModel
 
 	bodyBytes, readErr := io.ReadAll(io.LimitReader(resp.Body, 8192))
 	if readErr != nil {
-		return fmt.Errorf("manager event sync failed with status %d", resp.StatusCode)
+		return errors.Errorf("manager event sync failed with status %d", resp.StatusCode)
 	}
-	return fmt.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
+	return errors.Errorf("manager event sync failed with status %d: %s", resp.StatusCode, strings.TrimSpace(string(bodyBytes)))
 }
 
 func managerEventEndpointURL(rawBaseURL string) (string, error) {
@@ -233,10 +234,10 @@ func managerEventEndpointURL(rawBaseURL string) (string, error) {
 
 	baseURL, err := url.Parse(trimmed)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse manager API URL: %w", err)
+		return "", errors.WrapIf(err, "failed to parse manager API URL")
 	}
 	if baseURL.Scheme != "http" && baseURL.Scheme != "https" {
-		return "", fmt.Errorf("unsupported scheme %q", baseURL.Scheme)
+		return "", errors.Errorf("unsupported scheme %q", baseURL.Scheme)
 	}
 	if baseURL.Host == "" {
 		return "", errors.New("manager API URL host is required")
@@ -304,12 +305,12 @@ func (s *EventService) ListEventsPaginated(ctx context.Context, params paginatio
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
 	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
 	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
+		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}
 
 	return eventDtos, paginationResp, nil
@@ -334,12 +335,12 @@ func (s *EventService) GetEventsByEnvironmentPaginated(ctx context.Context, envi
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &events)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate events: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate events")
 	}
 
 	eventDtos, mapErr := mapper.MapSlice[models.Event, event.Event](events)
 	if mapErr != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to map events: %w", mapErr)
+		return nil, pagination.Response{}, errors.WrapIf(mapErr, "failed to map events")
 	}
 
 	return eventDtos, paginationResp, nil
@@ -398,7 +399,7 @@ func (s *EventService) GetEventSeverityCounts(ctx context.Context) (EventSeverit
 		Select("severity, COUNT(*) AS count").
 		Group("severity").
 		Scan(&rows).Error; err != nil {
-		return EventSeverityCounts{}, fmt.Errorf("failed to count events by severity: %w", err)
+		return EventSeverityCounts{}, errors.WrapIf(err, "failed to count events by severity")
 	}
 
 	var counts EventSeverityCounts
@@ -425,7 +426,7 @@ func (s *EventService) DeleteEvent(ctx context.Context, eventID string) error {
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Delete(&models.Event{}, "id = ?", eventID)
 		if result.Error != nil {
-			return fmt.Errorf("failed to delete event: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to delete event")
 		}
 		if result.RowsAffected == 0 {
 			return errors.New("event not found")
@@ -439,7 +440,7 @@ func (s *EventService) DeleteOldEvents(ctx context.Context, olderThan time.Durat
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Where("timestamp < ?", cutoff).Delete(&models.Event{})
 		if result.Error != nil {
-			return fmt.Errorf("failed to delete old events: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to delete old events")
 		}
 		return nil
 	})

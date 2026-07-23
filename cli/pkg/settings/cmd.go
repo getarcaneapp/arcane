@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
@@ -50,21 +51,21 @@ var updateCmd = &cobra.Command{
 
 		data, err := os.ReadFile(settingsUpdateFile)
 		if err != nil {
-			return fmt.Errorf("failed to read file %s: %w", settingsUpdateFile, err)
+			return errors.WrapIff(err, "failed to read file %s", settingsUpdateFile)
 		}
 
 		var req settings.Update
 		if err := json.Unmarshal(data, &req); err != nil {
-			return fmt.Errorf("failed to parse settings file: %w", err)
+			return errors.WrapIf(err, "failed to parse settings file")
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Settings(c.EnvID()), req)
 		if err != nil {
-			return fmt.Errorf("failed to update settings: %w", err)
+			return errors.WrapIf(err, "failed to update settings")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to update settings: %w", err)
+			return errors.WrapIf(err, "failed to update settings")
 		}
 
 		if jsonOutput {
@@ -109,19 +110,19 @@ func runSettingsList(cmd *cobra.Command, cfg settingsListConfig) error {
 
 	resp, err := c.Get(cmd.Context(), cfg.endpoint(c.EnvID()))
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var result []settings.PublicSetting
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	if jsonOutput {
 		resultBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
 		fmt.Println(string(resultBytes))
 		return nil

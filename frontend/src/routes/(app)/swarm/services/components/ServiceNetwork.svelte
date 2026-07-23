@@ -1,9 +1,9 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { Badge } from '$lib/components/ui/badge';
-	import { m } from '$lib/paraglide/messages';
-	import { NetworksIcon, GlobeIcon } from '$lib/icons';
-	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '$lib/types/swarm';
+	import * as Card from '#lib/components/ui/card';
+	import { Badge } from '#lib/components/ui/badge';
+	import { m } from '#lib/paraglide/messages';
+	import { NetworksIcon, GlobeIcon } from '#lib/icons';
+	import type { ServiceNetworkAttachment, ServiceNetworkDetail, ServiceVirtualIP, SwarmServicePort } from '#lib/types/swarm';
 
 	interface Props {
 		ports: SwarmServicePort[];

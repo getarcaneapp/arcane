@@ -8,9 +8,9 @@ import (
 	"sort"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -178,7 +178,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 
 	networks, paginationResp, counts, err := h.networkService.ListNetworksPaginated(ctx, params)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list networks").Error())
 	}
 
 	return &ListNetworksOutput{
@@ -194,7 +194,7 @@ func (h *NetworkHandler) ListNetworks(ctx context.Context, input *ListNetworksIn
 func (h *NetworkHandler) GetNetworkCounts(ctx context.Context, input *GetNetworkCountsInput) (*GetNetworkCountsOutput, error) {
 	_, inuse, unused, total, err := h.dockerService.GetAllNetworks(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkUsageCountsError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get network counts").Error())
 	}
 
 	return &GetNetworkCountsOutput{
@@ -240,12 +240,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 		return createErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create network").Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.CreateResponse, networktypes.CreateResponse](*response)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -260,12 +260,12 @@ func (h *NetworkHandler) CreateNetwork(ctx context.Context, input *CreateNetwork
 func (h *NetworkHandler) GetNetwork(ctx context.Context, input *GetNetworkInput) (*GetNetworkOutput, error) {
 	networkInspect, err := h.networkService.GetNetworkByID(ctx, input.NetworkID)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.NetworkNotFoundError{Err: err}).Error())
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Network not found").Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.Inspect, networktypes.Inspect](*networkInspect)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}
 
 	// Ensure ID is mapped correctly
@@ -383,7 +383,7 @@ func (h *NetworkHandler) DeleteNetwork(ctx context.Context, input *DeleteNetwork
 		return h.networkService.RemoveNetwork(runtimeCtx, input.NetworkID, *user)
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkRemovalError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to remove network").Error())
 	}
 
 	return &DeleteNetworkOutput{
@@ -411,12 +411,12 @@ func (h *NetworkHandler) PruneNetworks(ctx context.Context, input *PruneNetworks
 		return pruneErr
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkPruneError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to prune networks").Error())
 	}
 
 	out, err := mapper.MapOne[dockernetwork.PruneReport, networktypes.PruneReport](*report)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.NetworkMappingError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to map network").Error())
 	}
 	out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 

@@ -2,10 +2,10 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"strconv"
 	"strings"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -29,7 +29,7 @@ func (s *KVService) Get(ctx context.Context, key string) (string, bool, error) {
 		return "", false, nil
 	}
 	if err != nil {
-		return "", false, fmt.Errorf("failed to load kv entry %q: %w", key, err)
+		return "", false, errors.WrapIff(err, "failed to load kv entry %q", key)
 	}
 
 	return entry.Value, true, nil
@@ -44,7 +44,7 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 		}).
 		Create(&entry).Error
 	if err != nil {
-		return fmt.Errorf("failed to upsert kv entry %q: %w", key, err)
+		return errors.WrapIff(err, "failed to upsert kv entry %q", key)
 	}
 
 	return nil
@@ -52,7 +52,7 @@ func (s *KVService) Set(ctx context.Context, key, value string) error {
 
 func (s *KVService) Delete(ctx context.Context, key string) error {
 	if err := s.db.WithContext(ctx).Delete(&models.KVEntry{}, "key = ?", key).Error; err != nil {
-		return fmt.Errorf("failed to delete kv entry %q: %w", key, err)
+		return errors.WrapIff(err, "failed to delete kv entry %q", key)
 	}
 	return nil
 }
@@ -61,7 +61,7 @@ func (s *KVService) ListByPrefix(ctx context.Context, prefix string) ([]models.K
 	var entries []models.KVEntry
 	escapedPrefix := strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(prefix)
 	if err := s.db.WithContext(ctx).Where("key LIKE ? ESCAPE '\\'", escapedPrefix+"%").Find(&entries).Error; err != nil {
-		return nil, fmt.Errorf("failed to list kv entries with prefix %q: %w", prefix, err)
+		return nil, errors.WrapIff(err, "failed to list kv entries with prefix %q", prefix)
 	}
 	return entries, nil
 }
@@ -77,7 +77,7 @@ func (s *KVService) GetBool(ctx context.Context, key string, defaultValue bool) 
 
 	parsedValue, err := strconv.ParseBool(rawValue)
 	if err != nil {
-		return defaultValue, fmt.Errorf("failed to parse kv entry %q as bool: %w", key, err)
+		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as bool", key)
 	}
 
 	return parsedValue, nil
@@ -98,7 +98,7 @@ func (s *KVService) GetInt64(ctx context.Context, key string, defaultValue int64
 
 	parsedValue, err := strconv.ParseInt(rawValue, 10, 64)
 	if err != nil {
-		return defaultValue, fmt.Errorf("failed to parse kv entry %q as int64: %w", key, err)
+		return defaultValue, errors.WrapIff(err, "failed to parse kv entry %q as int64", key)
 	}
 
 	return parsedValue, nil
@@ -122,7 +122,7 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 
 		currentValue, parseErr := strconv.ParseInt(entry.Value, 10, 64)
 		if parseErr != nil {
-			return fmt.Errorf("failed to parse kv entry %q as int64: %w", key, parseErr)
+			return errors.WrapIff(parseErr, "failed to parse kv entry %q as int64", key)
 		}
 
 		nextValue = currentValue + delta
@@ -130,7 +130,7 @@ func (s *KVService) IncrementInt64(ctx context.Context, key string, delta int64)
 		return tx.Save(&entry).Error
 	})
 	if err != nil {
-		return 0, fmt.Errorf("failed to increment kv entry %q: %w", key, err)
+		return 0, errors.WrapIff(err, "failed to increment kv entry %q", key)
 	}
 
 	return nextValue, nil

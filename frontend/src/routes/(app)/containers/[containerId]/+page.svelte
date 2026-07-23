@@ -1,16 +1,16 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { refreshAll } from '$app/navigation';
-	import ActionButtons from '$lib/components/action-buttons.svelte';
-	import { Badge } from '$lib/components/ui/badge';
-	import { bytes } from '$lib/utils/formatting';
+	import ActionButtons from '#lib/components/action-buttons.svelte';
+	import { Badge } from '#lib/components/ui/badge';
+	import { bytes } from '#lib/utils/formatting';
 	import { tick } from 'svelte';
 	import { page } from '$app/state';
-	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '$lib/types/docker';
-	import { m } from '$lib/paraglide/messages';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { type TabItem } from '$lib/components/tab-bar/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
+	import type { ContainerDetailsDto, ContainerNetworkSettings, ContainerStats as ContainerStatsType } from '#lib/types/docker';
+	import { m } from '#lib/paraglide/messages';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { type TabItem } from '#lib/components/tab-bar/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
 	import ContainerOverview from '../components/ContainerOverview.svelte';
 	import ContainerStats from '../components/ContainerStats.svelte';
 	import ContainerConfiguration from '../components/ContainerConfiguration.svelte';
@@ -24,9 +24,9 @@
 	import ContainerDetailStatsSync from '../components/container-detail-stats-sync.svelte';
 	import ContainerHealthcheck from '../components/ContainerHealthcheck.svelte';
 	import ContainerCommitDialog from '../components/container-commit-dialog.svelte';
-	import IconImage from '$lib/components/icon-image.svelte';
-	import ResourceNotFound from '$lib/components/resource-not-found.svelte';
-	import { calculateMemoryUsage, getThemedIconUrl } from '$lib/utils/docker';
+	import IconImage from '#lib/components/icon-image.svelte';
+	import ResourceNotFound from '#lib/components/resource-not-found.svelte';
+	import { calculateMemoryUsage, getThemedIconUrl } from '#lib/utils/docker';
 	import { mode } from 'mode-watcher';
 	import {
 		VolumesIcon,
@@ -39,17 +39,17 @@
 		CodeIcon,
 		InspectIcon,
 		HealthIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import { parse as parseYaml } from 'yaml';
-	import type { IncludeFile } from '$lib/types/swarm';
-	import { projectService } from '$lib/services/project-service';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { hasPermission } from '$lib/utils/auth';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '$lib/icons';
-	import { runContainerLifecycleAction } from '$lib/utils/container-actions';
+	import type { IncludeFile } from '#lib/types/swarm';
+	import { projectService } from '#lib/services/project-service';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { hasPermission } from '#lib/utils/auth';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '#lib/icons';
+	import { runContainerLifecycleAction } from '#lib/utils/container-actions';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	let { data } = $props();
 	let container = $derived(data?.container as ContainerDetailsDto);
 	let stats = $state(null as ContainerStatsType | null);

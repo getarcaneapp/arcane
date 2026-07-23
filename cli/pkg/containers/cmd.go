@@ -3,7 +3,6 @@ package containers
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -11,6 +10,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/cmdutil"
@@ -89,19 +90,19 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	resp, err := c.Get(cmd.Context(), path)
 	if err != nil {
-		return fmt.Errorf("failed to list containers: %w", err)
+		return errors.WrapIf(err, "failed to list containers")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	var result base.Paginated[container.Summary]
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	if jsonOutput {
 		resultBytes, err := json.MarshalIndent(result, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
 		fmt.Println(string(resultBytes))
 		return nil
@@ -157,13 +158,13 @@ func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdat
 		var err error
 		path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
 		if err != nil {
-			return "", fmt.Errorf("failed to build pagination query: %w", err)
+			return "", errors.WrapIf(err, "failed to build pagination query")
 		}
 	}
 
 	parsed, err := url.Parse(path)
 	if err != nil {
-		return "", fmt.Errorf("failed to parse path: %w", err)
+		return "", errors.WrapIf(err, "failed to parse path")
 	}
 
 	query := parsed.Query()
@@ -229,13 +230,13 @@ var containersGetCmd = &cobra.Command{
 			path := types.Endpoints.Container(c.EnvID(), resolved.ID)
 			resp, err := c.Get(cmd.Context(), path)
 			if err != nil {
-				return fmt.Errorf("failed to get container: %w", err)
+				return errors.WrapIf(err, "failed to get container")
 			}
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[container.Details]
 			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return fmt.Errorf("failed to parse response: %w", err)
+				return errors.WrapIf(err, "failed to parse response")
 			}
 			resolved = &result.Data
 		}
@@ -243,7 +244,7 @@ var containersGetCmd = &cobra.Command{
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(resolved, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -356,23 +357,23 @@ func runContainerPostAction[T any](cmd *cobra.Command, containerRef string, cfg 
 	path := cfg.endpoint(c.EnvID(), resolved.ID)
 	resp, err := c.Post(cmd.Context(), path, nil)
 	if err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-		return fmt.Errorf("%s: %w", cfg.failureMessage, err)
+		return errors.WrapIff(err, "%s", cfg.failureMessage)
 	}
 
 	var result base.ApiResponse[T]
 	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return fmt.Errorf("failed to parse response: %w", err)
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	if jsonOutput {
 		resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 		if err != nil {
-			return fmt.Errorf("failed to marshal JSON: %w", err)
+			return errors.WrapIf(err, "failed to marshal JSON")
 		}
 		fmt.Println(string(resultBytes))
 		return nil
@@ -415,13 +416,13 @@ var containersDeleteCmd = &cobra.Command{
 		path := types.Endpoints.Container(c.EnvID(), resolved.ID) + "?force=true"
 		resp, err := c.Delete(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to delete container: %w", err)
+			return errors.WrapIf(err, "failed to delete container")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[base.MessageResponse]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if !result.Success {
@@ -429,13 +430,13 @@ var containersDeleteCmd = &cobra.Command{
 			if msg == "" {
 				msg = "unknown error"
 			}
-			return fmt.Errorf("failed to delete container: %s", msg)
+			return errors.Errorf("failed to delete container: %s", msg)
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -459,19 +460,19 @@ var containersCountsCmd = &cobra.Command{
 		path := types.Endpoints.ContainersCounts(c.EnvID())
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
-			return fmt.Errorf("failed to get container counts: %w", err)
+			return errors.WrapIf(err, "failed to get container counts")
 		}
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.StatusCounts]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -503,10 +504,10 @@ var containersCreateCmd = &cobra.Command{
 		if containerCreateFile != "" {
 			data, err := os.ReadFile(containerCreateFile)
 			if err != nil {
-				return fmt.Errorf("failed to read file %s: %w", containerCreateFile, err)
+				return errors.WrapIff(err, "failed to read file %s", containerCreateFile)
 			}
 			if err := json.Unmarshal(data, &req); err != nil {
-				return fmt.Errorf("failed to parse config file: %w", err)
+				return errors.WrapIf(err, "failed to parse config file")
 			}
 		}
 
@@ -584,22 +585,22 @@ var containersCreateCmd = &cobra.Command{
 		path := types.Endpoints.Containers(c.EnvID())
 		resp, err := c.Post(cmd.Context(), path, req)
 		if err != nil {
-			return fmt.Errorf("failed to create container: %w", err)
+			return errors.WrapIf(err, "failed to create container")
 		}
 		defer func() { _ = resp.Body.Close() }()
 		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return fmt.Errorf("failed to create container: %w", err)
+			return errors.WrapIf(err, "failed to create container")
 		}
 
 		var result base.ApiResponse[container.Created]
 		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return fmt.Errorf("failed to parse response: %w", err)
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -729,31 +730,31 @@ func resolveContainer(ctx context.Context, c *client.Client, identifier string, 
 		}
 	}
 
-	return nil, false, fmt.Errorf("container %q not found; use the container ID or run `arcane containers list`", trimmed)
+	return nil, false, errors.Errorf("container %q not found; use the container ID or run `arcane containers list`", trimmed)
 }
 
 func fetchContainerByIdentifier(ctx context.Context, c *client.Client, identifier string) (*container.Details, bool, bool, error) {
 	resp, err := c.Get(ctx, types.Endpoints.Container(c.EnvID(), identifier))
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to resolve container %q: %w", identifier, err)
+		return nil, false, false, errors.WrapIff(err, "failed to resolve container %q", identifier)
 	}
 
 	body, err := io.ReadAll(resp.Body)
 	_ = resp.Body.Close()
 	if err != nil {
-		return nil, false, false, fmt.Errorf("failed to read container response: %w", err)
+		return nil, false, false, errors.WrapIf(err, "failed to read container response")
 	}
 
 	if resp.StatusCode == http.StatusOK {
 		var result base.ApiResponse[container.Details]
 		if err := json.Unmarshal(body, &result); err != nil {
-			return nil, false, false, fmt.Errorf("failed to parse container response: %w", err)
+			return nil, false, false, errors.WrapIf(err, "failed to parse container response")
 		}
 		return &result.Data, true, true, nil
 	}
 
 	if resp.StatusCode != http.StatusNotFound {
-		return nil, false, false, fmt.Errorf("failed to resolve container %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
+		return nil, false, false, errors.Errorf("failed to resolve container %q (status %d): %s", identifier, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
 	return nil, false, false, nil
@@ -763,22 +764,22 @@ func searchContainerMatches(ctx context.Context, c *client.Client, identifier st
 	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Containers(c.EnvID()), url.QueryEscape(identifier), 200)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
-		return nil, fmt.Errorf("failed to search containers: %w", err)
+		return nil, errors.WrapIf(err, "failed to search containers")
 	}
 
 	searchBody, err := io.ReadAll(searchResp.Body)
 	_ = searchResp.Body.Close()
 	if err != nil {
-		return nil, fmt.Errorf("failed to read containers response: %w", err)
+		return nil, errors.WrapIf(err, "failed to read containers response")
 	}
 
 	if searchResp.StatusCode < 200 || searchResp.StatusCode >= 300 {
-		return nil, fmt.Errorf("failed to search containers (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
+		return nil, errors.Errorf("failed to search containers (status %d): %s", searchResp.StatusCode, strings.TrimSpace(string(searchBody)))
 	}
 
 	var result base.Paginated[container.Summary]
 	if err := json.Unmarshal(searchBody, &result); err != nil {
-		return nil, fmt.Errorf("failed to parse containers response: %w", err)
+		return nil, errors.WrapIf(err, "failed to parse containers response")
 	}
 
 	identifierLower := strings.ToLower(identifier)
@@ -801,10 +802,10 @@ func selectContainerMatch(matches []container.Summary, identifier string, allowP
 	}
 
 	if !allowPrompt {
-		return nil, fmt.Errorf("multiple containers match %q; use the container ID or run `arcane containers list`", identifier)
+		return nil, errors.Errorf("multiple containers match %q; use the container ID or run `arcane containers list`", identifier)
 	}
 	if len(matches) > maxPromptOptions {
-		return nil, fmt.Errorf("multiple containers match %q (%d results); refine your query or use the container ID", identifier, len(matches))
+		return nil, errors.Errorf("multiple containers match %q (%d results); refine your query or use the container ID", identifier, len(matches))
 	}
 
 	options := make([]string, 0, len(matches))
@@ -833,12 +834,12 @@ func fallbackContainerByIDPrefix(ctx context.Context, c *client.Client, identifi
 	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Endpoints.Containers(c.EnvID()), 200)
 	fallbackResp, err := c.Get(ctx, fallbackPath)
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to search containers: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to search containers")
 	}
 	fallbackBody, err := io.ReadAll(fallbackResp.Body)
 	_ = fallbackResp.Body.Close()
 	if err != nil {
-		return nil, false, fmt.Errorf("failed to read containers response: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to read containers response")
 	}
 	if fallbackResp.StatusCode < 200 || fallbackResp.StatusCode >= 300 {
 		return nil, false, nil
@@ -846,7 +847,7 @@ func fallbackContainerByIDPrefix(ctx context.Context, c *client.Client, identifi
 
 	var fallbackResult base.Paginated[container.Summary]
 	if err := json.Unmarshal(fallbackBody, &fallbackResult); err != nil {
-		return nil, false, fmt.Errorf("failed to parse containers response: %w", err)
+		return nil, false, errors.WrapIf(err, "failed to parse containers response")
 	}
 	for _, item := range fallbackResult.Data {
 		if strings.HasPrefix(strings.ToLower(item.ID), identifierLower) {

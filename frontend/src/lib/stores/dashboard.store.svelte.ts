@@ -1,14 +1,14 @@
 import { browser } from '$app/env';
-import { dashboardService } from '$lib/services/dashboard-service';
-import { LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
+import { dashboardService } from '#lib/services/dashboard-service';
+import { LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
 import {
 	createEnvironmentStreamStore,
 	environmentDisplayName,
 	type StreamEnvStateBase
-} from '$lib/stores/environment-stream.svelte';
-import type { DashboardSnapshot, DashboardStreamErrorCode, DashboardStreamEvent } from '$lib/types/shared';
-import type { Environment } from '$lib/types/environment';
-import userStore from '$lib/stores/user-store';
+} from '#lib/stores/environment-stream.svelte';
+import type { DashboardSnapshot, DashboardStreamErrorCode, DashboardStreamEvent } from '#lib/types/shared';
+import type { Environment } from '#lib/types/environment';
+import userStore from '#lib/stores/user-store';
 
 type DashboardEnvironmentState = StreamEnvStateBase & {
 	snapshot: DashboardSnapshot | null;

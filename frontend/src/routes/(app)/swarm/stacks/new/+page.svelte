@@ -1,28 +1,28 @@
 <script lang="ts">
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
 	import { toast } from 'svelte-sonner';
-	import { preventDefault, createForm } from '$lib/utils/settings';
-	import TemplateSelectionDialog from '$lib/components/dialogs/template-selection-dialog.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { swarmService } from '$lib/services/swarm-service.js';
-	import ComposeCreateMenu from '$lib/components/compose-create-menu.svelte';
-	import ComposeFileEditorPanel from '$lib/components/compose-file-editor-panel.svelte';
-	import { ArrowLeftIcon } from '$lib/icons';
+	import { preventDefault, createForm } from '#lib/utils/settings';
+	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
+	import { m } from '#lib/paraglide/messages';
+	import { swarmService } from '#lib/services/swarm-service.js';
+	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
+	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
+	import { ArrowLeftIcon } from '#lib/icons';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
 	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import DockerRunConverterDialog from '$lib/components/compose/docker-run-converter-dialog.svelte';
-	import { globalVariablesToMap } from '$lib/utils/template-load';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
+	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
 		submitComposeResourceForm,
 		templateNameSlug
-	} from '$lib/utils/compose-flow';
+	} from '#lib/utils/compose-flow';
 
 	let { data } = $props();
 

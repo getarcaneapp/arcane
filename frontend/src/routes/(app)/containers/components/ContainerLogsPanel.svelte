@@ -1,16 +1,16 @@
 <script lang="ts">
 	// Dozzle reference: the compact CPU/memory monitors in the logs header were informed
 	// by amir20/dozzle's ContainerLog.vue and MultiContainerStat.vue.
-	import * as Card from '$lib/components/ui/card';
-	import LogViewer from '$lib/components/logs/log-viewer.svelte';
-	import LogControls from '$lib/components/logs/log-controls.svelte';
-	import LogPanelTitle from '$lib/components/logs/log-panel-title.svelte';
-	import type { ContainerStats, ContainerStatsHistorySample } from '$lib/types/docker';
-	import { m } from '$lib/paraglide/messages';
-	import { bytes } from '$lib/utils/formatting';
-	import { calculateCPUPercent, calculateMemoryUsage } from '$lib/utils/docker';
-	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '$lib/utils/log-viewer';
-	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '$lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import LogViewer from '#lib/components/logs/log-viewer.svelte';
+	import LogControls from '#lib/components/logs/log-controls.svelte';
+	import LogPanelTitle from '#lib/components/logs/log-panel-title.svelte';
+	import type { ContainerStats, ContainerStatsHistorySample } from '#lib/types/docker';
+	import { m } from '#lib/paraglide/messages';
+	import { bytes } from '#lib/utils/formatting';
+	import { calculateCPUPercent, calculateMemoryUsage } from '#lib/utils/docker';
+	import { refreshLogViewerStream, startLogViewerStream, stopLogViewerStream } from '#lib/utils/log-viewer';
+	import { CpuIcon, FileTextIcon, MemoryStickIcon } from '#lib/icons';
 	import ContainerLogStatMonitor from './ContainerLogStatMonitor.svelte';
 
 	const HISTORY_LIMIT = 30;

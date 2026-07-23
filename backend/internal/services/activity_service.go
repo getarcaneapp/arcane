@@ -2,8 +2,7 @@ package services
 
 import (
 	"context"
-	"errors"
-	"fmt"
+	stderrors "errors"
 	"log/slog"
 	"maps"
 	"slices"
@@ -11,9 +10,12 @@ import (
 	"sync"
 	"time"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	activitytypes "github.com/getarcaneapp/arcane/types/v2/activity"
@@ -26,6 +28,10 @@ const (
 	defaultActivityHistoryLimit  = 1000
 	defaultActivityMessages      = 500
 	staleImageUpdateCheckAge     = 6 * time.Hour
+	// abandonedActivityGrace is how old an untracked queued/running activity
+	// must be before the periodic sweep fails it. It covers the window between
+	// StartActivity's row creation and the worker's Track call.
+	abandonedActivityGrace = 2 * time.Minute
 )
 
 type ActivityService struct {
@@ -51,7 +57,7 @@ type ActivityService struct {
 
 // ErrActivityNotCancelable indicates the activity has already reached a terminal
 // state and can no longer be cancelled.
-var ErrActivityNotCancelable = errors.New("activity is not cancelable")
+const ErrActivityNotCancelable = errors.Sentinel("activity is not cancelable")
 
 // subscriberMessageQueueLimit bounds the per-subscriber backlog of "message"
 // events; the oldest message is dropped (and flagged as missed) on overflow.
@@ -325,7 +331,7 @@ func (s *ActivityService) StartActivity(ctx context.Context, req StartActivityRe
 		if slotRelease != nil {
 			slotRelease()
 		}
-		return nil, fmt.Errorf("failed to create activity: %w", err)
+		return nil, errors.WrapIf(err, "failed to create activity")
 	}
 	if slotRelease != nil {
 		s.registerSlotReleaseInternal(model.ID, slotRelease)
@@ -397,6 +403,22 @@ func (s *ActivityService) AwaitActivitySlot(ctx context.Context, activityID, env
 	return nil
 }
 
+// AwaitActivitySlotBounded waits for a concurrency slot like AwaitActivitySlot
+// but gives up after timeouts.DefaultActivitySlotWait, returning
+// ActivitySlotWaitTimeoutError so the caller fails the queued activity loudly
+// instead of parking forever behind long-running slot holders.
+func (s *ActivityService) AwaitActivitySlotBounded(ctx context.Context, activityID, environmentID string) error {
+	slotCtx, cancel := context.WithTimeout(ctx, timeouts.DefaultActivitySlotWait)
+	defer cancel()
+	if err := s.AwaitActivitySlot(slotCtx, activityID, environmentID); err != nil {
+		if ctx.Err() == nil && errors.Is(err, context.DeadlineExceeded) {
+			return common.Classify(common.ErrTimeout, errors.New("timed out waiting for a free activity slot; other long-running activities are holding all slots"))
+		}
+		return err
+	}
+	return nil
+}
+
 func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string, req UpdateActivityRequest) (*activitytypes.Activity, error) {
 	if err := s.checkInitInternal(); err != nil {
 		return nil, err
@@ -432,13 +454,13 @@ func (s *ActivityService) UpdateActivity(ctx context.Context, activityID string,
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to update activity: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to update activity")
 		}
 		if result.RowsAffected == 0 {
 			return errors.New("activity not found")
 		}
 		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load updated activity: %w", err)
+			return errors.WrapIf(err, "failed to load updated activity")
 		}
 		return nil
 	}); err != nil {
@@ -486,7 +508,7 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 	var updated models.Activity
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		if err := tx.Create(message).Error; err != nil {
-			return fmt.Errorf("failed to append activity message: %w", err)
+			return errors.WrapIf(err, "failed to append activity message")
 		}
 
 		updates := map[string]any{
@@ -502,13 +524,13 @@ func (s *ActivityService) AppendMessage(ctx context.Context, activityID string, 
 
 		result := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to update activity latest message: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to update activity latest message")
 		}
 		if result.RowsAffected == 0 {
 			return errors.New("activity not found")
 		}
 		if err := tx.First(&updated, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load updated activity: %w", err)
+			return errors.WrapIf(err, "failed to load updated activity")
 		}
 		return nil
 	}); err != nil {
@@ -548,21 +570,37 @@ func (s *ActivityService) CompleteActivity(ctx context.Context, activityID strin
 
 	now := time.Now()
 	var model models.Activity
-	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load activity: %w", err)
-		}
+	// A lost terminal write leaves the activity stuck in running forever, so
+	// retry transient DB contention (SQLITE_BUSY under bulk activity writes)
+	// instead of surfacing it once and giving up.
+	const completeWriteAttempts = 3
+	var writeErr error
+	for attempt := 1; attempt <= completeWriteAttempts; attempt++ {
+		writeErr = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
+				return errors.WrapIf(err, "failed to load activity")
+			}
 
-		updates := completeActivityUpdatesInternal(model.StartedAt, status, finalMessage, errMessage, finalStep, now)
-		if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates).Error; err != nil {
-			return fmt.Errorf("failed to complete activity: %w", err)
+			updates := completeActivityUpdatesInternal(model.StartedAt, status, finalMessage, errMessage, finalStep, now)
+			if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).Updates(updates).Error; err != nil {
+				return errors.WrapIf(err, "failed to complete activity")
+			}
+			if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
+				return errors.WrapIf(err, "failed to load completed activity")
+			}
+			return nil
+		})
+		if writeErr == nil {
+			break
 		}
-		if err := tx.First(&model, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load completed activity: %w", err)
+		if attempt == completeWriteAttempts || !isRetryableDBWriteErrorInternal(writeErr) {
+			return nil, writeErr
 		}
-		return nil
-	}); err != nil {
-		return nil, err
+		slog.WarnContext(ctx, "retrying activity terminal status write", "activityId", activityID, "attempt", attempt, "error", writeErr)
+		time.Sleep(250 * time.Millisecond * time.Duration(attempt))
+	}
+	if writeErr != nil {
+		return nil, writeErr
 	}
 
 	if strings.TrimSpace(finalMessage) != "" {
@@ -654,13 +692,13 @@ func (s *ActivityService) CancelActivity(ctx context.Context, environmentID, act
 			Where("id = ? AND status IN ?", activityID, []models.ActivityStatus{models.ActivityStatusQueued, models.ActivityStatusRunning}).
 			Updates(updates)
 		if result.Error != nil {
-			return fmt.Errorf("failed to cancel activity: %w", result.Error)
+			return errors.WrapIf(result.Error, "failed to cancel activity")
 		}
 		if result.RowsAffected == 0 {
 			return ErrActivityNotCancelable
 		}
 		if err := tx.First(&finalized, "id = ? AND environment_id = ?", activityID, environmentID).Error; err != nil {
-			return fmt.Errorf("failed to load cancelled activity: %w", err)
+			return errors.WrapIf(err, "failed to load cancelled activity")
 		}
 		return nil
 	}); err != nil {
@@ -687,7 +725,7 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	if err := s.db.WithContext(ctx).
 		Where("type = ? AND status = ? AND started_at < ?", models.ActivityTypeImageUpdateCheck, models.ActivityStatusRunning, cutoff).
 		Find(&staleChecks).Error; err != nil {
-		return 0, fmt.Errorf("find stale image update checks: %w", err)
+		return 0, errors.WrapIf(err, "find stale image update checks")
 	}
 
 	const message = "Image update check failed because it was stale after Arcane restarted"
@@ -696,13 +734,93 @@ func (s *ActivityService) FailStaleImageUpdateChecks(ctx context.Context) (int64
 	var failErrs []error
 	for i := range staleChecks {
 		if _, err := s.CompleteActivity(ctx, staleChecks[i].ID, models.ActivityStatusFailed, message, &errMessage, "Image update check failed"); err != nil {
-			failErrs = append(failErrs, fmt.Errorf("fail stale image update check %s: %w", staleChecks[i].ID, err))
+			failErrs = append(failErrs, errors.WrapIff(err, "fail stale image update check %s", staleChecks[i].ID))
 			continue
 		}
 		failed++
 	}
 
-	return failed, errors.Join(failErrs...)
+	return failed, stderrors.Join(failErrs...)
+}
+
+// isTrackedInternal reports whether activityID has a live work registration in
+// this process (i.e. a worker goroutine called Track and has not completed yet).
+func (s *ActivityService) isTrackedInternal(activityID string) bool {
+	s.runningMu.Lock()
+	defer s.runningMu.Unlock()
+	_, ok := s.running[activityID]
+	return ok
+}
+
+// FailAbandonedActivities marks queued/running activities whose worker is no
+// longer alive in this process as failed, releasing any concurrency slot they
+// still hold. Liveness comes from the running map, not age: every creation
+// path Tracks its activity right after StartActivity, and the short grace
+// period covers that create→Track window. This assumes exactly one Arcane
+// process owns the database (managers and agents each own theirs); running
+// multiple replicas against one database would make each replica sweep the
+// other's live work.
+//
+// The terminal write is status-guarded like CancelActivity's untracked
+// fallback: a worker completing concurrently wins the race and the row is
+// skipped here.
+func (s *ActivityService) FailAbandonedActivities(ctx context.Context) (int64, error) {
+	if s == nil || s.db == nil {
+		return 0, nil
+	}
+
+	cutoff := time.Now().Add(-abandonedActivityGrace)
+	activeStatuses := []models.ActivityStatus{models.ActivityStatusQueued, models.ActivityStatusRunning}
+	var candidates []models.Activity
+	if err := s.db.WithContext(ctx).
+		Where("status IN ? AND started_at < ?", activeStatuses, cutoff).
+		Find(&candidates).Error; err != nil {
+		return 0, errors.WrapIf(err, "find abandoned activities")
+	}
+
+	const message = "Activity was marked failed because its worker is no longer running"
+	errMessage := message
+	var swept int64
+	var sweepErrs []error
+	for i := range candidates {
+		activityID := candidates[i].ID
+		if s.isTrackedInternal(activityID) {
+			continue
+		}
+
+		now := time.Now()
+		var finalized models.Activity
+		lostRace := false
+		if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+			updates := completeActivityUpdatesInternal(candidates[i].StartedAt, models.ActivityStatusFailed, message, &errMessage, nil, now)
+			result := tx.Model(&models.Activity{}).
+				Where("id = ? AND status IN ?", activityID, activeStatuses).
+				Updates(updates)
+			if result.Error != nil {
+				return errors.WrapIf(result.Error, "fail abandoned activity")
+			}
+			if result.RowsAffected == 0 {
+				lostRace = true
+				return nil
+			}
+			if err := tx.First(&finalized, "id = ?", activityID).Error; err != nil {
+				return errors.WrapIf(err, "load failed abandoned activity")
+			}
+			return nil
+		}); err != nil {
+			sweepErrs = append(sweepErrs, errors.WrapIff(err, "sweep activity %s", activityID))
+			continue
+		}
+		if lostRace {
+			continue
+		}
+
+		s.releaseSlotInternal(activityID)
+		s.publishActivityInternal(activityToDTOInternal(&finalized))
+		swept++
+	}
+
+	return swept, stderrors.Join(sweepErrs...)
 }
 
 // ResolveOrphanedQueuedActivities fails any activity still queued at startup.
@@ -717,7 +835,7 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context) (
 	if err := s.db.WithContext(ctx).
 		Where("status = ?", models.ActivityStatusQueued).
 		Find(&queued).Error; err != nil {
-		return 0, fmt.Errorf("find orphaned queued activities: %w", err)
+		return 0, errors.WrapIf(err, "find orphaned queued activities")
 	}
 
 	const message = "Queued activity was interrupted by an Arcane restart"
@@ -726,13 +844,13 @@ func (s *ActivityService) ResolveOrphanedQueuedActivities(ctx context.Context) (
 	var failErrs []error
 	for i := range queued {
 		if _, err := s.CompleteActivity(ctx, queued[i].ID, models.ActivityStatusFailed, message, &errMessage); err != nil {
-			failErrs = append(failErrs, fmt.Errorf("fail orphaned queued activity %s: %w", queued[i].ID, err))
+			failErrs = append(failErrs, errors.WrapIff(err, "fail orphaned queued activity %s", queued[i].ID))
 			continue
 		}
 		failed++
 	}
 
-	return failed, errors.Join(failErrs...)
+	return failed, stderrors.Join(failErrs...)
 }
 
 // PatchActivityMetadata merges patch into the activity's existing metadata,
@@ -752,7 +870,7 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		var activity models.Activity
 		if err := tx.First(&activity, "id = ?", activityID).Error; err != nil {
-			return fmt.Errorf("failed to load activity: %w", err)
+			return errors.WrapIf(err, "failed to load activity")
 		}
 		merged := cloneJSONInternal(activity.Metadata)
 		if merged == nil {
@@ -761,7 +879,7 @@ func (s *ActivityService) PatchActivityMetadata(ctx context.Context, activityID 
 		maps.Copy(merged, patch)
 		if err := tx.Model(&models.Activity{}).Where("id = ?", activityID).
 			Updates(map[string]any{"metadata": merged, "updated_at": time.Now()}).Error; err != nil {
-			return fmt.Errorf("failed to patch activity metadata: %w", err)
+			return errors.WrapIf(err, "failed to patch activity metadata")
 		}
 		return nil
 	})
@@ -780,7 +898,7 @@ func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) 
 	if err := s.db.WithContext(ctx).
 		Where("type = ? AND status = ?", models.ActivityTypeAutoUpdate, models.ActivityStatusRunning).
 		Find(&stale).Error; err != nil {
-		return 0, fmt.Errorf("find stale auto-update activities: %w", err)
+		return 0, errors.WrapIf(err, "find stale auto-update activities")
 	}
 
 	var resolved int64
@@ -796,13 +914,13 @@ func (s *ActivityService) ResolveStaleAutoUpdateActivities(ctx context.Context) 
 			errMessage = new(message)
 		}
 		if _, err := s.CompleteActivity(ctx, stale[i].ID, status, message, errMessage); err != nil {
-			resolveErrs = append(resolveErrs, fmt.Errorf("resolve stale auto-update activity %s: %w", stale[i].ID, err))
+			resolveErrs = append(resolveErrs, errors.WrapIff(err, "resolve stale auto-update activity %s", stale[i].ID))
 			continue
 		}
 		resolved++
 	}
 
-	return resolved, errors.Join(resolveErrs...)
+	return resolved, stderrors.Join(resolveErrs...)
 }
 
 func completeActivityUpdatesInternal(startedAt time.Time, status models.ActivityStatus, finalMessage string, errMessage *string, finalStep []string, now time.Time) map[string]any {
@@ -866,7 +984,7 @@ func (s *ActivityService) ListActivitiesPaginated(ctx context.Context, environme
 
 	paginationResp, err := pagination.PaginateAndSortDB(params, q, &activities)
 	if err != nil {
-		return nil, pagination.Response{}, fmt.Errorf("failed to paginate activities: %w", err)
+		return nil, pagination.Response{}, errors.WrapIf(err, "failed to paginate activities")
 	}
 
 	out := make([]activitytypes.Activity, 0, len(activities))
@@ -888,7 +1006,7 @@ func (s *ActivityService) GetActivityDetail(ctx context.Context, environmentID, 
 	if err := s.db.WithContext(ctx).
 		Where("id = ? AND environment_id = ?", activityID, environmentID).
 		First(&model).Error; err != nil {
-		return nil, fmt.Errorf("failed to load activity: %w", err)
+		return nil, errors.WrapIf(err, "failed to load activity")
 	}
 
 	var messages []models.ActivityMessage
@@ -897,7 +1015,7 @@ func (s *ActivityService) GetActivityDetail(ctx context.Context, environmentID, 
 		Order("created_at DESC").
 		Limit(limit).
 		Find(&messages).Error; err != nil {
-		return nil, fmt.Errorf("failed to load activity messages: %w", err)
+		return nil, errors.WrapIf(err, "failed to load activity messages")
 	}
 
 	outMessages := make([]activitytypes.Message, 0, len(messages))
@@ -929,7 +1047,7 @@ func (s *ActivityService) PruneHistory(ctx context.Context, retentionDays, maxEn
 			ids, err := findTerminalActivityIDsInternal(tx.
 				Where("COALESCE(ended_at, updated_at, created_at) < ?", cutoff))
 			if err != nil {
-				return fmt.Errorf("failed to find activities older than retention window: %w", err)
+				return errors.WrapIf(err, "failed to find activities older than retention window")
 			}
 			count, err := deleteActivitiesByIDInternal(tx, ids)
 			if err != nil {
@@ -972,7 +1090,7 @@ func (s *ActivityService) DeleteHistory(ctx context.Context, environmentID strin
 	if err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		ids, err := findTerminalActivityIDsInternal(tx.Where("environment_id = ?", environmentID))
 		if err != nil {
-			return fmt.Errorf("failed to find activity history: %w", err)
+			return errors.WrapIf(err, "failed to find activity history")
 		}
 		count, err := deleteActivitiesByIDInternal(tx, ids)
 		if err != nil {
@@ -1183,7 +1301,7 @@ func findActivityIDsBeyondHistoryLimitInternal(tx *gorm.DB, maxEntries int) ([]s
 		) ranked
 		WHERE ranked.activity_rank > ?
 	`, terminalActivityStatusesInternal(), maxEntries).Scan(&activityIDs).Error; err != nil {
-		return nil, fmt.Errorf("failed to find excess activities: %w", err)
+		return nil, errors.WrapIf(err, "failed to find excess activities")
 	}
 	return activityIDs, nil
 }
@@ -1201,11 +1319,11 @@ func deleteActivitiesByIDInternal(tx *gorm.DB, activityIDs []string) (int64, err
 		batch := activityIDs[i:end]
 
 		if err := tx.Where("activity_id IN ?", batch).Delete(&models.ActivityMessage{}).Error; err != nil {
-			return totalDeleted, fmt.Errorf("failed to delete activity messages: %w", err)
+			return totalDeleted, errors.WrapIf(err, "failed to delete activity messages")
 		}
 		result := tx.Where("id IN ?", batch).Delete(&models.Activity{})
 		if result.Error != nil {
-			return totalDeleted, fmt.Errorf("failed to delete activities: %w", result.Error)
+			return totalDeleted, errors.WrapIf(result.Error, "failed to delete activities")
 		}
 		totalDeleted += result.RowsAffected
 	}

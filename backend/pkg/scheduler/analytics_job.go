@@ -4,14 +4,14 @@ import (
 	"bytes"
 	"context"
 	json "encoding/json/v2"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
@@ -130,13 +130,13 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 
 			req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, j.heartbeatURL, bytes.NewReader(body))
 			if err != nil {
-				return struct{}{}, fmt.Errorf("failed to create request: %w", err)
+				return struct{}{}, errors.WrapIf(err, "failed to create request")
 			}
 			req.Header.Set("Content-Type", "application/json")
 
 			resp, err := j.httpClient.Do(req)
 			if err != nil {
-				return struct{}{}, fmt.Errorf("failed to send request: %w", err)
+				return struct{}{}, errors.WrapIf(err, "failed to send request")
 			}
 			defer func() { _ = resp.Body.Close() }()
 
@@ -157,7 +157,7 @@ func (j *AnalyticsJob) Run(ctx context.Context) {
 				if bodyText != "" {
 					details = append(details, "response="+bodyText)
 				}
-				return struct{}{}, fmt.Errorf("analytics heartbeat request failed: %s", strings.Join(details, "; "))
+				return struct{}{}, errors.Errorf("analytics heartbeat request failed: %s", strings.Join(details, "; "))
 			}
 			return struct{}{}, nil
 		},
@@ -203,7 +203,7 @@ func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) 
 	now := j.now().UTC()
 	rawLastAttemptAt, ok, err := j.kvService.Get(ctx, analyticsHeartbeatLastAttemptKey)
 	if err != nil {
-		return false, fmt.Errorf("failed to load analytics heartbeat attempt state: %w", err)
+		return false, errors.WrapIf(err, "failed to load analytics heartbeat attempt state")
 	}
 
 	if ok {
@@ -241,7 +241,7 @@ func (j *AnalyticsJob) claimHeartbeatAttemptWindowInternal(ctx context.Context) 
 	// best-effort at-most-once-per-24h check-ins, which avoids duplicate heartbeats
 	// after restarts or partially completed outbound requests.
 	if err := j.kvService.Set(ctx, analyticsHeartbeatLastAttemptKey, now.Format(time.RFC3339Nano)); err != nil {
-		return false, fmt.Errorf("failed to persist analytics heartbeat attempt state: %w", err)
+		return false, errors.WrapIf(err, "failed to persist analytics heartbeat attempt state")
 	}
 
 	return true, nil

@@ -5,14 +5,14 @@ import (
 
 	"bytes"
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"emperror.dev/errors"
+
+	"github.com/labstack/echo/v5"
 )
 
 const (
@@ -193,7 +193,7 @@ func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int,
 }
 
 // ProxyHTTPRequest is a helper that proxies an echo context through a tunnel
-func ProxyHTTPRequest(c echo.Context, tunnel *AgentTunnel, targetPath string) error {
+func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) error {
 	req := c.Request()
 	ctx := req.Context()
 
@@ -363,10 +363,10 @@ func DoRequest(ctx context.Context, envID, method, path string, body []byte) (in
 
 	tunnel, ok := GetRegistry().Get(envID).Get()
 	if !ok {
-		return 0, nil, fmt.Errorf("no active tunnel for environment %s", envID)
+		return 0, nil, errors.Errorf("no active tunnel for environment %s", envID)
 	}
 	if tunnel.Conn.IsClosed() {
-		return 0, nil, fmt.Errorf("tunnel for environment %s is closed", envID)
+		return 0, nil, errors.Errorf("tunnel for environment %s is closed", envID)
 	}
 
 	headers := make(map[string]string)

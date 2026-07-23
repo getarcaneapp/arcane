@@ -1,15 +1,15 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card/index.js';
-	import Label from '$lib/components/ui/label/label.svelte';
-	import { Input } from '$lib/components/ui/input/index.js';
-	import { Switch } from '$lib/components/ui/switch/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import TextInputWithLabel from '$lib/components/form/text-input-with-label.svelte';
-	import SettingsRow from '$lib/components/settings/settings-row.svelte';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import Label from '#lib/components/ui/label/label.svelte';
+	import { Input } from '#lib/components/ui/input/index.js';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
 	import EnvironmentConnectionDetails from './EnvironmentConnectionDetails.svelte';
-	import { m } from '$lib/paraglide/messages';
-	import { SettingsIcon, TestIcon } from '$lib/icons';
+	import { m } from '#lib/paraglide/messages';
+	import { SettingsIcon, TestIcon } from '#lib/icons';
 	import type { GeneralTabProps } from './tab-props';
 
 	let { formInputs, environment, currentStatus, isTestingConnection, testConnection, settingsAvailable }: GeneralTabProps =

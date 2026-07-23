@@ -1,9 +1,10 @@
 package utils
 
 import (
-	"errors"
 	"path"
 	"strings"
+
+	"emperror.dev/errors"
 )
 
 // SanitizeBrowsePath normalizes a path within a rooted file browser.

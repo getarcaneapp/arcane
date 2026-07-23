@@ -1,19 +1,19 @@
 <script lang="ts">
 	import { onMount } from 'svelte';
 	import { z } from 'zod/v4';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import settingsStore from '$lib/stores/config-store';
-	import { createForm } from '$lib/utils/settings';
-	import { isDepotBuildAvailable } from '$lib/utils/build-provider';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import settingsStore from '#lib/stores/config-store';
+	import { createForm } from '#lib/utils/settings';
+	import { isDepotBuildAvailable } from '#lib/utils/build-provider';
 	import { toast } from 'svelte-sonner';
-	import { environmentStore } from '$lib/stores/environment.store.svelte';
-	import { ResourceDetailLayout } from '$lib/layouts/index.js';
-	import TabbedPageLayout from '$lib/layouts/tabbed-page-layout.svelte';
-	import { sanitizeLogText } from '$lib/utils/formatting';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import { environmentStore } from '#lib/stores/environment.store.svelte';
+	import { ResourceDetailLayout } from '#lib/layouts/index.js';
+	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
+	import { sanitizeLogText } from '#lib/utils/formatting';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import {
 		CodeIcon,
 		TerminalIcon,
@@ -24,14 +24,14 @@
 		InfoIcon,
 		EllipsisIcon,
 		RedeployIcon
-	} from '$lib/icons';
-	import * as Card from '$lib/components/ui/card';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
-	import type { ColumnSpec, MobileFieldVisibility } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { Badge } from '$lib/components/ui/badge';
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
+	} from '#lib/icons';
+	import * as Card from '#lib/components/ui/card';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
+	import type { ColumnSpec, MobileFieldVisibility } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { Badge } from '#lib/components/ui/badge';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
 	import {
 		type LayerProgress,
 		calculateOverallProgress,
@@ -41,21 +41,21 @@
 		getLayerStats,
 		isIndeterminatePhase,
 		getAggregateStatus
-	} from '$lib/utils/docker';
-	import ResizableSplit from '$lib/components/resizable-split.svelte';
+	} from '#lib/utils/docker';
+	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
 	import BuildConfigPanel from './components/build-config-panel.svelte';
 	import BuildOutputPanel from './components/build-output-panel.svelte';
 	import type { BuildProviderOption } from './components/build-form.types';
-	import { imageService } from '$lib/services/image-service';
-	import { containerRegistryService } from '$lib/services/container-registry-service';
-	import type { ImageBuildRecord, ImageBuildStatus } from '$lib/types/docker';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import { queryKeys } from '$lib/query/query-keys';
+	import { imageService } from '#lib/services/image-service';
+	import { containerRegistryService } from '#lib/services/container-registry-service';
+	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
-	import { useUrlTab } from '$lib/hooks/use-url-tab.svelte';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let {}: PageProps = $props();
 
@@ -863,6 +863,11 @@
 			const tag = data.pushTag.trim();
 			if (!repositoryName) {
 				toast.error(m.build_push_repository_required());
+				isBuilding = false;
+				return;
+			}
+			if (!reg.repositoryNames?.includes(repositoryName)) {
+				toast.error(m.build_push_repository_invalid());
 				isBuilding = false;
 				return;
 			}

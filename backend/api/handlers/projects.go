@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	"errors"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -453,7 +454,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 		if errors.Is(err, context.Canceled) {
 			return nil, huma.Error500InternalServerError("Request was canceled")
 		}
-		return nil, huma.Error500InternalServerError((&common.ProjectListError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to list projects").Error())
 	}
 
 	if projects == nil {
@@ -473,7 +474,7 @@ func (h *ProjectHandler) ListProjects(ctx context.Context, input *ListProjectsIn
 func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetProjectStatusCountsInput) (*GetProjectStatusCountsOutput, error) {
 	_, running, stopped, total, archived, err := h.projectService.GetProjectStatusCounts(ctx)
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ProjectStatusCountsError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project status counts").Error())
 	}
 
 	return &GetProjectStatusCountsOutput{
@@ -492,7 +493,7 @@ func (h *ProjectHandler) GetProjectStatusCounts(ctx context.Context, input *GetP
 // DeployProject deploys a Docker Compose project.
 func (h *ProjectHandler) DeployProject(ctx context.Context, input *DeployProjectInput) (*huma.StreamResponse, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -565,10 +566,10 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 	if err := h.projectService.DownProject(downCtx, input.ProjectID, *user); err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", err)
-		if _, ok := errors.AsType[*common.ProjectArchivedError](err); ok {
-			return nil, huma.Error400BadRequest((&common.ProjectDownError{Err: err}).Error())
+		if errors.Is(err, common.ErrProjectArchived) {
+			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ProjectDownError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to bring down project").Error())
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project stopped", nil)
@@ -585,13 +586,13 @@ func (h *ProjectHandler) DownProject(ctx context.Context, input *DownProjectInpu
 }
 
 func projectUpdateHTTPErrorInternal(err error) error {
-	if conflictErr, ok := errors.AsType[*volumes.ProjectVolumeRenameConflictError](err); ok {
+	if conflictErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameConflictError](err); ok {
 		return huma.Error409Conflict(conflictErr.Error())
 	}
-	if inUseErr, ok := errors.AsType[*volumes.ProjectVolumeRenameInUseError](err); ok {
+	if inUseErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameInUseError](err); ok {
 		return huma.Error409Conflict(inUseErr.Error())
 	}
-	if spaceErr, ok := errors.AsType[*volumes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
+	if spaceErr, ok := stderrors.AsType[*volumes.ProjectVolumeRenameInsufficientSpaceError](err); ok {
 		return huma.NewError(http.StatusInsufficientStorage, spaceErr.Error())
 	}
 	return projectFileHTTPError(err)
@@ -600,14 +601,14 @@ func projectUpdateHTTPErrorInternal(err error) error {
 // projectFileHTTPError maps project file management errors to HTTP errors.
 // It returns nil when err is not a project file error.
 func projectFileHTTPError(err error) error {
-	if conflictErr, ok := errors.AsType[*common.ProjectFileConflictError](err); ok {
-		return huma.Error409Conflict(conflictErr.Error())
+	if errors.Is(err, common.ErrProjectFileConflict) {
+		return huma.Error409Conflict(err.Error())
 	}
-	if forbiddenErr, ok := errors.AsType[*common.ProjectFileForbiddenError](err); ok {
-		return huma.Error403Forbidden(forbiddenErr.Error())
+	if errors.Is(err, common.ErrProjectFileForbidden) {
+		return huma.Error403Forbidden(err.Error())
 	}
-	if badRequestErr, ok := errors.AsType[*common.ProjectFileBadRequestError](err); ok {
-		return huma.Error400BadRequest(badRequestErr.Error())
+	if errors.Is(err, common.ErrProjectFileBadRequest) {
+		return huma.Error400BadRequest(err.Error())
 	}
 	return nil
 }
@@ -641,7 +642,7 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 		if httpErr := projectFileHTTPError(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error500InternalServerError((&common.ProjectCreationError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to create project").Error())
 	}
 
 	var response project.CreateReponse
@@ -670,12 +671,12 @@ func (h *ProjectHandler) CreateProject(ctx context.Context, input *CreateProject
 // GetProject returns a project by ID.
 func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput) (*GetProjectOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, project.DetailsOptions{})
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
 	return &GetProjectOutput{
@@ -688,12 +689,12 @@ func (h *ProjectHandler) GetProject(ctx context.Context, input *GetProjectInput)
 
 func (h *ProjectHandler) getProjectDetailsWithOptionsInternal(ctx context.Context, input *GetProjectInput, opts project.DetailsOptions) (*GetProjectOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	details, err := h.projectService.GetProjectDetails(ctx, input.ProjectID, opts)
 	if err != nil {
-		return nil, huma.Error404NotFound((&common.ProjectDetailsError{Err: err}).Error())
+		return nil, huma.Error404NotFound(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 
 	return &GetProjectOutput{
@@ -735,7 +736,7 @@ func (h *ProjectHandler) GetProjectUpdates(ctx context.Context, input *GetProjec
 
 func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFileInput) (*GetProjectFileOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 	if input.RelativePath == "" {
 		return nil, huma.Error400BadRequest("relativePath is required")
@@ -743,16 +744,12 @@ func (h *ProjectHandler) GetProjectFile(ctx context.Context, input *GetProjectFi
 
 	file, err := h.projectService.GetProjectFileContent(ctx, input.ProjectID, input.RelativePath)
 	if err != nil {
-		var badRequestErr *common.ProjectFileBadRequestError
-		var forbiddenErr *common.ProjectFileForbiddenError
-		var notFoundErr *common.ProjectFileNotFoundError
-
 		switch {
-		case errors.As(err, &badRequestErr):
+		case errors.Is(err, common.ErrProjectFileBadRequest):
 			return nil, huma.Error400BadRequest(err.Error())
-		case errors.As(err, &forbiddenErr):
+		case errors.Is(err, common.ErrProjectFileForbidden):
 			return nil, huma.Error403Forbidden(err.Error())
-		case errors.As(err, &notFoundErr):
+		case errors.Is(err, common.ErrProjectFileNotFound):
 			return nil, huma.Error404NotFound("project file not found")
 		default:
 			return nil, huma.Error500InternalServerError("internal error")
@@ -809,7 +806,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 	if err := h.projectService.DestroyProject(destroyCtx, input.ProjectID, removeFiles, removeVolumes, *user); err != nil {
 		activitylib.FlushWriter(activityWriter)
 		activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", err)
-		return nil, huma.Error500InternalServerError((&common.ProjectDestroyError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to destroy project").Error())
 	}
 	activitylib.FlushWriter(activityWriter)
 	activitylib.CompleteHandlerActivity(runtimeCtx, h.activityService, activityID, "Project destroyed", nil)
@@ -828,7 +825,7 @@ func (h *ProjectHandler) DestroyProject(ctx context.Context, input *DestroyProje
 // UpdateProject updates a Docker Compose project.
 func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProjectInput) (*UpdateProjectOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -856,7 +853,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		if httpErr := projectUpdateHTTPErrorInternal(err); httpErr != nil {
 			return nil, httpErr
 		}
-		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
 	}
 
 	// Skip the recursive directory walks on save: the file tree is only
@@ -872,7 +869,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 		IncludeUpdateInfo:      true,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -887,7 +884,7 @@ func (h *ProjectHandler) UpdateProject(ctx context.Context, input *UpdateProject
 // UpdateProjectInclude updates an include file within a project.
 func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *UpdateProjectIncludeInput) (*UpdateProjectIncludeOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -915,7 +912,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		return h.projectService.UpdateProjectIncludeFile(runtimeCtx, input.ProjectID, input.Body.RelativePath, input.Body.Content, *user)
 	})
 	if err != nil {
-		return nil, huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+		return nil, huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
 	}
 
 	details, err := h.projectService.GetProjectDetails(runtimeCtx, input.ProjectID, project.DetailsOptions{
@@ -927,7 +924,7 @@ func (h *ProjectHandler) UpdateProjectInclude(ctx context.Context, input *Update
 		IncludeUpdateInfo:      true,
 	})
 	if err != nil {
-		return nil, huma.Error500InternalServerError((&common.ProjectDetailsError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to get project details").Error())
 	}
 	details.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 
@@ -998,7 +995,7 @@ func (h *ProjectHandler) redeployProjectActivityConfigInternal(options *project.
 			return h.projectService.RedeployProject(runtimeCtx, projectID, user, options)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
-			return huma.Error400BadRequest((&common.ProjectRedeploymentError{Err: err}).Error())
+			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to redeploy project").Error())
 		}),
 	}
 }
@@ -1017,7 +1014,7 @@ func (h *ProjectHandler) updateProjectServicesActivityConfigInternal(services []
 			return h.projectService.UpdateProjectServices(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
-			return huma.Error400BadRequest((&common.ProjectUpdateError{Err: err}).Error())
+			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to update project").Error())
 		}),
 	}
 }
@@ -1035,14 +1032,14 @@ func (h *ProjectHandler) restartProjectActivityConfigInternal(services []string)
 			return h.projectService.RestartProject(runtimeCtx, projectID, services, user)
 		},
 		Error: projectArchivedActionErrorInternal(func(err error) error {
-			return huma.Error400BadRequest((&common.ProjectRestartError{Err: err}).Error())
+			return huma.Error400BadRequest(errors.WithMessage(err, "Failed to restart project").Error())
 		}),
 	}
 }
 
 func projectArchivedActionErrorInternal(fallback func(error) error) func(error) error {
 	return func(err error) error {
-		if _, ok := errors.AsType[*common.ProjectArchivedError](err); ok {
+		if errors.Is(err, common.ErrProjectArchived) {
 			return huma.Error400BadRequest(err.Error())
 		}
 		return fallback(err)
@@ -1068,7 +1065,7 @@ func (h *ProjectHandler) runProjectActivityActionResponseInternal(
 
 func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, environmentID, projectID string, cfg projectActivityActionConfigInternal) (base.MessageResponse, error) {
 	if projectID == "" {
-		return base.MessageResponse{}, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return base.MessageResponse{}, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -1102,7 +1099,7 @@ func (h *ProjectHandler) runProjectActivityActionInternal(ctx context.Context, e
 
 func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProjectInput) (*ArchiveProjectOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -1111,10 +1108,10 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 	}
 
 	if err := h.projectService.ArchiveProject(ctx, input.ProjectID, *user); err != nil {
-		if _, ok := errors.AsType[*common.ProjectMustBeStoppedError](err); ok {
+		if errors.Is(err, common.ErrProjectMustBeStopped) {
 			return nil, huma.Error400BadRequest(err.Error())
 		}
-		return nil, huma.Error500InternalServerError((&common.ProjectArchiveError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to archive project").Error())
 	}
 
 	return &ArchiveProjectOutput{
@@ -1127,7 +1124,7 @@ func (h *ProjectHandler) ArchiveProject(ctx context.Context, input *ArchiveProje
 
 func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveProjectInput) (*UnarchiveProjectOutput, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -1136,7 +1133,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 	}
 
 	if err := h.projectService.UnarchiveProject(ctx, input.ProjectID, *user); err != nil {
-		return nil, huma.Error500InternalServerError((&common.ProjectUnarchiveError{Err: err}).Error())
+		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to unarchive project").Error())
 	}
 
 	return &UnarchiveProjectOutput{
@@ -1150,7 +1147,7 @@ func (h *ProjectHandler) UnarchiveProject(ctx context.Context, input *UnarchiveP
 // PullProjectImages pulls all images for a project with streaming progress.
 func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProjectImagesInput) (*huma.StreamResponse, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -1208,7 +1205,7 @@ func (h *ProjectHandler) PullProjectImages(ctx context.Context, input *PullProje
 // BuildProjectImages builds compose services with build directives.
 func (h *ProjectHandler) BuildProjectImages(ctx context.Context, input *BuildProjectInput) (*huma.StreamResponse, error) {
 	if input.ProjectID == "" {
-		return nil, huma.Error400BadRequest((&common.ProjectIDRequiredError{}).Error())
+		return nil, huma.Error400BadRequest("Project ID is required")
 	}
 
 	user, err := requireUserInternal(ctx)

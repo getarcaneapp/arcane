@@ -3,10 +3,10 @@ package project
 import (
 	"encoding/json/jsontext"
 	json "encoding/json/v2"
-	"fmt"
 	"strconv"
 	"strings"
 
+	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/docker/go-units"
 )
@@ -37,7 +37,7 @@ var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decode
 			}
 			parsed = int64(floatValue)
 			if floatValue != float64(parsed) {
-				return fmt.Errorf("invalid UnitBytes value %q", raw)
+				return errors.Errorf("invalid UnitBytes value %q", raw)
 			}
 		}
 		*value = composetypes.UnitBytes(parsed)
@@ -45,10 +45,10 @@ var unitBytesUnmarshalers = json.UnmarshalFromFunc(func(decoder *jsontext.Decode
 	case jsontext.KindInvalid, jsontext.KindFalse, jsontext.KindTrue,
 		jsontext.KindBeginObject, jsontext.KindEndObject,
 		jsontext.KindBeginArray, jsontext.KindEndArray:
-		return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
+		return errors.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 	}
 
-	return fmt.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
+	return errors.Errorf("unsupported JSON kind %s for UnitBytes", token.Kind())
 })
 
 type runtimeServiceAlias RuntimeService

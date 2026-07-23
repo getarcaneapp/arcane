@@ -1,7 +1,7 @@
 import BaseAPIService from './api-service';
-import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '$lib/types/swarm';
-import type { SearchPaginationSortRequest, Paginated } from '$lib/types/shared';
-import { transformPaginationParams } from '$lib/utils/tables';
+import type { TemplateRegistry, Template, RemoteRegistry, TemplateContentData } from '#lib/types/swarm';
+import type { SearchPaginationSortRequest, Paginated } from '#lib/types/shared';
+import { transformPaginationParams } from '#lib/utils/tables';
 
 class TemplateService extends BaseAPIService {
 	async getTemplates(options?: SearchPaginationSortRequest): Promise<Paginated<Template>> {

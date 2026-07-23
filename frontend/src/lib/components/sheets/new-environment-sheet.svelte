@@ -1,23 +1,23 @@
 <script lang="ts">
 	import { toast } from 'svelte-sonner';
-	import * as ResponsiveDialog from '$lib/components/ui/responsive-dialog/index.js';
-	import * as Tabs from '$lib/components/ui/tabs/index.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import FormInput from '$lib/components/form/form-input.svelte';
-	import LabeledSwitch from '$lib/components/form/labeled-switch.svelte';
-	import UrlInput from '$lib/components/form/url-input.svelte';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import AgentCommandBlock from '$lib/components/agent-command-block.svelte';
-	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '$lib/types/environment';
+	import * as ResponsiveDialog from '#lib/components/ui/responsive-dialog/index.js';
+	import * as Tabs from '#lib/components/ui/tabs/index.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import FormInput from '#lib/components/form/form-input.svelte';
+	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
+	import UrlInput from '#lib/components/form/url-input.svelte';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import AgentCommandBlock from '#lib/components/agent-command-block.svelte';
+	import type { CreateEnvironmentDTO, DeploymentSnippetFile } from '#lib/types/environment';
 	import { z } from 'zod/v4';
-	import { createForm, preventDefault } from '$lib/utils/settings';
-	import { m } from '$lib/paraglide/messages';
-	import { environmentManagementService } from '$lib/services/env-mgmt-service';
-	import { queryKeys } from '$lib/query/query-keys';
-	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '$lib/icons';
+	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { m } from '#lib/paraglide/messages';
+	import { environmentManagementService } from '#lib/services/env-mgmt-service';
+	import { queryKeys } from '#lib/query/query-keys';
+	import { RemoteEnvironmentIcon, EdgeConnectionIcon, DownloadIcon } from '#lib/icons';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
-	import { downloadTextFile } from '$lib/utils/formatting';
+	import { downloadTextFile } from '#lib/utils/formatting';
 
 	type NewEnvironmentSheetProps = {
 		open: boolean;

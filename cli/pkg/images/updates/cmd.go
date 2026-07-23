@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/output"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
@@ -33,18 +34,18 @@ var checkCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheck(c.EnvID(), args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to check updates: %w", err)
+			return errors.WrapIf(err, "failed to check updates")
 		}
 
 		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
 		if err != nil {
-			return fmt.Errorf("failed to check updates: %w", err)
+			return errors.WrapIf(err, "failed to check updates")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -76,18 +77,18 @@ var checkAllCmd = &cobra.Command{
 
 		resp, err := c.Post(cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), nil)
 		if err != nil {
-			return fmt.Errorf("failed to check all updates: %w", err)
+			return errors.WrapIf(err, "failed to check all updates")
 		}
 
 		result, err := client.DecodeResponseStrict[imageupdate.BatchResponse](resp)
 		if err != nil {
-			return fmt.Errorf("failed to check all updates: %w", err)
+			return errors.WrapIf(err, "failed to check all updates")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -120,18 +121,18 @@ var checkImageCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesCheckById(c.EnvID(), args[0]))
 		if err != nil {
-			return fmt.Errorf("failed to check image update: %w", err)
+			return errors.WrapIf(err, "failed to check image update")
 		}
 
 		result, err := client.DecodeResponseStrict[imageupdate.Response](resp)
 		if err != nil {
-			return fmt.Errorf("failed to check image update: %w", err)
+			return errors.WrapIf(err, "failed to check image update")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil
@@ -162,18 +163,18 @@ var summaryCmd = &cobra.Command{
 
 		resp, err := c.Get(cmd.Context(), types.Endpoints.ImageUpdatesSummary(c.EnvID()))
 		if err != nil {
-			return fmt.Errorf("failed to get summary: %w", err)
+			return errors.WrapIf(err, "failed to get summary")
 		}
 
 		result, err := client.DecodeResponseStrict[imageupdate.Summary](resp)
 		if err != nil {
-			return fmt.Errorf("failed to get summary: %w", err)
+			return errors.WrapIf(err, "failed to get summary")
 		}
 
 		if jsonOutput {
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
-				return fmt.Errorf("failed to marshal JSON: %w", err)
+				return errors.WrapIf(err, "failed to marshal JSON")
 			}
 			fmt.Println(string(resultBytes))
 			return nil

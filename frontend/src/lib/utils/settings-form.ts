@@ -1,9 +1,9 @@
 import { toast } from 'svelte-sonner';
 import { z } from 'zod/v4';
-import { UseSettingsForm } from '$lib/hooks/use-settings-form.svelte';
-import { m } from '$lib/paraglide/messages';
-import type { Settings } from '$lib/types/settings';
-import { createForm } from '$lib/utils/settings';
+import { UseSettingsForm } from '#lib/hooks/use-settings-form.svelte';
+import { m } from '#lib/paraglide/messages';
+import type { Settings } from '#lib/types/settings';
+import { createForm } from '#lib/utils/settings';
 
 type SettingsPayload = Partial<Settings> & Record<string, unknown>;
 

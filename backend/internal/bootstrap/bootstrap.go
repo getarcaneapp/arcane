@@ -2,14 +2,14 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
 	"os"
 	"strings"
 	"time"
+
+	"emperror.dev/errors"
 
 	"github.com/moby/moby/client"
 	"github.com/subosito/gotenv"
@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/startup"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 	libcrypto "go.getarcane.app/sys/crypto"
 	"go.uber.org/fx"
@@ -32,7 +32,7 @@ import (
 
 func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("load .env: %w", err)
+		return errors.WrapIf(err, "load .env")
 	}
 	cfg := config.Load()
 	runtimeIdentityCfg := &startup.RuntimeIdentityConfig{
@@ -44,7 +44,7 @@ func Bootstrap(ctx context.Context) error {
 		ProjectsDirectory: cfg.ProjectsDirectory,
 	}
 	if err := startup.ApplyRequestedRuntimeIdentity(ctx, runtimeIdentityCfg); err != nil {
-		return fmt.Errorf("apply runtime identity: %w", err)
+		return errors.WrapIf(err, "apply runtime identity")
 	}
 	cfg.DockerConfig = runtimeIdentityCfg.DockerConfig
 
@@ -62,7 +62,7 @@ func Bootstrap(ctx context.Context) error {
 	db, err := initializeDBAndMigrate(appCtx, cfg)
 	if err != nil {
 		cancelApp()
-		return fmt.Errorf("failed to initialize database: %w", err)
+		return errors.WrapIf(err, "failed to initialize database")
 	}
 	defer func() {
 		cancelApp()
@@ -76,7 +76,7 @@ func Bootstrap(ctx context.Context) error {
 	startCtx, cancelStart := context.WithTimeout(ctx, 5*time.Minute)
 	defer cancelStart()
 	if err := app.Start(startCtx); err != nil {
-		return fmt.Errorf("start application: %w", err)
+		return errors.WrapIf(err, "start application")
 	}
 
 	select {
@@ -89,7 +89,7 @@ func Bootstrap(ctx context.Context) error {
 	stopCtx, cancelStop := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancelStop()
 	if err := app.Stop(stopCtx); err != nil {
-		return fmt.Errorf("stop application: %w", err)
+		return errors.WrapIf(err, "stop application")
 	}
 
 	slog.InfoContext(context.WithoutCancel(appCtx), "Arcane shutdown complete")
@@ -405,7 +405,7 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 
 	req, err := http.NewRequestWithContext(reqCtx, http.MethodPost, pairURL, nil)
 	if err != nil {
-		return fmt.Errorf("failed to create pairing request: %w", err)
+		return errors.WrapIf(err, "failed to create pairing request")
 	}
 
 	req.Header.Set("X-Api-Key", cfg.AgentToken)
@@ -421,14 +421,14 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 			EdgeMTLSAssetsDir:  cfg.EdgeMTLSAssetsDir,
 		}, 10*time.Second)
 		if edgeErr != nil {
-			return fmt.Errorf("failed to configure edge pairing client: %w", edgeErr)
+			return errors.WrapIf(edgeErr, "failed to configure edge pairing client")
 		}
 		httpClient = edgeClient
 	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("pairing request failed: %w", err)
+		return errors.WrapIf(err, "pairing request failed")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -444,13 +444,13 @@ func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpCl
 			slog.InfoContext(ctx, "Agent already paired with manager", "managerUrl", cfg.ManagerApiUrl)
 			return nil
 		}
-		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+		return errors.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	case http.StatusUnauthorized:
 		// Invalid API key - could be already paired with a different key, or key was deleted
 		// This is not fatal; the agent can still function if it has a valid token configured
 		slog.DebugContext(ctx, "Pairing skipped - API key not recognized (agent may already be paired)", "managerUrl", cfg.ManagerApiUrl)
 		return nil
 	default:
-		return fmt.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
+		return errors.Errorf("pairing failed with status %d: %s", resp.StatusCode, string(body))
 	}
 }

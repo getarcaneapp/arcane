@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/containerd/errdefs"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
@@ -645,7 +646,7 @@ func (h *SwarmHandler) ListServices(ctx context.Context, input *ListSwarmService
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServicesPaginated(ctx, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm services").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.ServiceSummary{}
@@ -669,9 +670,9 @@ func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInp
 	service, err := h.swarmService.GetService(ctx, input.ServiceID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound((&common.SwarmServiceNotFoundError{Err: err}).Error())
+			return nil, huma.Error404NotFound(errors.WithMessage(err, "Swarm service not found").Error())
 		}
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm service not found").Error())
 	}
 
 	return &GetSwarmServiceOutput{Body: base.ApiResponse[swarmtypes.ServiceInspect]{Success: true, Data: *service}}, nil
@@ -691,7 +692,7 @@ func (h *SwarmHandler) GetService(ctx context.Context, input *GetSwarmServiceInp
 func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServiceInput) (*CreateSwarmServiceOutput, error) {
 	resp, err := h.swarmService.CreateService(ctx, input.Body)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceCreateError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to create swarm service").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.create", "swarm_service", resp.ID, "", map[string]any{"serviceId": resp.ID})
@@ -713,7 +714,7 @@ func (h *SwarmHandler) CreateService(ctx context.Context, input *CreateSwarmServ
 func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServiceInput) (*UpdateSwarmServiceOutput, error) {
 	resp, err := h.swarmService.UpdateService(ctx, input.ServiceID, input.Body)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.update", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
@@ -736,9 +737,9 @@ func (h *SwarmHandler) UpdateService(ctx context.Context, input *UpdateSwarmServ
 func (h *SwarmHandler) DeleteService(ctx context.Context, input *DeleteSwarmServiceInput) (*DeleteSwarmServiceOutput, error) {
 	if err := h.swarmService.RemoveService(ctx, input.ServiceID); err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound((&common.SwarmServiceNotFoundError{Err: err}).Error())
+			return nil, huma.Error404NotFound(errors.WithMessage(err, "Swarm service not found").Error())
 		}
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceRemoveError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to remove swarm service").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.delete", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
@@ -760,7 +761,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListServiceTasksPaginated(ctx, input.ServiceID, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm tasks").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.TaskSummary{}
@@ -783,7 +784,7 @@ func (h *SwarmHandler) ListServiceTasks(ctx context.Context, input *ListSwarmSer
 func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarmServiceInput) (*RollbackSwarmServiceOutput, error) {
 	resp, err := h.swarmService.RollbackService(ctx, input.ServiceID)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.rollback", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID})
@@ -805,7 +806,7 @@ func (h *SwarmHandler) RollbackService(ctx context.Context, input *RollbackSwarm
 func (h *SwarmHandler) ScaleService(ctx context.Context, input *ScaleSwarmServiceInput) (*ScaleSwarmServiceOutput, error) {
 	resp, err := h.swarmService.ScaleService(ctx, input.ServiceID, input.Body.Replicas)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmServiceUpdateError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to update swarm service").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "service.scale", "swarm_service", input.ServiceID, "", map[string]any{"serviceId": input.ServiceID, "replicas": input.Body.Replicas})
@@ -827,7 +828,7 @@ func (h *SwarmHandler) ListNodes(ctx context.Context, input *ListSwarmNodesInput
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodesPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm nodes").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.NodeSummary{}
@@ -851,9 +852,9 @@ func (h *SwarmHandler) GetNode(ctx context.Context, input *GetSwarmNodeInput) (*
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound((&common.SwarmNodeNotFoundError{Err: err}).Error())
+			return nil, huma.Error404NotFound(errors.WithMessage(err, "Swarm node not found").Error())
 		}
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	return &GetSwarmNodeOutput{Body: base.ApiResponse[swarmtypes.NodeSummary]{Success: true, Data: *node}}, nil
@@ -879,9 +880,9 @@ func (h *SwarmHandler) GetNodeAgentDeployment(ctx context.Context, input *GetSwa
 	node, err := h.swarmService.GetNode(ctx, input.EnvironmentID, input.NodeID)
 	if err != nil {
 		if errdefs.IsNotFound(err) {
-			return nil, huma.Error404NotFound((&common.SwarmNodeNotFoundError{Err: err}).Error())
+			return nil, huma.Error404NotFound(errors.WithMessage(err, "Swarm node not found").Error())
 		}
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	user, err := requireUserInternal(ctx)
@@ -1026,7 +1027,7 @@ func (h *SwarmHandler) GetNodeIdentity(ctx context.Context, _ *GetSwarmNodeIdent
 // when the node update fails.
 func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInput) (*UpdateSwarmNodeOutput, error) {
 	if err := h.swarmService.UpdateNode(ctx, input.NodeID, input.Body); err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.update", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
@@ -1047,7 +1048,7 @@ func (h *SwarmHandler) UpdateNode(ctx context.Context, input *UpdateSwarmNodeInp
 // when the node cannot be removed.
 func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInput) (*DeleteSwarmNodeOutput, error) {
 	if err := h.swarmService.RemoveNode(ctx, input.NodeID, input.Force); err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.delete", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID, "force": input.Force})
@@ -1068,7 +1069,7 @@ func (h *SwarmHandler) DeleteNode(ctx context.Context, input *DeleteSwarmNodeInp
 // when the promotion fails.
 func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeInput) (*PromoteSwarmNodeOutput, error) {
 	if err := h.swarmService.PromoteNode(ctx, input.NodeID); err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.promote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
@@ -1089,7 +1090,7 @@ func (h *SwarmHandler) PromoteNode(ctx context.Context, input *PromoteSwarmNodeI
 // when the demotion fails.
 func (h *SwarmHandler) DemoteNode(ctx context.Context, input *DemoteSwarmNodeInput) (*DemoteSwarmNodeOutput, error) {
 	if err := h.swarmService.DemoteNode(ctx, input.NodeID); err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmNodeNotFoundError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Swarm node not found").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "node.demote", "swarm_node", input.NodeID, "", map[string]any{"nodeId": input.NodeID})
@@ -1111,7 +1112,7 @@ func (h *SwarmHandler) ListNodeTasks(ctx context.Context, input *ListSwarmNodeTa
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListNodeTasksPaginated(ctx, input.NodeID, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm tasks").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.TaskSummary{}
@@ -1134,7 +1135,7 @@ func (h *SwarmHandler) ListTasks(ctx context.Context, input *ListSwarmTasksInput
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListTasksPaginated(ctx, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmTaskListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm tasks").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.TaskSummary{}
@@ -1157,7 +1158,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 	params := buildPaginationParamsInternal(input.Start, input.Limit, input.Sort, input.Order, input.Search)
 	items, paginationResp, err := h.swarmService.ListStacksPaginated(ctx, input.EnvironmentID, params)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmStackListError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to list swarm stacks").Error())
 	}
 	if items == nil {
 		items = []swarmtypes.StackSummary{}
@@ -1181,7 +1182,7 @@ func (h *SwarmHandler) ListStacks(ctx context.Context, input *ListSwarmStacksInp
 func (h *SwarmHandler) DeployStack(ctx context.Context, input *DeploySwarmStackInput) (*DeploySwarmStackOutput, error) {
 	resp, err := h.swarmService.DeployStack(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmStackDeployError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to deploy swarm stack").Error())
 	}
 
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "stack.deploy", "swarm_stack", input.Body.Name, input.Body.Name, map[string]any{"stack": input.Body.Name})
@@ -1386,7 +1387,7 @@ func (h *SwarmHandler) GetSwarmStatus(ctx context.Context, input *GetSwarmStatus
 func (h *SwarmHandler) GetSwarmInfo(ctx context.Context, input *GetSwarmInfoInput) (*GetSwarmInfoOutput, error) {
 	info, err := h.swarmService.GetSwarmInfo(ctx)
 	if err != nil {
-		return nil, mapSwarmServiceError(err, (&common.SwarmInspectError{Err: err}).Error())
+		return nil, mapSwarmServiceError(err, errors.WithMessage(err, "Failed to inspect swarm").Error())
 	}
 
 	return &GetSwarmInfoOutput{Body: base.ApiResponse[swarmtypes.SwarmInfo]{Success: true, Data: *info}}, nil
@@ -1946,13 +1947,13 @@ func mapSwarmServiceError(err error, fallback string) error {
 	if err == nil {
 		return nil
 	}
-	if common.IsSwarmNotEnabledError(err) {
-		return huma.Error409Conflict((&common.SwarmNotEnabledError{}).Error())
+	if errors.Is(err, common.ErrSwarmNotEnabled) {
+		return huma.Error409Conflict("Swarm mode is not enabled")
 	}
-	if common.IsSwarmManagerRequiredError(err) {
-		return huma.Error403Forbidden((&common.SwarmManagerRequiredError{}).Error())
+	if errors.Is(err, common.ErrSwarmManagerRequired) {
+		return huma.Error403Forbidden("Swarm manager access required")
 	}
-	if common.IsSwarmConfigImmutableError(err) || common.IsSwarmSecretImmutableError(err) {
+	if errors.Is(err, common.ErrSwarmConfigImmutable) || errors.Is(err, common.ErrSwarmSecretImmutable) {
 		return huma.Error400BadRequest(err.Error())
 	}
 	if errdefs.IsNotFound(err) {

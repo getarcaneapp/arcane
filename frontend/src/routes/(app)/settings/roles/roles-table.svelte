@@ -1,24 +1,24 @@
 <script lang="ts">
-	import ArcaneTable from '$lib/components/arcane-table/arcane-table.svelte';
+	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
 	import { toast } from 'svelte-sonner';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import RowActionsMenu from '$lib/components/arcane-table/row-actions-menu.svelte';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { Badge } from '$lib/components/ui/badge';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { Badge } from '#lib/components/ui/badge';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
 	import { goto } from '$app/navigation';
-	import type { Paginated, SearchPaginationSortRequest } from '$lib/types/shared';
-	import type { Role } from '$lib/types/auth';
-	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '$lib/types/auth';
-	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '$lib/components/arcane-table';
-	import { UniversalMobileCard } from '$lib/components/arcane-table';
-	import { m } from '$lib/paraglide/messages';
-	import { roleService } from '$lib/services/role-service';
-	import { ShieldAlertIcon, TrashIcon, EditIcon } from '$lib/icons';
-	import userStore from '$lib/stores/user-store';
-	import IfPermitted from '$lib/components/if-permitted.svelte';
+	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Role } from '#lib/types/auth';
+	import { BUILT_IN_ROLE_ADMIN, BUILT_IN_ROLE_EDITOR, BUILT_IN_ROLE_DEPLOYER, BUILT_IN_ROLE_VIEWER } from '#lib/types/auth';
+	import type { ColumnSpec, MobileFieldVisibility, BulkAction } from '#lib/components/arcane-table';
+	import { UniversalMobileCard } from '#lib/components/arcane-table';
+	import { m } from '#lib/paraglide/messages';
+	import { roleService } from '#lib/services/role-service';
+	import { ShieldAlertIcon, TrashIcon, EditIcon } from '#lib/icons';
+	import userStore from '#lib/stores/user-store';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
 		roles = $bindable(),

@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { ResponsiveDialog } from '$lib/components/ui/responsive-dialog/index.js';
-	import { Button } from '$lib/components/ui/button/index.js';
-	import { Spinner } from '$lib/components/ui/spinner/index.js';
-	import { ScrollArea } from '$lib/components/ui/scroll-area/index.js';
-	import { gitRepositoryService } from '$lib/services/git-repository-service';
-	import { queryKeys } from '$lib/query/query-keys';
-	import type { FileTreeNode } from '$lib/types/automation';
-	import { FolderOpenIcon, FileTextIcon, ArrowRightIcon } from '$lib/icons';
-	import { m } from '$lib/paraglide/messages';
+	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
+	import { Button } from '#lib/components/ui/button/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import { ScrollArea } from '#lib/components/ui/scroll-area/index.js';
+	import { gitRepositoryService } from '#lib/services/git-repository-service';
+	import { queryKeys } from '#lib/query/query-keys';
+	import type { FileTreeNode } from '#lib/types/automation';
+	import { FolderOpenIcon, FileTextIcon, ArrowRightIcon } from '#lib/icons';
+	import { m } from '#lib/paraglide/messages';
 	import { createQuery } from '@tanstack/svelte-query';
 	import type { Snippet } from 'svelte';
 

@@ -3,20 +3,20 @@ package edge
 import (
 	"context"
 	"crypto/tls"
-	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
-	"runtime/debug"
 	"strings"
 	"time"
+
+	"emperror.dev/emperror"
+	"emperror.dev/errors"
 
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -124,13 +124,13 @@ func (s *TunnelServer) SetConfig(cfg *Config) {
 
 // HandleConnect is the WebSocket handler for edge agent connections.
 // This is registered at /api/tunnel/connect.
-func (s *TunnelServer) HandleConnect(c echo.Context) error {
+func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
 	// Upgrade to WebSocket.
-	conn, err := tunnelUpgrader.Upgrade(c.Response().Writer, req, nil)
+	conn, err := tunnelUpgrader.Upgrade(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade edge tunnel connection", "error", err)
 		return nil
@@ -187,7 +187,7 @@ func (s *TunnelServer) HandleConnect(c echo.Context) error {
 // HandleMTLSEnroll returns manager-generated edge client certificates for the
 // calling environment when generated edge mTLS is enabled. The response includes
 // private key material, so response-body logging must not be enabled here.
-func (s *TunnelServer) HandleMTLSEnroll(c echo.Context) error {
+func (s *TunnelServer) HandleMTLSEnroll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 	c.Response().Header().Set("Cache-Control", "no-store")
@@ -501,7 +501,7 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 		select {
 		case pending.ResponseCh <- msg:
 		default:
-			err := fmt.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
+			err := errors.Errorf("response delivery failed because pending request %s is not consuming messages", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed pending request with full response channel", "id", msg.ID)
@@ -522,7 +522,7 @@ func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, m
 		case <-ctx.Done():
 			return
 		case <-time.After(streamDeliveryTimeout):
-			err := fmt.Errorf("stream delivery timed out for pending request %s", msg.ID)
+			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
 			slog.WarnContext(ctx, "Failed slow pending stream consumer",
@@ -645,11 +645,10 @@ func (s *TunnelServer) loggingStreamInterceptorInternal() grpc.StreamServerInter
 func (s *TunnelServer) recoveryStreamInterceptorInternal() grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (err error) {
 		defer func() {
-			if recovered := recover(); recovered != nil {
+			if panicErr := emperror.Recover(recover()); panicErr != nil {
 				slog.ErrorContext(ss.Context(), "panic in gRPC tunnel stream",
 					"method", info.FullMethod,
-					"panic", recovered,
-					"stack", string(debug.Stack()),
+					"error", panicErr,
 				)
 				err = status.Error(codes.Internal, "internal tunnel error")
 			}

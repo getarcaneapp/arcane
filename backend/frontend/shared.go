@@ -1,5 +1,5 @@
 package frontend
 
-import "errors"
+import "emperror.dev/errors"
 
-var ErrFrontendNotIncluded = errors.New("frontend is not included")
+const ErrFrontendNotIncluded = errors.Sentinel("frontend is not included")

@@ -20,8 +20,8 @@
 </script>
 
 <script lang="ts">
-	import { cn } from '$lib/utils.js';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
+	import { cn } from '#lib/utils.js';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 
 	interface Props {
 		class?: string;

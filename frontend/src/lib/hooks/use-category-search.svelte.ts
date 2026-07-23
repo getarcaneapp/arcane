@@ -1,4 +1,4 @@
-import { debounced } from '$lib/utils/ws';
+import { debounced } from '#lib/utils/ws';
 
 type CategorySearchResponse<T> = {
 	results?: T[];

@@ -1,5 +1,5 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
+	import * as Card from '#lib/components/ui/card';
 	import {
 		AlertIcon,
 		VolumesIcon,
@@ -14,22 +14,22 @@
 		InfoIcon,
 		ArrowUpIcon,
 		ArrowDownIcon
-	} from '$lib/icons';
-	import * as Alert from '$lib/components/ui/alert';
-	import { Badge } from '$lib/components/ui/badge';
-	import { formatDateTimeShort } from '$lib/utils/formatting';
+	} from '#lib/icons';
+	import * as Alert from '#lib/components/ui/alert';
+	import { Badge } from '#lib/components/ui/badge';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import { toast } from 'svelte-sonner';
-	import { openConfirmDialog } from '$lib/components/confirm-dialog';
-	import { ArcaneButton } from '$lib/components/arcane-button';
+	import { openConfirmDialog } from '#lib/components/confirm-dialog';
+	import { ArcaneButton } from '#lib/components/arcane-button';
 	import { goto } from '$app/navigation';
-	import { handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import { m } from '$lib/paraglide/messages';
-	import { networkService } from '$lib/services/network-service';
-	import { ResourceDetailLayout, type DetailAction } from '$lib/layouts';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import PropertyItem from '$lib/components/property-item.svelte';
-	import KeyValueGridCard from '$lib/components/key-value-grid-card.svelte';
+	import { handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { m } from '#lib/paraglide/messages';
+	import { networkService } from '#lib/services/network-service';
+	import { ResourceDetailLayout, type DetailAction } from '#lib/layouts';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import PropertyItem from '#lib/components/property-item.svelte';
+	import KeyValueGridCard from '#lib/components/key-value-grid-card.svelte';
 
 	let { data }: PageProps = $props();
 	let errorMessage = $state('');

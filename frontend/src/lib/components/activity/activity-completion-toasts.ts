@@ -1,8 +1,8 @@
 import { toast } from 'svelte-sonner';
 import { PersistedState } from 'runed';
-import { m } from '$lib/paraglide/messages';
-import type { Activity, ActivityType } from '$lib/types/activity.type';
-import { activityStore } from '$lib/stores/activity.store.svelte';
+import { m } from '#lib/paraglide/messages';
+import type { Activity, ActivityType } from '#lib/types/activity.type';
+import { activityStore } from '#lib/stores/activity.store.svelte';
 import { activityTypeLabel } from './activity-labels';
 
 /**

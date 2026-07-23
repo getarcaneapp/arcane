@@ -1,9 +1,9 @@
 import type { PageLoad } from './$types';
 import { error } from '@sveltejs/kit';
-import { volumeService } from '$lib/services/volume-service';
-import { containerService } from '$lib/services/container-service';
-import { environmentStore } from '$lib/stores/environment.store.svelte';
-import { queryKeys } from '$lib/query/query-keys';
+import { volumeService } from '#lib/services/volume-service';
+import { containerService } from '#lib/services/container-service';
+import { environmentStore } from '#lib/stores/environment.store.svelte';
+import { queryKeys } from '#lib/query/query-keys';
 
 export const load: PageLoad = async ({ params, parent }) => {
 	const { queryClient } = await parent();

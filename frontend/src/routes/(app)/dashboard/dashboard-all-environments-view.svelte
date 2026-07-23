@@ -4,23 +4,23 @@
 	import { formatDistanceToNow } from 'date-fns';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
-	import { type ActionButton } from '$lib/components/action-button-group/index.js';
-	import { cn } from '$lib/utils';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Badge, badgeVariants } from '$lib/components/ui/badge';
-	import PruneConfirmationDialog from '$lib/components/dialogs/prune-confirmation-dialog.svelte';
-	import DockerInfoDialog from '$lib/components/dialogs/docker-info-dialog.svelte';
-	import { Skeleton } from '$lib/components/ui/skeleton';
-	import * as Card from '$lib/components/ui/card/index.js';
-	import { m } from '$lib/paraglide/messages';
-	import { settingsService } from '$lib/services/settings-service';
-	import { systemService } from '$lib/services/system-service';
-	import { activityStore } from '$lib/stores/activity.store.svelte';
-	import { dashboardStore } from '$lib/stores/dashboard.store.svelte';
-	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '$lib/stores/environment.store.svelte';
-	import userStore from '$lib/stores/user-store';
-	import { hasAnyPermission, hasPermission } from '$lib/utils/auth';
-	import { formatDateTime } from '$lib/utils/formatting';
+	import { type ActionButton } from '#lib/components/action-button-group/index.js';
+	import { cn } from '#lib/utils';
+	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
+	import { Badge, badgeVariants } from '#lib/components/ui/badge';
+	import PruneConfirmationDialog from '#lib/components/dialogs/prune-confirmation-dialog.svelte';
+	import DockerInfoDialog from '#lib/components/dialogs/docker-info-dialog.svelte';
+	import { Skeleton } from '#lib/components/ui/skeleton';
+	import * as Card from '#lib/components/ui/card/index.js';
+	import { m } from '#lib/paraglide/messages';
+	import { settingsService } from '#lib/services/settings-service';
+	import { systemService } from '#lib/services/system-service';
+	import { activityStore } from '#lib/stores/activity.store.svelte';
+	import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
+	import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+	import userStore from '#lib/stores/user-store';
+	import { hasAnyPermission, hasPermission } from '#lib/utils/auth';
+	import { formatDateTime } from '#lib/utils/formatting';
 	import type {
 		DashboardActionItem,
 		DashboardEnvironmentCardState,
@@ -28,17 +28,17 @@
 		DashboardOverviewSummary,
 		DashboardSnapshot,
 		SystemStats
-	} from '$lib/types/shared';
-	import type { Environment } from '$lib/types/environment';
-	import type { DockerInfo } from '$lib/types/docker';
-	import type { PruneType, SystemPruneRequest } from '$lib/types/automation';
-	import type { Settings } from '$lib/types/settings';
-	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '$lib/utils/api';
-	import { tryCatch } from '$lib/utils/api';
-	import { isEnvironmentOnline, resolveEnvironmentStatus } from '$lib/utils/docker';
-	import { activityToastOptions, extractActivityId } from '$lib/utils/activity-toast';
-	import { createStatsWebSocket, type ReconnectingWebSocket } from '$lib/utils/ws';
-	import { bytes } from '$lib/utils/formatting';
+	} from '#lib/types/shared';
+	import type { Environment } from '#lib/types/environment';
+	import type { DockerInfo } from '#lib/types/docker';
+	import type { PruneType, SystemPruneRequest } from '#lib/types/automation';
+	import type { Settings } from '#lib/types/settings';
+	import { extractApiErrorMessage, handleApiResultWithCallbacks } from '#lib/utils/api';
+	import { tryCatch } from '#lib/utils/api';
+	import { isEnvironmentOnline, resolveEnvironmentStatus } from '#lib/utils/docker';
+	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
+	import { createStatsWebSocket, type ReconnectingWebSocket } from '#lib/utils/ws';
+	import { bytes } from '#lib/utils/formatting';
 	import {
 		ContainersIcon,
 		CpuIcon,
@@ -53,10 +53,10 @@
 		UpdateIcon,
 		VolumesIcon,
 		VerifiedCheckIcon
-	} from '$lib/icons';
+	} from '#lib/icons';
 	import DashboardMetricTile from './dash-metric-tile.svelte';
 	import DashboardEnvironmentUpgradeAction from './dashboard-environment-upgrade-action.svelte';
-	import * as ArcaneTooltip from '$lib/components/arcane-tooltip';
+	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 	import { mergeProps } from 'bits-ui';
 
 	let {

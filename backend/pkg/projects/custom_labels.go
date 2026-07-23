@@ -3,12 +3,12 @@ package projects
 
 import (
 	"context"
-	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"emperror.dev/errors"
 	"github.com/compose-spec/compose-go/v2/loader"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -60,7 +60,7 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
 	envMap, _, err := envLoader.LoadEnvironment(ctx)
 	if err != nil {
-		return emptyArcaneComposeMetadataInternal(), fmt.Errorf("load project environment: %w", err)
+		return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
 	}
 
 	return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
@@ -92,7 +92,7 @@ func parseArcaneComposeMetadataFromFileInternal(ctx context.Context, composeFile
 
 	project, err := loadComposeProjectForMetadataFromFileInternal(ctx, absPath, mergedEnv)
 	if err != nil {
-		return meta, fmt.Errorf("load compose metadata: %w", err)
+		return meta, errors.WrapIf(err, "load compose metadata")
 	}
 
 	meta = extractArcaneComposeMetadata(project)
@@ -287,12 +287,12 @@ func loadProcessEnv() map[string]string {
 func parseIncludePaths(composeFilePath string) ([]string, error) {
 	content, err := os.ReadFile(composeFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("read compose file: %w", err)
+		return nil, errors.WrapIf(err, "read compose file")
 	}
 
 	composeData := map[string]any{}
 	if err := yaml.Unmarshal(content, &composeData); err != nil {
-		return nil, fmt.Errorf("parse compose file: %w", err)
+		return nil, errors.WrapIf(err, "parse compose file")
 	}
 
 	rawIncludes, ok := composeData["include"]

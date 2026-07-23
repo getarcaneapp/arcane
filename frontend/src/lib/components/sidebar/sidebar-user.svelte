@@ -1,13 +1,13 @@
 <script lang="ts">
-	import { m } from '$lib/paraglide/messages';
-	import * as Avatar from '$lib/components/ui/avatar/index.js';
-	import * as DropdownMenu from '$lib/components/ui/dropdown-menu/index.js';
-	import * as Sidebar from '$lib/components/ui/sidebar/index.js';
-	import { useSidebar } from '$lib/components/ui/sidebar/index.js';
-	import type { User } from '$lib/types/auth';
-	import settingsStore from '$lib/stores/config-store';
+	import { m } from '#lib/paraglide/messages';
+	import * as Avatar from '#lib/components/ui/avatar/index.js';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import * as Sidebar from '#lib/components/ui/sidebar/index.js';
+	import { useSidebar } from '#lib/components/ui/sidebar/index.js';
+	import type { User } from '#lib/types/auth';
+	import settingsStore from '#lib/stores/config-store';
 	import { goto } from '$app/navigation';
-	import { LogoutIcon, UserIcon } from '$lib/icons';
+	import { LogoutIcon, UserIcon } from '#lib/icons';
 
 	let {
 		user,

@@ -1,7 +1,7 @@
-import { portService } from '$lib/services/port-service';
-import { queryKeys } from '$lib/query/query-keys';
-import { resolveListPageLoadContext } from '$lib/utils/tables';
-import { throwPageLoadError } from '$lib/utils/api';
+import { portService } from '#lib/services/port-service';
+import { queryKeys } from '#lib/query/query-keys';
+import { resolveListPageLoadContext } from '#lib/utils/tables';
+import { throwPageLoadError } from '#lib/utils/api';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({ parent }) => {
