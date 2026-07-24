@@ -28,7 +28,9 @@ import {
 	ZapIcon,
 	TagIcon,
 	ScanIcon,
-	ImagesIcon
+	ImagesIcon,
+	TestIcon,
+	BoxIcon
 } from '#lib/icons';
 
 export const arcaneButtonVariants = tv({
@@ -80,6 +82,10 @@ export const arcaneButtonVariants = tv({
 			'outline-build':
 				'bg-violet-500/5 text-foreground! border-violet-500/20 hover:bg-violet-500/10 hover:border-violet-500/40 ' +
 				'dark:bg-violet-500/10 dark:text-violet-300 dark:border-violet-500/30 dark:hover:bg-violet-500/20 ' +
+				'shadow-sm hover:shadow-md',
+			'outline-archive':
+				'bg-slate-500/5 text-foreground! border-slate-500/20 hover:bg-slate-500/10 hover:border-slate-500/40 ' +
+				'dark:bg-slate-500/10 dark:text-slate-300 dark:border-slate-500/30 dark:hover:bg-slate-500/20 ' +
 				'shadow-sm hover:shadow-md',
 
 			outline: 'bg-background border-input hover:bg-accent hover:text-accent-foreground shadow-sm',
@@ -210,6 +216,18 @@ export const actionConfigs = {
 		defaultLabel: m.vuln_scan(),
 		IconComponent: ScanIcon,
 		tone: 'outline-scan',
+		loadingLabel: m.common_processing()
+	},
+	test: {
+		defaultLabel: m.test_connection(),
+		IconComponent: TestIcon,
+		tone: 'outline-info',
+		loadingLabel: m.environments_testing_connection()
+	},
+	archive: {
+		defaultLabel: m.projects_archive(),
+		IconComponent: BoxIcon,
+		tone: 'outline-archive',
 		loadingLabel: m.common_processing()
 	},
 	commit: {
