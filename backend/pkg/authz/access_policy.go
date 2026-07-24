@@ -43,7 +43,6 @@ var accessSurfacesInternal = []AccessSurface{
 	landingSurfaceInternal("landing.settings", "/settings", "Settings", []string{
 		"settings.category.activity",
 		"settings.category.apikeys",
-		"settings.category.appearance",
 		"settings.category.authentication",
 		"settings.category.build",
 		"settings.category.jobschedule",
@@ -95,7 +94,6 @@ var accessSurfacesInternal = []AccessSurface{
 
 	settingsCategorySurfaceInternal("activity", "/settings/activity", "Activity", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("apikeys", "/settings/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
-	settingsCategorySurfaceInternal("appearance", "/settings/appearance", "Appearance", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("authentication", "/settings/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("build", "/settings/builds", "Builds", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("jobschedule", "", "Automations", AccessScopeModeSelectedEnvPlusGlobal, []string{PermJobsManage}),

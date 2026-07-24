@@ -1,13 +1,11 @@
 package handlers
 
 import (
-	"context"
 	"mime/multipart"
 	"net/http"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
-	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/stretchr/testify/assert"
@@ -34,7 +32,7 @@ func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 	h := &VolumeHandler{volumeService: &services.VolumeService{}}
 
-	ctx := context.WithValue(adminTestContextInternal(), humamw.ContextKeyCurrentUser, &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
+	ctx := models.WithCurrentUser(adminTestContextInternal(), &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
 
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",

@@ -4,7 +4,6 @@
 	import { page } from '$app/state';
 	import { m } from '#lib/paraglide/messages';
 	import { authService } from '#lib/services/auth-service';
-	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation } from '@tanstack/svelte-query';
 
@@ -14,14 +13,25 @@
 
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
-			const redirect = page.url.searchParams.get('redirect') || getEffectiveLandingPage();
+			// Carry only an explicit, same-origin redirect across the OIDC round
+			// trip. The account landing page is a per-user preference and cannot be
+			// resolved while signed out — storing the signed-out default here would
+			// make the callback treat it as an explicit target and override the
+			// user's saved page. The callback resolves the preference itself.
+			const requested = page.url.searchParams.get('redirect') ?? '';
+			const redirect = requested.startsWith('/') && !requested.startsWith('//') ? requested : '';
 
 			const authUrl = await authService.getAuthUrl(redirect);
 			if (!authUrl) {
 				throw new Error('oidc_url_generation_failed');
 			}
 
-			localStorage.setItem('oidc_redirect', redirect);
+			if (redirect) {
+				localStorage.setItem('oidc_redirect', redirect);
+			} else {
+				// Clear any target left behind by an earlier sign-in attempt.
+				localStorage.removeItem('oidc_redirect');
+			}
 			window.location.href = authUrl;
 		},
 		onError: (err: any) => {

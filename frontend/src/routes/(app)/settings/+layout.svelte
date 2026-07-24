@@ -29,8 +29,6 @@
 				return m.security();
 			case 'users':
 				return m.users_title();
-			case 'navigation':
-				return m.navigation_title();
 			case 'notifications':
 				return m.notifications_title();
 			case 'api-keys':

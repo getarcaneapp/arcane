@@ -1297,11 +1297,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 }
 
 func (s *ContainerService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
-	catalog := iconcatalog.DefaultCatalog
-	if s != nil && s.settingsService != nil {
-		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
-	}
-	return iconcatalog.Resolve(catalog, iconSet)
+	return iconcatalog.Resolve(iconCatalogForContextInternal(ctx), iconSet)
 }
 
 func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {

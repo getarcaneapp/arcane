@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"mime/multipart"
 	"net/http"
+	"reflect"
+	"strings"
 	"time"
 
 	"emperror.dev/errors"
@@ -22,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/getarcaneapp/arcane/types/v2/base"
+	"github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/getarcaneapp/arcane/types/v2/user"
 )
 
@@ -74,11 +77,12 @@ type LogoutAllOtherSessionsOutput struct {
 
 type UpdateMyProfileInput struct {
 	Body struct {
-		DisplayName *string          `json:"displayName,omitempty"`
-		Email       *string          `json:"email,omitempty"`
-		Locale      *string          `json:"locale,omitempty"`
-		TimeFormat  *user.TimeFormat `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
-		FontSize    *int             `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
+		DisplayName *string           `json:"displayName,omitempty"`
+		Email       *string           `json:"email,omitempty"`
+		Locale      *string           `json:"locale,omitempty"`
+		TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
+		FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
+		Preferences *user.Preferences `json:"preferences,omitempty"`
 	}
 }
 
@@ -400,6 +404,39 @@ func (h *AuthHandler) LogoutAllOtherSessions(ctx context.Context, input *struct{
 	}, nil
 }
 
+// validatePreferencesInternal checks the preference values Huma's enum tags
+// cannot express. Everything else is constrained by the schema.
+func validatePreferencesInternal(p *user.Preferences) error {
+	// The "default" sentinel means "no override"; anything else must be a color
+	// literal safe to inject into CSS.
+	if v := p.AccentColor; v != nil && *v != "" && *v != "default" && !settings.SafeAccentColor.MatchString(*v) {
+		return huma.Error400BadRequest("invalid accentColor value")
+	}
+	// Keep the landing page a same-origin relative path. The frontend
+	// additionally validates it against the known nav pages, falling back to
+	// /dashboard.
+	if v := p.DefaultLandingPage; v != nil && (!strings.HasPrefix(*v, "/") || strings.HasPrefix(*v, "//")) {
+		return huma.Error400BadRequest("invalid defaultLandingPage value")
+	}
+	return nil
+}
+
+// mergePreferencesInternal copies every set (non-nil) field of src onto dst.
+// Reflection keeps this merge-only update free of per-field branches, the same
+// way the settings update path walks its DTO, so a new preference needs no
+// handler change.
+func mergePreferencesInternal(dst, src *user.Preferences) {
+	dstValue := reflect.ValueOf(dst).Elem()
+	srcValue := reflect.ValueOf(src).Elem()
+
+	for i := range srcValue.NumField() {
+		field := srcValue.Field(i)
+		if field.Kind() == reflect.Pointer && !field.IsNil() {
+			dstValue.Field(i).Set(field)
+		}
+	}
+}
+
 // UpdateMyProfile lets the current user update their own displayName and email.
 // OIDC-managed accounts are read-only here.
 func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfileInput) (*UpdateMyProfileOutput, error) {
@@ -437,6 +474,12 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 	}
 	if input.Body.FontSize != nil {
 		userModel.FontSize = input.Body.FontSize
+	}
+	if p := input.Body.Preferences; p != nil {
+		if err := validatePreferencesInternal(p); err != nil {
+			return nil, err
+		}
+		mergePreferencesInternal(&userModel.Preferences, p)
 	}
 
 	updated, err := h.userService.UpdateUser(ctx, userModel)

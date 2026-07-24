@@ -9,22 +9,17 @@
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-	import {
-		getEffectiveLandingPage,
-		getEffectiveNavigationSettings,
-		navigationSettingsOverridesStore
-	} from '#lib/utils/navigation';
+	import { getEffectiveLandingPage, getEffectiveNavigationSettings } from '#lib/utils/navigation';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
 	import { isEditableTarget, matchesShortcutEvent } from '#lib/utils/navigation';
 	import { cn } from '#lib/utils';
-	import { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store';
+	import userStore, { userHasPermissionInAnyEnvironment } from '#lib/stores/user-store';
 	let { data, children }: LayoutProps = $props();
 
 	const versionInformation = $derived(data.versionInformation);
 	const user = $derived(data.user);
-	const settings = $derived(data.settings);
 	const permissionsManifest = $derived(data.permissionsManifest);
 	const permissionsManifestLoadFailed = $derived(data.permissionsManifestLoadFailed);
 	const swarmEnabled = $derived(data.swarmEnabled === true);
@@ -34,8 +29,9 @@
 	const isTablet = new IsTablet();
 
 	const navigationSettings = $derived.by(() => {
-		settings;
-		navigationSettingsOverridesStore.current;
+		// Track the store, not the loader snapshot: saving a preference calls
+		// userStore.setUser() without re-running load().
+		$userStore;
 		return getEffectiveNavigationSettings();
 	});
 	const navigationMode = $derived(navigationSettings.mode);
@@ -81,7 +77,7 @@
 
 	function handleNavigationShortcut(event: KeyboardEvent) {
 		if (event.defaultPrevented) return;
-		if (settings?.keyboardShortcutsEnabled === false) return;
+		if ($userStore?.preferences?.keyboardShortcutsEnabled === false) return;
 		if (isMobile.current || isTablet.current) return;
 		if (isEditableTarget(event.target)) return;
 
