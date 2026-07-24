@@ -246,21 +246,6 @@ type Update struct {
 	// Required: false
 	DockerHost *string `json:"dockerHost,omitempty"`
 
-	// AccentColor is the UI accent color.
-	//
-	// Required: false
-	AccentColor *string `json:"accentColor,omitempty"`
-
-	// ApplicationTheme is the overall application theme preset.
-	//
-	// Required: false
-	ApplicationTheme *string `json:"applicationTheme,omitempty"`
-
-	// IconCatalog is the catalog used to resolve icon slugs.
-	//
-	// Required: false
-	IconCatalog *string `json:"iconCatalog,omitempty"`
-
 	// AuthLocalEnabled indicates if local authentication is enabled.
 	//
 	// Required: false
@@ -403,41 +388,6 @@ type Update struct {
 	// Required: false
 	OidcProviderLogoUrl *string `json:"oidcProviderLogoUrl,omitempty"`
 
-	// DefaultLandingPage is the route opened after signing in.
-	//
-	// Required: false
-	DefaultLandingPage *string `json:"defaultLandingPage,omitempty"`
-
-	// MobileNavigationMode is the navigation mode for mobile devices.
-	//
-	// Required: false
-	MobileNavigationMode *string `json:"mobileNavigationMode,omitempty"`
-
-	// MobileNavigationShowLabels indicates if labels should be shown in mobile navigation.
-	//
-	// Required: false
-	MobileNavigationShowLabels *string `json:"mobileNavigationShowLabels,omitempty"`
-
-	// SidebarHoverExpansion indicates if the sidebar expands on hover.
-	//
-	// Required: false
-	SidebarHoverExpansion *string `json:"sidebarHoverExpansion,omitempty"`
-
-	// KeyboardShortcutsEnabled indicates if keyboard shortcuts are enabled.
-	//
-	// Required: false
-	KeyboardShortcutsEnabled *string `json:"keyboardShortcutsEnabled,omitempty"`
-
-	// GlassEffectsEnabled indicates if blur/glass effects are applied to UI surfaces.
-	//
-	// Required: false
-	GlassEffectsEnabled *string `json:"glassEffectsEnabled,omitempty"`
-
-	// AnimationsEnabled indicates if decorative interface animations are enabled.
-	//
-	// Required: false
-	AnimationsEnabled *string `json:"animationsEnabled,omitempty"`
-
 	// DockerApiTimeout is the timeout for Docker API operations in seconds.
 	//
 	// Required: false
@@ -533,9 +483,4 @@ type Update struct {
 	//
 	// Required: false
 	DepotToken *string `json:"depotToken,omitempty"`
-
-	// OledMode sets whether OLED dark mode is enabled or not.
-	//
-	// Required: false
-	OledMode *string `json:"oledMode,omitempty"`
 }

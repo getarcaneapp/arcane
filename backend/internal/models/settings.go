@@ -35,7 +35,6 @@ type settingFieldMeta struct {
 	isPublic            bool
 	isVisibleToNonAdmin bool
 	isSensitive         bool
-	isLocal             bool
 }
 
 var settingsFieldCache struct {
@@ -73,14 +72,10 @@ type Settings struct {
 	SwarmStackSourcesDirectory SettingVariable `key:"swarmStackSourcesDirectory,envOverride" meta:"label=Swarm Stack Sources Directory;type=text;keywords=swarm,stacks,stack,source,sources,directory,path,folder,location,storage,compose,env;category=internal;description=Configure where swarm stack source files are stored"`
 	DiskUsagePath              SettingVariable `key:"diskUsagePath" meta:"label=Disk Usage Path;type=text;keywords=disk,usage,path,storage,folder,files;category=general;description=Path used for disk usage calculations"`
 	BaseServerURL              SettingVariable `key:"baseServerUrl" meta:"label=Base Server URL;type=text;keywords=base,url,server,domain,host,endpoint,address,link;category=general;description=Set the base URL for the application"`
-	EnableGravatar             SettingVariable `key:"enableGravatar,authrequired" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=general;description=Enable Gravatar profile pictures for users"`
-	AvatarMaxUploadSizeMb      SettingVariable `key:"avatarMaxUploadSizeMb,authrequired,local" meta:"label=Avatar Max Upload Size (MB);type=number;keywords=avatar,profile,picture,upload,size,limit,maximum,image,user,photo,mb;category=general;description=Maximum size in MB for profile picture uploads (default: 2)"`
+	EnableGravatar             SettingVariable `key:"enableGravatar,authrequired" meta:"label=Enable Gravatar;type=boolean;keywords=gravatar,avatar,profile,picture,image,user,photo;category=users;description=Enable Gravatar profile pictures for users"`
+	AvatarMaxUploadSizeMb      SettingVariable `key:"avatarMaxUploadSizeMb,authrequired" meta:"label=Avatar Max Upload Size (MB);type=number;keywords=avatar,profile,picture,upload,size,limit,maximum,image,user,photo,mb;category=users;description=Maximum size in MB for profile picture uploads (default: 2)"`
 	DefaultShell               SettingVariable `key:"defaultShell" meta:"label=Default Shell;type=text;keywords=shell,default,shellpath,path,login;category=general;description=Default shell to use for commands"`
 	EnvironmentHealthInterval  SettingVariable `key:"environmentHealthInterval" meta:"label=Environment Health Check Interval;type=cron;keywords=environment,health,check,interval,frequency,heartbeat,status,monitoring,uptime,jobs,schedule;description=How often to check environment connectivity (cron expression)" catmeta:"id=jobschedule;title=Automations;icon=jobs;url=/settings/jobs;description=Configure how often Arcane background jobs run"`
-	ApplicationTheme           SettingVariable `key:"applicationTheme,public,local" meta:"label=Application Theme;type=select;keywords=theme,appearance,style,visual,palette,background,interface,ui;category=appearance;description=Choose the overall visual theme for the application"`
-	IconCatalog                SettingVariable `key:"iconCatalog,public,local" meta:"label=Icon Catalog;type=select;keywords=icon,catalog,selfhst,dashboard-icons,appearance,container,project;category=appearance;description=Choose the catalog used to resolve project and container icon slugs"`
-	AccentColor                SettingVariable `key:"accentColor,public,local" meta:"label=Accent Color;type=text;keywords=color,accent,theme,css,appearance,ui;category=general;description=Primary accent color for UI"`
-	OledMode                   SettingVariable `key:"oledMode,public,local" meta:"label=OLED Mode;type=boolean;keywords=oled,dark,theme,black,amoled,appearance,display;category=general;description=Use true-black backgrounds for OLED displays (only active in dark mode)"`
 
 	// Docker category
 	AutoUpdate                     SettingVariable `key:"autoUpdate" meta:"label=Auto Update;type=boolean;keywords=auto,update,automatic,upgrade,refresh,restart,deploy;category=internal;description=Automatically update containers when new images are available"`
@@ -166,15 +161,6 @@ type Settings struct {
 	OidcProviderLogoUrl             SettingVariable `key:"oidcProviderLogoUrl,public,envOverride" meta:"label=OIDC Provider Logo URL;type=text;keywords=oidc,provider,logo,url,image,icon,sso;category=authentication;description=Custom logo URL for the OIDC provider"`
 	OidcMobileRedirectUris          SettingVariable `key:"oidcMobileRedirectUris,envOverride" meta:"label=OIDC Mobile Redirect URIs;type=text;keywords=oidc,mobile,redirect,uri,callback,scheme,ios,android,native;category=authentication;description=Comma-separated allowlist of native app redirect URIs (e.g., arcane-mobile://oidc-callback)"`
 
-	// Appearance category
-	DefaultLandingPage         SettingVariable `key:"defaultLandingPage,authrequired,local" meta:"label=Default Landing Page;type=select;keywords=landing,default,home,start,startup,page,route,redirect,login,dashboard,navigation;category=appearance;description=Page to open after signing in"`
-	MobileNavigationMode       SettingVariable `key:"mobileNavigationMode,authrequired,local" meta:"label=Mobile Navigation Mode;type=select;keywords=mode,style,type,floating,docked,position,layout,design,appearance,bottom;category=appearance;description=Choose between floating or docked navigation on mobile" catmeta:"id=appearance;title=Appearance;icon=appearance;url=/settings/appearance;description=Customize navigation, theme, and interface behavior"`
-	MobileNavigationShowLabels SettingVariable `key:"mobileNavigationShowLabels,authrequired,local" meta:"label=Show Navigation Labels;type=boolean;keywords=labels,text,icons,display,show,hide,names,captions,titles,visible,toggle;category=appearance;description=Display text labels alongside navigation icons"`
-	SidebarHoverExpansion      SettingVariable `key:"sidebarHoverExpansion,authrequired,local" meta:"label=Sidebar Hover Expansion;type=boolean;keywords=sidebar,hover,expansion,expand,desktop,mouse,over,collapsed,collapsible,icon,labels,text,preview,peek,tooltip,overlay,temporary,quick,access,navigation,menu,items,submenu,nested;category=appearance;description=Expand sidebar on hover in desktop mode"`
-	KeyboardShortcutsEnabled   SettingVariable `key:"keyboardShortcutsEnabled,authrequired,local" meta:"label=Keyboard Shortcuts;type=boolean;keywords=keyboard,shortcuts,hotkeys,keybindings,navigation,tooltips,disable;category=appearance;description=Enable keyboard shortcuts for navigation and show shortcut hints in tooltips"`
-	GlassEffectsEnabled        SettingVariable `key:"glassEffectsEnabled,public,local" meta:"label=Glass & Blur Effects;type=boolean;keywords=blur,glass,glassmorphism,backdrop,transparency,frosted,performance,gpu,appearance;category=appearance;description=Apply blur and glass effects to UI surfaces. Disable for solid surfaces and lower GPU usage."`
-	AnimationsEnabled          SettingVariable `key:"animationsEnabled,public,local" meta:"label=Interface Animations;type=boolean;keywords=animation,animations,motion,shimmer,pulse,glow,effects,performance,gpu,appearance;category=appearance;description=Enable decorative interface animations. Disable to reduce motion and GPU usage."`
-
 	// Notifications category (placeholder for category metadata only - actual settings managed via notification service)
 	NotificationsCategoryPlaceholder SettingVariable `key:"notificationsCategory,internal" meta:"label=Notifications;type=internal;keywords=notifications,alerts,email,discord,webhooks,events,messages;category=notifications;description=Configure notification providers and alerts" catmeta:"id=notifications;title=Notifications;icon=bell;url=/settings/notifications;description=Configure email and Discord notifications for container and image updates"`
 
@@ -227,7 +213,6 @@ func buildSettingsFieldCacheInternal() {
 			isPublic:            slices.Contains(attrList, "public"),
 			isVisibleToNonAdmin: slices.Contains(attrList, "public") || slices.Contains(attrList, "authrequired"),
 			isSensitive:         slices.Contains(attrList, "sensitive"),
-			isLocal:             slices.Contains(attrList, "local"),
 		}
 		ordered = append(ordered, meta)
 		byKey[key] = meta
@@ -305,16 +290,6 @@ func (s *Settings) FieldByKey(key string) (defaultValue string, isPublic bool, i
 
 	valueField := rv.Field(field.index).FieldByName("Value")
 	return valueField.String(), field.isPublic, field.isSensitive, nil
-}
-
-func (s *Settings) IsLocalSetting(key string) bool {
-	_, byKey := getSettingsFieldCacheInternal()
-	field, ok := byKey[key]
-	if !ok {
-		return false
-	}
-
-	return field.isLocal
 }
 
 func (s *Settings) UpdateField(key string, value string, noSensitive bool) error {

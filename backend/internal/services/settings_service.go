@@ -184,17 +184,6 @@ func DefaultSettingsConfig() *models.Settings {
 		OidcProviderName:                models.SettingVariable{Value: ""},
 		OidcProviderLogoUrl:             models.SettingVariable{Value: ""},
 		OidcMobileRedirectUris:          models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
-		DefaultLandingPage:              models.SettingVariable{Value: "/dashboard"},
-		MobileNavigationMode:            models.SettingVariable{Value: "floating"},
-		MobileNavigationShowLabels:      models.SettingVariable{Value: "true"},
-		SidebarHoverExpansion:           models.SettingVariable{Value: "true"},
-		KeyboardShortcutsEnabled:        models.SettingVariable{Value: "true"},
-		ApplicationTheme:                models.SettingVariable{Value: "default"},
-		IconCatalog:                     models.SettingVariable{Value: "selfhst"},
-		AccentColor:                     models.SettingVariable{Value: "oklch(0.606 0.25 292.717)"},
-		OledMode:                        models.SettingVariable{Value: "false"},
-		GlassEffectsEnabled:             models.SettingVariable{Value: "true"},
-		AnimationsEnabled:               models.SettingVariable{Value: "true"},
 		MaxImageUploadSize:              models.SettingVariable{Value: "500"},
 		GitSyncMaxFiles:                 models.SettingVariable{Value: "500"},
 		GitSyncMaxTotalSizeMb:           models.SettingVariable{Value: "50"},
@@ -511,10 +500,6 @@ func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defa
 
 		if err := libarcane.ValidateCronSetting(key, value); err != nil {
 			return nil, false, false, false, false, false, nil, errors.WrapIff(err, "invalid cron expression for %s", key)
-		}
-
-		if key == "accentColor" && value != "" && value != "default" && !settings.SafeAccentColor.MatchString(value) {
-			return nil, false, false, false, false, false, nil, errors.New("invalid accentColor value")
 		}
 
 		var valueToSave string

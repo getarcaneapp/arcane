@@ -1,6 +1,5 @@
 import {
 	ApiKeyIcon,
-	AppearanceIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -195,13 +194,6 @@ export const navigationItems: NavigationSections = {
 					icon: ApiKeyIcon,
 					shortcut: ['mod', 'shift', '1'],
 					accessSurfaceId: 'settings.category.apikeys'
-				},
-				{
-					title: m.appearance_title(),
-					url: '/settings/appearance',
-					icon: AppearanceIcon,
-					shortcut: ['mod', 'shift', '2'],
-					accessSurfaceId: 'settings.category.appearance'
 				},
 				{
 					title: m.webhook_page_title(),

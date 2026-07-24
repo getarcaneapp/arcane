@@ -8,7 +8,7 @@
 	import { ArrowRightIcon } from '#lib/icons';
 	import SidebarCollapsibleItem from './sidebar-collapsible-item.svelte';
 	import SidebarItemTooltipContent from './sidebar-item-tooltip-content.svelte';
-	import settingsStore from '#lib/stores/config-store';
+	import userStore from '#lib/stores/user-store';
 
 	let {
 		items,
@@ -72,7 +72,7 @@
 
 	const collapsed = $derived(sidebar.state === 'collapsed');
 	const includeTitleInTooltip = $derived(collapsed && !(sidebar.hoverExpansionEnabled && sidebar.isHovered));
-	const shortcutsEnabled = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
+	const shortcutsEnabled = $derived($userStore?.preferences?.keyboardShortcutsEnabled ?? true);
 </script>
 
 {#snippet itemAnchor(entry: { title: string; url: string; icon?: typeof ArrowRightIcon }, props: Record<string, unknown>)}

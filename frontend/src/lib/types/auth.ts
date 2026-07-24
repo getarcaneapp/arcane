@@ -1,4 +1,5 @@
 import type { Locale } from '#lib/paraglide/runtime';
+import type { ApplicationTheme, IconCatalog } from '#lib/types/settings';
 
 // --- RBAC: roles, permissions, assignments ---
 
@@ -130,6 +131,25 @@ export const GLOBAL_SCOPE = 'global';
 
 export type TimeFormat = 'auto' | '12h' | '24h';
 
+/**
+ * Personal display/UI preferences stored on the user record. Every field is
+ * optional: an unset value falls back to the frontend default.
+ */
+export type UserPreferences = {
+	themeMode?: 'light' | 'dark' | 'system';
+	applicationTheme?: ApplicationTheme;
+	accentColor?: string;
+	iconCatalog?: IconCatalog;
+	oledMode?: boolean;
+	glassEffectsEnabled?: boolean;
+	animationsEnabled?: boolean;
+	sidebarHoverExpansion?: boolean;
+	keyboardShortcutsEnabled?: boolean;
+	mobileNavigationMode?: 'floating' | 'docked';
+	mobileNavigationShowLabels?: boolean;
+	defaultLandingPage?: string;
+};
+
 export type User = {
 	id: string;
 	username: string;
@@ -148,6 +168,7 @@ export type User = {
 	locale?: Locale;
 	timeFormat: TimeFormat;
 	fontSize?: number;
+	preferences?: UserPreferences;
 	requiresPasswordChange?: boolean;
 };
 

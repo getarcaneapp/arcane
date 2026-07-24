@@ -21,15 +21,13 @@
 	let password = $state('');
 	const queryClient = useQueryClient();
 
-	// The ambient shimmer is a ~300vmax rotating conic-gradient that pegs the GPU
-	// on Firefox-based browsers. `animationsEnabled` is a public setting, so it
-	// reaches this pre-auth page via data.settings — skip rendering the shimmer
-	// when animations are disabled. (OS reduced-motion is handled by the
+	// Animations and accent color are per-user preferences now, so neither is
+	// available before sign-in: this page always renders the ambient shimmer and
+	// the default-tinted logo. (OS reduced-motion is still honoured by the
 	// prefers-reduced-motion rule in the <style> below.)
-	const showAmbientMotion = $derived(data.settings?.animationsEnabled !== false);
+	const showAmbientMotion = true;
 
-	const accentColor = $derived(data.settings?.accentColor);
-	const logoUrl = $derived(getApplicationLogo(false, accentColor, accentColor));
+	const logoUrl = getApplicationLogo();
 
 	const oidcEnabledBySettings = $derived(data.settings?.oidcEnabled === true);
 	const showOidcLoginButton = $derived(oidcEnabledBySettings);
@@ -45,18 +43,22 @@
 		oidcProviderName ? m.auth_oidc_signin_with({ provider: oidcProviderName }) : m.auth_oidc_signin()
 	);
 
+	// Only an explicit redirect is handed to the OIDC flow. Resolving the account
+	// landing page here would bake the signed-out default into the OIDC round
+	// trip, where it would then outrank the user's saved preference.
+	const oidcLoginHref = $derived(data.redirectTo ? `/oidc/login?redirect=${encodeURIComponent(data.redirectTo)}` : '/oidc/login');
+
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
 			error = null;
-			const currentRedirect = data.redirectTo || getEffectiveLandingPage();
-			await goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
+			await goto(oidcLoginHref);
 		}
 	}));
 
 	const loginMutation = createMutation(() => ({
 		mutationFn: () => authService.login({ username, password }),
 		onSuccess: async (user) => {
-			userStore.setUser(user);
+			await userStore.setUser(user);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
 			const redirectTo = data.redirectTo || getEffectiveLandingPage();
 			await goto(redirectTo, { replaceState: true });
@@ -76,11 +78,10 @@
 	});
 
 	function handleOidcLogin() {
-		const currentRedirect = data.redirectTo || getEffectiveLandingPage();
 		oidcLoginMutation.mutate(undefined, {
 			onError: () => {
 				// Fallback to direct navigation when mutation fails unexpectedly
-				void goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
+				void goto(oidcLoginHref);
 			}
 		});
 	}

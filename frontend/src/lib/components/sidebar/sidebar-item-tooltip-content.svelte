@@ -1,7 +1,7 @@
 <script lang="ts">
 	import * as Kbd from '#lib/components/ui/kbd/index.js';
 	import { formatShortcutKeys, type ShortcutKey } from '#lib/utils/navigation';
-	import settingsStore from '#lib/stores/config-store';
+	import userStore from '#lib/stores/user-store';
 
 	let {
 		title,
@@ -13,7 +13,7 @@
 		includeTitle?: boolean;
 	} = $props();
 
-	const showShortcut = $derived($settingsStore?.keyboardShortcutsEnabled ?? true);
+	const showShortcut = $derived($userStore?.preferences?.keyboardShortcutsEnabled ?? true);
 </script>
 
 <div class="flex flex-wrap items-center gap-2">

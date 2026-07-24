@@ -12,11 +12,14 @@
 	let {
 		selectedTheme = $bindable(),
 		accentColor = '',
-		disabled = false
+		disabled = false,
+		onSelect
 	}: {
 		selectedTheme: ApplicationTheme;
 		accentColor?: string;
 		disabled?: boolean;
+		/** Called whenever the user picks a different theme. */
+		onSelect?: (theme: ApplicationTheme) => void;
 	} = $props();
 
 	const themeCopy: Record<ApplicationTheme, { label: string; description: string }> = {
@@ -90,6 +93,7 @@
 
 			selectedTheme = centeredTheme;
 			applyApplicationTheme(centeredTheme);
+			onSelect?.(centeredTheme);
 		};
 
 		api.on('select', syncCenteredTheme);
@@ -109,6 +113,7 @@
 		const nextTheme = resolveApplicationTheme(value);
 		selectedTheme = nextTheme;
 		applyApplicationTheme(nextTheme);
+		onSelect?.(nextTheme);
 	}
 </script>
 

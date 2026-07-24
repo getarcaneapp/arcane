@@ -55,12 +55,6 @@ export type Settings = {
 	uiConfigDisabled: boolean;
 	defaultShell: string;
 	dockerHost: string;
-	applicationTheme: ApplicationTheme;
-	iconCatalog: IconCatalog;
-	accentColor: string;
-	oledMode: boolean;
-	glassEffectsEnabled: boolean;
-	animationsEnabled: boolean;
 	autoInjectEnv: boolean;
 	backupVolumeName?: string;
 	edgeMTLSManagerCAAvailable?: boolean;
@@ -95,12 +89,6 @@ export type Settings = {
 	oidcMergeAccounts: boolean;
 	oidcProviderName: string;
 	oidcProviderLogoUrl: string;
-
-	defaultLandingPage: string;
-	mobileNavigationMode: 'floating' | 'docked';
-	mobileNavigationShowLabels: boolean;
-	sidebarHoverExpansion: boolean;
-	keyboardShortcutsEnabled: boolean;
 
 	dockerApiTimeout: number;
 	dockerImagePullTimeout: number;

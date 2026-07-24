@@ -24,7 +24,7 @@
 	import { type Extension } from '@codemirror/state';
 	import { browser } from '$app/env';
 	import { m } from '#lib/paraglide/messages';
-	import configStore from '#lib/stores/config-store';
+	import userStore from '#lib/stores/user-store';
 	import { mode } from 'mode-watcher';
 	import { arcaneDarkInit, arcaneLightInit } from './theme';
 	import { createDefaultSummary, ENV_SNIPPETS, YAML_SNIPPETS } from './editor-constants';
@@ -93,7 +93,7 @@
 	let activeOutlineItems = $state<OutlineItem[]>([]);
 	let activeView = $state<EditorView | null>(null);
 	let schemaState = $state<ComposeSchemaContext | null>(null);
-	let shortcutsEnabled = $derived($configStore?.keyboardShortcutsEnabled !== false);
+	let shortcutsEnabled = $derived($userStore?.preferences?.keyboardShortcutsEnabled !== false);
 	let schemaHoverSuppressedUntil = 0;
 
 	const schemaHoverSelectionSuppressionMs = 2500;
@@ -752,7 +752,8 @@
 	}
 
 	const theme = $derived.by(() => {
-		$configStore;
+		// Re-derive when the user's theme/accent preferences change.
+		$userStore;
 		return mode.current === 'dark' ? arcaneDarkInit() : arcaneLightInit();
 	});
 

@@ -29,9 +29,12 @@
 		return `/login?${params.toString()}`;
 	};
 
+	// Returns '' when no explicit target was carried across the OIDC round trip.
+	// This runs before the user is in the store, so the account landing page must
+	// not be resolved here — it is resolved after sign-in, below.
 	const getStoredRedirect = () => {
 		const storedRedirect = localStorage.getItem('oidc_redirect');
-		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : getEffectiveLandingPage();
+		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '';
 	};
 
 	type CallbackFailure = {
@@ -141,15 +144,19 @@
 			// to /no-access mid-navigation. refreshAll() above has repopulated
 			// page.data (user + permissions manifest) and the environment store.
 			const landingUser = page.data['user'] ?? user;
+			// Resolved here, after setUser/refreshAll, so the user's saved landing
+			// page applies when no explicit redirect was requested.
+			const landingPage = getEffectiveLandingPage();
+			const requestedTarget = redirectTo || landingPage;
 			const target =
 				getAuthRedirectPath(
-					redirectTo,
+					requestedTarget,
 					landingUser,
 					environmentStore.selected?.id,
 					page.data['permissionsManifest'],
 					page.data['permissionsManifestLoadFailed'] ?? false,
-					getEffectiveLandingPage()
-				) ?? redirectTo;
+					landingPage
+				) ?? requestedTarget;
 			await goto(target, { replaceState: true });
 		},
 		onError: (err: unknown) => {

@@ -4294,11 +4294,7 @@ func (s *ProjectService) appendDiscoveredComposeProjectUpdatesInternal(
 	}
 
 	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
-	iconCatalog := iconcatalog.DefaultCatalog
-	if s.settingsService != nil {
-		iconCatalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
-	}
-	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, iconCatalog)
+	discovered := buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, iconCatalogForContextInternal(ctx))
 	if len(discovered) == 0 {
 		return items
 	}
@@ -4856,12 +4852,18 @@ func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p mod
 	return meta
 }
 
-func (s *ProjectService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
-	catalog := iconcatalog.DefaultCatalog
-	if s != nil && s.settingsService != nil {
-		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
+// iconCatalogForContextInternal resolves the icon catalog of the requesting
+// user. Background jobs and agent-proxied calls have no user attached and fall
+// back to the default catalog.
+func iconCatalogForContextInternal(ctx context.Context) string {
+	if u, ok := models.CurrentUserFromContext(ctx); ok && u != nil && u.Preferences.IconCatalog != nil && *u.Preferences.IconCatalog != "" {
+		return *u.Preferences.IconCatalog
 	}
-	return iconcatalog.Resolve(catalog, iconSet)
+	return iconcatalog.DefaultCatalog
+}
+
+func (s *ProjectService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
+	return iconcatalog.Resolve(iconCatalogForContextInternal(ctx), iconSet)
 }
 
 func applyResolvedProjectIconInternal(resp *project.Details, icon iconcatalog.ResolvedIconSet) {

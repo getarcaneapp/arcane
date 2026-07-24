@@ -1,38 +1,14 @@
 import { get, writable } from 'svelte/store';
 import { z } from 'zod/v4';
-import type { ApplicationTheme } from '#lib/types/settings';
-import type { IconCatalog } from '#lib/types/settings';
 
 // --- Local vs environment settings classification ---
 
 export type LocalSettings = {
-	applicationTheme: ApplicationTheme;
-	iconCatalog: IconCatalog;
-	accentColor: string;
-	oledMode: boolean;
-	glassEffectsEnabled: boolean;
-	animationsEnabled: boolean;
-	defaultLandingPage: string;
-	mobileNavigationMode: string;
-	mobileNavigationShowLabels: boolean;
-	sidebarHoverExpansion: boolean;
-	keyboardShortcutsEnabled: boolean;
 	edgeMTLSManagerCAAvailable?: boolean;
 	avatarMaxUploadSizeMb: number;
 };
 
 const LOCAL_SETTING_KEYS = new Set([
-	'applicationTheme',
-	'iconCatalog',
-	'accentColor',
-	'oledMode',
-	'glassEffectsEnabled',
-	'animationsEnabled',
-	'defaultLandingPage',
-	'mobileNavigationMode',
-	'mobileNavigationShowLabels',
-	'sidebarHoverExpansion',
-	'keyboardShortcutsEnabled',
 	'avatarMaxUploadSizeMb',
 	'authLocalEnabled',
 	'authSessionTimeout',
