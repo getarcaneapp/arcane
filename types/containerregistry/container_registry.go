@@ -39,6 +39,12 @@ type ContainerRegistry struct {
 	// Required: true
 	RegistryType string `json:"registryType"`
 
+	// RepositoryNames is the list of pre-configured repository namespace
+	// strings available for selection when pushing images from the build page.
+	//
+	// Required: false
+	RepositoryNames []string `json:"repositoryNames"`
+
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
 	//
 	// Required: false
@@ -184,6 +190,12 @@ type Sync struct {
 	//
 	// Required: true
 	RegistryType string `json:"registryType"`
+
+	// RepositoryNames is the list of pre-configured repository namespace
+	// strings available for selection when pushing images from the build page.
+	//
+	// Required: false
+	RepositoryNames []string `json:"repositoryNames"`
 
 	// AWSAccessKeyID is the AWS Access Key ID for ECR registries.
 	//

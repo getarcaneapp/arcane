@@ -837,6 +837,7 @@ export interface ContainerRegistryCreateDto {
 	insecure?: boolean;
 	enabled?: boolean;
 	registryType?: RegistryType;
+	repositoryNames?: string[];
 	awsAccessKeyId?: string;
 	awsSecretAccessKey?: string;
 	awsRegion?: string;
@@ -850,6 +851,7 @@ export interface ContainerRegistryUpdateDto {
 	insecure?: boolean;
 	enabled?: boolean;
 	registryType?: RegistryType;
+	repositoryNames?: string[];
 	awsAccessKeyId?: string;
 	awsSecretAccessKey?: string;
 	awsRegion?: string;
@@ -864,6 +866,7 @@ export interface ContainerRegistry {
 	insecure?: boolean;
 	enabled?: boolean;
 	registryType?: RegistryType;
+	repositoryNames?: string[];
 	awsAccessKeyId?: string;
 	awsRegion?: string;
 	createdAt?: string;

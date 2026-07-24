@@ -10,6 +10,9 @@ export type BuildProviderOption = {
 export type BuildFormInputs = {
 	dockerfile: FormInput<string>;
 	tags: FormInput<string>;
+	registryId: FormInput<string>;
+	repositoryName: FormInput<string>;
+	pushTag: FormInput<string>;
 	target: FormInput<string>;
 	buildArgs: FormInput<string>;
 	labels: FormInput<string>;

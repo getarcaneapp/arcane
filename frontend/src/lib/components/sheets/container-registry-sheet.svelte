@@ -37,6 +37,7 @@
 			username: z.string().optional(),
 			token: z.string().optional(),
 			description: z.string().optional(),
+			repositoryNames: z.string().optional(),
 			insecure: z.boolean().default(false),
 			enabled: z.boolean().default(true),
 			awsAccessKeyId: z.string().optional(),
@@ -90,6 +91,7 @@
 		username: open && registryToEdit ? registryToEdit.username : '',
 		token: '',
 		description: open && registryToEdit ? registryToEdit.description || '' : '',
+		repositoryNames: open && registryToEdit ? (registryToEdit.repositoryNames?.join('\n') ?? '') : '',
 		insecure: open && registryToEdit ? (registryToEdit.insecure ?? false) : false,
 		enabled: open && registryToEdit ? (registryToEdit.enabled ?? true) : true,
 		awsAccessKeyId: open && registryToEdit ? (registryToEdit.awsAccessKeyId ?? '') : '',
@@ -104,7 +106,13 @@
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		onSubmit({ registry: data, isEditMode });
+		const repositoryNames = data.repositoryNames
+			? data.repositoryNames
+					.split('\n')
+					.map((s) => s.trim())
+					.filter((s) => s.length > 0)
+			: [];
+		onSubmit({ registry: { ...data, repositoryNames }, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {
@@ -176,6 +184,14 @@
 				type="text"
 				placeholder={m.registries_description_placeholder()}
 				bind:input={$inputs.description}
+			/>
+			<FormInput
+				label={m.registries_repository_names()}
+				type="textarea"
+				rows={3}
+				placeholder={m.registries_repository_names_placeholder()}
+				description={m.registries_repository_names_description()}
+				bind:input={$inputs.repositoryNames}
 			/>
 			<SwitchWithLabel
 				id="isEnabledSwitch"
