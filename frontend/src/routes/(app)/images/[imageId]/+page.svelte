@@ -400,6 +400,6 @@
 		bind:open={tagDialogOpen}
 		imageId={image.id}
 		defaultRepository={image.repoTags?.[0]?.split(':')[0] ?? ''}
-		onTagged={() => goto(`/images/${image.id}`, { invalidateAll: true })}
+		onTagged={() => goto(`/images/${image.id}`, { refreshAll: true })}
 	/>
 {/if}

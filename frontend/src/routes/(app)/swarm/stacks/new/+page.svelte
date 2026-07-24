@@ -120,7 +120,7 @@
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto('/swarm/stacks', { invalidateAll: true });
+				goto('/swarm/stacks', { refreshAll: true });
 			}
 		});
 	}
@@ -133,7 +133,7 @@
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { invalidateAll: true });
+				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { refreshAll: true });
 			}
 		});
 	}
