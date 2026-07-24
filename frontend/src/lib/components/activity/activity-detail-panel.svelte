@@ -1,29 +1,24 @@
 <script lang="ts">
-	import { Progress } from '#lib/components/ui/progress/index.js';
 	import { Badge } from '#lib/components/ui/badge';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { activityStore } from '#lib/stores/activity.store.svelte';
-	import type { Activity, ActivityMessage } from '#lib/types/activity.type';
+	import type { Activity } from '#lib/types/activity.type';
 	import { ActivityIcon, CloseIcon, TerminalIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
-	import { cn } from '#lib/utils';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
+	import ActivityOutput from './activity-output.svelte';
 	import { confirmCancelActivity } from './activity-cancel';
 	import { activityStatusLabel, activityStatusVariant, activityTypeIcon, activityTypeLabel } from './activity-labels';
-	import { formatDateTime, formatTime } from '#lib/utils/formatting';
+	import { formatDateTime } from '#lib/utils/formatting';
 
 	let { activity }: { activity: Activity } = $props();
-
-	let outputContainer = $state<HTMLElement | null>(null);
 
 	// Prefer the freshest activity data from the store (messages stream may update it).
 	const liveActivity = $derived(activityStore.getActivity(activity.id) ?? activity);
 	const detail = $derived(activityStore.getDetail(activity.id));
 	const messages = $derived(detail?.messages ?? []);
-	const outputText = $derived(messages.map(formatOutputLineInternal).join('\n'));
+	const outputText = $derived(messages.map((message) => message.message).join('\n'));
 	const IconComponent = $derived(activityTypeIcon(liveActivity.type));
-	const hasProgress = $derived(typeof liveActivity.progress === 'number');
-	const progressValue = $derived(Math.min(100, Math.max(0, Math.round(liveActivity.progress ?? 0))));
 	const isLoading = $derived(activityStore.isDetailLoading(activity.id));
 	const isDetailError = $derived(activityStore.isDetailError(activity.id));
 	const activityTarget = $derived(
@@ -34,17 +29,6 @@
 	);
 	const startedByName = $derived(liveActivity.startedBy?.displayName || liveActivity.startedBy?.username);
 	const cancelable = $derived(liveActivity.status === 'running' || liveActivity.status === 'queued');
-
-	$effect(() => {
-		messages.length;
-		outputContainer;
-		queueMicrotask(() => {
-			if (!outputContainer) {
-				return;
-			}
-			outputContainer.scrollTop = outputContainer.scrollHeight;
-		});
-	});
 
 	function formatDateTimeInternal(value?: string): string {
 		if (!value) {
@@ -73,24 +57,6 @@
 		const minutes = Math.floor(totalSeconds / 60);
 		const seconds = totalSeconds % 60;
 		return m.activity_duration_minutes({ minutes, seconds });
-	}
-
-	function formatOutputLineInternal(message: ActivityMessage): string {
-		const timestamp = formatTime(message.createdAt) || message.createdAt;
-		return `[${timestamp}] ${message.level.toUpperCase()} ${message.message}`;
-	}
-
-	function messageLevelClassInternal(level: ActivityMessage['level']): string {
-		switch (level) {
-			case 'error':
-				return 'text-red-300';
-			case 'warning':
-				return 'text-amber-300';
-			case 'success':
-				return 'text-emerald-300';
-			default:
-				return 'text-zinc-100';
-		}
 	}
 </script>
 
@@ -125,24 +91,6 @@
 						</button>
 					</IfPermitted>
 				{/if}
-			</div>
-
-			<div class="space-y-2">
-				<div class="flex items-center justify-between gap-3 text-xs">
-					<span class="text-muted-foreground">{liveActivity.step || m.activity_step_unknown()}</span>
-					<span class="text-muted-foreground tabular-nums">
-						{#if hasProgress}
-							{m.activity_progress_percent({ progress: progressValue })}
-						{:else}
-							{m.common_live()}
-						{/if}
-					</span>
-				</div>
-				<Progress
-					value={hasProgress ? progressValue : 100}
-					indeterminate={!hasProgress && (liveActivity.status === 'running' || liveActivity.status === 'queued')}
-					class="h-1.5"
-				/>
 			</div>
 
 			<div class="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-xs text-muted-foreground">
@@ -194,10 +142,7 @@
 				</CopyButton>
 			</div>
 
-			<div
-				bind:this={outputContainer}
-				class="max-h-80 min-h-40 overflow-auto bg-zinc-950 px-5 py-4 font-mono text-[12px] leading-relaxed text-zinc-100"
-			>
+			<div class="bg-zinc-950 font-mono text-[12px] leading-relaxed text-zinc-100">
 				{#if isDetailError && messages.length === 0}
 					<div class="flex min-h-32 flex-col items-center justify-center gap-2 text-zinc-500">
 						<span>{m.activity_output_load_failed()}</span>
@@ -219,15 +164,7 @@
 						{m.activity_output_empty()}
 					</div>
 				{:else}
-					{#each messages as message (message.id)}
-						<div class="grid grid-cols-[auto_auto_minmax(0,1fr)] gap-2 rounded px-1 py-0.5 hover:bg-white/4">
-							<span class="text-zinc-500">{formatDateTimeInternal(message.createdAt)}</span>
-							<span class={cn('font-bold', messageLevelClassInternal(message.level))}>
-								{message.level.toUpperCase()}
-							</span>
-							<span class="wrap-break-word whitespace-pre-wrap">{message.message}</span>
-						</div>
-					{/each}
+					<ActivityOutput {messages} />
 				{/if}
 			</div>
 		</div>

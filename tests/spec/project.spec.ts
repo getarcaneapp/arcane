@@ -15,7 +15,9 @@ const ROUTES = {
 };
 
 const DEPLOY_STREAM_SUCCESS =
-	'{"type":"deploy","phase":"begin"}\n' + '{"type":"deploy","phase":"complete"}\n';
+	'{"log":"Container test-1  Creating"}\n' +
+	'{"log":"Container test-1  Started"}\n' +
+	'{"done":true}\n';
 
 async function navigateToProjects(page: Page) {
 	await page.goto(ROUTES.page);

@@ -59,7 +59,6 @@ function activitySearchHaystackInternal(activity: Activity): string {
 		activity.resourceName,
 		activity.resourceId,
 		activity.latestMessage,
-		activity.step,
 		activity.error,
 		activity.sourceEnvironmentName
 	]
@@ -92,8 +91,7 @@ function groupActivitiesInternal(items: Activity[]): ActivityGroup[] {
 			total: 0,
 			done: 0,
 			failed: 0,
-			status: 'running',
-			progress: null
+			status: 'running'
 		};
 		batches.set(batchId, group);
 		groups.push(group);
@@ -118,27 +116,13 @@ function finalizeBatchGroupInternal(group: ActivityBatchGroup) {
 	group.failed = group.items.filter((item) => item.status === 'failed').length;
 	if (group.items.some((item) => isActiveStatusInternal(item.status))) {
 		group.status = group.items.some((item) => item.status === 'running') ? 'running' : 'queued';
-		const memberProgress = group.items.map((item) =>
-			isActiveStatusInternal(item.status) ? clampBatchProgressInternal(item.progress) : 100
-		);
-		group.progress = Math.round(memberProgress.reduce((sum, value) => sum + value, 0) / group.total);
+	} else if (group.failed > 0) {
+		group.status = 'failed';
+	} else if (group.items.every((item) => item.status === 'cancelled')) {
+		group.status = 'cancelled';
 	} else {
-		if (group.failed > 0) {
-			group.status = 'failed';
-		} else if (group.items.every((item) => item.status === 'cancelled')) {
-			group.status = 'cancelled';
-		} else {
-			group.status = 'success';
-		}
-		group.progress = 100;
+		group.status = 'success';
 	}
-}
-
-function clampBatchProgressInternal(progress: number | null | undefined): number {
-	if (typeof progress !== 'number' || Number.isNaN(progress)) {
-		return 0;
-	}
-	return Math.min(100, Math.max(0, progress));
 }
 
 function groupStatusIsActiveInternal(group: ActivityGroup): boolean {

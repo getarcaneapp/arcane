@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -46,17 +45,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
-
-func TestWriteProjectProgressInternal_SuppressedContextSkipsProgress(t *testing.T) {
-	ctx := context.Background()
-	var buf bytes.Buffer
-	ctx = context.WithValue(ctx, projects.ProgressWriterKey{}, &buf)
-	ctx = withProjectProgressSuppressedInternal(ctx)
-
-	writeProjectProgressInternal(ctx, "Project stopped", 100, "complete")
-
-	require.Empty(t, buf.String())
-}
 
 type testBuildBuilder struct {
 	err error

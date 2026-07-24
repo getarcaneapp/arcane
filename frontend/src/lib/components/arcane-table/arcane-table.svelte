@@ -360,7 +360,11 @@
 		if (rowActions) {
 			cols.push({
 				id: 'actions',
-				cell: ({ row }) => renderSnippet(rowActions, { row, item: row.original as TData })
+				// The closure reads the live rowActions prop. When the caller flips it
+				// to undefined (e.g. a project stops and its per-row actions go away),
+				// the old column can still render once before the column set rebuilds —
+				// rendering an undefined snippet would crash the page (invalid_snippet).
+				cell: ({ row }) => (rowActions ? renderSnippet(rowActions, { row, item: row.original as TData }) : undefined)
 			});
 		}
 

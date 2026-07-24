@@ -547,8 +547,8 @@ github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78 h1:ilQV1hzziu+LLM3zU
 github.com/youmark/pkcs8 v0.0.0-20240726163527-a2c0da244d78/go.mod h1:aL8wCCfTfSfmXjznFBSZNN13rSJjlIOI1fUNAtF7rmI=
 github.com/yusufpapurcu/wmi v1.2.4 h1:zFUKzehAFReQwLys1b/iSMl+JQGSCSjtVqQn9bBrPo0=
 github.com/yusufpapurcu/wmi v1.2.4/go.mod h1:SBZ9tNy3G9/m5Oi98Zks0QjeHVDvuK0qfxQmPyzfmi0=
-go.getarcane.app/builds v0.2.0 h1:IXl78t2Lpr4FJ+HQhAGbTgENyPr2WLBxAmFebRu5kuU=
-go.getarcane.app/builds v0.2.0/go.mod h1:korkB7gWCiWx00SbKtX0sTwxWYeL1pxeTKOYxohjJUA=
+go.getarcane.app/builds v0.3.0 h1:6fCgHy6PaEr3LpCtiF1iCdT4nuV3D3xvUHnV+E/0cqk=
+go.getarcane.app/builds v0.3.0/go.mod h1:yZJDSh9XX/sgZlwx7lghHEucgZeQ74Gr/Fx+XdR2bdk=
 go.getarcane.app/docker/convert v0.1.0 h1:prlIOs6dMx6CdnetsJFZ6ak0vcistM3DcH5lrZiFHBU=
 go.getarcane.app/docker/convert v0.1.0/go.mod h1:o9y4z/vah8HiHFtI+jJVFHbs8nLrkARYt88OaUlvGig=
 go.getarcane.app/streams v0.3.1 h1:Exs9a9G3paM9PnB6DQc8YvIKNbfaUTB7q271SD30zL8=

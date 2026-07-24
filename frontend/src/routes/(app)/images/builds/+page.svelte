@@ -13,6 +13,7 @@
 	import { ResourceDetailLayout } from '#lib/layouts/index.js';
 	import TabbedPageLayout from '#lib/layouts/tabbed-page-layout.svelte';
 	import { sanitizeLogText } from '#lib/utils/formatting';
+	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import {
 		CodeIcon,
@@ -32,16 +33,7 @@
 	import { UniversalMobileCard } from '#lib/components/arcane-table';
 	import { Badge } from '#lib/components/ui/badge';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog/index.js';
-	import {
-		type LayerProgress,
-		calculateOverallProgress,
-		areAllLayersComplete,
-		updateLayerFromStreamData,
-		extractErrorMessage,
-		getLayerStats,
-		isIndeterminatePhase,
-		getAggregateStatus
-	} from '#lib/utils/docker';
+	import { extractErrorMessage } from '#lib/utils/docker';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import BuildControls from './components/build-controls.svelte';
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
@@ -53,7 +45,6 @@
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { createMutation, createQuery, useQueryClient } from '@tanstack/svelte-query';
-	import { formatDateTimeShort } from '#lib/utils/formatting';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 
 	let {}: PageProps = $props();
@@ -146,10 +137,8 @@
 
 	let isBuilding = $state(false);
 	let isDesktop = $state(true);
-	let buildProgress = $state(0);
 	let buildStatusText = $state('');
 	let buildError = $state('');
-	let layerProgress = $state<Record<string, LayerProgress>>({});
 	let hasReachedComplete = $state(false);
 	let logLines = $state<string[]>([]);
 	let autoScroll = $state(true);
@@ -274,12 +263,11 @@
 			const reader = response.body.getReader();
 			const decoder = new TextDecoder();
 			let buffer = '';
+			let streamComplete = false;
 
-			while (true) {
+			while (!streamComplete) {
 				const { done, value } = await reader.read();
 				if (done) {
-					buildStatusText = m.finalizing_build();
-					appendLog(m.finalizing_build());
 					break;
 				}
 
@@ -302,23 +290,24 @@
 							continue;
 						}
 
-						if (event.status) {
-							const idSuffix = event.id ? ` ${event.id}` : '';
-							appendLog(`${sanitizeLogText(String(event.status))}${idSuffix}`);
-							buildStatusText = sanitizeLogText(String(event.status));
+						// The terminal frame marks success; don't wait on the network EOF.
+						if (event.done === true) {
+							streamComplete = true;
+							break;
 						}
 
-						layerProgress = updateLayerFromStreamData(layerProgress, event);
-						updateProgress();
+						// Raw docker CLI output arrives framed as {"log":"<line>"}.
+						if (typeof event.log === 'string') {
+							appendLog(event.log);
+							buildStatusText = sanitizeLogText(event.log);
+						}
 					} catch {
 						appendLog(line);
 					}
 				}
 			}
-
-			updateProgress();
-			if (!buildError && buildProgress < 100 && areAllLayersComplete(layerProgress)) {
-				buildProgress = 100;
+			if (streamComplete) {
+				await reader.cancel().catch(() => {});
 			}
 
 			if (buildError) {
@@ -326,7 +315,6 @@
 			}
 
 			hasReachedComplete = true;
-			buildProgress = 100;
 			buildStatusText = m.build_completed();
 			appendLog(m.build_completed());
 		},
@@ -335,17 +323,11 @@
 		}
 	}));
 
-	const layerStats = $derived(getLayerStats(layerProgress, hasReachedComplete));
 	const aggregateStatus = $derived.by(() => {
-		const status = getAggregateStatus(layerProgress, buildStatusText, hasReachedComplete);
-		if (!isBuilding) return status;
-		if (!status) return m.progress_building();
-		const normalized = status.toLowerCase();
-		if (normalized === 'pulling' || normalized === 'preparing') return m.progress_building();
-		return status;
+		if (hasReachedComplete) return m.build_completed();
+		if (isBuilding) return buildStatusText || m.progress_building();
+		return buildStatusText;
 	});
-	const isIndeterminate = $derived(isIndeterminatePhase(layerProgress, buildProgress));
-	const progressValue = $derived(Math.round(hasReachedComplete ? 100 : buildProgress));
 	const statusLabel = $derived.by(() => {
 		if (buildError) return m.common_error();
 		if (hasReachedComplete) return m.build_completed();
@@ -364,17 +346,8 @@
 	]);
 
 	type BuildOutputEntry = {
-		raw: string;
-		isJson: boolean;
-		type?: string;
-		status?: string;
-		id?: string;
-		phase?: string;
-		error?: string;
-		progress?: {
-			current?: number;
-			total?: number;
-		};
+		text: string;
+		isError: boolean;
 	};
 
 	const buildHistoryOutputEntries = $derived.by(() => parseBuildOutput(buildHistorySelected?.output ?? ''));
@@ -443,23 +416,16 @@
 
 	function resetState() {
 		isBuilding = false;
-		buildProgress = 0;
 		buildStatusText = '';
 		buildError = '';
-		layerProgress = {};
 		hasReachedComplete = false;
 		logLines = [];
 	}
 
 	function appendLog(line: string) {
-		const sanitized = sanitizeLogText(line);
-		// Some tools output standalone reset codes (which become empty after sanitizing).
-		if (sanitized.trim() === '') return;
-		logLines = [...logLines, sanitized];
-	}
-
-	function updateProgress() {
-		buildProgress = calculateOverallProgress(layerProgress);
+		// Keep ANSI sequences — the output panel renders them as colors.
+		if (sanitizeLogText(line).trim() === '') return;
+		logLines = [...logLines, line];
 	}
 
 	function parseTags(raw: string): string[] {
@@ -570,29 +536,6 @@
 		return `${seconds}s`;
 	}
 
-	function formatBytes(value: number) {
-		if (!Number.isFinite(value) || value <= 0) return '0 B';
-		const units = ['B', 'KB', 'MB', 'GB', 'TB'];
-		let size = value;
-		let unitIndex = 0;
-		while (size >= 1024 && unitIndex < units.length - 1) {
-			size /= 1024;
-			unitIndex += 1;
-		}
-		const precision = size >= 10 || unitIndex === 0 ? 0 : 1;
-		return `${size.toFixed(precision)} ${units[unitIndex]}`;
-	}
-
-	function getProgressPercent(current?: number, total?: number) {
-		if (current === undefined || total === undefined || total <= 0) return 0;
-		return Math.min(100, Math.max(0, Math.round((current / total) * 100)));
-	}
-
-	function formatProgress(current?: number, total?: number) {
-		if (current === undefined || total === undefined || total <= 0) return '-';
-		return `${formatBytes(current)} / ${formatBytes(total)}`;
-	}
-
 	function formatBuildArgs(buildArgs?: Record<string, string>) {
 		return formatKeyValueMap(buildArgs);
 	}
@@ -639,6 +582,9 @@
 		return '/';
 	}
 
+	// Build history output is the raw docker CLI text of the build. Records
+	// written before the raw-output change contain NDJSON progress events; pull
+	// their text out so old history stays readable.
 	function parseBuildOutput(output: string): BuildOutputEntry[] {
 		if (!output) return [];
 		return output
@@ -648,30 +594,24 @@
 			.map((line) => {
 				try {
 					const data = JSON.parse(line) as Record<string, unknown>;
-					if (!data || typeof data !== 'object') {
-						return { raw: sanitizeLogText(line), isJson: false } satisfies BuildOutputEntry;
+					if (data && typeof data === 'object') {
+						const error = data['error'];
+						if (error) {
+							const message =
+								typeof error === 'object' && error !== null ? ((error as { message?: string }).message ?? line) : String(error);
+							return { text: sanitizeLogText(message), isError: true } satisfies BuildOutputEntry;
+						}
+						const text = data['log'] ?? data['status'] ?? data['stream'];
+						if (typeof text === 'string') {
+							return { text: sanitizeLogText(text), isError: false } satisfies BuildOutputEntry;
+						}
 					}
-					const progressDetail = data['progressDetail'] as Record<string, unknown> | undefined;
-					const progress = progressDetail
-						? {
-								current: typeof progressDetail['current'] === 'number' ? progressDetail['current'] : undefined,
-								total: typeof progressDetail['total'] === 'number' ? progressDetail['total'] : undefined
-							}
-						: undefined;
-					return {
-						raw: sanitizeLogText(line),
-						isJson: true,
-						type: typeof data['type'] === 'string' ? data['type'] : undefined,
-						status: data['status'] ? sanitizeLogText(String(data['status'])) : undefined,
-						id: data['id'] ? String(data['id']) : undefined,
-						phase: typeof data['phase'] === 'string' ? data['phase'] : undefined,
-						error: data['error'] ? sanitizeLogText(String(data['error'])) : undefined,
-						progress
-					} satisfies BuildOutputEntry;
 				} catch {
-					return { raw: sanitizeLogText(line), isJson: false } satisfies BuildOutputEntry;
+					// Raw text line.
 				}
-			});
+				return { text: sanitizeLogText(line), isError: false } satisfies BuildOutputEntry;
+			})
+			.filter((entry) => entry.text.trim() !== '');
 	}
 
 	function buildHistoryStatusLabel(status?: ImageBuildStatus) {
@@ -1195,46 +1135,10 @@
 								</div>
 							{:else if buildHistorySelected?.output}
 								{#if buildHistoryOutputEntries.length > 0}
-									<div class="space-y-2">
-										{#each buildHistoryOutputEntries as entry, entryIndex (entry.raw + entryIndex)}
-											<div
-												class={`rounded-lg border border-border/50 px-3 py-2 ${
-													entry.error ? 'border-destructive/40 bg-destructive/10' : 'bg-zinc-950/40'
-												}`}
-											>
-												<div class="flex items-start justify-between gap-3">
-													<div class="min-w-0">
-														<div
-															class="flex flex-wrap items-center gap-2 text-[10px] tracking-wide text-muted-foreground uppercase"
-														>
-															{#if entry.type}
-																<span class="rounded bg-zinc-800/60 px-1.5 py-0.5">{entry.type}</span>
-															{/if}
-															{#if entry.phase}
-																<span class="rounded bg-zinc-800/60 px-1.5 py-0.5">{entry.phase}</span>
-															{/if}
-															{#if entry.id}
-																<span class="font-mono text-[10px] break-all">{entry.id}</span>
-															{/if}
-														</div>
-														<div class={`mt-1 text-xs break-all ${entry.error ? 'text-destructive' : 'text-foreground'}`}>
-															{entry.error ?? entry.status ?? entry.raw}
-														</div>
-													</div>
-													{#if entry.progress?.total}
-														<div class="flex shrink-0 flex-col items-end gap-1">
-															<span class="text-[10px] text-muted-foreground tabular-nums">
-																{formatProgress(entry.progress.current, entry.progress.total)}
-															</span>
-															<div class="h-1 w-24 overflow-hidden rounded-full bg-zinc-800/70">
-																<div
-																	class="h-full rounded-full bg-emerald-400"
-																	style={`width: ${getProgressPercent(entry.progress.current, entry.progress.total)}%`}
-																></div>
-															</div>
-														</div>
-													{/if}
-												</div>
+									<div class="rounded-lg border border-border/50 bg-zinc-950/40 p-3 font-mono text-xs leading-relaxed">
+										{#each buildHistoryOutputEntries as entry, entryIndex (entry.text + entryIndex)}
+											<div class={`break-words whitespace-pre-wrap ${entry.isError ? 'text-destructive' : 'text-foreground'}`}>
+												{entry.text}
 											</div>
 										{/each}
 									</div>
@@ -1313,10 +1217,7 @@
 			<Tabs.Content value="output" class="mt-0 min-h-0 flex-1 overflow-hidden">
 				<BuildOutputPanel
 					{logLines}
-					{layerStats}
 					{aggregateStatus}
-					{progressValue}
-					{isIndeterminate}
 					{hasReachedComplete}
 					{buildError}
 					{isBuilding}
@@ -1428,10 +1329,7 @@
 								<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">
 									<BuildOutputPanel
 										{logLines}
-										{layerStats}
 										{aggregateStatus}
-										{progressValue}
-										{isIndeterminate}
 										{hasReachedComplete}
 										{buildError}
 										{isBuilding}

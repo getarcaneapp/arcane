@@ -126,6 +126,8 @@ class ImageService extends BaseAPIService {
 					const message = typeof parsed.error === 'string' ? parsed.error : parsed.error.message || m.images_pull_stream_failed();
 					throw new Error(message);
 				}
+				// The terminal frame marks success; don't wait on the network EOF.
+				return parsed?.done === true;
 			});
 			return { success: true, imageName };
 		} catch (error) {

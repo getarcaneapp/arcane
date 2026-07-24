@@ -1,5 +1,6 @@
 import { writable } from 'svelte/store';
 import { m } from '#lib/paraglide/messages';
+import type { Action } from '#lib/components/arcane-button/index.js';
 
 interface ConfirmDialogStore {
 	open: boolean;
@@ -8,6 +9,8 @@ interface ConfirmDialogStore {
 	confirm: {
 		label?: string;
 		destructive?: boolean;
+		/** ArcaneButton action variant for the confirm button; overrides the destructive/remove default. */
+		button?: Action;
 		action: (checkboxStates: Record<string, boolean>) => void;
 	};
 	checkboxes?: Array<{
@@ -39,6 +42,7 @@ export function openConfirmDialog({
 	confirm: {
 		label?: string;
 		destructive?: boolean;
+		button?: Action;
 		action: (checkboxStates: Record<string, boolean>) => void;
 	};
 	checkboxes?: Array<{
@@ -54,6 +58,7 @@ export function openConfirmDialog({
 		confirm: {
 			label: confirm.label ?? m.common_confirm(),
 			destructive: confirm.destructive ?? false,
+			button: confirm.button,
 			action: confirm.action
 		},
 		checkboxes

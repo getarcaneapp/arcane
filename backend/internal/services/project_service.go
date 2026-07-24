@@ -745,7 +745,7 @@ func (s *ProjectService) composePullSelectedServicesInternal(
 		return nil
 	}
 
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	for _, imageRef := range imageRefsToPull {
 		if err := s.pullAndReconcileImageInternal(ctx, imageRef, progressWriter, user, credentials); err != nil {
 			return err
@@ -782,26 +782,6 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 	return nil
 }
 
-type projectProgressSuppressedContextKey struct{}
-
-func withProjectProgressSuppressedInternal(ctx context.Context) context.Context {
-	return context.WithValue(ctx, projectProgressSuppressedContextKey{}, true)
-}
-
-func writeProjectProgressInternal(ctx context.Context, message string, progress int, phase string) {
-	if suppressed, _ := ctx.Value(projectProgressSuppressedContextKey{}).(bool); suppressed {
-		return
-	}
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if progressWriter == nil {
-		return
-	}
-	payload := fmt.Sprintf(`{"type":"project","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
-	if _, err := progressWriter.Write([]byte(payload)); err != nil {
-		slog.DebugContext(ctx, "failed to write project progress", "phase", phase, "error", err)
-	}
-}
-
 func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID string, servicesToUpdate []string, user models.User) error {
 	projectFromDb, err := s.GetProjectFromDatabaseByID(ctx, projectID)
 	if err != nil {
@@ -829,7 +809,6 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 3. Pull images for specific services
-	writeProjectProgressInternal(ctx, "Pulling updated service images", 20, "pull")
 	if err := s.composePullSelectedServicesInternal(ctx, compProj, servicesToUpdate, user, credentials); err != nil {
 		if statusErr := s.updateProjectStatusInternal(ctx, projectID, previousStatus); statusErr != nil {
 			slog.ErrorContext(ctx, "UpdateProjectServices: failed to restore project status after compose pull failure", "projectID", projectID, "error", statusErr)
@@ -838,24 +817,20 @@ func (s *ProjectService) UpdateProjectServices(ctx context.Context, projectID st
 	}
 
 	// 4. Stop specific services
-	writeProjectProgressInternal(ctx, "Stopping selected services", 45, "stop")
 	if err := composeStopProjectServicesInternal(ctx, compProj, servicesToUpdate); err != nil {
 		slog.WarnContext(ctx, "compose stop failed, continuing", "error", err)
 	}
 
 	// 5. Up specific services
-	writeProjectProgressInternal(ctx, "Starting selected services", 70, "up")
 	if err := composeUpProjectServicesInternal(ctx, compProj, servicesToUpdate, false, true, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(err, "failed to up services")
 	}
 
 	// 6. Finalize status
-	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
 	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
 		return err
 	}
-	writeProjectProgressInternal(ctx, "Service update completed", 100, "complete")
 
 	metadata := models.JSON{
 		"action":      "update_services",
@@ -2165,7 +2140,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		return errors.WrapIf(cerr, "resolve registry credentials")
 	}
 
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, credentials, &user, resolvedPullPolicy); perr != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(perr, "failed to prepare project images for deploy")
@@ -2218,7 +2193,6 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 		return errors.WrapIf(err, "failed to update project status to stopping")
 	}
 
-	writeProjectProgressInternal(ctx, "Stopping project services", 45, "down")
 	if err := projects.ComposeDown(ctx, proj, false); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to bring down project")
@@ -2231,12 +2205,7 @@ func (s *ProjectService) DownProject(ctx context.Context, projectID string, user
 	}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectStop, projectID, projectFromDb.Name, user, metadata, "could not log project down action")
 
-	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
-	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped); err != nil {
-		return err
-	}
-	writeProjectProgressInternal(ctx, "Project stopped", 100, "complete")
-	return nil
+	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusStopped)
 }
 
 func (s *ProjectService) CreateProject(ctx context.Context, name, composeContent string, envContent *string, projectFiles []project.ProjectFileDraft, user models.User) (*models.Project, error) {
@@ -2334,13 +2303,11 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		"projectName", proj.Name,
 		"projectPath", proj.Path)
 
-	writeProjectProgressInternal(ctx, "Stopping project before destroy", 25, "down")
-	if err := s.DownProject(withProjectProgressSuppressedInternal(ctx), projectID, systemUser); err != nil {
+	if err := s.DownProject(ctx, projectID, systemUser); err != nil {
 		slog.WarnContext(ctx, "failed to bring down project", "error", err)
 	}
 
 	if removeVolumes {
-		writeProjectProgressInternal(ctx, "Removing project volumes", 55, "volumes")
 		if compProj, _, lerr := s.loadComposeProjectForProjectInternal(ctx, proj, nil); lerr == nil {
 			if derr := projects.ComposeDown(ctx, compProj, true); derr != nil {
 				slog.WarnContext(ctx, "failed to remove volumes", "error", derr)
@@ -2351,7 +2318,6 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 	}
 
 	if removeFiles {
-		writeProjectProgressInternal(ctx, "Removing project files", 75, "files")
 		slog.DebugContext(ctx, "Removing project files", "path", proj.Path)
 		if err := os.RemoveAll(proj.Path); err != nil {
 			slog.ErrorContext(ctx, "Failed to remove project files", "path", proj.Path, "error", err)
@@ -2377,7 +2343,6 @@ func (s *ProjectService) DestroyProject(ctx context.Context, projectID string, r
 		}
 	}
 	s.invalidateComposeCacheInternal(projectID)
-	writeProjectProgressInternal(ctx, "Project destroyed", 100, "complete")
 
 	metadata := models.JSON{"action": "destroy", "projectID": projectID, "projectName": proj.Name, "removeFiles": removeFiles, "removeVolumes": removeVolumes}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectDelete, projectID, proj.Name, user, metadata, "could not log project destroy action")
@@ -2396,12 +2361,9 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 		return errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 	}
 
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
+	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
 	if progressWriter == nil {
 		progressWriter = io.Discard
-	}
-	if _, writeErr := progressWriter.Write([]byte(`{"type":"deploy","phase":"pull","status":"pulling project images"}` + "\n")); writeErr != nil {
-		slog.DebugContext(ctx, "failed to write redeploy pull progress", "error", writeErr)
 	}
 
 	credentials, cerr := s.resolveRegistryCredentialsInternal(ctx)
@@ -2414,10 +2376,6 @@ func (s *ProjectService) RedeployProject(ctx context.Context, projectID string, 
 
 	metadata := models.JSON{"action": "redeploy", "projectID": projectID, "projectName": proj.Name}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, proj.Name, user, metadata, "could not log project redeploy action")
-
-	if _, writeErr := progressWriter.Write([]byte(`{"type":"deploy","phase":"up","status":"starting project deployment"}` + "\n")); writeErr != nil {
-		slog.DebugContext(ctx, "failed to write redeploy deploy progress", "error", writeErr)
-	}
 
 	return s.DeployProject(ctx, projectID, user, options)
 }
@@ -2868,7 +2826,6 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 		return errors.WrapIf(lerr, "failed to load compose project")
 	}
 
-	writeProjectProgressInternal(ctx, "Restarting project services", 55, "restart")
 	if err := projects.ComposeRestart(ctx, compProj, services); err != nil {
 		_ = s.updateProjectStatusInternal(ctx, projectID, models.ProjectStatusRunning)
 		return errors.WrapIf(err, "failed to restart project")
@@ -2884,12 +2841,7 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	}
 	s.logProjectEventInternal(ctx, models.EventTypeProjectStart, projectID, proj.Name, user, metadata, "could not log project restart action")
 
-	writeProjectProgressInternal(ctx, "Refreshing project status", 90, "status")
-	if err := s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning); err != nil {
-		return err
-	}
-	writeProjectProgressInternal(ctx, "Project restarted", 100, "complete")
-	return nil
+	return s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
 }
 
 func (s *ProjectService) UpdateProject(ctx context.Context, projectID string, name *string, composeContent, envContent, overrideContent *string, fileTreeRevision *string, fileChanges []project.ProjectFileChange, user models.User) (*models.Project, error) {
@@ -4199,8 +4151,8 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 
 	// Writer goroutine: compose logs -> pipe
 	go func() {
-		// since/timestamps not currently supported by ComposeLogs helper; follow/tail are used.
-		err := projects.ComposeLogs(ctx, projects.NormalizeProjectName(proj.Name), pw, follow, tail)
+		// timestamps not currently supported by ComposeLogs helper; follow/tail/since are used.
+		err := projects.ComposeLogs(ctx, projects.NormalizeProjectName(proj.Name), pw, follow, tail, since)
 		_ = pw.Close()
 		done <- err
 	}()
