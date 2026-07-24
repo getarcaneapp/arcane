@@ -116,7 +116,7 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 
 	dockerSvc := newDashboardHandlerTestDockerService(t, settingsSvc, containers, images)
 	handler := &DashboardHandler{
-		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil),
+		dashboardService: services.NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil),
 	}
 
 	output, err := handler.GetDashboard(context.Background(), &GetDashboardInput{EnvironmentID: "0"})
@@ -160,6 +160,7 @@ func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel con
 			break
 		}
 	}
+	require.NoError(t, scanner.Err())
 
 	go func() {
 		_, _ = io.Copy(io.Discard, pr)
@@ -196,7 +197,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -245,7 +246,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -287,7 +288,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-1", "Remote", server.URL, token)
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, settingsService, nil),
 	}
 
@@ -337,7 +338,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 	createStreamTestRemoteEnvironmentInternal(t, db, "remote-denied", "Denied", deniedServer.URL, "denied-token")
 
 	handler := &DashboardHandler{
-		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil),
+		dashboardService:   services.NewDashboardService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil),
 		environmentService: services.NewEnvironmentService(db, allowedServer.Client(), nil, nil, settingsService, nil),
 	}
 	ps := authz.NewPermissionSet()

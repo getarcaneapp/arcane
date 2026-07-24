@@ -1,17 +1,21 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
 import { get } from 'svelte/store';
-import { defaultMobileNavigationSettings, type MobileNavigationSettings } from '#lib/config/navigation-config';
+import {
+	DEFAULT_LANDING_PAGE,
+	defaultMobileNavigationSettings,
+	getLandingPageNavItems,
+	type MobileNavigationSettings
+} from '#lib/config/navigation-config';
 import settingsStore from '#lib/stores/config-store';
 
 // --- Mobile nav state ---
 
 const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
 
-export const navigationSettingsOverridesStore = new PersistedState<Partial<MobileNavigationSettings>>(
-	'navigation-settings-overrides',
-	{}
-);
+export const navigationSettingsOverridesStore = new PersistedState<
+	Partial<MobileNavigationSettings> & { defaultLandingPage?: string }
+>('navigation-settings-overrides', {});
 
 type NavigationVisibilityController = {
 	resetVisibility: () => void;
@@ -48,6 +52,18 @@ export function getEffectiveNavigationSettings(): MobileNavigationSettings {
 		),
 		scrollToHide: mode === 'floating'
 	};
+}
+
+/**
+ * Resolve the page to open after signing in: per-browser override first, then
+ * the server-side setting, then the built-in default. A stale value (e.g. a
+ * page that no longer exists) falls back to the default rather than 404ing.
+ */
+export function getEffectiveLandingPage(): string {
+	const candidate =
+		navigationSettingsOverridesStore.current.defaultLandingPage ?? get(settingsStore)?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+
+	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
 }
 
 // --- Keyboard shortcuts ---

@@ -15,9 +15,12 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	sqlite "github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
+	dockermount "github.com/moby/moby/api/types/mount"
+	dockervolume "github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -52,6 +55,7 @@ func newDashboardTestDockerService(
 	settingsSvc *SettingsService,
 	containers []dockercontainer.Summary,
 	images []dockerimage.Summary,
+	volumes []dockervolume.Volume,
 ) *DockerClientService {
 	t.Helper()
 
@@ -63,6 +67,8 @@ func newDashboardTestDockerService(
 			require.NoError(t, json.NewEncoder(w).Encode(containers))
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			require.NoError(t, json.NewEncoder(w).Encode(images))
+		case strings.HasSuffix(r.URL.Path, "/volumes"):
+			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Volumes": volumes, "Warnings": []string{}}))
 		default:
 			http.NotFound(w, r)
 		}
@@ -97,6 +103,9 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 			State:   "running",
 			Status:  "Up 2 hours",
 			Labels:  map[string]string{},
+			Mounts: []dockercontainer.MountPoint{
+				{Type: dockermount.TypeVolume, Name: "app-data"},
+			},
 		},
 		{
 			ID:      "container-stopped",
@@ -142,7 +151,12 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		ExpiresAt: new(time.Now().Add(12 * time.Hour)),
 	})
 
-	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
+	volumes := []dockervolume.Volume{
+		{Name: "app-data", Driver: "local"},
+		{Name: "orphan-data", Driver: "local"},
+	}
+
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, volumes)
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 	require.NoError(t, settingsSvc.SetStringSetting(context.Background(), "projectsDirectory", projectsDir))
@@ -157,7 +171,7 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 		Status:    models.ProjectStatusStopped,
 	}).Error)
 	projectSvc := NewProjectService(db, settingsSvc, nil, &ImageService{db: db}, nil, nil, nil, nil, config.Load())
-	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, projectSvc, nil, settingsSvc, nil, nil, nil, &VolumeService{})
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{})
 	require.NoError(t, err)
@@ -177,6 +191,9 @@ func TestDashboardService_GetSnapshot_ReturnsDashboardSnapshot(t *testing.T) {
 	require.Equal(t, 3, snapshot.ImageUsageCounts.Total)
 	require.EqualValues(t, 525, snapshot.ImageUsageCounts.TotalSize)
 	require.Equal(t, dashboardtypes.SnapshotSettings{}, snapshot.Settings)
+
+	require.NotNil(t, snapshot.VolumeUsageCounts)
+	require.Equal(t, volumetypes.UsageCounts{Inuse: 1, Unused: 1, Total: 2}, *snapshot.VolumeUsageCounts)
 
 	require.ElementsMatch(t, []dashboardtypes.ActionItem{
 		{Kind: dashboardtypes.ActionItemKindStoppedContainers, Count: 1, Severity: dashboardtypes.ActionItemSeverityWarning},
@@ -206,8 +223,8 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 
 	createDashboardTestImageUpdateRecord(t, db, models.ImageUpdateRecord{ID: "sha256:image-b", HasUpdate: true})
 
-	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images)
-	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil)
+	dockerSvc := newDashboardTestDockerService(t, settingsSvc, containers, images, nil)
+	svc := NewDashboardService(db, dockerSvc, nil, nil, nil, settingsSvc, nil, nil, nil, nil)
 
 	snapshot, err := svc.GetSnapshot(context.Background(), DashboardActionItemsOptions{DebugAllGood: true})
 	require.NoError(t, err)
@@ -217,5 +234,6 @@ func TestDashboardService_GetSnapshot_DebugAllGoodOnlyClearsActionItems(t *testi
 	require.Len(t, snapshot.Images.Data, 1)
 	require.Equal(t, 1, snapshot.Containers.Counts.StoppedContainers)
 	require.Equal(t, 1, snapshot.ImageUsageCounts.Inuse)
+	require.Nil(t, snapshot.VolumeUsageCounts)
 	require.Empty(t, snapshot.ActionItems.Items)
 }

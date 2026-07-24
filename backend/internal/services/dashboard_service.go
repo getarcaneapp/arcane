@@ -18,6 +18,7 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 )
@@ -36,6 +37,7 @@ type DashboardService struct {
 	vulnerabilityService *VulnerabilityService
 	environmentService   *EnvironmentService
 	versionService       *VersionService
+	volumeService        *VolumeService
 }
 
 type DashboardActionItemsOptions struct {
@@ -52,6 +54,7 @@ func NewDashboardService(
 	vulnerabilityService *VulnerabilityService,
 	environmentService *EnvironmentService,
 	versionService *VersionService,
+	volumeService *VolumeService,
 ) *DashboardService {
 	return &DashboardService{
 		db:                   db,
@@ -63,6 +66,7 @@ func NewDashboardService(
 		vulnerabilityService: vulnerabilityService,
 		environmentService:   environmentService,
 		versionService:       versionService,
+		volumeService:        volumeService,
 	}
 }
 
@@ -137,6 +141,14 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 		imageUsageCounts.TotalSize += img.Size
 	}
 
+	// Uses the unfiltered container list so a volume mounted only by an internal
+	// container still counts as in use, matching the volumes page.
+	var volumeUsageCounts *volumetypes.UsageCounts
+	if s.volumeService != nil && dockerSnapshot.Volumes != nil {
+		counts := s.volumeService.countVolumeUsageFromSnapshotInternal(dockerSnapshot.Volumes.Items, dockerContainers)
+		volumeUsageCounts = &counts
+	}
+
 	actionItems, err := s.buildActionItemsForSnapshotInternal(ctx, options, filteredContainers, dockerImages)
 	if err != nil {
 		return nil, err
@@ -157,10 +169,11 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 			Data:       imagePage,
 			Pagination: buildDashboardPaginationResponseInternal(len(imageItems), dashboardSnapshotPreloadLimit),
 		},
-		ImageUsageCounts: imageUsageCounts,
-		ActionItems:      *actionItems,
-		Settings:         dashboardtypes.SnapshotSettings{},
-		VersionInfo:      versionInfo,
+		ImageUsageCounts:  imageUsageCounts,
+		VolumeUsageCounts: volumeUsageCounts,
+		ActionItems:       *actionItems,
+		Settings:          dashboardtypes.SnapshotSettings{},
+		VersionInfo:       versionInfo,
 	}, nil
 }
 

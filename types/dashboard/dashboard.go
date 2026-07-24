@@ -7,6 +7,7 @@ import (
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	dockernetwork "github.com/moby/moby/api/types/network"
@@ -106,6 +107,13 @@ type Snapshot struct {
 	//
 	// Required: true
 	ImageUsageCounts imagetypes.UsageCounts `json:"imageUsageCounts"`
+
+	// VolumeUsageCounts is the dashboard volume usage summary. It is a pointer
+	// so agents that predate the field are distinguishable from environments
+	// that genuinely have no volumes.
+	//
+	// Required: false
+	VolumeUsageCounts *volumetypes.UsageCounts `json:"volumeUsageCounts,omitempty"`
 
 	// ActionItems is the dashboard attention summary.
 	//

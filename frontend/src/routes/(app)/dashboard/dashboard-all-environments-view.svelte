@@ -156,7 +156,9 @@
 			totalImages: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.totalImages, 0),
 			imagesInUse: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesInuse, 0),
 			imagesUnused: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.imagesUnused, 0),
-			totalImageSize: settledEnvironments.reduce((total, item) => total + item.imageUsageCounts.totalImageSize, 0)
+			totalVolumes: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.total ?? 0), 0),
+			volumesInUse: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.inuse ?? 0), 0),
+			volumesUnused: settledEnvironments.reduce((total, item) => total + (item.volumeUsageCounts?.unused ?? 0), 0)
 		};
 	}
 
@@ -304,6 +306,7 @@
 					environment,
 					containers: snapshot.containers.counts ?? { runningContainers: 0, stoppedContainers: 0, totalContainers: 0 },
 					imageUsageCounts: snapshot.imageUsageCounts,
+					volumeUsageCounts: snapshot.volumeUsageCounts,
 					actionItems: snapshot.actionItems,
 					settings: snapshot.settings,
 					versionInfo: snapshot.versionInfo,
@@ -662,16 +665,12 @@
 		return m.dashboard_all_image_summary({ inUse: summary.imagesInUse, unused: summary.imagesUnused });
 	}
 
-	function formatStorageOverviewLabel(summary: DashboardOverviewSummary): string {
-		if (summary.totalImageSize === 0) {
-			return m.dashboard_all_no_storage();
+	function formatVolumeOverviewLabel(summary: DashboardOverviewSummary): string {
+		if (summary.totalVolumes === 0) {
+			return m.dashboard_all_no_volumes();
 		}
 
-		if (summary.imagesUnused > 0) {
-			return m.dashboard_all_unused_images_summary({ count: summary.imagesUnused });
-		}
-
-		return m.dashboard_all_images_tracked_summary({ count: summary.totalImages });
+		return m.dashboard_all_volume_summary({ inUse: summary.volumesInUse, unused: summary.volumesUnused });
 	}
 
 	async function openPruneDialog(item: DashboardEnvironmentOverview) {
@@ -781,7 +780,7 @@
 	<section class="shrink-0">
 		{#if boardSummaryLoading}
 			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-				{#each [{ icon: UpdateIcon, label: m.updates() }, { icon: ContainersIcon, label: m.containers() }, { icon: ImagesIcon, label: m.images() }, { icon: VolumesIcon, label: m.storage() }] as tile (tile.label)}
+				{#each [{ icon: UpdateIcon, label: m.updates() }, { icon: ContainersIcon, label: m.containers() }, { icon: ImagesIcon, label: m.images() }, { icon: VolumesIcon, label: m.resource_volumes_cap() }] as tile (tile.label)}
 					<div class="min-w-0">
 						<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
 							<tile.icon class="size-3.5" />
@@ -795,8 +794,14 @@
 		{:else}
 			{@const summary = boardState.summary}
 			<div class="grid grid-cols-2 gap-x-6 gap-y-4 lg:grid-cols-4">
-				<div class="min-w-0">
-					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+				<button
+					type="button"
+					onclick={() => goto('/updates')}
+					class="group min-w-0 cursor-pointer rounded-sm text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring"
+				>
+					<div
+						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+					>
 						<UpdateIcon class="size-3.5" />
 						<span>{m.updates()}</span>
 					</div>
@@ -811,34 +816,52 @@
 							<span class="truncate">{m.dashboard_updates_available_label()}</span>
 						{/if}
 					</div>
-				</div>
+				</button>
 
-				<div class="min-w-0 border-border/60 max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6">
-					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+				<button
+					type="button"
+					onclick={() => goto('/containers')}
+					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
+				>
+					<div
+						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+					>
 						<ContainersIcon class="size-3.5" />
 						<span>{m.containers()}</span>
 					</div>
 					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalContainers}</div>
 					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatContainerOverviewLabel(summary)}</div>
-				</div>
+				</button>
 
-				<div class="min-w-0 border-border/60 lg:border-l lg:pl-6">
-					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+				<button
+					type="button"
+					onclick={() => goto('/images')}
+					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring lg:border-l lg:pl-6"
+				>
+					<div
+						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+					>
 						<ImagesIcon class="size-3.5" />
 						<span>{m.images()}</span>
 					</div>
 					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalImages}</div>
 					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatImageOverviewLabel(summary)}</div>
-				</div>
+				</button>
 
-				<div class="min-w-0 border-border/60 max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6">
-					<div class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase">
+				<button
+					type="button"
+					onclick={() => goto('/volumes')}
+					class="group min-w-0 cursor-pointer rounded-sm border-border/60 text-left transition-colors focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-ring max-lg:border-l max-lg:pl-6 lg:border-l lg:pl-6"
+				>
+					<div
+						class="flex items-center gap-1.5 text-[11px] font-semibold tracking-wide text-muted-foreground uppercase transition-colors group-hover:text-foreground"
+					>
 						<VolumesIcon class="size-3.5" />
-						<span>{m.storage()}</span>
+						<span>{m.resource_volumes_cap()}</span>
 					</div>
-					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{bytes.format(summary.totalImageSize)}</div>
-					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatStorageOverviewLabel(summary)}</div>
-				</div>
+					<div class="mt-1 text-2xl font-semibold tracking-tight tabular-nums">{summary.totalVolumes}</div>
+					<div class="mt-0.5 truncate text-xs text-muted-foreground">{formatVolumeOverviewLabel(summary)}</div>
+				</button>
 			</div>
 		{/if}
 	</section>
@@ -871,7 +894,7 @@
 
 						<Card.Root
 							variant="outlined"
-							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-colors ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60'}`}
+							class={`dashboard-environment-card [container-type:inline-size] overflow-hidden border transition-[background-color,border-color,box-shadow] hover:shadow-[0_0_24px_-8px_color-mix(in_oklch,var(--primary)_40%,transparent)] ${isCurrent ? 'border-primary/40 bg-primary/5' : 'border-border/60 hover:border-primary/25'}`}
 						>
 							<Card.Content class="space-y-4 p-4 sm:p-5">
 								<div class="flex flex-col gap-3 border-b border-border/60 pb-4 sm:flex-row sm:items-start sm:justify-between">

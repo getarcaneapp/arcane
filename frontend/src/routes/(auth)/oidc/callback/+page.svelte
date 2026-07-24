@@ -12,6 +12,7 @@
 	import { authService } from '#lib/services/auth-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { getAuthRedirectPath } from '#lib/utils/auth';
+	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
@@ -30,7 +31,7 @@
 
 	const getStoredRedirect = () => {
 		const storedRedirect = localStorage.getItem('oidc_redirect');
-		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '/dashboard';
+		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : getEffectiveLandingPage();
 	};
 
 	type CallbackFailure = {
@@ -146,7 +147,8 @@
 					landingUser,
 					environmentStore.selected?.id,
 					page.data['permissionsManifest'],
-					page.data['permissionsManifestLoadFailed'] ?? false
+					page.data['permissionsManifestLoadFailed'] ?? false,
+					getEffectiveLandingPage()
 				) ?? redirectTo;
 			await goto(target, { replaceState: true });
 		},

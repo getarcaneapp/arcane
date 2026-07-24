@@ -184,6 +184,7 @@ func DefaultSettingsConfig() *models.Settings {
 		OidcProviderName:                models.SettingVariable{Value: ""},
 		OidcProviderLogoUrl:             models.SettingVariable{Value: ""},
 		OidcMobileRedirectUris:          models.SettingVariable{Value: "arcane-mobile://oidc-callback"},
+		DefaultLandingPage:              models.SettingVariable{Value: "/dashboard"},
 		MobileNavigationMode:            models.SettingVariable{Value: "floating"},
 		MobileNavigationShowLabels:      models.SettingVariable{Value: "true"},
 		SidebarHoverExpansion:           models.SettingVariable{Value: "true"},

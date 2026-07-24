@@ -1,11 +1,13 @@
 import { redirect } from '@sveltejs/kit';
+import { getEffectiveLandingPage } from '#lib/utils/navigation';
 
 export const load = async ({ parent, url }) => {
 	const data = await parent();
 
-	const rawRedirect = url.searchParams.get('redirect') || '/dashboard';
+	const landingPage = getEffectiveLandingPage();
+	const rawRedirect = url.searchParams.get('redirect') || landingPage;
 	// Guard against open redirects — only allow same-origin relative paths
-	const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : '/dashboard';
+	const redirectTo = rawRedirect.startsWith('/') && !rawRedirect.startsWith('//') ? rawRedirect : landingPage;
 
 	if (data.user) {
 		throw redirect(302, redirectTo);
