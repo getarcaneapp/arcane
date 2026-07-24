@@ -7,6 +7,7 @@ import type { OidcUserInfo, LoginCredentials, LoginResponseData, AutoLoginConfig
 import type { QueryClient } from '@tanstack/svelte-query';
 import { activityStore } from '#lib/stores/activity.store.svelte';
 import { dashboardStore } from '#lib/stores/dashboard.store.svelte';
+import { getEffectiveLandingPage } from '#lib/utils/navigation';
 
 const REFRESH_TOKEN_KEY = 'arcane_refresh_token';
 const TOKEN_EXPIRY_KEY = 'arcane_token_expiry';
@@ -137,7 +138,7 @@ class AuthService extends BaseAPIService {
 
 		userStore.setUser(user);
 		await refreshAll();
-		goto('/dashboard');
+		goto(getEffectiveLandingPage());
 
 		return user;
 	}

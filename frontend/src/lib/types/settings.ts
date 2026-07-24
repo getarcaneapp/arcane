@@ -96,6 +96,7 @@ export type Settings = {
 	oidcProviderName: string;
 	oidcProviderLogoUrl: string;
 
+	defaultLandingPage: string;
 	mobileNavigationMode: 'floating' | 'docked';
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;

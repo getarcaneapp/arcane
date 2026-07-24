@@ -12,6 +12,7 @@ export type LocalSettings = {
 	oledMode: boolean;
 	glassEffectsEnabled: boolean;
 	animationsEnabled: boolean;
+	defaultLandingPage: string;
 	mobileNavigationMode: string;
 	mobileNavigationShowLabels: boolean;
 	sidebarHoverExpansion: boolean;
@@ -27,6 +28,7 @@ const LOCAL_SETTING_KEYS = new Set([
 	'oledMode',
 	'glassEffectsEnabled',
 	'animationsEnabled',
+	'defaultLandingPage',
 	'mobileNavigationMode',
 	'mobileNavigationShowLabels',
 	'sidebarHoverExpansion',

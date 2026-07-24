@@ -22,6 +22,7 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/streams/agg"
 )
 
@@ -372,6 +373,14 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 		errs = append(errs, err)
 	} else {
 		snapshot.ImageUsageCounts = imageCounts.Data
+	}
+
+	attempted++
+	var volumeCounts base.ApiResponse[volumetypes.UsageCounts]
+	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, "/api/environments/0/volumes/counts", nil, &volumeCounts); err != nil {
+		errs = append(errs, err)
+	} else {
+		snapshot.VolumeUsageCounts = &volumeCounts.Data
 	}
 
 	attempted++

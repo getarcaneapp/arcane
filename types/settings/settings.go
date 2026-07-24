@@ -403,6 +403,11 @@ type Update struct {
 	// Required: false
 	OidcProviderLogoUrl *string `json:"oidcProviderLogoUrl,omitempty"`
 
+	// DefaultLandingPage is the route opened after signing in.
+	//
+	// Required: false
+	DefaultLandingPage *string `json:"defaultLandingPage,omitempty"`
+
 	// MobileNavigationMode is the navigation mode for mobile devices.
 	//
 	// Required: false

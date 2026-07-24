@@ -5,6 +5,7 @@
 	import settingsStore from '#lib/stores/config-store';
 	import { m } from '#lib/paraglide/messages';
 	import { navigationSettingsOverridesStore, resetNavigationVisibility } from '#lib/utils/navigation';
+	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config';
 	import { SettingsPageLayout } from '#lib/layouts';
 	import { Switch } from '#lib/components/ui/switch/index.js';
 	import { Input } from '#lib/components/ui/input/index.js';
@@ -31,6 +32,7 @@
 	const formSchema = z.object({
 		applicationTheme: z.enum(APPLICATION_THEME_VALUES),
 		iconCatalog: z.enum(['selfhst', 'dashboard-icons']),
+		defaultLandingPage: z.string(),
 		mobileNavigationMode: z.enum(['floating', 'docked']),
 		mobileNavigationShowLabels: z.boolean(),
 		sidebarHoverExpansion: z.boolean(),
@@ -76,7 +78,7 @@
 		restorePersistedAppearance();
 	});
 
-	function setLocalOverride(key: 'mode' | 'showLabels', value: any) {
+	function setLocalOverride(key: 'mode' | 'showLabels' | 'defaultLandingPage', value: any) {
 		const currentOverrides = navigationSettingsOverridesStore.current;
 		navigationSettingsOverridesStore.current = { ...currentOverrides, [key]: value };
 		persistedState = navigationSettingsOverridesStore.current;
@@ -104,6 +106,19 @@
 		} else {
 			setLocalOverride('mode', segment);
 		}
+	}
+
+	// Default Landing Page state
+	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
+	const landingValue = $derived.by(() => {
+		const current = persistedState.defaultLandingPage ?? currentSettings.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+		// A stale value (page removed, or a hand-edited setting) falls back to the
+		// dashboard rather than leaving the select showing a placeholder.
+		return landingPageOptions.some((option) => option.value === current) ? current : DEFAULT_LANDING_PAGE;
+	});
+
+	function handleLandingPageSelect(value: string) {
+		setLocalOverride('defaultLandingPage', value);
 	}
 
 	// Show Labels state
@@ -243,6 +258,25 @@
 					<!-- Time Format -->
 					<SettingsRow label={m.time_format()} description={m.time_format_description()} layout="inline">
 						<TimeFormatPicker id="appearanceTimeFormatPicker" />
+					</SettingsRow>
+
+					<!-- Default Landing Page -->
+					<SettingsRow
+						label={m.navigation_default_landing_page_label()}
+						description={m.navigation_default_landing_page_description()}
+						layout="inline"
+					>
+						<div class="w-56">
+							<SelectWithLabel
+								id="defaultLandingPage"
+								label={m.navigation_default_landing_page_label()}
+								hideLabel
+								value={landingValue}
+								disabled={isReadOnly}
+								options={landingPageOptions}
+								onValueChange={handleLandingPageSelect}
+							/>
+						</div>
 					</SettingsRow>
 
 					<!-- Theme -->

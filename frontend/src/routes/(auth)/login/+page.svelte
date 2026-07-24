@@ -7,6 +7,7 @@
 	import userStore from '#lib/stores/user-store';
 	import { m } from '#lib/paraglide/messages';
 	import { authService } from '#lib/services/auth-service';
+	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import { queryKeys } from '#lib/query/query-keys';
 	import { getApplicationLogo } from '#lib/utils/docker';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -47,7 +48,7 @@
 	const oidcLoginMutation = createMutation(() => ({
 		mutationFn: async () => {
 			error = null;
-			const currentRedirect = data.redirectTo || '/dashboard';
+			const currentRedirect = data.redirectTo || getEffectiveLandingPage();
 			await goto(`/oidc/login?redirect=${encodeURIComponent(currentRedirect)}`);
 		}
 	}));
@@ -57,7 +58,7 @@
 		onSuccess: async (user) => {
 			userStore.setUser(user);
 			await queryClient.invalidateQueries({ queryKey: queryKeys.auth.all });
-			const redirectTo = data.redirectTo || '/dashboard';
+			const redirectTo = data.redirectTo || getEffectiveLandingPage();
 			await goto(redirectTo, { replaceState: true });
 		},
 		onError: (err) => {
@@ -75,7 +76,7 @@
 	});
 
 	function handleOidcLogin() {
-		const currentRedirect = data.redirectTo || '/dashboard';
+		const currentRedirect = data.redirectTo || getEffectiveLandingPage();
 		oidcLoginMutation.mutate(undefined, {
 			onError: () => {
 				// Fallback to direct navigation when mutation fails unexpectedly

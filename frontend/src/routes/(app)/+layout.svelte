@@ -9,7 +9,11 @@
 	import OperationWatchDialog from '#lib/components/operation-watch-dialog.svelte';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
-	import { getEffectiveNavigationSettings, navigationSettingsOverridesStore } from '#lib/utils/navigation';
+	import {
+		getEffectiveLandingPage,
+		getEffectiveNavigationSettings,
+		navigationSettingsOverridesStore
+	} from '#lib/utils/navigation';
 	import { browser } from '$app/env';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { navigationItems, getManagementItems, filterByPermissions, type NavigationItem } from '#lib/config/navigation-config';
@@ -55,7 +59,8 @@
 			user,
 			currentEnvId,
 			permissionsManifest,
-			permissionsManifestLoadFailed
+			permissionsManifestLoadFailed,
+			getEffectiveLandingPage()
 		);
 		if (redirectPath) {
 			goto(redirectPath);
