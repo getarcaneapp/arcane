@@ -710,8 +710,17 @@ test.describe('New Compose Project Page', () => {
 			// The activity record is committed before the streamed response reaches EOF in
 			// the browser, so polling the API can beat the detail page's local state update.
 			// Reload from the completed server state before asserting the rendered action.
-			await page.reload();
-			await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+			// A transient 500 from any request in the reload's load chain lands on the app
+			// error page (rendered as the generic "Unable to connect to Docker daemon"
+			// message), which never recovers on its own — retry the reload instead of
+			// failing the test on a one-off backend blip under CI load.
+			await expect(async () => {
+				await page.reload();
+				await expect(page).toHaveURL(new RegExp(`/projects/${projectId}`));
+				await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible({
+					timeout: 10000
+				});
+			}).toPass({ timeout: 60000 });
 			await expect
 				.poll(async () => (await fetchProjectDetail(page, projectId))?.status, {
 					message: 'Expected project to still be running after reload',

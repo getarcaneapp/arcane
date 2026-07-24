@@ -89,7 +89,7 @@
 		switch (prereq.settingKey) {
 			case 'pollingEnabled':
 			case 'autoUpdate':
-				return `${envBase}?tab=docker`;
+				return `${envBase}?tab=jobs`;
 			case 'scheduledPruneEnabled':
 				return `${envBase}?tab=jobs`;
 			case 'vulnerabilityScanEnabled':
@@ -131,10 +131,10 @@
 	}
 
 	const categories = [
+		{ id: 'updates', label: m.updates() },
 		{ id: 'monitoring', label: m.jobs_monitoring_heading() },
 		{ id: 'maintenance', label: m.maintenance() },
 		{ id: 'security', label: m.security() },
-		{ id: 'updates', label: m.updates() },
 		{ id: 'sync', label: m.resource_sync_cap() },
 		{ id: 'telemetry', label: m.jobs_telemetry_heading() }
 	];
@@ -263,7 +263,7 @@
 		<Card.Header icon={JobsIcon}>
 			<div class="flex flex-col space-y-1.5">
 				<Card.Title>
-					<h2>{m.jobs_title()}</h2>
+					<h2>{m.automations()}</h2>
 				</Card.Title>
 				<Card.Description>{m.jobs_environment_scope_description()}</Card.Description>
 			</div>

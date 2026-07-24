@@ -10,7 +10,6 @@
 		ArrowRightIcon,
 		CreateFileIcon,
 		TrashIcon,
-		BoxIcon,
 		ProjectsIcon,
 		LayersIcon,
 		SettingsIcon,
@@ -1300,8 +1299,7 @@
 {#if project}
 	{#snippet archiveButton(compact: boolean)}
 		<ArcaneButton
-			action="base"
-			icon={BoxIcon}
+			action="archive"
 			size={compact ? 'icon' : undefined}
 			showLabel={!compact}
 			loading={isLoading.archiving}

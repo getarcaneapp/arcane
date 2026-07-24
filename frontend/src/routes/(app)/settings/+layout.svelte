@@ -20,7 +20,7 @@
 	let pageTitle = $derived.by(() => {
 		switch (currentPageName) {
 			case 'jobs':
-				return m.jobs_title();
+				return m.automations();
 			case 'docker':
 				return m.docker_title();
 			case 'authentication':
