@@ -136,59 +136,6 @@ func (s *ProjectService) composeRegistryAuthConfigsInternal(ctx context.Context)
 	return authConfigs
 }
 
-func (s *ProjectService) getPathMapperInternal(ctx context.Context) *projects.PathMapper {
-	configuredPath := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
-
-	var containerDir, hostDir string
-
-	// Handle mapping format: "container_path:host_path"
-	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 {
-		// Only treat as mapping if first part is absolute Linux path (not Windows drive)
-		if !projects.IsWindowsDrivePath(configuredPath) && strings.HasPrefix(parts[0], "/") {
-			containerDir = parts[0]
-			hostDir = parts[1]
-		}
-	}
-
-	if containerDir == "" {
-		containerDir = configuredPath
-	}
-
-	// Resolve container directory to absolute path
-	containerDirResolved, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
-	if err != nil {
-		slog.WarnContext(ctx, "unable to resolve container projects directory, using default", "error", err)
-		containerDirResolved = "/app/data/projects"
-	}
-
-	// Explicit "container:host" mapping: honor the user-declared prefix directly.
-	if strings.TrimSpace(hostDir) != "" {
-		hostDirResolved := filepath.Clean(strings.TrimSpace(hostDir))
-		pm := projects.NewPathMapper(containerDirResolved, hostDirResolved)
-		if !pm.IsNonMatchingMount() {
-			return nil
-		}
-		return pm
-	}
-
-	// Auto-discovery: resolve each bind-mount source against Arcane's real container
-	// mount table (longest-prefix match) so independently bind-mounted project
-	// directories map to their own host path instead of a single projects-root prefix.
-	if s.dockerService != nil {
-		if dockerCli, derr := s.dockerService.GetClient(ctx); derr == nil {
-			if mounts, merr := projects.GetCurrentContainerMounts(ctx, dockerCli); merr == nil && len(mounts) > 0 {
-				pm := projects.NewPathMapperFromMounts(mounts)
-				if !pm.IsNonMatchingMount() {
-					return nil
-				}
-				return pm
-			}
-		}
-	}
-
-	return nil
-}
-
 func (s *ProjectService) getProjectsDirectoryInternal(ctx context.Context) (string, error) {
 	projectsDirSetting := s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects")
 	projectsDir, err := projects.GetProjectsDirectory(ctx, strings.TrimSpace(projectsDirSetting))
@@ -495,7 +442,16 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 	}
 	projectsDirectory := s.getProjectsDirectoryOrDefaultInternal(ctx, cfg)
 
-	pathMapper := s.getPathMapperInternal(ctx)
+	var dockerClient *client.Client
+	if s.dockerService != nil {
+		dockerClient, _ = s.dockerService.GetClient(ctx)
+	}
+	pathMapper := projects.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		"/app/data/projects",
+		dockerClient,
+	)
 
 	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if loadErr != nil {
@@ -2818,7 +2774,16 @@ func (s *ProjectService) RestartProject(ctx context.Context, projectID string, s
 	cfg := s.settingsService.GetSettingsOrDefaults(ctx)
 	projectsDirectory := s.getProjectsDirectoryOrDefaultInternal(ctx, cfg)
 
-	pathMapper := s.getPathMapperInternal(ctx)
+	var dockerClient *client.Client
+	if s.dockerService != nil {
+		dockerClient, _ = s.dockerService.GetClient(ctx)
+	}
+	pathMapper := projects.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		"/app/data/projects",
+		dockerClient,
+	)
 
 	compProj, _, lerr := projects.LoadComposeProjectFromDir(ctx, proj.Path, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
 	if lerr != nil {
@@ -4906,7 +4871,16 @@ func (s *ProjectService) loadComposeMetadataForSyncInternal(ctx context.Context,
 		return meta, pErr
 	}
 
-	pathMapper := s.getPathMapperInternal(ctx)
+	var dockerClient *client.Client
+	if s.dockerService != nil {
+		dockerClient, _ = s.dockerService.GetClient(ctx)
+	}
+	pathMapper := projects.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		"/app/data/projects",
+		dockerClient,
+	)
 
 	autoInjectEnv := utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false)
 

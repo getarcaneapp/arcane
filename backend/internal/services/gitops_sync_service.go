@@ -26,6 +26,7 @@ import (
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/swarm"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
@@ -2310,7 +2311,16 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 		return 0, err
 	}
 
-	pathMapper := s.projectService.getPathMapperInternal(ctx)
+	var dockerClient *client.Client
+	if s.projectService.dockerService != nil {
+		dockerClient, _ = s.projectService.dockerService.GetClient(ctx)
+	}
+	pathMapper := projects.NewPathMapperForConfiguredDirectory(
+		ctx,
+		s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"),
+		"/app/data/projects",
+		dockerClient,
+	)
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 	project, err := projects.LoadComposeProjectLenient(

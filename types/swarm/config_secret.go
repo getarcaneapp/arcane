@@ -27,18 +27,8 @@ type ConfigCreateRequest struct {
 	Spec json.RawMessage `json:"spec" doc:"Config specification"`
 }
 
-type ConfigUpdateRequest struct {
-	Version uint64          `json:"version,omitempty"`
-	Spec    json.RawMessage `json:"spec" doc:"Updated config specification"`
-}
-
 type SecretCreateRequest struct {
 	Spec json.RawMessage `json:"spec" doc:"Secret specification"`
-}
-
-type SecretUpdateRequest struct {
-	Version uint64          `json:"version,omitempty"`
-	Spec    json.RawMessage `json:"spec" doc:"Updated secret specification"`
 }
 
 // NewConfigSummary converts a Docker swarm config into the API-facing ConfigSummary shape.
