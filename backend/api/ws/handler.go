@@ -25,7 +25,9 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/hostshell"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/system"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
@@ -49,6 +51,7 @@ type WebSocketHandler struct {
 	swarmService       *services.SwarmService
 	systemService      *services.SystemService
 	diagnosticsService *services.DiagnosticsService
+	hostShellService   *services.HostShellService
 	wsUpgrader         websocket.Upgrader
 	wsMetrics          *wshub.WebSocketMetrics
 	activeConnections  sync.Map
@@ -101,6 +104,15 @@ func getContextUserIDInternal(c *echo.Context) string {
 	if val := c.Get("userID"); val != nil {
 		if userID, ok := val.(string); ok {
 			return userID
+		}
+	}
+	return ""
+}
+
+func getContextUsernameInternal(c *echo.Context) string {
+	if val := c.Get("currentUser"); val != nil {
+		if user, ok := val.(*models.User); ok {
+			return user.Username
 		}
 	}
 	return ""
@@ -216,6 +228,7 @@ func NewWebSocketHandler(
 	swarmService *services.SwarmService,
 	systemService *services.SystemService,
 	diagnosticsService *services.DiagnosticsService,
+	hostShellService *services.HostShellService,
 	authMiddleware *middleware.AuthMiddleware,
 	cfg *config.Config,
 ) {
@@ -225,6 +238,7 @@ func NewWebSocketHandler(
 		swarmService:       swarmService,
 		systemService:      systemService,
 		diagnosticsService: diagnosticsService,
+		hostShellService:   hostShellService,
 		wsMetrics:          defaultWebSocketMetrics,
 		logStreams:         make(map[string]*wsLogStream),
 		cgroupCache:        cgroup.NewCache(cgroupCacheTTL),
@@ -896,6 +910,127 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 			return
 		}
 	}
+}
+
+// HostTerminal provides an interactive root shell on the Docker host itself,
+// via a privileged helper container that nsenters into PID 1's namespaces.
+// Unlike ContainerExec, this is gated pre-upgrade by the hostTerminalEnabled
+// setting (off by default) so a disabled host returns a real HTTP status
+// instead of an opaque WebSocket close.
+//
+//	@Summary		Open a root shell on the Docker host via WebSocket
+//	@Description	Interactive host-shell access over WebSocket. Disabled by default; requires the hostTerminalEnabled setting and the system:host-terminal permission.
+//	@Tags			WebSocket
+//	@Param			id		path	string	true	"Environment ID"
+//	@Param			shell	query	string	false	"Shell to execute"	default(/bin/sh)
+//	@Router			/api/environments/{id}/ws/system/terminal [get]
+func (h *WebSocketHandler) HostTerminal(c *echo.Context) error {
+	ctx := c.Request().Context()
+
+	if h.hostShellService == nil || !h.hostShellService.Enabled(ctx) {
+		return c.JSON(http.StatusForbidden, map[string]any{
+			"success": false,
+			"error":   "host terminal is disabled",
+			"code":    "HOST_TERMINAL_DISABLED",
+		})
+	}
+
+	shell := queryParamWithDefaultInternal(c, "shell", hostshell.DefaultShell)
+	actor := services.HostShellActor{
+		UserID:    stringPtrOrNilInternal(getContextUserIDInternal(c)),
+		Username:  stringPtrOrNilInternal(getContextUsernameInternal(c)),
+		ClientIP:  c.RealIP(),
+		UserAgent: c.Request().Header.Get("User-Agent"),
+	}
+
+	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	if err != nil {
+		return nil
+	}
+	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindHostTerminal, "host"))
+	defer h.wsMetrics.UnregisterConnection(connID)
+	defer func() {
+		if err := conn.Close(); err != nil {
+			slog.Debug("Failed to close host terminal websocket connection", "error", err)
+		}
+	}()
+
+	execCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+
+	const execPongWait = 60 * time.Second
+	_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
+		return nil
+	})
+	go h.pingExecConnInternal(execCtx, conn, execPongWait*9/10)
+
+	h.runHostTerminalInternal(execCtx, cancel, conn, shell, actor)
+	return nil
+}
+
+func stringPtrOrNilInternal(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
+}
+
+func (h *WebSocketHandler) runHostTerminalInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, shell string, actor services.HostShellActor) {
+	session, err := h.hostShellService.StartInteractive(ctx, services.StartInteractiveRequest{Shell: shell, Actor: actor})
+	if err != nil {
+		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error opening host terminal"))
+		_ = conn.WriteControl(websocket.CloseMessage,
+			websocket.FormatCloseMessage(hostTerminalCloseCodeInternal(err), err.Error()),
+			time.Now().Add(time.Second))
+		return
+	}
+	cleanup := h.hostShellCleanupFuncInternal(ctx, session)
+	defer cleanup()
+	h.watchHostShellContextInternal(ctx, session, cleanup)
+
+	done := make(chan struct{})
+	go h.pipeExecOutputInternal(ctx, conn, session.Stdout(), session.ID(), "host", done)
+	go h.pipeExecInputInternal(ctx, cancel, conn, session.Stdin(), session.ID(), "host")
+
+	<-done
+}
+
+// hostTerminalCloseCodeInternal maps a StartInteractive failure to a
+// WebSocket close code so the client can distinguish "this host can never
+// do this" (1008) from "try again later" (1013) from an infrastructure
+// failure (1011).
+func hostTerminalCloseCodeInternal(err error) int {
+	switch {
+	case errors.Is(err, services.ErrHostShellSessionLimit):
+		return websocket.CloseTryAgainLater
+	case errors.Is(err, services.ErrHostShellDisabled),
+		errors.Is(err, hostshell.ErrInvalidShell),
+		errors.Is(err, hostshell.ErrHostNotLinux),
+		errors.Is(err, hostshell.ErrDockerDesktop),
+		errors.Is(err, hostshell.ErrRootlessDaemon):
+		return websocket.ClosePolicyViolation
+	default:
+		return websocket.CloseInternalServerErr
+	}
+}
+
+func (h *WebSocketHandler) hostShellCleanupFuncInternal(ctx context.Context, session *services.HostShellSession) func() {
+	return func() {
+		slog.Debug("Cleaning up host shell session", "sessionID", session.ID(), "contextErr", ctx.Err())
+		cleanupCtx, cleanupCancel := context.WithTimeout(context.Background(), 30*time.Second)
+		defer cleanupCancel()
+		session.Close(cleanupCtx, "client_closed") //nolint:contextcheck
+	}
+}
+
+func (h *WebSocketHandler) watchHostShellContextInternal(ctx context.Context, session *services.HostShellSession, cleanup func()) {
+	go func() {
+		<-ctx.Done()
+		slog.Debug("Host shell context cancelled", "sessionID", session.ID())
+		cleanup()
+	}()
 }
 
 // ============================================================================

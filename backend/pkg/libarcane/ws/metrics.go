@@ -17,6 +17,7 @@ type WebSocketMetrics struct {
 	containerExec       atomic.Int64
 	systemStats         atomic.Int64
 	serviceLogsActive   atomic.Int64
+	hostTerminal        atomic.Int64
 	seq                 atomic.Uint64
 	mu                  sync.RWMutex
 	connections         map[string]systemtypes.WebSocketConnectionInfo
@@ -38,6 +39,7 @@ func (m *WebSocketMetrics) Snapshot() systemtypes.WebSocketMetricsSnapshot {
 		ContainerExec:       m.containerExec.Load(),
 		SystemStats:         m.systemStats.Load(),
 		ServiceLogsActive:   m.serviceLogsActive.Load(),
+		HostTerminal:        m.hostTerminal.Load(),
 	}
 }
 
@@ -100,5 +102,7 @@ func (m *WebSocketMetrics) applyDelta(kind string, delta int64) {
 		m.systemStats.Add(delta)
 	case systemtypes.WSKindServiceLogs:
 		m.serviceLogsActive.Add(delta)
+	case systemtypes.WSKindHostTerminal:
+		m.hostTerminal.Add(delta)
 	}
 }

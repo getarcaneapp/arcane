@@ -40,6 +40,7 @@ var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/containers/*/terminal",
 	"GET /api/environments/*/ws/projects/*/logs",
 	"GET /api/environments/*/ws/system/stats",
+	"GET /api/environments/*/ws/system/terminal",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
@@ -245,7 +246,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	}
 
 	// Remaining echo handlers (WebSocket/streaming)
-	ws.NewWebSocketHandler(apiGroup, deps.Project, deps.Container, deps.Swarm, deps.System, deps.Diagnostics, authMiddleware, cfg)
+	ws.NewWebSocketHandler(apiGroup, deps.Project, deps.Container, deps.Swarm, deps.System, deps.Diagnostics, deps.HostShell, authMiddleware, cfg)
 
 	// Register edge tunnel endpoint for manager to accept agent connections
 	// This is only registered when NOT in agent mode (i.e., running as manager)

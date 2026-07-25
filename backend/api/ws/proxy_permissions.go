@@ -28,6 +28,7 @@ func (h *WebSocketHandler) proxiedRoutes() []proxiedWSRoute {
 		{"/containers/:containerId/terminal", h.ContainerExec, authz.PermContainersExec},
 		{"/swarm/services/:serviceId/logs", h.ServiceLogs, authz.PermSwarmServicesLogs},
 		{"/system/stats", h.SystemStats, authz.PermSystemRead},
+		{"/system/terminal", h.HostTerminal, authz.PermSystemHostTerminal},
 	}
 }
 

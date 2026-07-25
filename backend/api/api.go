@@ -214,6 +214,7 @@ type HandlerDeps struct {
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
 	Variable          *services.VariableService
+	HostShell         *services.HostShellService
 }
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.

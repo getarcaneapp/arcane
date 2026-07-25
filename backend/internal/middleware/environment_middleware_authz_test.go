@@ -132,3 +132,32 @@ func TestProxyPermissionDeniedWSTerminalRequiresExec(t *testing.T) {
 		t.Fatal("expected WS terminal to be allowed with containers:exec")
 	}
 }
+
+// wsHostTerminalMatcher mirrors ws.AddProxiedPermissions for the host
+// terminal stream: the proxy computes the suffix "/ws/system/terminal" for a
+// forwarded WebSocket request, and the matcher requires system:host-terminal
+// for it — distinct from, and not implied by, containers:exec.
+func wsHostTerminalMatcher() *authz.PermissionMatcher {
+	m := authz.NewPermissionMatcher()
+	m.Add(http.MethodGet, "/ws/system/terminal", authz.PermSystemHostTerminal)
+	return m
+}
+
+func TestProxyPermissionDeniedWSHostTerminalRequiresHostTerminalPerm(t *testing.T) {
+	m := newProxyAuthzMiddleware(wsHostTerminalMatcher())
+
+	// A caller with full container exec still must not reach the host
+	// terminal stream without the separate host-terminal permission.
+	ps := authz.NewPermissionSet()
+	ps.AddEnv(proxyTestEnvID, authz.PermContainersExec, authz.PermSystemRead)
+
+	c := newProxyRequestContext(http.MethodGet, "/api/environments/"+proxyTestEnvID+"/ws/system/terminal")
+	if !m.proxyPermissionDenied(c, ps, proxyTestEnvID) {
+		t.Fatal("expected WS host terminal to be denied without system:host-terminal")
+	}
+
+	ps.AddEnv(proxyTestEnvID, authz.PermSystemHostTerminal)
+	if m.proxyPermissionDenied(c, ps, proxyTestEnvID) {
+		t.Fatal("expected WS host terminal to be allowed with system:host-terminal")
+	}
+}
