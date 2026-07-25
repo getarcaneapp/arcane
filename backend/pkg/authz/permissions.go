@@ -185,6 +185,12 @@ const (
 	PermSystemRead    = "system:read"
 	PermSystemPrune   = "system:prune"
 	PermSystemUpgrade = "system:upgrade"
+	// PermSystemHostTerminal gates opening an interactive root shell on the
+	// Docker host through a privileged helper container (nsenter into PID
+	// 1's namespaces). Equivalent to root on the host machine. Deliberately
+	// absent from every BuiltIn*Permissions() list below — it is seeded
+	// only into the Admin role via AllPermissions().
+	PermSystemHostTerminal = "system:host-terminal"
 
 	PermImageUpdatesRead  = "image-updates:read"
 	PermImageUpdatesCheck = "image-updates:check"

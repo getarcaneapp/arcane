@@ -63,6 +63,9 @@ var accessSurfacesInternal = []AccessSurface{
 	routeSurfaceInternal("route.environments.gitops", "/environments/{id}/gitops", "GitOps Syncs", AccessScopeModeSelectedEnvPlusGlobal, []string{PermGitOpsList, PermGitOpsRead}, 0),
 	routeSurfaceInternal("route.containers", "/containers", "Containers", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 20),
 	routeSurfaceInternal("route.containers.detail", "/containers/{containerId}", "Container", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersList, PermContainersRead}, 0),
+	// Gated on container exec, not system:host-terminal, so container-only
+	// users keep the page — the host target inside it is gated separately.
+	routeSurfaceInternal("route.terminal", "/terminal", "Terminal", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersExec}, 25),
 	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
 	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
 	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesBuild}, 0),

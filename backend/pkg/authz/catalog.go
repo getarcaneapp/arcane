@@ -201,6 +201,7 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"read", PermSystemRead, "Read", ""},
 		{"prune", PermSystemPrune, "Prune", ""},
 		{"upgrade", PermSystemUpgrade, "Trigger upgrade", ""},
+		{"host-terminal", PermSystemHostTerminal, "Host terminal", "Open a root shell on the Docker host through a privileged helper container. Equivalent to root on the host machine."},
 	}},
 	{"image-updates", "Image Updates", PermissionScopeEnv, []PermissionCatalogAction{
 		{"read", PermImageUpdatesRead, "Read", ""},
