@@ -40,6 +40,12 @@ var loggerSkipPatterns = []string{
 	"GET /api/environments/*/ws/containers/*/terminal",
 	"GET /api/environments/*/ws/projects/*/logs",
 	"GET /api/environments/*/ws/system/stats",
+	// Long-lived aggregate streams. The access log only fires when the stream
+	// ends, so it reports the full connection lifetime as request latency —
+	// which reads as a multi-minute hung request. The handlers log their own
+	// termination instead.
+	"GET /api/dashboard/stream",
+	"GET /api/activities/stream",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
