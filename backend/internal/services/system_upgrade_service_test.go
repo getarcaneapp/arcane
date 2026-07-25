@@ -14,7 +14,7 @@ import (
 	mounttypes "github.com/moby/moby/api/types/mount"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/stretchr/testify/require"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 // TestSystemUpgradeService_UpgradeFlag tests the upgrading flag behavior
@@ -171,14 +171,14 @@ func TestDetermineUpgradeBinaryPath(t *testing.T) {
 		{
 			name: "agent container uses agent binary",
 			labels: map[string]string{
-				libupdater.LabelArcaneAgent: "true",
+				labels.LabelArcaneAgent: "true",
 			},
 			want: "/app/arcane-agent",
 		},
 		{
 			name: "main container uses main binary",
 			labels: map[string]string{
-				libupdater.LabelArcane: "true",
+				labels.LabelArcane: "true",
 			},
 			want: "/app/arcane",
 		},

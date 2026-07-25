@@ -18,7 +18,7 @@ import (
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
-	"go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 	"golang.org/x/sync/errgroup"
 )
 

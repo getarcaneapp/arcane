@@ -47,7 +47,7 @@ import (
 	"github.com/samber/mo"
 	buildtypes "go.getarcane.app/builds/types"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 )
 
@@ -911,7 +911,7 @@ func (s *ProjectService) GetProjectServices(ctx context.Context, projectID strin
 			IconDarkURL:      resolvedIcon.IconDarkURL,
 			ServiceConfig:    svcConfig,
 			Labels:           c.Labels,
-			RedeployDisabled: libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
+			RedeployDisabled: labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr),
 		})
 		have[c.Service] = true
 	}
@@ -2347,7 +2347,7 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	for _, container := range lookupProjectContainers(proj, containersByProject) {
-		if libupdater.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
+		if labels.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
 			return true
 		}
 	}
@@ -4711,7 +4711,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 
 		containerName := dockerutil.ContainerNameFromNames(c.Names)
 
-		redeployDisabled := libupdater.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
+		redeployDisabled := labels.ShouldDisableArcaneServerRedeploy(c.Labels, c.ID, currentContainerID, currentContainerErr)
 		if redeployDisabled {
 			resp.RedeployDisabled = true
 		}

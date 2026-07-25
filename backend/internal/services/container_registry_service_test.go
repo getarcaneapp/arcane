@@ -677,7 +677,7 @@ func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *tes
 	defer cancel()
 	result := make(chan error, 1)
 	go func() {
-		_, err := svc.GetImageDigest(ctx, "registry.example.com/team/app:latest")
+		_, err := svc.ImageDigest(ctx, "registry.example.com/team/app:latest")
 		result <- err
 	}()
 

@@ -23,9 +23,9 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
-	moduleapi "go.getarcane.app/updater/api"
-	updaterlabels "go.getarcane.app/updater/pkg/labels"
-	moduletypes "go.getarcane.app/updater/types"
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/refs"
 )
 
 type fakeDockerClientProviderInternal struct {
@@ -54,10 +54,10 @@ func (f *fakeImagePullerInternal) PullImage(_ context.Context, imageRef string, 
 }
 
 type fakeRunRecorderInternal struct {
-	results []moduletypes.ResourceResult
+	results []updater.ResourceResult
 }
 
-func (f *fakeRunRecorderInternal) RecordUpdateRun(_ context.Context, result moduletypes.ResourceResult) error {
+func (f *fakeRunRecorderInternal) RecordUpdateRun(_ context.Context, result updater.ResourceResult) error {
 	f.results = append(f.results, result)
 	return nil
 }
@@ -77,16 +77,16 @@ func (f fakeUsedImageCollectorInternal) UsedImages(context.Context) (map[string]
 }
 
 type fakeProjectUpdaterInternal struct {
-	projects   map[string]moduletypes.ComposeProject
+	projects   map[string]updater.ComposeProject
 	updateErrs map[string]error
 	calls      []string
 }
 
-func (f *fakeProjectUpdaterInternal) ProjectByComposeName(_ context.Context, composeName string) (moduletypes.ComposeProject, error) {
+func (f *fakeProjectUpdaterInternal) ProjectByComposeName(_ context.Context, composeName string) (updater.ComposeProject, error) {
 	if project, ok := f.projects[composeName]; ok {
 		return project, nil
 	}
-	return moduletypes.ComposeProject{}, errors.New("project not found")
+	return updater.ComposeProject{}, errors.New("project not found")
 }
 
 func (f *fakeProjectUpdaterInternal) UpdateServices(_ context.Context, projectID string, services []string) error {
@@ -178,10 +178,10 @@ type mockSystemUpgradeServiceInternal struct {
 	triggerCalled  bool
 	triggerError   error
 	capturedUser   *models.User
-	capturedTarget *moduletypes.SelfUpdateTarget
+	capturedTarget *updater.SelfUpdateTarget
 }
 
-func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target moduletypes.SelfUpdateTarget) error {
+func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target updater.SelfUpdateTarget) error {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	m.capturedTarget = &target
@@ -191,7 +191,8 @@ func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Contex
 func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, svcErr)
 
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{DryRun: true})
 
@@ -204,32 +205,31 @@ func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {
 	assert.Empty(t, result.Items)
 }
 
+// Type and ResourceIds are Arcane-side scoping the engine never acted on;
+// ApplyPending handles a scoped request itself before reaching the engine.
 func TestUpdaterService_ModuleOptionsFromUpdaterOptionsInternal(t *testing.T) {
 	got := moduleOptionsFromUpdaterOptionsInternal(arcaneupdater.Options{
-		Type:        moduletypes.ResourceTypeImage,
+		Type:        string(updater.ResourceTypeImage),
 		ResourceIds: []string{"image-1", "image-2"},
 		ForceUpdate: true,
 		DryRun:      true,
 	})
 
-	assert.Equal(t, moduletypes.ResourceTypeImage, got.Type)
-	assert.Equal(t, []string{"image-1", "image-2"}, got.ResourceIDs)
-	assert.True(t, got.Force)
-	assert.True(t, got.DryRun)
+	assert.Equal(t, updater.Options{Force: true, DryRun: true}, got)
 }
 
 func TestUpdaterService_ResultFromModulePreservesRestartedInternal(t *testing.T) {
-	got := resultFromModuleInternal(&moduletypes.Result{
+	got := resultFromModuleInternal(&updater.Result{
 		Success:   true,
 		Checked:   2,
 		Updated:   1,
 		Restarted: 1,
-		Items: []moduletypes.ResourceResult{
+		Items: []updater.ResourceResult{
 			{
 				ResourceID:    "web-id",
 				ResourceName:  "web",
-				ResourceType:  moduletypes.ResourceTypeContainer,
-				Status:        moduletypes.StatusRestarted,
+				ResourceType:  updater.ResourceTypeContainer,
+				Status:        updater.StatusRestarted,
 				UpdateApplied: true,
 			},
 		},
@@ -247,10 +247,11 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("server label triggers upgrade with system user", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
-			updaterlabels.LabelArcane: "true",
+			labels.LabelArcane: "true",
 		})
 
 		require.NoError(t, err)
@@ -265,10 +266,11 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("agent label triggers upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane-agent", map[string]string{
-			updaterlabels.LabelArcaneAgent: "true",
+			labels.LabelArcaneAgent: "true",
 		})
 
 		require.NoError(t, err)
@@ -277,7 +279,8 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("non Arcane labels fail without triggering upgrade", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{}
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "demo", map[string]string{
 			"com.example.app": "demo",
@@ -289,10 +292,11 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 	})
 
 	t.Run("missing upgrade service reports required hook", func(t *testing.T) {
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
-			updaterlabels.LabelArcane: "true",
+			labels.LabelArcane: "true",
 		})
 
 		require.Error(t, err)
@@ -301,10 +305,11 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 
 	t.Run("upgrade errors are wrapped", func(t *testing.T) {
 		mockUpgrade := &mockSystemUpgradeServiceInternal{triggerError: errors.New("upgrade failed")}
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.TriggerSelfUpdateViaCLI(ctx, "test", "container-1", "arcane", map[string]string{
-			updaterlabels.LabelArcane: "true",
+			labels.LabelArcane: "true",
 		})
 
 		require.Error(t, err)
@@ -313,7 +318,8 @@ func TestUpdaterService_TriggerSelfUpdateViaCLIInternal(t *testing.T) {
 }
 
 func TestUpdaterService_StatusTrackingInternal(t *testing.T) {
-	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, svcErr)
 
 	stopContainer := svc.BeginContainerUpdate("container-1")
 	stopProject := svc.BeginProjectUpdate("project-a")
@@ -338,7 +344,8 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing docker service returns unavailable error", func(t *testing.T) {
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, svcErr)
 
 		cli, err := svc.DockerClient(ctx)
 
@@ -351,7 +358,8 @@ func TestUpdaterService_DockerClientAdapterInternal(t *testing.T) {
 		server := newProjectImagePullServer(t, nil)
 		wantClient := newTestDockerClient(t, server)
 		dockerSvc := &DockerClientService{client: wantClient}
-		svc := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, dockerSvc, nil, nil, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, svcErr)
 
 		gotClient, err := svc.DockerClient(ctx)
 
@@ -364,7 +372,8 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("missing image service returns unavailable error", func(t *testing.T) {
-		svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+		require.NoError(t, svcErr)
 
 		err := svc.PullImage(ctx, "registry.example.com/app:1.2.3", nil)
 
@@ -377,7 +386,8 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		server := newProjectImagePullServer(t, nil)
 		dockerSvc := &DockerClientService{client: newTestDockerClient(t, server)}
 		imageSvc := NewImageService(db, dockerSvc, nil, nil, nil, NewEventService(db, nil, nil))
-		svc := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, nil, nil, nil, nil, imageSvc, nil, nil, nil)
+		require.NoError(t, svcErr)
 		var progress bytes.Buffer
 
 		err := svc.PullImage(ctx, "nginx:latest", &progress)
@@ -408,7 +418,8 @@ func TestUpdaterService_PullImageAdapterInternal(t *testing.T) {
 		envSvc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
 		projectSvc := NewProjectService(db, nil, nil, nil, nil, nil, nil, nil, nil).
 			WithRegistryCredentialsProvider(envSvc.GetEnabledRegistryCredentials)
-		svc := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
+		svc, svcErr := NewUpdaterService(db, nil, dockerSvc, projectSvc, nil, nil, nil, imageSvc, nil, nil, nil)
+		require.NoError(t, svcErr)
 		var progress bytes.Buffer
 
 		err := svc.PullImage(ctx, imageRef, &progress)
@@ -451,7 +462,8 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 		UpdateType: models.UpdateTypeDigest,
 		CheckTime:  checkTime,
 	}).Error)
-	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, svcErr)
 
 	records, err := svc.PendingImageUpdates(ctx)
 
@@ -461,7 +473,7 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 	assert.Equal(t, "registry.example.com/team/app", records[0].Repository)
 	assert.Equal(t, "1.2.3", records[0].Tag)
 	assert.True(t, records[0].HasUpdate)
-	assert.Equal(t, moduletypes.UpdateTypeTag, records[0].UpdateType)
+	assert.Equal(t, updater.UpdateTypeTag, records[0].UpdateType)
 	assert.Equal(t, "1.2.3", records[0].CurrentVersion)
 	assert.Equal(t, &latest, records[0].LatestVersion)
 	assert.Equal(t, &currentDigest, records[0].CurrentDigest)
@@ -496,7 +508,8 @@ func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t
 
 	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
-	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:               "sha256:pending-unnotified",
@@ -526,7 +539,8 @@ func TestUpdaterService_PendingImageUpdatesNoProvidersLeavesUnnotifiedInternal(t
 
 	notif := NewNotificationService(db, nil, nil, nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
-	svc := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
+	require.NoError(t, svcErr)
 
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:               "sha256:pending-no-provider",
@@ -549,17 +563,18 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.AutoUpdateRecord{}))
-	svc := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	svc, svcErr := NewUpdaterService(db, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, svcErr)
 
-	err := svc.RecordUpdateRun(ctx, moduletypes.ResourceResult{
+	err := svc.RecordUpdateRun(ctx, updater.ResourceResult{
 		ResourceID:      "container-1",
 		ResourceName:    "web",
-		ResourceType:    moduletypes.ResourceTypeContainer,
-		Status:          moduletypes.StatusUpdated,
+		ResourceType:    updater.ResourceTypeContainer,
+		Status:          updater.StatusUpdated,
 		UpdateAvailable: true,
 		UpdateApplied:   true,
-		OldImages:       map[string]string{"main": "nginx:1.2.3"},
-		NewImages:       map[string]string{"main": "nginx:1.2.4"},
+		OldImage:        "nginx:1.2.3",
+		NewImage:        "nginx:1.2.4",
 		Details:         map[string]any{"source": "test"},
 	})
 
@@ -568,7 +583,7 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	require.NoError(t, db.First(&record, "resource_id = ?", "container-1").Error)
 	assert.Equal(t, "web", record.ResourceName)
 	assert.Equal(t, "container", record.ResourceType)
-	assert.Equal(t, models.AutoUpdateStatus(moduletypes.StatusUpdated), record.Status)
+	assert.Equal(t, models.AutoUpdateStatus(string(updater.StatusUpdated)), record.Status)
 	assert.True(t, record.UpdateAvailable)
 	assert.True(t, record.UpdateApplied)
 	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])
@@ -664,7 +679,7 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 	puller := &fakeImagePullerInternal{}
 	recorder := &fakeRunRecorderInternal{}
 	projectUpdater := &fakeProjectUpdaterInternal{
-		projects: map[string]moduletypes.ComposeProject{
+		projects: map[string]updater.ComposeProject{
 			"proj-fail":    {ID: "project-fail", Name: "proj-fail"},
 			"proj-success": {ID: "project-success", Name: "proj-success"},
 		},
@@ -673,26 +688,27 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 		},
 	}
 
-	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	svc.engine = moduleapi.NewService(moduleapi.Config{
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.NoError(t, svcErr)
+	engine, engineErr := updater.New(updater.Config{
 		DockerClientProvider: dockerProvider,
 		ImagePuller:          puller,
-		PendingStore: moduleapi.NewMemoryPendingStore(
-			moduletypes.ImageUpdateRecord{
+		PendingStore: updater.NewMemoryPendingStore(
+			updater.ImageUpdateRecord{
 				ID:             oldImageIDFailed,
 				Repository:     "registry.example.com/team/fail",
 				Tag:            "1.0.0",
 				HasUpdate:      true,
-				UpdateType:     moduletypes.UpdateTypeTag,
+				UpdateType:     updater.UpdateTypeTag,
 				CurrentVersion: "1.0.0",
 				LatestVersion:  ptr("1.0.1"),
 			},
-			moduletypes.ImageUpdateRecord{
+			updater.ImageUpdateRecord{
 				ID:             oldImageIDUpdated,
 				Repository:     "registry.example.com/team/success",
 				Tag:            "2.0.0",
 				HasUpdate:      true,
-				UpdateType:     moduletypes.UpdateTypeTag,
+				UpdateType:     updater.UpdateTypeTag,
 				CurrentVersion: "2.0.0",
 				LatestVersion:  ptr("2.0.1"),
 			},
@@ -704,8 +720,13 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 			oldRefFailed:  {},
 			oldRefUpdated: {},
 		}},
-		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
+		LabelPolicy: updater.DefaultLabelPolicy(),
 	})
+	require.NoError(t, engineErr)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
+	svc.engine = engine
 
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
 	require.NoError(t, err)
@@ -723,16 +744,16 @@ func TestUpdaterService_ApplyPending_ProjectFailureDoesNotBlockOtherProjectsInte
 		errorByResource[item.ResourceID] = item.Error
 	}
 
-	assert.Equal(t, moduletypes.StatusFailed, statusByResource["container-fail"])
+	assert.Equal(t, string(updater.StatusFailed), statusByResource["container-fail"])
 	assert.Contains(t, errorByResource["container-fail"], "project-level update failed")
-	assert.Equal(t, moduletypes.StatusUpdated, statusByResource["container-success"])
+	assert.Equal(t, string(updater.StatusUpdated), statusByResource["container-success"])
 
-	var recordedStatuses []string
+	var recordedStatuses []updater.ResourceStatus
 	for _, recorded := range recorder.results {
 		recordedStatuses = append(recordedStatuses, recorded.Status)
 	}
-	assert.Contains(t, recordedStatuses, moduletypes.StatusFailed)
-	assert.Contains(t, recordedStatuses, moduletypes.StatusUpdated)
+	assert.Contains(t, recordedStatuses, updater.StatusFailed)
+	assert.Contains(t, recordedStatuses, updater.StatusUpdated)
 }
 
 func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeInternal(t *testing.T) {
@@ -743,9 +764,9 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	oldImageID := "sha256:old-arcane"
 	newImageID := "sha256:new-arcane"
 	arcaneLabels := map[string]string{
-		"com.docker.compose.project":          "arcane",
-		"com.docker.compose.service":          "server",
-		updaterlabels.LabelArcaneLegacyServer: "true",
+		"com.docker.compose.project":   "arcane",
+		"com.docker.compose.service":   "server",
+		labels.LabelArcaneLegacyServer: "true",
 	}
 
 	containers := []container.Summary{
@@ -792,22 +813,23 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	dockerProvider := fakeDockerClientProviderInternal{client: newTestDockerClient(t, server)}
 	puller := &fakeImagePullerInternal{}
 	projectUpdater := &fakeProjectUpdaterInternal{
-		projects: map[string]moduletypes.ComposeProject{
+		projects: map[string]updater.ComposeProject{
 			"arcane": {ID: "project-arcane", Name: "arcane"},
 		},
 	}
 	mockUpgrade := &mockSystemUpgradeServiceInternal{}
 
-	svc := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
-	svc.engine = moduleapi.NewService(moduleapi.Config{
+	svc, svcErr := NewUpdaterService(nil, nil, nil, nil, nil, nil, nil, nil, nil, mockUpgrade, nil)
+	require.NoError(t, svcErr)
+	engine, engineErr := updater.New(updater.Config{
 		DockerClientProvider: dockerProvider,
 		ImagePuller:          puller,
-		PendingStore: moduleapi.NewMemoryPendingStore(moduletypes.ImageUpdateRecord{
+		PendingStore: updater.NewMemoryPendingStore(updater.ImageUpdateRecord{
 			ID:             oldImageID,
 			Repository:     "ghcr.io/getarcaneapp/arcane",
 			Tag:            "1.0.0",
 			HasUpdate:      true,
-			UpdateType:     moduletypes.UpdateTypeTag,
+			UpdateType:     updater.UpdateTypeTag,
 			CurrentVersion: "1.0.0",
 			LatestVersion:  ptr("1.0.1"),
 		}),
@@ -817,8 +839,13 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 		UsedImageCollector: fakeUsedImageCollectorInternal{images: map[string]struct{}{
 			oldRef: {},
 		}},
-		LabelPolicy: updaterlabels.DefaultLabelPolicy(),
+		LabelPolicy: updater.DefaultLabelPolicy(),
 	})
+	require.NoError(t, engineErr)
+	t.Cleanup(func() {
+		require.NoError(t, engine.Close())
+	})
+	svc.engine = engine
 
 	result, err := svc.ApplyPending(ctx, arcaneupdater.Options{})
 	require.NoError(t, err)
@@ -827,36 +854,34 @@ func TestUpdaterService_ApplyPending_RoutesLegacyArcaneServerThroughSelfUpgradeI
 	assert.Empty(t, projectUpdater.calls, "legacy Arcane server should not be updated through project services")
 }
 
-func TestResolvePullableImageRefInternal(t *testing.T) {
+// The engine picks the reference Arcane's updates are applied to, so its choice
+// is worth pinning here as well as in the library.
+func TestPullableImageRefInternal(t *testing.T) {
 	tests := []struct {
-		name           string
-		summaryImage   string
-		inspectImage   string
-		repoTags       []string
-		expectedRef    string
-		expectedSource string
+		name         string
+		summaryImage string
+		inspectImage string
+		repoTags     []string
+		expectedRef  string
 	}{
 		{
-			name:           "inspect config image wins",
-			summaryImage:   "nginx:latest",
-			inspectImage:   "registry.example.com/nginx:stable",
-			expectedRef:    "registry.example.com/nginx:stable",
-			expectedSource: "container_inspect_config",
+			name:         "inspect config image wins",
+			summaryImage: "nginx:latest",
+			inspectImage: "registry.example.com/nginx:stable",
+			expectedRef:  "registry.example.com/nginx:stable",
 		},
 		{
-			name:           "summary image used when inspect is image ID",
-			summaryImage:   "redis:7",
-			inspectImage:   "sha256:abcdef",
-			expectedRef:    "redis:7",
-			expectedSource: "container_summary",
+			name:         "summary image used when inspect is image ID",
+			summaryImage: "redis:7",
+			inspectImage: "sha256:abcdef",
+			expectedRef:  "redis:7",
 		},
 		{
-			name:           "repo tag fallback skips none tag",
-			summaryImage:   "sha256:abcdef",
-			inspectImage:   "sha256:abcdef",
-			repoTags:       []string{"<none>:<none>", "postgres:16"},
-			expectedRef:    "postgres:16",
-			expectedSource: "image_repo_tag",
+			name:         "repo tag fallback skips none tag",
+			summaryImage: "sha256:abcdef",
+			inspectImage: "sha256:abcdef",
+			repoTags:     []string{"<none>:<none>", "postgres:16"},
+			expectedRef:  "postgres:16",
 		},
 		{
 			name:         "no pullable ref",
@@ -868,9 +893,7 @@ func TestResolvePullableImageRefInternal(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gotRef, gotSource := moduleapi.ResolvePullableImageRef(tt.summaryImage, tt.inspectImage, tt.repoTags)
-			assert.Equal(t, tt.expectedRef, gotRef)
-			assert.Equal(t, tt.expectedSource, gotSource)
+			assert.Equal(t, tt.expectedRef, refs.PullableImageRef(tt.summaryImage, tt.inspectImage, tt.repoTags))
 		})
 	}
 }

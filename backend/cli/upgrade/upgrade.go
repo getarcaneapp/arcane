@@ -19,8 +19,7 @@ import (
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"go.getarcane.app/sys/cgroup"
-	updaterlabels "go.getarcane.app/updater/pkg/labels"
-	updaterlogs "go.getarcane.app/updater/pkg/logs"
+	"go.getarcane.app/updater/labels"
 )
 
 var (
@@ -60,16 +59,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
-	logFile, err := updaterlogs.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
-	} else if logFile != nil {
-		defer func() {
-			if err := logFile.Close(); err != nil {
-				slog.Warn("Failed to close upgrade log file", "error", err)
-			}
-		}()
-		slog.Info("Upgrade log file created")
+	} else {
+		slog.Info("Upgrade log file created", "path", logFile.Name())
 	}
 
 	// Connect to Docker
@@ -152,20 +146,20 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		labels := map[string]string{}
+		containerLabels := map[string]string{}
 		if inspect.Config != nil && inspect.Config.Labels != nil {
-			labels = inspect.Config.Labels
+			containerLabels = inspect.Config.Labels
 		}
 
 		// New label: com.getarcaneapp.arcane=true
-		if updaterlabels.IsArcaneContainer(labels) {
+		if labels.IsArcaneContainer(containerLabels) {
 			slog.Info("Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
 
 		// Legacy label (pre-migration): com.getarcaneapp.arcane.server=true
 		// NOTE: older agent images also used this label, so we must additionally exclude AGENT_MODE=true.
-		if isLegacyServerLabel(labels) {
+		if isLegacyServerLabel(containerLabels) {
 			slog.Info("Found Arcane container by legacy label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
@@ -180,29 +174,29 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 	return container.InspectResponse{}, errors.New("no running Arcane container found")
 }
 
-func isLegacyServerLabel(labels map[string]string) bool {
-	if labels == nil {
+func isLegacyServerLabel(containerLabels map[string]string) bool {
+	if containerLabels == nil {
 		return false
 	}
-	for k, v := range labels {
-		if strings.EqualFold(k, updaterlabels.LabelArcaneLegacyServer) {
+	for k, v := range containerLabels {
+		if strings.EqualFold(k, labels.LabelArcaneLegacyServer) {
 			return strings.EqualFold(strings.TrimSpace(v), "true")
 		}
 	}
 	return false
 }
 
-func normalizeRecreatedArcaneLabelsInternal(labels map[string]string) map[string]string {
-	normalized := maps.Clone(labels)
+func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) map[string]string {
+	normalized := maps.Clone(containerLabels)
 	if normalized == nil {
 		return nil
 	}
-	if updaterlabels.IsArcaneContainer(labels) || isLegacyServerLabel(labels) {
-		normalized[updaterlabels.LabelArcane] = "true"
+	if labels.IsArcaneContainer(containerLabels) || isLegacyServerLabel(containerLabels) {
+		normalized[labels.LabelArcane] = "true"
 	}
-	if updaterlabels.IsArcaneAgentContainer(labels) {
-		normalized[updaterlabels.LabelArcaneAgent] = "true"
-		normalized[updaterlabels.LabelArcane] = "true"
+	if labels.IsArcaneAgentContainer(containerLabels) {
+		normalized[labels.LabelArcaneAgent] = "true"
+		normalized[labels.LabelArcane] = "true"
 	}
 	return normalized
 }

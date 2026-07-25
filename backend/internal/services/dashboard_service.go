@@ -20,7 +20,7 @@ import (
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 const defaultDashboardAPIKeyExpiryWindow = 14 * 24 * time.Hour
@@ -90,7 +90,7 @@ func (s *DashboardService) GetSnapshot(ctx context.Context, options DashboardAct
 	} else {
 		for _, container := range filteredContainers {
 			summary := containertypes.NewSummary(container)
-			summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+			summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 			containerItems = append(containerItems, summary)
 		}
 	}

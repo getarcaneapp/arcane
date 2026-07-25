@@ -27,8 +27,8 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
-	updaterdigest "go.getarcane.app/updater/pkg/digest"
-	updaterrefs "go.getarcane.app/updater/pkg/refs"
+	"go.getarcane.app/updater/digest"
+	"go.getarcane.app/updater/refs"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
 )
@@ -101,9 +101,9 @@ func (s *ImageUpdateService) dockerClientInternal(ctx context.Context) (*client.
 }
 
 func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) (map[string]struct{}, error) {
-	refs := make(map[string]struct{})
+	buildRefs := make(map[string]struct{})
 	if s == nil || s.db == nil {
-		return refs, nil
+		return buildRefs, nil
 	}
 
 	var projectRows []models.Project
@@ -119,14 +119,14 @@ func (s *ImageUpdateService) composeBuildImageRefsInternal(ctx context.Context) 
 			continue
 		}
 		for _, imageRef := range projectspkg.ParseImageRefsJSON(*projectRows[i].BuildImageRefsJSON) {
-			normalized := updaterrefs.NormalizeImageUpdateRef(imageRef)
+			normalized := refs.NormalizeImageUpdateRef(imageRef)
 			if normalized != "" {
-				refs[normalized] = struct{}{}
+				buildRefs[normalized] = struct{}{}
 			}
 		}
 	}
 
-	return refs, nil
+	return buildRefs, nil
 }
 
 func (s *ImageUpdateService) startImageUpdateActivityInternal(ctx context.Context, resourceName string, count int) string {
@@ -348,7 +348,7 @@ func (s *ImageUpdateService) resolveNotifiedImageIDInternal(ctx context.Context,
 
 func digestPinnedImageUpdateResultInternal(imageRef string) mo.Option[*imageupdate.Response] {
 	imageRef = strings.TrimSpace(imageRef)
-	pinnedDigest, ok := updaterdigest.FromReferenceSuffix(imageRef)
+	pinnedDigest, ok := digest.FromReferenceSuffix(imageRef)
 	if !ok {
 		return mo.None[*imageupdate.Response]()
 	}
@@ -486,7 +486,7 @@ func (s *ImageUpdateService) parseImageReference(imageRef string) *ImageParts {
 // Fallback parser for cases where the official parser fails
 func (s *ImageUpdateService) parseImageReferenceFallback(imageRef string) *ImageParts {
 	var registryHost, repository, tag string
-	if _, ok := updaterdigest.FromReferenceSuffix(imageRef); ok {
+	if _, ok := digest.FromReferenceSuffix(imageRef); ok {
 		digestParts := strings.Split(imageRef, "@")
 		if len(digestParts) != 2 {
 			return nil
@@ -665,7 +665,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			digest, ok := updaterdigest.FromReferenceSuffix(repoDigest)
+			digest, ok := digest.FromReferenceSuffix(repoDigest)
 			if !ok {
 				continue
 			}
@@ -685,7 +685,7 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 		primaryDigest = inspectResponse.ID
 		allDigests = []string{primaryDigest}
 	}
-	if normalizedRef := updaterrefs.NormalizeImageUpdateRef(imageRef); normalizedRef != "" {
+	if normalizedRef := refs.NormalizeImageUpdateRef(imageRef); normalizedRef != "" {
 		_, isComposeBuild := composeBuildRefs[normalizedRef]
 		isLocalBuild = isLocalBuild || isComposeBuild
 	}
@@ -1332,7 +1332,7 @@ func (s *ImageUpdateService) recordInitialBatchResultsInternal(ctx context.Conte
 		if strings.TrimSpace(result.Error) != "" {
 			continue
 		}
-		if _, ok := updaterdigest.FromReferenceSuffix(imageRef); !ok {
+		if _, ok := digest.FromReferenceSuffix(imageRef); !ok {
 			continue
 		}
 

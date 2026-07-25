@@ -26,7 +26,7 @@ import (
 	"go.getarcane.app/docker/convert"
 	converttypes "go.getarcane.app/docker/convert/types"
 	"go.getarcane.app/sys/cgroup"
-	updatertypes "go.getarcane.app/updater/types"
+	"go.getarcane.app/updater"
 )
 
 // SystemHandler handles system management endpoints.
@@ -504,7 +504,7 @@ func (h *SystemHandler) TriggerUpgrade(ctx context.Context, input *TriggerUpgrad
 
 	slog.Info("System upgrade triggered", "user", user.Username, "userId", user.ID)
 
-	err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updatertypes.SelfUpdateTarget{})
+	err = h.upgradeService.TriggerUpgradeViaCLI(ctx, *user, updater.SelfUpdateTarget{})
 	if err != nil {
 		slog.Error("System upgrade failed", "error", err, "user", user.Username)
 

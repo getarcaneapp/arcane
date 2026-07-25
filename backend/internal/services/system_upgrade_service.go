@@ -21,16 +21,16 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
-	vuln "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/vuln"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/getarcaneapp/arcane/types/v2/version"
-	containertypes "github.com/moby/moby/api/types/container"
-	mounttypes "github.com/moby/moby/api/types/mount"
+	"github.com/moby/moby/api/types/container"
+	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/client"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
-	updatertypes "go.getarcane.app/updater/types"
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/labels"
 )
 
 const defaultArcaneUpgraderImageInternal = "ghcr.io/getarcaneapp/arcane:latest"
@@ -47,8 +47,8 @@ type SystemUpgradeService struct {
 
 type upgraderRuntimeOptionsInternal struct {
 	ContainerEnv []string
-	Mounts       []mounttypes.Mount
-	NetworkMode  containertypes.NetworkMode
+	Mounts       []mount.Mount
+	NetworkMode  container.NetworkMode
 }
 
 func NewSystemUpgradeService(
@@ -94,7 +94,7 @@ func (s *SystemUpgradeService) CanUpgrade(ctx context.Context) (bool, error) {
 // This avoids self-termination issues by running the upgrade from outside.
 // A zero-value target upgrades the current container to its own image tag;
 // the updater engine passes an explicit target with the resolved new image.
-func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updatertypes.SelfUpdateTarget) error {
+func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) error {
 	if !s.upgrading.CompareAndSwap(false, true) {
 		return common.Classify(common.ErrUpgradeInProgress, errors.New("an upgrade is already in progress"))
 	}
@@ -214,7 +214,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		upgradeCmd = append(upgradeCmd, "--image", targetImage)
 	}
 
-	config := &containertypes.Config{
+	config := &container.Config{
 		Image: upgraderImage,
 		Cmd:   upgradeCmd,
 		// The upgrader needs root for the Docker socket; unlike the server it
@@ -228,7 +228,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		},
 	}
 
-	mounts := append([]mounttypes.Mount{}, runtimeOptions.Mounts...)
+	mounts := append([]mount.Mount{}, runtimeOptions.Mounts...)
 	if appDataMount != nil {
 		mounts = append(mounts, *appDataMount)
 	}
@@ -238,7 +238,7 @@ func (s *SystemUpgradeService) TriggerUpgradeViaCLI(ctx context.Context, user mo
 		slog.Info("Keeping upgrader container after exit (ARCANE_UPGRADE_KEEP_CONTAINER=true)")
 	}
 
-	hostConfig := &containertypes.HostConfig{
+	hostConfig := &container.HostConfig{
 		AutoRemove:  !keepUpgraderContainer, // default: clean up after completion
 		Mounts:      mounts,
 		NetworkMode: runtimeOptions.NetworkMode,
@@ -299,8 +299,8 @@ func daemonHasSELinuxEnabledInternal(ctx context.Context, dockerClient *client.C
 	return slices.Contains(infoResult.Info.SecurityOptions, "name=selinux")
 }
 
-func determineUpgradeBinaryPathInternal(labels map[string]string) string {
-	if libupdater.IsArcaneAgentContainer(labels) {
+func determineUpgradeBinaryPathInternal(containerLabels map[string]string) string {
+	if labels.IsArcaneAgentContainer(containerLabels) {
 		return "/app/arcane-agent"
 	}
 
@@ -310,7 +310,7 @@ func determineUpgradeBinaryPathInternal(labels map[string]string) string {
 func resolveSystemUpgraderRuntimeOptionsInternal(
 	ctx context.Context,
 	dockerHost string,
-	currentContainer *containertypes.InspectResponse,
+	currentContainer *container.InspectResponse,
 	discoverHostPath func(context.Context, string) (string, error),
 	isRunningInDocker func() bool,
 ) (upgraderRuntimeOptionsInternal, error) {
@@ -324,7 +324,7 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 	}
 
 	if scheme != "unix" {
-		options.NetworkMode = containertypes.NetworkMode(selectTrivyAutoNetworkModeInternal(currentContainer))
+		options.NetworkMode = container.NetworkMode(selectTrivyAutoNetworkModeInternal(currentContainer))
 		return options, nil
 	}
 
@@ -338,8 +338,8 @@ func resolveSystemUpgraderRuntimeOptionsInternal(
 		return upgraderRuntimeOptionsInternal{}, errors.WrapIf(err, "resolve unix socket source")
 	}
 
-	options.Mounts = append(options.Mounts, mounttypes.Mount{
-		Type:   mounttypes.TypeBind,
+	options.Mounts = append(options.Mounts, mount.Mount{
+		Type:   mount.TypeBind,
 		Source: socketSource,
 		Target: socketPath,
 	})
@@ -357,16 +357,16 @@ func (s *SystemUpgradeService) getCurrentContainerIDInternal() (string, error) {
 }
 
 // findArcaneContainer finds the container using the ID
-func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, containerId string) (containertypes.InspectResponse, error) {
+func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, containerId string) (container.InspectResponse, error) {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
-		return containertypes.InspectResponse{}, err
+		return container.InspectResponse{}, err
 	}
 
 	// Try to inspect the container directly
-	container, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
+	inspectResult, err := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerId, client.ContainerInspectOptions{})
 	if err == nil {
-		return container.Container, nil
+		return inspectResult.Container, nil
 	}
 
 	// Fallback: search for containers with arcane image
@@ -378,14 +378,14 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 		Filters: filter,
 	})
 	if err != nil {
-		return containertypes.InspectResponse{}, err
+		return container.InspectResponse{}, err
 	}
 
 	for _, c := range containers.Items {
 		if strings.HasPrefix(c.ID, containerId) {
 			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
-				return containertypes.InspectResponse{}, inspectErr
+				return container.InspectResponse{}, inspectErr
 			}
 			return inspect.Container, nil
 		}
@@ -394,20 +394,20 @@ func (s *SystemUpgradeService) findArcaneContainerInternal(ctx context.Context, 
 	// Try without filter - search all containers
 	allContainers, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true})
 	if err != nil {
-		return containertypes.InspectResponse{}, err
+		return container.InspectResponse{}, err
 	}
 
 	for _, c := range allContainers.Items {
 		if strings.HasPrefix(c.ID, containerId) || c.ID == containerId {
 			inspect, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, c.ID, client.ContainerInspectOptions{})
 			if inspectErr != nil {
-				return containertypes.InspectResponse{}, inspectErr
+				return container.InspectResponse{}, inspectErr
 			}
 			return inspect.Container, nil
 		}
 	}
 
-	return containertypes.InspectResponse{}, common.Classify(common.ErrNotFound, errors.
+	return container.InspectResponse{}, common.Classify(common.ErrNotFound, errors.
 
 		// --- Fleet-wide "update all environments" orchestration ---
 		//
@@ -621,7 +621,7 @@ func (s *SystemUpgradeService) runAgentsPhaseInternal(ctx context.Context, jobID
 		slog.WarnContext(ctx, "update-all: failed to persist pending_restart before manager upgrade", "jobId", job.ID, "error", err)
 	}
 
-	if err := s.TriggerUpgradeViaCLI(ctx, user, updatertypes.SelfUpdateTarget{}); err != nil {
+	if err := s.TriggerUpgradeViaCLI(ctx, user, updater.SelfUpdateTarget{}); err != nil {
 		// Agents already ran and no restart is coming, so finalize now. This flips
 		// the manager's updating row to failed with the reason.
 		s.markUpdateAllFailedInternal(ctx, job, fmt.Sprintf("manager upgrade trigger failed: %v", err))
