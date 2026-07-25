@@ -141,3 +141,62 @@ func TestAuthMiddleware_ManagerAuthAcceptsEnvironmentAccessTokenViaAPIKey(t *tes
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.Contains(t, rec.Body.String(), "environment:env-self")
 }
+
+func TestAgentAuth_WithoutActorHeaders_AttributesToAgentServiceAccount(t *testing.T) {
+	router := echo.New()
+	router.Use(NewAuthMiddleware(nil, &config.Config{AgentMode: true, AgentToken: "agent-secret"}).Add())
+	router.GET("/secure", func(c *echo.Context) error {
+		user, ok := c.Get("currentUser").(*models.User)
+		require.True(t, ok)
+		require.Equal(t, "agent", user.ID)
+		require.Equal(t, "agent", user.Username)
+
+		ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
+		require.True(t, ok)
+		require.True(t, ps.Sudo)
+
+		return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+	req.Header.Set("X-Arcane-Agent-Token", "agent-secret")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}
+
+// TestAgentAuth_WithActorHeaders_AttributesToForwardedHuman covers the
+// actor-attribution fix: a request the manager proxied on behalf of an
+// authenticated human must be attributed to that human on the agent, not to
+// the agent's own service account — while still authorizing as Sudo, since
+// the agent performs no authorization of its own and trusts the manager's
+// permission check entirely.
+func TestAgentAuth_WithActorHeaders_AttributesToForwardedHuman(t *testing.T) {
+	router := echo.New()
+	router.Use(NewAuthMiddleware(nil, &config.Config{AgentMode: true, AgentToken: "agent-secret"}).Add())
+	router.GET("/secure", func(c *echo.Context) error {
+		user, ok := c.Get("currentUser").(*models.User)
+		require.True(t, ok)
+		require.Equal(t, "user-42", user.ID)
+		require.Equal(t, "alice", user.Username)
+		require.Equal(t, "user-42", c.Get("userID"))
+
+		ps, ok := c.Get("userPermissions").(*authz.PermissionSet)
+		require.True(t, ok)
+		require.True(t, ps.Sudo, "authorization must remain Sudo regardless of actor attribution")
+
+		return c.JSON(http.StatusOK, map[string]any{"userId": user.ID})
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/secure", nil)
+	req.Header.Set("X-Arcane-Agent-Token", "agent-secret")
+	req.Header.Set("X-Arcane-Actor-Id", "user-42")
+	req.Header.Set("X-Arcane-Actor-Username", "alice")
+	rec := httptest.NewRecorder()
+
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+}

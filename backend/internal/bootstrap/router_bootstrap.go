@@ -111,6 +111,15 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 		return ps
 	}
+	// setActorContext records the authenticated human on c so
+	// EnvironmentMiddleware can forward their identity to the remote agent
+	// for audit attribution, mirroring what the local auth middleware sets
+	// for non-proxied requests.
+	setActorContext := func(c *echo.Context, user *models.User) {
+		c.Set("userID", user.ID)
+		c.Set("currentUser", user)
+	}
+
 	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
 		req := c.Request()
 		// Check for API key authentication
@@ -121,6 +130,7 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 				if key != nil && key.Kind != models.ApiKeyKindPersonal {
 					return resolveKey(ctx, key.ID), true
 				}
+				setActorContext(c, user)
 				return resolveUser(ctx, user), true
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
@@ -147,6 +157,7 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		if err != nil || user == nil {
 			return nil, false
 		}
+		setActorContext(c, user)
 		return resolveUser(ctx, user), true
 	}
 }

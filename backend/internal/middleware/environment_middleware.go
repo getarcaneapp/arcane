@@ -14,9 +14,11 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
@@ -153,6 +155,12 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 		})
 	}
 
+	// Stamp the manager's authenticated human user onto the forwarded
+	// request so the agent can attribute audit events to them instead of
+	// its own service account. Applies uniformly before any proxy path
+	// (tunnel, direct WS, direct HTTP) so none of them can be missed.
+	m.setProxyActorHeadersInternal(c)
+
 	isEdgeEnvironment := isEdgeEnvironmentURLInternal(apiURL)
 
 	if handled, err := m.proxyActiveEdgeTunnelInternal(c, envID, accessToken); handled {
@@ -248,6 +256,45 @@ func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c *echo.Context, 
 		c.Request().Header.Set(edge.HeaderAgentToken, *accessToken)
 		c.Request().Header.Set(edge.HeaderAPIKey, *accessToken)
 	}
+}
+
+// setProxyActorHeadersInternal stamps X-Arcane-Actor-Id/-Username onto the
+// outgoing request from the manager's own auth resolution (the "userID"/
+// "currentUser" context keys createAuthValidatorInternal sets, mirroring
+// what the local auth middleware sets for non-proxied requests). The
+// headers are deleted first, unconditionally, so a client cannot forge them
+// by sending its own values before this middleware runs — only the
+// manager's own resolved identity can populate them.
+func (m *EnvironmentMiddleware) setProxyActorHeadersInternal(c *echo.Context) {
+	c.Request().Header.Del(pkgutils.HeaderActorUserID)
+	c.Request().Header.Del(pkgutils.HeaderActorUsername)
+
+	userID := contextUserIDInternal(c)
+	if userID == "" {
+		return
+	}
+	c.Request().Header.Set(pkgutils.HeaderActorUserID, userID)
+	if username := contextUsernameInternal(c); username != "" {
+		c.Request().Header.Set(pkgutils.HeaderActorUsername, username)
+	}
+}
+
+func contextUserIDInternal(c *echo.Context) string {
+	if val := c.Get("userID"); val != nil {
+		if userID, ok := val.(string); ok {
+			return userID
+		}
+	}
+	return ""
+}
+
+func contextUsernameInternal(c *echo.Context) string {
+	if val := c.Get("currentUser"); val != nil {
+		if user, ok := val.(*models.User); ok {
+			return user.Username
+		}
+	}
+	return ""
 }
 
 func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c *echo.Context, tunnel *edge.AgentTunnel, envID string) error {

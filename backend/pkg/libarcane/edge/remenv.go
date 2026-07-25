@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 
+	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	"github.com/labstack/echo/v5"
 )
@@ -72,6 +74,19 @@ func BuildWebSocketHeaders(c *echo.Context, accessToken *string) http.Header {
 	if headers.Get(HeaderAuthorization) == "" && headers.Get(HeaderAPIKey) == "" {
 		if cookies := req.Header.Get(HeaderCookie); cookies != "" {
 			headers.Set(HeaderCookie, cookies)
+		}
+	}
+
+	// Forward the actor identity EnvironmentMiddleware stamped onto the
+	// request so the agent can attribute audit events to the human who
+	// made the request, not its own service account. Safe to forward
+	// as-is: EnvironmentMiddleware strips and re-sets these from its own
+	// auth resolution before this ever runs, so no client-supplied value
+	// survives to here.
+	if actorID := req.Header.Get(pkgutils.HeaderActorUserID); actorID != "" {
+		headers.Set(pkgutils.HeaderActorUserID, actorID)
+		if actorUsername := req.Header.Get(pkgutils.HeaderActorUsername); actorUsername != "" {
+			headers.Set(pkgutils.HeaderActorUsername, actorUsername)
 		}
 	}
 

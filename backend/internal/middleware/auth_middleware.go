@@ -342,6 +342,22 @@ func agentSudoInternal(c *echo.Context) {
 	c.Set(echoCtxKeyCurrentUser, agentUser)
 	c.Set(echoCtxKeyUserPermissions, authz.SudoPermissionSet())
 	c.Set(echoCtxKeyAuthMethod, "agent_token")
+
+	// A request the manager proxied on behalf of an authenticated human
+	// carries that identity in these headers (see setProxyContextHeadersInternal
+	// in environment_middleware.go, which strips them from the inbound
+	// request before setting them, so a client cannot forge them).
+	// Authorization is unaffected — the Sudo permission set above still
+	// applies either way — but audit events/logs should attribute the
+	// action to the human, not the agent's own service account.
+	if actorID := c.Request().Header.Get(pkgutils.HeaderActorUserID); actorID != "" {
+		actorUser := &models.User{
+			BaseModel: models.BaseModel{ID: actorID},
+			Username:  c.Request().Header.Get(pkgutils.HeaderActorUsername),
+		}
+		c.Set(echoCtxKeyUserID, actorUser.ID)
+		c.Set(echoCtxKeyCurrentUser, actorUser)
+	}
 }
 
 func environmentScopedInternal(c *echo.Context, env *models.Environment) {
