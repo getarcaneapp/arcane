@@ -192,6 +192,8 @@ func DefaultSettingsConfig() *models.Settings {
 		LifecycleEnabled:                models.SettingVariable{Value: "false"},
 		LifecycleDefaultRunnerImage:     models.SettingVariable{Value: "alpine:latest"},
 		LifecycleMaxTimeoutSec:          models.SettingVariable{Value: "300"},
+		HostTerminalEnabled:             models.SettingVariable{Value: "false"},
+		HostTerminalImage:               models.SettingVariable{Value: ""},
 
 		DockerAPITimeout:       models.SettingVariable{Value: "30"},
 		DockerImagePullTimeout: models.SettingVariable{Value: "600"},

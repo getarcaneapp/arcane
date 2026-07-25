@@ -221,6 +221,20 @@ type Update struct {
 	// Required: false
 	LifecycleMaxTimeoutSec *string `json:"lifecycleMaxTimeoutSec,omitempty"`
 
+	// HostTerminalEnabled gates whether users with the system:host-terminal
+	// permission may open a root shell on the Docker host through a
+	// privileged helper container. Disabled by default because it grants
+	// full root access to the host machine.
+	//
+	// Required: false
+	HostTerminalEnabled *string `json:"hostTerminalEnabled,omitempty"`
+
+	// HostTerminalImage overrides the image used for the host terminal
+	// helper container. Empty uses the Arcane tools image.
+	//
+	// Required: false
+	HostTerminalImage *string `json:"hostTerminalImage,omitempty"`
+
 	// BaseServerURL is the base URL of the server.
 	//
 	// Required: false
