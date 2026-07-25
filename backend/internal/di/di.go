@@ -49,6 +49,7 @@ var ServiceOptions = fx.Options(
 		services.NewGitOpsSyncService,
 		services.NewWebhookService,
 		services.NewVariableService,
+		services.NewHostShellService,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,

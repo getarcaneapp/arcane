@@ -153,6 +153,7 @@ type initializeStartupStateParams struct {
 	HTTPClient *http.Client
 
 	Volume      *services.VolumeService
+	HostShell   *services.HostShellService
 	Settings    *services.SettingsService
 	Environment *services.EnvironmentService
 	GitOpsSync  *services.GitOpsSyncService
@@ -172,6 +173,15 @@ func initializeStartupState(p initializeStartupStateParams) {
 
 	if p.Volume != nil {
 		startup.CleanupOrphanedVolumeHelpers(appCtx, p.Volume.CleanupOrphanedVolumeHelpers)
+	}
+
+	if p.HostShell != nil {
+		slog.InfoContext(appCtx, "Checking for orphaned host shell helper containers from previous runs")
+		if removedCount, err := p.HostShell.CleanupOrphaned(appCtx); err != nil {
+			slog.WarnContext(appCtx, "Failed to clean up orphaned host shell helper containers during startup", "error", err.Error())
+		} else {
+			slog.InfoContext(appCtx, "Orphaned host shell helper cleanup completed", "removed_count", removedCount)
+		}
 	}
 
 	runtimeCfg := &startup.RuntimeConfig{

@@ -59,6 +59,7 @@ type graphParams struct {
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
 	Variable          *services.VariableService
+	HostShell         *services.HostShellService
 	AuthMiddleware    *middleware.AuthMiddleware
 
 	AutoUpdate             *scheduler.AutoUpdateJob

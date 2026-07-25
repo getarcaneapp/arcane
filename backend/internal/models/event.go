@@ -103,6 +103,21 @@ const (
 	// on non-zero exit or timeout.
 	EventTypeLifecycleExecute EventType = "lifecycle.execute"
 
+	// EventTypeHostTerminalOpen is emitted when a host-shell session (the
+	// interactive terminal or a snippet run) opens a privileged helper
+	// container on the Docker host. Severity is warning — this is root on
+	// the host, it should stand out in the events list. Never carries
+	// keystrokes or output in its metadata.
+	EventTypeHostTerminalOpen EventType = "host.terminal.open"
+
+	// EventTypeHostTerminalClose is emitted when a host-shell session ends,
+	// with durationMs and a close reason in its metadata.
+	EventTypeHostTerminalClose EventType = "host.terminal.close"
+
+	// EventTypeHostTerminalDenied is emitted when a host-shell session is
+	// refused (disabled setting, preflight failure, session limit).
+	EventTypeHostTerminalDenied EventType = "host.terminal.denied"
+
 	// EventSeverityInfo and the constants below enumerate event severities.
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"
