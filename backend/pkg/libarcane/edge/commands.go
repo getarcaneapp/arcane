@@ -224,6 +224,7 @@ var commandRoutes = []commandRoute{
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/stats", CommandName: "container.stats.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/containers/{containerId}/terminal", CommandName: "container.exec.stream", Stream: true},
 	{PathPattern: "/api/environments/{id}/ws/system/stats", CommandName: "system.stats.stream", Stream: true},
+	{PathPattern: "/api/environments/{id}/ws/system/terminal", CommandName: "host.terminal.stream", Stream: true},
 }
 
 var commandRoutesIndex = buildCommandRouteIndexInternal(commandRoutes)
