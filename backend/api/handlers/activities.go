@@ -581,32 +581,19 @@ func applyActivitySourceLabelsForEnvironmentInternal(environment models.Environm
 func activitySourceFromEnvironmentInternal(environment models.Environment) (string, string) {
 	environmentID := environment.ID
 	if environmentID == "" {
-		environmentID = "0"
+		environmentID = services.LocalEnvironmentID
 	}
-	environmentName := environment.Name
-	if environmentName == "" {
-		if environmentID == "0" {
-			environmentName = "Local"
-		} else {
-			environmentName = environmentID
-		}
-	}
-	return environmentID, environmentName
+	return environmentID, services.EnvironmentDisplayName(environmentID, environment.Name)
 }
 
 func (h *ActivityHandler) resolveActivitySourceInternal(ctx context.Context, environmentID string) (string, string) {
 	if environmentID == "" {
-		environmentID = "0"
+		environmentID = services.LocalEnvironmentID
 	}
 	if h.environmentService != nil {
-		if env, err := h.environmentService.GetEnvironmentByID(ctx, environmentID); err == nil && env != nil {
-			return env.ID, env.Name
-		}
+		return environmentID, h.environmentService.ResolveEnvironmentName(ctx, environmentID)
 	}
-	if environmentID == "0" {
-		return "0", "Local"
-	}
-	return environmentID, environmentID
+	return environmentID, services.EnvironmentDisplayName(environmentID, "")
 }
 
 func applyActivitySourceInternal(item *activity.Activity, sourceID, sourceName string) {

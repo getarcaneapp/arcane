@@ -105,6 +105,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		return errors.WrapIf(err, "failed to pull image")
 	}
 
+	// The pull always runs so a mutable tag gets re-resolved, but when it lands on
+	// the image the container already runs there is nothing to swap in. Skipping the
+	// recreate avoids needless downtime and, for agents, a dropped connection.
+	if same, pulledID := pulledImageAlreadyRunning(ctx, dockerClient, imageToPull, targetContainer.Image); same {
+		slog.Info("Image unchanged after pull; already up to date, skipping recreate",
+			"container", containerName, "image", imageToPull, "imageId", pulledID)
+		return nil
+	}
+
 	// Perform the upgrade
 	slog.Info("Starting container upgrade", "container", containerName)
 	if err := upgradeContainer(ctx, dockerClient, targetContainer, imageToPull); err != nil {
@@ -336,6 +345,22 @@ func ensureDefaultTag(imageName string) string {
 		return "ghcr.io/getarcaneapp/arcane:latest"
 	}
 	return imageName + ":latest"
+}
+
+// pulledImageAlreadyRunning reports whether the freshly pulled reference resolves to
+// the image the target container is already running, along with the resolved image ID.
+// An inspect failure reports false: recreating unnecessarily is safer than skipping a
+// real update.
+func pulledImageAlreadyRunning(ctx context.Context, dockerClient *client.Client, imageRef, runningImageID string) (bool, string) {
+	if runningImageID == "" {
+		return false, ""
+	}
+	inspect, err := dockerClient.ImageInspect(ctx, imageRef)
+	if err != nil {
+		slog.Warn("Could not inspect pulled image; continuing with recreate", "image", imageRef, "error", err)
+		return false, ""
+	}
+	return inspect.ID == runningImageID, inspect.ID
 }
 
 func pullImage(ctx context.Context, dockerClient *client.Client, imageName string) error {

@@ -181,11 +181,11 @@ type mockSystemUpgradeServiceInternal struct {
 	capturedTarget *updater.SelfUpdateTarget
 }
 
-func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target updater.SelfUpdateTarget) error {
+func (m *mockSystemUpgradeServiceInternal) TriggerUpgradeViaCLI(_ context.Context, user models.User, target updater.SelfUpdateTarget) (string, error) {
 	m.triggerCalled = true
 	m.capturedUser = &user
 	m.capturedTarget = &target
-	return m.triggerError
+	return "upgrader-container-id", m.triggerError
 }
 
 func TestUpdaterService_ApplyPendingNoRecordsInternal(t *testing.T) {

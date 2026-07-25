@@ -11,13 +11,25 @@ export interface UpgradeResponse {
 	message: string;
 	success: boolean;
 	error?: string;
+	/**
+	 * The environment already runs the newest image, so the upgrade pulled it again and
+	 * left the container in place. Callers can stop waiting for a restart.
+	 */
+	upToDate: boolean;
 }
 
 export interface HealthCheckResult {
 	healthy: boolean;
 }
 
-export type UpdateAllEnvironmentStatus = 'pending' | 'updating' | 'updated' | 'triggered' | 'skipped_offline' | 'failed';
+export type UpdateAllEnvironmentStatus =
+	| 'pending'
+	| 'updating'
+	| 'updated'
+	| 'up_to_date'
+	| 'triggered'
+	| 'skipped_offline'
+	| 'failed';
 
 export interface UpdateAllEnvironmentResult {
 	environmentId: string;
@@ -59,8 +71,14 @@ async function checkUpgradeAvailable(environmentId: string = '0'): Promise<Upgra
  * @param environmentId - Environment ID (defaults to the local manager, '0')
  */
 async function triggerUpgrade(environmentId: string = '0'): Promise<UpgradeResponse> {
-	const res = await apiClient.post<UpgradeResponse>(`/environments/${environmentId}/system/upgrade`);
-	return res.data;
+	const res = await apiClient.post<ApiResponse<{ message?: string; upToDate?: boolean }>>(
+		`/environments/${environmentId}/system/upgrade`
+	);
+	return {
+		success: res.data.success,
+		message: res.data.data?.message ?? res.data.message ?? '',
+		upToDate: res.data.data?.upToDate ?? false
+	};
 }
 
 /**

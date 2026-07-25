@@ -56,7 +56,9 @@ type updaterDependenciesInternal struct {
 }
 
 type selfUpgradeServiceInternal interface {
-	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) error
+	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
+	// service does not need — only update-all's manager step uses it.
+	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) (string, error)
 }
 
 // NewUpdaterService constructs the Arcane updater facade.
@@ -676,7 +678,7 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.S
 		s.markSelfUpdateTriggeredInternal(ctx, target)
 	}
 
-	if err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
+	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
 		return errors.WrapIf(err, "CLI upgrade failed")
 	}
 	return nil

@@ -94,6 +94,9 @@ type swarmNodeAgentCoverage struct {
 	boundEnvsByNodeID  map[string][]models.Environment
 	candidatesByNodeID map[string][]models.Environment
 	localIdentity      *SwarmNodeIdentity
+	// Resolved once per request rather than per node: the name is user-editable, and
+	// applyNodeAgentCoverageInternal runs in a loop with no context to look it up.
+	localEnvironmentName string
 }
 
 func (s *SwarmService) IsEnabled(ctx context.Context) (bool, error) {
@@ -736,11 +739,12 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 		boundEnvsByNodeID:  boundEnvsByNodeID,
 		candidatesByNodeID: candidatesByNodeID,
 	}
-	if environmentID == "0" {
+	if environmentID == LocalEnvironmentID {
 		identity, identityErr := s.GetLocalNodeIdentity(ctx)
 		if identityErr == nil {
 			coverage.localIdentity = identity
 		}
+		coverage.localEnvironmentName = s.environmentService.ResolveEnvironmentName(ctx, LocalEnvironmentID)
 	}
 	return coverage, nil
 }
@@ -750,10 +754,11 @@ func (s *SwarmService) applyNodeAgentCoverageInternal(environmentID string, item
 		return
 	}
 	nodeID := strings.TrimSpace(item.ID)
-	if environmentID == "0" && coverage.localIdentity != nil && coverage.localIdentity.SwarmActive && strings.TrimSpace(coverage.localIdentity.SwarmNodeID) == nodeID {
+	if environmentID == LocalEnvironmentID && coverage.localIdentity != nil && coverage.localIdentity.SwarmActive && strings.TrimSpace(coverage.localIdentity.SwarmNodeID) == nodeID {
 		connected := true
 		bindingKind := swarmtypes.NodeAgentBindingKindLocal
-		localID, localName, localType := "0", "Local", "local"
+		localID, localType := LocalEnvironmentID, "local"
+		localName := EnvironmentDisplayName(LocalEnvironmentID, coverage.localEnvironmentName)
 		item.Agent = swarmtypes.NodeAgentStatus{
 			State:           swarmtypes.NodeAgentStateConnected,
 			BindingKind:     &bindingKind,
