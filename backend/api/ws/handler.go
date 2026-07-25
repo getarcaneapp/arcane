@@ -806,7 +806,7 @@ func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *webso
 
 func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
 	// Create exec instance
-	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
+	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell}, nil)
 	if err != nil {
 		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error creating exec"))
 		return
