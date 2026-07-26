@@ -6,6 +6,7 @@ import (
 	"hash"
 	"io"
 	"io/fs"
+	"log/slog"
 	"os"
 	"path"
 	"path/filepath"
@@ -106,6 +107,16 @@ type projectFileTreeWalkerInternal struct {
 
 func (w *projectFileTreeWalkerInternal) visit(rel string, entry fs.DirEntry, walkErr error) error {
 	if walkErr != nil {
+		// fs.WalkDir reports a directory it could not read by invoking the
+		// callback a second time with the ReadDir error. Skipping keeps the
+		// rest of the tree intact instead of discarding every sibling; the
+		// directory itself was already recorded by the first call. A failure
+		// on the project root, or one that is not a permission/disappearance
+		// error, stays fatal so real I/O problems remain observable.
+		if rel != "." && entry != nil && entry.IsDir() && (os.IsPermission(walkErr) || os.IsNotExist(walkErr)) {
+			slog.Debug("Skipping unreadable project subdirectory", "relativePath", rel, "error", walkErr)
+			return fs.SkipDir
+		}
 		return walkErr
 	}
 	if rel == "." {
@@ -137,7 +148,18 @@ func (w *projectFileTreeWalkerInternal) visit(rel string, entry fs.DirEntry, wal
 
 	info, err := entry.Info()
 	if err != nil {
-		return errors.WrapIf(err, "inspect project file")
+		// An entry that vanished mid-walk or that we are not allowed to stat is
+		// skipped rather than failing the whole tree; anything else surfaces.
+		// fs.SkipDir on a non-directory would break out of the parent's sibling
+		// loop, so split on IsDir.
+		if !os.IsPermission(err) && !os.IsNotExist(err) {
+			return err
+		}
+		slog.Debug("Skipping unreadable project entry", "relativePath", rel, "error", err)
+		if entry.IsDir() {
+			return fs.SkipDir
+		}
+		return nil
 	}
 
 	// fs.WalkDir visits entries in deterministic lexical order, so hashing
