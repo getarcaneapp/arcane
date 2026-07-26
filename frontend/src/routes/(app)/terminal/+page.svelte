@@ -136,7 +136,10 @@
 								items={containerItems}
 								bind:value={selectedContainerId}
 								selectText={m.terminal_target_containers()}
-								onSelect={handleReconnect}
+								onSelect={(value) => {
+									selectedContainerId = value;
+									handleReconnect();
+								}}
 							/>
 						{:else if !canUseHostTerminal}
 							<p class="text-xs text-muted-foreground">
