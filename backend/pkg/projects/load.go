@@ -200,17 +200,24 @@ func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.Compos
 		Environment: composetypes.Mapping(envMap),
 	}
 
-	project, err = loader.LoadWithContext(ctx, configDetails, func(loaderOpts *loader.Options) {
+	loaderOptions := []func(*loader.Options){func(loaderOpts *loader.Options) {
 		if projectName := strings.TrimSpace(opts.ProjectName); projectName != "" {
 			loaderOpts.SetProjectName(projectName, true)
 		}
 		loader.WithDiscardEnvFiles(loaderOpts)
-	})
+	}}
+
+	project, err = loader.LoadWithContext(ctx, configDetails, loaderOptions...)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to load compose project")
 	}
 
-	return finishLoadedProjectInternal(project, workingDir, opts.PathMapper, false)
+	var rawSources map[string]string
+	if !isNilVolumeSourcePathMapperInternal(opts.PathMapper) {
+		rawSources = harvestRawSourcesInternal(ctx, configDetails, loaderOptions...)
+	}
+
+	return finishLoadedProjectInternal(ctx, project, workingDir, opts.PathMapper, false, rawSources)
 }
 
 // wrapTypeCastMappingLenientInternal prepares the interp type-cast mapping for lenient
@@ -376,7 +383,7 @@ func loadComposeProjectInternal(
 		Environment: composetypes.Mapping(fullEnvMap),
 	}
 
-	project, err = loader.LoadWithContext(ctx, cfg, func(opts *loader.Options) {
+	loaderOptions := []func(*loader.Options){func(opts *loader.Options) {
 		if projectName != "" {
 			opts.SetProjectName(projectName, false)
 		}
@@ -389,7 +396,9 @@ func loadComposeProjectInternal(
 		if configureLoader != nil {
 			configureLoader(opts)
 		}
-	})
+	}}
+
+	project, err = loader.LoadWithContext(ctx, cfg, loaderOptions...)
 	if err != nil {
 		return nil, errors.WrapIf(err, "load compose project")
 	}
@@ -398,7 +407,12 @@ func loadComposeProjectInternal(
 		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
 	}
 
-	project, err = finishLoadedProjectInternal(project, workdir, pathMapper, true)
+	var rawSources map[string]string
+	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
+		rawSources = harvestRawSourcesInternal(ctx, cfg, loaderOptions...)
+	}
+
+	project, err = finishLoadedProjectInternal(ctx, project, workdir, pathMapper, true, rawSources)
 	if err != nil {
 		return nil, err
 	}
@@ -407,7 +421,7 @@ func loadComposeProjectInternal(
 	return project, nil
 }
 
-func finishLoadedProjectInternal(project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool) (*composetypes.Project, error) {
+func finishLoadedProjectInternal(ctx context.Context, project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool, rawSources map[string]string) (*composetypes.Project, error) {
 	project = project.WithoutUnnecessaryResources()
 	ResolveRelativeProjectPaths(project, workingDir)
 
@@ -415,9 +429,72 @@ func finishLoadedProjectInternal(project *composetypes.Project, workingDir strin
 		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
 			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
 		}
+		RemapEscapedRelativeSources(ctx, pathMapper, project, workingDir, rawSources, translateFileResources)
 	}
 
 	return project, nil
+}
+
+// harvestRawSourcesInternal re-parses the same Compose input with path
+// resolution disabled, so the raw still-relative paths survive for
+// RemapEscapedRelativeSources. The resolved project on its own cannot tell a
+// relative path that escaped the projects mount from an intentionally absolute
+// one, and only the former may be re-resolved against the host directory.
+//
+// Best effort by design: any failure yields a nil map and the caller then
+// behaves exactly as it did before. Environment resolution is skipped because
+// env_file paths are left relative here and would otherwise be read against the
+// process working directory; label_file is read regardless, which is one of the
+// reasons this cannot be fatal.
+func harvestRawSourcesInternal(ctx context.Context, cfg composetypes.ConfigDetails, loaderOptions ...func(*loader.Options)) (rawSources map[string]string) {
+	defer func() {
+		if panicErr := emperror.Recover(recover()); panicErr != nil {
+			slog.DebugContext(ctx, "panic while harvesting raw compose paths", "error", panicErr)
+			rawSources = nil
+		}
+	}()
+
+	options := append(slices.Clone(loaderOptions), func(opts *loader.Options) {
+		opts.ResolvePaths = false
+		opts.SkipResolveEnvironment = true
+		opts.SkipValidation = true
+		opts.SkipConsistencyCheck = true
+	})
+
+	project, err := loader.LoadWithContext(ctx, cfg, options...)
+	if err != nil {
+		slog.DebugContext(ctx, "unable to harvest raw compose paths; relative paths outside the projects mount may resolve incorrectly", "error", err)
+		return nil
+	}
+
+	rawSources = make(map[string]string)
+	for name, service := range project.Services {
+		for _, volume := range service.Volumes {
+			if volume.Type == composetypes.VolumeTypeBind && volume.Source != "" {
+				rawSources[VolumeSourceKey(name, volume.Target)] = volume.Source
+			}
+		}
+	}
+
+	for name, volume := range project.Volumes {
+		if device, ok := bindVolumeDeviceInternal(volume); ok {
+			rawSources["volume_device:"+name] = device
+		}
+	}
+
+	for name, secret := range project.Secrets {
+		if secret.File != "" {
+			rawSources["secret:"+name] = secret.File
+		}
+	}
+
+	for name, config := range project.Configs {
+		if config.File != "" {
+			rawSources["config:"+name] = config.File
+		}
+	}
+
+	return rawSources
 }
 
 func isNilVolumeSourcePathMapperInternal(pathMapper projecttypes.VolumeSourcePathMapper) bool {

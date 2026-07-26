@@ -166,3 +166,68 @@ func TestPathMapper_TranslateVolumeSourcesKeepsArcaneReadFiles(t *testing.T) {
 	assert.Equal(t, "/app/data/swarm/sources/0/stack/secret.txt", project.Secrets["secret"].File)
 	assert.Equal(t, "/app/data/swarm/sources/0/stack/config.yaml", project.Configs["config"].File)
 }
+
+// A bind-backed named volume's device is opened by the Docker daemon, so it needs
+// the same container->host translation as a bind mount source.
+func TestPathMapper_TranslateVolumeSourcesDriverOptsDevice(t *testing.T) {
+	pm := NewPathMapper("/app/data/projects", "/host/arcane-data/projects")
+	project := &composetypes.Project{
+		Volumes: composetypes.Volumes{
+			"bind-backed": {
+				Driver:     "local",
+				DriverOpts: composetypes.Options{"type": "none", "o": "bind", "device": "/app/data/projects/myproj/data"},
+			},
+			"nfs-backed": {
+				Driver:     "local",
+				DriverOpts: composetypes.Options{"type": "nfs", "o": "addr=10.0.0.1,rw", "device": ":/exported/path"},
+			},
+			// compose-go only absolutizes a device when `o` is exactly "bind", so this
+			// one stays relative and must be left alone rather than failing the load.
+			"unresolved-bind": {
+				Driver:     "local",
+				DriverOpts: composetypes.Options{"type": "none", "o": "bind,ro", "device": "data"},
+			},
+			"plain": {},
+		},
+	}
+
+	require.NoError(t, pm.TranslateVolumeSources(project, true))
+	assert.Equal(t, "/host/arcane-data/projects/myproj/data", project.Volumes["bind-backed"].DriverOpts["device"])
+	assert.Equal(t, ":/exported/path", project.Volumes["nfs-backed"].DriverOpts["device"])
+	assert.Equal(t, "data", project.Volumes["unresolved-bind"].DriverOpts["device"])
+}
+
+// The mount table must keep winning for relative paths that stay inside a nested
+// independently-bind-mounted directory; only paths it cannot resolve fall back to
+// being re-resolved against the host project directory.
+func TestRemapEscapedRelativeSources_MountTableTakesPrecedence(t *testing.T) {
+	pm := NewPathMapperFromMounts([]HostMount{
+		{Destination: "/app/data", Source: "/docker/112/arcane/arcane-data"},
+		{Destination: "/app/data/projects/goclaw/media", Source: "/mnt/media"},
+	})
+	require.True(t, pm.IsNonMatchingMount())
+
+	containerWorkingDir := "/app/data/projects/goclaw"
+	project := &composetypes.Project{
+		Services: composetypes.Services{
+			"goclaw": {
+				Name: "goclaw",
+				Volumes: []composetypes.ServiceVolumeConfig{
+					{Type: composetypes.VolumeTypeBind, Source: "/app/data/projects/goclaw/media", Target: "/media"},
+					{Type: composetypes.VolumeTypeBind, Source: "/goclaw/data", Target: "/app/data"},
+				},
+			},
+		},
+	}
+	rawSources := map[string]string{
+		VolumeSourceKey("goclaw", "/media"):    "./media",
+		VolumeSourceKey("goclaw", "/app/data"): "../../../../goclaw/data",
+	}
+
+	require.NoError(t, pm.TranslateVolumeSources(project, true))
+	RemapEscapedRelativeSources(context.Background(), pm, project, containerWorkingDir, rawSources, true)
+
+	volumes := project.Services["goclaw"].Volumes
+	assert.Equal(t, "/mnt/media", volumes[0].Source, "nested independent mount must win over the host project directory")
+	assert.Equal(t, "/docker/112/goclaw/data", volumes[1].Source)
+}
