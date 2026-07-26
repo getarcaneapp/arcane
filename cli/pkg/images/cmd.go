@@ -54,9 +54,9 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/prompt"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/cli/v2/pkg/images/updates"
+	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/spf13/cobra"
-	"go.getarcane.app/sys/bytes"
 )
 
 var (
@@ -67,6 +67,9 @@ var (
 	imagesSearch     string
 	imagesInUseOnly  bool
 	imagesUnusedOnly bool
+	imagesAll        bool
+
+	imagesUpdatesFilter string
 )
 
 const maxPromptOptions = 20
@@ -111,9 +114,26 @@ var imagesListCmd = &cobra.Command{
 		if imagesSearch != "" {
 			q.Set("search", imagesSearch)
 		}
+		// Filter server-side so that pagination and the reported totals apply to
+		// the matching set rather than to whichever page happened to be fetched.
+		if imagesInUseOnly {
+			q.Set("inUse", "true")
+		}
+		if imagesUnusedOnly {
+			q.Set("inUse", "false")
+		}
+		if imagesUpdatesFilter != "" {
+			q.Set("updates", imagesUpdatesFilter)
+		}
 
 		u.RawQuery = q.Encode()
-		path, err = cmdutil.ApplyPaginationParams(cmd, u.String(), "images", "limit", imagesLimit, 0, "start", imagesStart)
+		path, err = cmdutil.ApplyPaginationParams(cmd, u.String(), cmdutil.ListParams{
+			Resource:        "images",
+			Limit:           imagesLimit,
+			FallbackDefault: 0,
+			Start:           imagesStart,
+			All:             imagesAll,
+		})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -126,39 +146,20 @@ var imagesListCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to read response")
+			return errors.WrapIf(err, "failed to list images")
 		}
 
 		log.Debugf("Response body: %s", string(body))
 
-		if cmdutil.JSONOutputEnabled(cmd) && !imagesInUseOnly && !imagesUnusedOnly {
-			fmt.Println(string(body))
-			return nil
+		if cmdutil.JSONOutputEnabled(cmd) {
+			return cmdutil.PrintRawJSON(body)
 		}
 
-		var result struct {
-			Success    bool            `json:"success"`
-			Data       []image.Summary `json:"data"`
-			Pagination struct {
-				TotalItems int64 `json:"totalItems"`
-			} `json:"pagination"`
-		}
-
+		var result base.Paginated[image.Summary]
 		if err := json.Unmarshal(body, &result); err != nil {
 			return errors.WrapIf(err, "failed to parse response")
-		}
-		result.Data = filterImagesByUsage(result.Data, imagesInUseOnly, imagesUnusedOnly)
-		result.Pagination.TotalItems = int64(len(result.Data))
-
-		if cmdutil.JSONOutputEnabled(cmd) {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
 		}
 
 		headers := []string{"ID", "REPOSITORY:TAG", "SIZE", "IN USE"}
@@ -174,7 +175,7 @@ var imagesListCmd = &cobra.Command{
 				inUse = color.New(color.FgGreen).Sprint("Yes")
 			}
 			id := color.New(color.FgHiWhite, color.Bold).Sprint(img.ID)
-			rows = append(rows, []string{id, tag, bytes.Capacity(img.Size).String(), inUse})
+			rows = append(rows, []string{id, tag, output.Bytes(img.Size), inUse})
 		}
 
 		output.Table(headers, rows)
@@ -239,7 +240,7 @@ var imagesGetCmd = &cobra.Command{
 		if len(result.Data.RepoTags) > 0 {
 			output.KeyValue("Tags", strings.Join(result.Data.RepoTags, ", "))
 		}
-		output.KeyValue("Size", bytes.Capacity(result.Data.Size).String())
+		output.KeyValue("Size", output.Bytes(result.Data.Size))
 		output.KeyValue("Architecture", result.Data.Architecture)
 		output.KeyValue("OS", result.Data.Os)
 		if result.Data.Created != "" {
@@ -404,6 +405,7 @@ var imagesPullCmd = &cobra.Command{
 
 		for {
 			var event struct {
+				Type           string `json:"type"`
 				Status         string `json:"status"`
 				Error          string `json:"error"`
 				ID             string `json:"id"`
@@ -418,6 +420,12 @@ var imagesPullCmd = &cobra.Command{
 					break
 				}
 				return errors.WrapIf(err, "failed to decode stream")
+			}
+
+			// The stream opens with an activity frame that carries no Docker
+			// status; printing it would emit a blank line per pull.
+			if event.Type != "" && event.Status == "" && event.Error == "" {
+				continue
 			}
 
 			if event.Error != "" {
@@ -537,7 +545,7 @@ var imagesPruneCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to parse response")
 		}
 
-		output.Success("Pruned %d images, reclaimed %s", len(result.Data.ImagesDeleted), bytes.Capacity(result.Data.SpaceReclaimed).String())
+		output.Success("Pruned %d images, reclaimed %s", len(result.Data.ImagesDeleted), output.Bytes(result.Data.SpaceReclaimed))
 
 		return nil
 	},
@@ -589,7 +597,7 @@ var imagesCountsCmd = &cobra.Command{
 		output.KeyValue("In Use", result.Data.Inuse)
 		output.KeyValue("Unused", result.Data.Unused)
 		output.KeyValue("Total", result.Data.Total)
-		output.KeyValue("Total Size", bytes.Capacity(result.Data.TotalSize).String())
+		output.KeyValue("Total Size", output.Bytes(result.Data.TotalSize))
 
 		return nil
 	},
@@ -708,7 +716,9 @@ var imagesUploadCmd = &cobra.Command{
 func init() {
 	ImagesCmd.AddCommand(imagesListCmd)
 	imagesListCmd.Flags().IntVarP(&imagesLimit, "limit", "n", 0, "Number of images to show (server default 20)")
-	imagesListCmd.Flags().IntVar(&imagesStart, "start", 0, "Offset for pagination")
+	imagesListCmd.Flags().IntVar(&imagesStart, "start", 0, cmdutil.StartFlagUsage)
+	imagesListCmd.Flags().BoolVarP(&imagesAll, "all", "a", false, cmdutil.AllFlagUsage)
+	imagesListCmd.Flags().StringVar(&imagesUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
 	imagesListCmd.Flags().StringVar(&imagesSort, "sort", "", "Field to sort by")
 	imagesListCmd.Flags().StringVar(&imagesOrder, "order", "", "Sort order (asc/desc)")
 	imagesListCmd.Flags().StringVar(&imagesSearch, "search", "", "Search query")
@@ -825,7 +835,7 @@ func buildImageSearchTerms(trimmed string) []string {
 }
 
 func searchImageMatches(ctx context.Context, c *client.Client, term, trimmed string) ([]image.Summary, error) {
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Images(c.EnvID()), url.QueryEscape(term), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Images(c.EnvID()), url.QueryEscape(term), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search images")
@@ -933,21 +943,4 @@ func formatImageMatchOption(match image.Summary) string {
 		label = match.Repo + ":" + match.Tag
 	}
 	return fmt.Sprintf("%s (%s)", label, match.ID)
-}
-
-func filterImagesByUsage(items []image.Summary, inUseOnly, unusedOnly bool) []image.Summary {
-	if !inUseOnly && !unusedOnly {
-		return items
-	}
-	filtered := make([]image.Summary, 0, len(items))
-	for _, item := range items {
-		if inUseOnly && !item.InUse {
-			continue
-		}
-		if unusedOnly && item.InUse {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
 }

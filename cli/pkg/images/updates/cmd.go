@@ -75,7 +75,8 @@ var checkAllCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Post(cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), nil)
+		// The handler declares a non-pointer Body, so an empty body is a 400.
+		resp, err := c.Post(cmd.Context(), types.Endpoints.ImageUpdatesCheckAll(c.EnvID()), imageupdate.CheckAllImagesRequest{})
 		if err != nil {
 			return errors.WrapIf(err, "failed to check all updates")
 		}

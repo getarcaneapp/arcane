@@ -156,6 +156,17 @@ func safeCapacity(value int64) bytes.Capacity {
 	return bytes.Capacity(uint64(value))
 }
 
+// Bytes renders a signed byte count in human-readable form. Negative values,
+// which bytes.Capacity would otherwise wrap into the exabyte range, render as 0.
+func Bytes(value int64) string {
+	return safeCapacity(value).String()
+}
+
+// UnsignedBytes renders an unsigned byte count in human-readable form.
+func UnsignedBytes(value uint64) string {
+	return bytes.Capacity(value).String()
+}
+
 // Progress renders a Bubble Tea progress bar inline.
 type Progress struct {
 	program *tea.Program

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"sort"
@@ -46,7 +47,12 @@ var (
 	templateDownloadOutput    string
 	templateDefaultsSaveFile  string
 	templateDefaultsEnvFile   string
-	templateVarsUpdateFile    string
+	templateFetchURL          string
+	templateVarsUpdateKey     string
+	templateVarsUpdateValue   string
+	templateVarsUpdateSecret  bool
+	templateVarsUpdateAllEnvs bool
+	templateVarsUpdateEnvIDs  []string
 	templateRegUpdateName     string
 	templateRegUpdateURL      string
 	templateRegUpdateDesc     string
@@ -91,8 +97,8 @@ var listCmd = &cobra.Command{
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[[]template.Template]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 
 			templates = result.Data
@@ -100,7 +106,7 @@ var listCmd = &cobra.Command{
 			jsonPayload = result.Data
 		} else {
 			path = types.Endpoints.Templates()
-			path, err = cmdutil.ApplyPaginationParams(cmd, path, "templates", "limit", limitFlag, 20, "start", startFlag)
+			path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "templates", Limit: limitFlag, FallbackDefault: 20, Start: startFlag})
 			if err != nil {
 				return errors.WrapIf(err, "failed to build pagination query")
 			}
@@ -112,8 +118,8 @@ var listCmd = &cobra.Command{
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.Paginated[template.Template]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 
 			templates = result.Data
@@ -172,8 +178,8 @@ var defaultCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.DefaultTemplatesResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -210,8 +216,8 @@ var contentCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.TemplateContent]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -256,8 +262,8 @@ var registriesCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[[]template.TemplateRegistry]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -293,7 +299,7 @@ var registriesCmd = &cobra.Command{
 var variablesCmd = &cobra.Command{
 	Use:          "variables",
 	Aliases:      []string{"vars"},
-	Short:        "List template variables",
+	Short:        "List global variables",
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		c, err := client.NewFromConfig()
@@ -307,26 +313,28 @@ var variablesCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[[]env.Variable]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		var result base.ApiResponse[[]env.GlobalVariable]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to list variables")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
-		headers := []string{"KEY", "VALUE"}
+		headers := []string{"ID", "KEY", "VALUE", "SECRET", "SCOPE"}
 		rows := make([][]string, len(result.Data))
 		for i, v := range result.Data {
+			scope := "all environments"
+			if !v.AllEnvironments {
+				scope = strings.Join(v.EnvironmentIDs, ", ")
+			}
 			rows[i] = []string{
+				v.ID,
 				v.Key,
 				v.Value,
+				strconv.FormatBool(v.IsSecret),
+				scope,
 			}
 		}
 
@@ -853,8 +861,8 @@ var createCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.Template]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -879,9 +887,32 @@ var updateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		c, err := client.NewFromConfig()
+		if err != nil {
+			return err
+		}
+
+		// UpdateRequest has no omitempty fields and the handler replaces the whole
+		// record, so an unset --file would otherwise wipe the compose content.
+		// Start from the stored template and overlay only what was passed.
+		current, err := fetchTemplateInternal(cmd, c, args[0])
+		if err != nil {
+			return err
+		}
+
 		req := template.UpdateRequest{
-			Name:        templateUpdateName,
-			Description: templateUpdateDescription,
+			Name:        current.Name,
+			Description: current.Description,
+			Content:     current.Content,
+		}
+		if current.EnvContent != nil {
+			req.EnvContent = *current.EnvContent
+		}
+		if cmd.Flags().Changed("name") {
+			req.Name = templateUpdateName
+		}
+		if cmd.Flags().Changed("description") {
+			req.Description = templateUpdateDescription
 		}
 
 		if templateUpdateFile != "" {
@@ -900,11 +931,6 @@ var updateCmd = &cobra.Command{
 			req.EnvContent = string(envContent)
 		}
 
-		c, err := client.NewFromConfig()
-		if err != nil {
-			return err
-		}
-
 		resp, err := c.Put(cmd.Context(), types.Endpoints.Template(args[0]), req)
 		if err != nil {
 			return errors.WrapIf(err, "failed to update template")
@@ -912,17 +938,12 @@ var updateCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[template.Template]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to update template")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template updated successfully")
@@ -952,9 +973,9 @@ var downloadCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to download template")
 		}
 
-		var result base.ApiResponse[template.TemplateContent]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		var result base.ApiResponse[template.Template]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if templateDownloadOutput != "" {
@@ -1011,16 +1032,11 @@ var defaultsSaveCmd = &cobra.Command{
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[template.DefaultTemplatesResponse]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			var result base.ApiResponse[base.MessageResponse]
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Default templates saved successfully")
@@ -1029,19 +1045,32 @@ var defaultsSaveCmd = &cobra.Command{
 }
 
 var variablesUpdateCmd = &cobra.Command{
-	Use:          "variables-update",
+	Use:          "variables-update <variable-id>",
 	Aliases:      []string{"vars-update"},
-	Short:        "Update template variables",
+	Short:        "Update a global variable",
+	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		content, err := os.ReadFile(templateVarsUpdateFile)
-		if err != nil {
-			return errors.WrapIff(err, "failed to read file %s", templateVarsUpdateFile)
+		// Only the flags that were set are sent; every field on the request is a
+		// pointer, and the server keeps the current value for the ones omitted.
+		var req env.UpdateGlobalVariableRequest
+		if cmd.Flags().Changed("key") {
+			req.Key = &templateVarsUpdateKey
 		}
-
-		var variables []env.Variable
-		if err := json.Unmarshal(content, &variables); err != nil {
-			return errors.WrapIf(err, "failed to parse variables JSON")
+		if cmd.Flags().Changed("value") {
+			req.Value = &templateVarsUpdateValue
+		}
+		if cmd.Flags().Changed("secret") {
+			req.IsSecret = &templateVarsUpdateSecret
+		}
+		if cmd.Flags().Changed("all-environments") {
+			req.AllEnvironments = &templateVarsUpdateAllEnvs
+		}
+		if cmd.Flags().Changed("environment") {
+			req.EnvironmentIDs = &templateVarsUpdateEnvIDs
+		}
+		if req.Key == nil && req.Value == nil && req.IsSecret == nil && req.AllEnvironments == nil && req.EnvironmentIDs == nil {
+			return errors.New("no changes requested; pass at least one of --key, --value, --secret, --all-environments or --environment")
 		}
 
 		c, err := client.NewFromConfig()
@@ -1049,29 +1078,22 @@ var variablesUpdateCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplatesVariables(), variables)
+		resp, err := c.Put(cmd.Context(), types.Endpoints.Variable(args[0]), req)
 		if err != nil {
-			return errors.WrapIf(err, "failed to update variables")
+			return errors.WrapIf(err, "failed to update variable")
 		}
 		defer func() { _ = resp.Body.Close() }()
-		if err := cmdutil.EnsureSuccessStatus(resp); err != nil {
-			return errors.WrapIf(err, "failed to update variables")
+
+		var result base.ApiResponse[env.GlobalVariableMutationResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to update variable")
 		}
 
 		if jsonOutput {
-			var result base.ApiResponse[[]env.Variable]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
-			}
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
-		output.Success("Template variables updated successfully")
+		output.Success("Variable updated successfully")
 		return nil
 	},
 }
@@ -1082,16 +1104,43 @@ var registriesUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		req := template.UpdateRegistryRequest{
-			Name:        templateRegUpdateName,
-			URL:         templateRegUpdateURL,
-			Description: templateRegUpdateDesc,
-			Enabled:     templateRegUpdateEnabled && !templateRegUpdateDisabled,
+		if templateRegUpdateEnabled && templateRegUpdateDisabled {
+			return errors.New("--enabled and --disabled cannot be used together")
 		}
 
 		c, err := client.NewFromConfig()
 		if err != nil {
 			return err
+		}
+
+		// Every field on UpdateRegistryRequest is required and the handler does a
+		// full replace, so start from the current registry and overlay only the
+		// flags that were actually passed.
+		current, err := fetchTemplateRegistryInternal(cmd, c, args[0])
+		if err != nil {
+			return err
+		}
+
+		req := template.UpdateRegistryRequest{
+			Name:        current.Name,
+			URL:         current.URL,
+			Description: current.Description,
+			Enabled:     current.Enabled,
+		}
+		if cmd.Flags().Changed("name") {
+			req.Name = templateRegUpdateName
+		}
+		if cmd.Flags().Changed("url") {
+			req.URL = templateRegUpdateURL
+		}
+		if cmd.Flags().Changed("description") {
+			req.Description = templateRegUpdateDesc
+		}
+		if templateRegUpdateEnabled {
+			req.Enabled = true
+		}
+		if templateRegUpdateDisabled {
+			req.Enabled = false
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.TemplateRegistry(args[0]), req)
@@ -1100,25 +1149,58 @@ var registriesUpdateCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[template.TemplateRegistry]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		// The handler answers with a plain message, not the updated registry.
+		var result base.ApiResponse[base.MessageResponse]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to update registry")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result.Data)
 		}
 
 		output.Success("Template registry updated successfully")
-		output.KeyValue("ID", result.Data.ID)
-		output.KeyValue("Name", result.Data.Name)
+		output.KeyValue("ID", current.ID)
+		output.KeyValue("Name", req.Name)
 		return nil
 	},
+}
+
+// fetchTemplateInternal loads a single template, including its content.
+func fetchTemplateInternal(cmd *cobra.Command, c *client.Client, id string) (template.Template, error) {
+	resp, err := c.Get(cmd.Context(), types.Endpoints.Template(id))
+	if err != nil {
+		return template.Template{}, errors.WrapIf(err, "failed to load template")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var result base.ApiResponse[template.Template]
+	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		return template.Template{}, errors.WrapIf(err, "failed to load template")
+	}
+	return result.Data, nil
+}
+
+// fetchTemplateRegistryInternal looks a registry up by ID. The API exposes no
+// get-by-id route for template registries, so this filters the list.
+func fetchTemplateRegistryInternal(cmd *cobra.Command, c *client.Client, id string) (template.TemplateRegistry, error) {
+	resp, err := c.Get(cmd.Context(), types.Endpoints.TemplatesRegistries())
+	if err != nil {
+		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	var listed base.ApiResponse[[]template.TemplateRegistry]
+	if err := cmdutil.DecodeJSON(resp, &listed); err != nil {
+		return template.TemplateRegistry{}, errors.WrapIf(err, "failed to load registry")
+	}
+
+	for _, registry := range listed.Data {
+		if registry.ID == id {
+			return registry, nil
+		}
+	}
+	return template.TemplateRegistry{}, errors.Errorf("template registry %q not found", id)
 }
 
 var fetchCmd = &cobra.Command{
@@ -1131,7 +1213,8 @@ var fetchCmd = &cobra.Command{
 			return err
 		}
 
-		resp, err := c.Get(cmd.Context(), types.Endpoints.TemplateFetch())
+		path := cmdutil.AppendQuery(types.Endpoints.TemplateFetch(), url.Values{"url": []string{templateFetchURL}})
+		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to fetch templates")
 		}
@@ -1142,8 +1225,8 @@ var fetchCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
@@ -1220,7 +1303,11 @@ func init() {
 	_ = defaultsSaveCmd.MarkFlagRequired("file")
 
 	// variables-update command flags
-	variablesUpdateCmd.Flags().StringVar(&templateVarsUpdateFile, "file", "", "Path to variables JSON file")
+	variablesUpdateCmd.Flags().StringVar(&templateVarsUpdateKey, "key", "", "New variable key")
+	variablesUpdateCmd.Flags().StringVar(&templateVarsUpdateValue, "value", "", "New variable value")
+	variablesUpdateCmd.Flags().BoolVar(&templateVarsUpdateSecret, "secret", false, "Mark the variable as a secret")
+	variablesUpdateCmd.Flags().BoolVar(&templateVarsUpdateAllEnvs, "all-environments", false, "Scope the variable to all environments")
+	variablesUpdateCmd.Flags().StringSliceVar(&templateVarsUpdateEnvIDs, "environment", nil, "Environment IDs to scope the variable to (repeatable)")
 	variablesUpdateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	_ = variablesUpdateCmd.MarkFlagRequired("file")
 
@@ -1233,5 +1320,7 @@ func init() {
 	registriesUpdateCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// fetch command flags
+	fetchCmd.Flags().StringVar(&templateFetchURL, "url", "", "Registry URL to fetch templates from (required)")
+	_ = fetchCmd.MarkFlagRequired("url")
 	fetchCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 }

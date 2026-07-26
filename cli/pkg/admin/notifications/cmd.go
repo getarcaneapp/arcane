@@ -49,8 +49,8 @@ var settingsGetCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result []notification.Response
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {

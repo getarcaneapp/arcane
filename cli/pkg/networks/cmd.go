@@ -24,6 +24,7 @@ import (
 var (
 	limitFlag      int
 	startFlag      int
+	allFlag        bool
 	forceFlag      bool
 	jsonOutput     bool
 	inUseOnlyFlag  bool
@@ -53,10 +54,24 @@ var listCmd = &cobra.Command{
 			return err
 		}
 
-		path := types.Endpoints.Networks(c.EnvID())
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "networks", "limit", limitFlag, 20, "start", startFlag)
+		path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Networks(c.EnvID()), cmdutil.ListParams{
+			Resource:        "networks",
+			Limit:           limitFlag,
+			FallbackDefault: 20,
+			Start:           startFlag,
+			All:             allFlag,
+		})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
+		}
+
+		// Filter server-side so that pagination and the reported totals apply to
+		// the matching set rather than to whichever page happened to be fetched.
+		if inUseOnlyFlag {
+			path = cmdutil.AppendQuery(path, url.Values{"inUse": []string{"true"}})
+		}
+		if unusedOnlyFlag {
+			path = cmdutil.AppendQuery(path, url.Values{"inUse": []string{"false"}})
 		}
 
 		resp, err := c.Get(cmd.Context(), path)
@@ -65,20 +80,18 @@ var listCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.Paginated[network.Summary]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		body, err := cmdutil.ReadJSONBody(resp)
+		if err != nil {
+			return errors.WrapIf(err, "failed to list networks")
 		}
-		result.Data = filterNetworksByUsage(result.Data, inUseOnlyFlag, unusedOnlyFlag)
-		result.Pagination.TotalItems = int64(len(result.Data))
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintRawJSON(body)
+		}
+
+		var result base.Paginated[network.Summary]
+		if err := json.Unmarshal(body, &result); err != nil {
+			return errors.WrapIf(err, "failed to parse response")
 		}
 
 		headers := []string{"ID", "NAME", "DRIVER", "SCOPE", "CREATED", "IN USE"}
@@ -128,8 +141,8 @@ var getCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[network.Inspect]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -204,8 +217,8 @@ var deleteCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[any]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
@@ -237,8 +250,8 @@ var countsCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[network.UsageCounts]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -289,8 +302,8 @@ var pruneCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[network.PruneReport]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -304,6 +317,7 @@ var pruneCmd = &cobra.Command{
 
 		output.Success("Networks pruned successfully")
 		output.KeyValue("Deleted networks", len(result.Data.NetworksDeleted))
+		output.KeyValue("Space Reclaimed", output.UnsignedBytes(result.Data.SpaceReclaimed))
 		return nil
 	},
 }
@@ -317,7 +331,8 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of networks to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	listCmd.Flags().BoolVar(&inUseOnlyFlag, "inuse", false, "Only show networks currently in use")
 	listCmd.Flags().BoolVar(&unusedOnlyFlag, "unused", false, "Only show networks not in use")
@@ -373,7 +388,7 @@ func resolveNetworkID(ctx context.Context, c *client.Client, identifier string, 
 		return "", "", errors.Errorf("failed to resolve network %q (status %d): %s", trimmed, resp.StatusCode, strings.TrimSpace(string(body)))
 	}
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Networks(c.EnvID()), url.QueryEscape(trimmed), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Networks(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return "", "", errors.WrapIf(err, "failed to search networks")
@@ -440,21 +455,4 @@ func networkMatches(item network.Summary, identifierLower, original string) bool
 		return true
 	}
 	return strings.EqualFold(item.Name, original)
-}
-
-func filterNetworksByUsage(items []network.Summary, inUseOnly, unusedOnly bool) []network.Summary {
-	if !inUseOnly && !unusedOnly {
-		return items
-	}
-	filtered := make([]network.Summary, 0, len(items))
-	for _, item := range items {
-		if inUseOnly && !item.InUse {
-			continue
-		}
-		if unusedOnly && item.InUse {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered
 }

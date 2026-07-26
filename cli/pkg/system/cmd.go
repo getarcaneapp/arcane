@@ -52,8 +52,8 @@ var pruneCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[system.PruneAllResult]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -66,7 +66,7 @@ var pruneCmd = &cobra.Command{
 		}
 
 		output.Header("System Prune Results")
-		output.KeyValue("Space Reclaimed", result.Data.SpaceReclaimed)
+		output.KeyValue("Space Reclaimed", output.UnsignedBytes(result.Data.SpaceReclaimed))
 		return nil
 	},
 }
@@ -87,25 +87,22 @@ var dockerInfoCmd = &cobra.Command{
 		}
 		defer func() { _ = resp.Body.Close() }()
 
-		var result base.ApiResponse[dockerinfo.Info]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		// This endpoint returns dockerinfo.Info directly, not wrapped in an
+		// ApiResponse envelope.
+		var result dockerinfo.Info
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to get docker info")
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
-			if err != nil {
-				return errors.WrapIf(err, "failed to marshal JSON")
-			}
-			fmt.Println(string(resultBytes))
-			return nil
+			return cmdutil.PrintJSON(result)
 		}
 
 		output.Header("Docker Info")
-		output.KeyValue("API Version", result.Data.APIVersion)
-		output.KeyValue("OS", result.Data.Os)
-		output.KeyValue("Architecture", result.Data.Arch)
-		output.KeyValue("Go Version", result.Data.GoVersion)
+		output.KeyValue("API Version", result.APIVersion)
+		output.KeyValue("OS", result.Os)
+		output.KeyValue("Architecture", result.Arch)
+		output.KeyValue("Go Version", result.GoVersion)
 		return nil
 	},
 }
@@ -221,8 +218,8 @@ var convertCmd = &cobra.Command{
 			EnvVars       string `json:"envVars"`
 			ServiceName   string `json:"serviceName"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -327,8 +324,8 @@ var upgradeCheckCmd = &cobra.Command{
 			Error      bool   `json:"error"`
 			Message    string `json:"message"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {

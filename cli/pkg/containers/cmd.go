@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,16 +21,20 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/container"
+	"github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/spf13/cobra"
 )
 
 var (
-	containersLimit         int
-	containersStart         int
-	containersAll           bool
-	containersUpdatesFilter string
-	forceFlag               bool
-	jsonOutput              bool
+	containersLimit           int
+	containersStart           int
+	containersAll             bool
+	containersUpdatesFilter   string
+	containersStandalone      string
+	containersIncludeInternal bool
+	containersDeleteVolumes   bool
+	forceFlag                 bool
+	jsonOutput                bool
 
 	containerCreateFile       string
 	containerCreateName       string
@@ -94,18 +99,18 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var result base.Paginated[container.Summary]
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+	body, err := cmdutil.ReadJSONBody(resp)
+	if err != nil {
+		return errors.WrapIf(err, "failed to list containers")
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintRawJSON(body)
+	}
+
+	var result base.Paginated[container.Summary]
+	if err := json.Unmarshal(body, &result); err != nil {
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	effectiveUpdatesFilter := strings.TrimSpace(containersUpdatesFilter)
@@ -149,17 +154,15 @@ func runContainersList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 }
 
 func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateFilter bool) (string, error) {
-	path := types.Endpoints.Containers(c.EnvID())
-	if containersAll {
-		if cmd != nil && (cmd.Flags().Changed("limit") || cmd.Flags().Changed("start")) {
-			return "", errors.New("--all cannot be combined with explicit pagination flags")
-		}
-	} else {
-		var err error
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "containers", "limit", containersLimit, 20, "start", containersStart)
-		if err != nil {
-			return "", errors.WrapIf(err, "failed to build pagination query")
-		}
+	path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Containers(c.EnvID()), cmdutil.ListParams{
+		Resource:        "containers",
+		Limit:           containersLimit,
+		FallbackDefault: 20,
+		Start:           containersStart,
+		All:             containersAll,
+	})
+	if err != nil {
+		return "", errors.WrapIf(err, "failed to build pagination query")
 	}
 
 	parsed, err := url.Parse(path)
@@ -168,8 +171,11 @@ func buildContainersListPath(cmd *cobra.Command, c *client.Client, forceHasUpdat
 	}
 
 	query := parsed.Query()
-	if containersAll {
-		query.Set("all", "true")
+	if containersStandalone != "" {
+		query.Set("standalone", containersStandalone)
+	}
+	if containersIncludeInternal {
+		query.Set("includeInternal", "true")
 	}
 	updatesFilter := strings.TrimSpace(containersUpdatesFilter)
 	if forceHasUpdateFilter {
@@ -235,8 +241,8 @@ var containersGetCmd = &cobra.Command{
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[container.Details]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resolved = &result.Data
 		}
@@ -308,7 +314,9 @@ var containersUpdateCmd = &cobra.Command{
 	Args:         cobra.ExactArgs(1),
 	SilenceUsage: true,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		return runContainerPostAction[container.ActionResult](cmd, args[0], containerPostActionConfig[container.ActionResult]{
+		// This route is served by the updater handler, so it answers with an
+		// updater.Result rather than a container.ActionResult.
+		return runContainerPostAction[updater.Result](cmd, args[0], containerPostActionConfig[updater.Result]{
 			endpoint:       types.Endpoints.ContainerUpdate,
 			failureMessage: "failed to update container",
 			successVerb:    "updated",
@@ -366,8 +374,8 @@ func runContainerPostAction[T any](cmd *cobra.Command, containerRef string, cfg 
 	}
 
 	var result base.ApiResponse[T]
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+		return err
 	}
 
 	if jsonOutput {
@@ -413,7 +421,10 @@ var containersDeleteCmd = &cobra.Command{
 			}
 		}
 
-		path := types.Endpoints.Container(c.EnvID(), resolved.ID) + "?force=true"
+		query := url.Values{}
+		query.Set("force", strconv.FormatBool(forceFlag))
+		query.Set("volumes", strconv.FormatBool(containersDeleteVolumes))
+		path := types.Endpoints.Container(c.EnvID(), resolved.ID) + "?" + query.Encode()
 		resp, err := c.Delete(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to delete container")
@@ -421,8 +432,8 @@ var containersDeleteCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[base.MessageResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return errors.WrapIf(err, "failed to delete container")
 		}
 
 		if !result.Success {
@@ -465,8 +476,8 @@ var containersCountsCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[container.StatusCounts]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -593,8 +604,8 @@ var containersCreateCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[container.Created]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -650,16 +661,20 @@ func init() {
 
 	// List command flags
 	containersListCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
-	containersListCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
-	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, "Show all containers (including stopped)")
+	containersListCmd.Flags().IntVar(&containersStart, "start", 0, cmdutil.StartFlagUsage)
+	containersListCmd.Flags().BoolVarP(&containersAll, "all", "a", false, cmdutil.AllFlagUsage)
 	containersListCmd.Flags().StringVar(&containersUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
+	containersListCmd.Flags().StringVar(&containersStandalone, "standalone", "", "Filter standalone containers only (true/false)")
+	containersListCmd.Flags().BoolVar(&containersIncludeInternal, "include-internal", false, "Include Arcane-internal containers")
 	containersListCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	containersUpdatesCmd.Flags().IntVarP(&containersLimit, "limit", "n", 20, "Number of containers to show")
-	containersUpdatesCmd.Flags().IntVar(&containersStart, "start", 0, "Offset for pagination")
+	containersUpdatesCmd.Flags().IntVar(&containersStart, "start", 0, cmdutil.StartFlagUsage)
+	containersUpdatesCmd.Flags().BoolVarP(&containersAll, "all", "a", false, cmdutil.AllFlagUsage)
 	containersUpdatesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Delete command flags
-	containersDeleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force deletion without confirmation")
+	containersDeleteCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force removal of a running container and skip the confirmation prompt")
+	containersDeleteCmd.Flags().BoolVar(&containersDeleteVolumes, "volumes", false, "Remove anonymous volumes associated with the container")
 
 	// Global JSON output flags
 	containersGetCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
@@ -761,7 +776,7 @@ func fetchContainerByIdentifier(ctx context.Context, c *client.Client, identifie
 }
 
 func searchContainerMatches(ctx context.Context, c *client.Client, identifier string) ([]container.Summary, error) {
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Containers(c.EnvID()), url.QueryEscape(identifier), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Containers(c.EnvID()), url.QueryEscape(identifier), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to search containers")
@@ -831,7 +846,7 @@ func containerDetailsFromSummary(summary container.Summary) *container.Details {
 }
 
 func fallbackContainerByIDPrefix(ctx context.Context, c *client.Client, identifierLower string) (*container.Details, bool, error) {
-	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Endpoints.Containers(c.EnvID()), 200)
+	fallbackPath := fmt.Sprintf("%s?limit=%d", types.Endpoints.Containers(c.EnvID()), cmdutil.ShowAllLimit)
 	fallbackResp, err := c.Get(ctx, fallbackPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search containers")

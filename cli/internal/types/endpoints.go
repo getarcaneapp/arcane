@@ -9,7 +9,8 @@ import (
 // Endpoint paths may contain format specifiers (e.g., %s) for environment IDs or resource IDs.
 type ArcaneApiEndpoints struct {
 	// Version
-	VersionEndpoint string
+	VersionEndpoint    string
+	AppVersionEndpoint string
 
 	// Authentication
 	AuthLogoutEndpoint    string
@@ -127,7 +128,6 @@ type ArcaneApiEndpoints struct {
 	// Container Registries
 	ContainerRegistriesEndpoint   string
 	ContainerRegistryEndpoint     string
-	ContainerRegistrySyncEndpoint string
 	ContainerRegistryTestEndpoint string
 
 	// Events
@@ -142,6 +142,7 @@ type ArcaneApiEndpoints struct {
 	TemplatesDefaultEndpoint    string
 	TemplatesRegistriesEndpoint string
 	TemplateRegistryEndpoint    string
+	VariableEndpoint            string
 	TemplatesVariablesEndpoint  string
 	TemplateContentEndpoint     string
 	TemplateDownloadEndpoint    string
@@ -173,13 +174,13 @@ type ArcaneApiEndpoints struct {
 	GitRepositoryTestEndpoint     string
 	GitRepositoryBranchesEndpoint string
 	GitRepositoryFilesEndpoint    string
-	GitRepositoriesSyncEndpoint   string
 }
 
 // Endpoints contains the defined API endpoints
 var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; auth-related names are not credentials
 	// Version
-	VersionEndpoint: "/api/version",
+	VersionEndpoint:    "/api/version",
+	AppVersionEndpoint: "/api/app-version",
 
 	// Authentication
 	AuthLogoutEndpoint:    "/api/auth/logout",
@@ -297,7 +298,6 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	// Container Registries
 	ContainerRegistriesEndpoint:   "/api/container-registries",
 	ContainerRegistryEndpoint:     "/api/container-registries/%s",
-	ContainerRegistrySyncEndpoint: "/api/container-registries/sync",
 	ContainerRegistryTestEndpoint: "/api/container-registries/%s/test",
 
 	// Events
@@ -312,7 +312,8 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	TemplatesDefaultEndpoint:    "/api/templates/default",
 	TemplatesRegistriesEndpoint: "/api/templates/registries",
 	TemplateRegistryEndpoint:    "/api/templates/registries/%s",
-	TemplatesVariablesEndpoint:  "/api/templates/variables",
+	TemplatesVariablesEndpoint:  "/api/variables",
+	VariableEndpoint:            "/api/variables/%s",
 	TemplateContentEndpoint:     "/api/templates/%s/content",
 	TemplateDownloadEndpoint:    "/api/templates/%s/download",
 	TemplateFetchEndpoint:       "/api/templates/fetch",
@@ -343,7 +344,6 @@ var Endpoints = ArcaneApiEndpoints{ //nolint:gosec // static endpoint paths; aut
 	GitRepositoryTestEndpoint:     "/api/customize/git-repositories/%s/test",
 	GitRepositoryBranchesEndpoint: "/api/customize/git-repositories/%s/branches",
 	GitRepositoryFilesEndpoint:    "/api/customize/git-repositories/%s/files",
-	GitRepositoriesSyncEndpoint:   "/api/git-repositories/sync",
 }
 
 // Auth endpoints
@@ -653,7 +653,6 @@ func (e ArcaneApiEndpoints) ContainerRegistries() string { return e.ContainerReg
 func (e ArcaneApiEndpoints) ContainerRegistry(id string) string {
 	return fmt.Sprintf(e.ContainerRegistryEndpoint, id)
 }
-func (e ArcaneApiEndpoints) ContainerRegistrySync() string { return e.ContainerRegistrySyncEndpoint }
 func (e ArcaneApiEndpoints) ContainerRegistryTest(id string) string {
 	return fmt.Sprintf(e.ContainerRegistryTestEndpoint, id)
 }
@@ -677,6 +676,11 @@ func (e ArcaneApiEndpoints) TemplateRegistry(id string) string {
 	return fmt.Sprintf(e.TemplateRegistryEndpoint, id)
 }
 func (e ArcaneApiEndpoints) TemplatesVariables() string { return e.TemplatesVariablesEndpoint }
+
+// Variable returns the path for a single global variable.
+func (e ArcaneApiEndpoints) Variable(id string) string {
+	return fmt.Sprintf(e.VariableEndpoint, id)
+}
 func (e ArcaneApiEndpoints) TemplateContent(id string) string {
 	return fmt.Sprintf(e.TemplateContentEndpoint, id)
 }
@@ -727,4 +731,3 @@ func (e ArcaneApiEndpoints) GitRepositoryBranches(id string) string {
 func (e ArcaneApiEndpoints) GitRepositoryFiles(id string) string {
 	return fmt.Sprintf(e.GitRepositoryFilesEndpoint, id)
 }
-func (e ArcaneApiEndpoints) GitRepositoriesSync() string { return e.GitRepositoriesSyncEndpoint }

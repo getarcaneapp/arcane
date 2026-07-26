@@ -12,10 +12,12 @@ import (
 
 // EffectiveLimit resolves the final list limit with precedence:
 // explicit flag > per-resource config > global config > fallback default.
+// A limit of ShowAllLimit is passed straight through so that `--limit -1`
+// reaches the server as the documented "return everything" sentinel.
 func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fallbackDefault int) int {
 	if cmd != nil {
 		if flag := cmd.Flags().Lookup(flagName); flag != nil && flag.Changed {
-			if flagValue > 0 {
+			if flagValue > 0 || flagValue == ShowAllLimit {
 				return flagValue
 			}
 			return 0
@@ -25,12 +27,12 @@ func EffectiveLimit(cmd *cobra.Command, resource, flagName string, flagValue, fa
 	resource = clitypes.NormalizePaginatedResource(resource)
 	if app, ok := runtimectx.From(cmd.Context()); ok {
 		if cfg := app.Config(); cfg != nil {
-			if v := cfg.LimitFor(resource); v > 0 {
+			if v := cfg.LimitFor(resource); v != 0 {
 				return v
 			}
 		}
 	} else if cfg, err := config.Load(); err == nil && cfg != nil {
-		if v := cfg.LimitFor(resource); v > 0 {
+		if v := cfg.LimitFor(resource); v != 0 {
 			return v
 		}
 	}
