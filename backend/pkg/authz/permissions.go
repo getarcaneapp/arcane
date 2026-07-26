@@ -192,6 +192,21 @@ const (
 	// only into the Admin role via AllPermissions().
 	PermSystemHostTerminal = "system:host-terminal"
 
+	// PermSnippetsList, PermSnippetsRead, PermSnippetsCreate, PermSnippetsUpdate
+	// and PermSnippetsDelete manage Snippet CRUD. PermSnippetsRun is deliberately
+	// separate from create/update so an operator can be granted permission to
+	// run vetted snippets without being able to author new ones. Every snippet
+	// run executes on the real Docker host via HostShellService — equivalent to
+	// root on the host machine — so, like PermSystemHostTerminal, none of these
+	// are seeded into any built-in role; they are seeded only into Admin via
+	// AllPermissions().
+	PermSnippetsList   = "snippets:list"
+	PermSnippetsRead   = "snippets:read"
+	PermSnippetsCreate = "snippets:create"
+	PermSnippetsUpdate = "snippets:update"
+	PermSnippetsDelete = "snippets:delete"
+	PermSnippetsRun    = "snippets:run"
+
 	PermImageUpdatesRead  = "image-updates:read"
 	PermImageUpdatesCheck = "image-updates:check"
 

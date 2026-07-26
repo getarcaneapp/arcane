@@ -136,6 +136,14 @@ export const queryKeys = {
 			['gitops-syncs', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, syncId: string) => ['gitops-syncs', environmentId, syncId] as const
 	},
+	snippets: {
+		all: ['snippets'] as const,
+		list: (environmentId: string, options: SearchPaginationSortRequest) =>
+			['snippets', environmentId, stableSerialize(options)] as const,
+		detail: (environmentId: string, snippetId: string) => ['snippets', environmentId, snippetId] as const,
+		runs: (environmentId: string, snippetId: string, options: SearchPaginationSortRequest) =>
+			['snippets', environmentId, snippetId, 'runs', stableSerialize(options)] as const
+	},
 	volumes: {
 		table: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['volumes', environmentId, stableSerialize(options)] as const,

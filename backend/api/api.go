@@ -215,6 +215,7 @@ type HandlerDeps struct {
 	Role              *services.RoleService
 	Variable          *services.VariableService
 	HostShell         *services.HostShellService
+	Snippet           *services.SnippetService
 }
 
 // SetupAPI creates and configures the Huma API attached to the Echo router.
@@ -395,6 +396,7 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	handlers.RegisterDiagnostics(api, deps.Diagnostics)
 	handlers.RegisterGitRepositories(api, deps.GitRepository)
 	handlers.RegisterGitOpsSyncs(api, deps.GitOpsSync)
+	handlers.RegisterSnippets(api, deps.Snippet)
 	handlers.RegisterWebhooks(api, deps.Webhook)
 	handlers.RegisterVulnerability(api, deps.Vulnerability, handlerAppCtx)
 	handlers.RegisterDashboard(api, deps.Dashboard, deps.Environment)

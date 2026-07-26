@@ -50,6 +50,7 @@ var ServiceOptions = fx.Options(
 		services.NewWebhookService,
 		services.NewVariableService,
 		services.NewHostShellService,
+		services.NewSnippetService,
 
 		// Adapters for scalar config fields, unexported parameters, builders, and lifecycle hooks.
 		provideVersionServiceInternal,

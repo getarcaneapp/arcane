@@ -118,6 +118,18 @@ const (
 	// refused (disabled setting, preflight failure, session limit).
 	EventTypeHostTerminalDenied EventType = "host.terminal.denied"
 
+	// EventTypeSnippetCreate, EventTypeSnippetUpdate and EventTypeSnippetDelete
+	// are emitted on Snippet CRUD operations.
+	EventTypeSnippetCreate EventType = "snippet.create"
+	EventTypeSnippetUpdate EventType = "snippet.update"
+	EventTypeSnippetDelete EventType = "snippet.delete"
+
+	// EventTypeSnippetExecute is emitted once per snippet run, manual or
+	// scheduled. Severity is success on exit code 0 and warning otherwise.
+	// Metadata carries parameter names only — never values or output; the
+	// SnippetRun row (not this event) is the durable output record.
+	EventTypeSnippetExecute EventType = "snippet.execute"
+
 	// EventSeverityInfo and the constants below enumerate event severities.
 	EventSeverityInfo    EventSeverity = "info"
 	EventSeverityWarning EventSeverity = "warning"

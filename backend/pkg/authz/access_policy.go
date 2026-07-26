@@ -66,6 +66,7 @@ var accessSurfacesInternal = []AccessSurface{
 	// Gated on container exec, not system:host-terminal, so container-only
 	// users keep the page — the host target inside it is gated separately.
 	routeSurfaceInternal("route.terminal", "/terminal", "Terminal", AccessScopeModeSelectedEnvPlusGlobal, []string{PermContainersExec}, 25),
+	routeSurfaceInternal("route.snippets", "/snippets", "Snippets", AccessScopeModeSelectedEnvPlusGlobal, []string{PermSnippetsList, PermSnippetsRead}, 27),
 	routeSurfaceInternal("route.images", "/images", "Images", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 50),
 	routeSurfaceInternal("route.images.detail", "/images/{imageId}", "Image", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesList, PermImagesRead}, 0),
 	routeSurfaceInternal("route.images.builds", "/images/builds", "Builds", AccessScopeModeSelectedEnvPlusGlobal, []string{PermImagesBuild}, 0),

@@ -10,11 +10,13 @@ import (
 	"emperror.dev/errors"
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/google/uuid"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/client"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/hostshell"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
+	buildapi "go.getarcane.app/builds/api"
 )
 
 // Host-shell session limits. These bound the blast radius of a feature that
@@ -26,6 +28,10 @@ const (
 	hostShellIdleTimeout           = 15 * time.Minute
 	hostShellMaxLifetime           = 4 * time.Hour
 	hostShellRemoveTimeout         = 30 * time.Second
+
+	// hostShellScriptDefaultMaxOutputBytes bounds RunScript output when the
+	// caller does not specify ScriptRequest.MaxOutputBytes.
+	hostShellScriptDefaultMaxOutputBytes = 16 * 1024
 )
 
 // Sentinel errors returned by HostShellService entry points, distinct from
@@ -256,6 +262,136 @@ func (s *HostShellService) StartInteractive(ctx context.Context, req StartIntera
 	s.emitOpenEventInternal(ctx, req.Actor, session)
 
 	return session, nil
+}
+
+// ScriptRequest configures a one-shot host-shell script run, backing
+// Snippets. Script is delivered to "/bin/sh -s" on stdin — never as an argv
+// element or a "-c" string — so a parameter value can never be interpreted
+// as shell syntax; the only shell-injection surface is the script body
+// itself, which is trusted author-supplied content. Env entries are applied
+// as the exec process environment, never folded into Script or any other
+// string field.
+type ScriptRequest struct {
+	Script         string
+	Env            map[string]string
+	WorkingDir     string
+	Timeout        time.Duration
+	MaxOutputBytes int
+}
+
+// ScriptResult is the outcome of a completed RunScript call.
+type ScriptResult struct {
+	ExitCode int64
+	Output   string
+}
+
+// RunScript runs Script once on the real Docker host inside a throwaway
+// privileged helper container (the same mechanism as StartInteractive) and
+// returns its combined, capped stdout+stderr and exit code. It shares
+// Enabled/Preflight/ResolveImage and the session-count gate with
+// StartInteractive so the total number of concurrent privileged helper
+// containers on the host stays bounded regardless of which feature opened
+// them.
+//
+// Callers own audit logging for the run itself (see SnippetService) — this
+// method does not emit host.terminal.* events, since every snippet run
+// already gets its own audit event and duplicating it here would double the
+// events list for no benefit.
+func (s *HostShellService) RunScript(ctx context.Context, req ScriptRequest) (ScriptResult, error) {
+	if !s.Enabled(ctx) {
+		return ScriptResult{}, ErrHostShellDisabled
+	}
+
+	if err := s.acquireSlotInternal(); err != nil {
+		return ScriptResult{}, err
+	}
+	defer s.releaseSlotInternal()
+
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	if err := s.preflightInternal(ctx, dockerClient); err != nil {
+		return ScriptResult{}, err
+	}
+
+	image, err := hostshell.ResolveImage(ctx, dockerClient, s.settingsService.GetStringSetting(ctx, "hostTerminalImage", ""))
+	if err != nil {
+		return ScriptResult{}, err
+	}
+
+	sessionID := uuid.NewString()
+	containerID, err := s.createHelperContainerInternal(ctx, dockerClient, image, sessionID)
+	if err != nil {
+		return ScriptResult{}, err
+	}
+	defer forceRemoveHostShellHelperInternal(ctx, dockerClient, containerID)
+
+	cmd := hostshell.NsenterCommand(req.WorkingDir, []string{"/bin/sh", "-s"})
+	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          cmd,
+		Env:          envMapToSliceInternal(req.Env),
+	})
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to create host shell script exec")
+	}
+
+	attachResp, err := dockerClient.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{})
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to attach to host shell script exec")
+	}
+	defer attachResp.Close()
+
+	if _, err := attachResp.Conn.Write([]byte(req.Script)); err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to write script to host shell stdin")
+	}
+	// Half-close so /bin/sh -s sees EOF on stdin after the script and exits
+	// once it finishes running it, instead of waiting for more input.
+	_ = attachResp.CloseWrite()
+
+	maxOutputBytes := req.MaxOutputBytes
+	if maxOutputBytes <= 0 {
+		maxOutputBytes = hostShellScriptDefaultMaxOutputBytes
+	}
+	capture := buildapi.NewLogCapture(maxOutputBytes)
+
+	copyDone := make(chan error, 1)
+	go func() {
+		_, copyErr := stdcopy.StdCopy(capture, capture, attachResp.Reader)
+		copyDone <- copyErr
+	}()
+
+	timedOut := false
+	select {
+	case <-copyDone:
+	case <-time.After(req.Timeout):
+		timedOut = true
+		// Force-close the attach connection so the copy goroutine's blocked
+		// Read unblocks; the deferred forceRemoveHostShellHelperInternal
+		// above kills the still-running process.
+		attachResp.Close()
+		<-copyDone
+	}
+
+	output := capture.String()
+	if capture.Truncated() {
+		output += "\n...<truncated>"
+	}
+
+	if timedOut {
+		return ScriptResult{Output: output}, errors.WrapIf(context.DeadlineExceeded, "snippet script timed out")
+	}
+
+	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
+	if err != nil {
+		return ScriptResult{Output: output}, errors.WrapIf(err, "failed to inspect host shell script exec result")
+	}
+
+	return ScriptResult{ExitCode: int64(inspect.ExitCode), Output: output}, nil
 }
 
 // CleanupOrphaned force-removes any host-shell helper container left behind

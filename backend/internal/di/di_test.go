@@ -60,6 +60,7 @@ type graphParams struct {
 	Role              *services.RoleService
 	Variable          *services.VariableService
 	HostShell         *services.HostShellService
+	Snippet           *services.SnippetService
 	AuthMiddleware    *middleware.AuthMiddleware
 
 	AutoUpdate             *scheduler.AutoUpdateJob

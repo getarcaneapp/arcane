@@ -182,6 +182,14 @@ var permissionCatalog = []PermissionCatalogResource{
 		{"sync", PermGitOpsSync, "Trigger sync", ""},
 		{"lifecycle", PermGitOpsLifecycle, "Configure pre-deploy hooks", "Create or modify a sync's pre-deploy lifecycle hook, which runs an arbitrary container with host bind mounts and env on every sync"},
 	}},
+	{"snippets", "Snippets", PermissionScopeEnv, []PermissionCatalogAction{
+		{"list", PermSnippetsList, "List", ""},
+		{"read", PermSnippetsRead, "Read", ""},
+		{"create", PermSnippetsCreate, "Create", ""},
+		{"update", PermSnippetsUpdate, "Update", ""},
+		{"delete", PermSnippetsDelete, "Delete", ""},
+		{"run", PermSnippetsRun, "Run", "Execute a snippet on the environment's host shell. Equivalent to root on the host machine."},
+	}},
 	{"webhooks", "Webhooks", PermissionScopeEnv, []PermissionCatalogAction{
 		{"list", PermWebhooksList, "List", ""},
 		{"create", PermWebhooksCreate, "Create", ""},
