@@ -35,7 +35,7 @@ require (
 	github.com/jinzhu/copier v0.4.0
 	github.com/klauspost/compress v1.19.1
 	github.com/labstack/echo/v5 v5.3.1
-	github.com/libtnb/sqlite v1.2.0
+	github.com/libtnb/sqlite v1.2.1
 	github.com/lmittmann/tint v1.2.0
 	github.com/moby/buildkit v0.31.2
 	github.com/moby/moby/api v1.55.0
@@ -242,9 +242,9 @@ require (
 	gopkg.in/warnings.v0 v0.1.2 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/v3 v3.5.2 // indirect
-	modernc.org/libc v1.73.4 // indirect
+	modernc.org/libc v1.74.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.11.0 // indirect
-	modernc.org/sqlite v1.53.0 // indirect
+	modernc.org/sqlite v1.54.0 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )
