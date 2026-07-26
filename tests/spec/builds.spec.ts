@@ -147,13 +147,26 @@ async function mockDepotConfiguredSettings(page: Page) {
 	});
 }
 
-async function mockBuildRegistry(page: Page, repositoryNames = ['team/build']) {
+const BUILD_REGISTRY_URL = 'registry.example.com';
+
+/**
+ * Serves a single enabled registry to the push target pickers. Pass a function
+ * for `repositoryNames` to change the configured names between requests, and
+ * use the returned counter to wait for a refetch.
+ */
+async function mockBuildRegistry(
+	page: Page,
+	repositoryNames: string[] | (() => string[]) = ['team/build']
+) {
+	const registryRequests = { count: 0 };
+
 	await page.route(/\/api\/container-registries(?:\?.*)?$/, async (route) => {
 		if (route.request().method() !== 'GET') {
 			await route.fallback();
 			return;
 		}
 
+		registryRequests.count += 1;
 		await route.fulfill({
 			status: 200,
 			contentType: 'application/json',
@@ -162,14 +175,15 @@ async function mockBuildRegistry(page: Page, repositoryNames = ['team/build']) {
 				data: [
 					{
 						id: 'e2e-build-registry',
-						url: 'registry.example.com',
+						url: BUILD_REGISTRY_URL,
 						username: 'e2e-user',
 						token: '',
 						description: 'Build test registry',
 						insecure: false,
 						enabled: true,
 						registryType: 'generic',
-						repositoryNames
+						repositoryNames:
+							typeof repositoryNames === 'function' ? repositoryNames() : repositoryNames
 					}
 				],
 				pagination: {
@@ -182,14 +196,13 @@ async function mockBuildRegistry(page: Page, repositoryNames = ['team/build']) {
 			})
 		});
 	});
+
+	return registryRequests;
 }
 
 async function selectBuildPushReference(page: Page, repositoryName = 'team/build') {
 	await page.locator('#build-push-registry:visible').click();
-	await page
-		.locator('[data-slot="select-item"]')
-		.filter({ hasText: 'Generic: registry.example.com' })
-		.click();
+	await page.locator('[data-slot="select-item"]').filter({ hasText: BUILD_REGISTRY_URL }).click();
 	await page.locator('#build-push-repository:visible').click();
 	await page.locator('[data-slot="select-item"]').filter({ hasText: repositoryName }).click();
 	await page.locator('#tag:visible').fill('v1');
@@ -279,61 +292,19 @@ test.describe('Build workspace provider flows', () => {
 
 	test('blocks a stale repository value after registry options change', async ({ page }) => {
 		let repositoryNames = ['team/legacy'];
-		let registryRequests = 0;
-		await page.context().route(/\/api\/container-registries(?:\?.*)?$/, async (route) => {
-			if (route.request().method() !== 'GET') {
-				await route.fallback();
-				return;
-			}
-
-			registryRequests += 1;
-			await route.fulfill({
-				status: 200,
-				contentType: 'application/json',
-				body: JSON.stringify({
-					success: true,
-					data: [
-						{
-							id: 'stale-repository-registry',
-							url: 'registry.example.com',
-							username: 'e2e-user',
-							token: '',
-							description: 'Stale repository test registry',
-							insecure: false,
-							enabled: true,
-							registryType: 'generic',
-							repositoryNames
-						}
-					],
-					pagination: {
-						totalPages: 1,
-						totalItems: 1,
-						currentPage: 1,
-						itemsPerPage: 100,
-						grandTotalItems: 1
-					}
-				})
-			});
-		});
+		const registryRequests = await mockBuildRegistry(page, () => repositoryNames);
 
 		await navigateToBuildWorkspace(page);
 		const pushSwitch = page.locator('#build-push');
 		await ensureSwitchState(pushSwitch, true);
-		await expect.poll(() => registryRequests).toBeGreaterThan(0);
+		await expect.poll(() => registryRequests.count).toBeGreaterThan(0);
 
-		await page.locator('#build-push-registry:visible').click();
-		await page
-			.locator('[data-slot="select-item"]')
-			.filter({ hasText: 'Generic: registry.example.com' })
-			.click();
-		await page.locator('#build-push-repository:visible').click();
-		await page.locator('[data-slot="select-item"]').filter({ hasText: 'team/legacy' }).click();
-		await page.locator('#tag:visible').fill('v1');
+		await selectBuildPushReference(page, 'team/legacy');
 
 		repositoryNames = ['team/current'];
 		await ensureSwitchState(pushSwitch, false);
 		await ensureSwitchState(pushSwitch, true);
-		await expect.poll(() => registryRequests).toBeGreaterThan(1);
+		await expect.poll(() => registryRequests.count).toBeGreaterThan(1);
 		await expect(page.locator('#build-push-repository:visible')).toContainText(
 			'Select a repository name'
 		);

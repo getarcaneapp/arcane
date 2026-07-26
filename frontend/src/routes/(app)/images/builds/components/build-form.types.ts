@@ -1,10 +1,14 @@
 import type { FormInput } from '#lib/utils/settings';
 import type { Writable } from 'svelte/store';
 
-export type BuildProviderOption = {
+export type SelectOption = {
 	label: string;
-	value: 'local' | 'depot';
+	value: string;
 	description?: string;
+};
+
+export type BuildProviderOption = SelectOption & {
+	value: 'local' | 'depot';
 };
 
 export type BuildFormInputs = {

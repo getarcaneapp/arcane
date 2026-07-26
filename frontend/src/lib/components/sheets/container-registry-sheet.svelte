@@ -12,6 +12,7 @@
 	} from '#lib/types/docker';
 	import { z } from 'zod/v4';
 	import { createForm, preventDefault } from '#lib/utils/settings';
+	import { parseLines } from '#lib/utils/form-parsers';
 	import { m } from '#lib/paraglide/messages';
 
 	type ContainerRegistryFormProps = {
@@ -106,13 +107,7 @@
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
-		const repositoryNames = data.repositoryNames
-			? data.repositoryNames
-					.split('\n')
-					.map((s) => s.trim())
-					.filter((s) => s.length > 0)
-			: [];
-		onSubmit({ registry: { ...data, repositoryNames }, isEditMode });
+		onSubmit({ registry: { ...data, repositoryNames: parseLines(data.repositoryNames ?? '') }, isEditMode });
 	}
 
 	function handleOpenChange(newOpenState: boolean) {

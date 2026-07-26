@@ -39,9 +39,11 @@
 	import BuildWorkspacePanel from './components/build-workspace-panel.svelte';
 	import BuildConfigPanel from './components/build-config-panel.svelte';
 	import BuildOutputPanel from './components/build-output-panel.svelte';
-	import type { BuildProviderOption } from './components/build-form.types';
+	import type { BuildProviderOption, SelectOption } from './components/build-form.types';
 	import { imageService } from '#lib/services/image-service';
 	import { containerRegistryService } from '#lib/services/container-registry-service';
+	import { buildImageReference, getRegistryDisplayName } from '#lib/utils/registry';
+	import { parseList } from '#lib/utils/form-parsers';
 	import type { ImageBuildRecord, ImageBuildStatus } from '#lib/types/docker';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import { queryKeys } from '#lib/query/query-keys';
@@ -185,50 +187,43 @@
 	const resolvedProvider = $derived(depotAvailable ? $inputs.provider.value : 'local');
 	const isPushMode = $derived(resolvedProvider === 'depot' ? true : $inputs.push.value);
 
+	const registryRequestOptions = {
+		pagination: { page: 1, limit: 100 },
+		sort: { column: 'url', direction: 'asc' }
+	} satisfies SearchPaginationSortRequest;
+
 	const registriesQuery = createQuery(() => ({
-		queryKey: queryKeys.containerRegistries.list({
-			pagination: { page: 1, limit: 100 },
-			sort: { column: 'url', direction: 'asc' }
-		}),
+		queryKey: queryKeys.containerRegistries.list(registryRequestOptions),
 		enabled: isPushMode,
-		queryFn: () =>
-			containerRegistryService.getRegistries({
-				pagination: { page: 1, limit: 100 },
-				sort: { column: 'url', direction: 'asc' }
-			})
+		queryFn: () => containerRegistryService.getRegistries(registryRequestOptions)
 	}));
 
-	const registryOptions = $derived.by(() => {
-		const opts: { label: string; value: string; description?: string }[] = [];
-		const regs = registriesQuery.data?.data ?? [];
-		for (const r of regs) {
-			if (!r.enabled) continue;
-			const type = r.registryType === 'ecr' ? 'ECR' : 'Generic';
-			opts.push({
-				label: `${type}: ${r.url}`,
-				value: r.id,
-				description: r.registryType === 'ecr' && r.awsRegion ? `AWS ${r.awsRegion}` : undefined
-			});
-		}
-		return opts;
-	});
+	const registries = $derived(registriesQuery.data?.data ?? []);
 
-	const selectedRegistry = $derived((registriesQuery.data?.data ?? []).find((r) => r.id === $inputs.registryId.value));
+	const registryOptions = $derived<SelectOption[]>(
+		registries
+			.filter((registry) => registry.enabled)
+			.map((registry) => {
+				const displayName = getRegistryDisplayName(registry);
+				return {
+					label: registry.url,
+					value: registry.id,
+					description: displayName === registry.url ? undefined : displayName
+				};
+			})
+	);
 
-	const repositoryOptions = $derived((selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name })));
+	const selectedRegistry = $derived(registries.find((registry) => registry.id === $inputs.registryId.value));
 
-	function normalizeRegistryHost(url: string): string {
-		return url.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-	}
+	const repositoryOptions = $derived<SelectOption[]>(
+		(selectedRegistry?.repositoryNames ?? []).map((name) => ({ label: name, value: name }))
+	);
 
-	const fullImageReference = $derived.by(() => {
-		if (!isPushMode || !selectedRegistry) return '';
-		const repositoryName = $inputs.repositoryName.value.trim();
-		const tag = $inputs.pushTag.value.trim();
-		if (!repositoryName || !tag) return '';
-		const host = normalizeRegistryHost(selectedRegistry.url);
-		return `${host}/${repositoryName}:${tag}`;
-	});
+	const fullImageReference = $derived(
+		isPushMode && selectedRegistry
+			? buildImageReference(selectedRegistry.url, $inputs.repositoryName.value, $inputs.pushTag.value)
+			: ''
+	);
 
 	// Clear the repository name when registry changes to prevent cross-registry mismatches.
 	let lastRegistryId = $state($inputs.registryId.value);
@@ -492,20 +487,6 @@
 		logLines = [...logLines, line];
 	}
 
-	function parseTags(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((t) => t.trim())
-			.filter(Boolean);
-	}
-
-	function parsePlatforms(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((t) => t.trim())
-			.filter(Boolean);
-	}
-
 	function parseBuildArgs(raw: string): Record<string, string> {
 		const result: Record<string, string> = {};
 		for (const line of raw.split('\n')) {
@@ -521,19 +502,37 @@
 		return result;
 	}
 
-	function parseList(raw: string): string[] {
-		return raw
-			.split(/[\n,]/)
-			.map((value) => value.trim())
-			.filter(Boolean);
-	}
-
 	function parseOptionalBytes(raw: string): number | undefined {
 		const trimmed = raw.trim();
 		if (!trimmed) return undefined;
 		const parsed = Number.parseInt(trimmed, 10);
 		if (!Number.isFinite(parsed) || parsed <= 0) return undefined;
 		return parsed;
+	}
+
+	// Push builds target a configured registry, so their reference is assembled
+	// from the selected registry, repository name and tag rather than the
+	// free-form tags field.
+	function resolveBuildTags(
+		data: z.infer<typeof formSchema>,
+		push: boolean
+	): { tags: string[]; error?: undefined } | { tags?: undefined; error: string } {
+		if (!push) {
+			const tags = parseList(data.tags);
+			return tags.length > 0 ? { tags } : { error: m.image_tags_required() };
+		}
+
+		const registry = registries.find((item) => item.id === data.registryId);
+		if (!registry) return { error: m.select_a_registry() };
+
+		const repositoryName = data.repositoryName.trim();
+		if (!repositoryName) return { error: m.select_a_repository_name() };
+		if (!registry.repositoryNames?.includes(repositoryName)) return { error: m.repository_name_not_configured() };
+
+		const reference = buildImageReference(registry.url, repositoryName, data.pushTag);
+		if (!reference) return { error: m.tag_required() };
+
+		return { tags: [reference] };
 	}
 
 	function validateProviderCompatibility(
@@ -791,45 +790,17 @@
 		const push = resolvedProvider === 'depot' ? true : data.push;
 		const load = resolvedProvider === 'depot' ? false : data.load;
 
-		let tags: string[];
-		if (push) {
-			const reg = (registriesQuery.data?.data ?? []).find((r) => r.id === data.registryId);
-			if (!reg) {
-				toast.error(m.build_push_registry_required());
-				isBuilding = false;
-				return;
-			}
-			const repositoryName = data.repositoryName.trim();
-			const tag = data.pushTag.trim();
-			if (!repositoryName) {
-				toast.error(m.build_push_repository_required());
-				isBuilding = false;
-				return;
-			}
-			if (!reg.repositoryNames?.includes(repositoryName)) {
-				toast.error(m.build_push_repository_invalid());
-				isBuilding = false;
-				return;
-			}
-			if (!tag) {
-				toast.error(m.build_push_tag_required());
-				isBuilding = false;
-				return;
-			}
-			const host = normalizeRegistryHost(reg.url);
-			tags = [`${host}/${repositoryName}:${tag}`];
-		} else {
-			tags = parseTags(data.tags);
-			if (tags.length === 0) {
-				toast.error(m.image_tags_required());
-				isBuilding = false;
-				return;
-			}
+		const resolvedTags = resolveBuildTags(data, push);
+		if (resolvedTags.error) {
+			toast.error(resolvedTags.error);
+			isBuilding = false;
+			return;
 		}
+		const tags = resolvedTags.tags;
 
 		const parsedCacheTo = parseList(data.cacheTo || '');
 		const parsedEntitlements = parseList(data.entitlements || '');
-		const parsedPlatforms = parsePlatforms(data.platforms || '');
+		const parsedPlatforms = parseList(data.platforms || '');
 		const parsedExtraHosts = parseList(data.extraHosts || '');
 		const parsedUlimits = parseBuildArgs(data.ulimits || '');
 		const parsedShmSize = parseOptionalBytes(data.shmSize || '');
@@ -917,6 +888,20 @@
 			onSelectContext={(path: string) => (selectedContextPath = path)}
 		/>
 	</Card.Root>
+{/snippet}
+
+{#snippet configPanel()}
+	<BuildConfigPanel
+		{inputs}
+		provider={$inputs.provider.value}
+		bind:showAdvanced
+		{isPushMode}
+		{registryOptions}
+		{repositoryOptions}
+		{fullImageReference}
+		registryLoadFailed={Boolean(registriesQuery.error)}
+		onSubmit={handleSubmit}
+	/>
 {/snippet}
 
 {#snippet BuildHistoryStatusCell({ value }: { value: unknown })}
@@ -1312,17 +1297,7 @@
 			</div>
 
 			<Tabs.Content value="config" class="mt-0 min-h-0 flex-1 overflow-auto">
-				<BuildConfigPanel
-					{inputs}
-					provider={$inputs.provider.value}
-					bind:showAdvanced
-					{isPushMode}
-					{registryOptions}
-					{repositoryOptions}
-					{fullImageReference}
-					registryLoadError={registriesQuery.error as { message?: string } | null}
-					onSubmit={handleSubmit}
-				/>
+				{@render configPanel()}
 			</Tabs.Content>
 			<Tabs.Content value="output" class="mt-0 min-h-0 flex-1 overflow-hidden">
 				<BuildOutputPanel
@@ -1433,17 +1408,7 @@
 								{@render workspaceCard()}
 							{:else if buildTabValue === 'configuration'}
 								<Card.Root class="overflow-hidden">
-									<BuildConfigPanel
-										{inputs}
-										provider={$inputs.provider.value}
-										bind:showAdvanced
-										{isPushMode}
-										{registryOptions}
-										{repositoryOptions}
-										{fullImageReference}
-										registryLoadError={registriesQuery.error as { message?: string } | null}
-										onSubmit={handleSubmit}
-									/>
+									{@render configPanel()}
 								</Card.Root>
 							{:else}
 								<Card.Root class="flex h-full min-h-[500px] flex-col overflow-hidden">

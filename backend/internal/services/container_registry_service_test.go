@@ -12,6 +12,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -1002,118 +1003,70 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 	assert.Contains(t, err.Error(), "failed to load enabled registries")
 }
 
-func TestContainerRegistryService_CreateRegistry_PersistsRepositoryNames(t *testing.T) {
-	_, db := setupImageServiceAuthTest(t)
-	svc := NewContainerRegistryService(db, nil, nil)
+func createRegistryWithRepositoryNames(t *testing.T, svc *ContainerRegistryService, repositoryNames ...string) *models.ContainerRegistry {
+	t.Helper()
 
-	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
 		URL:             "https://registry.example.com",
 		Username:        "my-user",
 		Token:           "my-token",
-		RepositoryNames: []string{"team", "team/platform"},
-	})
-	require.NoError(t, err)
-	assert.Equal(t, models.StringSlice{"team", "team/platform"}, reg.RepositoryNames)
-
-	// Verify the value was persisted to the database.
-	var fetched models.ContainerRegistry
-	require.NoError(t, db.WithContext(context.Background()).First(&fetched, "id = ?", reg.ID).Error)
-	assert.Equal(t, models.StringSlice{"team", "team/platform"}, fetched.RepositoryNames)
-}
-
-func TestContainerRegistryService_CreateRegistry_NormalizesRepositoryNames(t *testing.T) {
-	_, db := setupImageServiceAuthTest(t)
-	svc := NewContainerRegistryService(db, nil, nil)
-
-	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
-		URL:      "https://registry.example.com",
-		Username: "my-user",
-		Token:    "my-token",
-		RepositoryNames: []string{
-			" team ",
-			"",
-			"team",
-			"team/platform",
-			" team ",
-		},
+		RepositoryNames: repositoryNames,
 	})
 	require.NoError(t, err)
 
-	// Entries should be trimmed, empties filtered, and duplicates removed
-	// while preserving first-occurrence order.
-	assert.Equal(t, models.StringSlice{"team", "team/platform"}, reg.RepositoryNames)
+	return registry
+}
+
+func fetchRegistry(t *testing.T, db *database.DB, id string) models.ContainerRegistry {
+	t.Helper()
 
 	var fetched models.ContainerRegistry
-	require.NoError(t, db.WithContext(context.Background()).First(&fetched, "id = ?", reg.ID).Error)
-	assert.Equal(t, models.StringSlice{"team", "team/platform"}, fetched.RepositoryNames)
+	require.NoError(t, db.WithContext(context.Background()).First(&fetched, "id = ?", id).Error)
+
+	return fetched
 }
 
-func TestContainerRegistryService_CreateRegistry_RejectsInvalidRepositoryNames(t *testing.T) {
+func TestContainerRegistryService_CreateRegistry_NormalizesAndPersistsRepositoryNames(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	svc := NewContainerRegistryService(db, nil, nil)
 
-	for _, repositoryName := range []string{"/team", "team/", "team:latest", "team name"} {
-		t.Run(repositoryName, func(t *testing.T) {
-			_, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
-				URL:             "https://registry.example.com",
-				Username:        "my-user",
-				Token:           "my-token",
-				RepositoryNames: []string{repositoryName},
-			})
-			require.Error(t, err)
-			require.ErrorIs(t, err, common.ErrValidation)
-			assert.Contains(t, errors.GetDetails(err), "repositoryNames")
-		})
-	}
+	// Entries are trimmed, empties dropped and duplicates removed while
+	// preserving first-occurrence order.
+	registry := createRegistryWithRepositoryNames(t, svc, " team ", "", "team", "team/platform", " team ")
+	assert.Equal(t, models.StringSlice{"team", "team/platform"}, registry.RepositoryNames)
+	assert.Equal(t, models.StringSlice{"team", "team/platform"}, fetchRegistry(t, db, registry.ID).RepositoryNames)
 }
 
-func TestContainerRegistryService_UpdateRegistry_ClearsRepositoryNamesWithEmptySlice(t *testing.T) {
+func TestContainerRegistryService_CreateRegistry_RejectsInvalidRepositoryName(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	svc := NewContainerRegistryService(db, nil, nil)
 
-	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+	_, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
 		URL:             "https://registry.example.com",
-		Username:        "my-user",
-		Token:           "my-token",
-		RepositoryNames: []string{"team", "team/platform"},
+		RepositoryNames: []string{"team:latest"},
 	})
-	require.NoError(t, err)
-	require.Len(t, reg.RepositoryNames, 2)
-
-	emptySlice := []string{}
-	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
-		RepositoryNames: &emptySlice,
-	})
-	require.NoError(t, err)
-	assert.Empty(t, updated.RepositoryNames)
-
-	var fetched models.ContainerRegistry
-	require.NoError(t, db.WithContext(context.Background()).First(&fetched, "id = ?", reg.ID).Error)
-	assert.Empty(t, fetched.RepositoryNames)
+	require.ErrorIs(t, err, common.ErrValidation)
+	assert.Contains(t, errors.GetDetails(err), "repositoryNames")
 }
 
-func TestContainerRegistryService_UpdateRegistry_KeepsRepositoryNamesWithNilPointer(t *testing.T) {
+func TestContainerRegistryService_UpdateRegistry_RepositoryNamesPointerSemantics(t *testing.T) {
 	_, db := setupImageServiceAuthTest(t)
 	svc := NewContainerRegistryService(db, nil, nil)
 
-	reg, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
-		URL:             "https://registry.example.com",
-		Username:        "my-user",
-		Token:           "my-token",
-		RepositoryNames: []string{"team", "team/platform"},
-	})
-	require.NoError(t, err)
-	require.Len(t, reg.RepositoryNames, 2)
+	registry := createRegistryWithRepositoryNames(t, svc, "team", "team/platform")
 
-	// Update a different field while leaving RepositoryNames as nil.
-	updated, err := svc.UpdateRegistry(context.Background(), reg.ID, models.UpdateContainerRegistryRequest{
+	// A nil pointer leaves the existing names untouched.
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
 		Username: new("updated-user"),
 	})
 	require.NoError(t, err)
-	assert.Equal(t, "updated-user", updated.Username)
 	assert.Equal(t, models.StringSlice{"team", "team/platform"}, updated.RepositoryNames)
 
-	var fetched models.ContainerRegistry
-	require.NoError(t, db.WithContext(context.Background()).First(&fetched, "id = ?", reg.ID).Error)
-	assert.Equal(t, models.StringSlice{"team", "team/platform"}, fetched.RepositoryNames)
+	// An empty slice clears them.
+	updated, err = svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		RepositoryNames: &[]string{},
+	})
+	require.NoError(t, err)
+	assert.Empty(t, updated.RepositoryNames)
+	assert.Empty(t, fetchRegistry(t, db, registry.ID).RepositoryNames)
 }

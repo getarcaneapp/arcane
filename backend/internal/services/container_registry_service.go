@@ -154,7 +154,7 @@ func (s *ContainerRegistryService) CreateRegistry(ctx context.Context, req model
 	if err != nil {
 		return nil, err
 	}
-	repositoryNames, err := normalizeRepositoryNames(req.RepositoryNames)
+	repositoryNames, err := normalizeRepositoryNamesInternal(req.RepositoryNames)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +240,7 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 
 	// RepositoryNames: nil pointer means "don't touch"; empty slice means "clear".
 	if req.RepositoryNames != nil {
-		repositoryNames, err := normalizeRepositoryNames(*req.RepositoryNames)
+		repositoryNames, err := normalizeRepositoryNamesInternal(*req.RepositoryNames)
 		if err != nil {
 			return nil, err
 		}
@@ -1176,16 +1176,13 @@ func (s *ContainerRegistryService) checkRegistryNeedsUpdateInternal(item contain
 	needsUpdate = utils.ApplyChanged(&existing.Insecure, mo.Some(item.Insecure)) || needsUpdate
 	needsUpdate = utils.ApplyChanged(&existing.Enabled, mo.Some(item.Enabled)) || needsUpdate
 
-	// Sync repository names from the manager. normalizeRepositoryNames ensures
-	// a deterministic representation so the comparison below is meaningful.
-	normalizedRepoNames, err := normalizeRepositoryNames(item.RepositoryNames)
+	// Normalizing first gives the manager and the local copy the same
+	// representation, so the comparison below only reports real changes.
+	repositoryNames, err := normalizeRepositoryNamesInternal(item.RepositoryNames)
 	if err != nil {
 		return false, err
 	}
-	if !stringSlicesEqualInternal(existing.RepositoryNames, normalizedRepoNames) {
-		existing.RepositoryNames = normalizedRepoNames
-		needsUpdate = true
-	}
+	needsUpdate = utils.ApplySliceChanged(&existing.RepositoryNames, mo.Some(repositoryNames)) || needsUpdate
 
 	// Clear stale credentials when registry type changes during sync
 	if newType != existing.RegistryType {
@@ -1245,7 +1242,7 @@ func (s *ContainerRegistryService) createNewRegistryInternal(ctx context.Context
 	if err != nil {
 		return err
 	}
-	repositoryNames, err := normalizeRepositoryNames(item.RepositoryNames)
+	repositoryNames, err := normalizeRepositoryNamesInternal(item.RepositoryNames)
 	if err != nil {
 		return err
 	}
@@ -1303,51 +1300,22 @@ func normalizeRegistryTypeInternal(value string) (string, error) {
 	}
 }
 
-// normalizeRepositoryNames trims each entry, filters out empty strings, and
-// deduplicates while preserving first-occurrence order. Every non-empty entry
-// must be a valid Docker repository path prefix. It returns a non-nil slice
-// (possibly empty) so that GORM always serializes to a JSON array.
-func normalizeRepositoryNames(raw []string) (models.StringSlice, error) {
-	if len(raw) == 0 {
-		return models.StringSlice{}, nil
+// normalizeRepositoryNamesInternal trims, filters and deduplicates the given
+// entries (preserving first-occurrence order) and validates what remains. It
+// returns a non-nil slice so that GORM always serializes to a JSON array.
+func normalizeRepositoryNamesInternal(raw []string) (models.StringSlice, error) {
+	names := utils.UniqueNonEmptyStrings(raw)
+	result := make(models.StringSlice, 0, len(names))
+	for _, name := range names {
+		// A repository name is only a path, so pair it with placeholder domain
+		// and tag segments to validate it against the reference grammar.
+		if _, err := ref.ParseNormalizedNamed("registry.invalid/" + name + "/placeholder:latest"); err != nil {
+			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("invalid repository name %q", name), "field", "repositoryNames"))
+		}
+		result = append(result, name)
 	}
 
-	seen := make(map[string]bool, len(raw))
-	result := make(models.StringSlice, 0, len(raw))
-	for _, entry := range raw {
-		trimmed := strings.TrimSpace(entry)
-		if trimmed == "" {
-			continue
-		}
-		if _, err := ref.ParseNormalizedNamed("registry.invalid/" + trimmed + "/placeholder:latest"); err != nil {
-			return nil, common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("invalid repository namespace %q", trimmed), "field", "repositoryNames"))
-		}
-		if seen[trimmed] {
-			continue
-		}
-		seen[trimmed] = true
-		result = append(result, trimmed)
-	}
 	return result, nil
-}
-
-// stringSlicesEqualInternal reports whether two string slices contain the
-// same elements in the same order. Nil and empty slices are treated as equal
-// to simplify the sync comparison where a missing field is equivalent to an
-// empty list.
-func stringSlicesEqualInternal(a, b []string) bool {
-	if len(a) == 0 && len(b) == 0 {
-		return true
-	}
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func (s *ContainerRegistryService) deleteUnsyncedInternal(ctx context.Context, existingMap map[string]*models.ContainerRegistry, syncedIDs map[string]bool) error {

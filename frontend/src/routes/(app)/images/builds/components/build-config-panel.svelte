@@ -5,9 +5,7 @@
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import { preventDefault } from '#lib/utils/settings';
 	import { m } from '#lib/paraglide/messages';
-	import type { BuildFormInputsStore } from './build-form.types';
-
-	type RegistryOption = { label: string; value: string; description?: string };
+	import type { BuildFormInputsStore, SelectOption } from './build-form.types';
 
 	let {
 		inputs,
@@ -17,17 +15,17 @@
 		registryOptions = [],
 		repositoryOptions = [],
 		fullImageReference = '',
-		registryLoadError = null,
+		registryLoadFailed = false,
 		onSubmit
 	}: {
 		inputs: BuildFormInputsStore;
 		provider: 'local' | 'depot';
 		showAdvanced?: boolean;
 		isPushMode?: boolean;
-		registryOptions?: RegistryOption[];
-		repositoryOptions?: RegistryOption[];
+		registryOptions?: SelectOption[];
+		repositoryOptions?: SelectOption[];
 		fullImageReference?: string;
-		registryLoadError?: { message?: string } | null;
+		registryLoadFailed?: boolean;
 		onSubmit?: () => void;
 	} = $props();
 
@@ -41,42 +39,30 @@
 			{#if isPushMode}
 				<SelectWithLabel
 					id="build-push-registry"
-					label={m.build_push_registry_label()}
-					placeholder={m.build_push_registry_placeholder()}
+					label={m.common_registry()}
+					placeholder={m.select_a_registry()}
 					options={registryOptions}
+					description={!registryLoadFailed && registryOptions.length === 0 ? m.registries_none_enabled() : undefined}
+					error={registryLoadFailed ? m.registries_no_list_permission() : null}
 					bind:value={$inputs.registryId.value}
-					triggerClass="w-full"
 				/>
-				{#if registryLoadError}
-					<p class="text-xs text-destructive">{m.build_push_registry_permission()}</p>
-				{:else if registryOptions.length === 0}
-					<p class="text-xs text-muted-foreground">{m.build_push_registry_none()}</p>
-				{/if}
 
 				<SelectWithLabel
 					id="build-push-repository"
-					label={m.build_push_repository_label()}
-					placeholder={m.build_push_repository_placeholder()}
+					label={m.repository_name()}
+					placeholder={m.select_a_repository_name()}
 					options={repositoryOptions}
+					description={$inputs.registryId.value && !registryLoadFailed && repositoryOptions.length === 0
+						? m.registries_no_repository_names()
+						: undefined}
 					bind:value={$inputs.repositoryName.value}
-					triggerClass="w-full"
 				/>
-				{#if $inputs.registryId.value && repositoryOptions.length === 0 && !registryLoadError}
-					<p class="text-xs text-muted-foreground">{m.build_push_repository_empty()}</p>
-				{/if}
 
-				<FormInput
-					label={m.build_push_tag_label()}
-					type="text"
-					placeholder={m.build_push_tag_placeholder()}
-					bind:input={$inputs.pushTag}
-				/>
+				<FormInput label={m.tag()} type="text" placeholder={m.tag_placeholder()} bind:input={$inputs.pushTag} />
 
 				{#if fullImageReference}
 					<div class="space-y-1">
-						<span class="text-xs font-medium text-muted-foreground">
-							{m.build_push_reference_label()}
-						</span>
+						<span class="text-xs font-medium text-muted-foreground">{m.image_reference()}</span>
 						<div class="rounded-md bg-muted/50 px-3 py-2">
 							<code class="text-xs break-all">{fullImageReference}</code>
 						</div>
