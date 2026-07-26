@@ -15,7 +15,6 @@
 </script>
 
 <div class="space-y-4">
-	<h3 class="text-base font-semibold">{title}</h3>
 	<SettingsRow label={title} {description} layout="inline">
 		<Switch id="{id}-enabled" bind:checked={enabled} {disabled} />
 	</SettingsRow>

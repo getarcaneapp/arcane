@@ -158,14 +158,16 @@ type PushoverConfig struct {
 }
 
 type GotifyConfig struct {
-	Host       string                         `json:"host"`
-	Port       int                            `json:"port,omitempty"`
-	Token      string                         `json:"token"`
-	Path       string                         `json:"path,omitempty"`
-	Priority   int                            `json:"priority,omitempty"`
-	Title      string                         `json:"title,omitempty"`
-	DisableTLS bool                           `json:"disableTls"`
-	Events     map[NotificationEventType]bool `json:"events,omitempty"`
+	Host               string                         `json:"host"`
+	Port               int                            `json:"port,omitempty"`
+	Token              string                         `json:"token"`
+	Path               string                         `json:"path,omitempty"`
+	Priority           int                            `json:"priority,omitempty"`
+	Title              string                         `json:"title,omitempty"`
+	DisableTLS         bool                           `json:"disableTls"`
+	InsecureSkipVerify bool                           `json:"insecureSkipVerify"`
+	UseHeader          bool                           `json:"useHeader"`
+	Events             map[NotificationEventType]bool `json:"events,omitempty"`
 }
 
 type MatrixConfig struct {
