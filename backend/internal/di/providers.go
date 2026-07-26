@@ -70,7 +70,7 @@ func provideProjectServiceInternal(db *database.DB, settings *services.SettingsS
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }
 
-func provideUpdaterServiceInternal(db *database.DB, settings *services.SettingsService, docker *services.DockerClientService, project *services.ProjectService, imageUpdate *services.ImageUpdateService, registry *services.ContainerRegistryService, event *services.EventService, image *services.ImageService, notification *services.NotificationService, systemUpgrade *services.SystemUpgradeService, activity *services.ActivityService) *services.UpdaterService {
+func provideUpdaterServiceInternal(db *database.DB, settings *services.SettingsService, docker *services.DockerClientService, project *services.ProjectService, imageUpdate *services.ImageUpdateService, registry *services.ContainerRegistryService, event *services.EventService, image *services.ImageService, notification *services.NotificationService, systemUpgrade *services.SystemUpgradeService, activity *services.ActivityService) (*services.UpdaterService, error) {
 	return services.NewUpdaterService(db, settings, docker, project, imageUpdate, registry, event, image, notification, systemUpgrade, activity)
 }
 

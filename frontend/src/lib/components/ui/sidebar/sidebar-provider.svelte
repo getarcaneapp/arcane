@@ -7,7 +7,7 @@
 	import { IsTablet } from '#lib/hooks/is-tablet.svelte.js';
 	import { IsMobile } from '#lib/hooks/is-mobile.svelte.js';
 	import { PersistedState } from 'runed';
-	import settingsStore from '#lib/stores/config-store';
+	import userStore from '#lib/stores/user-store';
 
 	const persistedPinned = new PersistedState('sidebar-pinned', true);
 
@@ -60,18 +60,15 @@
 		}
 	});
 
-	// Sync sidebar hover expansion with backend settings
+	// Sync sidebar hover expansion with the signed-in user's preference
 	$effect(() => {
-		const settings = $settingsStore;
-		if (settings && settings.sidebarHoverExpansion !== undefined) {
-			sidebar.setHoverExpansion(settings.sidebarHoverExpansion);
-		}
+		sidebar.setHoverExpansion($userStore?.preferences?.sidebarHoverExpansion ?? true);
 	});
 </script>
 
 <svelte:window
 	onkeydown={(event) => {
-		if ($settingsStore?.keyboardShortcutsEnabled !== false) {
+		if ($userStore?.preferences?.keyboardShortcutsEnabled !== false) {
 			sidebar.handleShortcutKeydown(event);
 		}
 	}}

@@ -8,8 +8,15 @@
 	let {
 		selectedColor = $bindable(),
 		previousColor,
-		disabled = false
-	}: { selectedColor: string; previousColor: string; disabled?: boolean } = $props();
+		disabled = false,
+		onSelect
+	}: {
+		selectedColor: string;
+		previousColor: string;
+		disabled?: boolean;
+		/** Called whenever the user picks a different accent color. */
+		onSelect?: (color: string) => void;
+	} = $props();
 	let showCustomColorDialog = $state(false);
 
 	const accentColors = [
@@ -29,6 +36,7 @@
 	function handleAccentColorChange(accentValue: string) {
 		selectedColor = accentValue;
 		applyAccentColor(accentValue);
+		onSelect?.(accentValue);
 	}
 </script>
 

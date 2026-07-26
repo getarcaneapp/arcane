@@ -24,8 +24,6 @@ type ContextKey string
 const (
 	// ContextKeyUserID is the context key for the authenticated user's ID.
 	ContextKeyUserID ContextKey = "userID"
-	// ContextKeyCurrentUser is the context key for the authenticated user model.
-	ContextKeyCurrentUser ContextKey = "currentUser"
 	// ContextKeyCurrentSessionID is the context key for the authenticated session ID.
 	ContextKeyCurrentSessionID ContextKey = "currentSessionID"
 	// ContextKeyUserPermissions is the context key for the caller's resolved
@@ -43,8 +41,7 @@ func GetUserIDFromContext(ctx context.Context) (string, bool) {
 
 // GetCurrentUserFromContext retrieves the current user from the context.
 func GetCurrentUserFromContext(ctx context.Context) (*models.User, bool) {
-	u, ok := ctx.Value(ContextKeyCurrentUser).(*models.User)
-	return u, ok
+	return models.CurrentUserFromContext(ctx)
 }
 
 // GetCurrentSessionIDFromContext retrieves the current session ID from the context.
@@ -417,7 +414,7 @@ func setUserInContextInternal(ctx context.Context, user *models.User, ps *authz.
 		ps = authz.NewPermissionSet()
 	}
 	ctx = context.WithValue(ctx, ContextKeyUserID, user.ID)
-	ctx = context.WithValue(ctx, ContextKeyCurrentUser, user)
+	ctx = models.WithCurrentUser(ctx, user)
 	ctx = context.WithValue(ctx, ContextKeyUserPermissions, ps)
 	return ctx
 }

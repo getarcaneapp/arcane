@@ -67,6 +67,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 	// connections would multiply requests and exhaust the browser's
 	// 6-per-origin HTTP/1.1 limit.
 	let streamAbortController: AbortController | null = null;
+	let removePageLifecycleListeners: (() => void) | null = null;
 	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
 	let reconnectAttempt = 0;
 	let streamGeneration = 0;
@@ -140,6 +141,30 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		_streamConnected = false;
 	}
 
+	// Closing a tab leaves teardown to whenever the browser gets around to
+	// dropping the socket. Until it does, the server keeps writing heartbeats
+	// into a connection nobody is reading — so tear down explicitly instead.
+	function watchPageLifecycle() {
+		if (!browser || removePageLifecycleListeners) {
+			return;
+		}
+
+		const onPageHide = () => abortStream();
+		// A bfcache restore comes back with the stream already torn down.
+		const onPageShow = (event: PageTransitionEvent) => {
+			if (event.persisted && started && !streamAbortController) {
+				void connectStream(nextGeneration());
+			}
+		};
+
+		window.addEventListener('pagehide', onPageHide);
+		window.addEventListener('pageshow', onPageShow);
+		removePageLifecycleListeners = () => {
+			window.removeEventListener('pagehide', onPageHide);
+			window.removeEventListener('pageshow', onPageShow);
+		};
+	}
+
 	function removeEnvironment(environmentId: string) {
 		const nextStates = { ..._environmentStates };
 		delete nextStates[environmentId];
@@ -157,11 +182,20 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			return;
 		}
 
+		// Overlapping connects would otherwise strand the previous controller:
+		// abortStream() only ever reaches the newest one, so the older request
+		// would keep an open connection the server has no way to notice.
+		streamAbortController?.abort();
+
 		const controller = new AbortController();
 		streamAbortController = controller;
 		try {
 			const response = await config.openStream(controller.signal);
 			if (!isCurrentGeneration(generation) || !response.body) {
+				// The response body is live even though nobody will read it;
+				// dropping it on the floor leaves the server streaming into a
+				// connection that stays open until its TCP timers expire.
+				controller.abort();
 				if (streamAbortController === controller) {
 					streamAbortController = null;
 				}
@@ -186,6 +220,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				if (!controller.signal.aborted) {
 					scheduleReconnect(generation);
 				}
+			} else if (!controller.signal.aborted) {
+				// A superseded generation has no owner left to abort it.
+				controller.abort();
 			}
 		}
 	}
@@ -215,6 +252,10 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				handleStreamLine(buffer);
 			}
 		} finally {
+			// The loop also exits when the generation advances, with the stream
+			// still open. Cancelling is what actually closes the fetch and lets
+			// the server see the disconnect; releaseLock alone does not.
+			await reader.cancel().catch(() => {});
 			reader.releaseLock();
 		}
 	}
@@ -353,6 +394,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				return;
 			}
 			config.onSelectedEnvironment?.(environmentStore.selected);
+			watchPageLifecycle();
 			reconcileEnvironments();
 			const generation = nextGeneration();
 			if (config.refreshOnStart) {
@@ -372,6 +414,8 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			unsubscribeEnvironment = null;
 			unsubscribeEnvironmentFilter?.();
 			unsubscribeEnvironmentFilter = null;
+			removePageLifecycleListeners?.();
+			removePageLifecycleListeners = null;
 			nextGeneration();
 			abortStream();
 			reconnectAttempt = 0;

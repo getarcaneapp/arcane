@@ -4,7 +4,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	updaterlabels "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
@@ -17,33 +17,33 @@ func TestNormalizeRecreatedArcaneLabelsInternal(t *testing.T) {
 		{
 			name: "legacy server gains current Arcane label",
 			labels: map[string]string{
-				updaterlabels.LabelArcaneLegacyServer: "true",
-				updaterlabels.LabelUpdater:            "false",
-				"com.example.unrelated":               "keep",
+				labels.LabelArcaneLegacyServer: "true",
+				labels.LabelUpdater:            "false",
+				"com.example.unrelated":        "keep",
 			},
 			want: map[string]string{
-				updaterlabels.LabelArcaneLegacyServer: "true",
-				updaterlabels.LabelArcane:             "true",
-				updaterlabels.LabelUpdater:            "false",
-				"com.example.unrelated":               "keep",
+				labels.LabelArcaneLegacyServer: "true",
+				labels.LabelArcane:             "true",
+				labels.LabelUpdater:            "false",
+				"com.example.unrelated":        "keep",
 			},
 			wantSource: map[string]string{
-				updaterlabels.LabelArcaneLegacyServer: "true",
-				updaterlabels.LabelUpdater:            "false",
-				"com.example.unrelated":               "keep",
+				labels.LabelArcaneLegacyServer: "true",
+				labels.LabelUpdater:            "false",
+				"com.example.unrelated":        "keep",
 			},
 		},
 		{
 			name: "agent gains current Arcane label",
 			labels: map[string]string{
-				updaterlabels.LabelArcaneAgent: "true",
+				labels.LabelArcaneAgent: "true",
 			},
 			want: map[string]string{
-				updaterlabels.LabelArcane:      "true",
-				updaterlabels.LabelArcaneAgent: "true",
+				labels.LabelArcane:      "true",
+				labels.LabelArcaneAgent: "true",
 			},
 			wantSource: map[string]string{
-				updaterlabels.LabelArcaneAgent: "true",
+				labels.LabelArcaneAgent: "true",
 			},
 		},
 		{

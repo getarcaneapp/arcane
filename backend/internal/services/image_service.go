@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -198,24 +197,9 @@ func (s *ImageService) PullImage(ctx context.Context, imageName string, progress
 	}
 	defer func() { _ = reader.Close() }()
 
-	streamWriter := progressWriter
-	if streamWriter == nil {
-		streamWriter = io.Discard
-	}
-
-	flusher, implementsFlusher := streamWriter.(http.Flusher)
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, func(line []byte) error {
-		if _, writeErr := streamWriter.Write(line); writeErr != nil {
-			return writeErr
-		}
-		if _, writeErr := streamWriter.Write([]byte("\n")); writeErr != nil {
-			return writeErr
-		}
-		if implementsFlusher {
-			flusher.Flush()
-		}
-		return nil
-	})
+	logWriter := dockerutils.NewLogLineWriter(progressWriter)
+	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+	_ = logWriter.Close()
 	if streamErr != nil {
 		if errors.Is(streamErr, context.Canceled) || strings.Contains(streamErr.Error(), "context canceled") {
 			slog.Debug("image pull stream canceled", "image", imageName, "err", streamErr)
@@ -398,15 +382,7 @@ func (s *ImageService) LoadImageFromReader(ctx context.Context, reader io.Reader
 
 	var result imagetypes.LoadResult
 	var responseBuilder strings.Builder
-	streamErr := dockerutils.ConsumeJSONMessageStream(loadResp, func(line []byte) error {
-		if _, err := responseBuilder.Write(line); err != nil {
-			return err
-		}
-		if err := responseBuilder.WriteByte('\n'); err != nil {
-			return err
-		}
-		return nil
-	})
+	streamErr := dockerutils.RenderJSONMessageStream(loadResp, &responseBuilder)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeImageError, "image", "", fileName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "load", "file": fileName, "step": "read_response"})
 		return nil, errors.WrapIf(streamErr, "failed to read load response")

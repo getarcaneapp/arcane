@@ -54,13 +54,13 @@ require (
 	github.com/stretchr/testify v1.11.1
 	github.com/subosito/gotenv v1.6.0
 	github.com/wneessen/go-mail v0.8.1
-	go.getarcane.app/builds v0.2.0
+	go.getarcane.app/builds v0.3.0
 	go.getarcane.app/docker/convert v0.1.0
 	go.getarcane.app/streams v0.3.1
 	go.getarcane.app/sys/atomic v0.1.0
 	go.getarcane.app/sys/cgroup v0.1.1
 	go.getarcane.app/sys/crypto v0.1.0
-	go.getarcane.app/updater v0.6.1
+	go.getarcane.app/updater v0.7.0
 	go.uber.org/fx v1.24.0
 	go.yaml.in/yaml/v4 v4.0.0-rc.6
 	golang.org/x/crypto v0.54.0
@@ -68,6 +68,7 @@ require (
 	golang.org/x/net v0.57.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/text v0.40.0
 	golang.org/x/time v0.15.0
 	google.golang.org/grpc v1.82.1
@@ -128,7 +129,7 @@ require (
 	github.com/go-git/gcfg v1.5.1-0.20230307220236-3a3c6141e376 // indirect
 	github.com/go-git/go-billy/v5 v5.9.0 // indirect
 	github.com/go-jose/go-jose/v4 v4.1.4 // indirect
-	github.com/go-logr/logr v1.4.3 // indirect
+	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
 	github.com/go-ole/go-ole v1.3.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
@@ -184,10 +185,10 @@ require (
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
 	github.com/pmezard/go-difflib v1.0.1-0.20181226105442-5d4384ee4fb2 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
-	github.com/prometheus/client_golang v1.23.2 // indirect
+	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.2 // indirect
-	github.com/prometheus/common v0.67.5 // indirect
-	github.com/prometheus/procfs v0.20.1 // indirect
+	github.com/prometheus/common v0.70.1 // indirect
+	github.com/prometheus/procfs v0.21.1 // indirect
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/samber/go-singleflightx v0.3.2 // indirect
 	github.com/samber/lo v1.53.0 // indirect
@@ -234,8 +235,6 @@ require (
 	go.uber.org/dig v1.19.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.26.0 // indirect
-	go.yaml.in/yaml/v2 v2.4.4 // indirect
-	golang.org/x/sys v0.47.0 // indirect
 	golang.org/x/term v0.45.0 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260526163538-3dc84a4a5aaa // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260526163538-3dc84a4a5aaa // indirect

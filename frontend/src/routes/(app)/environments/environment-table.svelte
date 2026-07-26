@@ -19,6 +19,7 @@
 	import systemUpgradeService from '#lib/services/api/system-upgrade-service';
 	import UpdateCenterDialog from '#lib/components/dialogs/update-center-dialog.svelte';
 	import EnvironmentUpgradeMenuItem from './environment-upgrade-menu-item.svelte';
+	import EnvironmentVersionCell from './environment-version-cell.svelte';
 	import type { AppVersionInformation } from '#lib/types/settings';
 	import { hasPermission } from '#lib/utils/auth';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
@@ -197,6 +198,7 @@
 				throw new Error(result.error || m.upgrade_failed({ error: 'Unknown error' }));
 			}
 			toast.success(m.upgrade_success());
+			return { upToDate: result.upToDate };
 		} catch (error) {
 			toastUpgradeError(error, m.upgrade_failed);
 			throw error;
@@ -264,9 +266,10 @@
 			cell: EnabledCell
 		},
 		{
-			accessorKey: 'apiUrl',
-			title: m.environments_api_url(),
-			cell: ApiCell
+			id: 'version',
+			title: m.common_version(),
+			accessorFn: (row) => row,
+			cell: VersionCell
 		}
 	] satisfies ColumnSpec<Environment>[];
 
@@ -341,8 +344,8 @@
 	<Badge variant={typeVariant} minWidth="20">{typeLabel}</Badge>
 {/snippet}
 
-{#snippet ApiCell({ value }: { value: unknown })}
-	<span class="font-mono text-sm text-muted-foreground">{String(value)}</span>
+{#snippet VersionCell({ item }: { item: Environment })}
+	<EnvironmentVersionCell environment={item} isOnline={isEnvironmentOnline(item)} />
 {/snippet}
 
 {#snippet EnabledCell({ value }: { value: unknown })}

@@ -43,6 +43,23 @@ func TestWriterContinuesActivityCaptureWhenResponseWriterFailsInternal(t *testin
 	require.Equal(t, models.ActivityMessageLevelInfo, appender.messages[0].Level)
 }
 
+func TestWriterRecordsLogAndErrorFramesVerbatimInternal(t *testing.T) {
+	appender := &recordingAppender{}
+	writer := NewWriter(context.Background(), appender, "activity-1", io.Discard, "Deploying project")
+
+	_, err := writer.Write([]byte(`{"log":"Container web-1  Created"}` + "\n" + `{"error":"Error response from daemon: conflict"}` + "\n"))
+	require.NoError(t, err)
+
+	FlushWriter(writer)
+	require.Eventually(t, func() bool {
+		return len(appender.messages) == 2
+	}, time.Second, 10*time.Millisecond)
+	require.Equal(t, "Container web-1  Created", appender.messages[0].Message)
+	require.Equal(t, models.ActivityMessageLevelInfo, appender.messages[0].Level)
+	require.Equal(t, "Error response from daemon: conflict", appender.messages[1].Message)
+	require.Equal(t, models.ActivityMessageLevelError, appender.messages[1].Level)
+}
+
 func TestWriterReturnsWrappedWriteErrorWithoutActivityInternal(t *testing.T) {
 	writer := NewWriter(context.Background(), nil, "", failingWriter{}, "Pulling image")
 

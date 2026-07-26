@@ -6,14 +6,20 @@
 	import UserTable from './user-table.svelte';
 	import UserFormSheet from '#lib/components/sheets/user-form-sheet.svelte';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
+	import type { Settings } from '#lib/types/settings';
 	import type { User } from '#lib/types/auth';
 	import type { CreateUser } from '#lib/types/auth';
 	import { m } from '#lib/paraglide/messages';
 	import { userService } from '#lib/services/user-service';
 	import { roleService } from '#lib/services/role-service';
+	import { settingsService } from '#lib/services/settings-service';
 	import userStore from '#lib/stores/user-store';
+	import settingsStore from '#lib/stores/config-store';
 	import { untrack } from 'svelte';
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts/index.js';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 
 	let { data } = $props();
 
@@ -126,6 +132,40 @@
 		}
 	}
 
+	// Avatar policy: server-wide settings that belong with user management.
+	const isReadOnly = $derived(Boolean($settingsStore?.uiConfigDisabled));
+	const gravatarEnabled = $derived(Boolean($settingsStore?.enableGravatar));
+	const avatarMaxUploadSizeMb = $derived(
+		Number($settingsStore?.avatarMaxUploadSizeMb) > 0 ? Number($settingsStore?.avatarMaxUploadSizeMb) : 2
+	);
+	let avatarSizeInput = $state('');
+	let avatarSizeError = $state<string | null>(null);
+
+	$effect(() => {
+		avatarSizeInput = String(avatarMaxUploadSizeMb);
+	});
+
+	async function saveAvatarSettings(patch: Partial<Settings>) {
+		try {
+			const updated = await settingsService.updateSettings(patch);
+			settingsStore.set(updated);
+			toast.success(m.common_update_success({ resource: m.settings() }));
+		} catch (error) {
+			toast.error(error instanceof Error ? error.message : m.common_update_failed({ resource: m.settings() }));
+		}
+	}
+
+	function handleAvatarSizeCommit() {
+		const parsed = Number(avatarSizeInput);
+		if (!Number.isInteger(parsed) || parsed < 1 || parsed > 50) {
+			avatarSizeError = m.general_avatar_upload_size_help();
+			return;
+		}
+		avatarSizeError = null;
+		if (parsed === avatarMaxUploadSizeMb) return;
+		void saveAvatarSettings({ avatarMaxUploadSizeMb: parsed });
+	}
+
 	const actionButtons: SettingsActionButton[] = $derived.by(() => [
 		{
 			id: 'create',
@@ -146,6 +186,45 @@
 	{actionButtons}
 >
 	{#snippet mainContent()}
+		<div class="mb-6 divide-y divide-border/40 border-b border-border/50 pb-6 [&>*]:py-5 [&>*:first-child]:pt-0">
+			<SettingsRow
+				label={m.general_enable_gravatar_label()}
+				description={m.general_enable_gravatar_description()}
+				layout="inline"
+			>
+				<Switch
+					id="enableGravatar"
+					checked={gravatarEnabled}
+					disabled={isReadOnly}
+					onCheckedChange={(checked) => void saveAvatarSettings({ enableGravatar: checked })}
+				/>
+			</SettingsRow>
+
+			<SettingsRow
+				label={m.general_avatar_upload_size_label()}
+				description={m.general_avatar_upload_size_description()}
+				helpText={m.general_avatar_upload_size_help()}
+				layout="inline"
+			>
+				<div class="flex w-24 flex-col gap-1">
+					<Input
+						id="avatarMaxUploadSizeMb"
+						type="number"
+						min="1"
+						max="50"
+						bind:value={avatarSizeInput}
+						placeholder="2"
+						disabled={isReadOnly}
+						aria-invalid={Boolean(avatarSizeError)}
+						onblur={handleAvatarSizeCommit}
+					/>
+					{#if avatarSizeError}
+						<p class="text-xs font-medium text-destructive">{avatarSizeError}</p>
+					{/if}
+				</div>
+			</SettingsRow>
+		</div>
+
 		<UserTable
 			bind:users
 			bind:selectedIds

@@ -7,6 +7,7 @@
 	import * as AlertDialog from '#lib/components/ui/alert-dialog';
 	import * as ArcaneTooltip from '#lib/components/arcane-tooltip';
 	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { Input } from '#lib/components/ui/input/index.js';
 	import { CopyButton } from '#lib/components/ui/copy-button';
 	import { cn } from '#lib/utils';
 	import { goto, refreshAll } from '$app/navigation';
@@ -23,7 +24,9 @@
 	import { createSettingsForm } from '#lib/utils/settings-form';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import EnvironmentStatusSummary from './components/EnvironmentStatusSummary.svelte';
-	import GeneralTab from './components/GeneralTab.svelte';
+	import EditableName from '../../projects/components/EditableName.svelte';
+	import ConnectionEdgeTab from './components/ConnectionEdgeTab.svelte';
+	import StorageTab from './components/StorageTab.svelte';
 	import DockerTab from './components/DockerTab.svelte';
 	import JobsTab from './components/JobsTab.svelte';
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
@@ -34,15 +37,13 @@
 	import {
 		ArrowLeftIcon,
 		AlertIcon,
-		DownloadIcon,
-		RefreshIcon,
 		DockerBrandIcon,
 		SecurityIcon,
-		SettingsIcon,
 		GitBranchIcon,
 		JobsIcon,
 		ResetIcon,
-		ConnectionIcon
+		ConnectionIcon,
+		VolumesIcon
 	} from '#lib/icons';
 
 	let { data } = $props();
@@ -64,6 +65,8 @@
 	let showRegenerateDialog = $state(false);
 	let regeneratedApiKey = $state<string | null>(null);
 	let easyJoinDialogOpen = $state(false);
+	let nameInputRef = $state<HTMLInputElement | null>(null);
+	let isEditingApiUrl = $state(false);
 	const easyJoinCandidates = useEasyJoinCandidates();
 
 	// Version state
@@ -84,9 +87,6 @@
 			runtimeEnvironment.isEdge &&
 			(runtimeEnvironment.edgeSecurityMode === 'mtls' || hasMTLSAssets)
 	);
-	let mtlsBundleDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/bundle`);
-	let mtlsCertificateDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.crt`);
-	let mtlsKeyDownloadHref = $derived(`/api/environments/${runtimeEnvironment.id}/deployment/mtls/agent.key`);
 	let canEasyJoin = $derived(
 		runtimeEnvironment.id !== '0' &&
 			runtimeEnvironment.enabled &&
@@ -106,66 +106,43 @@
 		}
 
 		if (environment.id !== '0') {
-			actions.push({
-				id: 'sync',
-				action: 'base',
-				label: m.resource_sync_cap(),
-				onclick: syncEnvironment,
-				disabled: isSyncing,
-				loading: isSyncing,
-				icon: RefreshIcon
-			});
-
-			if (showMTLSDownloads) {
+			// Edge environments manage mTLS downloads and API key regeneration in the Connection & Edge tab.
+			if (!runtimeEnvironment.isEdge) {
 				actions.push({
-					id: 'mtls-downloads',
+					id: 'regenerate-api-key',
 					action: 'base',
-					label: m.environments_agent_mtls_download_bundle(),
-					href: mtlsBundleDownloadHref,
-					rel: 'external',
-					icon: DownloadIcon,
-					menuItems: [
-						{
-							id: 'mtls-certificate',
-							label: m.environments_agent_mtls_download_certificate(),
-							href: mtlsCertificateDownloadHref
-						},
-						{
-							id: 'mtls-key',
-							label: m.environments_agent_mtls_download_key(),
-							href: mtlsKeyDownloadHref
-						}
-					]
+					label: m.environments_regenerate_api_key(),
+					onclick: () => {
+						showRegenerateDialog = true;
+					},
+					disabled: isRegeneratingKey,
+					loading: isRegeneratingKey,
+					icon: ResetIcon
 				});
 			}
-
-			actions.push({
-				id: 'regenerate-api-key',
-				action: 'base',
-				label: m.environments_regenerate_api_key(),
-				onclick: () => {
-					showRegenerateDialog = true;
-				},
-				disabled: isRegeneratingKey,
-				loading: isRegeneratingKey,
-				icon: ResetIcon
-			});
 		}
 
 		return actions;
 	});
 
 	const tabItems = $derived.by((): TabItem[] => {
-		const items: TabItem[] = [
-			{
-				value: 'general',
-				label: m.general_title(),
-				icon: SettingsIcon
-			}
-		];
+		const items: TabItem[] = [];
+
+		if (runtimeEnvironment.isEdge) {
+			items.push({
+				value: 'connection',
+				label: m.connection_edge(),
+				icon: ConnectionIcon
+			});
+		}
 
 		if (showSettingsTabs) {
 			items.push(
+				{
+					value: 'storage',
+					label: m.storage_limits(),
+					icon: VolumesIcon
+				},
 				{
 					value: 'docker',
 					label: m.environments_docker_settings_title(),
@@ -178,7 +155,7 @@
 				},
 				{
 					value: 'jobs',
-					label: m.jobs_title(),
+					label: m.automations(),
 					icon: JobsIcon
 				}
 			);
@@ -195,7 +172,7 @@
 
 	const urlTab = useUrlTab({
 		validTabs: () => tabItems.map((tab) => tab.value),
-		defaultTab: () => 'general'
+		defaultTab: () => tabItems.find((tab) => tab.value !== 'gitops')?.value ?? 'gitops'
 	});
 	const activeTab = $derived(urlTab.value);
 	const securityTabItems = $derived.by((): TabItem[] => [
@@ -212,7 +189,10 @@
 	]);
 
 	$effect(() => {
-		if (activeTab === 'gitops') void goto(`/environments/${environment.id}/gitops`);
+		// Don't bounce away when gitops is the only tab (offline/disabled environment) — the
+		// header still needs to be reachable to fix the connection.
+		if (activeTab === 'gitops' && tabItems.some((tab) => tab.value !== 'gitops'))
+			void goto(`/environments/${environment.id}/gitops`);
 	});
 
 	function handleTabChange(value: string) {
@@ -525,8 +505,62 @@
 		<div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
 			<div class="flex flex-1 items-start gap-4">
 				<div class="min-w-0 flex-1">
-					<h1 class="text-xl font-semibold wrap-break-word sm:text-2xl">{environment.name}</h1>
-					<p class="mt-1.5 text-sm wrap-break-word text-muted-foreground sm:text-base">{m.environments_page_subtitle()}</p>
+					<div class="flex min-h-9 min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+						<EditableName
+							bind:value={$formInputs.name.value}
+							bind:ref={nameInputRef}
+							variant="inline"
+							error={$formInputs.name.error ?? undefined}
+							originalValue={environment.name}
+							placeholder={m.environments_name_placeholder()}
+							class="max-w-[14rem] min-w-0 sm:max-w-[20rem] md:max-w-[26rem]"
+						/>
+					</div>
+					<div class="mt-1 flex min-w-0 items-center gap-1">
+						{#if isEditingApiUrl}
+							<Input
+								id="api-url"
+								type="url"
+								bind:value={$formInputs.apiUrl.value}
+								class="h-7 w-full max-w-md font-mono text-xs {$formInputs.apiUrl.error ? 'border-destructive' : ''}"
+								placeholder={m.environments_api_url_placeholder()}
+								autofocus
+								onkeydown={(e) => {
+									if (e.key === 'Enter') {
+										e.preventDefault();
+										isEditingApiUrl = false;
+									}
+									if (e.key === 'Escape') {
+										$formInputs.apiUrl.value = environment.apiUrl;
+										isEditingApiUrl = false;
+									}
+								}}
+								onblur={() => (isEditingApiUrl = false)}
+							/>
+						{:else if environment.id === '0'}
+							<ArcaneTooltip.Root>
+								<ArcaneTooltip.Trigger class="min-w-0">
+									<span class="block truncate px-1 font-mono text-xs text-muted-foreground">{$formInputs.apiUrl.value}</span>
+								</ArcaneTooltip.Trigger>
+								<ArcaneTooltip.Content>
+									<p>{m.environments_local_setting_disabled()}</p>
+								</ArcaneTooltip.Content>
+							</ArcaneTooltip.Root>
+						{:else}
+							<button
+								type="button"
+								class="min-w-0 truncate rounded px-1 py-0.5 text-left font-mono text-xs text-muted-foreground transition-colors hover:bg-muted/50 hover:text-foreground"
+								title={m.environments_api_url()}
+								onclick={() => (isEditingApiUrl = true)}
+							>
+								{$formInputs.apiUrl.value || m.environments_api_url_placeholder()}
+							</button>
+						{/if}
+						<CopyButton text={$formInputs.apiUrl.value} size="icon" class="size-6 shrink-0" />
+					</div>
+					{#if $formInputs.apiUrl.error}
+						<p class="mt-1 text-xs text-destructive">{$formInputs.apiUrl.error}</p>
+					{/if}
 				</div>
 
 				<!-- Enable/Disable indicator -->
@@ -558,7 +592,7 @@
 			</div>
 
 			<div class="flex min-w-0 flex-col items-start gap-3 sm:items-end">
-				<div class="hidden flex-wrap items-center gap-2 self-start sm:flex sm:self-end">
+				<div class="flex flex-wrap items-center gap-2 self-start sm:self-end">
 					{#if settingsForm.hasChanges}
 						<span class="text-xs text-orange-600 dark:text-orange-400">{m.common_unsaved_changes()}</span>
 					{:else}
@@ -584,7 +618,13 @@
 						loadingLabel={m.common_saving()}
 					/>
 
+					<ArcaneButton action="test" onclick={testConnection} disabled={isTestingConnection} loading={isTestingConnection} />
+
 					<ArcaneButton action="refresh" onclick={refreshEnvironment} disabled={isRefreshing} loading={isRefreshing} />
+
+					{#if environment.id !== '0'}
+						<ArcaneButton action="sync" onclick={syncEnvironment} disabled={isSyncing} loading={isSyncing} />
+					{/if}
 				</div>
 			</div>
 		</div>
@@ -664,18 +704,23 @@
 			<TabBar items={tabItems} value={activeTab} onValueChange={handleTabChange} />
 		</div>
 
-		<Tabs.Content value="general">
-			<GeneralTab
-				{formInputs}
-				environment={runtimeEnvironment}
-				{currentStatus}
-				{isTestingConnection}
-				{testConnection}
-				settingsAvailable={showSettingsTabs}
-			/>
-		</Tabs.Content>
+		{#if runtimeEnvironment.isEdge}
+			<Tabs.Content value="connection">
+				<ConnectionEdgeTab
+					environment={runtimeEnvironment}
+					{currentStatus}
+					{showMTLSDownloads}
+					{isRegeneratingKey}
+					onRegenerateApiKey={() => (showRegenerateDialog = true)}
+				/>
+			</Tabs.Content>
+		{/if}
 
 		{#if showSettingsTabs}
+			<Tabs.Content value="storage">
+				<StorageTab {formInputs} />
+			</Tabs.Content>
+
 			<Tabs.Content value="docker">
 				<DockerTab {formInputs} {shellSelectValue} {handleShellSelectChange} {shellOptions} />
 			</Tabs.Content>

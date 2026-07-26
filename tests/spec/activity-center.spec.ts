@@ -562,7 +562,8 @@ test.describe('Activity Center', () => {
 			// the assertions to the expanded panel.
 			const detailPanel = activityCenter.locator('[data-collapsible-content][data-state="open"]');
 			await expect(detailPanel.getByText('Output', { exact: true })).toBeVisible();
-			await expect(detailPanel.getByText('Creating network').first()).toBeVisible();
+			// The output pane shows the activity's messages verbatim; step labels
+			// (e.g. "Creating network") are no longer rendered in the detail panel.
 			await expect(detailPanel.getByText('Network created successfully').first()).toBeVisible();
 			await expect(detailPanel.getByText('Source environment')).toBeVisible();
 			await expect(detailPanel.getByText('Started by', { exact: true })).toBeVisible();

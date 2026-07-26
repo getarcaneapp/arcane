@@ -5,13 +5,16 @@ import type { EnvironmentFormValues } from './environment-form-schema';
 
 export type EnvironmentFormInputs = Writable<FormInputs<EnvironmentFormValues>>;
 
-export interface GeneralTabProps {
-	formInputs: EnvironmentFormInputs;
+export interface ConnectionEdgeTabProps {
 	environment: Environment;
 	currentStatus: EnvironmentStatus;
-	isTestingConnection: boolean;
-	testConnection: () => void | Promise<void>;
-	settingsAvailable: boolean;
+	showMTLSDownloads: boolean;
+	isRegeneratingKey: boolean;
+	onRegenerateApiKey: () => void;
+}
+
+export interface StorageTabProps {
+	formInputs: EnvironmentFormInputs;
 }
 
 export interface DockerTabProps {

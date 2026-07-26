@@ -43,7 +43,6 @@ var accessSurfacesInternal = []AccessSurface{
 	landingSurfaceInternal("landing.settings", "/settings", "Settings", []string{
 		"settings.category.activity",
 		"settings.category.apikeys",
-		"settings.category.appearance",
 		"settings.category.authentication",
 		"settings.category.build",
 		"settings.category.jobschedule",
@@ -95,10 +94,9 @@ var accessSurfacesInternal = []AccessSurface{
 
 	settingsCategorySurfaceInternal("activity", "/settings/activity", "Activity", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("apikeys", "/settings/api-keys", "API Keys", AccessScopeModeGlobalOnly, []string{PermApiKeysList, PermApiKeysRead}),
-	settingsCategorySurfaceInternal("appearance", "/settings/appearance", "Appearance", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("authentication", "/settings/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("build", "/settings/builds", "Builds", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
-	settingsCategorySurfaceInternal("jobschedule", "", "Job Schedule", AccessScopeModeSelectedEnvPlusGlobal, []string{PermJobsManage}),
+	settingsCategorySurfaceInternal("jobschedule", "", "Automations", AccessScopeModeSelectedEnvPlusGlobal, []string{PermJobsManage}),
 	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNotificationsManage}),
 	settingsCategorySurfaceInternal("roles", "/settings/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 	routeSurfaceInternal("route.settings.roles.new", "/settings/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),

@@ -91,7 +91,7 @@
 				<ArcaneButton class="min-w-[80px]" action="cancel" onclick={() => ($confirmDialogStore.open = false)} />
 				<ArcaneButton
 					class="min-w-[80px]"
-					action={$confirmDialogStore.confirm.destructive ? 'remove' : 'confirm'}
+					action={$confirmDialogStore.confirm.button ?? ($confirmDialogStore.confirm.destructive ? 'remove' : 'confirm')}
 					customLabel={$confirmDialogStore.confirm.label}
 					onclick={handleConfirm}
 				/>

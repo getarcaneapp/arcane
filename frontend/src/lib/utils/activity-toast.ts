@@ -19,6 +19,21 @@ export function activityToastOptions(activityId?: string) {
 	};
 }
 
+/**
+ * Extracts the activityId from an operation stream's started frame
+ * ({"type":"activity","activityId":...}). Returns undefined for other frames.
+ */
+export function activityIdFromStreamFrame(data: unknown): string | undefined {
+	if (!data || typeof data !== 'object') {
+		return undefined;
+	}
+	const frame = data as { type?: unknown; activityId?: unknown };
+	if (frame.type !== 'activity' || typeof frame.activityId !== 'string' || !frame.activityId.trim()) {
+		return undefined;
+	}
+	return frame.activityId;
+}
+
 export function extractActivityId(value: unknown): string | undefined {
 	if (!value || typeof value !== 'object') {
 		return undefined;

@@ -2148,6 +2148,36 @@ func (s *VolumeService) calculateVolumeUsageCountsInternal(items []volumetypes.V
 	return counts
 }
 
+// countVolumeUsageFromSnapshotInternal derives volume usage counts from an
+// already-fetched volume and container listing. It mirrors the semantics of
+// ListVolumesPaginated — internal volumes are excluded and a volume counts as
+// in use when any container mounts it — so dashboard tile numbers agree with
+// the volumes page.
+func (s *VolumeService) countVolumeUsageFromSnapshotInternal(volumes []volume.Volume, containers []container.Summary) volumetypes.UsageCounts {
+	inUse := make(map[string]struct{})
+	for _, c := range containers {
+		for _, m := range c.Mounts {
+			if m.Type == mount.TypeVolume && m.Name != "" {
+				inUse[m.Name] = struct{}{}
+			}
+		}
+	}
+
+	counts := volumetypes.UsageCounts{}
+	for _, v := range volumes {
+		if s.isInternalVolumeInternal(volumetypes.NewSummary(v)) {
+			continue
+		}
+		counts.Total++
+		if _, ok := inUse[v.Name]; ok {
+			counts.Inuse++
+		} else {
+			counts.Unused++
+		}
+	}
+	return counts
+}
+
 func (s *VolumeService) isInternalVolumeInternal(v volumetypes.Volume) bool {
 	if strings.EqualFold(strings.TrimSpace(v.Name), strings.TrimSpace(s.backupVolumeName)) {
 		return true

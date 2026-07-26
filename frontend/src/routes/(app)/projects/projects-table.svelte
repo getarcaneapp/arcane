@@ -213,7 +213,7 @@
 		{
 			id: 'archive',
 			label: m.projects_bulk_archive({ count: selectedIds?.length ?? 0 }),
-			action: 'base',
+			action: 'archive',
 			onClick: handleBulkArchive,
 			loading: isBulkLoading.archive,
 			disabled: !canArchiveProject || isAnyLoading || hasArchivedSelection || hasRunningSelection,
@@ -221,8 +221,7 @@
 				? m.projects_archive_requires_stopped()
 				: hasArchivedSelection
 					? m.projects_archived_badge()
-					: undefined,
-			icon: BoxIcon
+					: undefined
 		}
 	]);
 </script>

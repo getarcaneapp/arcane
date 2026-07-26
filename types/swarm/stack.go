@@ -95,27 +95,29 @@ type StackRenderConfigResponse struct {
 	// Required: true
 	RenderedCompose string `json:"renderedCompose"`
 
-	// Services contains service names discovered in the compose file.
+	// Services contains the final stack-scoped service names.
 	//
 	// Required: true
 	Services []string `json:"services"`
 
-	// Networks contains network names discovered in the compose file.
+	// Networks contains the final resolved network names, including stack
+	// namespacing for non-external resources.
 	//
 	// Required: true
 	Networks []string `json:"networks"`
 
-	// Volumes contains volume names discovered in the compose file.
+	// Volumes contains the final resolved volume names, including stack
+	// namespacing for non-external resources.
 	//
 	// Required: true
 	Volumes []string `json:"volumes"`
 
-	// Configs contains config names discovered in the compose file.
+	// Configs contains the final content-addressed or external config names.
 	//
 	// Required: true
 	Configs []string `json:"configs"`
 
-	// Secrets contains secret names discovered in the compose file.
+	// Secrets contains the final content-addressed or external secret names.
 	//
 	// Required: true
 	Secrets []string `json:"secrets"`

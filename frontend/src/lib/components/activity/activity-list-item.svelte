@@ -20,13 +20,11 @@
 	} = $props();
 
 	const IconComponent = $derived(activityTypeIcon(activity.type));
-	const hasProgress = $derived(typeof activity.progress === 'number');
-	const progressValue = $derived(Math.round(activity.progress ?? 0));
 	const isActive = $derived(activity.status === 'running' || activity.status === 'queued');
 	// Resource-less activities (e.g. prunes) promote the type label instead.
 	const resourceLabel = $derived(activity.resourceName || activity.resourceId || '');
 	const targetName = $derived(resourceLabel || activityTypeLabel(activity.type));
-	const subtitle = $derived(activity.latestMessage || activity.step || m.activity_no_message());
+	const subtitle = $derived(activity.latestMessage || m.activity_no_message());
 	const sourceEnvironmentName = $derived(
 		activity.sourceEnvironmentName || activity.sourceEnvironmentId || activity.environmentId
 	);
@@ -107,16 +105,7 @@
 		<div class="space-y-1.5">
 			<div class="line-clamp-2 text-xs leading-relaxed text-muted-foreground">{subtitle}</div>
 			{#if isActive && !expanded}
-				<div class="flex items-center gap-2">
-					<Progress value={hasProgress ? progressValue : 100} indeterminate={!hasProgress} class="h-1.5 rounded-full" />
-					<span class="w-9 shrink-0 text-right text-[11px] text-muted-foreground tabular-nums">
-						{#if hasProgress}
-							{m.activity_progress_percent({ progress: progressValue })}
-						{:else}
-							{m.common_live()}
-						{/if}
-					</span>
-				</div>
+				<Progress value={100} indeterminate class="h-1.5 rounded-full" />
 			{/if}
 		</div>
 	</div>

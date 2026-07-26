@@ -728,6 +728,28 @@ func IsSafeSubdirectory(baseDir, subdir string) bool {
 	return !strings.HasPrefix(rel, "..") && !filepath.IsAbs(rel)
 }
 
+// ResolvePathWithinDir resolves path and rejects paths that escape baseDir.
+func ResolvePathWithinDir(baseDir, path string) (string, error) {
+	resolvedBase, err := filepath.Abs(filepath.Clean(baseDir))
+	if err != nil {
+		return "", errors.WrapIff(err, "failed to resolve base directory %q", baseDir)
+	}
+
+	resolvedPath := path
+	if !filepath.IsAbs(resolvedPath) {
+		resolvedPath = filepath.Join(resolvedBase, resolvedPath)
+	}
+	resolvedPath, err = filepath.Abs(filepath.Clean(resolvedPath))
+	if err != nil {
+		return "", errors.WrapIff(err, "failed to resolve path %q", path)
+	}
+	if !IsSafeSubdirectory(resolvedBase, resolvedPath) {
+		return "", errors.Errorf("path %q escapes directory %q", path, baseDir)
+	}
+
+	return resolvedPath, nil
+}
+
 func SaveOrUpdateProjectFiles(projectsRoot, projectPath, composeContent string, envContent *string) error {
 	return WriteProjectFiles(projectsRoot, projectPath, composeContent, envContent)
 }

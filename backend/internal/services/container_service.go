@@ -35,7 +35,7 @@ import (
 	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 type ContainerService struct {
@@ -155,17 +155,6 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 	return shouldStart
 }
 
-func writeContainerProgressInternal(ctx context.Context, message string, progress int, phase string) {
-	progressWriter, _ := ctx.Value(projects.ProgressWriterKey{}).(io.Writer)
-	if progressWriter == nil {
-		return
-	}
-	payload := fmt.Sprintf(`{"type":"container","phase":%q,"status":%q,"progressDetail":{"current":%d,"total":100}}`+"\n", phase, message, progress)
-	if _, err := progressWriter.Write([]byte(payload)); err != nil {
-		slog.DebugContext(ctx, "failed to write container progress", "phase", phase, "error", err)
-	}
-}
-
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
 	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
@@ -208,7 +197,11 @@ func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, docker
 	}
 	defer func() { _ = reader.Close() }()
 
-	streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+	progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
+	logWriter := dockerutils.NewLogLineWriter(progressWriter)
+	defer func() { _ = logWriter.Close() }()
+
+	streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
 	if streamErr != nil {
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", streamErr, models.JSON{
 			"action": "redeploy",
@@ -597,7 +590,7 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	apiVersion := libarcane.DetectDockerAPIVersion(ctx, dockerClient)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	if libupdater.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
+	if labels.ShouldDisableArcaneServerRedeploy(containerInfo.Config.Labels, containerInfo.ID, currentContainerID, currentContainerErr) {
 		err = errors.New("arcane cannot redeploy itself; use the system upgrade flow (Settings -> Updates) instead")
 		s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", containerID, containerName, user.ID, user.Username, "0", err, models.JSON{
 			"action": "redeploy",
@@ -626,14 +619,12 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if imageName != "" {
-		writeContainerProgressInternal(ctx, "Pulling latest container image", 20, "pull")
 		if err := s.pullRedeployImageInternal(ctx, dockerClient, imageName, containerID, containerName, user); err != nil {
 			return "", err
 		}
 	}
 
 	backupName := buildRedeployBackupNameInternal(containerName, containerID)
-	writeContainerProgressInternal(ctx, "Preparing existing container", 45, "prepare")
 	if err := s.prepareContainerForRedeployInternal(ctx, dockerClient, containerID, containerName, backupName, wasRunning, user); err != nil {
 		return "", err
 	}
@@ -645,7 +636,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		newConfig.Hostname = ""
 	}
 
-	writeContainerProgressInternal(ctx, "Creating replacement container", 65, "create")
 	createResp, err := libarcane.ContainerCreateWithCompatibilityForAPIVersion(ctx, dockerClient, client.ContainerCreateOptions{
 		Config:           &newConfig,
 		HostConfig:       containerInfo.HostConfig,
@@ -663,7 +653,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 	}
 
 	if shouldStartRedeployedContainerInternal(containerInfo, wasRunning) {
-		writeContainerProgressInternal(ctx, "Starting replacement container", 80, "start")
 		_, err = dockerClient.ContainerStart(ctx, createResp.ID, client.ContainerStartOptions{})
 		if err != nil {
 			if _, removeErr := dockerClient.ContainerRemove(ctx, createResp.ID, client.ContainerRemoveOptions{Force: true}); removeErr != nil {
@@ -705,7 +694,6 @@ func (s *ContainerService) RedeployContainer(ctx context.Context, containerID st
 		slog.WarnContext(ctx, "failed to log deploy event", "err", logErr)
 	}
 
-	writeContainerProgressInternal(ctx, "Container redeployed", 100, "complete")
 	return createResp.ID, nil
 }
 
@@ -735,7 +723,7 @@ func (s *ContainerService) GetContainerDetails(ctx context.Context, id string) (
 
 	details := containertypes.NewDetails(containerInspect)
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	details.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
+	details.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(details.Labels, details.ID, currentContainerID, currentContainerErr)
 	s.applyContainerDetailsIconInternal(ctx, &details)
 
 	return details, nil
@@ -842,7 +830,10 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 		defer func() { _ = reader.Close() }()
 
-		streamErr := dockerutils.ConsumeJSONMessageStream(reader, nil)
+		progressWriter, _ := ctx.Value(dockerutils.ProgressWriterKey{}).(io.Writer)
+		logWriter := dockerutils.NewLogLineWriter(progressWriter)
+		streamErr := dockerutils.RenderJSONMessageStream(reader, logWriter)
+		_ = logWriter.Close()
 		if streamErr != nil {
 			s.eventService.LogErrorEvent(ctx, models.EventTypeContainerError, "container", "", containerName, user.ID, user.Username, "0", streamErr, models.JSON{"action": "create", "image": config.Image, "step": "complete_pull"})
 			return nil, errors.WrapIf(streamErr, "failed to complete image pull")
@@ -1218,7 +1209,7 @@ func (s *ContainerService) buildContainerSummaries(containers []container.Summar
 		if info, exists := updateInfoMap[dc.ImageID]; exists {
 			summary.UpdateInfo = info
 		}
-		summary.RedeployDisabled = libupdater.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
+		summary.RedeployDisabled = labels.ShouldDisableArcaneServerRedeploy(summary.Labels, summary.ID, currentContainerID, currentContainerErr)
 		items = append(items, summary)
 	}
 	return items
@@ -1306,11 +1297,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 }
 
 func (s *ContainerService) resolveIconSetInternal(ctx context.Context, iconSet iconcatalog.IconSet) iconcatalog.ResolvedIconSet {
-	catalog := iconcatalog.DefaultCatalog
-	if s != nil && s.settingsService != nil {
-		catalog = s.settingsService.GetStringSetting(ctx, "iconCatalog", iconcatalog.DefaultCatalog)
-	}
-	return iconcatalog.Resolve(catalog, iconSet)
+	return iconcatalog.Resolve(iconCatalogForContextInternal(ctx), iconSet)
 }
 
 func (s *ContainerService) buildContainerPaginationConfig() pagination.Config[containertypes.Summary] {

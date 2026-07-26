@@ -486,16 +486,6 @@ type CreateSwarmConfigOutput struct {
 	Body base.ApiResponse[swarmtypes.ConfigSummary]
 }
 
-type UpdateSwarmConfigInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	ConfigID      string `path:"configId" doc:"Config ID"`
-	Body          swarmtypes.ConfigUpdateRequest
-}
-
-type UpdateSwarmConfigOutput struct {
-	Status int `status:"204"`
-}
-
 type DeleteSwarmConfigInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	ConfigID      string `path:"configId" doc:"Config ID"`
@@ -529,16 +519,6 @@ type CreateSwarmSecretInput struct {
 
 type CreateSwarmSecretOutput struct {
 	Body base.ApiResponse[swarmtypes.SecretSummary]
-}
-
-type UpdateSwarmSecretInput struct {
-	EnvironmentID string `path:"id" doc:"Environment ID"`
-	SecretID      string `path:"secretId" doc:"Secret ID"`
-	Body          swarmtypes.SecretUpdateRequest
-}
-
-type UpdateSwarmSecretOutput struct {
-	Status int `status:"204"`
 }
 
 type DeleteSwarmSecretInput struct {
@@ -590,7 +570,7 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "promote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/promote", Summary: "Promote swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.PromoteNode)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "demote-swarm-node", Method: http.MethodPost, Path: "/environments/{id}/swarm/nodes/{nodeId}/demote", Summary: "Demote swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmNodes, h.DemoteNode)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-node-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/nodes/{nodeId}/tasks", Summary: "List tasks for a swarm node", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListNodeTasks)
-	huma.Register(api, huma.Operation{OperationID: "get-swarm-node-identity", Method: http.MethodGet, Path: "/swarm/node-identity", Summary: "Get local swarm node identity", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal(), Middlewares: humamw.RequirePermission(api, authz.PermSwarmRead)}, h.GetNodeIdentity)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-node-identity", Method: http.MethodGet, Path: "/swarm/node-identity", Summary: "Get local swarm node identity", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetNodeIdentity)
 
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-tasks", Method: http.MethodGet, Path: "/environments/{id}/swarm/tasks", Summary: "List swarm tasks", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListTasks)
 
@@ -620,13 +600,11 @@ func RegisterSwarm(api huma.API, swarmSvc *services.SwarmService, environmentSvc
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-configs", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs", Summary: "List swarm configs", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListConfigs)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-config", Method: http.MethodGet, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Get swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetConfig)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-config", Method: http.MethodPost, Path: "/environments/{id}/swarm/configs", Summary: "Create swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.CreateConfig)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-config", Method: http.MethodPut, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Update swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.UpdateConfig)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-config", Method: http.MethodDelete, Path: "/environments/{id}/swarm/configs/{configId}", Summary: "Delete swarm config", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmConfigs, h.DeleteConfig)
 
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-swarm-secrets", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets", Summary: "List swarm secrets", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.ListSecrets)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-swarm-secret", Method: http.MethodGet, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Get swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmRead, h.GetSecret)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-swarm-secret", Method: http.MethodPost, Path: "/environments/{id}/swarm/secrets", Summary: "Create swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.CreateSecret)
-	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-swarm-secret", Method: http.MethodPut, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Update swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.UpdateSecret)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "delete-swarm-secret", Method: http.MethodDelete, Path: "/environments/{id}/swarm/secrets/{secretId}", Summary: "Delete swarm secret", Tags: []string{"Swarm"}, Security: defaultOperationSecurityInternal()}, authz.PermSwarmSecrets, h.DeleteSecret)
 }
 
@@ -1342,7 +1320,7 @@ func (h *SwarmHandler) ListStackTasks(ctx context.Context, input *ListSwarmStack
 // Returns the rendered compose content together with discovered resource names.
 // Returns a mapped HTTP error when parsing, interpolation, or rendering fails.
 func (h *SwarmHandler) RenderStackConfig(ctx context.Context, input *RenderSwarmStackConfigInput) (*RenderSwarmStackConfigOutput, error) {
-	resp, err := h.swarmService.RenderStackConfig(ctx, input.Body)
+	resp, err := h.swarmService.RenderStackConfig(ctx, input.EnvironmentID, input.Body)
 	if err != nil {
 		return nil, mapSwarmServiceError(err, "Failed to render swarm stack config")
 	}
@@ -1715,25 +1693,6 @@ func (h *SwarmHandler) CreateConfig(ctx context.Context, input *CreateSwarmConfi
 	return &CreateSwarmConfigOutput{Body: base.ApiResponse[swarmtypes.ConfigSummary]{Success: true, Data: *cfg}}, nil
 }
 
-// UpdateConfig rejects updates to an existing swarm config.
-//
-// It requires admin privileges and delegates the update request to the swarm
-// service. Docker swarm configs are immutable, so the current service behavior
-// returns a mapped validation error instead of a replacement config.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the config to update and contains the replacement specification.
-//
-// Returns no content if a future service implementation completes the update.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the update fails.
-func (h *SwarmHandler) UpdateConfig(ctx context.Context, input *UpdateSwarmConfigInput) (*UpdateSwarmConfigOutput, error) {
-	if err := h.swarmService.UpdateConfig(ctx, input.ConfigID, input.Body); err != nil {
-		return nil, mapSwarmServiceError(err, "Failed to update swarm config")
-	}
-	return &UpdateSwarmConfigOutput{}, nil
-}
-
 // DeleteConfig removes a swarm config.
 //
 // It requires admin privileges, delegates removal to the swarm service, maps
@@ -1823,25 +1782,6 @@ func (h *SwarmHandler) CreateSecret(ctx context.Context, input *CreateSwarmSecre
 	h.auditSwarmMutation(ctx, input.EnvironmentID, "secret.create", "swarm_secret", secret.ID, secret.Spec.Name, map[string]any{"secretId": secret.ID, "name": secret.Spec.Name})
 
 	return &CreateSwarmSecretOutput{Body: base.ApiResponse[swarmtypes.SecretSummary]{Success: true, Data: *secret}}, nil
-}
-
-// UpdateSecret rejects updates to an existing swarm secret.
-//
-// It requires admin privileges and delegates the update request to the swarm
-// service. Docker swarm secrets are immutable, so the current service behavior
-// returns a mapped validation error instead of a replacement secret.
-//
-// ctx carries request-scoped cancellation, auth, and audit context.
-// input identifies the secret to update and contains the replacement specification.
-//
-// Returns no content if a future service implementation completes the update.
-// Returns an authorization error for non-admin callers or mapped HTTP errors
-// when the update fails.
-func (h *SwarmHandler) UpdateSecret(ctx context.Context, input *UpdateSwarmSecretInput) (*UpdateSwarmSecretOutput, error) {
-	if err := h.swarmService.UpdateSecret(ctx, input.SecretID, input.Body); err != nil {
-		return nil, mapSwarmServiceError(err, "Failed to update swarm secret")
-	}
-	return &UpdateSwarmSecretOutput{}, nil
 }
 
 // DeleteSecret removes a swarm secret.
@@ -1953,7 +1893,7 @@ func mapSwarmServiceError(err error, fallback string) error {
 	if errors.Is(err, common.ErrSwarmManagerRequired) {
 		return huma.Error403Forbidden("Swarm manager access required")
 	}
-	if errors.Is(err, common.ErrSwarmConfigImmutable) || errors.Is(err, common.ErrSwarmSecretImmutable) {
+	if errors.Is(err, common.ErrBadRequest) {
 		return huma.Error400BadRequest(err.Error())
 	}
 	if errdefs.IsNotFound(err) {
@@ -1966,7 +1906,7 @@ func mapSwarmServiceError(err error, fallback string) error {
 		return huma.Error409Conflict(err.Error())
 	}
 	errText := strings.ToLower(err.Error())
-	if strings.Contains(errText, "required") || strings.Contains(errText, "invalid") || strings.Contains(errText, "immutable") {
+	if strings.Contains(errText, "required") || strings.Contains(errText, "invalid") {
 		return huma.Error400BadRequest(err.Error())
 	}
 	return huma.Error500InternalServerError(fallback)

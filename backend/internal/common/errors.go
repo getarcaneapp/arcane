@@ -67,8 +67,6 @@ var (
 	ErrGlobalVariableSecretValueRequired       = Classify(ErrValidation, errors.Sentinel("A new value is required when making a secret variable readable"))
 	ErrSwarmNotEnabled                         = Classify(ErrBadRequest, errors.Sentinel("Swarm mode is not enabled"))
 	ErrSwarmManagerRequired                    = Classify(ErrForbidden, errors.Sentinel("Swarm manager access required"))
-	ErrSwarmConfigImmutable                    = Classify(ErrConflict, errors.Sentinel("Swarm configs are immutable; create a new config and update services to use it"))
-	ErrSwarmSecretImmutable                    = Classify(ErrConflict, errors.Sentinel("Swarm secrets are immutable; create a new secret and update services to use it"))
 	ErrRoleNotFound                            = Classify(ErrNotFound, errors.Sentinel("Role not found"))
 	ErrRoleBuiltIn                             = Classify(ErrForbidden, errors.Sentinel("Built-in role cannot be modified"))
 	ErrRoleNameTaken                           = Classify(ErrConflict, errors.Sentinel("Role name already in use"))

@@ -43,10 +43,11 @@ type StackDeployRequest struct {
 	// Required: false
 	ResolveImage string `json:"resolveImage,omitempty"`
 
-	// WorkingDir defines the working directory context for evaluating compose files.
+	// WorkingDir is the trusted internal working directory used by GitOps.
+	// It is never decoded from public API requests.
 	//
 	// Required: false
-	WorkingDir string `json:"workingDir,omitempty"`
+	WorkingDir string `json:"-"`
 }
 
 // SyncFile represents a file to be synced to the target environment.

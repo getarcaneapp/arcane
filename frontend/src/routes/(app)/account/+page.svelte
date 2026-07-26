@@ -2,12 +2,12 @@
 	import { onMount } from 'svelte';
 	import { fromStore } from 'svelte/store';
 	import { toast } from 'svelte-sonner';
+	import { mode } from 'mode-watcher';
 	import ThemeModeSelector from '#lib/components/theme-mode/theme-mode-selector.svelte';
 	import { format, formatDistanceToNow } from 'date-fns';
 	import HeaderCard from '#lib/components/header-card.svelte';
 	import ApiKeyFormSheet from '#lib/components/sheets/api-key-form-sheet.svelte';
 	import { Card } from '#lib/components/ui/card';
-	import { Separator } from '#lib/components/ui/separator';
 	import * as Avatar from '#lib/components/ui/avatar';
 	import * as ImageCropper from '#lib/components/ui/image-cropper';
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
@@ -15,6 +15,15 @@
 	import LocalePicker from '#lib/components/locale-picker.svelte';
 	import TimeFormatPicker from '#lib/components/time-format-picker.svelte';
 	import FontSizePicker from '#lib/components/font-size-picker.svelte';
+	import SettingsRow from '#lib/components/settings/settings-row.svelte';
+	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import AccentColorPicker from '#lib/components/accent-color/accent-color-picker.svelte';
+	import ApplicationThemePicker from '#lib/components/application-theme/application-theme-picker.svelte';
+	import { Switch } from '#lib/components/ui/switch/index.js';
+	import { DEFAULT_LANDING_PAGE, getLandingPageNavItems } from '#lib/config/navigation-config';
+	import { resetNavigationVisibility } from '#lib/utils/navigation';
+	import { applyGlassEffects, applyInterfaceAnimations, applyOledMode, DEFAULT_ACCENT_COLOR } from '#lib/utils/theme';
+	import { debounced } from '#lib/utils/ws';
 	import { m } from '#lib/paraglide/messages';
 	import { userService } from '#lib/services/user-service';
 	import { apiKeyService } from '#lib/services/api-key-service';
@@ -24,8 +33,19 @@
 	import { avatarUploadLimitBytes, prepareAvatarUploadFile } from '#lib/utils/avatar-upload';
 	import { cn } from '#lib/utils';
 	import { GLOBAL_SCOPE } from '#lib/types/auth';
-	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey } from '#lib/types/auth';
-	import { UserIcon, LogoutIcon, ShieldAlertIcon, ApiKeyIcon, AddIcon, CopyIcon, TrashIcon } from '#lib/icons';
+	import type { ApiKey, ApiKeyCreated, ApiKeyPermissionGrant, CreateUserApiKey, UserPreferences } from '#lib/types/auth';
+	import type { ApplicationTheme, IconCatalog } from '#lib/types/settings';
+	import {
+		UserIcon,
+		LogoutIcon,
+		ShieldAlertIcon,
+		ApiKeyIcon,
+		AddIcon,
+		CopyIcon,
+		TrashIcon,
+		MonitorSpeakerIcon,
+		DockIcon
+	} from '#lib/icons';
 
 	let { data: _data }: PageProps = $props();
 
@@ -111,6 +131,82 @@
 	);
 
 	const passwordValid = $derived(currentPassword.length > 0 && newPassword.length >= 8 && newPassword === confirmPassword);
+
+	// --- Appearance preferences ---
+	// Each control writes straight through to the account: the visual change is
+	// applied by the control itself, then persisted; a failed save reverts by
+	// re-applying the stored user.
+	const preferences = $derived(currentUser?.preferences ?? {});
+	const applicationThemeValue = $derived<ApplicationTheme>(preferences.applicationTheme ?? 'default');
+	const accentColorValue = $derived(
+		preferences.accentColor && preferences.accentColor !== 'default' ? preferences.accentColor : DEFAULT_ACCENT_COLOR
+	);
+	const iconCatalogValue = $derived(preferences.iconCatalog ?? 'selfhst');
+	const oledModeEnabled = $derived(preferences.oledMode ?? false);
+	const glassEffectsEnabled = $derived(preferences.glassEffectsEnabled ?? true);
+	const animationsEnabled = $derived(preferences.animationsEnabled ?? true);
+	const sidebarHoverExpansionEnabled = $derived(preferences.sidebarHoverExpansion ?? true);
+	const keyboardShortcutsEnabled = $derived(preferences.keyboardShortcutsEnabled ?? true);
+
+	const isDarkMode = $derived(mode.current === 'dark');
+	const isDefaultApplicationTheme = $derived(applicationThemeValue === 'default');
+
+	const iconCatalogOptions = $derived([
+		{ value: 'selfhst', label: m.icon_catalog_selfhst(), description: m.icon_catalog_selfhst_description() },
+		{
+			value: 'dashboard-icons',
+			label: m.icon_catalog_dashboard_icons(),
+			description: m.icon_catalog_dashboard_icons_description()
+		}
+	]);
+
+	const landingPageOptions = $derived(getLandingPageNavItems().map((item) => ({ value: item.url, label: item.title })));
+	const landingValue = $derived.by(() => {
+		const current = preferences.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+		// A stale value (page removed, or a hand-edited preference) falls back to
+		// the dashboard rather than leaving the select showing a placeholder.
+		return landingPageOptions.some((option) => option.value === current) ? current : DEFAULT_LANDING_PAGE;
+	});
+
+	async function savePreferences(patch: Partial<UserPreferences>) {
+		const previous = currentUser;
+		if (!previous) return;
+		try {
+			const updated = await userService.updateMyProfile({ preferences: patch });
+			await userStore.setUser(updated);
+		} catch (err) {
+			toast.error(err instanceof Error ? err.message : m.common_update_failed({ resource: m.account_preferences() }));
+			// Re-applying the stored user rolls the live preview back.
+			await userStore.setUser(previous);
+		}
+	}
+
+	// The theme carousel emits a value per scroll snap, so persistence is
+	// debounced. Patches are merged rather than replaced, so a theme change
+	// immediately followed by an accent change still saves both.
+	let pendingPreferences: Partial<UserPreferences> = {};
+	const flushPreferences = debounced(() => {
+		const patch = pendingPreferences;
+		pendingPreferences = {};
+		void savePreferences(patch);
+	}, 400);
+
+	function savePreferencesDebounced(patch: Partial<UserPreferences>) {
+		pendingPreferences = { ...pendingPreferences, ...patch };
+		flushPreferences();
+	}
+
+	// --- Mobile navigation ---
+	const mobileNavigationMode = $derived(preferences.mobileNavigationMode ?? 'floating');
+	const mobileNavigationShowLabels = $derived(preferences.mobileNavigationShowLabels ?? true);
+
+	function selectMobileNavigationMode(value: 'floating' | 'docked') {
+		if (value === mobileNavigationMode) return;
+		// The bar hides itself on scroll in floating mode; reset it so the change
+		// is visible right away.
+		resetNavigationVisibility();
+		void savePreferences({ mobileNavigationMode: value });
+	}
 
 	async function updateAvatar(email: string | undefined, enabled: boolean) {
 		if (!enabled || !email) {
@@ -306,7 +402,7 @@
 
 	{#if currentUser}
 		<div class="grid gap-6 lg:grid-cols-3">
-			<!-- Left column: profile + password + API keys -->
+			<!-- Left column: profile + password -->
 			<div class="space-y-6 lg:col-span-2">
 				<!-- Profile -->
 				<Card class="overflow-hidden">
@@ -438,6 +534,84 @@
 						{:else}
 							<p class="text-xs text-muted-foreground">{m.account_profile_managed_by_idp()}</p>
 						{/if}
+
+						<!-- Roles & access -->
+						<div class="border-t pt-5">
+							<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+								{m.account_roles_and_access()}
+							</h3>
+
+							{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
+								<ul class="mt-3 flex flex-wrap gap-2">
+									{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
+										<li class="rounded-lg bg-muted/30 px-3 py-2">
+											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
+											<div class="text-xs text-muted-foreground">
+												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
+												{#if ra.source === 'oidc'}
+													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
+												{/if}
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{:else}
+								<p class="mt-3 text-sm text-muted-foreground">{m.account_no_roles()}</p>
+							{/if}
+
+							{#if currentUser.permissionsByEnv}
+								{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
+								{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
+								<p class="mt-3 text-xs text-muted-foreground">
+									{globalCount} global permission{globalCount === 1 ? '' : 's'} across {envCount} environment{envCount === 1
+										? ''
+										: 's'}.
+								</p>
+							{/if}
+						</div>
+
+						<!-- Danger zone -->
+						{#if !autoLoginEnabled}
+							<div class="rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+								<div class="flex items-center gap-2">
+									<ShieldAlertIcon class="size-4 text-destructive" />
+									<h3 class="text-sm font-semibold tracking-tight">{m.account_danger_zone()}</h3>
+								</div>
+								<p class="mt-1 text-xs text-muted-foreground">{m.account_danger_zone_desc()}</p>
+
+								<div class="mt-4 grid gap-4 sm:grid-cols-2">
+									<div class="space-y-2">
+										<div class="text-sm font-medium">{m.account_signout_other()}</div>
+										<p class="text-xs text-muted-foreground">{m.account_signout_other_desc()}</p>
+										<ArcaneButton
+											action="restart"
+											tone="outline"
+											size="sm"
+											customLabel={m.account_signout_other()}
+											onclick={logoutAllOther}
+											loading={revokingAll}
+											disabled={revokingAll}
+										/>
+									</div>
+
+									<div class="space-y-2">
+										<div class="text-sm font-medium">{m.common_log_out()}</div>
+										<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
+										<form action="/logout" method="POST">
+											<ArcaneButton
+												action="cancel"
+												tone="outline"
+												size="sm"
+												customLabel={m.common_log_out()}
+												icon={LogoutIcon}
+												type="submit"
+												class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
+											/>
+										</form>
+									</div>
+								</div>
+							</div>
+						{/if}
 					</div>
 				</Card>
 
@@ -486,233 +660,323 @@
 						</div>
 					</Card>
 				{/if}
+			</div>
 
-				<!-- API keys -->
-				<Card class="overflow-hidden">
-					<div class="flex items-start justify-between gap-3 border-b p-4 sm:p-6">
-						<div class="min-w-0">
-							<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
-							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_api_keys_description()}</p>
+			<!-- Right column: API keys -->
+			<!--
+				Pinned to the row box so the card never grows taller than the profile
+				column: the panel is taken out of flow at `lg`, which leaves the grid
+				row height driven entirely by the left column. The key list absorbs
+				the slack and scrolls on its own.
+			-->
+			<div class="lg:relative">
+				<div class="flex flex-col gap-6 lg:absolute lg:inset-0">
+					<!-- API keys -->
+					<Card class="overflow-hidden lg:flex lg:min-h-0 lg:flex-1 lg:flex-col">
+						<div class="flex shrink-0 items-start justify-between gap-3 border-b p-4 sm:p-6">
+							<div class="min-w-0">
+								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_api_keys_title()}</h2>
+								<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_api_keys_description()}</p>
+							</div>
+							{#if !showCreateKeyForm && !createdKey}
+								<ArcaneButton
+									action="create"
+									tone="outline"
+									size="sm"
+									customLabel={m.account_new_key()}
+									icon={AddIcon}
+									class="shrink-0"
+									onclick={() => (showCreateKeyForm = true)}
+								/>
+							{/if}
 						</div>
-						{#if !showCreateKeyForm && !createdKey}
-							<ArcaneButton
-								action="create"
-								tone="outline"
-								size="sm"
-								customLabel={m.account_new_key()}
-								icon={AddIcon}
-								onclick={() => (showCreateKeyForm = true)}
-							/>
-						{/if}
-					</div>
 
-					<div class="p-4 sm:p-6">
-						{#if createdKey}
-							<div class="mb-4 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
-								<div>
-									<div class="text-sm font-semibold">Key created: {createdKey.name}</div>
-									<p class="mt-1 text-xs text-muted-foreground">Copy this token now &mdash; you won't be able to see it again.</p>
-								</div>
-								<div class="flex items-center gap-2">
-									<code class="flex-1 truncate rounded border bg-background px-3 py-2 font-mono text-xs">
+						<div class="p-4 sm:p-6 lg:min-h-0 lg:flex-1 lg:overflow-y-auto">
+							{#if createdKey}
+								<div class="mb-4 space-y-3 rounded-lg border border-primary/30 bg-primary/5 p-4">
+									<div>
+										<div class="truncate text-sm font-semibold">{m.api_key_created_title()}: {createdKey.name}</div>
+										<p class="mt-1 text-xs text-muted-foreground">{m.api_key_save_warning()}</p>
+									</div>
+									<code class="block truncate rounded border bg-background px-3 py-2 font-mono text-xs">
 										{createdKey.key}
 									</code>
-									<ArcaneButton
-										action="base"
-										tone="outline"
-										size="sm"
-										customLabel={m.common_copy()}
-										icon={CopyIcon}
-										onclick={() => copyKeyToClipboard(createdKey!.key)}
-									/>
-								</div>
-								<div class="flex justify-end">
-									<ArcaneButton
-										action="cancel"
-										tone="ghost"
-										size="sm"
-										customLabel={m.common_ive_saved_it()}
-										onclick={() => (createdKey = null)}
-									/>
-								</div>
-							</div>
-						{/if}
-
-						{#if apiKeysLoading && apiKeys.length === 0}
-							<div class="py-8 text-center text-sm text-muted-foreground">Loading keys…</div>
-						{:else if apiKeys.length === 0}
-							<div class="py-8 text-center text-sm text-muted-foreground">
-								<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />
-								No API keys yet.
-							</div>
-						{:else}
-							<ul class="divide-y">
-								{#each apiKeys as key (key.id)}
-									<li class="flex items-center justify-between gap-3 py-3 first:pt-0 last:pb-0">
-										<div class="min-w-0 flex-1">
-											<div class="flex items-center gap-2">
-												<span class="truncate text-sm font-medium">{key.name}</span>
-												<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono text-xs text-muted-foreground">
-													{key.keyPrefix}…
-												</code>
-											</div>
-											{#if key.description}
-												<div class="mt-0.5 truncate text-xs text-muted-foreground">{key.description}</div>
-											{/if}
-											<div class="mt-1 text-xs text-muted-foreground">
-												{#if safeFormatDate(key.createdAt, 'PP')}
-													Created {safeFormatDate(key.createdAt, 'PP')}
-												{/if}
-												{#if key.lastUsedAt && safeFormatRelative(key.lastUsedAt)}
-													· Last used {safeFormatRelative(key.lastUsedAt)}
-												{:else}
-													· Never used
-												{/if}
-											</div>
-										</div>
+									<div class="flex flex-wrap justify-end gap-2">
 										<ArcaneButton
-											action="remove"
+											action="base"
+											tone="outline"
+											size="sm"
+											customLabel={m.common_copy()}
+											icon={CopyIcon}
+											onclick={() => copyKeyToClipboard(createdKey!.key)}
+										/>
+										<ArcaneButton
+											action="cancel"
 											tone="ghost"
 											size="sm"
-											icon={TrashIcon}
-											customLabel={m.common_delete()}
-											showLabel={false}
-											class="text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
-											onclick={() => deleteApiKey(key.id, key.name)}
+											customLabel={m.common_ive_saved_it()}
+											onclick={() => (createdKey = null)}
 										/>
-									</li>
-								{/each}
-							</ul>
-						{/if}
-					</div>
-				</Card>
-			</div>
+									</div>
+								</div>
+							{/if}
 
-			<!-- Right column: preferences + roles + danger zone -->
-			<div class="space-y-6">
-				<!-- Preferences -->
-				<Card class="overflow-hidden">
-					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
-						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_preferences_desc()}</p>
-					</div>
-					<div class="divide-y p-2">
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.account_theme()}</div>
-								<div class="text-xs text-muted-foreground">{m.appearance_theme_current_user_description()}</div>
-							</div>
-							<ThemeModeSelector />
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.language()}</div>
-								<div class="text-xs text-muted-foreground">{m.account_language_desc()}</div>
-							</div>
-							<LocalePicker inline />
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.time_format()}</div>
-								<div class="text-xs text-muted-foreground">{m.account_time_format_desc()}</div>
-							</div>
-							<TimeFormatPicker id="accountTimeFormatPicker" />
-						</div>
-						<div class="flex items-center justify-between gap-4 p-3">
-							<div class="min-w-0">
-								<div class="text-sm font-medium">{m.font_size()}</div>
-								<div class="text-xs text-muted-foreground">{m.font_size_description()}</div>
-							</div>
-							<FontSizePicker />
-						</div>
-					</div>
-				</Card>
-
-				<!-- Roles & access -->
-				<Card class="overflow-hidden">
-					<div class="border-b p-4 sm:p-6">
-						<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_roles_and_access()}</h2>
-						<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_roles()}</p>
-					</div>
-					<div class="p-4 sm:p-6">
-						{#if currentUser.roleAssignments && currentUser.roleAssignments.length > 0}
-							<ul class="space-y-2">
-								{#each currentUser.roleAssignments as ra (`${ra.roleId}-${ra.environmentId ?? 'global'}`)}
-									<li class="flex items-center justify-between gap-3 rounded-lg bg-muted/30 px-3 py-2">
-										<div class="min-w-0">
-											<div class="text-sm font-medium">{prettyRoleName(ra.roleId)}</div>
-											<div class="text-xs text-muted-foreground">
-												{ra.environmentId ? m.account_role_environment({ env: ra.environmentId }) : m.account_global_scope()}
-												{#if ra.source === 'oidc'}
-													<span class="ml-1 opacity-70">{m.account_via_sso()}</span>
-												{/if}
+							{#if apiKeysLoading && apiKeys.length === 0}
+								<div class="py-8 text-center text-sm text-muted-foreground">{m.common_loading()}</div>
+							{:else if apiKeys.length === 0}
+								<div class="py-8 text-center text-sm text-muted-foreground">
+									<ApiKeyIcon class="mx-auto mb-2 size-8 opacity-40" />
+									{m.api_keys_empty()}
+								</div>
+							{:else}
+								<ul class="divide-y divide-border/40">
+									{#each apiKeys as key (key.id)}
+										<li class="py-3 first:pt-0 last:pb-0">
+											<div class="flex items-start justify-between gap-2">
+												<div class="min-w-0 flex-1">
+													<div class="truncate text-sm font-medium">{key.name}</div>
+													{#if key.description}
+														<div class="mt-0.5 truncate text-xs text-muted-foreground">{key.description}</div>
+													{/if}
+												</div>
+												<ArcaneButton
+													action="remove"
+													tone="ghost"
+													size="sm"
+													icon={TrashIcon}
+													customLabel={m.common_delete()}
+													showLabel={false}
+													class="shrink-0 text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+													onclick={() => deleteApiKey(key.id, key.name)}
+												/>
 											</div>
-										</div>
-									</li>
-								{/each}
-							</ul>
-						{:else}
-							<p class="text-sm text-muted-foreground">{m.account_no_roles()}</p>
-						{/if}
-
-						{#if currentUser.permissionsByEnv}
-							{@const envCount = Object.keys(currentUser.permissionsByEnv).length}
-							{@const globalCount = currentUser.permissionsByEnv[GLOBAL_SCOPE]?.length ?? 0}
-							<p class="mt-3 text-xs text-muted-foreground">
-								{globalCount} global permission{globalCount === 1 ? '' : 's'} across {envCount} environment{envCount === 1
-									? ''
-									: 's'}.
-							</p>
-						{/if}
-					</div>
-				</Card>
-
-				{#if !autoLoginEnabled}
-					<Card class="overflow-hidden border-destructive/30">
-						<div class="border-b border-destructive/20 p-4 sm:p-6">
-							<div class="flex items-center gap-2">
-								<ShieldAlertIcon class="size-5 text-destructive" />
-								<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_danger_zone()}</h2>
-							</div>
-							<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_danger_zone_desc()}</p>
-						</div>
-						<div class="space-y-4 p-4 sm:p-6">
-							<div class="space-y-2">
-								<div class="text-sm font-medium">{m.account_signout_other()}</div>
-								<p class="text-xs text-muted-foreground">
-									{m.account_signout_other_desc()}
-								</p>
-								<ArcaneButton
-									action="restart"
-									tone="outline"
-									customLabel={m.account_signout_other()}
-									onclick={logoutAllOther}
-									loading={revokingAll}
-									disabled={revokingAll}
-								/>
-							</div>
-
-							<Separator />
-
-							<div class="space-y-2">
-								<div class="text-sm font-medium">{m.common_log_out()}</div>
-								<p class="text-xs text-muted-foreground">{m.account_signout_this()}</p>
-								<form action="/logout" method="POST">
-									<ArcaneButton
-										action="cancel"
-										tone="outline"
-										customLabel={m.common_log_out()}
-										icon={LogoutIcon}
-										type="submit"
-										class="border-destructive/30 text-destructive hover:bg-destructive/10 hover:text-destructive"
-									/>
-								</form>
-							</div>
+											<div class="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
+												<code class="rounded bg-muted/40 px-1.5 py-0.5 font-mono">{key.keyPrefix}…</code>
+												{#if safeFormatDate(key.createdAt, 'PP')}
+													<span>{m.common_created()} {safeFormatDate(key.createdAt, 'PP')}</span>
+													<span aria-hidden="true">·</span>
+												{/if}
+												<span>{m.last_used()} {safeFormatRelative(key.lastUsedAt) ?? m.common_never()}</span>
+											</div>
+										</li>
+									{/each}
+								</ul>
+							{/if}
 						</div>
 					</Card>
-				{/if}
+				</div>
 			</div>
 		</div>
+
+		<!-- Preferences -->
+		<Card class="overflow-hidden">
+			<div class="border-b p-4 sm:p-6">
+				<h2 class="text-base font-semibold tracking-tight sm:text-lg">{m.account_preferences()}</h2>
+				<p class="mt-1 text-xs text-muted-foreground sm:text-sm">{m.account_preferences_desc()}</p>
+			</div>
+
+			<div class="divide-y divide-border/50">
+				<!-- General -->
+				<section class="p-4 sm:p-6">
+					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.general_title()}</h3>
+					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+						<SettingsRow label={m.language()} description={m.account_language_desc()} layout="inline">
+							<LocalePicker inline id="accountLocalePicker" />
+						</SettingsRow>
+
+						<SettingsRow label={m.time_format()} description={m.account_time_format_desc()} layout="inline">
+							<TimeFormatPicker id="accountTimeFormatPicker" />
+						</SettingsRow>
+					</div>
+				</section>
+
+				<!-- Appearance -->
+				<section class="p-4 sm:p-6">
+					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.appearance_title()}</h3>
+					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+						<SettingsRow label={m.account_theme()} description={m.appearance_theme_current_user_description()} layout="inline">
+							<ThemeModeSelector />
+						</SettingsRow>
+
+						<SettingsRow label={m.font_size()} description={m.font_size_description()} layout="inline">
+							<FontSizePicker />
+						</SettingsRow>
+
+						<SettingsRow label={m.icon_catalog()} description={m.icon_catalog_description()} layout="inline">
+							<div class="w-52">
+								<SelectWithLabel
+									id="account-icon-catalog"
+									label={m.icon_catalog()}
+									hideLabel
+									triggerSize="sm"
+									value={iconCatalogValue}
+									options={iconCatalogOptions}
+									onValueChange={(value) => void savePreferences({ iconCatalog: value as IconCatalog })}
+								/>
+							</div>
+						</SettingsRow>
+
+						<SettingsRow label={m.application_theme()} description={m.application_theme_description()}>
+							<ApplicationThemePicker
+								selectedTheme={applicationThemeValue}
+								accentColor={accentColorValue}
+								onSelect={(value) => savePreferencesDebounced({ applicationTheme: value })}
+							/>
+						</SettingsRow>
+
+						<SettingsRow label={m.accent_color()} description={m.accent_color_description()}>
+							<AccentColorPicker
+								previousColor={accentColorValue}
+								selectedColor={accentColorValue}
+								onSelect={(value) => savePreferencesDebounced({ accentColor: value })}
+							/>
+						</SettingsRow>
+
+						<SettingsRow label={m.oled_mode()} description={m.oled_mode_description()} layout="inline">
+							{#snippet helpText()}
+								{#if !isDefaultApplicationTheme}
+									<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_default_theme()}</p>
+								{:else if !isDarkMode}
+									<p class="mt-1 text-xs text-muted-foreground/70 italic">{m.oled_mode_requires_dark()}</p>
+								{/if}
+							{/snippet}
+							<Switch
+								id="account-oled-mode"
+								checked={oledModeEnabled}
+								disabled={!isDefaultApplicationTheme}
+								onCheckedChange={(checked) => {
+									applyOledMode(checked);
+									void savePreferences({ oledMode: checked });
+								}}
+							/>
+						</SettingsRow>
+
+						<SettingsRow label={m.glass_effects()} description={m.glass_effects_description()} layout="inline">
+							<Switch
+								id="account-glass-effects"
+								checked={glassEffectsEnabled}
+								onCheckedChange={(checked) => {
+									applyGlassEffects(checked);
+									void savePreferences({ glassEffectsEnabled: checked });
+								}}
+							/>
+						</SettingsRow>
+
+						<SettingsRow label={m.interface_animations()} description={m.interface_animations_description()} layout="inline">
+							<Switch
+								id="account-animations"
+								checked={animationsEnabled}
+								onCheckedChange={(checked) => {
+									applyInterfaceAnimations(checked);
+									void savePreferences({ animationsEnabled: checked });
+								}}
+							/>
+						</SettingsRow>
+					</div>
+				</section>
+
+				<!-- Navigation -->
+				<section class="p-4 sm:p-6">
+					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">{m.navigation_title()}</h3>
+					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+						<SettingsRow
+							label={m.navigation_default_landing_page_label()}
+							description={m.navigation_default_landing_page_description()}
+							layout="inline"
+						>
+							<div class="w-52">
+								<SelectWithLabel
+									id="account-default-landing-page"
+									label={m.navigation_default_landing_page_label()}
+									hideLabel
+									triggerSize="sm"
+									value={landingValue}
+									options={landingPageOptions}
+									onValueChange={(value) => void savePreferences({ defaultLandingPage: value })}
+								/>
+							</div>
+						</SettingsRow>
+
+						<SettingsRow
+							label={m.navigation_sidebar_hover_expansion_label()}
+							description={m.navigation_sidebar_hover_expansion_description()}
+							layout="inline"
+						>
+							<Switch
+								id="account-sidebar-hover-expansion"
+								checked={sidebarHoverExpansionEnabled}
+								onCheckedChange={(checked) => void savePreferences({ sidebarHoverExpansion: checked })}
+							/>
+						</SettingsRow>
+
+						<SettingsRow
+							label={m.navigation_keyboard_shortcuts_label()}
+							description={m.navigation_keyboard_shortcuts_description()}
+							layout="inline"
+						>
+							<Switch
+								id="account-keyboard-shortcuts"
+								checked={keyboardShortcutsEnabled}
+								onCheckedChange={(checked) => void savePreferences({ keyboardShortcutsEnabled: checked })}
+							/>
+						</SettingsRow>
+					</div>
+				</section>
+
+				<!-- Mobile navigation -->
+				<section class="p-4 sm:p-6">
+					<h3 class="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+						{m.navigation_mobile_appearance_title()}
+					</h3>
+					<div class="mt-4 divide-y divide-border/40 [&>*]:py-4 [&>*:first-child]:pt-0 [&>*:last-child]:pb-0">
+						<SettingsRow label={m.navigation_mode_label()} description={m.navigation_mode_description()} layout="inline">
+							<div class="inline-flex rounded-lg bg-muted/40 p-0.5">
+								<button
+									type="button"
+									aria-pressed={mobileNavigationMode === 'floating'}
+									onclick={() => selectMobileNavigationMode('floating')}
+									class={cn(
+										'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+										mobileNavigationMode === 'floating'
+											? 'bg-background text-foreground shadow-sm'
+											: 'text-muted-foreground hover:text-foreground'
+									)}
+								>
+									<MonitorSpeakerIcon class="size-3.5" />
+									{m.navigation_mode_floating()}
+								</button>
+								<button
+									type="button"
+									aria-pressed={mobileNavigationMode === 'docked'}
+									onclick={() => selectMobileNavigationMode('docked')}
+									class={cn(
+										'inline-flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors',
+										mobileNavigationMode === 'docked'
+											? 'bg-background text-foreground shadow-sm'
+											: 'text-muted-foreground hover:text-foreground'
+									)}
+								>
+									<DockIcon class="size-3.5" />
+									{m.navigation_mode_docked()}
+								</button>
+							</div>
+						</SettingsRow>
+
+						<SettingsRow
+							label={m.navigation_show_labels_label()}
+							description={m.navigation_show_labels_description()}
+							layout="inline"
+						>
+							<Switch
+								id="account-mobile-nav-labels"
+								checked={mobileNavigationShowLabels}
+								onCheckedChange={(checked) => void savePreferences({ mobileNavigationShowLabels: checked })}
+							/>
+						</SettingsRow>
+					</div>
+				</section>
+			</div>
+		</Card>
 	{:else}
 		<div class="py-12 text-center text-sm text-muted-foreground">Loading account…</div>
 	{/if}

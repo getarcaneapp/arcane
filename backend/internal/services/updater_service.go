@@ -23,22 +23,20 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/timeouts"
 	projectspkg "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	"github.com/getarcaneapp/arcane/types/v2/updater"
+	arcaneupdater "github.com/getarcaneapp/arcane/types/v2/updater"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/cgroup"
-	moduleapi "go.getarcane.app/updater/api"
-	updaterdigest "go.getarcane.app/updater/pkg/digest"
-	"go.getarcane.app/updater/pkg/labels"
-	"go.getarcane.app/updater/pkg/refs"
-	moduletypes "go.getarcane.app/updater/types"
+	"go.getarcane.app/updater"
+	"go.getarcane.app/updater/labels"
+	"go.getarcane.app/updater/refs"
 )
 
 // UpdaterService is Arcane's handler-facing service for the standalone updater engine.
 type UpdaterService struct {
 	deps   updaterDependenciesInternal
-	engine *moduleapi.Service
+	engine *updater.Service
 }
 
 type updaterDependenciesInternal struct {
@@ -58,7 +56,9 @@ type updaterDependenciesInternal struct {
 }
 
 type selfUpgradeServiceInternal interface {
-	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target moduletypes.SelfUpdateTarget) error
+	// TriggerUpgradeViaCLI returns the spawned upgrader container's ID, which this
+	// service does not need — only update-all's manager step uses it.
+	TriggerUpgradeViaCLI(ctx context.Context, user models.User, target updater.SelfUpdateTarget) (string, error)
 }
 
 // NewUpdaterService constructs the Arcane updater facade.
@@ -74,7 +74,7 @@ func NewUpdaterService(
 	notifications *NotificationService,
 	upgrade selfUpgradeServiceInternal,
 	activityService *ActivityService,
-) *UpdaterService {
+) (*UpdaterService, error) {
 	service := &UpdaterService{
 		deps: updaterDependenciesInternal{
 			DB:                     db,
@@ -91,12 +91,16 @@ func NewUpdaterService(
 			SystemUser:             systemUser,
 		},
 	}
-	service.engine = moduleapi.NewService(service.configInternal())
-	return service
+	engine, err := updater.New(service.configInternal())
+	if err != nil {
+		return nil, errors.WrapIf(err, "configure updater engine")
+	}
+	service.engine = engine
+	return service, nil
 }
 
-func (s *UpdaterService) configInternal() moduleapi.Config {
-	return moduleapi.Config{
+func (s *UpdaterService) configInternal() updater.Config {
+	return updater.Config{
 		DockerClientProvider:   s,
 		ImagePuller:            s,
 		PendingStore:           s,
@@ -107,8 +111,8 @@ func (s *UpdaterService) configInternal() moduleapi.Config {
 		SelfUpdater:            s,
 		Notifier:               s,
 		EventRecorder:          s,
-		UsedImageCollector:     moduleapi.UsedImageCollectorFunc(s.CollectUsedImages),
-		LabelPolicy:            labels.DefaultLabelPolicy(),
+		UsedImageCollector:     updater.UsedImageCollectorFunc(s.CollectUsedImages),
+		LabelPolicy:            updater.DefaultLabelPolicy(),
 		SelfContainerID:        selfContainerIDInternal(),
 		Logger:                 s.loggerInternal(),
 	}
@@ -125,7 +129,7 @@ func selfContainerIDInternal() string {
 	return id
 }
 
-func (s *UpdaterService) engineInternal() *moduleapi.Service {
+func (s *UpdaterService) engineInternal() *updater.Service {
 	return s.engine
 }
 
@@ -136,7 +140,7 @@ func (s *UpdaterService) loggerInternal() *slog.Logger {
 	return slog.Default()
 }
 
-func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteResolver {
+func (s *UpdaterService) registryDigestResolverInternal() updater.RegistryDigestResolver {
 	if s == nil || s.deps.RegistryDigestResolver == nil {
 		return nil
 	}
@@ -148,16 +152,16 @@ func (s *UpdaterService) registryDigestResolverInternal() updaterdigest.RemoteRe
 // filtering (it would apply every pending update), so scoped requests resolve
 // to concrete containers and go through the engine's single-container path
 // instead — same activity, events, and cleanup either way.
-func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Options) (out *updater.Result, err error) {
+func (s *UpdaterService) ApplyPending(ctx context.Context, options arcaneupdater.Options) (out *arcaneupdater.Result, err error) {
 	start := time.Now()
 	activityID := s.startAutoUpdateActivityInternal(ctx, options.DryRun)
-	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
 
 	defer func() {
 		if out == nil {
-			out = &updater.Result{Items: []updater.ResourceResult{}}
+			out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
 		}
 		if out.Duration == "" {
 			out.Duration = time.Since(start).String()
@@ -231,7 +235,7 @@ func (s *UpdaterService) ApplyPending(ctx context.Context, options updater.Optio
 // applyScopedUpdatesInternal runs a scoped update into the caller's result:
 // resolves the requested resources to container IDs and updates each through
 // the engine's single-container path.
-func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options updater.Options, out *updater.Result) error {
+func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options arcaneupdater.Options, out *arcaneupdater.Result) error {
 	containerIDs, err := s.resolveScopedContainerIDsInternal(ctx, options)
 	if err != nil {
 		return err
@@ -240,7 +244,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 		return errors.Errorf("no containers matched the requested %s resources", strings.TrimSpace(options.Type))
 	}
 
-	engineOpts := moduletypes.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
+	engineOpts := updater.Options{Force: options.ForceUpdate, DryRun: options.DryRun}
 	var engineErrs []error
 	for _, containerID := range containerIDs {
 		moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, engineOpts)
@@ -255,10 +259,10 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 		}
 		if engineErr != nil {
 			out.Failed++
-			out.Items = append(out.Items, updater.ResourceResult{
+			out.Items = append(out.Items, arcaneupdater.ResourceResult{
 				ResourceID:   containerID,
 				ResourceType: "container",
-				Status:       updater.StatusFailed,
+				Status:       arcaneupdater.StatusFailed,
 				Error:        engineErr.Error(),
 			})
 			engineErrs = append(engineErrs, errors.WrapIff(engineErr, "%s", containerID))
@@ -273,7 +277,7 @@ func (s *UpdaterService) applyScopedUpdatesInternal(ctx context.Context, options
 
 // resolveScopedContainerIDsInternal maps a scoped options payload to the
 // container IDs it covers.
-func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, options updater.Options) ([]string, error) {
+func (s *UpdaterService) resolveScopedContainerIDsInternal(ctx context.Context, options arcaneupdater.Options) ([]string, error) {
 	requested := make([]string, 0, len(options.ResourceIds))
 	for _, id := range options.ResourceIds {
 		if trimmed := strings.TrimSpace(id); trimmed != "" {
@@ -377,17 +381,17 @@ func (s *UpdaterService) containerIDsForImagesInternal(ctx context.Context, imag
 }
 
 // UpdateSingleContainer updates a single container by ID to the latest available image.
-func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *updater.Result, err error) {
+func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID string) (out *arcaneupdater.Result, err error) {
 	start := time.Now()
 	activityID := s.startSingleContainerUpdateActivityInternal(ctx, containerID)
-	out = &updater.Result{Items: []updater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
+	out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}, ActivityID: mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()}
 	ctx = s.trackActivityInternal(ctx, activityID)
 	ctx = contextWithActivityIDInternal(ctx, activityID)
 	activitylib.AwaitHandlerActivitySlot(ctx, s.deps.Activity, activityID, "0")
 
 	defer func() {
 		if out == nil {
-			out = &updater.Result{Items: []updater.ResourceResult{}}
+			out = &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
 		}
 		if out.Duration == "" {
 			out.Duration = time.Since(start).String()
@@ -396,7 +400,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 		s.completeAutoUpdateActivityInternal(ctx, activityID, out, err)
 	}()
 
-	moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, moduletypes.Options{})
+	moduleResult, engineErr := s.engineInternal().UpdateContainer(ctx, containerID, updater.Options{})
 	if moduleResult != nil {
 		out = resultFromModuleInternal(moduleResult)
 		out.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
@@ -410,7 +414,7 @@ func (s *UpdaterService) UpdateSingleContainer(ctx context.Context, containerID 
 }
 
 // GetStatus returns the current in-memory update activity snapshot.
-func (s *UpdaterService) GetStatus() updater.Status {
+func (s *UpdaterService) GetStatus() arcaneupdater.Status {
 	return statusFromModuleInternal(s.engineInternal().Status())
 }
 
@@ -428,7 +432,7 @@ func (s *UpdaterService) GetHistory(ctx context.Context, limit int) ([]models.Au
 }
 
 // RestartContainersUsingOldIDs restarts containers matching old image IDs or refs.
-func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]updater.ResourceResult, error) {
+func (s *UpdaterService) RestartContainersUsingOldIDs(ctx context.Context, oldIDToNewRef map[string]string, oldRefToNewRef map[string]string) ([]arcaneupdater.ResourceResult, error) {
 	results, err := s.engineInternal().RestartContainersUsingOldImages(ctx, oldIDToNewRef, oldRefToNewRef)
 	return resourceResultsFromModuleInternal(results), err
 }
@@ -438,7 +442,7 @@ func (s *UpdaterService) TriggerSelfUpdateViaCLI(ctx context.Context, source, co
 	if !labels.IsArcaneContainer(labelMap) {
 		return errors.Errorf("%s: container is not an Arcane self-update target", source)
 	}
-	return s.TriggerSelfUpdate(ctx, moduletypes.SelfUpdateTarget{
+	return s.TriggerSelfUpdate(ctx, updater.SelfUpdateTarget{
 		ContainerID:   containerID,
 		ContainerName: containerName,
 		InstanceType:  instanceTypeFromLabelsInternal(labelMap),
@@ -571,7 +575,7 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 }
 
 // PendingImageUpdates returns pending image update records from Arcane's database.
-func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes.ImageUpdateRecord, error) {
+func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]updater.ImageUpdateRecord, error) {
 	if s == nil || s.deps.DB == nil {
 		return nil, common.Classify(common.ErrUnavailable, errors.New("database unavailable"))
 	}
@@ -595,7 +599,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes
 		10,
 	)
 
-	out := make([]moduletypes.ImageUpdateRecord, 0, len(records))
+	out := make([]updater.ImageUpdateRecord, 0, len(records))
 	for _, record := range records {
 		out = append(out, imageUpdateRecordToModuleInternal(record))
 	}
@@ -603,7 +607,7 @@ func (s *UpdaterService) PendingImageUpdates(ctx context.Context) ([]moduletypes
 }
 
 // ClearImageUpdateRecord clears a pending image update record after it is handled.
-func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record moduletypes.ImageUpdateRecord) error {
+func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record updater.ImageUpdateRecord) error {
 	if s == nil {
 		return common.Classify(common.ErrUnavailable, errors.New("updater service unavailable"))
 	}
@@ -611,7 +615,7 @@ func (s *UpdaterService) ClearImageUpdateRecord(ctx context.Context, record modu
 }
 
 // RecordUpdateRun persists one updater resource result into Arcane history.
-func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result moduletypes.ResourceResult) error {
+func (s *UpdaterService) RecordUpdateRun(ctx context.Context, result updater.ResourceResult) error {
 	if s == nil || s.deps.DB == nil {
 		return nil
 	}
@@ -635,18 +639,18 @@ func (s *UpdaterService) ExcludedContainers(ctx context.Context) ([]string, erro
 }
 
 // ProjectByComposeName resolves an Arcane project from a Docker Compose project name.
-func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (moduletypes.ComposeProject, error) {
+func (s *UpdaterService) ProjectByComposeName(ctx context.Context, composeName string) (updater.ComposeProject, error) {
 	if s == nil || s.deps.Projects == nil {
-		return moduletypes.ComposeProject{}, common.Classify(common.ErrUnavailable, errors.New("project service unavailable"))
+		return updater.ComposeProject{}, common.Classify(common.ErrUnavailable, errors.New("project service unavailable"))
 	}
 	project, err := s.deps.Projects.GetProjectByComposeName(ctx, composeName)
 	if err != nil {
-		return moduletypes.ComposeProject{}, err
+		return updater.ComposeProject{}, err
 	}
 	if project == nil {
-		return moduletypes.ComposeProject{}, errors.Errorf("compose project not found: %s", composeName)
+		return updater.ComposeProject{}, errors.Errorf("compose project not found: %s", composeName)
 	}
-	return moduletypes.ComposeProject{ID: project.ID, Name: project.Name}, nil
+	return updater.ComposeProject{ID: project.ID, Name: project.Name}, nil
 }
 
 // UpdateServices redeploys selected services through Arcane's project service.
@@ -658,7 +662,7 @@ func (s *UpdaterService) UpdateServices(ctx context.Context, projectID string, s
 }
 
 // TriggerSelfUpdate runs Arcane's CLI-backed self-update hook.
-func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target moduletypes.SelfUpdateTarget) error {
+func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target updater.SelfUpdateTarget) error {
 	if s == nil || s.deps.SelfUpgrade == nil {
 		instanceType := strings.TrimSpace(target.InstanceType)
 		if instanceType == "" {
@@ -674,13 +678,13 @@ func (s *UpdaterService) TriggerSelfUpdate(ctx context.Context, target moduletyp
 		s.markSelfUpdateTriggeredInternal(ctx, target)
 	}
 
-	if err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
+	if _, err := s.deps.SelfUpgrade.TriggerUpgradeViaCLI(ctx, s.deps.SystemUser, target); err != nil {
 		return errors.WrapIf(err, "CLI upgrade failed")
 	}
 	return nil
 }
 
-func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, target moduletypes.SelfUpdateTarget) {
+func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, target updater.SelfUpdateTarget) {
 	activityID := activityIDFromContextInternal(ctx)
 	if s.deps.Activity == nil || activityID == "" {
 		return
@@ -696,7 +700,7 @@ func (s *UpdaterService) markSelfUpdateTriggeredInternal(ctx context.Context, ta
 }
 
 // Notify sends Arcane's container update notification.
-func (s *UpdaterService) Notify(ctx context.Context, notification moduletypes.Notification) error {
+func (s *UpdaterService) Notify(ctx context.Context, notification updater.Notification) error {
 	if s == nil || s.deps.Notifications == nil {
 		return nil
 	}
@@ -710,7 +714,7 @@ func (s *UpdaterService) Notify(ctx context.Context, notification moduletypes.No
 }
 
 // RecordEvent records updater lifecycle events in Arcane's event stream.
-func (s *UpdaterService) RecordEvent(ctx context.Context, event moduletypes.Event) error {
+func (s *UpdaterService) RecordEvent(ctx context.Context, event updater.Event) error {
 	if s == nil {
 		return nil
 	}
@@ -841,7 +845,7 @@ func (s *UpdaterService) appendAutoUpdateActivityMessageInternal(ctx context.Con
 	}
 }
 
-func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context, activityID string, result *updater.Result, applyErr error) {
+func (s *UpdaterService) completeAutoUpdateActivityInternal(ctx context.Context, activityID string, result *arcaneupdater.Result, applyErr error) {
 	if s.deps.Activity == nil || strings.TrimSpace(activityID) == "" {
 		return
 	}
@@ -880,13 +884,13 @@ func (s *UpdaterService) trackActivityInternal(ctx context.Context, activityID s
 	return s.deps.Activity.Track(ctx, activityID)
 }
 
-func imageUpdateRecordToModuleInternal(record models.ImageUpdateRecord) moduletypes.ImageUpdateRecord {
-	return moduletypes.ImageUpdateRecord{
+func imageUpdateRecordToModuleInternal(record models.ImageUpdateRecord) updater.ImageUpdateRecord {
+	return updater.ImageUpdateRecord{
 		ID:             record.ID,
 		Repository:     record.Repository,
 		Tag:            record.Tag,
 		HasUpdate:      record.HasUpdate,
-		UpdateType:     record.UpdateType,
+		UpdateType:     updater.UpdateType(record.UpdateType),
 		CurrentVersion: record.CurrentVersion,
 		LatestVersion:  record.LatestVersion,
 		CurrentDigest:  record.CurrentDigest,
@@ -896,59 +900,81 @@ func imageUpdateRecordToModuleInternal(record models.ImageUpdateRecord) modulety
 	}
 }
 
-func moduleOptionsFromUpdaterOptionsInternal(options updater.Options) moduletypes.Options {
-	return moduletypes.Options{
-		Type:        options.Type,
-		ResourceIDs: slices.Clone(options.ResourceIds),
-		Force:       options.ForceUpdate,
-		DryRun:      options.DryRun,
+// moduleOptionsFromUpdaterOptionsInternal narrows Arcane's request options to
+// what the engine acts on. Options.Type and Options.ResourceIds stay behind:
+// the engine never read them, and ApplyPending already routes a scoped request
+// through applyScopedUpdatesInternal before reaching the engine.
+func moduleOptionsFromUpdaterOptionsInternal(options arcaneupdater.Options) updater.Options {
+	return updater.Options{
+		Force:  options.ForceUpdate,
+		DryRun: options.DryRun,
 	}
 }
 
-func resultFromModuleInternal(result *moduletypes.Result) *updater.Result {
+// resultFromModuleInternal converts an engine result to Arcane's wire type. The
+// engine reports times as time.Time and a Duration method; Arcane's API has
+// always carried them as strings, so they are formatted here. ActivityID is not
+// an engine concept; every caller sets it on the returned value.
+func resultFromModuleInternal(result *updater.Result) *arcaneupdater.Result {
 	if result == nil {
-		return &updater.Result{Items: []updater.ResourceResult{}}
+		return &arcaneupdater.Result{Items: []arcaneupdater.ResourceResult{}}
 	}
-	return &updater.Result{
-		Success:    result.Success,
-		Checked:    result.Checked,
-		Updated:    result.Updated,
-		Restarted:  result.Restarted,
-		Skipped:    result.Skipped,
-		Failed:     result.Failed,
-		StartTime:  result.StartTime,
-		EndTime:    result.EndTime,
-		Duration:   result.Duration,
-		Items:      resourceResultsFromModuleInternal(result.Items),
-		ActivityID: result.ActivityID,
+	return &arcaneupdater.Result{
+		Success:   result.Success,
+		Checked:   result.Checked,
+		Updated:   result.Updated,
+		Restarted: result.Restarted,
+		Skipped:   result.Skipped,
+		Failed:    result.Failed,
+		StartTime: formatModuleTimeInternal(result.StartTime),
+		EndTime:   formatModuleTimeInternal(result.EndTime),
+		Duration:  result.Duration().String(),
+		Items:     resourceResultsFromModuleInternal(result.Items),
 	}
 }
 
-func resourceResultsFromModuleInternal(results []moduletypes.ResourceResult) []updater.ResourceResult {
-	out := make([]updater.ResourceResult, 0, len(results))
+func formatModuleTimeInternal(value time.Time) string {
+	if value.IsZero() {
+		return ""
+	}
+	return value.UTC().Format(time.RFC3339)
+}
+
+func resourceResultsFromModuleInternal(results []updater.ResourceResult) []arcaneupdater.ResourceResult {
+	out := make([]arcaneupdater.ResourceResult, 0, len(results))
 	for _, result := range results {
 		out = append(out, resourceResultFromModuleInternal(result))
 	}
 	return out
 }
 
-func resourceResultFromModuleInternal(result moduletypes.ResourceResult) updater.ResourceResult {
-	return updater.ResourceResult{
+// resourceResultFromModuleInternal converts one engine result to Arcane's wire
+// type. The engine now reports a single old/new image; Arcane's API carries
+// maps, which only ever held the "main" entry, so that shape is rebuilt here.
+func resourceResultFromModuleInternal(result updater.ResourceResult) arcaneupdater.ResourceResult {
+	return arcaneupdater.ResourceResult{
 		ResourceID:      result.ResourceID,
 		ResourceName:    result.ResourceName,
-		ResourceType:    result.ResourceType,
-		Status:          result.Status,
+		ResourceType:    string(result.ResourceType),
+		Status:          string(result.Status),
 		UpdateAvailable: result.UpdateAvailable,
 		UpdateApplied:   result.UpdateApplied,
-		OldImages:       result.OldImages,
-		NewImages:       result.NewImages,
+		OldImages:       mainImageMapInternal(result.OldImage),
+		NewImages:       mainImageMapInternal(result.NewImage),
 		Error:           result.Error,
 		Details:         result.Details,
 	}
 }
 
-func statusFromModuleInternal(status moduletypes.Status) updater.Status {
-	return updater.Status{
+func mainImageMapInternal(imageRef string) map[string]string {
+	if imageRef == "" {
+		return nil
+	}
+	return map[string]string{"main": imageRef}
+}
+
+func statusFromModuleInternal(status updater.Status) arcaneupdater.Status {
+	return arcaneupdater.Status{
 		UpdatingContainers: status.UpdatingContainers,
 		UpdatingProjects:   status.UpdatingProjects,
 		ContainerIds:       status.ContainerIDs,
@@ -956,7 +982,7 @@ func statusFromModuleInternal(status moduletypes.Status) updater.Status {
 	}
 }
 
-func (s *UpdaterService) recordRunInternal(ctx context.Context, item updater.ResourceResult) error {
+func (s *UpdaterService) recordRunInternal(ctx context.Context, item arcaneupdater.ResourceResult) error {
 	now := time.Now()
 	record := &models.AutoUpdateRecord{
 		ResourceID:       item.ResourceID,
@@ -965,7 +991,7 @@ func (s *UpdaterService) recordRunInternal(ctx context.Context, item updater.Res
 		Status:           models.AutoUpdateStatus(item.Status),
 		StartTime:        now,
 		EndTime:          &now,
-		UpdateAvailable:  item.UpdateAvailable || item.Status == moduletypes.StatusUpdated || item.Status == moduletypes.StatusUpdateAvailable,
+		UpdateAvailable:  item.UpdateAvailable || item.Status == string(updater.StatusUpdated) || item.Status == string(updater.StatusUpdateAvailable),
 		UpdateApplied:    item.UpdateApplied,
 		OldImageVersions: mapToJSONInternal(item.OldImages),
 		NewImageVersions: mapToJSONInternal(item.NewImages),
@@ -977,7 +1003,7 @@ func (s *UpdaterService) recordRunInternal(ctx context.Context, item updater.Res
 	return s.deps.DB.WithContext(ctx).Create(record).Error
 }
 
-func (s *UpdaterService) clearImageUpdateRecordForModuleInternal(ctx context.Context, record moduletypes.ImageUpdateRecord) error {
+func (s *UpdaterService) clearImageUpdateRecordForModuleInternal(ctx context.Context, record updater.ImageUpdateRecord) error {
 	if s.deps.DB == nil {
 		return nil
 	}
@@ -1009,16 +1035,16 @@ func detailsToJSONInternal(values map[string]any) models.JSON {
 	return out
 }
 
-func (s *UpdaterService) logResultItemsInternal(ctx context.Context, result *updater.Result) {
+func (s *UpdaterService) logResultItemsInternal(ctx context.Context, result *arcaneupdater.Result) {
 	if result == nil {
 		return
 	}
 	for _, item := range result.Items {
 		severity := models.EventSeverityInfo
 		switch item.Status {
-		case moduletypes.StatusFailed:
+		case string(updater.StatusFailed):
 			severity = models.EventSeverityError
-		case moduletypes.StatusUpdated:
+		case string(updater.StatusUpdated):
 			severity = models.EventSeveritySuccess
 		}
 		s.recordAutoUpdateEventInternal(ctx, severity, models.JSON{

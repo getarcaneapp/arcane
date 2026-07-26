@@ -176,6 +176,110 @@ func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {
 	require.Equal(t, "already failed", got.Results[3].Error)
 }
 
+// An up-to-date manager never restarts: its upgrader pulls, finds the image already
+// running and skips the recreate. The pending_restart job must then be finalized in
+// place, because no next boot is coming to do it.
+func TestUpdateAllFinalizesUpToDateManagerWithoutRestart(t *testing.T) {
+	ctx := context.Background()
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+
+	db := &database.DB{DB: gormDB}
+	require.NoError(t, db.AutoMigrate(&models.EnvironmentUpdateJob{}, &models.Event{}))
+
+	svc := NewSystemUpgradeService(db, nil, nil, NewEventService(db, nil, nil), nil)
+	job := &models.EnvironmentUpdateJob{
+		Status:                models.EnvironmentUpdateJobStatusPendingRestart,
+		UserID:                "user-1",
+		Username:              "arcane",
+		ManagerVersionAtStart: "v1.0.0",
+		Results: models.EnvironmentUpdateResults{
+			{EnvironmentID: "0", EnvironmentName: "Local", Status: models.EnvironmentUpdateResultStatusUpdating, FromVersion: "v1.0.0"},
+			{EnvironmentID: "remote-1", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusUpToDate},
+		},
+	}
+	require.NoError(t, db.WithContext(ctx).Create(job).Error)
+
+	svc.recordManagerResultInternal(job, models.EnvironmentUpdateResultStatusUpToDate, "v1.0.0")
+	svc.finalizeUpdateAllJobInternal(ctx, job)
+
+	var got models.EnvironmentUpdateJob
+	require.NoError(t, db.WithContext(ctx).First(&got, "id = ?", job.ID).Error)
+
+	// Nothing is left waiting on a restart that will never happen.
+	require.Equal(t, models.EnvironmentUpdateJobStatusCompleted, got.Status)
+	require.NotNil(t, got.CompletedAt)
+	require.Nil(t, got.Error)
+
+	require.Equal(t, "0", got.Results[0].EnvironmentID)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[0].Status)
+	require.Equal(t, "v1.0.0", got.Results[0].ToVersion)
+	require.Empty(t, got.Results[0].Error)
+	require.Equal(t, models.EnvironmentUpdateResultStatusUpToDate, got.Results[1].Status)
+}
+
+// The up-to-date short-circuit must only fire when the version check is conclusive:
+// an agent that could not resolve a newest version or digest keeps the full
+// trigger-and-confirm flow rather than being reported as already current.
+func TestAgentAlreadyOnTarget(t *testing.T) {
+	tests := []struct {
+		name string
+		info version.Info
+		want bool
+	}{
+		{
+			name: "on newest version",
+			info: version.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.2.3"},
+			want: true,
+		},
+		{
+			name: "update available",
+			info: version.Info{CurrentVersion: "1.2.3", NewestVersion: "v1.3.0", UpdateAvailable: true},
+			want: false,
+		},
+		{
+			name: "on newest digest",
+			info: version.Info{CurrentDigest: "sha256:abc", NewestDigest: "sha256:abc"},
+			want: true,
+		},
+		{
+			// A mutable tag rebuilt at the same version: the semver track reports no
+			// update, but the differing digest means the pull really will replace the
+			// image, so this must not be treated as already current.
+			name: "same version, rebuilt digest",
+			info: version.Info{
+				CurrentVersion: "1.2.3",
+				NewestVersion:  "v1.2.3",
+				CurrentDigest:  "sha256:old",
+				NewestDigest:   "sha256:new",
+			},
+			want: false,
+		},
+		{
+			// Only one digest resolved, so a rebuild cannot be ruled out: the matching
+			// version tag must not be enough on its own.
+			name: "same version, remote digest unresolved",
+			info: version.Info{
+				CurrentVersion: "1.2.3",
+				NewestVersion:  "v1.2.3",
+				CurrentDigest:  "sha256:running",
+			},
+			want: false,
+		},
+		{
+			name: "inconclusive check resolves nothing",
+			info: version.Info{CurrentVersion: "1.2.3"},
+			want: false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			require.Equal(t, tt.want, agentAlreadyOnTargetInternal(&tt.info))
+		})
+	}
+}
+
 // With the manager-last ordering, a resumed pending_restart job means the agents
 // phase already ran before the restart: resume must finalize the manager's own row
 // and complete the job, NOT re-run the agents phase.

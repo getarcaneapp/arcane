@@ -14,6 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/labstack/echo/v5"
 	"go.uber.org/fx"
 	"google.golang.org/grpc"
@@ -189,6 +190,9 @@ func newHTTPServerInternal(baseCtx context.Context, listenAddr string, handler h
 		ReadHeaderTimeout: 5 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		BaseContext:       func(net.Listener) context.Context { return baseCtx },
+		// Long-lived stream handlers tune dead-peer detection for their own
+		// connection; see httpx.SetDeadPeerTimeout.
+		ConnContext: httpx.WithConn,
 	}
 	if !useTLS {
 		return srv, nil

@@ -78,19 +78,9 @@ func (s *ApplicationImagesService) GetImageWithColor(name string, colorOverride 
 }
 
 func (s *ApplicationImagesService) applyAccentColorToSVGInternal(svgData []byte, colorOverride string) []byte {
-	accentColor := ""
+	accentColor := settings.DefaultAccentColor
 	if settings.SafeAccentColor.MatchString(colorOverride) {
 		accentColor = colorOverride
-	} else if s.settingsService != nil {
-		if cfg := s.settingsService.GetSettingsConfig(); cfg != nil {
-			stored := cfg.AccentColor.Value
-			if stored != "" && stored != "default" && settings.SafeAccentColor.MatchString(stored) {
-				accentColor = stored
-			}
-		}
-	}
-	if accentColor == "" {
-		accentColor = settings.DefaultAccentColor
 	}
 
 	svgStr := string(svgData)

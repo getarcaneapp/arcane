@@ -2,7 +2,6 @@ package services
 
 import (
 	"context"
-	json "encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -16,6 +15,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	buildgit "github.com/getarcaneapp/arcane/backend/v2/pkg/gitutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
@@ -90,10 +90,14 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 		return nil, errors.New("build service not available")
 	}
 
+	// The builder emits raw docker-CLI text. The log capture stores it verbatim
+	// for build history; the progress writer gets it framed as {"log":...} lines.
 	logCapture := buildapi.NewLogCapture(buildHistoryOutputLimitBytes)
 	writer := io.Writer(logCapture)
+	var logWriter io.WriteCloser
 	if progressWriter != nil {
-		writer = io.MultiWriter(progressWriter, logCapture)
+		logWriter = dockerutils.NewLogLineWriter(progressWriter)
+		writer = io.MultiWriter(logWriter, logCapture)
 	}
 
 	buildRecordID := ""
@@ -120,6 +124,9 @@ func (s *BuildService) BuildImage(ctx context.Context, environmentID string, req
 	}
 
 	completedAt := time.Now()
+	if logWriter != nil {
+		_ = logWriter.Close()
+	}
 	if cleanupErr := cleanupResolvedContext(); cleanupErr != nil {
 		slog.WarnContext(ctx, "failed to cleanup temporary git build context", "error", cleanupErr)
 	}
@@ -375,16 +382,12 @@ func writeBuildProgressStatusInternal(progressWriter io.Writer, serviceName, sta
 		return
 	}
 
-	if err := json.MarshalWrite(progressWriter, buildtypes.ProgressEvent{
-		Type:    "build",
-		Service: serviceName,
-		Status:  status,
-	}); err != nil {
-		slog.Debug("failed to write build progress status", "error", err)
-		return
+	line := status
+	if service := strings.TrimSpace(serviceName); service != "" {
+		line = service + ": " + status
 	}
-	if _, err := io.WriteString(progressWriter, "\n"); err != nil {
-		slog.Debug("failed to terminate build progress status", "error", err)
+	if _, err := io.WriteString(progressWriter, line+"\n"); err != nil {
+		slog.Debug("failed to write build progress status", "error", err)
 	}
 }
 

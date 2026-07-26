@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { goto, refreshAll } from '$app/navigation';
+	import { untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
 	import { preventDefault, createForm } from '#lib/utils/settings';
 	import TemplateSelectionDialog from '#lib/components/dialogs/template-selection-dialog.svelte';
@@ -8,15 +9,34 @@
 	import { swarmService } from '#lib/services/swarm-service.js';
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
-	import { ArrowLeftIcon } from '#lib/icons';
+	import { ArrowLeftIcon, TrashIcon } from '#lib/icons';
 	import CodePanel from '../../../projects/components/CodePanel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
 	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
 	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
+	import { Checkbox } from '#lib/components/ui/checkbox';
+	import { Label } from '#lib/components/ui/label';
+	import * as Select from '#lib/components/ui/select';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import DockerRunConverterDialog from '#lib/components/compose/docker-run-converter-dialog.svelte';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
+	import type { ProjectFileDraft } from '#lib/types/project-files';
+	import type { SwarmSyncFile } from '#lib/types/swarm';
+	import {
+		isProjectFileSelectionUnder,
+		planProjectFileCreate,
+		planProjectFileMove,
+		planProjectFileRename,
+		projectFileBasename,
+		projectFileLanguage,
+		projectFilePathMatches,
+		remapProjectFilePath,
+		remapProjectFileRecord,
+		remapSelectedProjectFileKey,
+		removeProjectFileRecord,
+		type ManagedProjectFileEntry
+	} from '../../../projects/components/project-file-tree-utils';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
@@ -66,28 +86,103 @@
 	let composeOpen = $state(true);
 	let envOpen = $state(true);
 	let nameInputRef = $state<HTMLInputElement | null>(null);
+	let overrideContent = $state(untrack(() => data.overrideTemplate || ''));
+	let overrideActive = $state(untrack(() => (data.overrideTemplate || '').trim().length > 0));
+	let deployOptions = $state({
+		prune: false,
+		withRegistryAuth: false,
+		resolveImage: 'always'
+	});
+
+	function decodeStackFileContent(content: string): string {
+		try {
+			const bytes = Uint8Array.from(atob(content), (character) => character.charCodeAt(0));
+			return new TextDecoder().decode(bytes);
+		} catch {
+			return content;
+		}
+	}
+
+	function encodeStackFileContent(content: string): string {
+		const bytes = new TextEncoder().encode(content);
+		let encoded = '';
+		for (const byte of bytes) {
+			encoded += String.fromCharCode(byte);
+		}
+		return btoa(encoded);
+	}
+
+	let stackFiles = $state<ProjectFileDraft[]>(
+		untrack(() => (data.sourceFiles ?? []).map((file) => ({ relativePath: file.relativePath, isDirectory: false })))
+	);
+	let stackFileContents = $state<Record<string, string>>(
+		untrack(() =>
+			Object.fromEntries((data.sourceFiles ?? []).map((file) => [file.relativePath, decodeStackFileContent(file.content)]))
+		)
+	);
+	const stackFileEntries = $derived.by<ManagedProjectFileEntry[]>(() =>
+		stackFiles.map((file) => ({
+			path: file.relativePath,
+			relativePath: file.relativePath,
+			name: projectFileBasename(file.relativePath),
+			isDirectory: !!file.isDirectory,
+			size: file.isDirectory ? 0 : (stackFileContents[file.relativePath]?.length ?? 0),
+			content: file.isDirectory ? undefined : (stackFileContents[file.relativePath] ?? ''),
+			pending: false
+		}))
+	);
+	const stackFilePaths = $derived.by(() => new Set(stackFileEntries.map((file) => file.relativePath)));
 
 	let selectedStackFile = $state('compose');
 	let openStackTabs = $state<string[]>(['compose']);
 	let stackTreeWidth = $state<number | null>(null);
 	let treeOutlineOpen = $state(false);
 	let treeCommandPaletteOpen = $state(false);
-	const stackOpenTabs = $derived(openStackTabs.length > 0 ? openStackTabs : ['compose']);
+	const stackOpenTabs = $derived.by(() => {
+		const valid = openStackTabs.filter((key) => {
+			if (key === 'compose' || key === 'env') return true;
+			if (key === 'override') return overrideActive;
+			if (!key.startsWith('file:')) return false;
+			const entry = stackFileEntries.find((file) => file.relativePath === key.slice(5));
+			return !!entry && !entry.isDirectory;
+		});
+		return valid.length > 0 ? valid : ['compose'];
+	});
 	const activeStackTab = $derived(
 		stackOpenTabs.includes(selectedStackFile) ? selectedStackFile : (stackOpenTabs[0] ?? 'compose')
 	);
 	const stackTabs = $derived(
 		stackOpenTabs.map((key) => ({
 			key,
-			label: key === 'compose' ? 'compose.yaml' : '.env',
-			title: key === 'compose' ? 'compose.yaml' : '.env',
-			iconClass: key === 'compose' ? 'text-blue-500' : 'text-green-500',
+			label:
+				key === 'compose'
+					? 'compose.yaml'
+					: key === 'override'
+						? 'compose.override.yaml'
+						: key === 'env'
+							? '.env'
+							: projectFileBasename(key.slice(5)),
+			title:
+				key === 'compose' ? 'compose.yaml' : key === 'override' ? 'compose.override.yaml' : key === 'env' ? '.env' : key.slice(5),
+			iconClass:
+				key === 'compose'
+					? 'text-blue-500'
+					: key === 'override'
+						? 'text-purple-500'
+						: key === 'env'
+							? 'text-green-500'
+							: 'text-muted-foreground',
 			pending: false
 		}))
 	);
 
+	function isStackDirectoryKey(key: string): boolean {
+		if (!key.startsWith('file:')) return false;
+		return stackFileEntries.find((file) => file.relativePath === key.slice(5))?.isDirectory === true;
+	}
+
 	function openStackTab(key: string) {
-		if (!openStackTabs.includes(key)) {
+		if (!isStackDirectoryKey(key) && !openStackTabs.includes(key)) {
 			openStackTabs = [...openStackTabs, key];
 		}
 		selectedStackFile = key;
@@ -102,7 +197,82 @@
 		}
 	}
 
+	function addOverride() {
+		overrideActive = true;
+		openStackTab('override');
+	}
+
+	function removeOverride() {
+		overrideContent = '';
+		overrideActive = false;
+		closeStackTab('override');
+	}
+
+	function createStackFile(parentPath: string, name: string, content = '') {
+		const relativePath = planProjectFileCreate(stackFilePaths, parentPath, name);
+		if (!relativePath) return;
+		stackFiles = [...stackFiles, { relativePath, isDirectory: false }];
+		stackFileContents = { ...stackFileContents, [relativePath]: content };
+		openStackTab(`file:${relativePath}`);
+	}
+
+	function createStackFolder(parentPath: string, name: string) {
+		const relativePath = planProjectFileCreate(stackFilePaths, parentPath, name);
+		if (!relativePath) return;
+		stackFiles = [...stackFiles, { relativePath, isDirectory: true }];
+		selectedStackFile = `file:${relativePath}`;
+	}
+
+	function applyStackFilePathChange(oldPath: string, newPath: string) {
+		stackFiles = stackFiles.map((file) => ({
+			...file,
+			relativePath: remapProjectFilePath(file.relativePath, oldPath, newPath)
+		}));
+		stackFileContents = remapProjectFileRecord(stackFileContents, oldPath, newPath);
+		openStackTabs = openStackTabs.map((tab) => remapSelectedProjectFileKey(tab, oldPath, newPath) ?? tab);
+		const remappedSelection = remapSelectedProjectFileKey(selectedStackFile, oldPath, newPath);
+		if (remappedSelection) {
+			selectedStackFile = remappedSelection;
+		}
+	}
+
+	function renameStackFile(relativePath: string, newName: string) {
+		const plan = planProjectFileRename(stackFilePaths, relativePath, newName);
+		if (!plan) return;
+		applyStackFilePathChange(relativePath, plan.newPath);
+	}
+
+	function moveStackFile(relativePath: string, newParentPath: string) {
+		const entry = stackFileEntries.find((file) => file.relativePath === relativePath);
+		const newPath = planProjectFileMove(entry, stackFilePaths, relativePath, newParentPath);
+		if (!newPath) return;
+		applyStackFilePathChange(relativePath, newPath);
+	}
+
+	function deleteStackFile(relativePath: string) {
+		stackFiles = stackFiles.filter((file) => !projectFilePathMatches(file.relativePath, relativePath));
+		stackFileContents = removeProjectFileRecord(stackFileContents, relativePath);
+		openStackTabs = openStackTabs.filter((tab) => !isProjectFileSelectionUnder(tab, relativePath));
+		if (isProjectFileSelectionUnder(selectedStackFile, relativePath)) {
+			selectedStackFile = stackOpenTabs[0] ?? 'compose';
+		}
+	}
+
+	function buildStackFilePayload(): SwarmSyncFile[] {
+		return stackFiles
+			.filter((file) => !file.isDirectory)
+			.map((file) => ({
+				relativePath: file.relativePath,
+				content: encodeStackFileContent(stackFileContents[file.relativePath] ?? '')
+			}));
+	}
+
 	const globalVariableMap = $derived(globalVariablesToMap(data.globalVariables));
+	const stackEditorContext = $derived({
+		envContent: $inputs.envContent.value,
+		composeContents: [$inputs.composeContent.value, overrideContent].filter((content) => content.length > 0),
+		globalVariables: globalVariableMap
+	});
 
 	async function handleSubmit() {
 		if (isEditMode) {
@@ -116,11 +286,21 @@
 		await submitComposeResourceForm({
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
-			submit: ({ name, composeContent, envContent }) => swarmService.deployStack({ name, composeContent, envContent }),
+			submit: ({ name, composeContent, envContent }) =>
+				swarmService.deployStack({
+					name,
+					composeContent,
+					overrideContent,
+					envContent,
+					files: buildStackFilePayload(),
+					prune: deployOptions.prune,
+					withRegistryAuth: deployOptions.withRegistryAuth,
+					resolveImage: deployOptions.resolveImage
+				}),
 			failureMessage: (name) => m.common_create_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_create_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto('/swarm/stacks', { invalidateAll: true });
+				goto('/swarm/stacks', { refreshAll: true });
 			}
 		});
 	}
@@ -129,11 +309,17 @@
 		await submitComposeResourceForm({
 			validate: form.validate,
 			setLoading: (value) => (ui.saving = value),
-			submit: ({ name, composeContent, envContent }) => swarmService.deployStack({ name, composeContent, envContent }),
+			submit: ({ name, composeContent, envContent }) =>
+				swarmService.updateStackSource(name, {
+					composeContent,
+					overrideContent,
+					envContent,
+					files: buildStackFilePayload()
+				}),
 			failureMessage: (name) => m.common_update_failed({ resource: `${m.swarm_stack()} "${name}"` }),
 			onSuccess: async (_result, { name }) => {
 				toast.success(m.common_update_success({ resource: `${m.swarm_stack()} "${name}"` }));
-				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { invalidateAll: true });
+				goto(`/swarm/stacks/${encodeURIComponent(name)}`, { refreshAll: true });
 			}
 		});
 	}
@@ -223,7 +409,46 @@
 					/>
 				</div>
 
-				<form class="flex h-full min-h-0 flex-1 flex-col px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
+				<form class="flex h-full min-h-0 flex-1 flex-col gap-3 px-2 pb-4 sm:px-6" onsubmit={preventDefault(handleSubmit)}>
+					{#if !isEditMode}
+						<div class="flex shrink-0 flex-wrap items-center gap-x-6 gap-y-3 rounded-lg border border-border bg-card px-4 py-3">
+							<div class="flex items-center gap-2">
+								<Checkbox
+									id="swarm-stack-prune"
+									checked={deployOptions.prune}
+									onCheckedChange={(checked) => (deployOptions.prune = checked === true)}
+								/>
+								<Label for="swarm-stack-prune" class="font-normal">{m.swarm_stack_deploy_prune()}</Label>
+							</div>
+							<div class="flex items-center gap-2">
+								<Checkbox
+									id="swarm-stack-registry-auth"
+									checked={deployOptions.withRegistryAuth}
+									onCheckedChange={(checked) => (deployOptions.withRegistryAuth = checked === true)}
+								/>
+								<Label for="swarm-stack-registry-auth" class="font-normal">{m.swarm_stack_registry_auth()}</Label>
+							</div>
+							<div class="flex min-w-56 items-center gap-2">
+								<Label for="swarm-stack-resolve-image" class="shrink-0 font-normal">{m.swarm_stack_resolve_image()}</Label>
+								<Select.Root type="single" bind:value={deployOptions.resolveImage}>
+									<Select.Trigger id="swarm-stack-resolve-image" class="h-8 min-w-32">
+										<span class="truncate">
+											{deployOptions.resolveImage === 'changed'
+												? m.swarm_stack_resolve_image_changed()
+												: deployOptions.resolveImage === 'never'
+													? m.common_never()
+													: m.common_always()}
+										</span>
+									</Select.Trigger>
+									<Select.Content>
+										<Select.Item value="always">{m.common_always()}</Select.Item>
+										<Select.Item value="changed">{m.swarm_stack_resolve_image_changed()}</Select.Item>
+										<Select.Item value="never">{m.common_never()}</Select.Item>
+									</Select.Content>
+								</Select.Root>
+							</div>
+						</div>
+					{/if}
 					<div class="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border border-border bg-card">
 						<ResizableSplit
 							class="min-h-0 flex-1"
@@ -242,10 +467,18 @@
 							{#snippet first()}
 								<ProjectFileTreePanel
 									composeFileName="compose.yaml"
-									entries={[]}
+									overrideFileName="compose.override.yaml"
+									showOverride={overrideActive}
+									onAddOverride={addOverride}
+									entries={stackFileEntries}
 									selectedFile={selectedStackFile}
 									disabled={ui.saving || ui.isLoadingTemplateContent}
 									onSelect={openStackTab}
+									onCreateFile={createStackFile}
+									onCreateFolder={createStackFolder}
+									onRename={renameStackFile}
+									onMove={moveStackFile}
+									onDelete={deleteStackFile}
 								/>
 							{/snippet}
 
@@ -274,14 +507,35 @@
 													bind:value={$inputs.composeContent.value}
 													error={$inputs.composeContent.error ?? undefined}
 													fileId={isEditMode ? `swarm:stacks:${initialName}:compose` : 'swarm:stacks:new:compose'}
-													editorContext={{
-														envContent: $inputs.envContent.value,
-														composeContents: [$inputs.composeContent.value],
-														globalVariables: globalVariableMap
-													}}
+													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
 													bind:commandPaletteOpen={treeCommandPaletteOpen}
 												/>
+											{:else if activeStackTab === 'override'}
+												<div class="flex min-h-0 flex-1 flex-col">
+													<div class="flex shrink-0 items-center justify-between gap-2 border-b border-border px-3 py-2">
+														<p class="text-xs text-muted-foreground">{m.compose_override_hint()}</p>
+														<button
+															type="button"
+															class="flex shrink-0 items-center gap-1 text-xs font-medium text-muted-foreground hover:text-destructive"
+															onclick={removeOverride}
+														>
+															<TrashIcon class="size-3.5 shrink-0" />
+															<span>{m.compose_override_remove()}</span>
+														</button>
+													</div>
+													<CodePanel
+														variant="plain"
+														open={true}
+														title="compose.override.yaml"
+														language="yaml"
+														bind:value={overrideContent}
+														fileId={isEditMode ? `swarm:stacks:${initialName}:override` : 'swarm:stacks:new:override'}
+														editorContext={stackEditorContext}
+														bind:outlineOpen={treeOutlineOpen}
+														bind:commandPaletteOpen={treeCommandPaletteOpen}
+													/>
+												</div>
 											{:else if activeStackTab === 'env'}
 												<CodePanel
 													variant="plain"
@@ -291,11 +545,21 @@
 													bind:value={$inputs.envContent.value}
 													error={$inputs.envContent.error ?? undefined}
 													fileId={isEditMode ? `swarm:stacks:${initialName}:env` : 'swarm:stacks:new:env'}
-													editorContext={{
-														envContent: $inputs.envContent.value,
-														composeContents: [$inputs.composeContent.value],
-														globalVariables: globalVariableMap
-													}}
+													editorContext={stackEditorContext}
+													bind:outlineOpen={treeOutlineOpen}
+													bind:commandPaletteOpen={treeCommandPaletteOpen}
+												/>
+											{:else if activeStackTab.startsWith('file:')}
+												{@const relativePath = activeStackTab.slice(5)}
+												<CodePanel
+													variant="plain"
+													open={true}
+													title={relativePath}
+													language={projectFileLanguage(relativePath)}
+													validationMode="none"
+													bind:value={stackFileContents[relativePath]}
+													fileId={`swarm:stacks:${isEditMode ? initialName : 'new'}:file:${relativePath}`}
+													editorContext={stackEditorContext}
 													bind:outlineOpen={treeOutlineOpen}
 													bind:commandPaletteOpen={treeCommandPaletteOpen}
 												/>

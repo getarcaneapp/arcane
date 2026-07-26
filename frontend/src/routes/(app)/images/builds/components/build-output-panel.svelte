@@ -4,13 +4,7 @@
 	import { ArcaneButton } from '#lib/components/arcane-button/index.js';
 	import { TerminalIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
-
-	type LayerStats = {
-		total: number;
-		completed: number;
-		downloading: number;
-		extracting: number;
-	};
+	import { ansiToHtml } from '#lib/utils/formatting';
 
 	type AutoScrollParams = {
 		enabled: boolean;
@@ -19,10 +13,7 @@
 
 	let {
 		logLines,
-		layerStats,
 		aggregateStatus,
-		progressValue,
-		isIndeterminate,
 		hasReachedComplete,
 		buildError,
 		autoScroll = $bindable(true),
@@ -30,10 +21,7 @@
 		onReset
 	}: {
 		logLines: string[];
-		layerStats: LayerStats;
 		aggregateStatus: string;
-		progressValue: number;
-		isIndeterminate: boolean;
 		hasReachedComplete: boolean;
 		buildError: string;
 		autoScroll?: boolean;
@@ -58,7 +46,7 @@
 </script>
 
 <div class="flex h-full flex-col p-8">
-	<!-- Progress section with enhanced styling -->
+	<!-- Status section -->
 	<div class="mb-6 shrink-0 space-y-4 rounded-2xl border border-border/50 bg-card p-5">
 		<div class="flex items-center justify-between">
 			<div class="flex items-center gap-3">
@@ -73,34 +61,19 @@
 									: 'bg-muted-foreground/30'
 					}`}
 				></div>
-				<span class="text-sm font-medium">
+				<span class="truncate text-sm font-medium">
 					{#if hasReachedComplete}
 						{m.build_completed()}
-					{:else if layerStats.total > 0}
-						{aggregateStatus} &middot; {m.progress_layers_status({ completed: layerStats.completed, total: layerStats.total })}
 					{:else}
 						{aggregateStatus || m.idle()}
 					{/if}
 				</span>
 			</div>
-			<div class="flex items-center gap-3">
-				{#if !isIndeterminate || hasReachedComplete}
-					<span class="text-sm font-medium text-muted-foreground">{progressValue}%</span>
-				{/if}
-				<SwitchWithLabel
-					id="auto-scroll"
-					checked={autoScroll}
-					label={m.auto_scroll()}
-					onCheckedChange={(v) => (autoScroll = v)}
-				/>
-			</div>
+			<SwitchWithLabel id="auto-scroll" checked={autoScroll} label={m.auto_scroll()} onCheckedChange={(v) => (autoScroll = v)} />
 		</div>
-		<Progress
-			value={hasReachedComplete || isIndeterminate ? 100 : progressValue}
-			max={100}
-			class="h-1.5 w-full"
-			indeterminate={isIndeterminate && !hasReachedComplete}
-		/>
+		{#if isBuilding && !hasReachedComplete}
+			<Progress value={100} max={100} class="h-1.5 w-full" indeterminate />
+		{/if}
 	</div>
 
 	<!-- Terminal output with refined styling -->
@@ -108,9 +81,6 @@
 		use:autoScrollToBottom={{ enabled: autoScroll, key: logLines.length }}
 		class="group relative min-h-0 flex-1 overflow-auto rounded-2xl border border-border/50 bg-zinc-950 p-5 font-mono text-[13px] leading-[1.7] text-zinc-50 shadow-2xl shadow-black/50 dark:bg-zinc-950"
 	>
-		<!-- Subtle scanline effect overlay -->
-		<div class="pointer-events-none absolute inset-0 hidden"></div>
-
 		<div class="relative">
 			{#if logLines.length === 0}
 				<div class="flex min-h-[200px] items-center justify-center">
@@ -121,7 +91,10 @@
 				</div>
 			{:else}
 				{#each logLines as line, idx (idx)}
-					<div class="rounded px-1 py-0.5 break-words whitespace-pre-wrap transition-colors hover:bg-white/[0.03]">{line}</div>
+					<!-- eslint-disable-next-line svelte/no-at-html-tags -- ansiToHtml escapes markup before adding color spans -->
+					<div class="rounded px-1 py-0.5 break-words whitespace-pre-wrap transition-colors hover:bg-white/[0.03]">
+						{@html ansiToHtml(line)}
+					</div>
 				{/each}
 			{/if}
 		</div>

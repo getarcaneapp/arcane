@@ -12,6 +12,7 @@
 	import { authService } from '#lib/services/auth-service';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { getAuthRedirectPath } from '#lib/utils/auth';
+	import { getEffectiveLandingPage } from '#lib/utils/navigation';
 	import OidcStatusPanel from '#lib/components/oidc-status-panel.svelte';
 	import { createMutation, useQueryClient } from '@tanstack/svelte-query';
 
@@ -28,9 +29,12 @@
 		return `/login?${params.toString()}`;
 	};
 
+	// Returns '' when no explicit target was carried across the OIDC round trip.
+	// This runs before the user is in the store, so the account landing page must
+	// not be resolved here — it is resolved after sign-in, below.
 	const getStoredRedirect = () => {
 		const storedRedirect = localStorage.getItem('oidc_redirect');
-		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '/dashboard';
+		return storedRedirect?.startsWith('/') && !storedRedirect.startsWith('//') ? storedRedirect : '';
 	};
 
 	type CallbackFailure = {
@@ -140,14 +144,19 @@
 			// to /no-access mid-navigation. refreshAll() above has repopulated
 			// page.data (user + permissions manifest) and the environment store.
 			const landingUser = page.data['user'] ?? user;
+			// Resolved here, after setUser/refreshAll, so the user's saved landing
+			// page applies when no explicit redirect was requested.
+			const landingPage = getEffectiveLandingPage();
+			const requestedTarget = redirectTo || landingPage;
 			const target =
 				getAuthRedirectPath(
-					redirectTo,
+					requestedTarget,
 					landingUser,
 					environmentStore.selected?.id,
 					page.data['permissionsManifest'],
-					page.data['permissionsManifestLoadFailed'] ?? false
-				) ?? redirectTo;
+					page.data['permissionsManifestLoadFailed'] ?? false,
+					landingPage
+				) ?? requestedTarget;
 			await goto(target, { replaceState: true });
 		},
 		onError: (err: unknown) => {

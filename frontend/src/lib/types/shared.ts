@@ -169,7 +169,7 @@ export interface SettingsSearchResponse {
 
 // --- Dashboard ---
 
-import type { ContainerStatusCounts, ContainerSummaryDto, ImageSummaryDto, ImageUsageCounts } from './docker';
+import type { ContainerStatusCounts, ContainerSummaryDto, ImageSummaryDto, ImageUsageCounts, VolumeUsageCounts } from './docker';
 import type { AppVersionInformation } from './settings';
 import type { Environment } from './environment';
 
@@ -193,6 +193,7 @@ export interface DashboardSnapshot {
 	containers: Paginated<ContainerSummaryDto, ContainerStatusCounts>;
 	images: Paginated<ImageSummaryDto>;
 	imageUsageCounts: ImageUsageCounts;
+	volumeUsageCounts?: VolumeUsageCounts;
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
 	versionInfo?: AppVersionInformation;
@@ -217,6 +218,7 @@ export interface DashboardEnvironmentOverview {
 	environment: Environment;
 	containers: ContainerStatusCounts;
 	imageUsageCounts: ImageUsageCounts;
+	volumeUsageCounts?: VolumeUsageCounts;
 	actionItems: DashboardActionItems;
 	settings: DashboardSnapshotSettings;
 	versionInfo?: AppVersionInformation;
@@ -235,7 +237,9 @@ export interface DashboardOverviewSummary {
 	totalImages: number;
 	imagesInUse: number;
 	imagesUnused: number;
-	totalImageSize: number;
+	totalVolumes: number;
+	volumesInUse: number;
+	volumesUnused: number;
 }
 
 export interface DashboardEnvironmentCardState {

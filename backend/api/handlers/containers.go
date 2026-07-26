@@ -15,9 +15,9 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	activitylib "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/activity"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
@@ -763,7 +763,7 @@ func (h *ContainerHandler) RedeployContainer(ctx context.Context, input *Contain
 	activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(runtimeCtx, h.activityService, input.EnvironmentID, models.ActivityTypeContainerRedeploy, "container", input.ContainerID, input.ContainerID, user, "Starting redeploy", "Container redeploy requested", models.JSON{"containerID": input.ContainerID})
 	activitylib.AwaitHandlerActivitySlot(runtimeCtx, h.activityService, activityID, input.EnvironmentID)
 	activityWriter := activitylib.NewWriter(runtimeCtx, h.activityService, activityID, io.Discard, "Redeploying container")
-	redeployCtx := context.WithValue(runtimeCtx, projects.ProgressWriterKey{}, activityWriter)
+	redeployCtx := context.WithValue(runtimeCtx, dockerutils.ProgressWriterKey{}, activityWriter)
 	newContainerID, err := h.containerService.RedeployContainer(redeployCtx, input.ContainerID, *user)
 	if err != nil {
 		activitylib.FlushWriter(activityWriter)

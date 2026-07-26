@@ -100,7 +100,9 @@ async function currentReloadCount(page: Page) {
 }
 
 test.describe('Manager self-update recovery', () => {
-	test('Update All reloads automatically when the manager is updated', async ({ page }) => {
+	test('Update All keeps the manager result visible and refreshes without a document reload', async ({
+		page
+	}) => {
 		await registerReloadCounter(page);
 		await page.route(/\/api\/environments\/0\/system\/upgrade\/all$/, async (route) => {
 			await fulfillJob(route, 'running', 'updating');
@@ -112,7 +114,19 @@ test.describe('Manager self-update recovery', () => {
 		await page.goto('/environments');
 		await openAndConfirmUpdateAll(page);
 
-		await expect.poll(() => currentReloadCount(page), { timeout: 10_000 }).toBe(2);
+		// The finished result stays on screen instead of the page being yanked away.
+		const dialog = page.getByRole('dialog');
+		await expect(dialog.getByRole('heading', { name: 'All environments processed' })).toBeVisible({
+			timeout: 10_000
+		});
+		// A hard reload here would re-run every load function while the agents are still
+		// reconnecting, briefly rendering the whole fleet as offline.
+		await expect.poll(() => currentReloadCount(page)).toBe(1);
+
+		// Closing refreshes through SvelteKit, which reloads data but not the document.
+		await dialog.getByRole('button', { name: 'Close', exact: true }).first().click();
+		await expect(dialog).toBeHidden();
+		await expect.poll(() => currentReloadCount(page)).toBe(1);
 		await expect(page).toHaveURL('/environments');
 	});
 

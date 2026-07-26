@@ -7,6 +7,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -22,6 +23,7 @@ import (
 	"github.com/docker/compose/v5/pkg/api"
 	"github.com/docker/go-units"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	projecttypes "github.com/getarcaneapp/arcane/backend/v2/pkg/projects/types"
 	"github.com/samber/mo"
 )
 
@@ -156,6 +158,61 @@ func LoadComposeProjectLenient(ctx context.Context, composeFile, projectName, pr
 	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, true)
 }
 
+// LoadComposeProjectFromContent loads a Compose project from in-memory source content.
+func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.ComposeContentOptions) (project *composetypes.Project, err error) {
+	defer recoverComposeLoadPanicInternal(ctx, "in-memory compose content", &project, &err)
+
+	if strings.TrimSpace(opts.ComposeContent) == "" {
+		return nil, errors.New("compose content is required")
+	}
+	composeContent := opts.ComposeContent
+
+	workingDir := strings.TrimSpace(opts.WorkingDir)
+	if workingDir == "" {
+		workingDir, err = os.Getwd()
+		if err != nil {
+			workingDir = os.TempDir()
+		}
+	}
+
+	envMap := maps.Clone(loadProcessEnvSnapshotInternal())
+	if envMap == nil {
+		envMap = make(EnvMap)
+	}
+	if strings.TrimSpace(opts.EnvContent) != "" {
+		parsedEnv, parseErr := ParseProjectEnvContent(opts.EnvContent, envMap)
+		if parseErr != nil {
+			return nil, errors.WrapIf(parseErr, "failed to parse env content")
+		}
+		maps.Copy(envMap, parsedEnv)
+	}
+	envMap["PWD"] = workingDir
+
+	configFiles := []composetypes.ConfigFile{{Content: []byte(composeContent)}}
+	if strings.TrimSpace(opts.OverrideContent) != "" {
+		configFiles = append(configFiles, composetypes.ConfigFile{Content: []byte(opts.OverrideContent)})
+	}
+
+	configDetails := composetypes.ConfigDetails{
+		Version:     api.ComposeVersion,
+		WorkingDir:  workingDir,
+		ConfigFiles: configFiles,
+		Environment: composetypes.Mapping(envMap),
+	}
+
+	project, err = loader.LoadWithContext(ctx, configDetails, func(loaderOpts *loader.Options) {
+		if projectName := strings.TrimSpace(opts.ProjectName); projectName != "" {
+			loaderOpts.SetProjectName(projectName, true)
+		}
+		loader.WithDiscardEnvFiles(loaderOpts)
+	})
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to load compose project")
+	}
+
+	return finishLoadedProjectInternal(project, workingDir, opts.PathMapper, false)
+}
+
 // wrapTypeCastMappingLenientInternal prepares the interp type-cast mapping for lenient
 // loading: every existing cast falls back to "0" when it fails (so the lenient
 // placeholder for an undefined variable doesn't abort interpolation), and casts
@@ -273,17 +330,7 @@ func loadComposeProjectInternal(
 	configureLoader func(*loader.Options),
 	lenient bool,
 ) (project *composetypes.Project, err error) {
-	defer func() {
-		if panicErr := emperror.Recover(recover()); panicErr != nil {
-			slog.WarnContext(ctx,
-				"panic while loading compose project; compose file may contain invalid syntax",
-				"path", composeFile,
-				"error", panicErr,
-			)
-			err = errors.WrapIff(panicErr, "load compose project panic for %s", composeFile)
-			project = nil
-		}
-	}()
+	defer recoverComposeLoadPanicInternal(ctx, composeFile, &project, &err)
 
 	workdir := filepath.Dir(composeFile)
 
@@ -351,20 +398,47 @@ func loadComposeProjectInternal(
 		project.ComposeFiles = append(project.ComposeFiles, configFile.Filename)
 	}
 
-	project = project.WithoutUnnecessaryResources()
-
-	// Resolve relative paths for bind mounts, secrets, and configs
-	ResolveRelativeProjectPaths(project, workdir)
-
-	// Translate container paths to host paths for Docker execution
-	if pathMapper != nil {
-		if err := pathMapper.TranslateVolumeSources(project); err != nil {
-			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
-		}
+	project, err = finishLoadedProjectInternal(project, workdir, pathMapper, true)
+	if err != nil {
+		return nil, err
 	}
 
 	injectServiceConfiguration(project, injectionVars)
 	return project, nil
+}
+
+func finishLoadedProjectInternal(project *composetypes.Project, workingDir string, pathMapper projecttypes.VolumeSourcePathMapper, translateFileResources bool) (*composetypes.Project, error) {
+	project = project.WithoutUnnecessaryResources()
+	ResolveRelativeProjectPaths(project, workingDir)
+
+	if !isNilVolumeSourcePathMapperInternal(pathMapper) {
+		if err := pathMapper.TranslateVolumeSources(project, translateFileResources); err != nil {
+			return nil, errors.WrapIf(err, "failed to translate paths for docker host")
+		}
+	}
+
+	return project, nil
+}
+
+func isNilVolumeSourcePathMapperInternal(pathMapper projecttypes.VolumeSourcePathMapper) bool {
+	if pathMapper == nil {
+		return true
+	}
+
+	value := reflect.ValueOf(pathMapper)
+	return value.Kind() == reflect.Pointer && value.IsNil()
+}
+
+func recoverComposeLoadPanicInternal(ctx context.Context, source string, project **composetypes.Project, err *error) {
+	if panicErr := emperror.Recover(recover()); panicErr != nil {
+		slog.WarnContext(ctx,
+			"panic while loading compose project; compose file may contain invalid syntax",
+			"path", source,
+			"error", panicErr,
+		)
+		*err = errors.WrapIff(panicErr, "load compose project panic for %s", source)
+		*project = nil
+	}
 }
 
 func applyCustomLabelsInternal(projectName string, serviceName string, workingDirectory string, composeFiles []string) composetypes.Labels {

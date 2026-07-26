@@ -17,7 +17,7 @@ import (
 	"github.com/opencontainers/go-digest"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBuildInternal(t *testing.T) {
@@ -41,7 +41,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 					ID:    containerID,
 					State: container.StateRunning,
 					Labels: map[string]string{
-						libupdater.LabelArcane: "true",
+						labels.LabelArcane: "true",
 					},
 				},
 			}))
@@ -53,7 +53,7 @@ func TestVersionService_GetAppVersionInfoDoesNotUseStoredDigestUpdateForSemverBu
 				Config: &container.Config{
 					Image: imageRef,
 					Labels: map[string]string{
-						libupdater.LabelArcane: "true",
+						labels.LabelArcane: "true",
 					},
 				},
 			}))

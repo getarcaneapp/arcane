@@ -102,6 +102,7 @@
 			}
 			toast.success(m.upgrade_success());
 			await onRefreshRequested?.();
+			return { upToDate: result.upToDate };
 		} catch (error) {
 			toastUpgradeError(error, m.upgrade_failed);
 			throw error;

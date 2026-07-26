@@ -50,6 +50,8 @@ export const load: PageLoad = async ({ url }) => {
 		defaultTemplate: isEditMode
 			? (sourceStack?.composeContent ?? '')
 			: (selectedTemplate?.content ?? defaultTemplates.swarmStackTemplate),
+		overrideTemplate: sourceStack?.overrideContent ?? '',
+		sourceFiles: sourceStack?.files ?? [],
 		isEditMode,
 		selectedTemplate: selectedTemplate?.template || null,
 		sourceStackName: sourceStack?.name || sourceStackName || null,

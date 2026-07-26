@@ -94,6 +94,14 @@
 					onValueChange={(v) => ($formInputs.defaultDeployPullPolicy.value = v as 'missing' | 'always' | 'never')}
 				/>
 			</div>
+
+			<TextInputWithLabel
+				id="base-server-url"
+				label={m.general_base_url_label()}
+				bind:value={$formInputs.baseServerUrl.value}
+				error={$formInputs.baseServerUrl.error}
+				helpText={m.general_base_url_help()}
+			/>
 		</div>
 
 		<div class="border-t pt-6">
@@ -108,7 +116,7 @@
 				<p class="text-xs text-muted-foreground">{m.prune_options_description()}</p>
 			</div>
 
-			<div class="grid gap-2 sm:grid-cols-2">
+			<div class="grid gap-4 sm:grid-cols-2">
 				<PruneModeCard
 					title={m.containers()}
 					description={m.scheduled_prune_containers_description()}

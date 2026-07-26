@@ -3,11 +3,13 @@ package services
 import (
 	"bytes"
 	"context"
+	json "encoding/json/v2"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -384,7 +386,11 @@ func TestBuildService_BuildImage_FailureExporterErrorsAppearInOutputHistoryAndEv
 	assert.Equal(t, "depot", event.Metadata["provider"])
 	assert.Equal(t, "/builds/demo", event.Metadata["contextDir"])
 	assert.Equal(t, buildErr.Error(), event.Metadata["error"])
-	assert.Equal(t, buildErr.Error(), progress.String())
+	// The progress writer is the wire transport: raw builder text arrives framed
+	// as {"log":...} NDJSON lines.
+	var frame map[string]string
+	require.NoError(t, json.Unmarshal([]byte(strings.TrimSpace(progress.String())), &frame))
+	assert.Equal(t, buildErr.Error(), frame["log"])
 	assert.Equal(t, buildErr.Error(), *record.ErrorMessage)
 	assert.NotEmpty(t, event.Metadata["buildRecordId"])
 	assert.Equal(t, record.ID, event.Metadata["buildRecordId"])

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"os"
 	"strings"
 	"time"
 
@@ -18,8 +19,7 @@ import (
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"go.getarcane.app/sys/cgroup"
-	updaterlabels "go.getarcane.app/updater/pkg/labels"
-	updaterlogs "go.getarcane.app/updater/pkg/logs"
+	"go.getarcane.app/updater/labels"
 )
 
 var (
@@ -59,16 +59,11 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	// This prevents interruption when stopping the target container
 	ctx := context.Background()
 
-	logFile, err := updaterlogs.SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
+	logFile, err := SetupMessageOnlyLogFile("/app/data", "arcane-upgrade", slog.LevelInfo)
 	if err != nil {
 		slog.Warn("Failed to setup file logging", "error", err)
-	} else if logFile != nil {
-		defer func() {
-			if err := logFile.Close(); err != nil {
-				slog.Warn("Failed to close upgrade log file", "error", err)
-			}
-		}()
-		slog.Info("Upgrade log file created")
+	} else {
+		slog.Info("Upgrade log file created", "path", logFile.Name())
 	}
 
 	// Connect to Docker
@@ -108,6 +103,15 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 	slog.Info("Pulling new image", "image", imageToPull)
 	if err := pullImage(ctx, dockerClient, imageToPull); err != nil {
 		return errors.WrapIf(err, "failed to pull image")
+	}
+
+	// The pull always runs so a mutable tag gets re-resolved, but when it lands on
+	// the image the container already runs there is nothing to swap in. Skipping the
+	// recreate avoids needless downtime and, for agents, a dropped connection.
+	if same, pulledID := pulledImageAlreadyRunning(ctx, dockerClient, imageToPull, targetContainer.Image); same {
+		slog.Info("Image unchanged after pull; already up to date, skipping recreate",
+			"container", containerName, "image", imageToPull, "imageId", pulledID)
+		return nil
 	}
 
 	// Perform the upgrade
@@ -151,20 +155,20 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 			continue
 		}
 
-		labels := map[string]string{}
+		containerLabels := map[string]string{}
 		if inspect.Config != nil && inspect.Config.Labels != nil {
-			labels = inspect.Config.Labels
+			containerLabels = inspect.Config.Labels
 		}
 
 		// New label: com.getarcaneapp.arcane=true
-		if updaterlabels.IsArcaneContainer(labels) {
+		if labels.IsArcaneContainer(containerLabels) {
 			slog.Info("Found Arcane container by label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
 
 		// Legacy label (pre-migration): com.getarcaneapp.arcane.server=true
 		// NOTE: older agent images also used this label, so we must additionally exclude AGENT_MODE=true.
-		if isLegacyServerLabel(labels) {
+		if isLegacyServerLabel(containerLabels) {
 			slog.Info("Found Arcane container by legacy label", "id", c.ID[:12], "image", c.Image, "names", c.Names)
 			return inspect, nil
 		}
@@ -179,29 +183,29 @@ func findArcaneContainer(ctx context.Context, dockerClient *client.Client) (cont
 	return container.InspectResponse{}, errors.New("no running Arcane container found")
 }
 
-func isLegacyServerLabel(labels map[string]string) bool {
-	if labels == nil {
+func isLegacyServerLabel(containerLabels map[string]string) bool {
+	if containerLabels == nil {
 		return false
 	}
-	for k, v := range labels {
-		if strings.EqualFold(k, updaterlabels.LabelArcaneLegacyServer) {
+	for k, v := range containerLabels {
+		if strings.EqualFold(k, labels.LabelArcaneLegacyServer) {
 			return strings.EqualFold(strings.TrimSpace(v), "true")
 		}
 	}
 	return false
 }
 
-func normalizeRecreatedArcaneLabelsInternal(labels map[string]string) map[string]string {
-	normalized := maps.Clone(labels)
+func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) map[string]string {
+	normalized := maps.Clone(containerLabels)
 	if normalized == nil {
 		return nil
 	}
-	if updaterlabels.IsArcaneContainer(labels) || isLegacyServerLabel(labels) {
-		normalized[updaterlabels.LabelArcane] = "true"
+	if labels.IsArcaneContainer(containerLabels) || isLegacyServerLabel(containerLabels) {
+		normalized[labels.LabelArcane] = "true"
 	}
-	if updaterlabels.IsArcaneAgentContainer(labels) {
-		normalized[updaterlabels.LabelArcaneAgent] = "true"
-		normalized[updaterlabels.LabelArcane] = "true"
+	if labels.IsArcaneAgentContainer(containerLabels) {
+		normalized[labels.LabelArcaneAgent] = "true"
+		normalized[labels.LabelArcane] = "true"
 	}
 	return normalized
 }
@@ -343,6 +347,22 @@ func ensureDefaultTag(imageName string) string {
 	return imageName + ":latest"
 }
 
+// pulledImageAlreadyRunning reports whether the freshly pulled reference resolves to
+// the image the target container is already running, along with the resolved image ID.
+// An inspect failure reports false: recreating unnecessarily is safer than skipping a
+// real update.
+func pulledImageAlreadyRunning(ctx context.Context, dockerClient *client.Client, imageRef, runningImageID string) (bool, string) {
+	if runningImageID == "" {
+		return false, ""
+	}
+	inspect, err := dockerClient.ImageInspect(ctx, imageRef)
+	if err != nil {
+		slog.Warn("Could not inspect pulled image; continuing with recreate", "image", imageRef, "error", err)
+		return false, ""
+	}
+	return inspect.ID == runningImageID, inspect.ID
+}
+
 func pullImage(ctx context.Context, dockerClient *client.Client, imageName string) error {
 	reader, err := dockerClient.ImagePull(ctx, imageName, client.ImagePullOptions{})
 	if err != nil {
@@ -350,7 +370,7 @@ func pullImage(ctx context.Context, dockerClient *client.Client, imageName strin
 	}
 	defer func() { _ = reader.Close() }()
 
-	return docker.ConsumeJSONMessageStream(reader, nil)
+	return docker.RenderJSONMessageStream(reader, os.Stdout)
 }
 
 func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldContainer container.InspectResponse, newImage string) error {

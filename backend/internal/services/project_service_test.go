@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -40,23 +39,12 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	buildtypes "go.getarcane.app/builds/types"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 )
-
-func TestWriteProjectProgressInternal_SuppressedContextSkipsProgress(t *testing.T) {
-	ctx := context.Background()
-	var buf bytes.Buffer
-	ctx = context.WithValue(ctx, projects.ProgressWriterKey{}, &buf)
-	ctx = withProjectProgressSuppressedInternal(ctx)
-
-	writeProjectProgressInternal(ctx, "Project stopped", 100, "complete")
-
-	require.Empty(t, buf.String())
-}
 
 type testBuildBuilder struct {
 	err error
@@ -4244,7 +4232,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			labels: map[string]string{
 				"com.docker.compose.project": "arcane",
 				"com.docker.compose.service": "server",
-				libupdater.LabelArcane:       "true",
+				labels.LabelArcane:           "true",
 			},
 			wantProject: true,
 			wantService: true,
@@ -4254,9 +4242,9 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			containerID:        "arcane1234567890",
 			currentContainerID: "arcane1234567890",
 			labels: map[string]string{
-				"com.docker.compose.project":       "arcane",
-				"com.docker.compose.service":       "server",
-				libupdater.LabelArcaneLegacyServer: "true",
+				"com.docker.compose.project":   "arcane",
+				"com.docker.compose.service":   "server",
+				labels.LabelArcaneLegacyServer: "true",
 			},
 			wantProject: true,
 			wantService: true,
@@ -4268,7 +4256,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			labels: map[string]string{
 				"com.docker.compose.project": "arcane",
 				"com.docker.compose.service": "server",
-				libupdater.LabelArcane:       "true",
+				labels.LabelArcane:           "true",
 			},
 			wantProject: true,
 			wantService: true,
@@ -4280,8 +4268,8 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 			labels: map[string]string{
 				"com.docker.compose.project": "arcane",
 				"com.docker.compose.service": "agent",
-				libupdater.LabelArcane:       "true",
-				libupdater.LabelArcaneAgent:  "true",
+				labels.LabelArcane:           "true",
+				labels.LabelArcaneAgent:      "true",
 			},
 		},
 		{

@@ -1,17 +1,17 @@
 import { browser } from '$app/env';
 import { PersistedState } from 'runed';
 import { get } from 'svelte/store';
-import { defaultMobileNavigationSettings, type MobileNavigationSettings } from '#lib/config/navigation-config';
-import settingsStore from '#lib/stores/config-store';
+import {
+	DEFAULT_LANDING_PAGE,
+	defaultMobileNavigationSettings,
+	getLandingPageNavItems,
+	type MobileNavigationSettings
+} from '#lib/config/navigation-config';
+import userStore from '#lib/stores/user-store';
 
 // --- Mobile nav state ---
 
 const pinnedItemsStore = new PersistedState('mobile-nav-settings', defaultMobileNavigationSettings);
-
-export const navigationSettingsOverridesStore = new PersistedState<Partial<MobileNavigationSettings>>(
-	'navigation-settings-overrides',
-	{}
-);
 
 type NavigationVisibilityController = {
 	resetVisibility: () => void;
@@ -28,26 +28,26 @@ export function resetNavigationVisibility() {
 }
 
 export function getEffectiveNavigationSettings(): MobileNavigationSettings {
-	const serverSettings = get(settingsStore);
-	const overrides = navigationSettingsOverridesStore.current;
-	const currentPinnedItems = pinnedItemsStore.current;
-
-	const getEffectiveValue = <T>(serverValue: T | undefined, overrideValue: T | undefined, defaultValue: T): T => {
-		return overrideValue !== undefined ? overrideValue : (serverValue ?? defaultValue);
-	};
-
-	const mode = getEffectiveValue(serverSettings?.mobileNavigationMode, overrides.mode, defaultMobileNavigationSettings.mode);
+	const preferences = get(userStore)?.preferences;
+	const mode = preferences?.mobileNavigationMode ?? defaultMobileNavigationSettings.mode;
 
 	return {
-		pinnedItems: overrides.pinnedItems ?? currentPinnedItems.pinnedItems,
+		pinnedItems: pinnedItemsStore.current.pinnedItems,
 		mode,
-		showLabels: getEffectiveValue(
-			serverSettings?.mobileNavigationShowLabels,
-			overrides.showLabels,
-			defaultMobileNavigationSettings.showLabels
-		),
+		showLabels: preferences?.mobileNavigationShowLabels ?? defaultMobileNavigationSettings.showLabels,
 		scrollToHide: mode === 'floating'
 	};
+}
+
+/**
+ * Resolve the page to open after signing in from the signed-in user's account
+ * preference, falling back to the built-in default. A stale value (e.g. a page
+ * that no longer exists) falls back to the default rather than 404ing.
+ */
+export function getEffectiveLandingPage(): string {
+	const candidate = get(userStore)?.preferences?.defaultLandingPage ?? DEFAULT_LANDING_PAGE;
+
+	return getLandingPageNavItems().some((item) => item.url === candidate) ? candidate : DEFAULT_LANDING_PAGE;
 }
 
 // --- Keyboard shortcuts ---

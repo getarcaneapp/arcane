@@ -22,6 +22,7 @@ import (
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	versiontypes "github.com/getarcaneapp/arcane/types/v2/version"
+	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
 	"go.getarcane.app/streams/agg"
 )
 
@@ -125,6 +126,8 @@ func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *Strea
 // environment and every enabled remote environment over a single response so
 // the browser needs one connection regardless of environment count.
 func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
+	// RunAuthorizedAggregateStream logs how the stream ended; there is nothing
+	// left to report to a client whose response headers were sent long ago.
 	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
 		Writer:            writer,
 		Flush:             flush,
@@ -372,6 +375,14 @@ func (h *DashboardHandler) fetchLegacyDashboardSnapshotInternal(ctx context.Cont
 		errs = append(errs, err)
 	} else {
 		snapshot.ImageUsageCounts = imageCounts.Data
+	}
+
+	attempted++
+	var volumeCounts base.ApiResponse[volumetypes.UsageCounts]
+	if err := h.environmentService.ProxyJSONRequestForEnvironment(ctx, environment, http.MethodGet, "/api/environments/0/volumes/counts", nil, &volumeCounts); err != nil {
+		errs = append(errs, err)
+	} else {
+		snapshot.VolumeUsageCounts = &volumeCounts.Data
 	}
 
 	attempted++

@@ -485,11 +485,47 @@ func (s *EnvironmentService) updateRemoteEnvironmentSnapshotInternal(environment
 	}
 }
 
-func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
-	const localEnvID = "0"
+// LocalEnvironmentID is the reserved ID of the environment Arcane manages directly —
+// the manager itself, as opposed to a remote agent.
+const LocalEnvironmentID = "0"
 
+// localEnvironmentFallbackNameInternal labels the local environment when its stored
+// name is unreadable or blank. Its real name is user-editable, so this is only ever a
+// fallback — never assume it, resolve the name instead.
+const localEnvironmentFallbackNameInternal = "Local"
+
+// EnvironmentDisplayName returns the label to show for an environment: its stored name
+// when set, otherwise a readable fallback — the local environment gets a friendly
+// label, any other environment falls back to its ID.
+func EnvironmentDisplayName(environmentID, storedName string) string {
+	if name := strings.TrimSpace(storedName); name != "" {
+		return name
+	}
+	id := strings.TrimSpace(environmentID)
+	if id == "" || id == LocalEnvironmentID {
+		return localEnvironmentFallbackNameInternal
+	}
+	return id
+}
+
+// ResolveEnvironmentName looks up an environment and returns the label to show for it.
+// Use this instead of hardcoding a name for a known ID: names are user-editable, so
+// even the local environment's is not fixed.
+func (s *EnvironmentService) ResolveEnvironmentName(ctx context.Context, environmentID string) string {
+	if strings.TrimSpace(environmentID) == "" {
+		environmentID = LocalEnvironmentID
+	}
+	env, err := s.GetEnvironmentByID(ctx, environmentID)
+	if err != nil || env == nil {
+		slog.WarnContext(ctx, "failed to resolve environment name", "environmentID", environmentID, "error", err)
+		return EnvironmentDisplayName(environmentID, "")
+	}
+	return EnvironmentDisplayName(env.ID, env.Name)
+}
+
+func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl string) error {
 	var existingEnv models.Environment
-	err := s.db.WithContext(ctx).Where("id = ?", localEnvID).First(&existingEnv).Error
+	err := s.db.WithContext(ctx).Where("id = ?", LocalEnvironmentID).First(&existingEnv).Error
 
 	if err == nil {
 		// Local environment already exists, ensure ApiUrl matches current appUrl
@@ -497,7 +533,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 			if err := s.db.WithContext(ctx).Model(&existingEnv).Update("api_url", appUrl).Error; err != nil {
 				return errors.WrapIf(err, "failed to update local environment api url")
 			}
-			slog.InfoContext(ctx, "updated local environment api url", "id", localEnvID, "url", appUrl)
+			slog.InfoContext(ctx, "updated local environment api url", "id", LocalEnvironmentID, "url", appUrl)
 		}
 		return nil
 	}
@@ -510,7 +546,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 	now := time.Now()
 	localEnv := &models.Environment{
 		BaseModel: models.BaseModel{
-			ID:        localEnvID,
+			ID:        LocalEnvironmentID,
 			CreatedAt: now,
 			UpdatedAt: new(now),
 		},
@@ -524,7 +560,7 @@ func (s *EnvironmentService) EnsureLocalEnvironment(ctx context.Context, appUrl 
 		return errors.WrapIf(err, "failed to create local environment")
 	}
 
-	slog.InfoContext(ctx, "created local environment record", "id", localEnvID)
+	slog.InfoContext(ctx, "created local environment record", "id", LocalEnvironmentID)
 	return nil
 }
 

@@ -94,12 +94,13 @@ export function getAuthRedirectPath(
 	user: User | null,
 	envId?: string,
 	accessManifest?: PermissionsManifest | null,
-	accessManifestLoadFailed = false
+	accessManifestLoadFailed = false,
+	landingPath: string = '/dashboard'
 ): string | null {
 	const isSignedIn = !!user;
 
 	if (path === '/') {
-		return isSignedIn ? '/dashboard' : '/login';
+		return isSignedIn ? landingPath : '/login';
 	}
 
 	if (!isSignedIn && matchesAny(path, PROTECTED_PREFIXES)) {
@@ -107,7 +108,7 @@ export function getAuthRedirectPath(
 	}
 
 	if (isSignedIn && matchesAny(path, UNAUTHENTICATED_ONLY_PREFIXES)) {
-		return '/dashboard';
+		return landingPath;
 	}
 
 	if (

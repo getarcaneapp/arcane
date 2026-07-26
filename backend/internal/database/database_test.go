@@ -139,6 +139,39 @@ func TestMigration067_ActivityBatchID_UpAndDown(t *testing.T) {
 	assert.Zero(t, indexCount)
 }
 
+func TestMigration068_UserPreferences_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-user-preferences.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 67))
+	var columnCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+
+	_, err := rawDB.Exec(`INSERT INTO users (id, created_at, updated_at, username, password_hash) VALUES ('u-1', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 'kyle', 'hash')`)
+	require.NoError(t, err)
+	// One string setting and one boolean setting are seeded; iconCatalog is
+	// deliberately absent so the migration must leave it JSON null.
+	_, err = rawDB.Exec(`INSERT INTO settings (key, value) VALUES ('applicationTheme', 'nord'), ('oledMode', 'true')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 68))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Equal(t, 1, columnCount)
+
+	var theme string
+	var oled bool
+	var iconCatalog stdsql.NullString
+	require.NoError(t, rawDB.QueryRow(`SELECT json_extract(preferences, '$.applicationTheme'), json_extract(preferences, '$.oledMode'), json_extract(preferences, '$.iconCatalog') FROM users WHERE id = 'u-1'`).Scan(&theme, &oled, &iconCatalog))
+	assert.Equal(t, "nord", theme)
+	assert.True(t, oled)
+	assert.False(t, iconCatalog.Valid)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 67))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM pragma_table_info('users') WHERE name = 'preferences'`).Scan(&columnCount))
+	assert.Zero(t, columnCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

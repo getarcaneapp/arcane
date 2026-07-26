@@ -1,6 +1,5 @@
 import {
 	ApiKeyIcon,
-	AppearanceIcon,
 	UsersIcon,
 	LockIcon,
 	NotificationsIcon,
@@ -197,13 +196,6 @@ export const navigationItems: NavigationSections = {
 					accessSurfaceId: 'settings.category.apikeys'
 				},
 				{
-					title: m.appearance_title(),
-					url: '/settings/appearance',
-					icon: AppearanceIcon,
-					shortcut: ['mod', 'shift', '2'],
-					accessSurfaceId: 'settings.category.appearance'
-				},
-				{
 					title: m.webhook_page_title(),
 					url: '/settings/webhooks',
 					icon: GlobeIcon,
@@ -349,6 +341,17 @@ export function getSwarmNavigationItems(swarmEnabled: boolean): NavigationItem[]
 	}
 
 	return navigationItems.swarmItems.filter((item) => item.url === '/swarm/cluster');
+}
+
+export const DEFAULT_LANDING_PAGE = '/dashboard';
+
+/**
+ * Top-level pages selectable as the post-login landing page. Derived from the
+ * sidebar sections so the option list stays in sync with the nav; /customize is
+ * excluded because it is a category landing rather than a resource page.
+ */
+export function getLandingPageNavItems(): NavigationItem[] {
+	return [...navigationItems.managementItems, ...navigationItems.resourceItems].filter((item) => item.url !== '/customize');
 }
 
 export type MobileNavigationSettings = {

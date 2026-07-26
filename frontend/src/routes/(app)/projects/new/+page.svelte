@@ -191,7 +191,7 @@
 					activityToastOptions(extractActivityId(project))
 				);
 				// fallow-ignore-next-line code-duplication -- create-success handler; navigation target diverges per page
-				goto(`/projects/${project.id}`, { invalidateAll: true });
+				goto(`/projects/${project.id}`, { refreshAll: true });
 			}
 		});
 	}

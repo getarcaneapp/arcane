@@ -2,7 +2,16 @@ import type { User } from '#lib/types/auth';
 import { GLOBAL_SCOPE, SUDO_PERMISSION } from '#lib/types/auth';
 import { writable, get } from 'svelte/store';
 import { setLocale } from '#lib/utils/formatting';
-import { applyFontSize, FONT_SIZE_DEFAULT } from '#lib/utils/theme';
+import {
+	applyAccentColor,
+	applyApplicationTheme,
+	applyFontSize,
+	applyGlassEffects,
+	applyInterfaceAnimations,
+	applyOledMode,
+	FONT_SIZE_DEFAULT
+} from '#lib/utils/theme';
+import { setMode } from 'mode-watcher';
 import { timeFormatStore } from '#lib/stores/time-format.store.svelte';
 
 const userStore = writable<User | null>(null);
@@ -20,12 +29,32 @@ const setUser = async (user: User) => {
 	}
 	applyFontSize(user.fontSize ?? FONT_SIZE_DEFAULT);
 	timeFormatStore.set(user.timeFormat ?? 'auto');
+
+	const preferences = user.preferences ?? {};
+	applyApplicationTheme(preferences.applicationTheme);
+	applyAccentColor(preferences.accentColor ?? 'default');
+	applyOledMode(preferences.oledMode ?? false);
+	applyGlassEffects(preferences.glassEffectsEnabled ?? true);
+	applyInterfaceAnimations(preferences.animationsEnabled ?? true);
+	// Only override the device-local mode when the account carries an explicit
+	// choice, so a browser that has never synced keeps its own light/dark mode.
+	if (preferences.themeMode) {
+		setMode(preferences.themeMode);
+	}
+
 	userStore.set(user);
 };
 
 const clearUser = () => {
 	applyFontSize(FONT_SIZE_DEFAULT);
 	timeFormatStore.reset();
+	applyApplicationTheme('default');
+	applyAccentColor('default');
+	applyOledMode(false);
+	applyGlassEffects(true);
+	applyInterfaceAnimations(true);
+	// Light/dark mode is deliberately left alone on logout: it is a device-local
+	// preference and flipping it mid-session is jarring.
 	userStore.set(null);
 };
 

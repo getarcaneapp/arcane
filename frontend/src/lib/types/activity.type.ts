@@ -34,8 +34,6 @@ export interface Activity {
 	resourceType?: string;
 	resourceId?: string;
 	resourceName?: string;
-	progress?: number | null;
-	step?: string;
 	latestMessage?: string;
 	startedBy?: ActivityStartedBy;
 	startedAt: string;
@@ -75,7 +73,6 @@ export interface ActivityBatchGroup {
 	done: number;
 	failed: number;
 	status: ActivityStatus;
-	progress: number | null;
 }
 
 export type ActivityGroup = { kind: 'single'; activity: Activity } | ActivityBatchGroup;

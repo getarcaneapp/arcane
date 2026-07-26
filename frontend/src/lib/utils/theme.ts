@@ -209,7 +209,7 @@ const APP_THEME_ATTRIBUTE = 'data-app-theme';
 const OLED_CLASS = 'oled';
 const DARK_CLASS = 'dark';
 const OLED_THEME_COLOR = '#000000';
-const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
+export const DEFAULT_ACCENT_COLOR = 'oklch(0.606 0.25 292.717)';
 
 let htmlClassObserver: MutationObserver | null = null;
 

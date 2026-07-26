@@ -23,7 +23,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/samber/hot"
 	"go.getarcane.app/sys/cgroup"
-	libupdater "go.getarcane.app/updater/pkg/labels"
+	"go.getarcane.app/updater/labels"
 )
 
 const (
@@ -399,7 +399,7 @@ func (s *VersionService) detectContainerID(ctx context.Context, dockerClient *cl
 // findArcaneContainerByLabel searches for the Arcane container using labels
 func (s *VersionService) findArcaneContainerByLabel(ctx context.Context, dockerClient *client.Client) string {
 	f := make(client.Filters)
-	f = f.Add("label", libupdater.LabelArcane+"=true")
+	f = f.Add("label", labels.LabelArcane+"=true")
 	list, err := dockerClient.ContainerList(ctx, client.ContainerListOptions{All: true, Filters: f})
 	if err != nil {
 		slog.Debug("findArcaneContainerByLabel: failed to list containers", "error", err)
@@ -495,7 +495,7 @@ func (s *VersionService) checkDigestBasedUpdate(ctx context.Context, currentTag,
 	imageRef := fmt.Sprintf("%s:%s", currentImageRef, currentTag)
 
 	// Fetch latest digest from registry
-	latestDigest, err := s.containerRegistryService.GetImageDigest(ctx, imageRef)
+	latestDigest, err := s.containerRegistryService.ImageDigest(ctx, imageRef)
 	if err != nil {
 		slog.WarnContext(ctx, "Failed to fetch latest digest for tag", "tag", currentTag, "error", err)
 		return false, ""

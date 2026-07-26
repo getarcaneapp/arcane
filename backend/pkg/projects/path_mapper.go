@@ -1,11 +1,14 @@
 package projects
 
 import (
+	"context"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
 	"emperror.dev/errors"
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 )
 
@@ -59,6 +62,50 @@ func NewPathMapperFromMounts(mounts []HostMount) *PathMapper {
 		mounts:        mounts,
 		isNonMatching: nonMatching,
 	}
+}
+
+// NewPathMapperForConfiguredDirectory resolves an optional container-to-host
+// directory mapping and falls back to Docker mount discovery when no explicit
+// host path is configured.
+func NewPathMapperForConfiguredDirectory(ctx context.Context, configuredPath, defaultDir string, dockerClient *client.Client) *PathMapper {
+	configuredPath = strings.TrimSpace(configuredPath)
+	if configuredPath == "" {
+		configuredPath = defaultDir
+	}
+
+	containerDir := configuredPath
+	hostDir := ""
+	if parts := strings.SplitN(configuredPath, ":", 2); len(parts) == 2 &&
+		!IsWindowsDrivePath(configuredPath) &&
+		strings.HasPrefix(parts[0], "/") {
+		containerDir = parts[0]
+		hostDir = parts[1]
+	}
+
+	containerDir, err := GetProjectsDirectory(ctx, strings.TrimSpace(containerDir))
+	if err != nil {
+		slog.WarnContext(ctx, "unable to resolve configured source directory, using default", "path", configuredPath, "error", err)
+		containerDir = filepath.Clean(defaultDir)
+	}
+
+	if strings.TrimSpace(hostDir) != "" {
+		pathMapper := NewPathMapper(containerDir, filepath.Clean(strings.TrimSpace(hostDir)))
+		if pathMapper.IsNonMatchingMount() {
+			return pathMapper
+		}
+		return nil
+	}
+
+	mounts, err := GetCurrentContainerMounts(ctx, dockerClient)
+	if err != nil || len(mounts) == 0 {
+		return nil
+	}
+
+	pathMapper := NewPathMapperFromMounts(mounts)
+	if pathMapper.IsNonMatchingMount() {
+		return pathMapper
+	}
+	return nil
 }
 
 // ResolveHostPath returns the host-side path for containerPath by selecting the
@@ -145,8 +192,10 @@ func (pm *PathMapper) ContainerToHost(containerPath string) (string, error) {
 	return hostPath, nil
 }
 
-// TranslateVolumeSources translates all bind mount sources in a compose project
-func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) error {
+// TranslateVolumeSources translates bind mount sources in a Compose project.
+// File-backed configs and secrets are translated only when the Docker host,
+// rather than Arcane itself, will read those files.
+func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project, translateFileResources bool) error {
 	if !pm.IsNonMatchingMount() {
 		return nil // No translation needed
 	}
@@ -171,6 +220,10 @@ func (pm *PathMapper) TranslateVolumeSources(project *composetypes.Project) erro
 			service.Volumes[vi] = volume
 		}
 		project.Services[si] = service
+	}
+
+	if !translateFileResources {
+		return nil
 	}
 
 	// Translate secrets
