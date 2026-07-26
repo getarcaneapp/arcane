@@ -3,7 +3,6 @@ package version
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -28,8 +27,11 @@ var VersionCmd = &cobra.Command{
 			return err
 		}
 
-		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.VersionEndpoint)
-		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.VersionEndpoint)
+		// /api/version returns the trimmed version.Check payload, which carries
+		// neither displayVersion nor revision. /api/app-version returns the full
+		// version.Info, including the update-check fields printed below.
+		logger.GetLogger().Debug("Sending request", "endpoint", clitypes.Endpoints.AppVersionEndpoint)
+		resp, err := c.Get(cmd.Context(), clitypes.Endpoints.AppVersionEndpoint)
 		if err != nil {
 			return errors.WrapIf(err, "failed to get version")
 		}
@@ -37,9 +39,9 @@ var VersionCmd = &cobra.Command{
 
 		logger.GetLogger().Debug("Response received", "status", resp.Status)
 
-		body, err := io.ReadAll(resp.Body)
+		body, err := cmdutil.ReadJSONBody(resp)
 		if err != nil {
-			return errors.WrapIf(err, "failed to read response")
+			return errors.WrapIf(err, "failed to get version")
 		}
 
 		logger.GetLogger().Debug("Raw response", "body", string(body))

@@ -79,6 +79,9 @@ var (
 
 var ansiRegexp = regexp.MustCompile("\x1b\\[[0-9;]*[a-zA-Z]")
 
+// ansiReset closes a styled run re-applied after truncation.
+const ansiReset = "\x1b[0m"
+
 var tableWhitespaceReplacer = strings.NewReplacer("\r\n", " ", "\n", " ", "\r", " ", "\t", " ")
 
 var colorEnabled = true
@@ -372,11 +375,20 @@ func truncateVisible(value string, maxWidth int) string {
 	}
 
 	plain := ansiRegexp.ReplaceAllString(value, "")
-	if maxWidth == 1 {
-		return "…"
+	truncated := "…"
+	if maxWidth > 1 {
+		truncated = runewidth.Truncate(plain, maxWidth, "…")
 	}
 
-	return runewidth.Truncate(plain, maxWidth, "…")
+	// Re-apply the cell's styling. Colour is written as a single leading escape
+	// sequence plus a trailing reset, so measuring against the stripped text and
+	// then returning it bare would leave truncated cells uncoloured while their
+	// untruncated neighbours in the same column stay tinted.
+	codes := ansiRegexp.FindAllString(value, -1)
+	if len(codes) == 0 || !strings.HasPrefix(value, codes[0]) {
+		return truncated
+	}
+	return codes[0] + truncated + ansiReset
 }
 
 func tableNonContentWidth(columnCount int) int {

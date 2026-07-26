@@ -27,11 +27,16 @@ import (
 )
 
 var (
-	limitFlag             int
-	startFlag             int
-	projectsUpdatesFilter string
-	forceFlag             bool
-	jsonOutput            bool
+	limitFlag              int
+	startFlag              int
+	allFlag                bool
+	projectsUpdatesFilter  string
+	projectsStatusFilter   string
+	projectsArchivedFilter string
+	forceFlag              bool
+	jsonOutput             bool
+	destroyRemoveFiles     bool
+	destroyRemoveVolumes   bool
 
 	createName    string
 	createFile    string
@@ -86,18 +91,18 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	var result base.Paginated[project.Details]
-	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-		return errors.WrapIf(err, "failed to parse response")
+	body, err := cmdutil.ReadJSONBody(resp)
+	if err != nil {
+		return errors.WrapIf(err, "failed to list projects")
 	}
 
 	if jsonOutput {
-		resultBytes, err := json.MarshalIndent(result, "", "  ")
-		if err != nil {
-			return errors.WrapIf(err, "failed to marshal JSON")
-		}
-		fmt.Println(string(resultBytes))
-		return nil
+		return cmdutil.PrintRawJSON(body)
+	}
+
+	var result base.Paginated[project.Details]
+	if err := json.Unmarshal(body, &result); err != nil {
+		return errors.WrapIf(err, "failed to parse response")
 	}
 
 	effectiveUpdatesFilter := strings.TrimSpace(projectsUpdatesFilter)
@@ -148,9 +153,13 @@ func runProjectsList(cmd *cobra.Command, forceHasUpdateFilter bool) error {
 }
 
 func buildProjectsListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateFilter bool) (string, error) {
-	path := types.Endpoints.Projects(c.EnvID())
-	var err error
-	path, err = cmdutil.ApplyPaginationParams(cmd, path, "projects", "limit", limitFlag, 20, "start", startFlag)
+	path, err := cmdutil.ApplyPaginationParams(cmd, types.Endpoints.Projects(c.EnvID()), cmdutil.ListParams{
+		Resource:        "projects",
+		Limit:           limitFlag,
+		FallbackDefault: 20,
+		Start:           startFlag,
+		All:             allFlag,
+	})
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to build pagination query")
 	}
@@ -167,6 +176,17 @@ func buildProjectsListPath(cmd *cobra.Command, c *client.Client, forceHasUpdateF
 	}
 	if updatesFilter != "" {
 		query.Set("updates", updatesFilter)
+	}
+	if projectsStatusFilter != "" {
+		query.Set("status", projectsStatusFilter)
+	}
+	// The server excludes archived projects unless asked, so --all has to opt
+	// into them explicitly to actually mean "everything".
+	switch {
+	case projectsArchivedFilter != "":
+		query.Set("archived", projectsArchivedFilter)
+	case allFlag:
+		query.Set("archived", "all")
 	}
 
 	parsed.RawQuery = query.Encode()
@@ -212,7 +232,10 @@ var destroyCmd = &cobra.Command{
 			}
 		}
 
-		resp, err := c.Delete(cmd.Context(), types.Endpoints.ProjectDestroy(c.EnvID(), resolved.ID))
+		resp, err := c.DeleteWithBody(cmd.Context(), types.Endpoints.ProjectDestroy(c.EnvID(), resolved.ID), project.Destroy{
+			RemoveFiles:   &destroyRemoveFiles,
+			RemoveVolumes: destroyRemoveVolumes,
+		})
 		if err != nil {
 			return errors.WrapIf(err, "failed to destroy project")
 		}
@@ -251,8 +274,8 @@ var getCmd = &cobra.Command{
 			defer func() { _ = resp.Body.Close() }()
 
 			var result base.ApiResponse[project.Details]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resolved = &result.Data
 		}
@@ -473,8 +496,8 @@ var createCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[project.CreateReponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -545,8 +568,8 @@ var updateCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[project.Details]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
@@ -598,8 +621,8 @@ var updateIncludesCmd = &cobra.Command{
 
 		if jsonOutput {
 			var result base.ApiResponse[project.Details]
-			if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-				return errors.WrapIf(err, "failed to parse response")
+			if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+				return err
 			}
 			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
@@ -631,8 +654,8 @@ var countsCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[map[string]any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -669,11 +692,15 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage+", including archived projects")
 	listCmd.Flags().StringVar(&projectsUpdatesFilter, "updates", "", "Filter by update status (has_update, up_to_date, error, unknown)")
+	listCmd.Flags().StringVar(&projectsStatusFilter, "status", "", "Filter by status (comma-separated: running, stopped, partially running)")
+	listCmd.Flags().StringVar(&projectsArchivedFilter, "archived", "", "Archived filter: 'true' for archived only, 'all' to include archived")
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 	updatesCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of projects to show")
-	updatesCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	updatesCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	updatesCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	updatesCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Get command flags
@@ -684,6 +711,8 @@ func init() {
 
 	// Destroy command flags
 	destroyCmd.Flags().BoolVarP(&forceFlag, "force", "f", false, "Force destroy without confirmation")
+	destroyCmd.Flags().BoolVar(&destroyRemoveFiles, "remove-files", true, "Remove the project's files from disk")
+	destroyCmd.Flags().BoolVar(&destroyRemoveVolumes, "remove-volumes", false, "Remove the project's volumes")
 	destroyCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Create command flags
@@ -737,7 +766,7 @@ func resolveProject(ctx context.Context, c *client.Client, identifier string, al
 
 	identifierLower := strings.ToLower(trimmed)
 
-	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Projects(c.EnvID()), url.QueryEscape(trimmed), 200)
+	searchPath := fmt.Sprintf("%s?search=%s&limit=%d", types.Endpoints.Projects(c.EnvID()), url.QueryEscape(trimmed), cmdutil.ShowAllLimit)
 	searchResp, err := c.Get(ctx, searchPath)
 	if err != nil {
 		return nil, false, errors.WrapIf(err, "failed to search projects")

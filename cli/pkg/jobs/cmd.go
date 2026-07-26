@@ -44,8 +44,8 @@ var getCmd = &cobra.Command{
 		}
 
 		var cfg jobschedule.Config
-		if err := json.NewDecoder(resp.Body).Decode(&cfg); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &cfg); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -103,8 +103,8 @@ var updateCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[jobschedule.Config]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {

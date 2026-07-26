@@ -20,6 +20,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -102,7 +103,7 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Users()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "users", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "users", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -114,8 +115,8 @@ var listCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[user.User]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -197,8 +198,8 @@ var createCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[user.User]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -236,8 +237,8 @@ var getCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[user.User]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -366,7 +367,8 @@ func init() {
 	UsersCmd.AddCommand(deleteCmd)
 
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of users to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	createCmd.Flags().StringVar(&userCreateUsername, "username", "", "Username")

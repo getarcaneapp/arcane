@@ -236,8 +236,8 @@ var meCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[any]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
@@ -368,8 +368,8 @@ var refreshCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[auth.TokenRefreshResponse]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {
@@ -426,8 +426,8 @@ var oidcStatusCmd = &cobra.Command{
 			EnvConfigured bool `json:"envConfigured"`
 			MergeAccounts bool `json:"mergeAccounts"`
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if cmdutil.JSONOutputEnabled(cmd) || jsonOutput {

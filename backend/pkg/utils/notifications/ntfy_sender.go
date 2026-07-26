@@ -101,7 +101,7 @@ func SendNtfy(ctx context.Context, config models.NtfyConfig, message string) err
 		return errors.WrapIf(err, "failed to build shoutrrr Ntfy URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Ntfy sender")
 	}

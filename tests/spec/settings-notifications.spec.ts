@@ -6,7 +6,7 @@ test.describe('Notification settings', () => {
 		await tab.scrollIntoViewIfNeeded();
 		await expect(tab).toBeVisible();
 		await tab.click();
-		await expect(page.locator('h3').filter({ hasText: name }).first()).toBeVisible();
+		await expect(page.getByRole('tabpanel', { name, exact: true })).toBeVisible();
 	};
 
 	const enableCurrentProvider = async (page: Page) => {
@@ -104,7 +104,7 @@ test.describe('Notification settings', () => {
 			'data-state',
 			'active'
 		);
-		await expect(page.locator('h3').filter({ hasText: 'Discord' }).first()).toBeVisible();
+		await expect(page.getByRole('tabpanel', { name: 'Discord', exact: true })).toBeVisible();
 	});
 
 	test('should allow testing email notifications without state_unsafe_mutation errors', async ({

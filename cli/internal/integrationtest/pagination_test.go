@@ -129,7 +129,11 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 	}
 }
 
-func TestContainersListAllSkipsPaginationParams(t *testing.T) {
+// TestContainersListAllRequestsEveryItem pins the wire form of --all. The API
+// has no "all" query parameter — it silently ignores unknown ones — so sending
+// all=true without a limit left Huma applying its default of 20. limit=-1 is the
+// documented "return everything" sentinel.
+func TestContainersListAllRequestsEveryItem(t *testing.T) {
 	var (
 		mu       sync.Mutex
 		gotPath  string
@@ -166,8 +170,48 @@ func TestContainersListAllSkipsPaginationParams(t *testing.T) {
 	if gotPath != "/api/environments/0/containers" {
 		t.Fatalf("path = %q, want %q", gotPath, "/api/environments/0/containers")
 	}
-	if gotQuery != "all=true" {
-		t.Fatalf("query = %q, want %q", gotQuery, "all=true")
+	if gotQuery != "limit=-1" {
+		t.Fatalf("query = %q, want %q", gotQuery, "limit=-1")
+	}
+}
+
+// TestProjectsListAllIncludesArchived covers the one resource where "everything"
+// takes a second parameter: the projects list filters archived rows out by
+// default, so --all has to opt back into them.
+func TestProjectsListAllIncludesArchived(t *testing.T) {
+	var (
+		mu       sync.Mutex
+		gotQuery string
+	)
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		gotQuery = r.URL.RawQuery
+		mu.Unlock()
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"success": true,
+			"data": [],
+			"pagination": {"totalPages":1,"totalItems":0,"currentPage":1,"itemsPerPage":0}
+		}`))
+	}))
+	defer srv.Close()
+
+	configPath := writeCLIIntegrationConfigInternal(t, srv.URL)
+	_, errOut, err := executeCLIIntegrationCommandInternal(
+		t,
+		[]string{"--config", configPath, "projects", "list", "--json", "--all"},
+	)
+	if err != nil {
+		t.Fatalf("execute: %v (%s)", err, errOut)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if gotQuery != "archived=all&limit=-1" {
+		t.Fatalf("query = %q, want %q", gotQuery, "archived=all&limit=-1")
 	}
 }
 

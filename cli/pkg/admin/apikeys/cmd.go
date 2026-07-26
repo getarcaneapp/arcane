@@ -19,6 +19,7 @@ import (
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -38,6 +39,17 @@ var (
 // grant list. Each token is either `resource:action` (global grant) or
 // `resource:action:envId` (env-scoped grant). Anything else is an error so the
 // user catches typos before the server rejects them.
+// apiKeyUpdateBody mirrors apikey.UpdateApiKey but holds Permissions behind a
+// pointer. The shared type tags that field omitempty, so encoding/json drops an
+// empty slice — turning `--permission ""` (clear every grant) into a silent
+// no-op even though the server treats a non-nil empty list as "clear".
+type apiKeyUpdateBody struct {
+	Name        *string                   `json:"name,omitempty"`
+	Description *string                   `json:"description,omitempty"`
+	ExpiresAt   *time.Time                `json:"expiresAt,omitempty"`
+	Permissions *[]apikey.PermissionGrant `json:"permissions,omitempty"`
+}
+
 func parsePermissionGrantsInternal(tokens []string) ([]apikey.PermissionGrant, error) {
 	out := make([]apikey.PermissionGrant, 0, len(tokens))
 	for _, raw := range tokens {
@@ -84,7 +96,7 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.ApiKeys()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "apikeys", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "apikeys", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -304,7 +316,7 @@ var updateCmd = &cobra.Command{
 			return err
 		}
 
-		var req apikey.UpdateApiKey
+		var req apiKeyUpdateBody
 		if cmd.Flags().Changed("name") {
 			req.Name = &apikeyUpdateName
 		}
@@ -325,7 +337,7 @@ var updateCmd = &cobra.Command{
 			}
 			// Allow `--permission ""` once to clear all grants. Otherwise
 			// the parsed slice replaces the key's permission set entirely.
-			req.Permissions = grants
+			req.Permissions = &grants
 		}
 
 		resp, err := c.Put(cmd.Context(), types.Endpoints.ApiKey(args[0]), req)
@@ -359,7 +371,8 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of API keys to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Create command flags

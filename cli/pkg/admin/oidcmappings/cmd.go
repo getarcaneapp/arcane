@@ -215,21 +215,29 @@ var deleteCmd = &cobra.Command{
 	},
 }
 
+// fetchMappingInternal looks a mapping up by ID. The API registers only PUT and
+// DELETE on /oidc/role-mappings/{id} — a GET there is a 405 — so this filters
+// the list instead.
 func fetchMappingInternal(cmd *cobra.Command, id string) (*roletypes.OidcRoleMapping, error) {
 	c, err := cmdutil.ClientFromCommand(cmd)
 	if err != nil {
 		return nil, err
 	}
-	resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMapping(id))
+	resp, err := c.Get(cmd.Context(), types.Endpoints.OidcRoleMappings())
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}
 	defer func() { _ = resp.Body.Close() }()
-	var result base.ApiResponse[roletypes.OidcRoleMapping]
+	var result base.ApiResponse[[]roletypes.OidcRoleMapping]
 	if err := cmdutil.DecodeJSON(resp, &result); err != nil {
 		return nil, errors.WrapIf(err, "failed to load current mapping")
 	}
-	return &result.Data, nil
+	for i := range result.Data {
+		if result.Data[i].ID == id {
+			return &result.Data[i], nil
+		}
+	}
+	return nil, errors.Errorf("OIDC mapping %q not found", id)
 }
 
 func init() {

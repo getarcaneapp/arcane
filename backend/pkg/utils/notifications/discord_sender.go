@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/discord"
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildDiscordURL converts DiscordConfig to Shoutrrr URL format using shoutrrr's Config
@@ -37,7 +38,7 @@ func SendDiscord(ctx context.Context, config models.DiscordConfig, message strin
 		return errors.WrapIf(err, "failed to build shoutrrr Discord URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Discord sender")
 	}

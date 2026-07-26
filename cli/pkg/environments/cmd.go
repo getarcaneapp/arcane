@@ -18,12 +18,14 @@ import (
 	"github.com/getarcaneapp/arcane/cli/v2/internal/types"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
+	"github.com/getarcaneapp/arcane/types/v2/version"
 	"github.com/spf13/cobra"
 )
 
 var (
 	limitFlag  int
 	startFlag  int
+	allFlag    bool
 	forceFlag  bool
 	jsonOutput bool
 )
@@ -61,7 +63,7 @@ var listCmd = &cobra.Command{
 		}
 
 		path := types.Endpoints.Environments()
-		path, err = cmdutil.ApplyPaginationParams(cmd, path, "environments", "limit", limitFlag, 20, "start", startFlag)
+		path, err = cmdutil.ApplyPaginationParams(cmd, path, cmdutil.ListParams{Resource: "environments", Limit: limitFlag, FallbackDefault: 20, Start: startFlag, All: allFlag})
 		if err != nil {
 			return errors.WrapIf(err, "failed to build pagination query")
 		}
@@ -73,8 +75,8 @@ var listCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[environment.Environment]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -163,8 +165,8 @@ var getCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.ApiResponse[environment.Environment]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -241,7 +243,7 @@ var switchCmd = &cobra.Command{
 			return err
 		}
 
-		path := fmt.Sprintf("%s?limit=%d", types.Endpoints.Environments(), 200)
+		path := fmt.Sprintf("%s?limit=%d", types.Endpoints.Environments(), cmdutil.ShowAllLimit)
 		resp, err := c.Get(cmd.Context(), path)
 		if err != nil {
 			return errors.WrapIf(err, "failed to list environments")
@@ -249,8 +251,8 @@ var switchCmd = &cobra.Command{
 		defer func() { _ = resp.Body.Close() }()
 
 		var result base.Paginated[environment.Environment]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if len(result.Data) == 0 {
@@ -372,8 +374,8 @@ var updateCmd = &cobra.Command{
 		}
 
 		var result base.ApiResponse[environment.Environment]
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
@@ -414,22 +416,13 @@ var versionCmd = &cobra.Command{
 			return errors.WrapIf(err, "failed to get environment version")
 		}
 
-		var result struct {
-			CurrentVersion  string `json:"currentVersion"`
-			CurrentTag      string `json:"currentTag"`
-			Revision        string `json:"revision"`
-			ShortRevision   string `json:"shortRevision"`
-			GoVersion       string `json:"goVersion"`
-			BuildTime       string `json:"buildTime"`
-			DisplayVersion  string `json:"displayVersion"`
-			UpdateAvailable bool   `json:"updateAvailable"`
-		}
-		if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
-			return errors.WrapIf(err, "failed to parse response")
+		var result base.ApiResponse[version.Info]
+		if err := cmdutil.DecodeJSON(resp, &result); err != nil {
+			return err
 		}
 
 		if jsonOutput {
-			resultBytes, err := json.MarshalIndent(result, "", "  ")
+			resultBytes, err := json.MarshalIndent(result.Data, "", "  ")
 			if err != nil {
 				return errors.WrapIf(err, "failed to marshal JSON")
 			}
@@ -438,13 +431,13 @@ var versionCmd = &cobra.Command{
 		}
 
 		output.Header("Environment Version")
-		output.KeyValue("Version", result.DisplayVersion)
-		output.KeyValue("Full Version", result.CurrentVersion)
-		output.KeyValue("Tag", result.CurrentTag)
-		output.KeyValue("Revision", result.ShortRevision)
-		output.KeyValue("Go Version", result.GoVersion)
-		output.KeyValue("Build Time", result.BuildTime)
-		output.KeyValue("Update Available", strconv.FormatBool(result.UpdateAvailable))
+		output.KeyValue("Version", result.Data.DisplayVersion)
+		output.KeyValue("Full Version", result.Data.CurrentVersion)
+		output.KeyValue("Tag", result.Data.CurrentTag)
+		output.KeyValue("Revision", result.Data.ShortRevision)
+		output.KeyValue("Go Version", result.Data.GoVersion)
+		output.KeyValue("Build Time", result.Data.BuildTime)
+		output.KeyValue("Update Available", strconv.FormatBool(result.Data.UpdateAvailable))
 		return nil
 	},
 }
@@ -488,7 +481,8 @@ func init() {
 
 	// List command flags
 	listCmd.Flags().IntVarP(&limitFlag, "limit", "n", 20, "Number of environments to show")
-	listCmd.Flags().IntVar(&startFlag, "start", 0, "Offset for pagination")
+	listCmd.Flags().IntVar(&startFlag, "start", 0, cmdutil.StartFlagUsage)
+	listCmd.Flags().BoolVarP(&allFlag, "all", "a", false, cmdutil.AllFlagUsage)
 	listCmd.Flags().BoolVar(&jsonOutput, "json", false, "Output in JSON format")
 
 	// Get command flags

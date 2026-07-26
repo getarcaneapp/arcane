@@ -8,6 +8,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/nicholas-fedor/shoutrrr"
 	"github.com/nicholas-fedor/shoutrrr/pkg/services/chat/telegram"
+	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
 )
 
 // BuildTelegramURL converts TelegramConfig to Shoutrrr URL format using shoutrrr's Config
@@ -52,7 +53,7 @@ func SendTelegram(ctx context.Context, config models.TelegramConfig, message str
 		return errors.WrapIf(err, "failed to build shoutrrr Telegram URL")
 	}
 
-	sender, err := shoutrrr.CreateSender(shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Telegram sender")
 	}

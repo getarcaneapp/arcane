@@ -45,6 +45,7 @@
 		genericFormValuesToSettings
 	} from '#lib/types/notifications';
 	import { NotificationsIcon } from '#lib/icons';
+	import { TabBar, type TabItem } from '#lib/components/tab-bar';
 	import { BuiltInProviderForm } from './providers';
 
 	let { data } = $props();
@@ -59,6 +60,13 @@
 		defaultTab: () => 'email'
 	});
 	const providerTab = $derived(urlTab.value);
+	const providerTabItems = NOTIFICATION_PROVIDER_KEYS.map(
+		(provider) =>
+			({
+				value: provider,
+				label: provider.charAt(0).toUpperCase() + provider.slice(1)
+			}) satisfies TabItem
+	);
 
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
 
@@ -434,14 +442,8 @@
 >
 	{#snippet mainContent()}
 		<fieldset disabled={isReadOnly} class="relative w-full min-w-0">
-			<Tabs.Root value={providerTab} onValueChange={urlTab.select} class="flex min-h-0 w-full min-w-0 flex-col">
-				<Tabs.List class="scrollbar-hide flex w-full max-w-full justify-start gap-4 overflow-x-auto">
-					{#each NOTIFICATION_PROVIDER_KEYS as provider (provider)}
-						<Tabs.Trigger value={provider} class="shrink-0">
-							{provider.charAt(0).toUpperCase() + provider.slice(1)}
-						</Tabs.Trigger>
-					{/each}
-				</Tabs.List>
+			<Tabs.Root value={providerTab} class="flex min-h-0 w-full min-w-0 flex-col">
+				<TabBar items={providerTabItems} value={providerTab} onValueChange={urlTab.select} class="self-start" />
 
 				<Tabs.Content value="email" class="mt-4 space-y-4">
 					<BuiltInProviderForm
