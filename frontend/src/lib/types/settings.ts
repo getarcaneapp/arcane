@@ -78,6 +78,8 @@ export type Settings = {
 	lifecycleEnabled: boolean;
 	lifecycleDefaultRunnerImage: string;
 	lifecycleMaxTimeoutSec: number;
+	hostTerminalEnabled: boolean;
+	hostTerminalImage: string;
 	oidcEnabled: boolean;
 	oidcClientId: string;
 	oidcClientSecret?: string;

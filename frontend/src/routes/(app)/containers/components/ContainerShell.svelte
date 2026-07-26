@@ -2,6 +2,7 @@
 	import * as Card from '#lib/components/ui/card';
 	import Terminal from '#lib/components/terminal/terminal.svelte';
 	import TerminalControls from '#lib/components/terminal/terminal-controls.svelte';
+	import { ArcaneButton } from '#lib/components/arcane-button';
 	import { m } from '#lib/paraglide/messages';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import settingsStore from '#lib/stores/config-store';
@@ -93,7 +94,16 @@
 				</div>
 				<Card.Description>{m.shell_interactive_access()}</Card.Description>
 			</div>
-			<TerminalControls bind:selectedShell onShellChange={handleShellChange} onReconnect={handleReconnect} />
+			<div class="flex items-center gap-2">
+				<ArcaneButton
+					action="base"
+					tone="outline"
+					size="sm"
+					href={containerId ? `/terminal?target=container:${containerId}` : undefined}
+					customLabel={m.terminal_open_in_terminal()}
+				/>
+				<TerminalControls bind:selectedShell onShellChange={handleShellChange} onReconnect={handleReconnect} />
+			</div>
 		</div>
 	</Card.Header>
 	<Card.Content class="overflow-hidden p-2">
@@ -103,6 +113,7 @@
 					<Terminal
 						{websocketUrl}
 						height="calc(100vh - 320px)"
+						protocol="v1"
 						onConnected={handleConnected}
 						onDisconnected={handleDisconnected}
 					/>

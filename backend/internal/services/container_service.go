@@ -1526,19 +1526,13 @@ func (s *ContainerService) CreateExec(ctx context.Context, containerID string, c
 
 // ResizeExec resizes the TTY of a running exec session so full-screen
 // terminal apps (top, vim, less) render correctly after a client-side resize.
-//
-// NOTE: client.ExecResizeOptions{Height, Width} mirrors the naming already
-// used by ExecCreateOptions/ExecAttachOptions in this file, but could not be
-// verified against github.com/moby/moby/client v0.5.0 source in this
-// environment (no local Go toolchain/module cache) — confirm with `go build`
-// and adjust the option/field names if they differ.
 func (s *ContainerService) ResizeExec(ctx context.Context, execID string, cols, rows uint) error {
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return errors.WrapIf(err, "failed to connect to Docker")
 	}
 
-	if err := dockerClient.ExecResize(ctx, execID, client.ExecResizeOptions{Height: rows, Width: cols}); err != nil {
+	if _, err := dockerClient.ExecResize(ctx, execID, client.ExecResizeOptions{Height: rows, Width: cols}); err != nil {
 		return errors.WrapIf(err, "failed to resize exec")
 	}
 	return nil

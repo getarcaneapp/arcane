@@ -756,6 +756,106 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 	}()
 }
 
+// execProtoV1 opts an exec WebSocket client into the framed protocol: input
+// keystrokes move from text to binary frames, and text frames carry JSON
+// control messages (currently "ready" and "resize"). A client that omits
+// ?proto=v1 stays in legacy mode — every frame, both directions, is raw
+// bytes exactly as before resize support existed — so old clients and old
+// agents (over an edge tunnel) keep working unchanged.
+const execProtoV1 = "v1"
+
+// execControlMaxBytes caps a text control frame before it is even handed to
+// the JSON parser.
+const execControlMaxBytes = 1024
+
+// execResizeMinDim/execResizeMaxDim bound accepted TTY dimensions.
+const (
+	execResizeMinDim = 1
+	execResizeMaxDim = 1000
+)
+
+// execControlMessage is the JSON shape exchanged over text frames once a
+// connection is in framed mode. Not every field applies to every message
+// type: "ready" only sets Protocol, "resize" only sets Cols/Rows.
+type execControlMessage struct {
+	Type     string `json:"type"`
+	Cols     uint   `json:"cols,omitempty"`
+	Rows     uint   `json:"rows,omitempty"`
+	Protocol string `json:"protocol,omitempty"`
+}
+
+// execTerminalParams are the optional TTY-negotiation parameters a client
+// may add to an exec WebSocket URL.
+type execTerminalParams struct {
+	proto string
+	cols  uint
+	rows  uint
+}
+
+func parseExecTerminalParamsInternal(c *echo.Context) execTerminalParams {
+	return execTerminalParams{
+		proto: queryParamWithDefaultInternal(c, "proto", ""),
+		cols:  queryParamUintInternal(c, "cols", 0),
+		rows:  queryParamUintInternal(c, "rows", 0),
+	}
+}
+
+func queryParamUintInternal(c *echo.Context, key string, def uint) uint {
+	v := c.QueryParam(key)
+	if v == "" {
+		return def
+	}
+	parsed, err := strconv.ParseUint(v, 10, 32)
+	if err != nil {
+		return def
+	}
+	return uint(parsed)
+}
+
+// sendExecReadyInternal applies the client's initial TTY size (if supplied)
+// and sends the one-time "ready" text frame that flips a proto=v1 client
+// from legacy to framed mode. No-op when the client never negotiated v1, so
+// a legacy client sees nothing it doesn't already expect.
+func sendExecReadyInternal(conn *websocket.Conn, params execTerminalParams, resize func(cols, rows uint), logCtx ...any) {
+	if params.proto != execProtoV1 {
+		return
+	}
+	if resize != nil && params.cols > 0 && params.rows > 0 {
+		resize(params.cols, params.rows)
+	}
+	ready, err := json.Marshal(execControlMessage{Type: "ready", Protocol: execProtoV1})
+	if err != nil {
+		return
+	}
+	if err := conn.WriteMessage(websocket.TextMessage, ready); err != nil {
+		slog.Debug("Failed to send exec ready frame", append([]any{"error", err}, logCtx...)...)
+	}
+}
+
+// execHandleControlMessageInternal parses a text frame as JSON. A frame
+// that fails to parse is NOT a recognised control message (returns false)
+// so the caller falls back to writing it to stdin verbatim — this is what
+// keeps a raw client (e.g. wscat) that never speaks the control protocol
+// working even after opting into proto=v1. A frame that does parse is
+// always treated as consumed (returns true), whether or not its "type" is
+// one this server acts on, since a framed-mode client never sends stdin
+// bytes over a text frame.
+func execHandleControlMessageInternal(data []byte, resize func(cols, rows uint)) bool {
+	if len(data) > execControlMaxBytes {
+		return false
+	}
+	var msg execControlMessage
+	if err := json.Unmarshal(data, &msg); err != nil {
+		return false
+	}
+	if msg.Type == "resize" && resize != nil &&
+		msg.Cols >= execResizeMinDim && msg.Cols <= execResizeMaxDim &&
+		msg.Rows >= execResizeMinDim && msg.Rows <= execResizeMaxDim {
+		resize(msg.Cols, msg.Rows)
+	}
+	return true
+}
+
 // ContainerExec provides interactive terminal access to a container.
 //
 //	@Summary		Execute command in container via WebSocket
@@ -764,6 +864,9 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 //	@Param			id			path	string	true	"Environment ID"
 //	@Param			containerId	path	string	true	"Container ID"
 //	@Param			shell		query	string	false	"Shell to execute"	default(/bin/sh)
+//	@Param			proto		query	string	false	"Set to v1 to enable TTY resize framing"
+//	@Param			cols		query	int		false	"Initial terminal columns (proto=v1 only)"
+//	@Param			rows		query	int		false	"Initial terminal rows (proto=v1 only)"
 //	@Router			/api/environments/{id}/ws/containers/{containerId}/terminal [get]
 func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	containerID := c.Param("containerId")
@@ -772,6 +875,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	}
 
 	shell := queryParamWithDefaultInternal(c, "shell", "/bin/sh")
+	params := parseExecTerminalParamsInternal(c)
 
 	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
 	if err != nil {
@@ -796,7 +900,7 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 	})
 	go h.pingExecConnInternal(ctx, conn, execPongWait*9/10)
 
-	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
+	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell, params)
 	return nil
 }
 
@@ -818,7 +922,7 @@ func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *webso
 	}
 }
 
-func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string) {
+func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, containerID, shell string, params execTerminalParams) {
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell}, nil)
 	if err != nil {
@@ -836,9 +940,16 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	defer cleanup()
 	h.watchExecContextInternal(ctx, execID, containerID, cleanup)
 
+	resize := func(cols, rows uint) {
+		if err := h.containerService.ResizeExec(ctx, execID, cols, rows); err != nil {
+			slog.Debug("Failed to resize exec TTY", "execID", execID, "containerID", containerID, "error", err)
+		}
+	}
+	sendExecReadyInternal(conn, params, resize, "execID", execID, "containerID", containerID)
+
 	done := make(chan struct{})
 	go h.pipeExecOutputInternal(ctx, conn, execSession.Stdout(), execID, containerID, done)
-	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin(), execID, containerID)
+	go h.pipeExecInputInternal(ctx, cancel, conn, execSession.Stdin(), execID, containerID, params.proto, resize)
 
 	<-done
 }
@@ -891,7 +1002,7 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 	}
 }
 
-func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
+func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID, proto string, resize func(cols, rows uint)) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -899,12 +1010,17 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 		default:
 		}
 
-		_, data, err := conn.ReadMessage()
+		msgType, data, err := conn.ReadMessage()
 		if err != nil {
 			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
 			cancel()
 			return
 		}
+
+		if proto == execProtoV1 && msgType == websocket.TextMessage && execHandleControlMessageInternal(data, resize) {
+			continue
+		}
+
 		if _, err := stdin.Write(data); err != nil {
 			slog.Debug("Exec stdin write error", "execID", execID, "containerID", containerID, "error", err)
 			return
@@ -923,6 +1039,9 @@ func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel con
 //	@Tags			WebSocket
 //	@Param			id		path	string	true	"Environment ID"
 //	@Param			shell	query	string	false	"Shell to execute"	default(/bin/sh)
+//	@Param			proto	query	string	false	"Set to v1 to enable TTY resize framing"
+//	@Param			cols	query	int		false	"Initial terminal columns (proto=v1 only)"
+//	@Param			rows	query	int		false	"Initial terminal rows (proto=v1 only)"
 //	@Router			/api/environments/{id}/ws/system/terminal [get]
 func (h *WebSocketHandler) HostTerminal(c *echo.Context) error {
 	ctx := c.Request().Context()
@@ -936,6 +1055,7 @@ func (h *WebSocketHandler) HostTerminal(c *echo.Context) error {
 	}
 
 	shell := queryParamWithDefaultInternal(c, "shell", hostshell.DefaultShell)
+	params := parseExecTerminalParamsInternal(c)
 	actor := services.HostShellActor{
 		UserID:    stringPtrOrNilInternal(getContextUserIDInternal(c)),
 		Username:  stringPtrOrNilInternal(getContextUsernameInternal(c)),
@@ -966,7 +1086,7 @@ func (h *WebSocketHandler) HostTerminal(c *echo.Context) error {
 	})
 	go h.pingExecConnInternal(execCtx, conn, execPongWait*9/10)
 
-	h.runHostTerminalInternal(execCtx, cancel, conn, shell, actor)
+	h.runHostTerminalInternal(execCtx, cancel, conn, shell, actor, params)
 	return nil
 }
 
@@ -977,7 +1097,7 @@ func stringPtrOrNilInternal(s string) *string {
 	return &s
 }
 
-func (h *WebSocketHandler) runHostTerminalInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, shell string, actor services.HostShellActor) {
+func (h *WebSocketHandler) runHostTerminalInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, shell string, actor services.HostShellActor, params execTerminalParams) {
 	session, err := h.hostShellService.StartInteractive(ctx, services.StartInteractiveRequest{Shell: shell, Actor: actor})
 	if err != nil {
 		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error opening host terminal"))
@@ -990,9 +1110,16 @@ func (h *WebSocketHandler) runHostTerminalInternal(ctx context.Context, cancel c
 	defer cleanup()
 	h.watchHostShellContextInternal(ctx, session, cleanup)
 
+	resize := func(cols, rows uint) {
+		if err := session.Resize(ctx, cols, rows); err != nil {
+			slog.Debug("Failed to resize host terminal TTY", "sessionID", session.ID(), "error", err)
+		}
+	}
+	sendExecReadyInternal(conn, params, resize, "sessionID", session.ID())
+
 	done := make(chan struct{})
 	go h.pipeExecOutputInternal(ctx, conn, session.Stdout(), session.ID(), "host", done)
-	go h.pipeExecInputInternal(ctx, cancel, conn, session.Stdin(), session.ID(), "host")
+	go h.pipeExecInputInternal(ctx, cancel, conn, session.Stdin(), session.ID(), "host", params.proto, resize)
 
 	<-done
 }

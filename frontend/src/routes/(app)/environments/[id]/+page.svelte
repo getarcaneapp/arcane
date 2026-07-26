@@ -32,6 +32,7 @@
 	import { environmentFormSchema, type EnvironmentFormValues } from './components/environment-form-schema';
 	import TrivySecuritySettings from '#lib/components/settings/trivy-security-settings.svelte';
 	import LifecycleSecuritySettings from '#lib/components/settings/lifecycle-security-settings.svelte';
+	import HostTerminalSecuritySettings from '#lib/components/settings/host-terminal-security-settings.svelte';
 	import { useEasyJoinCandidates } from '#lib/hooks/use-easy-join-candidates.svelte';
 	import EasyJoinDialog from '../../swarm/cluster/easy-join-dialog.svelte';
 	import {
@@ -41,6 +42,7 @@
 		DockerBrandIcon,
 		SecurityIcon,
 		GitBranchIcon,
+		TerminalIcon,
 		JobsIcon,
 		ResetIcon,
 		ConnectionIcon,
@@ -196,6 +198,11 @@
 			value: 'lifecycle',
 			label: m.security_lifecycle_tab(),
 			icon: GitBranchIcon
+		},
+		{
+			value: 'host-terminal',
+			label: m.security_host_terminal_tab(),
+			icon: TerminalIcon
 		}
 	]);
 
@@ -263,6 +270,8 @@
 		lifecycleEnabled: settings?.lifecycleEnabled ?? false,
 		lifecycleDefaultRunnerImage: settings?.lifecycleDefaultRunnerImage || 'alpine:latest',
 		lifecycleMaxTimeoutSec: settings?.lifecycleMaxTimeoutSec ?? 300,
+		hostTerminalEnabled: settings?.hostTerminalEnabled ?? false,
+		hostTerminalImage: settings?.hostTerminalImage || '',
 		autoUpdateExcludedContainers: settings?.autoUpdateExcludedContainers || '',
 		autoHealEnabled: settings?.autoHealEnabled ?? false,
 		autoHealExcludedContainers: settings?.autoHealExcludedContainers || '',
@@ -324,6 +333,8 @@
 				lifecycleEnabled: formData.lifecycleEnabled,
 				lifecycleDefaultRunnerImage: formData.lifecycleDefaultRunnerImage,
 				lifecycleMaxTimeoutSec: formData.lifecycleMaxTimeoutSec,
+				hostTerminalEnabled: formData.hostTerminalEnabled,
+				hostTerminalImage: formData.hostTerminalImage,
 				autoUpdateExcludedContainers: formData.autoUpdateExcludedContainers,
 				autoHealEnabled: formData.autoHealEnabled,
 				autoHealExcludedContainers: formData.autoHealExcludedContainers,
@@ -742,6 +753,10 @@
 
 					<Tabs.Content value="lifecycle">
 						<LifecycleSecuritySettings {formInputs} />
+					</Tabs.Content>
+
+					<Tabs.Content value="host-terminal">
+						<HostTerminalSecuritySettings {formInputs} />
 					</Tabs.Content>
 				</Tabs.Root>
 			</Tabs.Content>

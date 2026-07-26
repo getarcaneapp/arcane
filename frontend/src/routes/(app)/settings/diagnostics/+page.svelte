@@ -39,7 +39,8 @@
 		container_stats: m.diagnostics_ws_container_stats(),
 		container_exec: m.diagnostics_ws_kind_terminal(),
 		system_stats: m.diagnostics_ws_system_stats(),
-		service_logs: m.diagnostics_ws_service_logs()
+		service_logs: m.diagnostics_ws_service_logs(),
+		host_terminal: m.diagnostics_ws_kind_host_terminal()
 	};
 
 	function fmtBytes(n: number): string {

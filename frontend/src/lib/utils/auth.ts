@@ -43,6 +43,7 @@ const PROTECTED_PREFIXES = [
 	'/volumes',
 	'/networks',
 	'/ports',
+	'/terminal',
 	'/settings',
 	'/swarm',
 	'/updates'

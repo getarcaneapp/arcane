@@ -74,6 +74,64 @@ func TestBroadcastLogStreamErrorInternal_Text(t *testing.T) {
 	require.Equal(t, "Failed to stream container logs: boom", string(payload))
 }
 
+func TestExecHandleControlMessageInternal_Resize(t *testing.T) {
+	var gotCols, gotRows uint
+	resize := func(cols, rows uint) { gotCols, gotRows = cols, rows }
+
+	handled := execHandleControlMessageInternal([]byte(`{"type":"resize","cols":80,"rows":24}`), resize)
+
+	require.True(t, handled)
+	require.EqualValues(t, 80, gotCols)
+	require.EqualValues(t, 24, gotRows)
+}
+
+func TestExecHandleControlMessageInternal_ResizeOutOfBoundsIsIgnored(t *testing.T) {
+	called := false
+	resize := func(uint, uint) { called = true }
+
+	for _, payload := range []string{
+		`{"type":"resize","cols":0,"rows":24}`,
+		`{"type":"resize","cols":80,"rows":0}`,
+		`{"type":"resize","cols":1001,"rows":24}`,
+		`{"type":"resize","cols":80,"rows":1001}`,
+	} {
+		handled := execHandleControlMessageInternal([]byte(payload), resize)
+		require.True(t, handled, payload)
+	}
+	require.False(t, called, "resize must not be invoked for out-of-bounds dimensions")
+}
+
+func TestExecHandleControlMessageInternal_UnknownTypeIsConsumedNotWrittenToStdin(t *testing.T) {
+	resize := func(uint, uint) { t.Fatal("resize must not be called for a non-resize message") }
+
+	handled := execHandleControlMessageInternal([]byte(`{"type":"bogus"}`), resize)
+
+	require.True(t, handled, "a parseable JSON control frame must always be consumed, even with an unknown type")
+}
+
+func TestExecHandleControlMessageInternal_MalformedFallsThroughToStdin(t *testing.T) {
+	resize := func(uint, uint) { t.Fatal("resize must not be called for malformed input") }
+
+	for _, payload := range []string{`{"garbage`, `not json at all`, ``} {
+		handled := execHandleControlMessageInternal([]byte(payload), resize)
+		require.False(t, handled, payload)
+	}
+}
+
+func TestExecHandleControlMessageInternal_OversizedPayloadFallsThroughToStdin(t *testing.T) {
+	resize := func(uint, uint) { t.Fatal("resize must not be called for an oversized payload") }
+
+	oversized := `{"type":"resize","cols":80,"rows":24,"padding":"` + strings.Repeat("a", execControlMaxBytes) + `"}`
+	handled := execHandleControlMessageInternal([]byte(oversized), resize)
+
+	require.False(t, handled)
+}
+
+func TestExecHandleControlMessageInternal_NilResizeCallbackIsSafe(t *testing.T) {
+	handled := execHandleControlMessageInternal([]byte(`{"type":"resize","cols":80,"rows":24}`), nil)
+	require.True(t, handled)
+}
+
 func newTestWSPairInternal(t *testing.T) (clientConn *websocket.Conn, serverConn *websocket.Conn, cleanup func()) {
 	t.Helper()
 	serverReady := make(chan *websocket.Conn, 1)

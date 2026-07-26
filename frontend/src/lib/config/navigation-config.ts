@@ -25,7 +25,8 @@ import {
 	GlobeIcon,
 	UpdateIcon,
 	VariableIcon,
-	ActivityIcon
+	ActivityIcon,
+	TerminalIcon
 } from '#lib/icons';
 import { m } from '#lib/paraglide/messages';
 import type { ShortcutKey } from '#lib/utils/navigation';
@@ -116,6 +117,12 @@ export const navigationItems: NavigationSections = {
 			icon: ContainersIcon,
 			shortcut: ['mod', '5'],
 			accessSurfaceId: 'route.containers'
+		},
+		{
+			title: m.terminal_title(),
+			url: '/terminal',
+			icon: TerminalIcon,
+			accessSurfaceId: 'route.terminal'
 		},
 		{
 			title: m.images(),

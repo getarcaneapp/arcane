@@ -136,13 +136,9 @@ func (sess *HostShellSession) Touch() {
 }
 
 // Resize resizes the session's TTY.
-//
-// NOTE: relies on ContainerService.ResizeExec, whose underlying
-// client.ExecResizeOptions field names could not be verified against
-// github.com/moby/moby/client v0.5.0 in this environment — confirm with `go
-// build`.
 func (sess *HostShellSession) Resize(ctx context.Context, cols, rows uint) error {
-	return sess.dockerClient.ExecResize(ctx, sess.execID, client.ExecResizeOptions{Height: rows, Width: cols})
+	_, err := sess.dockerClient.ExecResize(ctx, sess.execID, client.ExecResizeOptions{Height: rows, Width: cols})
+	return err
 }
 
 // Close ends the session: it terminates the exec, force-removes the helper

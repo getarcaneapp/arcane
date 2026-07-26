@@ -27,11 +27,11 @@ func TestValidateShell_Rejects(t *testing.T) {
 	cases := []string{
 		"",
 		"   ",
-		"bash",                  // not absolute
-		"/bin/sh -c evil",       // arguments
-		"/bin/../etc/passwd",    // traversal
-		"/bin/sh; rm -rf /",     // shell metacharacters
-		"/bin/sh\n",             // trailing control char
+		"bash",               // not absolute
+		"/bin/sh -c evil",    // arguments
+		"/bin/../etc/passwd", // traversal
+		"/bin/sh; rm -rf /",  // shell metacharacters
+		"/bin/sh\n",          // trailing control char
 		"/" + strings.Repeat("a", maxShellLength),
 	}
 	for _, shell := range cases {

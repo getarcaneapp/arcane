@@ -9,11 +9,22 @@
 	let {
 		websocketUrl,
 		height = '100%',
+		protocol = 'legacy',
 		onConnected,
 		onDisconnected
 	}: {
 		websocketUrl: string;
 		height?: string;
+		/**
+		 * 'v1' opts into the in-band TTY resize protocol: the connection stays
+		 * in plain byte-stream ("legacy") mode until the server sends a
+		 * `{"type":"ready"}` text frame confirming it also speaks v1, at which
+		 * point resize messages start flowing. A server that never sends that
+		 * frame (older backend, or an edge-tunneled agent that doesn't support
+		 * it yet) leaves the connection in legacy mode indefinitely — byte-for-byte
+		 * the same behavior as before resize support existed.
+		 */
+		protocol?: 'legacy' | 'v1';
 		onConnected?: () => void;
 		onDisconnected?: () => void;
 	} = $props();
@@ -25,6 +36,10 @@
 	let isReconnecting = false;
 	let resizeObserver: ResizeObserver | null = null;
 	let isReady = $state(false);
+	// Whether the server has confirmed it speaks the v1 resize protocol for
+	// the *current* connection. Reset on every reconnect until the next
+	// "ready" frame arrives.
+	let framed = false;
 
 	const darkTheme = {
 		background: '#09090b',
@@ -100,9 +115,11 @@
 		});
 
 		terminal.onData((data) => {
-			if (ws && ws.readyState === WebSocket.OPEN) {
-				ws.send(data);
-			}
+			if (!ws || ws.readyState !== WebSocket.OPEN) return;
+			// Framed mode reserves text frames for JSON control messages, so
+			// keystrokes move to binary frames once the server has confirmed
+			// it speaks v1 (see the "ready" handling in onmessage below).
+			ws.send(framed ? new TextEncoder().encode(data) : data);
 		});
 
 		resizeObserver = new ResizeObserver(() => {
@@ -122,7 +139,8 @@
 		}
 
 		isReconnecting = false;
-		ws = new WebSocket(websocketUrl);
+		framed = false;
+		ws = new WebSocket(protocol === 'v1' ? withProtocolParam(websocketUrl) : websocketUrl);
 		ws.binaryType = 'arraybuffer';
 
 		ws.onopen = () => {
@@ -135,9 +153,27 @@
 				const uint8Array = new Uint8Array(event.data);
 				const text = new TextDecoder().decode(uint8Array);
 				terminal.write(text);
-			} else {
-				terminal.write(event.data);
+				return;
 			}
+
+			// Every text frame the server sends today is either the one-time
+			// v1 "ready" control message or a plain-text error string (sent
+			// regardless of protocol). Try control first; anything that
+			// isn't valid JSON, or doesn't look like "ready", falls through
+			// to the terminal exactly as error text always has.
+			if (protocol === 'v1') {
+				try {
+					const msg = JSON.parse(event.data);
+					if (msg && msg.type === 'ready') {
+						framed = true;
+						sendResize();
+						return;
+					}
+				} catch {
+					// Not JSON — fall through and write it as text below.
+				}
+			}
+			terminal.write(event.data);
 		};
 
 		ws.onerror = () => {
@@ -162,6 +198,16 @@
 				console.warn('Terminal resize failed:', e);
 			}
 		}
+		sendResize();
+	}
+
+	function sendResize() {
+		if (!framed || !terminal || !ws || ws.readyState !== WebSocket.OPEN) return;
+		ws.send(JSON.stringify({ type: 'resize', cols: terminal.cols, rows: terminal.rows }));
+	}
+
+	function withProtocolParam(url: string): string {
+		return url + (url.includes('?') ? '&' : '?') + 'proto=v1';
 	}
 
 	onMount(() => {
