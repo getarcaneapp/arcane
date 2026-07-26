@@ -12,6 +12,15 @@ const (
 	ParameterTypeSelect  ParameterType = "select"
 )
 
+// Target values for Snippet.Target / CreateSnippetRequest.Target. Plain
+// strings (not a distinct Go type) so they round-trip through the
+// copier-based model<->API mapping the same way TriggerSource/Status already
+// do.
+const (
+	TargetHost      = "host"
+	TargetContainer = "container"
+)
+
 // ParameterDef declares one snippet parameter. At run time the resolved value
 // is exposed to the script as a process environment variable named Name —
 // never spliced into the script text — so there is no quoting or injection
@@ -90,11 +99,23 @@ type Snippet struct {
 	// Required: false
 	Description *string `json:"description,omitempty"`
 
-	// Script is the shell script body, executed via the host shell. Declared
-	// parameters are referenced as quoted env vars, e.g. "$NAME".
+	// Script is the shell script body, executed via the host shell or, when
+	// Target is "container", inside ContainerID. Declared parameters are
+	// referenced as quoted env vars, e.g. "$NAME".
 	//
 	// Required: true
 	Script string `json:"script"`
+
+	// Target is where the script executes: "host" (default) or "container".
+	//
+	// Required: true
+	Target string `json:"target"`
+
+	// ContainerID is the target container's ID, required when Target is
+	// "container" and otherwise empty.
+	//
+	// Required: false
+	ContainerID *string `json:"containerId,omitempty"`
 
 	// Parameters declares the typed inputs the script accepts. Order is
 	// preserved and used as the run-form field order.
@@ -241,6 +262,17 @@ type CreateSnippetRequest struct {
 	// Required: true
 	Script string `json:"script" binding:"required"`
 
+	// Target is where the script executes: "host" (default) or "container".
+	//
+	// Required: false
+	Target *string `json:"target,omitempty"`
+
+	// ContainerID is the target container's ID, required when Target is
+	// "container".
+	//
+	// Required: false
+	ContainerID *string `json:"containerId,omitempty"`
+
 	// Parameters declares the typed inputs the script accepts.
 	//
 	// Required: false
@@ -288,6 +320,17 @@ type UpdateSnippetRequest struct {
 	//
 	// Required: false
 	Script *string `json:"script,omitempty"`
+
+	// Target is where the script executes: "host" or "container".
+	//
+	// Required: false
+	Target *string `json:"target,omitempty"`
+
+	// ContainerID is the target container's ID, required when Target is
+	// "container". Set to an empty string to clear.
+	//
+	// Required: false
+	ContainerID *string `json:"containerId,omitempty"`
 
 	// Parameters declares the typed inputs the script accepts. Replaces the
 	// full parameter set when present.

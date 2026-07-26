@@ -3,17 +3,22 @@
 	import SheetFooterActions from '#lib/components/sheets/sheet-footer-actions.svelte';
 	import SwitchWithLabel from '#lib/components/form/labeled-switch.svelte';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
+	import SearchableSelect from '#lib/components/form/searchable-select.svelte';
 	import { Button } from '#lib/components/ui/button';
 	import { Input } from '#lib/components/ui/input';
 	import { Label } from '#lib/components/ui/label';
 	import { Textarea } from '#lib/components/ui/textarea';
 	import CodeEditor from '#lib/components/code-editor/editor.svelte';
+	import { createQuery } from '@tanstack/svelte-query';
+	import { containerService } from '#lib/services/container-service';
+	import { queryKeys } from '#lib/query/query-keys';
 	import type {
 		Snippet,
 		SnippetCreateDto,
 		SnippetUpdateDto,
 		SnippetParameterDef,
-		SnippetParameterType
+		SnippetParameterType,
+		SnippetTarget
 	} from '#lib/types/snippet';
 	import { preventDefault } from '#lib/utils/settings';
 	import { m } from '#lib/paraglide/messages';
@@ -26,11 +31,13 @@
 	let {
 		open = $bindable(false),
 		snippetToEdit = $bindable(null),
+		environmentId,
 		isLoading = false,
 		onSubmit
 	}: {
 		open: boolean;
 		snippetToEdit: Snippet | null;
+		environmentId: string;
 		isLoading?: boolean;
 		onSubmit: (payload: SnippetFormPayload) => void;
 	} = $props();
@@ -52,6 +59,8 @@
 	let name = $state('');
 	let description = $state('');
 	let script = $state('');
+	let target = $state<SnippetTarget>('host');
+	let containerId = $state('');
 	let workingDir = $state('');
 	let timeoutSec = $state<number | ''>(60);
 	let paramRows = $state<ParamRow[]>([]);
@@ -81,12 +90,28 @@
 		};
 	}
 
+	const containersQuery = createQuery(() => {
+		const queryEnvId = environmentId;
+		return {
+			queryKey: queryKeys.containers.list(queryEnvId, { pagination: { page: 1, limit: 200 } }),
+			queryFn: () => containerService.getContainersForEnvironment(queryEnvId, { pagination: { page: 1, limit: 200 } }),
+			enabled: open
+		};
+	});
+	const containerItems = $derived(
+		(containersQuery.data?.data ?? [])
+			.filter((c) => c.state === 'running')
+			.map((c) => ({ value: c.id, label: c.names[0]?.replace(/^\//, '') || c.id.slice(0, 12) }))
+	);
+
 	$effect(() => {
 		if (open) {
 			const editing = snippetToEdit;
 			name = editing?.name ?? '';
 			description = editing?.description ?? '';
 			script = editing?.script ?? '';
+			target = editing?.target ?? 'host';
+			containerId = editing?.containerId ?? '';
 			workingDir = editing?.workingDir ?? '';
 			timeoutSec = editing?.timeoutSec ?? 60;
 			paramRows = (editing?.parameters ?? []).map(paramDefToRow);
@@ -161,6 +186,10 @@
 			formError = m.common_field_required({ field: m.snippets_script() });
 			return;
 		}
+		if (target === 'container' && !containerId) {
+			formError = m.snippets_target_container_required();
+			return;
+		}
 
 		const parameters = buildParameters();
 		if (parameters === null) return;
@@ -183,6 +212,8 @@
 			name: name.trim(),
 			description: description.trim() || undefined,
 			script,
+			target,
+			containerId: target === 'container' ? containerId : undefined,
 			parameters,
 			workingDir: workingDir.trim() || undefined,
 			timeoutSec: typeof timeoutSec === 'number' ? timeoutSec : undefined,
@@ -232,6 +263,37 @@
 				<div class="mt-2 h-64 overflow-hidden rounded-md border border-border/50">
 					<CodeEditor bind:value={script} language="shell" autoHeight={false} />
 				</div>
+			</div>
+
+			<div class="grid grid-cols-2 gap-4">
+				<div>
+					<Label for="snippet-target">{m.snippets_target()}</Label>
+					<div class="mt-2">
+						<SelectWithLabel
+							id="snippet-target"
+							label=""
+							hideLabel
+							bind:value={target as string}
+							options={[
+								{ label: m.snippets_target_host(), value: 'host' },
+								{ label: m.snippets_target_container(), value: 'container' }
+							]}
+						/>
+					</div>
+				</div>
+				{#if target === 'container'}
+					<div>
+						<Label for="snippet-target-container">{m.snippets_target_container()}</Label>
+						<SearchableSelect
+							triggerId="snippet-target-container"
+							class="mt-2 w-full"
+							items={containerItems}
+							bind:value={containerId}
+							selectText={m.snippets_target_container_placeholder()}
+							onSelect={(value) => (containerId = value)}
+						/>
+					</div>
+				{/if}
 			</div>
 
 			<div class="grid grid-cols-2 gap-4">

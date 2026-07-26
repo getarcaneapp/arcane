@@ -9,7 +9,7 @@
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import type { Snippet } from '#lib/types/snippet';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
-	import { CodeIcon, ClockIcon, PlayIcon, EditIcon, TrashIcon } from '#lib/icons';
+	import { CodeIcon, ClockIcon, PlayIcon, EditIcon, TrashIcon, MonitorIcon, BoxIcon } from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 
 	let {
@@ -41,6 +41,7 @@
 
 	const columns = [
 		{ accessorKey: 'name', title: m.common_name(), sortable: true, cell: NameCell },
+		{ id: 'target', accessorFn: (row) => row.id, title: m.snippets_target(), cell: TargetCell },
 		{ id: 'parameters', accessorFn: (row) => row.id, title: m.snippets_parameters(), cell: ParametersCell },
 		{ id: 'schedule', accessorFn: (row) => row.id, title: m.snippets_schedule(), cell: ScheduleCell },
 		{ id: 'lastRun', accessorFn: (row) => row.id, title: m.snippets_last_run(), cell: LastRunCell },
@@ -48,6 +49,7 @@
 	] satisfies ColumnSpec<Snippet>[];
 
 	const mobileFields = [
+		{ id: 'target', label: m.snippets_target(), defaultVisible: true },
 		{ id: 'parameters', label: m.snippets_parameters(), defaultVisible: true },
 		{ id: 'schedule', label: m.snippets_schedule(), defaultVisible: true },
 		{ id: 'lastRun', label: m.snippets_last_run(), defaultVisible: true }
@@ -61,6 +63,18 @@
 			<p class="max-w-[320px] truncate text-xs text-muted-foreground">{item.description}</p>
 		{/if}
 	</div>
+{/snippet}
+
+{#snippet TargetCell({ item }: { item: Snippet })}
+	<Badge variant="outline" size="sm" class="gap-1">
+		{#if item.target === 'container'}
+			<BoxIcon class="size-3" />
+			{m.snippets_target_container()}
+		{:else}
+			<MonitorIcon class="size-3" />
+			{m.snippets_target_host()}
+		{/if}
+	</Badge>
 {/snippet}
 
 {#snippet ParametersCell({ item }: { item: Snippet })}
@@ -136,6 +150,13 @@
 		title={(item: Snippet) => item.name}
 		subtitle={(item: Snippet) => item.description ?? null}
 		fields={[
+			{
+				label: m.snippets_target(),
+				getValue: (item: Snippet) => (item.target === 'container' ? m.snippets_target_container() : m.snippets_target_host()),
+				icon: item.target === 'container' ? BoxIcon : MonitorIcon,
+				iconVariant: 'gray' as const,
+				show: mobileFieldVisibility['target'] ?? true
+			},
 			{
 				label: m.snippets_parameters(),
 				getValue: (item: Snippet) => (item.parameters?.length ? String(item.parameters.length) : '—'),

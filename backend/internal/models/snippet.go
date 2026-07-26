@@ -17,6 +17,8 @@ type Snippet struct {
 	Name               string                      `json:"name" sortable:"true" search:"snippet,command,script"`
 	Description        *string                     `json:"description,omitempty"`
 	Script             string                      `json:"script"`
+	Target             string                      `json:"target" gorm:"column:target;default:host"`
+	ContainerID        *string                     `json:"containerId,omitempty" gorm:"column:container_id"`
 	Parameters         []snippettypes.ParameterDef `json:"parameters,omitempty" gorm:"serializer:json"`
 	WorkingDir         *string                     `json:"workingDir,omitempty" gorm:"column:working_dir"`
 	TimeoutSec         int                         `json:"timeoutSec" gorm:"column:timeout_sec;default:60"`

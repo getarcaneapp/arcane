@@ -30,12 +30,14 @@ const (
 	snippetRunHistoryLimit = 50
 )
 
-// SnippetService runs user-authored host-shell commands with typed
-// parameters, manually or on a cron schedule, via HostShellService.RunScript.
+// SnippetService runs user-authored commands with typed parameters, manually
+// or on a cron schedule, either on the host shell (HostShellService.RunScript)
+// or inside a target container (ContainerService.RunScript).
 type SnippetService struct {
 	db               *database.DB
 	eventService     *EventService
 	hostShellService *HostShellService
+	containerService *ContainerService
 
 	// scheduler and lifecycleCtx are injected post-construction via
 	// SetScheduler, for the same reason as GitOpsSyncService's identical
@@ -45,11 +47,12 @@ type SnippetService struct {
 	lifecycleCtx context.Context
 }
 
-func NewSnippetService(db *database.DB, eventService *EventService, hostShellService *HostShellService) *SnippetService {
+func NewSnippetService(db *database.DB, eventService *EventService, hostShellService *HostShellService, containerService *ContainerService) *SnippetService {
 	return &SnippetService{
 		db:               db,
 		eventService:     eventService,
 		hostShellService: hostShellService,
+		containerService: containerService,
 	}
 }
 
@@ -223,6 +226,19 @@ func (s *SnippetService) checkNameConflictInternal(ctx context.Context, environm
 	return nil
 }
 
+// resolveSnippetTargetInternal validates the requested target, defaulting to
+// "host" when omitted/blank.
+func resolveSnippetTargetInternal(requested *string) (string, error) {
+	target := snippettypes.TargetHost
+	if requested != nil && strings.TrimSpace(*requested) != "" {
+		target = strings.TrimSpace(*requested)
+	}
+	if target != snippettypes.TargetHost && target != snippettypes.TargetContainer {
+		return "", common.Classify(common.ErrValidation, errors.Errorf("target must be %q or %q", snippettypes.TargetHost, snippettypes.TargetContainer))
+	}
+	return target, nil
+}
+
 func resolveSnippetTimeoutSecInternal(requested *int) int {
 	if requested == nil || *requested <= 0 {
 		return snippetDefaultTimeoutSec
@@ -241,6 +257,18 @@ func (s *SnippetService) CreateSnippet(ctx context.Context, environmentID string
 	if strings.TrimSpace(req.Script) == "" {
 		return nil, common.Classify(common.ErrValidation, errors.New("script is required"))
 	}
+	target, err := resolveSnippetTargetInternal(req.Target)
+	if err != nil {
+		return nil, err
+	}
+	var containerID *string
+	if target == snippettypes.TargetContainer {
+		trimmed := strings.TrimSpace(stringOrEmptyInternal(req.ContainerID))
+		if trimmed == "" {
+			return nil, common.Classify(common.ErrValidation, errors.New("containerId is required when target is \"container\""))
+		}
+		containerID = &trimmed
+	}
 	if err := validateSnippetParameterDefsInternal(req.Parameters); err != nil {
 		return nil, err
 	}
@@ -258,6 +286,8 @@ func (s *SnippetService) CreateSnippet(ctx context.Context, environmentID string
 		Name:               name,
 		Description:        nullableTrimmedStringInternal(req.Description),
 		Script:             req.Script,
+		Target:             target,
+		ContainerID:        containerID,
 		Parameters:         normalizeSnippetParametersInternal(req.Parameters),
 		WorkingDir:         nullableTrimmedStringInternal(req.WorkingDir),
 		TimeoutSec:         resolveSnippetTimeoutSecInternal(req.TimeoutSec),
@@ -354,6 +384,32 @@ func (s *SnippetService) UpdateSnippet(ctx context.Context, environmentID, id st
 		}
 		updates["script"] = *req.Script
 	}
+
+	finalTarget := snippet.Target
+	if finalTarget == "" {
+		finalTarget = snippettypes.TargetHost
+	}
+	if req.Target != nil {
+		resolved, err := resolveSnippetTargetInternal(req.Target)
+		if err != nil {
+			return nil, err
+		}
+		finalTarget = resolved
+		updates["target"] = resolved
+	}
+	finalContainerID := stringOrEmptyInternal(snippet.ContainerID)
+	if req.ContainerID != nil {
+		finalContainerID = strings.TrimSpace(*req.ContainerID)
+		updates["container_id"] = nullableUpdateStringValueInternal(req.ContainerID)
+	}
+	if finalTarget == snippettypes.TargetContainer && finalContainerID == "" {
+		return nil, common.Classify(common.ErrValidation, errors.New("containerId is required when target is \"container\""))
+	}
+	if finalTarget == snippettypes.TargetHost && finalContainerID != "" {
+		finalContainerID = ""
+		updates["container_id"] = nil
+	}
+
 	if req.Parameters != nil {
 		encoded, err := jsonColumnValueInternal(normalizeSnippetParametersInternal(req.Parameters))
 		if err != nil {
@@ -449,20 +505,49 @@ func (s *SnippetService) DeleteSnippet(ctx context.Context, environmentID, id st
 	return nil
 }
 
+// resolveSnippetRunnerInternal picks the RunScript implementation for
+// snippet.Target and validates that target is actually runnable right now:
+// the host shell must be enabled, or the target container must exist and be
+// running.
+func (s *SnippetService) resolveSnippetRunnerInternal(ctx context.Context, snippet *models.Snippet) (func(context.Context, ScriptRequest) (ScriptResult, error), error) {
+	if snippet.Target == snippettypes.TargetContainer {
+		containerID := stringOrEmptyInternal(snippet.ContainerID)
+		if containerID == "" {
+			return nil, common.Classify(common.ErrValidation, errors.New("snippet has no target container configured"))
+		}
+		info, err := s.containerService.GetContainerByID(ctx, containerID)
+		if err != nil {
+			return nil, common.Classify(common.ErrNotFound, errors.WrapIf(err, "target container not found"))
+		}
+		if !info.State.Running {
+			return nil, common.Classify(common.ErrUnavailable, errors.New("target container is not running"))
+		}
+		return func(ctx context.Context, req ScriptRequest) (ScriptResult, error) {
+			return s.containerService.RunScript(ctx, containerID, req)
+		}, nil
+	}
+
+	if !s.hostShellService.Enabled(ctx) {
+		return nil, common.Classify(common.ErrUnavailable, errors.New("host shell is disabled; enable it in this environment's security settings before running snippets"))
+	}
+	return s.hostShellService.RunScript, nil
+}
+
 // RunSnippet executes a snippet once, synchronously, either from a manual
 // API call (triggerSource "manual") or a scheduled fire (triggerSource
-// "schedule"). Guards run in this order: host shell unavailable (503),
+// "schedule"). Guards run in this order: target unavailable (503/404),
 // resolve parameters (400), then the run itself — a request that fails
-// either guard never reaches HostShellService.RunScript and never creates a
-// run row, matching the "every invocation that reaches the exec step" rule.
+// either guard never reaches RunScript and never creates a run row, matching
+// the "every invocation that reaches the exec step" rule.
 func (s *SnippetService) RunSnippet(ctx context.Context, environmentID, id string, parameters map[string]string, triggerSource string, actor models.User) (*models.SnippetRun, error) {
 	snippet, err := s.getSnippetRecordInternal(ctx, environmentID, id)
 	if err != nil {
 		return nil, err
 	}
 
-	if !s.hostShellService.Enabled(ctx) {
-		return nil, common.Classify(common.ErrUnavailable, errors.New("host shell is disabled; enable it in this environment's security settings before running snippets"))
+	runScript, err := s.resolveSnippetRunnerInternal(ctx, snippet)
+	if err != nil {
+		return nil, err
 	}
 
 	resolved, err := resolveSnippetParamsInternal(snippet.Parameters, parameters)
@@ -476,7 +561,7 @@ func (s *SnippetService) RunSnippet(ctx context.Context, environmentID, id strin
 	}
 
 	startedAt := time.Now()
-	result, runErr := s.hostShellService.RunScript(ctx, ScriptRequest{
+	result, runErr := runScript(ctx, ScriptRequest{
 		Script:         snippet.Script,
 		Env:            resolved,
 		WorkingDir:     stringOrEmptyInternal(snippet.WorkingDir),

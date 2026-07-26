@@ -167,7 +167,13 @@
 	{/snippet}
 
 	{#snippet additionalContent()}
-		<SnippetFormSheet bind:open={isFormSheetOpen} bind:snippetToEdit isLoading={isSubmitting} onSubmit={handleFormSubmit} />
+		<SnippetFormSheet
+			bind:open={isFormSheetOpen}
+			bind:snippetToEdit
+			environmentId={pageState.envId}
+			isLoading={isSubmitting}
+			onSubmit={handleFormSubmit}
+		/>
 		<SnippetRunSheet bind:open={isRunSheetOpen} snippet={snippetToRun} environmentId={pageState.envId} />
 	{/snippet}
 </ResourcePageLayout>

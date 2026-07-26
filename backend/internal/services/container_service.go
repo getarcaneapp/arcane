@@ -15,6 +15,7 @@ import (
 	"emperror.dev/errors"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"
+	"github.com/moby/moby/api/pkg/stdcopy"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/network"
@@ -32,11 +33,17 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	"github.com/samber/hot"
+	buildapi "go.getarcane.app/builds/api"
 	"go.getarcane.app/streams/bus"
 	containerstats "go.getarcane.app/streams/stats"
 	"go.getarcane.app/sys/cgroup"
 	libupdater "go.getarcane.app/updater/pkg/labels"
 )
+
+// containerScriptDefaultMaxOutputBytes bounds RunScript output when the
+// caller does not specify ScriptRequest.MaxOutputBytes. Mirrors
+// hostShellScriptDefaultMaxOutputBytes.
+const containerScriptDefaultMaxOutputBytes = 16 * 1024
 
 type ContainerService struct {
 	db              *database.DB
@@ -1536,6 +1543,86 @@ func (s *ContainerService) ResizeExec(ctx context.Context, execID string, cols, 
 		return errors.WrapIf(err, "failed to resize exec")
 	}
 	return nil
+}
+
+// RunScript runs Script once inside containerID via a non-interactive,
+// non-TTY exec and returns its combined, capped stdout+stderr and exit code.
+// Mirrors HostShellService.RunScript's exec/attach/capture mechanics, but
+// execs directly into an existing container instead of a throwaway
+// nsenter'd helper — used by Snippets when Target is "container". Script is
+// delivered on stdin to "/bin/sh -s", never as an argv element, so a
+// parameter value (applied via req.Env only) can never be interpreted as
+// shell syntax.
+func (s *ContainerService) RunScript(ctx context.Context, containerID string, req ScriptRequest) (ScriptResult, error) {
+	dockerClient, err := s.dockerService.GetClient(ctx)
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to connect to Docker")
+	}
+
+	execResp, err := dockerClient.ExecCreate(ctx, containerID, client.ExecCreateOptions{
+		AttachStdin:  true,
+		AttachStdout: true,
+		AttachStderr: true,
+		Cmd:          []string{"/bin/sh", "-s"},
+		Env:          envMapToSliceInternal(req.Env),
+		WorkingDir:   req.WorkingDir,
+	})
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to create container script exec")
+	}
+
+	attachResp, err := dockerClient.ExecAttach(ctx, execResp.ID, client.ExecAttachOptions{})
+	if err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to attach to container script exec")
+	}
+	defer attachResp.Close()
+
+	if _, err := attachResp.Conn.Write([]byte(req.Script)); err != nil {
+		return ScriptResult{}, errors.WrapIf(err, "failed to write script to container exec stdin")
+	}
+	// Half-close so /bin/sh -s sees EOF on stdin after the script and exits
+	// once it finishes running it, instead of waiting for more input.
+	_ = attachResp.CloseWrite()
+
+	maxOutputBytes := req.MaxOutputBytes
+	if maxOutputBytes <= 0 {
+		maxOutputBytes = containerScriptDefaultMaxOutputBytes
+	}
+	capture := buildapi.NewLogCapture(maxOutputBytes)
+
+	copyDone := make(chan error, 1)
+	go func() {
+		_, copyErr := stdcopy.StdCopy(capture, capture, attachResp.Reader)
+		copyDone <- copyErr
+	}()
+
+	timedOut := false
+	select {
+	case <-copyDone:
+	case <-time.After(req.Timeout):
+		timedOut = true
+		// Force-close the attach connection so the copy goroutine's blocked
+		// Read unblocks; the process itself is left to the container's own
+		// lifecycle (there is no helper container to tear down here).
+		attachResp.Close()
+		<-copyDone
+	}
+
+	output := capture.String()
+	if capture.Truncated() {
+		output += "\n...<truncated>"
+	}
+
+	if timedOut {
+		return ScriptResult{Output: output}, errors.WrapIf(context.DeadlineExceeded, "container script timed out")
+	}
+
+	inspect, err := dockerClient.ExecInspect(ctx, execResp.ID, client.ExecInspectOptions{})
+	if err != nil {
+		return ScriptResult{Output: output}, errors.WrapIf(err, "failed to inspect container script exec result")
+	}
+
+	return ScriptResult{ExitCode: int64(inspect.ExitCode), Output: output}, nil
 }
 
 // ExecSession manages the lifecycle of a Docker exec session.

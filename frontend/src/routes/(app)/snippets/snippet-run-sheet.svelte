@@ -10,6 +10,7 @@
 	import { toast } from 'svelte-sonner';
 	import { m } from '#lib/paraglide/messages';
 	import { formatDateTime } from '#lib/utils/formatting';
+	import { MonitorIcon, BoxIcon } from '#lib/icons';
 
 	let {
 		open = $bindable(false),
@@ -112,6 +113,16 @@
 >
 	{#snippet children()}
 		<div class="grid gap-4 py-4">
+			<Badge variant="outline" size="sm" class="w-fit gap-1">
+				{#if snippet?.target === 'container'}
+					<BoxIcon class="size-3" />
+					{m.snippets_target_container()}
+				{:else}
+					<MonitorIcon class="size-3" />
+					{m.snippets_target_host()}
+				{/if}
+			</Badge>
+
 			{#if runFields.length > 0}
 				<div class="grid gap-3">
 					{#each runFields as field (field.name)}

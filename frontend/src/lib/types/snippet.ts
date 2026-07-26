@@ -1,4 +1,5 @@
 export type SnippetParameterType = 'string' | 'number' | 'boolean' | 'select';
+export type SnippetTarget = 'host' | 'container';
 
 export interface SnippetParameterDef {
 	name: string;
@@ -18,6 +19,8 @@ export interface Snippet {
 	name: string;
 	description?: string;
 	script: string;
+	target: SnippetTarget;
+	containerId?: string;
 	parameters?: SnippetParameterDef[];
 	workingDir?: string;
 	timeoutSec: number;
@@ -51,6 +54,8 @@ export interface SnippetCreateDto {
 	name: string;
 	description?: string;
 	script: string;
+	target?: SnippetTarget;
+	containerId?: string;
 	parameters?: SnippetParameterDef[];
 	workingDir?: string;
 	timeoutSec?: number;
@@ -63,6 +68,8 @@ export interface SnippetUpdateDto {
 	name?: string;
 	description?: string;
 	script?: string;
+	target?: SnippetTarget;
+	containerId?: string;
 	parameters?: SnippetParameterDef[];
 	workingDir?: string;
 	timeoutSec?: number;

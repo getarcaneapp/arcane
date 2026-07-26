@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
+	sqlite "github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
-	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -37,7 +37,7 @@ func setupSnippetTestService(t *testing.T) (*SnippetService, *database.DB) {
 
 	gdb, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, gdb.AutoMigrate(&models.Snippet{}, &models.SnippetRun{}, &models.Environment{}, &models.Event{}))
+	require.NoError(t, gdb.AutoMigrate(&models.Snippet{}, &models.SnippetRun{}, &models.Environment{}, &models.Event{}, &models.SettingVariable{}))
 	db := &database.DB{DB: gdb}
 
 	require.NoError(t, gdb.Exec("INSERT INTO environments (id, created_at, name) VALUES ('0', ?, 'local')", time.Now()).Error)
@@ -49,7 +49,7 @@ func setupSnippetTestService(t *testing.T) (*SnippetService, *database.DB) {
 	eventService := NewEventService(db, nil, nil)
 	hostShellService := NewHostShellService(nil, nil, settingsService, eventService)
 
-	return NewSnippetService(db, eventService, hostShellService), db
+	return NewSnippetService(db, eventService, hostShellService, nil), db
 }
 
 func TestSnippetService_CreateSnippet_RegistersScheduleJob(t *testing.T) {
@@ -69,6 +69,75 @@ func TestSnippetService_CreateSnippet_RegistersScheduleJob(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Contains(t, scheduler.added, snippetJobNameInternal(snippet.ID))
+}
+
+func TestSnippetService_CreateSnippet_DefaultsToHostTarget(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupSnippetTestService(t)
+
+	snippet, err := svc.CreateSnippet(ctx, "0", snippettypes.CreateSnippetRequest{
+		Name: "no-target", Script: "echo hi",
+	}, systemUser)
+	require.NoError(t, err)
+	require.Equal(t, snippettypes.TargetHost, snippet.Target)
+	require.Nil(t, snippet.ContainerID)
+}
+
+func TestSnippetService_CreateSnippet_ContainerTargetRequiresContainerID(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupSnippetTestService(t)
+
+	target := snippettypes.TargetContainer
+	_, err := svc.CreateSnippet(ctx, "0", snippettypes.CreateSnippetRequest{
+		Name: "no-container-id", Script: "echo hi", Target: &target,
+	}, systemUser)
+	require.Error(t, err)
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestSnippetService_CreateSnippet_InvalidTargetRejected(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupSnippetTestService(t)
+
+	bogus := "vm"
+	_, err := svc.CreateSnippet(ctx, "0", snippettypes.CreateSnippetRequest{
+		Name: "bad-target", Script: "echo hi", Target: &bogus,
+	}, systemUser)
+	require.Error(t, err)
+	require.ErrorIs(t, err, common.ErrValidation)
+}
+
+func TestSnippetService_CreateSnippet_ContainerTargetPersists(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupSnippetTestService(t)
+
+	target := snippettypes.TargetContainer
+	containerID := "abc123"
+	snippet, err := svc.CreateSnippet(ctx, "0", snippettypes.CreateSnippetRequest{
+		Name: "restart-in-container", Script: "echo hi", Target: &target, ContainerID: &containerID,
+	}, systemUser)
+	require.NoError(t, err)
+	require.Equal(t, snippettypes.TargetContainer, snippet.Target)
+	require.NotNil(t, snippet.ContainerID)
+	require.Equal(t, containerID, *snippet.ContainerID)
+}
+
+func TestSnippetService_UpdateSnippet_SwitchingToHostClearsContainerID(t *testing.T) {
+	ctx := context.Background()
+	svc, _ := setupSnippetTestService(t)
+
+	target := snippettypes.TargetContainer
+	containerID := "abc123"
+	created, err := svc.CreateSnippet(ctx, "0", snippettypes.CreateSnippetRequest{
+		Name: "switching", Script: "echo hi", Target: &target, ContainerID: &containerID,
+	}, systemUser)
+	require.NoError(t, err)
+
+	hostTarget := snippettypes.TargetHost
+	updated, err := svc.UpdateSnippet(ctx, "0", created.ID, snippettypes.UpdateSnippetRequest{Target: &hostTarget}, systemUser)
+	require.NoError(t, err)
+	require.Equal(t, snippettypes.TargetHost, updated.Target)
+	require.Nil(t, updated.ContainerID)
 }
 
 func TestSnippetService_UpdateSnippet_DisablingRemovesJob(t *testing.T) {
