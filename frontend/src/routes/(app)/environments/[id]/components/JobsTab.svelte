@@ -16,6 +16,7 @@
 	import type { JobStatus, JobPrerequisite } from '#lib/types/settings';
 	import type { ContainerSummaryDto } from '#lib/types/docker';
 	import type { JobsTabProps } from './tab-props';
+	import { isAutoUpdateLabelDisabled, normalizeContainerName, parseExcludedContainerSet } from '#lib/utils/container-auto-update';
 
 	let { formInputs, environmentId }: JobsTabProps = $props();
 
@@ -56,16 +57,7 @@
 	let searchTerm = $state('');
 	let autoHealSearchTerm = $state('');
 
-	function parseExcludedContainerSet(value: string | undefined) {
-		return new SvelteSet(
-			(value || '')
-				.split(',')
-				.map((s: string) => normalizeContainerName(s.trim()))
-				.filter(Boolean)
-		);
-	}
-
-	function toggleExcludedContainerValue(current: SvelteSet<string>, containerName: string): string {
+	function toggleExcludedContainerValue(current: ReadonlySet<string>, containerName: string): string {
 		const normalizedName = normalizeContainerName(containerName);
 		const newSet = new SvelteSet(current);
 		if (newSet.has(normalizedName)) {
@@ -173,23 +165,9 @@
 		return normalizeContainerName(rawName);
 	}
 
-	function normalizeContainerName(name: string): string {
-		return name.replace(/^\/+/, '');
-	}
-
-	function isContainerLabelExcluded(container: ContainerSummaryDto): boolean {
-		const labels = container.labels || {};
-		for (const [k, v] of Object.entries(labels)) {
-			if (k.toLowerCase() === 'com.getarcaneapp.arcane.updater') {
-				return ['false', '0', 'no', 'off'].includes(v.trim().toLowerCase());
-			}
-		}
-		return false;
-	}
-
 	function mapContainerToItem(container: ContainerSummaryDto) {
 		const name = getContainerName(container);
-		const labelExcluded = isContainerLabelExcluded(container);
+		const labelExcluded = isAutoUpdateLabelDisabled(container.labels);
 		return {
 			value: name,
 			label: name,

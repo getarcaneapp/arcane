@@ -48,6 +48,7 @@
 	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
 	import { ImagesIcon, PauseIcon, PlayIcon, ZapIcon } from '#lib/icons';
 	import { runContainerLifecycleAction } from '#lib/utils/container-actions';
+	import { isAutoUpdateIgnored, isAutoUpdateLabelDisabled } from '#lib/utils/container-auto-update';
 	import KillContainerDialog from '../components/kill-container-dialog.svelte';
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	let { data } = $props();
@@ -57,27 +58,13 @@
 	let autoScrollLogs = $state(true);
 	let hasInitialStatsLoaded = $state(false);
 
-	// Auto-update: detect whether the Docker label controls the state (not toggleable via UI)
-	function isAutoUpdateLabelControlled(c: ContainerDetailsDto): boolean {
-		if (!c?.labels) return false;
-		const labelValue = Object.entries(c.labels).find(([k]) => k.toLowerCase() === 'com.getarcaneapp.arcane.updater')?.[1];
-		return !!labelValue && ['false', '0', 'no', 'off'].includes(labelValue.trim().toLowerCase());
-	}
-
-	function isAutoUpdateEnabled(c: ContainerDetailsDto, settings: any): boolean {
-		if (isAutoUpdateLabelControlled(c)) return false;
-		const excluded = settings?.autoUpdateExcludedContainers ?? '';
-		const containerName = c?.name?.replace(/^\/+/, '') ?? '';
-		if (containerName && excluded) {
-			const excludedList = excluded.split(',').map((s: string) => s.trim());
-			if (excludedList.includes(containerName)) return false;
-		}
-		return true;
-	}
-
-	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelControlled(container));
+	// Auto-update: the Docker label controls the state when set (not toggleable via UI)
+	const autoUpdateLabelControlled = $derived(isAutoUpdateLabelDisabled(container?.labels));
 	let autoUpdateOverride = $state<boolean | null>(null);
-	const autoUpdateEnabled = $derived(autoUpdateOverride ?? isAutoUpdateEnabled(container, data?.settings));
+	const autoUpdateEnabled = $derived(
+		autoUpdateOverride ??
+			!isAutoUpdateIgnored(container?.name ?? '', container?.labels, data?.settings?.autoUpdateExcludedContainers)
+	);
 
 	const cleanContainerName = (name: string | undefined): string => {
 		if (!name) return m.common_not_found_title({ resource: m.containers() });

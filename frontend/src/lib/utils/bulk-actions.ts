@@ -207,7 +207,10 @@ export function confirmAndRun<T>({
 			label: confirmLabel,
 			destructive,
 			action: async () => {
-				handleApiResultWithCallbacks({
+				// Flip loading before awaiting `run`, not after: these back row
+				// spinners, and the request is the part worth showing progress for.
+				setLoading?.(true);
+				await handleApiResultWithCallbacks({
 					result: await tryCatch(run()),
 					message: failureMessage,
 					setLoadingState: setLoading ?? (() => {}),
