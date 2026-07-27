@@ -477,13 +477,13 @@ func (h *EnvironmentHandler) createEnvironmentWithApiKeyInternal(ctx context.Con
 		return nil, huma.Error500InternalServerError("Failed to create environment API key")
 	}
 
-	// Store the API key in AccessToken field (encrypted) for manager-to-agent auth
-	encryptedKey := apiKeyDto.Key // Store the full key
+	// Store the full API key in AccessToken for manager-to-agent auth.
+	apiKey := apiKeyDto.Key
 
-	// Link API key to environment and store encrypted key for manager use
+	// Link the API key to the environment for manager use.
 	updates := map[string]any{
 		"api_key_id":   apiKeyDto.ID,
-		"access_token": encryptedKey,
+		"access_token": apiKey,
 	}
 	created, err = h.environmentService.UpdateEnvironment(ctx, created.ID, updates, &user.ID, &user.Username)
 	if err != nil {
@@ -580,7 +580,11 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 	}
 	updated, updateErr := h.environmentService.UpdateEnvironment(ctx, input.ID, updates, userID, username)
 	if updateErr != nil {
-		return nil, huma.Error500InternalServerError("Failed to update environment")
+		apiErr := models.ToAPIError(updateErr)
+		if apiErr.HTTPStatus() == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError("Failed to update environment")
+		}
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	h.triggerPostUpdateTasksInternal(ctx, input.ID, updated, &input.Body)
@@ -612,8 +616,8 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 		}
 
 		// Use service method to update environment and create event
-		encryptedKey := apiKeyDto.Key
-		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, encryptedKey, user.ID, user.Username, updated.Name)
+		apiKey := apiKeyDto.Key
+		err = h.environmentService.RegenerateEnvironmentApiKey(ctx, input.ID, apiKeyDto.ID, apiKey, user.ID, user.Username, updated.Name)
 		if err != nil {
 			slog.ErrorContext(ctx, "Failed to regenerate API key", "environmentID", input.ID, "error", err.Error())
 			return nil, huma.Error500InternalServerError("Failed to regenerate API key")
@@ -683,11 +687,22 @@ func (h *EnvironmentHandler) TestConnection(ctx context.Context, input *TestConn
 	if input.Body != nil {
 		apiUrl = input.Body.ApiUrl
 	}
+	if apiUrl != nil {
+		permissions, ok := humamw.PermissionsFromContext(ctx)
+		if !ok || !permissions.Allows(authz.PermEnvironmentsUpdate, "") {
+			return nil, huma.Error403Forbidden("permission denied: " + authz.PermEnvironmentsUpdate)
+		}
+	}
 
 	status, err := h.environmentService.TestConnection(ctx, input.ID, apiUrl)
 	resp := environment.Test{Status: status}
 	if err != nil {
-		resp.Message = new(err.Error())
+		if apiUrl == nil {
+			resp.Message = new(err.Error())
+		} else {
+			apiErr := models.ToAPIError(err)
+			err = huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
+		}
 		return &TestConnectionOutput{
 			Body: base.ApiResponse[environment.Test]{
 				Success: false,

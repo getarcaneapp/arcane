@@ -319,8 +319,13 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 	defer cleanup()
 
 	targetPath := path.Join("/volume", sanitizedPath)
-	quotedPath := strconv.Quote(targetPath)
-	cmd := []string{"sh", "-c", fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c \"%%s %%Y %%f %%A\" -- \"$f\" 2>/dev/null) || continue; printf \"%%s\\0%%s\\0\" \"$f\" \"$out\"; done", quotedPath)}
+	cmd := []string{
+		"sh",
+		"-c",
+		`find "$1" -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c "%s %Y %f %A" -- "$f" 2>/dev/null) || continue; printf "%s\0%s\0" "$f" "$out"; done`,
+		"sh",
+		targetPath,
+	}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list directory")

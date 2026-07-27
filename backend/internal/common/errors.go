@@ -90,6 +90,7 @@ var (
 	ErrProjectComposeFileNotFound              = Classify(ErrNotFound, errors.Sentinel("Project compose file not found"))
 	ErrComposeFileNotFound                     = Classify(ErrNotFound, errors.Sentinel("no compose file found"))
 	ErrEnvironmentInvalidProxyTarget           = Classify(ErrBadRequest, errors.Sentinel("Invalid proxy target URL"))
+	ErrEnvironmentConnectionTestFailed         = Classify(ErrBadRequest, errors.Sentinel("Environment connection test failed"))
 	ErrUnsafeRemoteURL                         = Classify(ErrBadRequest, errors.Sentinel("Remote URL is not allowed"))
 	ErrImageScanInProgress                     = Classify(ErrConflict, errors.Sentinel("an image update check is already in progress"))
 	ErrRedeployAfterSyncFailed                 = errors.Sentinel("redeploy failed")

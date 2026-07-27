@@ -9,6 +9,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -149,6 +150,121 @@ func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
 	current, err = svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "8", current.AvatarMaxUploadSizeMb.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		OidcIssuerUrl:    new("https://attacker.example.com"),
+		OidcClientSecret: new(""),
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://issuer.example.com", current.OidcIssuerUrl.Value)
+	require.Equal(t, "old-client-secret", current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		OidcIssuerUrl:    new("https://replacement.example.com"),
+		OidcClientSecret: new("new-client-secret"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
+	require.Equal(t, "new-client-secret", current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new("https://attacker.example.com"),
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://trivy.example.com", current.TrivyServerUrl.Value)
+	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl:   new("https://replacement.example.com"),
+		TrivyServerToken: new("new-trivy-token"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
+	require.Equal(t, "new-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new(""),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Empty(t, current.TrivyServerUrl.Value)
+	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new("https://replacement.example.com"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
 }
 
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {

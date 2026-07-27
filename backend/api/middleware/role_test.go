@@ -116,6 +116,35 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 	require.Equal(t, http.StatusForbidden, rec.Code)
 }
 
+func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInternal(t *testing.T) {
+	router := echo.New()
+	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))
+
+	api.UseMiddleware(func(ctx huma.Context, next func(huma.Context)) {
+		ps := authz.NewPermissionSet()
+		ps.AddEnv("env-1", authz.PermNotificationsManage)
+		next(huma.WithContext(ctx, context.WithValue(ctx.Context(), ContextKeyUserPermissions, ps)))
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "guarded-global-notifications",
+		Method:      http.MethodPost,
+		Path:        "/environments/{id}/notifications/settings",
+		Middlewares: RequirePermission(api, authz.PermNotificationsManage),
+	}, func(_ context.Context, _ *struct {
+		ID string `path:"id"`
+	}) (*struct{}, error) {
+		t.Fatal("handler must not run for an environment-scoped grant on global notification settings")
+		return nil, nil
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/environments/env-1/notifications/settings", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusForbidden, rec.Code)
+}
+
 func TestRequirePermission_SudoCallerAllowed(t *testing.T) {
 	router := echo.New()
 	api := humaecho.NewWithGroup(router, router.Group("/api"), huma.DefaultConfig("test", "1.0.0"))

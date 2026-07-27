@@ -38,6 +38,12 @@ func TestValidateCredentialTargetChange(t *testing.T) {
 			storedCredentials: map[string]bool{"token": true},
 		},
 		{
+			name:              "cleared target",
+			currentTarget:     "registry.example.com",
+			nextTarget:        new("  "),
+			storedCredentials: map[string]bool{"token": true},
+		},
+		{
 			name:              "normalized target alias",
 			currentTarget:     "https://registry.example.com",
 			nextTarget:        new("REGISTRY.EXAMPLE.COM"),

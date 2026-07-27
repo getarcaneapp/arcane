@@ -191,7 +191,7 @@ var permissionCatalog = []PermissionCatalogResource{
 	{"jobs", "Background Jobs", PermissionScopeEnv, []PermissionCatalogAction{
 		{"manage", PermJobsManage, "Manage", ""},
 	}},
-	{"notifications", "Notifications", PermissionScopeEnv, []PermissionCatalogAction{
+	{"notifications", "Notifications", PermissionScopeGlobal, []PermissionCatalogAction{
 		{"manage", PermNotificationsManage, "Manage", ""},
 	}},
 	{"dashboard", "Dashboard", PermissionScopeEnv, []PermissionCatalogAction{

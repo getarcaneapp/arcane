@@ -213,17 +213,27 @@ func (s *ContainerRegistryService) UpdateRegistry(ctx context.Context, id string
 		return nil, err
 	}
 
-	if registry.RegistryType != registryTypeECR {
-		if err := validation.ValidateCredentialTargetChange(
-			"registry URL",
-			registry.URL,
-			req.URL,
-			normalizeRegistryServerAddressInternal,
-			map[string]bool{"token": registry.Token != ""},
-			map[string]bool{"token": req.Token != nil && *req.Token != ""},
-		); err != nil {
-			return nil, err
+	storedCredentials := map[string]bool{"token": registry.Token != ""}
+	updatedCredentials := map[string]bool{"token": req.Token != nil && *req.Token != ""}
+	if registry.RegistryType == registryTypeECR {
+		storedCredentials = map[string]bool{
+			"awsAccessKeyId":     registry.AWSAccessKeyID != "",
+			"awsSecretAccessKey": registry.AWSSecretAccessKey != "",
 		}
+		updatedCredentials = map[string]bool{
+			"awsAccessKeyId":     req.AWSAccessKeyID != nil && *req.AWSAccessKeyID != "",
+			"awsSecretAccessKey": req.AWSSecretAccessKey != nil && *req.AWSSecretAccessKey != "",
+		}
+	}
+	if err := validation.ValidateCredentialTargetChange(
+		"registry URL",
+		registry.URL,
+		req.URL,
+		normalizeRegistryServerAddressInternal,
+		storedCredentials,
+		updatedCredentials,
+	); err != nil {
+		return nil, err
 	}
 
 	// Update common fields

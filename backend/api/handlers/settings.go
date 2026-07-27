@@ -384,7 +384,11 @@ func (h *SettingsHandler) updateSettingsForLocalEnvironment(ctx context.Context,
 
 	updatedSettings, err := h.settingsService.UpdateSettings(ctx, input)
 	if err != nil {
-		return nil, huma.Error500InternalServerError("Failed to update settings")
+		apiErr := models.ToAPIError(err)
+		if apiErr.HTTPStatus() == http.StatusInternalServerError {
+			return nil, huma.Error500InternalServerError("Failed to update settings")
+		}
+		return nil, huma.NewError(apiErr.HTTPStatus(), apiErr.Message)
 	}
 
 	settingDtos := make([]settings.SettingDto, 0, len(updatedSettings))

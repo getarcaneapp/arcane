@@ -317,3 +317,23 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 		}
 	}
 }
+
+func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
+	if !IsOrgLevel(PermNotificationsManage) {
+		t.Fatal("notifications:manage must be org-level for manager-global notification settings")
+	}
+	if IsEnvScoped(PermNotificationsManage) {
+		t.Fatal("notifications:manage must not be environment-scoped")
+	}
+
+	ps := NewPermissionSet()
+	ps.AddEnv("env-1", PermNotificationsManage)
+	if ps.Allows(PermNotificationsManage, "") {
+		t.Fatal("an environment-scoped notification grant must not authorize the global resource")
+	}
+
+	ps.AddGlobal(PermNotificationsManage)
+	if !ps.Allows(PermNotificationsManage, "") {
+		t.Fatal("a global notification grant must authorize the global resource")
+	}
+}

@@ -3,6 +3,7 @@ package validation
 import (
 	"fmt"
 	"slices"
+	"strings"
 
 	"emperror.dev/errors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
@@ -20,6 +21,9 @@ func ValidateCredentialTargetChange(
 	updatedCredentials map[string]bool,
 ) error {
 	if nextTarget == nil {
+		return nil
+	}
+	if strings.TrimSpace(*nextTarget) == "" {
 		return nil
 	}
 

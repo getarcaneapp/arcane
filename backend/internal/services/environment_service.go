@@ -15,6 +15,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -24,6 +25,7 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
@@ -1111,6 +1113,35 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 }
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
+	current, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var nextAPIURL *string
+	if rawAPIURL, ok := updates["api_url"]; ok {
+		if apiURL, isString := rawAPIURL.(string); isString {
+			nextAPIURL = new(apiURL)
+		}
+	}
+	_, accessTokenUpdated := updates["access_token"]
+	if err := validation.ValidateCredentialTargetChange(
+		"environment API URL",
+		current.ApiUrl,
+		nextAPIURL,
+		func(value string) string {
+			normalized, normalizeErr := normalizeEnvironmentBaseURLInternal(value)
+			if normalizeErr != nil {
+				return strings.TrimSpace(value)
+			}
+			return normalized
+		},
+		map[string]bool{"accessToken": current.AccessToken != nil && *current.AccessToken != ""},
+		map[string]bool{"accessToken": accessTokenUpdated},
+	); err != nil {
+		return nil, err
+	}
+
 	updates["updated_at"] = new(time.Now())
 
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -1209,6 +1240,13 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	if err != nil {
 		return "error", err
 	}
+	connectionFailure := func(status string, failure error) (string, error) {
+		if customApiUrl == nil {
+			return status, failure
+		}
+		slog.WarnContext(ctx, "Environment custom URL connection test failed", "environment_id", id, "error", failure)
+		return "error", common.ErrEnvironmentConnectionTestFailed
+	}
 
 	// Special handling for local Docker environment (ID "0")
 	if id == "0" && customApiUrl == nil {
@@ -1221,7 +1259,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	}
 
 	apiUrl := environment.ApiUrl
-	if customApiUrl != nil && *customApiUrl != "" {
+	if customApiUrl != nil {
 		apiUrl = *customApiUrl
 	}
 
@@ -1230,7 +1268,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "invalid environment API URL")
+		return connectionFailure("offline", errors.WrapIf(err, "invalid environment API URL"))
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -1240,14 +1278,14 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "failed to create request")
+		return connectionFailure("offline", errors.WrapIf(err, "failed to create request"))
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "connection failed")
+		return connectionFailure("offline", errors.WrapIf(err, "connection failed"))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1261,7 +1299,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	if customApiUrl == nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusError))
 	}
-	return "error", errors.Errorf("unexpected status code: %d", resp.StatusCode)
+	return connectionFailure("error", errors.Errorf("unexpected status code: %d", resp.StatusCode))
 }
 
 // testEdgeConnection tests connection to an edge agent via its tunnel
@@ -1431,16 +1469,16 @@ func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, 
 	})
 }
 
-func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, encryptedKey string, userID, username string, envName string) error {
+func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, apiKey string, userID, username string, envName string) error {
 	// Trim once at the boundary so the value persisted, the value cached,
 	// and the value returned by callers (which already TrimSpace before
 	// returning) all stay byte-identical. Any divergence here would surface
 	// as a 401 "invalid agent token" because lookup is direct equality.
-	encryptedKey = strings.TrimSpace(encryptedKey)
+	apiKey = strings.TrimSpace(apiKey)
 
 	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
-		"access_token": encryptedKey,
+		"access_token": apiKey,
 		"status":       string(models.EnvironmentStatusPending),
 		"last_seen":    nil, // Clear last seen time
 	}
@@ -1449,11 +1487,11 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 		return errors.WrapIf(err, "failed to update environment with new API key")
 	}
 
-	s.syncEnvironmentTokenCacheInternal(envID, encryptedKey)
+	s.syncEnvironmentTokenCacheInternal(envID, apiKey)
 	now := time.Now()
 	s.updateRemoteEnvironmentSnapshotInternal(envID, func(environment *models.Environment) {
 		environment.ApiKeyID = &newApiKeyID
-		environment.AccessToken = &encryptedKey
+		environment.AccessToken = &apiKey
 		environment.Status = string(models.EnvironmentStatusPending)
 		environment.LastSeen = nil
 		environment.UpdatedAt = &now

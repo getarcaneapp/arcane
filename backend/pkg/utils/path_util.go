@@ -15,8 +15,11 @@ func SanitizeBrowsePath(input string) (string, error) {
 	}
 
 	cleaned := path.Clean(trimmed)
+	if cleaned == ".." || strings.HasPrefix(cleaned, "../") {
+		return "", errors.New("invalid path: path traversal not allowed")
+	}
 	if !path.IsAbs(cleaned) {
-		cleaned = "/" + cleaned
+		cleaned = path.Clean("/" + cleaned)
 	}
 	if strings.Contains(cleaned, "/../") || strings.HasSuffix(cleaned, "/..") || cleaned == "/.." {
 		return "", errors.New("invalid path: path traversal not allowed")
