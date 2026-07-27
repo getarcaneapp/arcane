@@ -63,6 +63,12 @@ type EnvironmentService struct {
 	// variableSyncer is injected post-construction via SetVariableSyncer
 	// (manager-only) to avoid a wire cycle with VariableService.
 	variableSyncer VariableSyncer
+
+	// runtimeWatchers receive a coalesced wake-up whenever an environment's
+	// liveness changes. See environment_runtime_notify.go.
+	runtimeWatchMu    sync.Mutex
+	runtimeWatchers   map[int]chan struct{}
+	runtimeWatcherSeq int
 }
 
 // VariableSyncer pushes the effective global-variable set to one environment.
@@ -1378,6 +1384,9 @@ func (s *EnvironmentService) updateEnvironmentStatusInternal(ctx context.Context
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
 		return errors.WrapIf(err, "failed to update environment status")
 	}
+	// Direct environments have no tunnel callback, so this health-check write is
+	// the only moment their liveness changes.
+	s.NotifyRuntimeStateChanged()
 	return nil
 }
 
@@ -1395,6 +1404,12 @@ func (s *EnvironmentService) UpdateEnvironmentHeartbeat(ctx context.Context, id 
 
 	if result.Error != nil {
 		return errors.WrapIf(result.Error, "failed to update environment heartbeat")
+	}
+
+	// The 30s throttle above doubles as the notify throttle: a no-op heartbeat
+	// changed nothing worth waking a stream for.
+	if result.RowsAffected > 0 {
+		s.NotifyRuntimeStateChanged()
 	}
 
 	return nil
@@ -1424,7 +1439,118 @@ func (s *EnvironmentService) UpdateEnvironmentConnectionState(ctx context.Contex
 		return errors.WrapIf(err, "failed to update environment connection state")
 	}
 
+	s.NotifyRuntimeStateChanged()
+
 	return nil
+}
+
+// ApplyEnvironmentRuntimeState normalizes edge environment runtime status using
+// in-memory tunnel and poll registries without mutating persisted state.
+func ApplyEnvironmentRuntimeState(env *environment.Environment) {
+	if env == nil || !env.IsEdge {
+		return
+	}
+
+	connected := false
+	env.Connected = &connected
+	env.ConnectedAt = nil
+	env.LastHeartbeat = nil
+	env.LastPollAt = nil
+	env.EdgeTransport = nil
+	env.EdgeSecurityMode = nil
+	env.EdgeSessionID = nil
+	env.EdgeAgentInstance = nil
+	env.EdgeCapabilities = nil
+
+	if pollState, ok := edge.GetPollRuntimeRegistry().Get(env.ID, time.Now()).Get(); ok {
+		env.LastPollAt = pollState.LastPollAt
+	}
+
+	if runtimeState, ok := edge.GetTunnelRuntimeState(env.ID).Get(); ok {
+		connected = true
+		env.Connected = &connected
+		env.Status = string(models.EnvironmentStatusOnline)
+		env.ConnectedAt = runtimeState.ConnectedAt
+		env.LastHeartbeat = runtimeState.LastHeartbeat
+		if runtimeState.SecurityMode != "" {
+			env.EdgeSecurityMode = &runtimeState.SecurityMode
+		}
+		if runtimeState.SessionID != "" {
+			env.EdgeSessionID = &runtimeState.SessionID
+		}
+		if runtimeState.AgentInstance != "" {
+			env.EdgeAgentInstance = &runtimeState.AgentInstance
+		}
+		if len(runtimeState.Capabilities) > 0 {
+			env.EdgeCapabilities = append([]string(nil), runtimeState.Capabilities...)
+		}
+		if transport, ok := edge.GetActiveTunnelTransport(env.ID).Get(); ok {
+			env.EdgeTransport = &transport
+		} else if runtimeState.Transport != "" {
+			env.EdgeTransport = &runtimeState.Transport
+		}
+		return
+	}
+
+	if env.LastPollAt != nil {
+		env.Status = string(models.EnvironmentStatusStandby)
+		return
+	}
+
+	if env.Status != string(models.EnvironmentStatusPending) {
+		env.Status = string(models.EnvironmentStatusOffline)
+	}
+}
+
+// Environment liveness lives in process-local registries (the edge tunnel
+// registry and the poll registry), so nothing in the database changes when an
+// agent connects or drops. Open status streams therefore need a nudge rather
+// than a payload: they re-derive every environment they cover on wake, which is
+// why a bare signal is enough and why a dropped signal is harmless — the
+// watcher has one pending already and will read current state when it runs.
+
+// SubscribeRuntimeChanges returns a channel that receives a coalesced wake-up
+// whenever environment liveness may have changed, plus a function to release
+// it. The channel is never closed; callers select on it alongside their own
+// context.
+func (s *EnvironmentService) SubscribeRuntimeChanges() (<-chan struct{}, func()) {
+	s.runtimeWatchMu.Lock()
+	defer s.runtimeWatchMu.Unlock()
+
+	if s.runtimeWatchers == nil {
+		s.runtimeWatchers = make(map[int]chan struct{})
+	}
+
+	s.runtimeWatcherSeq++
+	id := s.runtimeWatcherSeq
+	// Capacity 1: a second signal arriving before the watcher wakes is
+	// redundant, because the watcher reads live state rather than a queue.
+	ch := make(chan struct{}, 1)
+	s.runtimeWatchers[id] = ch
+
+	return ch, func() {
+		s.runtimeWatchMu.Lock()
+		defer s.runtimeWatchMu.Unlock()
+		delete(s.runtimeWatchers, id)
+	}
+}
+
+// NotifyRuntimeStateChanged wakes every runtime watcher. It never blocks, so it
+// is safe to call from connection callbacks on the tunnel hot path.
+func (s *EnvironmentService) NotifyRuntimeStateChanged() {
+	if s == nil {
+		return
+	}
+
+	s.runtimeWatchMu.Lock()
+	defer s.runtimeWatchMu.Unlock()
+
+	for _, ch := range s.runtimeWatchers {
+		select {
+		case ch <- struct{}{}:
+		default:
+		}
+	}
 }
 
 // ReconcileEdgeStatusesOnStartup resets edge environments to offline when the manager starts.

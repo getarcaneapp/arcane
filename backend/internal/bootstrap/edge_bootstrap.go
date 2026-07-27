@@ -50,6 +50,11 @@ func registerEdgeTunnelRoutes(
 		if err := createEdgeConnectionEvent(ctx, eventService, envID, envName, connected); err != nil {
 			slog.WarnContext(ctx, "Failed to create edge connection event", "environment_id", envID, "connected", connected, "error", err)
 		}
+
+		// This is the only funnel for "an edge tunnel came up or went down"
+		// (register, unregister and stale reaping all route through it), so it
+		// is where open status streams learn about it without polling.
+		environmentService.NotifyRuntimeStateChanged()
 	}
 
 	eventCallback := func(ctx context.Context, envID string, evt *edge.TunnelEvent) error {

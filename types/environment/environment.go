@@ -212,6 +212,28 @@ type Environment struct {
 	ApiKey *string `json:"apiKey,omitempty"`
 }
 
+// StreamEvent is one line of the environment stream. A "snapshot" event carries
+// the caller's full visible environment list with the manager's runtime overlay
+// already applied, so clients replace their cached list wholesale rather than
+// merging field by field — which also keeps renames and enable toggles live,
+// not just connectivity.
+type StreamEvent struct {
+	// Type is the event kind: "snapshot" or "heartbeat".
+	//
+	// Required: true
+	Type string `json:"type"`
+
+	// Environments is the caller's visible environment list for a "snapshot".
+	//
+	// Required: false
+	Environments []Environment `json:"environments,omitempty"`
+
+	// Timestamp is when the event was produced.
+	//
+	// Required: true
+	Timestamp time.Time `json:"timestamp"`
+}
+
 // AgentPairRequest is the request body for pairing with an agent.
 type AgentPairRequest struct {
 	// Rotate indicates if the token should be rotated.

@@ -29,9 +29,17 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/version"
+	"go.getarcane.app/streams/agg"
 )
 
 const localDockerEnvironmentID = "0"
+
+const (
+	// Only covers poll-mode TTL expiry; tunnel and health-check changes arrive
+	// on the service's runtime-change signal instead.
+	environmentStreamPollInterval = 5 * time.Second
+	environmentStreamRefreshFloor = 30 * time.Second
+)
 
 // EnvironmentHandler handles environment management endpoints.
 type EnvironmentHandler struct {
@@ -428,6 +436,93 @@ func accessibleEnvironmentIDsInternal(ps *authz.PermissionSet) []string {
 	}
 	sort.Strings(ids)
 	return ids
+}
+
+// visibleEnvironmentsForInternal returns the environments the caller may see,
+// with the manager's runtime overlay already applied. It reuses the same access
+// rules as ListEnvironments so the stream and the REST list can never disagree
+// about which environments a caller has.
+func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context, ps *authz.PermissionSet) ([]environment.Environment, error) {
+	envs, err := h.environmentService.ListVisibleEnvironments(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if environmentListerSeesAllInternal(ps) {
+		return envs, nil
+	}
+
+	allowed := make(map[string]struct{}, len(ps.PerEnv))
+	for _, envID := range accessibleEnvironmentIDsInternal(ps) {
+		allowed[envID] = struct{}{}
+	}
+
+	filtered := envs[:0]
+	for _, env := range envs {
+		if _, ok := allowed[env.ID]; ok {
+			filtered = append(filtered, env)
+		}
+	}
+	return filtered, nil
+}
+
+func (h *EnvironmentHandler) runEnvironmentStreamProducerInternal(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
+	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
+	defer unsubscribe()
+
+	var lastFingerprint []byte
+	var lastSentAt time.Time
+
+	send := func() bool {
+		envs, err := h.visibleEnvironmentsForInternal(ctx, ps)
+		if err != nil {
+			// A failed read must not end the stream; the next tick retries.
+			if ctx.Err() == nil {
+				slog.WarnContext(ctx, "environment stream failed to list environments", "error", err)
+			}
+			return ctx.Err() == nil
+		}
+
+		fingerprint, err := json.Marshal(envs)
+		if err != nil {
+			slog.WarnContext(ctx, "environment stream failed to encode environments", "error", err)
+			return ctx.Err() == nil
+		}
+		// Re-send unchanged state on a floor so relative timestamps in the UI
+		// ("last seen 2 minutes ago") keep advancing.
+		if bytes.Equal(fingerprint, lastFingerprint) && time.Since(lastSentAt) < environmentStreamRefreshFloor {
+			return true
+		}
+		lastFingerprint = fingerprint
+		lastSentAt = time.Now()
+
+		return agg.Send(ctx, events, environment.StreamEvent{
+			Type:         "snapshot",
+			Environments: envs,
+			Timestamp:    time.Now(),
+		})
+	}
+
+	if !send() {
+		return
+	}
+
+	ticker := time.NewTicker(environmentStreamPollInterval)
+	defer ticker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-changes:
+			if !send() {
+				return
+			}
+		case <-ticker.C:
+			if !send() {
+				return
+			}
+		}
+	}
 }
 
 // CreateEnvironment creates a new environment.

@@ -3,7 +3,6 @@ package handlers
 import (
 	"context"
 	stderrors "errors"
-	"io"
 	"net/http"
 	"time"
 
@@ -16,7 +15,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
-	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2/base"
 	containertypes "github.com/getarcaneapp/arcane/types/v2/container"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
@@ -38,10 +36,6 @@ type GetDashboardInput struct {
 
 type GetDashboardOutput struct {
 	Body base.ApiResponse[dashboardtypes.Snapshot]
-}
-
-type StreamAllDashboardsInput struct {
-	DebugAllGood bool `query:"debugAllGood" default:"false" doc:"Debug mode: force an empty action item list"`
 }
 
 const (
@@ -68,17 +62,6 @@ func RegisterDashboard(api huma.API, dashboardService *services.DashboardService
 		Tags:        []string{"Dashboard"},
 		Security:    defaultOperationSecurityInternal(),
 	}, authz.PermDashboardRead, h.GetDashboard)
-
-	huma.Register(api, huma.Operation{
-		OperationID: "stream-all-dashboards",
-		Method:      http.MethodGet,
-		Path:        "/dashboard/stream",
-		Summary:     "Stream dashboard snapshots across all environments",
-		Description: "Stream dashboard snapshot updates for the local environment and all enabled remote environments as JSON lines",
-		Tags:        []string{"Dashboard"},
-		Security:    defaultOperationSecurityInternal(),
-		Middlewares: humamw.RequireAnyEnvironmentPermission(api, authz.PermDashboardRead),
-	}, h.StreamAllDashboards)
 }
 
 func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboardInput) (*GetDashboardOutput, error) {
@@ -102,47 +85,6 @@ func (h *DashboardHandler) GetDashboard(ctx context.Context, input *GetDashboard
 			Data:    *snapshot,
 		},
 	}, nil
-}
-
-func (h *DashboardHandler) StreamAllDashboards(ctx context.Context, input *StreamAllDashboardsInput) (*huma.StreamResponse, error) {
-	return &huma.StreamResponse{
-		Body: func(humaCtx huma.Context) { //nolint:contextcheck // streaming work must use humaCtx.Context()
-			httpx.SetJSONStreamHeaders(humaCtx)
-
-			writer := humaCtx.BodyWriter()
-			flush := func() {
-				if f, ok := writer.(http.Flusher); ok {
-					f.Flush()
-				}
-			}
-
-			ps, _ := humamw.PermissionsFromContext(humaCtx.Context())
-			h.streamAllDashboardsInternal(humaCtx.Context(), ps, input.DebugAllGood, writer, flush)
-		},
-	}, nil
-}
-
-// streamAllDashboardsInternal multiplexes dashboard snapshots for the local
-// environment and every enabled remote environment over a single response so
-// the browser needs one connection regardless of environment count.
-func (h *DashboardHandler) streamAllDashboardsInternal(ctx context.Context, ps *authz.PermissionSet, debugAllGood bool, writer io.Writer, flush func()) {
-	// RunAuthorizedAggregateStream logs how the stream ended; there is nothing
-	// left to report to a client whose response headers were sent long ago.
-	_ = httpx.RunAuthorizedAggregateStream(ctx, ps, authz.PermDashboardRead, agg.Config[dashboardtypes.StreamEvent]{
-		Writer:            writer,
-		Flush:             flush,
-		Buffer:            dashboardStreamEventBuffer,
-		HeartbeatInterval: dashboardStreamHeartbeatInterval,
-		MakeHeartbeat: func() dashboardtypes.StreamEvent {
-			return dashboardtypes.StreamEvent{Type: "heartbeat", Timestamp: time.Now()}
-		},
-	},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runLocalDashboardStreamProducerInternal(ctx, debugAllGood, events)
-		},
-		func(ctx context.Context, events chan<- dashboardtypes.StreamEvent) {
-			h.runRemoteDashboardStreamPollersInternal(ctx, ps, debugAllGood, events)
-		})
 }
 
 // trimDashboardStreamSnapshotInternal drops the first-page container/image

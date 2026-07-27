@@ -44,8 +44,7 @@ var loggerSkipPatterns = []string{
 	// ends, so it reports the full connection lifetime as request latency —
 	// which reads as a multi-minute hung request. The handlers log their own
 	// termination instead.
-	"GET /api/dashboard/stream",
-	"GET /api/activities/stream",
+	"GET /api/stream",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
