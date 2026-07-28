@@ -91,7 +91,7 @@
 			bind:autoScroll
 			{projectId}
 			{tailLines}
-			{showParsedJson}
+			bind:showParsedJson
 			type="project"
 			maxLines={500}
 			showTimestamps={true}

@@ -257,7 +257,7 @@
 				bind:autoScroll
 				type="container"
 				{containerId}
-				{showParsedJson}
+				bind:showParsedJson
 				maxLines={500}
 				showTimestamps={true}
 				groupAdjacentLines={true}

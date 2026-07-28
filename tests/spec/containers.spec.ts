@@ -5,6 +5,118 @@ import { openRowActionsMenu } from '../utils/table-actions.util';
 
 const CONTAINERS_ROUTE = '/containers';
 
+const structuredContainerLog = {
+	level: 'stdout',
+	message: JSON.stringify({
+		level: 'info',
+		message: 'structured container log marker',
+		request_id: 'request-3415'
+	}),
+	timestamp: '2026-07-27T23:08:37.000Z'
+};
+
+async function mockContainerLogsWebSocket(page: Page) {
+	await page.addInitScript((logEntry) => {
+		localStorage.setItem('arcane_log_json_parsing_v3', 'false');
+		localStorage.setItem('arcane_log_auto_start', 'false');
+
+		const browserWindow = globalThis as typeof globalThis & {
+			WebSocket: any;
+			EventTarget: any;
+			Event: any;
+			MessageEvent: any;
+			CloseEvent: any;
+		};
+
+		const NativeWebSocket = browserWindow.WebSocket;
+		const containerLogsPathPattern =
+			/\/api\/environments\/[^/]+\/ws\/containers\/[^/]+\/logs(?:\?.*)?$/;
+
+		class MockContainerLogsWebSocket extends browserWindow.EventTarget {
+			static CONNECTING = 0;
+			static OPEN = 1;
+			static CLOSING = 2;
+			static CLOSED = 3;
+
+			url: string;
+			readyState = MockContainerLogsWebSocket.CONNECTING;
+			bufferedAmount = 0;
+			extensions = '';
+			protocol = '';
+			binaryType = 'blob';
+			onopen: ((event: unknown) => void) | null = null;
+			onmessage: ((event: unknown) => void) | null = null;
+			onerror: ((event: unknown) => void) | null = null;
+			onclose: ((event: unknown) => void) | null = null;
+
+			constructor(url: string | URL) {
+				super();
+				this.url = String(url);
+
+				queueMicrotask(() => {
+					if (this.readyState !== MockContainerLogsWebSocket.CONNECTING) return;
+
+					this.readyState = MockContainerLogsWebSocket.OPEN;
+
+					const openEvent = new browserWindow.Event('open');
+					this.dispatchEvent(openEvent);
+					this.onopen?.(openEvent);
+
+					const messageEvent = new browserWindow.MessageEvent('message', {
+						data: JSON.stringify(logEntry)
+					});
+
+					this.dispatchEvent(messageEvent);
+					this.onmessage?.(messageEvent);
+				});
+			}
+
+			send(_data?: string | ArrayBufferLike | Blob | ArrayBufferView) {}
+
+			close(code = 1000, reason = '') {
+				if (this.readyState === MockContainerLogsWebSocket.CLOSED) return;
+
+				this.readyState = MockContainerLogsWebSocket.CLOSED;
+
+				const closeEvent = new browserWindow.CloseEvent('close', {
+					code,
+					reason,
+					wasClean: true
+				});
+
+				this.dispatchEvent(closeEvent);
+				this.onclose?.(closeEvent);
+			}
+		}
+
+		const PatchedWebSocket = function (
+			this: unknown,
+			url: string | URL,
+			protocols?: string | string[]
+		) {
+			const urlString = String(url);
+
+			if (containerLogsPathPattern.test(urlString)) {
+				return new MockContainerLogsWebSocket(urlString);
+			}
+
+			return protocols === undefined
+				? new NativeWebSocket(url)
+				: new NativeWebSocket(url, protocols);
+		} as unknown as typeof WebSocket;
+
+		Object.defineProperties(PatchedWebSocket, {
+			CONNECTING: { value: NativeWebSocket.CONNECTING },
+			OPEN: { value: NativeWebSocket.OPEN },
+			CLOSING: { value: NativeWebSocket.CLOSING },
+			CLOSED: { value: NativeWebSocket.CLOSED }
+		});
+
+		PatchedWebSocket.prototype = NativeWebSocket.prototype;
+		browserWindow.WebSocket = PatchedWebSocket;
+	}, structuredContainerLog);
+}
+
 async function navigateToContainers(page: Page) {
 	await page.goto(CONTAINERS_ROUTE);
 	await page.waitForLoadState('load');
@@ -77,6 +189,31 @@ test.describe('Containers Page', () => {
 		await expect(page.getByTestId('container-log-memory-monitor')).toBeVisible();
 		await expect(page.getByTestId('container-log-cpu-monitor')).not.toContainText('N/A');
 		await expect(page.getByTestId('container-log-memory-monitor')).not.toContainText('N/A');
+	});
+
+	test('keeps the parsed log toggle synchronized when structured logs are detected', async ({
+		page
+	}) => {
+		const running = containersData.data.find((container) => container.state === 'running');
+		test.skip(!running, 'No running container available');
+
+		await mockContainerLogsWebSocket(page);
+		await page.goto(`/containers/${running!.id}`);
+		await page.waitForLoadState('load');
+		await page.getByRole('tab', { name: 'Logs' }).click();
+
+		const parsedModeToggle = page.locator('#parsed-log-mode-toggle:visible');
+		await expect(parsedModeToggle).toHaveAttribute('aria-checked', 'false');
+
+		await page.getByRole('button', { name: 'Start', exact: true }).first().click();
+
+		await expect(
+			page.getByText('structured container log marker', { exact: true }).filter({ visible: true })
+		).toBeVisible();
+		await expect(parsedModeToggle).toHaveAttribute('aria-checked', 'true');
+		await expect
+			.poll(() => page.evaluate(() => localStorage.getItem('arcane_log_json_parsing_v3')))
+			.toBe('false');
 	});
 
 	test('should show non-live fallback monitors on the logs tab for stopped containers', async ({
