@@ -223,6 +223,35 @@ test.describe('Notification settings', () => {
 		getErrorCheck();
 	});
 
+	test('should allow configuring a custom generic webhook payload template', async ({ page }) => {
+		const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'generic');
+
+		await openProviderTab(page, 'Generic');
+		await enableCurrentProvider(page);
+
+		await page.getByPlaceholder('https://example.com/webhook').fill('https://example.com/webhook');
+
+		const template = '{"receiveIdType":"chat_id","msgType":"text","text":"{{.message}}"}';
+		await page.locator('#generic-template').fill(template);
+
+		await openTestMenu(page);
+		await page.getByRole('menuitem', { name: 'Simple Test Notification', exact: true }).click();
+
+		const saveAndTestButton = page.getByRole('button', { name: 'Save & Test', exact: true });
+		if (await saveAndTestButton.isVisible().catch(() => false)) {
+			await saveAndTestButton.click();
+		}
+
+		await expect.poll(wasTestEndpointCalled, { timeout: 10_000 }).toBe(true);
+		getErrorCheck();
+
+		// The template must survive a reload, proving it round-trips through the
+		// save path and back into the form.
+		await page.reload();
+		await openProviderTab(page, 'Generic');
+		await expect(page.locator('#generic-template')).toHaveValue(template);
+	});
+
 	test('should allow testing signal notifications', async ({ page }) => {
 		const { getErrorCheck, wasTestEndpointCalled } = await setupNotificationTest(page, 'signal');
 

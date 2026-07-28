@@ -196,4 +196,11 @@ type GenericConfig struct {
 	// {"code":900,...} on failure). When empty, only the HTTP status code is
 	// checked (existing behaviour).
 	SuccessBodyContains string `json:"successBodyContains,omitempty"`
+	// Template is an optional Go text/template rendered into the request body,
+	// letting users target endpoints that require a nested or provider-specific
+	// payload shape rather than the flat {"title":...,"message":...} object.
+	// The template receives `title` and `message` (plus the configured
+	// TitleKey/MessageKey aliases) and its output is sent verbatim. When empty,
+	// the flat JSON payload is used (existing behaviour).
+	Template string `json:"template,omitempty"`
 }

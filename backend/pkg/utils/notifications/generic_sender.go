@@ -3,12 +3,14 @@ package notifications
 import (
 	"bytes"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
+	"text/template"
 
 	"emperror.dev/errors"
 
@@ -133,11 +135,14 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 		return errors.New("webhook URL is empty")
 	}
 
-	// When the caller needs response-body validation we make the HTTP request
-	// ourselves so that we can inspect the body.  Otherwise we delegate to
-	// shoutrrr, which preserves the existing behaviour for everyone who does
-	// not set SuccessBodyContains.
-	if config.SuccessBodyContains != "" {
+	// When the caller needs response-body validation, or has supplied a custom
+	// body template, we make the HTTP request ourselves. Shoutrrr's generic
+	// service only resolves `template` as the ID of a template registered on
+	// the service instance, which the sender API does not expose — and its
+	// built-in JSON template can only emit a flat object, so nested payloads
+	// (Lark/Feishu, Teams, provider-specific envelopes) are unreachable through
+	// it. Otherwise we delegate to shoutrrr, preserving existing behaviour.
+	if config.SuccessBodyContains != "" || strings.TrimSpace(config.Template) != "" {
 		return sendGenericDirectInternal(ctx, config, title, message)
 	}
 
@@ -167,6 +172,120 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 	return nil
 }
 
+// resolveGenericKeys returns the effective title/message payload keys, applying
+// the same defaults Shoutrrr's generic service uses.
+func resolveGenericKeys(config models.GenericConfig) (titleKey, messageKey string) {
+	titleKey = config.TitleKey
+	if titleKey == "" {
+		titleKey = "title"
+	}
+	messageKey = config.MessageKey
+	if messageKey == "" {
+		messageKey = "message"
+	}
+	return titleKey, messageKey
+}
+
+// RenderGenericTemplate renders a user-supplied Go text/template into a webhook
+// request body.
+//
+// The template is given `title` and `message`, plus aliases under the
+// configured TitleKey/MessageKey so a template can use whichever naming the
+// user already configured. Values are exposed pre-escaped for JSON string
+// contexts, so `{"text": "{{.message}}"}` stays valid even when the message
+// contains quotes, backslashes or newlines. text/template (not html/template)
+// is used deliberately: the output is a webhook body, and HTML entity encoding
+// would corrupt payloads.
+func RenderGenericTemplate(config models.GenericConfig, title, message string) (string, error) {
+	tmpl, err := template.New("generic-webhook").Option("missingkey=zero").Parse(config.Template)
+	if err != nil {
+		return "", errors.WrapIf(err, "invalid webhook payload template")
+	}
+
+	titleKey, messageKey := resolveGenericKeys(config)
+
+	// Escape for embedding inside a JSON string literal, which is where these
+	// values land in practice. json.Marshal yields a quoted string; trim the
+	// surrounding quotes so the template author keeps control of the quoting.
+	escape := func(value string) string {
+		encoded, marshalErr := json.Marshal(value)
+		if marshalErr != nil {
+			return value
+		}
+		return strings.TrimSuffix(strings.TrimPrefix(string(encoded), `"`), `"`)
+	}
+
+	// The canonical names are authoritative; the configured-key aliases are only
+	// added when they do not shadow one, so a TitleKey of "message" cannot
+	// repoint `.message` at the title.
+	data := map[string]string{
+		"title":      escape(title),
+		"message":    escape(message),
+		"titleRaw":   title,
+		"messageRaw": message,
+	}
+	for key, value := range map[string]string{titleKey: title, messageKey: message} {
+		if _, taken := data[key]; !taken {
+			data[key] = escape(value)
+		}
+	}
+
+	var rendered bytes.Buffer
+	if err := tmpl.Execute(&rendered, data); err != nil {
+		return "", errors.WrapIf(err, "failed to render webhook payload template")
+	}
+
+	body := rendered.String()
+
+	// A template can be syntactically valid Go yet still emit malformed JSON —
+	// an unbalanced brace produces no parse error, only a puzzling 4xx from the
+	// remote endpoint. When the payload is meant to be JSON, validate it here so
+	// the mistake surfaces against the user's own configuration instead.
+	if isJSONContentType(config.ContentType) && !jsontext.Value(body).IsValid() {
+		return "", errors.New("webhook payload template did not render valid JSON")
+	}
+
+	return body, nil
+}
+
+// isJSONContentType reports whether the configured content type denotes JSON.
+// An empty content type counts as JSON because that is the default applied to
+// outgoing generic webhook requests.
+func isJSONContentType(contentType string) bool {
+	if contentType == "" {
+		return true
+	}
+	// Ignore any parameters such as "; charset=utf-8".
+	mediaType := strings.ToLower(strings.TrimSpace(strings.Split(contentType, ";")[0]))
+	return mediaType == "application/json" || strings.HasSuffix(mediaType, "+json")
+}
+
+// buildGenericPayload produces the request body: the user's rendered template
+// when one is configured, otherwise the flat JSON object keyed by the
+// configured title/message keys.
+func buildGenericPayload(config models.GenericConfig, title, message string) ([]byte, error) {
+	if strings.TrimSpace(config.Template) != "" {
+		rendered, err := RenderGenericTemplate(config, title, message)
+		if err != nil {
+			return nil, err
+		}
+		return []byte(rendered), nil
+	}
+
+	titleKey, messageKey := resolveGenericKeys(config)
+
+	payload := map[string]string{messageKey: message}
+	if title != "" {
+		payload[titleKey] = title
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to marshal webhook payload")
+	}
+	return body, nil
+}
+
 // sendGenericDirectInternal makes the webhook HTTP call directly, giving access
 // to the response body so that provider-level success/failure can be detected
 // even when the HTTP status is always 200.
@@ -176,24 +295,9 @@ func sendGenericDirectInternal(ctx context.Context, config models.GenericConfig,
 		return err
 	}
 
-	// Build JSON payload using the configured message/title keys.
-	msgKey := config.MessageKey
-	if msgKey == "" {
-		msgKey = "message"
-	}
-	titleKey := config.TitleKey
-	if titleKey == "" {
-		titleKey = "title"
-	}
-
-	payload := map[string]string{msgKey: message}
-	if title != "" {
-		payload[titleKey] = title
-	}
-
-	body, err := json.Marshal(payload)
+	body, err := buildGenericPayload(config, title, message)
 	if err != nil {
-		return errors.WrapIf(err, "failed to marshal webhook payload")
+		return err
 	}
 
 	method := strings.ToUpper(config.Method)

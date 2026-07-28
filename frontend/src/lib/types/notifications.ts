@@ -156,6 +156,7 @@ export interface GenericFormValues extends BaseProviderFormValues {
 	titleKey: string;
 	messageKey: string;
 	customHeaders: string;
+	template: string;
 }
 
 export type ProviderFormValuesMap = {
@@ -513,6 +514,7 @@ export function genericSettingsToFormValues(settings?: NotificationSettings): Ge
 		titleKey: getString(cfg, 'titleKey', 'title'),
 		messageKey: getString(cfg, 'messageKey', 'message'),
 		customHeaders: customHeadersStr,
+		template: getString(cfg, 'template'),
 		...eventFlagsToFormValues(events)
 	};
 }
@@ -645,6 +647,7 @@ export function genericFormValuesToSettings(values: GenericFormValues): Notifica
 			titleKey: values.titleKey,
 			messageKey: values.messageKey,
 			customHeaders: customHeaders,
+			template: values.template?.trim() ?? '',
 			events: {
 				image_update: values.eventImageUpdate,
 				container_update: values.eventContainerUpdate,

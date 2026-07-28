@@ -14,6 +14,11 @@
 
 	type AnyBuiltInValues = ProviderFormValuesMap[NotificationProviderKey];
 
+	// Go template syntax is deliberately kept out of the translatable messages:
+	// the `{{ }}` delimiters collide with the message compiler's own placeholder
+	// syntax, and the example is code rather than prose to translate.
+	const GENERIC_TEMPLATE_PLACEHOLDER = ['{', '  "msgType": "text",', '  "text": "{{.message}}"', '}'].join('\n');
+
 	interface Props {
 		provider: NotificationProviderKey;
 		values: AnyBuiltInValues;
@@ -348,11 +353,25 @@
 				titleKey: z.string(),
 				messageKey: z.string(),
 				customHeaders: z.string(),
+				template: z.string(),
 				...eventSubscriptionSchemaFields
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Generic Webhook is enabled');
+
+				// A template with no placeholder at all would send the same static body
+				// for every notification, which is silently useless — flag it early.
+				// Any `{{ .field }}` reference counts, since the backend also exposes
+				// the raw variants and the configured title/message key aliases.
+				const template = d.template.trim();
+				if (template && !/\{\{[^}]*\./.test(template)) {
+					ctx.addIssue({
+						code: 'custom',
+						message: m.notifications_generic_template_invalid(),
+						path: ['template']
+					});
+				}
 			})
 	};
 
@@ -1064,6 +1083,15 @@
 				label: m.notifications_generic_custom_headers_label(),
 				placeholder: m.notifications_generic_custom_headers_placeholder(),
 				helpText: m.notifications_generic_custom_headers_help()
+			},
+			{
+				kind: 'textarea',
+				key: 'template',
+				id: 'generic-template',
+				label: m.notifications_generic_template_label(),
+				placeholder: GENERIC_TEMPLATE_PLACEHOLDER,
+				helpText: m.notifications_generic_template_help(),
+				rows: 5
 			}
 		]
 	};
