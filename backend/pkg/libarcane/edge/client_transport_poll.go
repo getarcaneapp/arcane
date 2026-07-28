@@ -174,9 +174,9 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 		return nil, errors.WrapIf(err, "failed to create poll request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(HeaderAgentToken, c.cfg.AgentToken)
-	req.Header.Set(HeaderAPIKey, c.cfg.AgentToken)
-	req.Header.Set(HeaderAuthorization, "Bearer "+c.cfg.AgentToken)
+	for header, value := range agentAuthCredentialsInternal(c.cfg.AgentToken) {
+		req.Header.Set(header, value)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {

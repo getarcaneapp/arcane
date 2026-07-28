@@ -38,25 +38,27 @@ type commandRequestTransfer struct {
 
 // TunnelClient represents the agent-side tunnel client
 type TunnelClient struct {
-	cfg                     *Config
-	handler                 http.Handler
-	reconnectInterval       time.Duration
-	heartbeatInterval       time.Duration
-	grpcRegistrationTimeout time.Duration
-	websocketPreferenceTTL  time.Duration
-	managerURL              string
-	managerGRPCAddr         string
-	localPort               string // Port the agent is running on locally
-	httpClient              *http.Client
-	conn                    atomic.Pointer[connBox]
-	stopCh                  chan struct{}
-	requestTimeout          time.Duration
-	activeStreams           sync.Map // map[string]*activeWSStream
-	requestTransfers        sync.Map // map[string]*commandRequestTransfer
-	transportPreferenceMu   sync.RWMutex
-	preferWebSocketUntil    time.Time
-	agentInstanceID         string
-	sessionID               string
+	cfg                    *Config
+	handler                http.Handler
+	reconnectInterval      time.Duration
+	heartbeatInterval      time.Duration
+	registrationTimeout    time.Duration
+	websocketPreferenceTTL time.Duration
+	managerURL             string
+	managerGRPCAddr        string
+	localPort              string // Port the agent is running on locally
+	httpClient             *http.Client
+	conn                   atomic.Pointer[connBox]
+	stopCh                 chan struct{}
+	requestTimeout         time.Duration
+	activeStreams          sync.Map // map[string]*activeWSStream
+	requestTransfers       sync.Map // map[string]*commandRequestTransfer
+	transportPreferenceMu  sync.RWMutex
+	preferWebSocketUntil   time.Time
+	grpcFailureStreak      int
+	agentInstanceID        string
+	sessionID              string
+	managerCapabilities    []string
 }
 
 // connBox wraps the active TunnelConnection so it can be swapped atomically on
@@ -357,6 +359,10 @@ type GRPCManagerTunnelConn struct {
 	cancel context.CancelFunc
 	mu     sync.Mutex
 	closed atomic.Bool
+	// parityEncoding is set once the agent advertises the proto-parity-v1
+	// capability, enabling native stream_data/stream_end encodings instead of
+	// the legacy ws_data re-encode.
+	parityEncoding atomic.Bool
 }
 
 // GRPCAgentTunnelConn wraps the agent-side gRPC tunnel stream.

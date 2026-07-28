@@ -216,12 +216,7 @@ func (s *TunnelServer) pollStatusInternal(envID string) TunnelPollResponse {
 
 	if tunnel, ok := s.registry.Get(envID).Get(); ok && tunnel != nil && tunnel.Conn != nil && !tunnel.Conn.IsClosed() {
 		hasActiveTunnel = true
-		switch tunnel.Conn.(type) {
-		case *GRPCManagerTunnelConn:
-			activeTransport = EdgeTransportGRPC
-		case *TunnelConn:
-			activeTransport = EdgeTransportWebSocket
-		}
+		activeTransport = tunnel.Conn.Transport()
 	}
 
 	status := GetDemandRegistry().DesiredStatus(envID, hasActiveTunnel, time.Now())

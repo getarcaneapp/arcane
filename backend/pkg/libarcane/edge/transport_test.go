@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
@@ -184,6 +184,8 @@ func (u *unknownTunnelConn) IsExpectedReceiveError(error) bool { return false }
 func (u *unknownTunnelConn) Close() error { return nil }
 
 func (u *unknownTunnelConn) IsClosed() bool { return false }
+
+func (u *unknownTunnelConn) Transport() string { return "" }
 
 func BenchmarkEdgeTunnelProxyRequest(b *testing.B) {
 	previousLogger := slog.Default()

@@ -26,14 +26,22 @@ const (
 	// DefaultRequestTimeout is the timeout for executing local requests
 	DefaultRequestTimeout = 5 * time.Minute
 	// DefaultGRPCRegistrationTimeout bounds how long the agent waits for the
-	// manager to acknowledge gRPC tunnel registration before treating it as a
-	// failed transport attempt.
+	// manager to acknowledge tunnel registration on any transport before
+	// treating it as a failed transport attempt.
 	DefaultGRPCRegistrationTimeout = 10 * time.Second
 	// DefaultWebSocketPreferenceTTL keeps websocket as the preferred transport
 	// for a short period after a successful auto-mode fallback.
 	DefaultWebSocketPreferenceTTL = 2 * time.Minute
-	defaultCommandChunkSize       = 256 * 1024
+	// maxWebSocketPreferenceTTL caps the exponential backoff applied to the
+	// websocket preference window while gRPC keeps failing, so a persistently
+	// broken gRPC path is retried at most this often but never disabled.
+	maxWebSocketPreferenceTTL = 30 * time.Minute
+	defaultCommandChunkSize   = 256 * 1024
 )
+
+// errTunnelRegistrationTimeout marks a registration attempt where the manager
+// accepted the connection but never answered the register message.
+const errTunnelRegistrationTimeout = errors.Sentinel("timed out waiting for tunnel registration response")
 
 func (t *commandRequestTransfer) stopInternal() {
 	if t == nil {
@@ -82,19 +90,19 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 	}
 
 	return &TunnelClient{
-		cfg:                     cfg,
-		handler:                 handler,
-		reconnectInterval:       reconnectInterval,
-		heartbeatInterval:       DefaultHeartbeatInterval,
-		grpcRegistrationTimeout: DefaultGRPCRegistrationTimeout,
-		websocketPreferenceTTL:  DefaultWebSocketPreferenceTTL,
-		managerURL:              managerURL,
-		managerGRPCAddr:         managerGRPCAddr,
-		localPort:               localPort,
-		httpClient:              &http.Client{},
-		stopCh:                  make(chan struct{}),
-		requestTimeout:          DefaultRequestTimeout,
-		agentInstanceID:         uuid.NewString(),
+		cfg:                    cfg,
+		handler:                handler,
+		reconnectInterval:      reconnectInterval,
+		heartbeatInterval:      DefaultHeartbeatInterval,
+		registrationTimeout:    DefaultGRPCRegistrationTimeout,
+		websocketPreferenceTTL: DefaultWebSocketPreferenceTTL,
+		managerURL:             managerURL,
+		managerGRPCAddr:        managerGRPCAddr,
+		localPort:              localPort,
+		httpClient:             &http.Client{},
+		stopCh:                 make(chan struct{}),
+		requestTimeout:         DefaultRequestTimeout,
+		agentInstanceID:        uuid.NewString(),
 	}
 }
 
@@ -192,6 +200,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 		if preferredUntil, ok := c.preferredWebSocketUntilInternal(time.Now()).Get(); ok {
 			slog.InfoContext(ctx, "Temporarily preferring websocket edge tunnel transport after recent websocket success",
 				"preferred_until", preferredUntil,
+				"grpc_failure_streak", c.grpcFailureStreakInternal(),
 				"manager_ws_url", c.managerWebSocketURLInternal(),
 			)
 			return c.connectAndServeWebSocket(ctx)
@@ -201,6 +210,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 			if ctx.Err() != nil {
 				return ctx.Err()
 			}
+			c.noteGRPCTunnelFailureInternal()
 			if c.shouldFallbackToWebSocketInternal() {
 				managerWSURL := c.managerWebSocketURLInternal()
 				slog.WarnContext(ctx, "gRPC edge tunnel connection failed, falling back to websocket transport",
@@ -288,11 +298,11 @@ func (c *TunnelClient) managerWebSocketURLInternal() string {
 	return HTTPToWebSocketURL(managerBaseURL) + "/api/tunnel/connect"
 }
 
-func (c *TunnelClient) grpcRegistrationTimeoutInternal() time.Duration {
-	if c == nil || c.grpcRegistrationTimeout <= 0 {
+func (c *TunnelClient) registrationTimeoutInternal() time.Duration {
+	if c == nil || c.registrationTimeout <= 0 {
 		return DefaultGRPCRegistrationTimeout
 	}
-	return c.grpcRegistrationTimeout
+	return c.registrationTimeout
 }
 
 func (c *TunnelClient) requestTimeoutInternal() time.Duration {
@@ -335,16 +345,42 @@ func (c *TunnelClient) markTransportConnectedInternal(transport string) {
 	switch transport {
 	case EdgeTransportGRPC:
 		c.preferWebSocketUntil = time.Time{}
+		c.grpcFailureStreak = 0
 	case EdgeTransportWebSocket:
 		if c.shouldAttemptGRPCTunnelInternal() && c.shouldAttemptWebSocketTunnelInternal() {
-			c.preferWebSocketUntil = time.Now().Add(c.websocketPreferenceTTLInternal())
+			// Back the preference window off exponentially while gRPC keeps
+			// failing so each reconnect does not re-pay the registration
+			// timeout against a persistently broken gRPC path.
+			ttl := c.websocketPreferenceTTLInternal()
+			if streak := min(c.grpcFailureStreak, 4); streak > 0 {
+				ttl = min(ttl<<streak, maxWebSocketPreferenceTTL)
+			}
+			c.preferWebSocketUntil = time.Now().Add(ttl)
 		}
 	}
 }
 
+func (c *TunnelClient) noteGRPCTunnelFailureInternal() {
+	if c == nil {
+		return
+	}
+	c.transportPreferenceMu.Lock()
+	defer c.transportPreferenceMu.Unlock()
+	c.grpcFailureStreak++
+}
+
+func (c *TunnelClient) grpcFailureStreakInternal() int {
+	if c == nil {
+		return 0
+	}
+	c.transportPreferenceMu.RLock()
+	defer c.transportPreferenceMu.RUnlock()
+	return c.grpcFailureStreak
+}
+
 func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
 	capabilities := AdvertisedEdgeCommands()
-	capabilities = append(capabilities, tunnelCapabilityChunkedRequest)
+	capabilities = append(capabilities, tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity)
 	return &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
@@ -368,7 +404,7 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 		err error
 	}
 
-	timeout := c.grpcRegistrationTimeoutInternal()
+	timeout := c.registrationTimeoutInternal()
 	recvCh := make(chan registrationResult, 1)
 	go func() {
 		msg, err := conn.Receive()
@@ -384,7 +420,7 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 		return nil, ctx.Err()
 	case <-timer.C:
 		_ = conn.Close()
-		return nil, errors.Errorf("timed out waiting for tunnel registration response after %s", timeout)
+		return nil, errors.WrapIff(errTunnelRegistrationTimeout, "after %s", timeout)
 	case result := <-recvCh:
 		if result.err != nil {
 			return nil, errors.WrapIf(result.err, "failed to receive tunnel registration response")
@@ -399,8 +435,50 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 			return nil, errors.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
 		c.sessionID = result.msg.SessionID
+		c.managerCapabilities = append([]string(nil), result.msg.Capabilities...)
 		return result.msg, nil
 	}
+}
+
+// serveTunnelSessionInternal runs the shared register/heartbeat/message
+// lifecycle on an established tunnel connection, for every transport.
+func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn TunnelConnection, managerAddr string) error {
+	c.setConn(conn)
+	setActiveAgentTunnelConn(conn)
+	defer clearActiveAgentTunnelConn(conn)
+	// Always tear down through the wrapper so the peer sees a clean close
+	// (websocket close frame / gRPC half-close) and later Sends hit the
+	// closed guard instead of the dead socket.
+	defer func() { _ = conn.Close() }()
+
+	if err := conn.Send(c.registerMessageInternal()); err != nil {
+		return errors.WrapIff(err, "failed to send %s tunnel register message", conn.Transport())
+	}
+
+	registerMsg, err := c.awaitRegistrationInternal(ctx)
+	if err != nil {
+		return err
+	}
+
+	slog.InfoContext(ctx, "Edge tunnel connected to manager",
+		"transport", conn.Transport(),
+		"manager_addr", managerAddr,
+		"environment_id", registerMsg.EnvironmentID,
+		"session_id", registerMsg.SessionID,
+	)
+	c.markTransportConnectedInternal(conn.Transport())
+
+	connCtx, connCancel := context.WithCancel(ctx)
+	defer connCancel()
+	// A blocked websocket Receive is not ctx-aware; closing the connection is
+	// what unblocks messageLoop when the session context is cancelled.
+	go func() {
+		<-connCtx.Done()
+		_ = conn.Close()
+	}()
+	go c.heartbeatLoop(connCtx)
+
+	return c.messageLoop(connCtx)
 }
 
 // heartbeatLoop sends periodic heartbeats
@@ -487,8 +565,8 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 				if !msg.Accepted {
 					return errors.Errorf("manager rejected tunnel registration: %s", msg.Error)
 				}
-				slog.InfoContext(ctx, "Edge gRPC tunnel connected to manager",
-					"manager_addr", c.managerGRPCAddr,
+				slog.InfoContext(ctx, "Edge tunnel re-registered",
+					"transport", conn.Transport(),
 					"environment_id", msg.EnvironmentID,
 				)
 			case MessageTypeRegister:
@@ -635,6 +713,8 @@ func (c *TunnelClient) buildLocalHTTPRequest(ctx context.Context, msg *TunnelMes
 		}
 	}
 
+	// Set headers. Note: Go's net/http does not populate req.Host from
+	// Header.Set("Host", ...) — it must be set explicitly on the field.
 	for k, v := range msg.Headers {
 		if http.CanonicalHeaderKey(k) == "Host" {
 			req.Host = v
@@ -644,6 +724,16 @@ func (c *TunnelClient) buildLocalHTTPRequest(ctx context.Context, msg *TunnelMes
 	}
 
 	return req, nil
+}
+
+// agentAuthCredentialsInternal returns the canonical header/metadata credential
+// set every agent transport presents, so the three transports cannot drift.
+func agentAuthCredentialsInternal(token string) map[string]string {
+	return map[string]string{
+		HeaderAgentToken:    token,
+		HeaderAPIKey:        token,
+		HeaderAuthorization: "Bearer " + token,
+	}
 }
 
 // handleRequest processes an incoming request and sends back a response
@@ -659,39 +749,10 @@ func (c *TunnelClient) handleRequest(ctx context.Context, conn TunnelConnection,
 
 	slog.DebugContext(reqCtx, "Processing tunneled request", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
-	// Build the request
-	var body io.Reader
-	var bodyBytes []byte
-	if len(msg.Body) > 0 {
-		bodyBytes = msg.Body
-		body = bytes.NewReader(bodyBytes)
-	}
-
-	path := msg.Path
-	if msg.Query != "" {
-		path = path + "?" + msg.Query
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, msg.Method, path, body)
+	req, err := c.buildLocalHTTPRequest(reqCtx, msg)
 	if err != nil {
 		c.sendErrorResponse(conn, msg.ID, http.StatusInternalServerError, fmt.Sprintf("failed to create request: %v", err))
 		return
-	}
-
-	if bodyBytes != nil {
-		req.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-		}
-	}
-
-	// Set headers. Note: Go's net/http does not populate req.Host from
-	// Header.Set("Host", ...) — it must be set explicitly on the field.
-	for k, v := range msg.Headers {
-		if http.CanonicalHeaderKey(k) == "Host" {
-			req.Host = v
-			continue
-		}
-		req.Header.Set(k, v)
 	}
 
 	// Use a response recorder to capture the response
@@ -730,8 +791,7 @@ func isGRPCConnection(conn TunnelConnection) bool {
 	if conn == nil {
 		return false
 	}
-	_, isGRPC := conn.(*GRPCAgentTunnelConn)
-	return isGRPC
+	return conn.Transport() == EdgeTransportGRPC
 }
 
 func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
@@ -741,38 +801,10 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelCo
 
 	slog.DebugContext(reqCtx, "Processing tunneled request (streaming)", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
-	var body io.Reader
-	var bodyBytes []byte
-	if len(msg.Body) > 0 {
-		bodyBytes = msg.Body
-		body = bytes.NewReader(bodyBytes)
-	}
-
-	path := msg.Path
-	if msg.Query != "" {
-		path = path + "?" + msg.Query
-	}
-
-	req, err := http.NewRequestWithContext(reqCtx, msg.Method, path, body)
+	req, err := c.buildLocalHTTPRequest(reqCtx, msg)
 	if err != nil {
 		c.sendErrorResponse(conn, msg.ID, http.StatusInternalServerError, fmt.Sprintf("failed to create request: %v", err))
 		return
-	}
-
-	if bodyBytes != nil {
-		req.GetBody = func() (io.ReadCloser, error) {
-			return io.NopCloser(bytes.NewReader(bodyBytes)), nil
-		}
-	}
-
-	// Set headers. Note: Go's net/http does not populate req.Host from
-	// Header.Set("Host", ...) — it must be set explicitly on the field.
-	for k, v := range msg.Headers {
-		if http.CanonicalHeaderKey(k) == "Host" {
-			req.Host = v
-			continue
-		}
-		req.Header.Set(k, v)
 	}
 
 	recorder := newStreamingResponseRecorder(msg.ID, conn)

@@ -13,7 +13,12 @@ import (
 
 const (
 	tunnelCapabilityChunkedRequest = "chunked-request"
-	bodyTransferMetadataKey        = "body_transfer_id"
+	// tunnelCapabilityProtoParity signals the peer can decode the full
+	// TunnelMessage vocabulary natively over gRPC (stream_data/stream_end
+	// manager->agent, cancel_request agent->manager) instead of the legacy
+	// re-encoded forms.
+	tunnelCapabilityProtoParity = "proto-parity-v1"
+	bodyTransferMetadataKey     = "body_transfer_id"
 )
 
 func NewCommandClient() *CommandClient {

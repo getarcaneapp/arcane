@@ -129,14 +129,10 @@ func GetActiveTunnelTransport(envID string) mo.Option[string] {
 		return mo.None[string]()
 	}
 
-	switch tunnel.Conn.(type) {
-	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
-		return mo.Some(EdgeTransportGRPC)
-	case *TunnelConn:
-		return mo.Some(EdgeTransportWebSocket)
-	default:
-		return mo.None[string]()
+	if transport := tunnel.Conn.Transport(); transport != "" {
+		return mo.Some(transport)
 	}
+	return mo.None[string]()
 }
 
 // GetTunnelRuntimeState returns live metadata for an active tunnel.
@@ -147,13 +143,7 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 	}
 
 	state := &TunnelRuntimeState{}
-
-	switch tunnel.Conn.(type) {
-	case *GRPCManagerTunnelConn, *GRPCAgentTunnelConn:
-		state.Transport = EdgeTransportGRPC
-	case *TunnelConn:
-		state.Transport = EdgeTransportWebSocket
-	}
+	state.Transport = tunnel.Conn.Transport()
 
 	state.ConnectedAt = new(tunnel.ConnectedAt)
 	state.LastHeartbeat = new(tunnel.GetLastHeartbeat())

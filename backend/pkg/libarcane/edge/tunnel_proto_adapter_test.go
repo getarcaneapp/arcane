@@ -1,8 +1,11 @@
 package edge
 
 import (
+	"context"
+	"io"
 	"testing"
 
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,7 +22,7 @@ func TestTunnelMessageToManagerProto_RoundTripRequest(t *testing.T) {
 		Body:    []byte(`{"ok":true}`),
 	}
 
-	protoMsg, err := tunnelMessageToManagerProto(original)
+	protoMsg, err := tunnelMessageToManagerProto(original, false)
 	require.NoError(t, err)
 
 	decoded, err := managerProtoToTunnelMessage(protoMsg)
@@ -42,7 +45,7 @@ func TestTunnelMessageToManagerProto_StreamDataUsesWebSocketPayload(t *testing.T
 		WSMessageType: websocket.TextMessage,
 	}
 
-	protoMsg, err := tunnelMessageToManagerProto(original)
+	protoMsg, err := tunnelMessageToManagerProto(original, false)
 	require.NoError(t, err)
 
 	wsData := protoMsg.GetWsData()
@@ -126,7 +129,7 @@ func TestTunnelMessageToAgentProto_RoundTripEvent(t *testing.T) {
 }
 
 func TestTunnelMessageToManagerProto_UnsupportedType(t *testing.T) {
-	_, err := tunnelMessageToManagerProto(&TunnelMessage{Type: MessageTypeResponse})
+	_, err := tunnelMessageToManagerProto(&TunnelMessage{Type: MessageTypeResponse}, false)
 	require.Error(t, err)
 }
 
@@ -149,3 +152,111 @@ func TestTunnelMessageToAgentProto_RoundTripStreamDataPreservesWebSocketType(t *
 	assert.Equal(t, original.Body, decoded.Body)
 	assert.Equal(t, original.WSMessageType, decoded.WSMessageType)
 }
+
+func TestTunnelProtoAdapter_HeartbeatIDRoundTrip(t *testing.T) {
+	ping, err := tunnelMessageToAgentProto(&TunnelMessage{ID: "hb-1", Type: MessageTypeHeartbeat})
+	require.NoError(t, err)
+	decodedPing, err := agentProtoToTunnelMessage(ping)
+	require.NoError(t, err)
+	assert.Equal(t, "hb-1", decodedPing.ID)
+
+	pong, err := tunnelMessageToManagerProto(&TunnelMessage{ID: "hb-1", Type: MessageTypeHeartbeatAck}, false)
+	require.NoError(t, err)
+	decodedPong, err := managerProtoToTunnelMessage(pong)
+	require.NoError(t, err)
+	assert.Equal(t, "hb-1", decodedPong.ID)
+}
+
+func TestTunnelProtoAdapter_FileChunkMetadataRoundTrip(t *testing.T) {
+	original := &TunnelMessage{
+		ID:       "transfer-1",
+		Type:     MessageTypeFileChunk,
+		Body:     []byte("chunk"),
+		Sequence: 2,
+		Metadata: map[string]string{bodyTransferMetadataKey: "transfer-1"},
+	}
+
+	agentMsg, err := tunnelMessageToAgentProto(original)
+	require.NoError(t, err)
+	decoded, err := agentProtoToTunnelMessage(agentMsg)
+	require.NoError(t, err)
+	assert.Equal(t, original.Metadata, decoded.Metadata)
+
+	managerMsg, err := tunnelMessageToManagerProto(original, false)
+	require.NoError(t, err)
+	decodedManager, err := managerProtoToTunnelMessage(managerMsg)
+	require.NoError(t, err)
+	assert.Equal(t, original.Metadata, decodedManager.Metadata)
+}
+
+func TestTunnelMessageToManagerProto_StreamDataParityEncoding(t *testing.T) {
+	original := &TunnelMessage{
+		ID:            "stream-1",
+		Type:          MessageTypeStreamData,
+		Body:          []byte("hello"),
+		WSMessageType: websocket.TextMessage,
+	}
+
+	// Legacy agents receive the ws_data re-encode and see ws_data.
+	legacy, err := tunnelMessageToManagerProto(original, false)
+	require.NoError(t, err)
+	decodedLegacy, err := managerProtoToTunnelMessage(legacy)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeWebSocketData, decodedLegacy.Type)
+
+	// Parity-capable agents receive native stream_data with the type preserved.
+	parity, err := tunnelMessageToManagerProto(original, true)
+	require.NoError(t, err)
+	require.NotNil(t, parity.GetStreamData())
+	decodedParity, err := managerProtoToTunnelMessage(parity)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeStreamData, decodedParity.Type)
+	assert.Equal(t, original.ID, decodedParity.ID)
+	assert.Equal(t, original.Body, decodedParity.Body)
+}
+
+func TestTunnelMessageToManagerProto_StreamEndRequiresParity(t *testing.T) {
+	original := &TunnelMessage{ID: "stream-1", Type: MessageTypeStreamEnd}
+
+	_, err := tunnelMessageToManagerProto(original, false)
+	require.Error(t, err)
+
+	parity, err := tunnelMessageToManagerProto(original, true)
+	require.NoError(t, err)
+	decoded, err := managerProtoToTunnelMessage(parity)
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeStreamEnd, decoded.Type)
+	assert.Equal(t, original.ID, decoded.ID)
+}
+
+func TestGRPCAgentTunnelConn_ReceiveSkipsUnknownPayload(t *testing.T) {
+	stream := &scriptedAgentStream{msgs: []*tunnelpb.ManagerMessage{
+		{}, // nil payload, decodes as unknown
+		{Payload: &tunnelpb.ManagerMessage_HeartbeatPong{HeartbeatPong: &tunnelpb.HeartbeatPong{Id: "hb-2"}}},
+	}}
+	conn := NewGRPCAgentTunnelConn(stream)
+
+	msg, err := conn.Receive()
+	require.NoError(t, err)
+	assert.Equal(t, MessageTypeHeartbeatAck, msg.Type)
+	assert.Equal(t, "hb-2", msg.ID)
+}
+
+type scriptedAgentStream struct {
+	msgs []*tunnelpb.ManagerMessage
+}
+
+func (s *scriptedAgentStream) Send(*tunnelpb.AgentMessage) error { return nil }
+
+func (s *scriptedAgentStream) Recv() (*tunnelpb.ManagerMessage, error) {
+	if len(s.msgs) == 0 {
+		return nil, io.EOF
+	}
+	msg := s.msgs[0]
+	s.msgs = s.msgs[1:]
+	return msg, nil
+}
+
+func (s *scriptedAgentStream) Context() context.Context { return context.Background() }
+
+func (s *scriptedAgentStream) CloseSend() error { return nil }

@@ -601,6 +601,8 @@ func (f *fakeServerTunnelConn) Close() error { return nil }
 
 func (f *fakeServerTunnelConn) IsClosed() bool { return false }
 
+func (f *fakeServerTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 type registerResponseOrderConn struct {
 	sendHook func(*TunnelMessage) error
 	recvErr  error
@@ -625,6 +627,8 @@ func (f *registerResponseOrderConn) IsExpectedReceiveError(error) bool { return 
 func (f *registerResponseOrderConn) Close() error { return nil }
 
 func (f *registerResponseOrderConn) IsClosed() bool { return false }
+
+func (f *registerResponseOrderConn) Transport() string { return EdgeTransportGRPC }
 
 func TestTunnelServer_ManageConnectedTunnel_RegistersBeforeSendingGRPCRegisterResponse(t *testing.T) {
 	server := NewTunnelServer(nil, nil)

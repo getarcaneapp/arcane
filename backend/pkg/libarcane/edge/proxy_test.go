@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"

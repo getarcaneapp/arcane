@@ -19,8 +19,8 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	slogecho "github.com/samber/slog-echo/v2"
@@ -720,6 +720,8 @@ func (f *fakeTunnelConnForTransportCheck) IsClosed() bool {
 	return false
 }
 
+func (f *fakeTunnelConnForTransportCheck) Transport() string { return EdgeTransportWebSocket }
+
 type capturingTunnelConnForHandleRequest struct {
 	sent []*TunnelMessage
 }
@@ -753,6 +755,8 @@ func (c *capturingTunnelConnForHandleRequest) IsClosed() bool {
 	return false
 }
 
+func (c *capturingTunnelConnForHandleRequest) Transport() string { return EdgeTransportWebSocket }
+
 type failingHeartbeatConn struct {
 	closeCalled bool
 }
@@ -777,6 +781,8 @@ func (f *failingHeartbeatConn) Close() error {
 func (f *failingHeartbeatConn) IsClosed() bool {
 	return false
 }
+
+func (f *failingHeartbeatConn) Transport() string { return EdgeTransportWebSocket }
 
 type stallingTunnelService struct {
 	tunnelpb.UnimplementedTunnelServiceServer
@@ -824,6 +830,8 @@ func (c *blockingRegistrationConn) IsClosed() bool {
 		return false
 	}
 }
+
+func (c *blockingRegistrationConn) Transport() string { return EdgeTransportWebSocket }
 
 func (s *stallingTunnelService) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMessage, tunnelpb.ManagerMessage]) error {
 	s.connectCount.Add(1)
@@ -1097,33 +1105,35 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServeGRPC(ctx)
 	require.Error(t, err)
+	assert.ErrorIs(t, err, errTunnelRegistrationTimeout)
 	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
+	assert.Contains(t, err.Error(), "not forwarding gRPC")
 	assert.EqualValues(t, 1, service.connectCount.Load())
 	assert.True(t, client.getConn() == nil || client.getConn().IsClosed())
 }
 
-func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
+func TestTunnelClient_awaitRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	conn := newBlockingRegistrationConnInternal()
 	client := &TunnelClient{
-		grpcRegistrationTimeout: time.Second,
+		registrationTimeout: time.Second,
 	}
 	client.setConn(conn)
 
-	msg, err := client.awaitGRPCRegistrationInternal(ctx)
+	msg, err := client.awaitRegistrationInternal(ctx)
 	require.Nil(t, msg)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.True(t, conn.IsClosed())
 	assert.EqualValues(t, 1, conn.closeCount.Load())
 }
 
-func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
+func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1135,7 +1145,7 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 	})
 
 	client := &TunnelClient{
-		grpcRegistrationTimeout: time.Second,
+		registrationTimeout: time.Second,
 	}
 	client.setConn(firstConn)
 
@@ -1145,7 +1155,7 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 	}
 	resultCh := make(chan registrationResult, 1)
 	go func() {
-		msg, err := client.awaitGRPCRegistrationInternal(ctx)
+		msg, err := client.awaitRegistrationInternal(ctx)
 		resultCh <- registrationResult{msg: msg, err: err}
 	}()
 
@@ -1407,7 +1417,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1445,7 +1455,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1482,7 +1492,7 @@ func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.
 	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -1807,7 +1817,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -1964,7 +1974,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -2208,6 +2218,8 @@ func (f *fakeTunnelConn) IsClosed() bool {
 	return f.closed
 }
 
+func (f *fakeTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 func TestStreamingResponseRecorder_Sequence(t *testing.T) {
 	conn := &fakeTunnelConn{}
 	r := newStreamingResponseRecorder("req-1", conn)
@@ -2250,4 +2262,62 @@ func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
 	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
 	assert.Equal(t, http.StatusCreated, conn.msgs[0].Status)
 	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[1].Type)
+}
+
+func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
+	registered := make(chan struct{})
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upgrader := websocket.Upgrader{}
+		conn, err := upgrader.Upgrade(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.Close() }()
+
+		_, _, err = conn.ReadMessage()
+		if err != nil {
+			return
+		}
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-cancel",
+		})
+		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+		close(registered)
+		// Go silent: keep reading so the socket stays open.
+		for {
+			if _, _, err := conn.ReadMessage(); err != nil {
+				return
+			}
+		}
+	}))
+	defer managerServer.Close()
+
+	cfg := &Config{
+		EdgeTransport: EdgeTransportWebSocket,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "test-token",
+	}
+	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- client.connectAndServeWebSocket(ctx) }()
+
+	select {
+	case <-registered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for registration")
+	}
+	cancel()
+
+	select {
+	case <-done:
+		// Cancellation must close the socket and unblock the message loop well
+		// under the poll-managed teardown timeout.
+	case <-time.After(defaultPollManagedSessionStopTimeout):
+		t.Fatal("messageLoop did not unblock after context cancellation")
+	}
 }

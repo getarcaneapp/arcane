@@ -6,14 +6,15 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
@@ -29,6 +30,10 @@ import (
 const (
 	// TunnelStaleTimeout is how long before a tunnel is considered stale.
 	TunnelStaleTimeout = 2 * time.Minute
+	// tunnelStaleSweepInterval is how often stale tunnels are reaped. The sweep
+	// is a backstop behind read-deadline liveness, so it runs well under
+	// TunnelStaleTimeout to keep the dead-but-selectable window short.
+	tunnelStaleSweepInterval = time.Minute
 	// streamDeliveryTimeout bounds per-message delivery wait to a pending consumer.
 	// This prevents silent data loss while avoiding indefinite blocking.
 	streamDeliveryTimeout = 5 * time.Second
@@ -289,7 +294,9 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
 
-	tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(stream))
+	managerConn := NewGRPCManagerTunnelConn(stream)
+	managerConn.SetParityEncoding(slices.Contains(register.GetCapabilities(), tunnelCapabilityProtoParity))
+	tunnel := NewAgentTunnelWithConn(envID, managerConn)
 	s.populateSessionMetadata(tunnel, &TunnelMessage{
 		AgentInstance: register.GetAgentInstanceId(),
 		Capabilities:  append([]string(nil), register.GetCapabilities()...),
@@ -314,11 +321,8 @@ func (s *TunnelServer) populateSessionMetadata(tunnel *AgentTunnel, registerMsg 
 		tunnel.Capabilities = append([]string(nil), registerMsg.Capabilities...)
 	}
 
-	switch tunnel.Conn.(type) {
-	case *GRPCManagerTunnelConn:
-		tunnel.Transport = EdgeTransportGRPC
-	default:
-		tunnel.Transport = EdgeTransportWebSocket
+	if tunnel.Conn != nil {
+		tunnel.Transport = tunnel.Conn.Transport()
 	}
 }
 
@@ -333,16 +337,17 @@ func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (st
 	return s.resolver(ctx, token)
 }
 
+// agentTokenHeaderPriority is the shared credential fallback order for both
+// header- and metadata-based token extraction, so the transports cannot drift.
+var agentTokenHeaderPriority = []string{HeaderAgentToken, HeaderAPIKey}
+
 func tokenFromMetadataInternal(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
 	}
-	for _, key := range []string{
-		strings.ToLower(HeaderAgentToken),
-		strings.ToLower(HeaderAPIKey),
-	} {
-		values := md.Get(key)
+	for _, header := range agentTokenHeaderPriority {
+		values := md.Get(strings.ToLower(header))
 		for _, value := range values {
 			trimmed := strings.TrimSpace(value)
 			if trimmed != "" {
@@ -371,7 +376,7 @@ func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
 	if req == nil {
 		return "", ""
 	}
-	for _, header := range []string{HeaderAgentToken, HeaderAPIKey} {
+	for _, header := range agentTokenHeaderPriority {
 		if token := strings.TrimSpace(req.Header.Get(header)); token != "" {
 			return token, header
 		}
@@ -406,13 +411,22 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 		"security_mode", tunnel.SecurityMode,
 	)
 
+	// Echo the agent's capabilities and append the manager's own so the agent
+	// learns what this manager supports (older agents ignore extra strings).
+	capabilities := append([]string(nil), tunnel.Capabilities...)
+	for _, capability := range []string{tunnelCapabilityProtoParity, tunnelCapabilityChunkedRequest} {
+		if !slices.Contains(capabilities, capability) {
+			capabilities = append(capabilities, capability)
+		}
+	}
+
 	if err := tunnel.Conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegisterResponse,
 		Accepted:      true,
 		EnvironmentID: tunnel.EnvironmentID,
 		SessionID:     tunnel.SessionID,
 		SecurityMode:  tunnel.SecurityMode,
-		Capabilities:  append([]string(nil), tunnel.Capabilities...),
+		Capabilities:  capabilities,
 		DrainPrevious: drainPrevious,
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
@@ -561,7 +575,7 @@ func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg
 // StartCleanupLoop periodically cleans up stale tunnels.
 func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 	defer close(s.cleanupDone)
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(tunnelStaleSweepInterval)
 	defer ticker.Stop()
 
 	for {
