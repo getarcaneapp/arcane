@@ -70,7 +70,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	}
 
 	tunnel := newWebSocketAgentTunnel("env-ws-proxy", agentConn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	// Start receiving on tunnel
 	go func() {
@@ -93,7 +93,7 @@ func TestProxyWebSocketRequest(t *testing.T) {
 	// Setup Manager
 	router := echo.New()
 	router.GET("/proxy-ws", func(c *echo.Context) error {
-		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats", func(*http.Request) bool { return true })
 	})
 
 	proxyServer := httptest.NewServer(router)
@@ -148,7 +148,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 	}
 
 	tunnel := newWebSocketAgentTunnel("env-ws-close", agentConn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	go func() {
 		for {
@@ -160,7 +160,7 @@ func TestProxyWebSocketRequest_ClientClose(t *testing.T) {
 
 	router := echo.New()
 	router.GET("/proxy-ws", func(c *echo.Context) error {
-		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats", func(*http.Request) bool { return true })
 	})
 	proxyServer := httptest.NewServer(router)
 	defer proxyServer.Close()
@@ -219,7 +219,7 @@ func TestSendWebSocketData(t *testing.T) {
 	defer func() { _ = conn.Close() }()
 
 	tunnel := newWebSocketAgentTunnel("env-helper", conn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	err = sendWebSocketData(tunnel, "test-stream", websocket.TextMessage, []byte("payload"))
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func TestSendWebSocketClose(t *testing.T) {
 	}
 
 	tunnel := newWebSocketAgentTunnel("env-helper-close", conn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	sendWebSocketClose(tunnel, "test-stream")
 }

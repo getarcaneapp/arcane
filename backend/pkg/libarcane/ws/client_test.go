@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -251,4 +252,44 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, expected, string(msg))
 	}
+}
+
+// A reconnect can land on a hub whose Run has already exited (e.g. the idle
+// teardown fired between lookup and registration). That used to block forever
+// on the unbuffered register channel, leaking the caller's goroutine and the
+// socket; registration must now fail so the caller can retry with a fresh hub.
+func TestServeClient_StoppedHubDoesNotBlock(t *testing.T) {
+	h := NewHub(10)
+	ctx, cancel := context.WithCancel(t.Context())
+	stopped := make(chan struct{})
+	go func() {
+		defer close(stopped)
+		h.Run(ctx)
+	}()
+
+	cancel()
+	<-stopped
+
+	_, serverConn, cleanup := newTestWSPair(t)
+	defer cleanup()
+
+	var onRemoveCalled atomic.Bool
+	done := make(chan bool, 1)
+	go func() {
+		done <- ServeClientWithOnRemove(t.Context(), h, serverConn, func() {
+			onRemoveCalled.Store(true)
+		})
+	}()
+
+	select {
+	case registered := <-done:
+		assert.False(t, registered, "registration against a stopped hub must fail")
+	case <-time.After(2 * time.Second):
+		t.Fatal("ServeClientWithOnRemove blocked on a stopped hub")
+	}
+
+	// The caller owns the connection and its bookkeeping on failure, so it can
+	// retry the same conn against a fresh hub.
+	assert.False(t, onRemoveCalled.Load(), "onRemove must not run when registration fails")
+	assert.Equal(t, 0, h.ClientCount())
 }

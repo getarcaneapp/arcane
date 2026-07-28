@@ -18,6 +18,7 @@ import (
 
 	"github.com/libtnb/sqlite"
 	"github.com/pressly/goose/v3"
+	"github.com/pressly/goose/v3/lock"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -238,7 +239,20 @@ func newGooseProviderInternal(db *sql.DB, dbProvider string) (*goose.Provider, e
 		return nil, err
 	}
 
-	return goose.NewProvider(dialect, db, migrationsFS)
+	// Two Arcane processes pointed at the same Postgres (a rolling deploy, or a
+	// replica set) would otherwise run migrations concurrently and race on the
+	// same DDL. A session-level advisory lock serializes them; SQLite needs no
+	// equivalent because it is single-writer by construction.
+	var options []goose.ProviderOption
+	if dialect == goose.DialectPostgres {
+		sessionLocker, err := lock.NewPostgresSessionLocker()
+		if err != nil {
+			return nil, errors.WrapIf(err, "failed to create Postgres migration session locker")
+		}
+		options = append(options, goose.WithSessionLocker(sessionLocker))
+	}
+
+	return goose.NewProvider(dialect, db, migrationsFS, options...)
 }
 
 func embeddedMigrationFSInternal(dbProvider string) (fs.FS, error) {

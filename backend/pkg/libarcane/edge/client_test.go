@@ -1285,7 +1285,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		if !ok || tunnel == nil {
 			return c.NoContent(http.StatusServiceUnavailable)
 		}
-		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats", func(*http.Request) bool { return true })
 	})
 
 	proxyServer := httptest.NewServer(router)

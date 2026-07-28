@@ -3,8 +3,10 @@ package scheduler
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/moby/moby/api/types/container"
@@ -16,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"go.getarcane.app/sys/cgroup"
 )
 
@@ -32,6 +35,11 @@ type AutoHealJob struct {
 	settingsService     *services.SettingsService
 	eventService        *services.EventService
 	notificationService *services.NotificationService
+
+	// running guards against overlapping cron ticks: inspecting every candidate
+	// can outlast the (as low as 30s) interval, and stacked runs re-evaluate the
+	// same unhealthy containers concurrently.
+	running atomic.Bool
 
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
@@ -91,6 +99,12 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
+	if !j.running.CompareAndSwap(false, true) {
+		slog.WarnContext(ctx, "auto-heal run still in progress; skipping overlapping run")
+		return
+	}
+	defer j.running.Store(false)
+
 	dockerClient, err := j.getDockerClientInternal(ctx)
 	if err != nil {
 		slog.ErrorContext(ctx, "auto-heal failed to get Docker client", "error", err)
@@ -116,7 +130,9 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 	g.SetLimit(autoHealInspectConcurrency)
 
 	for _, candidate := range candidates {
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "auto-heal worker")
+
 			j.processCandidateInternal(groupCtx, dockerClient, candidate, maxRestarts, restartWindow, restartWindowMinutes)
 			return nil
 		})
@@ -195,7 +211,8 @@ func (j *AutoHealJob) processCandidateInternal(
 		return
 	}
 
-	if !j.canRestart(containerID, maxRestarts, restartWindow) {
+	releaseSlot, reserved := j.reserveRestartSlotInternal(containerID, maxRestarts, restartWindow)
+	if !reserved {
 		slog.WarnContext(ctx, "auto-heal restart-loop protection: skipping container",
 			"container", containerName,
 			"max_restarts", maxRestarts,
@@ -205,11 +222,11 @@ func (j *AutoHealJob) processCandidateInternal(
 	}
 
 	if err := j.restartContainerInternal(ctx, dockerClient, containerID); err != nil {
+		releaseSlot()
 		slog.ErrorContext(ctx, "auto-heal failed to restart container", "container", containerName, "error", err)
 		return
 	}
 
-	j.recordRestart(containerID)
 	j.postRestartActionsInternal(ctx, containerID, containerName)
 
 	slog.InfoContext(ctx, "auto-heal restarted unhealthy container", "container", containerName, "container_id", containerID)
@@ -243,21 +260,79 @@ func (j *AutoHealJob) Reschedule(ctx context.Context) error {
 	return nil
 }
 
-// canRestart checks if a container can be restarted within the rate limit.
-func (j *AutoHealJob) canRestart(containerID string, maxRestarts int, window time.Duration) bool {
+// pruneRecordLockedInternal prunes expired timestamps for containerID and drops
+// the entry entirely when nothing recent remains, so restarts does not grow
+// without bound as containers come and go. Callers must hold j.mu.
+func (j *AutoHealJob) pruneRecordLockedInternal(containerID string, cutoff time.Time) *restartRecord {
+	record, exists := j.restarts[containerID]
+	if !exists {
+		return nil
+	}
+
+	record.timestamps = j.pruneTimestamps(record.timestamps, cutoff)
+	if len(record.timestamps) == 0 {
+		delete(j.restarts, containerID)
+		return nil
+	}
+	return record
+}
+
+// reserveRestartSlotInternal atomically checks the rate limit and claims a slot.
+// Checking and recording separately let two workers inspecting the same
+// container both pass the check and restart it past the configured limit.
+//
+// The returned release undoes the reservation, so a restart that fails does not
+// consume a slot — matching the previous behaviour of only counting restarts
+// that actually happened.
+func (j *AutoHealJob) reserveRestartSlotInternal(containerID string, maxRestarts int, window time.Duration) (func(), bool) {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	record := j.pruneRecordLockedInternal(containerID, time.Now().Add(-window))
+	if record != nil && len(record.timestamps) >= maxRestarts {
+		return nil, false
+	}
+	if record == nil {
+		record = &restartRecord{}
+		j.restarts[containerID] = record
+	}
+
+	reserved := time.Now()
+	record.timestamps = append(record.timestamps, reserved)
+
+	return func() { j.releaseRestartSlotInternal(containerID, reserved) }, true
+}
+
+func (j *AutoHealJob) releaseRestartSlotInternal(containerID string, reserved time.Time) {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 
 	record, exists := j.restarts[containerID]
 	if !exists {
+		return
+	}
+	for i, ts := range slices.Backward(record.timestamps) {
+		if ts.Equal(reserved) {
+			record.timestamps = append(record.timestamps[:i], record.timestamps[i+1:]...)
+			break
+		}
+	}
+	if len(record.timestamps) == 0 {
+		delete(j.restarts, containerID)
+	}
+}
+
+// canRestart checks if a container can be restarted within the rate limit.
+func (j *AutoHealJob) canRestart(containerID string, maxRestarts int, window time.Duration) bool {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+
+	record := j.pruneRecordLockedInternal(containerID, time.Now().Add(-window))
+	if record == nil {
 		return true
 	}
 
-	cutoff := time.Now().Add(-window)
-	recent := j.pruneTimestamps(record.timestamps, cutoff)
-	record.timestamps = recent
-
-	return len(recent) < maxRestarts
+	return len(record.timestamps) < maxRestarts
 }
 
 // recordRestart records a restart timestamp for a container.

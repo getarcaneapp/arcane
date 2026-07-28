@@ -20,6 +20,17 @@ import (
 // diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
 const diagnosticsStreamInterval = 2 * time.Second
 
+// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
+// stats stream. Without them a silently dead peer wedges WriteMessage forever,
+// which also strands the writer's deferred cleanup (log subscription, conn).
+const (
+	diagnosticsReadLimit     = 512
+	diagnosticsPongWait      = 60 * time.Second
+	diagnosticsWriteWait     = 10 * time.Second
+	diagnosticsPingWriteWait = 1 * time.Second
+	diagnosticsPingPeriod    = diagnosticsPongWait * 9 / 10
+)
+
 // BuildDiagnostics assembles a full diagnostics snapshot: runtime/memory/GC from
 // the DiagnosticsService plus this package's WebSocket metrics and worker-goroutine
 // count. Shared by the REST endpoint (via handlers) and the live WebSocket stream.
@@ -77,6 +88,7 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 		if marshalErr != nil {
 			return true
 		}
+		_ = conn.SetWriteDeadline(time.Now().Add(diagnosticsWriteWait))
 		return conn.WriteMessage(websocket.TextMessage, b) == nil
 	}
 
@@ -85,12 +97,19 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	}
 	ticker := time.NewTicker(diagnosticsStreamInterval)
 	defer ticker.Stop()
+	pingTicker := time.NewTicker(diagnosticsPingPeriod)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-done:
 			return nil
 		case <-ticker.C:
 			if !write() {
+				return nil
+			}
+		case <-pingTicker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(diagnosticsPingWriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
 				return nil
 			}
 		}
@@ -120,6 +139,7 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 		if marshalErr != nil {
 			return true
 		}
+		_ = conn.SetWriteDeadline(time.Now().Add(diagnosticsWriteWait))
 		return conn.WriteMessage(websocket.TextMessage, b) == nil
 	}
 
@@ -128,6 +148,8 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 			return nil
 		}
 	}
+	pingTicker := time.NewTicker(diagnosticsPingPeriod)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-done:
@@ -139,13 +161,27 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 			if !write(e) {
 				return nil
 			}
+		case <-pingTicker.C:
+			_ = conn.SetWriteDeadline(time.Now().Add(diagnosticsPingWriteWait))
+			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+				return nil
+			}
 		}
 	}
 }
 
 // diagnosticsReadLoopInternal drains incoming frames; the returned channel closes
-// when the peer disconnects, signaling the writer loop to stop.
+// when the peer disconnects, signaling the writer loop to stop. The read deadline
+// is what makes a half-open connection observable: pongs from the writer's pings
+// extend it, and a peer that stops answering trips it within diagnosticsPongWait.
 func diagnosticsReadLoopInternal(conn *websocket.Conn) <-chan struct{} {
+	conn.SetReadLimit(diagnosticsReadLimit)
+	_ = conn.SetReadDeadline(time.Now().Add(diagnosticsPongWait))
+	conn.SetPongHandler(func(string) error {
+		_ = conn.SetReadDeadline(time.Now().Add(diagnosticsPongWait))
+		return nil
+	})
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

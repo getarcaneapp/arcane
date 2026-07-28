@@ -13,9 +13,22 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/cenkalti/backoff/v5"
 	"github.com/google/uuid"
 	"github.com/gorilla/websocket"
 	"github.com/samber/mo"
+)
+
+const (
+	// maxReconnectInterval caps the exponential reconnect backoff so a long-dead
+	// manager is still retried at a sane cadence.
+	maxReconnectInterval = 60 * time.Second
+	// healthyTunnelSessionDuration is how long a tunnel session must survive
+	// before the reconnect backoff is treated as recovered.
+	healthyTunnelSessionDuration = 60 * time.Second
+	// maxPollRetryInterval caps the exponential backoff applied to failed poll
+	// control requests. Successful polls return to the manager-advertised interval.
+	maxPollRetryInterval = 60 * time.Second
 )
 
 const (
@@ -113,6 +126,14 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 		defer close(errCh)
 	}
 
+	// A fixed reconnect interval meant a permanently broken or unauthorized agent
+	// hammered the manager's auth and DB path forever. Back off exponentially
+	// (with jitter) up to maxReconnectInterval, and reset only once a session has
+	// stayed up long enough to count as healthy.
+	reconnectBackoff := backoff.NewExponentialBackOff()
+	reconnectBackoff.InitialInterval = c.reconnectInterval
+	reconnectBackoff.MaxInterval = maxReconnectInterval
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -122,6 +143,7 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 			slog.InfoContext(ctx, "Edge tunnel client stopped")
 			return
 		default:
+			sessionStart := time.Now()
 			if err := c.connectAndServe(ctx); err != nil {
 				if errCh != nil {
 					select {
@@ -133,14 +155,23 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 				}
 			}
 
+			if time.Since(sessionStart) >= healthyTunnelSessionDuration {
+				reconnectBackoff.Reset()
+			}
+
 			// Wait before reconnecting
+			delay := reconnectBackoff.NextBackOff()
+			reconnectTimer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
+				reconnectTimer.Stop()
 				return
 			case <-c.stopCh:
+				reconnectTimer.Stop()
 				return
-			case <-time.After(c.reconnectInterval):
-				slog.InfoContext(ctx, "Attempting to reconnect edge tunnel")
+			case <-reconnectTimer.C:
+				reconnectTimer.Stop()
+				slog.InfoContext(ctx, "Attempting to reconnect edge tunnel", "delay", delay)
 			}
 		}
 	}
@@ -743,7 +774,7 @@ func (c *TunnelClient) handleRequest(ctx context.Context, conn TunnelConnection,
 		return
 	}
 
-	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeoutInternal())
 	defer cancel()
 	reqCtx = withInternalTunnelRequestInternal(reqCtx)
 
@@ -795,7 +826,7 @@ func isGRPCConnection(conn TunnelConnection) bool {
 }
 
 func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
-	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeout)
+	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeoutInternal())
 	defer cancel()
 	reqCtx = withInternalTunnelRequestInternal(reqCtx)
 

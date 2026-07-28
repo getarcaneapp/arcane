@@ -20,13 +20,13 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
-	"sync"
 	"syscall"
 	"time"
 
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"go.getarcane.app/sys/atomic"
 	libcrypto "go.getarcane.app/sys/crypto"
@@ -54,7 +54,7 @@ const (
 
 var generatedAssetNameSanitizer = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 
-var managerCALocks sync.Map
+var managerCALocks utils.KeyedMutex
 
 // BuildManagerServerTLSConfig returns the manager TLS configuration needed to
 // support optional edge mTLS on the shared Arcane listener.
@@ -1066,15 +1066,11 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 	}
 
 	lockPath := filepath.Join(absDir, lockName)
-	muValue, _ := managerCALocks.LoadOrStore(lockPath, &sync.Mutex{})
-	mu, ok := muValue.(*sync.Mutex)
-	if !ok {
-		return nil, errors.New("manager CA lock value is not *sync.Mutex")
-	}
 
 	deadline := time.Now().Add(managerCALockTimeout)
 	for {
-		if !mu.TryLock() {
+		unlock, held := managerCALocks.TryLock(lockPath)
+		if !held {
 			if err := waitForEdgeMTLSLockPollInternal(ctx); err != nil {
 				return nil, err
 			}
@@ -1086,22 +1082,26 @@ func lockEdgeMTLSPathInternal(ctx context.Context, dir string, lockName string) 
 			_ = file.Close()
 			return func() {
 				_ = os.Remove(lockPath)
-				mu.Unlock()
+				unlock()
 			}, nil
 		}
 		if !os.IsExist(err) {
-			mu.Unlock()
+			unlock()
 			return nil, errors.WrapIf(err, "failed to acquire edge mTLS CA lock")
 		}
 		if time.Now().After(deadline) {
 			if removeStaleEdgeMTLSLockInternal(lockPath) {
+				// Retake the lock from the top; continuing while still holding it
+				// makes the next TryLock fail against ourselves and spin until the
+				// context is cancelled.
+				unlock()
 				deadline = time.Now().Add(managerCALockTimeout)
 				continue
 			}
-			mu.Unlock()
+			unlock()
 			return nil, errors.Errorf("timed out waiting for edge mTLS CA lock %s", lockPath)
 		}
-		mu.Unlock()
+		unlock()
 		if err := waitForEdgeMTLSLockPollInternal(ctx); err != nil {
 			return nil, err
 		}

@@ -17,6 +17,8 @@ type LogMessage struct {
 
 // ForwardLines forwards plain text lines to the hub.
 func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {
+	defer trackWorkerGoroutine()()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -32,6 +34,8 @@ func ForwardLines(ctx context.Context, hub *Hub, lines <-chan string) {
 
 // ForwardLogJSON sends each LogMessage as its own JSON object frame.
 func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
+	defer trackWorkerGoroutine()()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -54,9 +58,12 @@ func ForwardLogJSON(ctx context.Context, hub *Hub, logs <-chan LogMessage) {
 // Flushes when maxBatch reached or flushInterval elapsed.
 func ForwardLogJSONBatched(ctx context.Context, hub *Hub, logs <-chan LogMessage, maxBatch int, flushInterval time.Duration) {
 	if maxBatch <= 1 {
+		// Delegates to ForwardLogJSON, which does its own accounting.
 		ForwardLogJSON(ctx, hub, logs)
 		return
 	}
+	defer trackWorkerGoroutine()()
+
 	ticker := time.NewTicker(flushInterval)
 	defer ticker.Stop()
 

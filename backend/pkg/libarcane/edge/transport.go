@@ -142,16 +142,18 @@ func GetTunnelRuntimeState(envID string) mo.Option[*TunnelRuntimeState] {
 		return mo.None[*TunnelRuntimeState]()
 	}
 
-	state := &TunnelRuntimeState{}
-	state.Transport = tunnel.Conn.Transport()
+	// One snapshot under a single read lock, so the reported fields all describe
+	// the same moment and none of them race the tunnel's writers.
+	meta := tunnel.MetadataSnapshot()
 
-	state.ConnectedAt = new(tunnel.ConnectedAt)
-	state.LastHeartbeat = new(tunnel.GetLastHeartbeat())
-	state.SessionID = tunnel.SessionID
-	state.AgentInstance = tunnel.AgentInstance
-	state.SecurityMode = tunnel.SecurityMode
-	state.Capabilities = append([]string(nil), tunnel.Capabilities...)
-	state.State = tunnel.State
-
-	return mo.Some(state)
+	return mo.Some(&TunnelRuntimeState{
+		Transport:     tunnel.Conn.Transport(),
+		ConnectedAt:   new(meta.ConnectedAt),
+		LastHeartbeat: new(meta.LastHeartbeat),
+		SessionID:     meta.SessionID,
+		AgentInstance: meta.AgentInstance,
+		SecurityMode:  meta.SecurityMode,
+		Capabilities:  meta.Capabilities,
+		State:         meta.State,
+	})
 }

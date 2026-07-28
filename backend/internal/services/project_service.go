@@ -64,10 +64,31 @@ type ProjectService struct {
 	config                      *config.Config
 	registryCredentialsProvider registryCredentialsProviderInternal
 
+	// syncMu serializes SyncProjectsFromFileSystem: its discovery walk and its
+	// cleanup pass must not interleave with another run's.
+	syncMu sync.Mutex
+
 	composeNameCacheMu  sync.RWMutex
 	composeNameToProjID map[string]string
 	composeCache        *hot.HotCache[string, composeCacheEntry]
+	// metaCache holds per-project icon/URL metadata, keyed by project ID. Deriving
+	// it costs a full compose load (interpolation plus .env reads) and, for GitOps
+	// projects, a gitops_syncs lookup — per project, on every list request. Mirrors
+	// ContainerService.iconMetaCache.
+	metaCache *hot.HotCache[string, projects.ArcaneComposeMetadata]
 }
+
+// projectMetadataEnvInternal carries the inputs ParseArcaneComposeMetadata needs
+// beyond the project itself. Resolving them costs a settings clone and a stat
+// syscall each, so list paths resolve once and reuse across every project.
+type projectMetadataEnvInternal struct {
+	projectsDirectory string
+	autoInjectEnv     bool
+}
+
+// projectMetadataTTL bounds how stale cached compose metadata can be. It matches
+// containerIconMetadataTTL so icons resolved from either service agree.
+const projectMetadataTTL = 5 * time.Second
 
 type registryCredentialsProviderInternal func(context.Context) ([]containerregistry.Credential, error)
 
@@ -90,6 +111,10 @@ func NewProjectService(db *database.DB, settingsService *SettingsService, eventS
 		containerRegistryService: containerRegistryService,
 		config:                   cfg,
 		composeCache:             hot.NewHotCache[string, composeCacheEntry](hot.LRU, 2048).Build(),
+		metaCache: hot.NewHotCache[string, projects.ArcaneComposeMetadata](hot.LRU, 1024).
+			WithTTL(projectMetadataTTL).
+			WithJanitor().
+			Build(),
 	}
 }
 
@@ -976,7 +1001,7 @@ func (s *ProjectService) GetProjectDetails(ctx context.Context, projectID string
 	resp.DirName = mo.PointerToOption(proj.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, proj.Path)
 	resp.GitOpsManagedBy = proj.GitOpsManagedBy
-	meta := s.getProjectMetadataForProject(ctx, *proj)
+	meta := s.getProjectMetadataForProject(ctx, *proj, nil)
 	applyResolvedProjectIconInternal(&resp, s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
@@ -1149,30 +1174,20 @@ func readProjectIncludeFileContentInternal(projectPath string, inc projects.Incl
 		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
 	}
 
-	resolvedProjectPath, err := filepath.EvalSymlinks(projectPath)
+	resolvedPath, err := utils.ResolveWithinRoot(projectPath, validatedPath)
 	if err != nil {
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to resolve project path")
-	}
-	resolvedPath, err := filepath.EvalSymlinks(validatedPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			return project.IncludeFile{
-				Path:         validatedPath,
-				RelativePath: inc.RelativePath,
-				Content:      "# This file will be created when you save changes\nservices:\n",
-			}, nil
-		}
-		return project.IncludeFile{}, errors.WrapIf(err, "failed to resolve include file")
-	}
-	if !projects.IsSafeSubdirectory(resolvedProjectPath, resolvedPath) {
-		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.New("Forbidden project file path: include resolves outside project directory"))
+		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
 	}
 
 	info, err := os.Stat(resolvedPath)
+	if os.IsNotExist(err) {
+		return project.IncludeFile{
+			Path:         validatedPath,
+			RelativePath: inc.RelativePath,
+			Content:      "# This file will be created when you save changes\nservices:\n",
+		}, nil
+	}
 	if err != nil {
-		if os.IsNotExist(err) {
-			return project.IncludeFile{}, common.Classify(common.ErrProjectFileNotFound, errors.New("Project file not found"))
-		}
 		return project.IncludeFile{}, errors.WrapIf(err, "failed to stat include file")
 	}
 	if info.IsDir() {
@@ -1466,6 +1481,13 @@ func (s *ProjectService) enrichWithComposeServiceConfigs(ctx context.Context, pr
 }
 
 func (s *ProjectService) SyncProjectsFromFileSystem(ctx context.Context) error {
+	// Serialized because the walk and the cleanup are two halves of one
+	// decision: overlapping syncs let an older walk's cleanup delete a project a
+	// newer walk had just upserted, because the older walk's `seen` set predates
+	// it. Filesystem-watcher debounces fire these back to back.
+	s.syncMu.Lock()
+	defer s.syncMu.Unlock()
+
 	followProjectSymlinks := s.settingsService.GetBoolSetting(ctx, "followProjectSymlinks", false)
 	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
@@ -4101,6 +4123,12 @@ func (s *ProjectService) StreamProjectLogs(ctx context.Context, projectID string
 
 	// Reader goroutine: forward lines to channel
 	go func() {
+		// Closing the read half unblocks any pending pw.Write in ComposeLogs.
+		// Without it, an abandoned tail (ctx cancel, or a >1MiB line tripping
+		// bufio.ErrTooLong) wedges the writer goroutine forever and this
+		// function never collects its second done value.
+		defer func() { _ = pr.CloseWithError(io.ErrClosedPipe) }()
+
 		sc := bufio.NewScanner(pr)
 		sc.Buffer(make([]byte, 0, 64*1024), 1024*1024)
 		for sc.Scan() {
@@ -4611,25 +4639,70 @@ func getProjectUpdateStatusInternal(updateInfo *project.UpdateInfo) string {
 	return updateInfo.Status
 }
 
-func (s *ProjectService) countProjectsByUpdateStatusInternal(ctx context.Context, status string) (int, error) {
-	if strings.TrimSpace(status) == "" {
+// countProjectsWithPendingUpdatesInternal counts non-archived projects with at
+// least one image update pending, plus compose projects running on the daemon
+// that Arcane does not track. It deliberately avoids the project-list pipeline:
+// that path builds full project DTOs (live status, icons, URLs, GitOps lookups)
+// and then throws all of them away for a single number, costing several full
+// container lists and a compose parse per project on every dashboard load.
+//
+// allContainers is the caller's already-fetched container list; pass nil to have
+// it fetched here.
+func (s *ProjectService) countProjectsWithPendingUpdatesInternal(ctx context.Context, allContainers []container.Summary) (int, error) {
+	if s.db == nil {
 		return 0, nil
 	}
 
-	result, err := s.filterProjectsWithDerivedFiltersInternal(ctx, pagination.QueryParams{
-		Filters: map[string]string{
-			"updates": status,
-		},
-		Params: pagination.Params{
-			Start: 0,
-			Limit: 0,
-		},
-	}, s.db.WithContext(ctx).Model(&models.Project{}).Where("is_archived = ?", false))
-	if err != nil {
-		return 0, err
+	var projectsArray []models.Project
+	if err := s.db.WithContext(ctx).Where("is_archived = ?", false).Find(&projectsArray).Error; err != nil {
+		return 0, errors.WrapIf(err, "failed to list projects for update count")
 	}
 
-	return int(result.TotalCount), nil
+	// enrichProjectsWithUpdateInfoInternal keys off Details.ID, so the summaries
+	// only need identity — no status, icons or URLs are read here.
+	details := make([]project.Details, len(projectsArray))
+	for i, proj := range projectsArray {
+		details[i].ID = proj.ID
+	}
+	s.enrichProjectsWithUpdateInfoInternal(ctx, projectsArray, details)
+
+	count := 0
+	for i := range details {
+		if details[i].UpdateInfo != nil && details[i].UpdateInfo.HasUpdate {
+			count++
+		}
+	}
+
+	return count + s.countDiscoveredComposeProjectUpdatesInternal(ctx, projectsArray, allContainers), nil
+}
+
+// countDiscoveredComposeProjectUpdatesInternal counts compose projects running on
+// the daemon that Arcane does not track but that have a pending image update, so
+// the dashboard badge matches the projects table. Errors are logged and counted
+// as zero: a missing container list should degrade the badge, not fail the load.
+func (s *ProjectService) countDiscoveredComposeProjectUpdatesInternal(ctx context.Context, projectsArray []models.Project, allContainers []container.Summary) int {
+	if allContainers == nil {
+		var err error
+		allContainers, err = projects.ListGlobalComposeContainers(ctx)
+		if err != nil {
+			slog.WarnContext(ctx, "failed to list compose containers for project update count", "error", err)
+			return 0
+		}
+	}
+
+	composeContainers := make([]container.Summary, 0, len(allContainers))
+	for _, c := range allContainers {
+		if dockerutil.ComposeProjectLabel(c.Labels) != "" {
+			composeContainers = append(composeContainers, c)
+		}
+	}
+	if len(composeContainers) == 0 {
+		return 0
+	}
+
+	knownProjectNames := s.buildKnownComposeProjectNameSetInternal(ctx, projectsArray)
+	// Only rows with a pending update are returned, so the length is the count.
+	return len(buildDiscoveredComposeProjectUpdateRowsInternal(ctx, composeContainers, knownProjectNames, s.imageService, iconCatalogForContextInternal(ctx)))
 }
 
 // fetchProjectStatusConcurrently fetches live Docker status for multiple projects in parallel
@@ -4638,6 +4711,13 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	projectsDir, err := s.getProjectsDirectoryInternal(ctx)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to resolve projects directory for relative project paths", "error", err)
+	}
+
+	// Resolved once for the whole list: getProjectMetadataForProject would
+	// otherwise re-stat the projects directory and re-clone settings per project.
+	metaEnv := &projectMetadataEnvInternal{
+		projectsDirectory: projectsDir,
+		autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
 	}
 
 	// 1. Fetch all compose containers in one go
@@ -4653,7 +4733,7 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 			results[i].DirName = mo.PointerToOption(p.DirName).OrEmpty()
 			results[i].RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 			results[i].GitOpsManagedBy = p.GitOpsManagedBy
-			meta := s.getProjectMetadataForProject(ctx, p)
+			meta := s.getProjectMetadataForProject(ctx, p, metaEnv)
 			applyResolvedProjectIconInternal(&results[i], s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 			results[i].URLs = meta.ProjectURLS
 			results[i].Status = string(models.ProjectStatusUnknown)
@@ -4668,13 +4748,13 @@ func (s *ProjectService) fetchProjectStatusConcurrently(ctx context.Context, pro
 	results := make([]project.Details, len(projectsList))
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
 	for i, p := range projectsList {
-		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr)
+		results[i] = s.mapProjectToDto(ctx, projectsDir, p, containersByProject, currentContainerID, currentContainerErr, metaEnv)
 	}
 
 	return results
 }
 
-func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error) project.Details {
+func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string, p models.Project, containersByProject map[string][]container.Summary, currentContainerID string, currentContainerErr error, metaEnv *projectMetadataEnvInternal) project.Details {
 	var resp project.Details
 	_ = mapper.MapStruct(p, &resp)
 
@@ -4685,7 +4765,7 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	resp.DirName = mo.PointerToOption(p.DirName).OrEmpty()
 	resp.RelativePath = s.getProjectRelativePathInternal(projectsDir, p.Path)
 	resp.GitOpsManagedBy = p.GitOpsManagedBy
-	meta := s.getProjectMetadataForProject(ctx, p)
+	meta := s.getProjectMetadataForProject(ctx, p, metaEnv)
 	applyResolvedProjectIconInternal(&resp, s.resolveIconSetInternal(ctx, meta.ProjectIcon))
 	resp.URLs = meta.ProjectURLS
 
@@ -4796,22 +4876,47 @@ func (s *ProjectService) mapProjectToDto(ctx context.Context, projectsDir string
 	return resp
 }
 
-func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p models.Project) projects.ArcaneComposeMetadata {
+// getProjectMetadataForProject resolves a project's icon sets and service URLs.
+// Results are cached for projectMetadataTTL because deriving them is expensive
+// (compose load with interpolation and .env reads, plus a gitops_syncs query for
+// GitOps-managed projects) and every project row on the list page needs it.
+//
+// env may be nil, in which case the projects directory and autoInjectEnv setting
+// are resolved here; callers iterating over many projects should resolve them
+// once and pass them in.
+func (s *ProjectService) getProjectMetadataForProject(ctx context.Context, p models.Project, env *projectMetadataEnvInternal) projects.ArcaneComposeMetadata {
+	if s.metaCache != nil && p.ID != "" {
+		if meta, ok, _ := s.metaCache.Get(p.ID); ok {
+			return meta
+		}
+	}
+
+	empty := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
+
 	composeFile, err := s.resolveProjectComposeFileInternal(ctx, &p)
 	if err != nil {
-		return projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
+		return empty
 	}
 
-	projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
-	if projectsDirErr != nil {
-		slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
+	if env == nil {
+		projectsDirectory, projectsDirErr := s.getProjectsDirectoryInternal(ctx)
+		if projectsDirErr != nil {
+			slog.WarnContext(ctx, "failed to resolve projects directory for Arcane compose metadata", "path", composeFile, "error", projectsDirErr)
+		}
+		env = &projectMetadataEnvInternal{
+			projectsDirectory: projectsDirectory,
+			autoInjectEnv:     s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false),
+		}
 	}
-	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
 
-	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, projectsDirectory, autoInjectEnv)
+	meta, err := projects.ParseArcaneComposeMetadata(ctx, composeFile, env.projectsDirectory, env.autoInjectEnv)
 	if err != nil {
 		slog.WarnContext(ctx, "failed to parse Arcane compose metadata", "path", composeFile, "error", err)
-		return projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
+		return empty
+	}
+
+	if s.metaCache != nil && p.ID != "" {
+		s.metaCache.Set(p.ID, meta)
 	}
 
 	return meta

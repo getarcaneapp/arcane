@@ -34,6 +34,7 @@ import (
 	"github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
+	"golang.org/x/sync/singleflight"
 )
 
 type VolumeService struct {
@@ -46,13 +47,21 @@ type VolumeService struct {
 	backupVolumeName string
 	helperMu         sync.Mutex
 	helperByVolume   map[string]*volumeHelper
+	// helperGroup deduplicates concurrent read-only helper creation per volume.
+	// Without it two simultaneous browse requests each create a helper and the
+	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
+	// container that pins the volume until restart.
+	helperGroup singleflight.Group
 }
 
 // volumeHelper tracks a reused read-only browse helper container and the last
-// time it serviced a request, so idle helpers can be reaped.
+// time it serviced a request, so idle helpers can be reaped. inUse counts the
+// requests currently holding the helper: the reaper must not remove a helper
+// mid-download just because it was acquired longer ago than the idle timeout.
 type volumeHelper struct {
 	id         string
 	lastUsedAt time.Time
+	inUse      int
 }
 
 const volumeHelperImage = volumehelper.DefaultToolsImage
@@ -723,12 +732,109 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 		return "", nil, err
 	}
 
-	if readOnly {
-		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
-			return containerID, func() {}, nil
-		}
+	if !readOnly {
+		return s.startHelperContainerInternal(ctx, dockerClient, volumeName, false)
 	}
 
+	// Read-only helpers are shared and reaped when idle; the caller's cleanup
+	// releases its in-use hold instead of removing the container. The resolve →
+	// acquire gap is racy against the reaper, so retry a resolve whose helper
+	// was reaped before this caller could take its hold.
+	for range 3 {
+		containerID, err := s.resolveReadOnlyHelperInternal(ctx, dockerClient, volumeName)
+		if err != nil {
+			return "", nil, err
+		}
+		if release, ok := s.acquireHelperInternal(volumeName, containerID); ok {
+			return containerID, release, nil
+		}
+	}
+	return "", nil, errors.New("failed to acquire volume helper container")
+}
+
+// resolveReadOnlyHelperInternal returns the shared read-only helper container ID
+// for volumeName, creating it if needed. singleflight collapses concurrent
+// misses: without it both requests create a helper and the loser is orphaned,
+// holding the volume mount with no cleanup path until Arcane restarts. The
+// creation itself can pull an image, so it must not run under helperMu.
+func (s *VolumeService) resolveReadOnlyHelperInternal(ctx context.Context, dockerClient *client.Client, volumeName string) (string, error) {
+	resultCh := s.helperGroup.DoChan(volumeName, func() (any, error) {
+		if containerID, ok := s.getReusableReadOnlyContainerInternal(ctx, dockerClient, volumeName).Get(); ok {
+			return containerID, nil
+		}
+
+		// Detached from the caller's context so a client that walks away
+		// mid-create doesn't abort the helper the other waiters are blocked on,
+		// but still bounded: WithoutCancel alone would let a hung daemon or
+		// image pull wedge this singleflight key forever, queueing every later
+		// browse of the volume behind it with no recovery until restart.
+		createCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), timeouts.DefaultDockerImagePull)
+		defer cancel()
+
+		containerID, _, createErr := s.startHelperContainerInternal(createCtx, dockerClient, volumeName, true)
+		if createErr != nil {
+			return nil, createErr
+		}
+
+		s.helperMu.Lock()
+		s.helperByVolume[volumeName] = &volumeHelper{id: containerID, lastUsedAt: time.Now()}
+		s.helperMu.Unlock()
+		return containerID, nil
+	})
+
+	// DoChan instead of Do so a caller whose request is canceled unblocks
+	// immediately; the shared create keeps running for the remaining waiters
+	// (and lands in helperByVolume for the next request even if none remain).
+	var shared any
+	select {
+	case <-ctx.Done():
+		return "", errors.WrapIf(ctx.Err(), "canceled waiting for volume helper container")
+	case result := <-resultCh:
+		if result.Err != nil {
+			return "", result.Err
+		}
+		shared = result.Val
+	}
+
+	containerID, ok := shared.(string)
+	if !ok || containerID == "" {
+		return "", errors.New("failed to resolve volume helper container")
+	}
+	return containerID, nil
+}
+
+// acquireHelperInternal takes an in-use hold on volumeName's helper, reporting
+// false when the helper has been removed (e.g. reaped) since it was resolved.
+// The returned release drops the hold and refreshes the idle clock, so the idle
+// timeout is measured from the end of the last request, not its start — a
+// download running longer than the timeout used to have its helper reaped out
+// from under it, truncating the stream.
+func (s *VolumeService) acquireHelperInternal(volumeName, containerID string) (func(), bool) {
+	s.helperMu.Lock()
+	defer s.helperMu.Unlock()
+
+	helper := s.helperByVolume[volumeName]
+	if helper == nil || helper.id != containerID {
+		return nil, false
+	}
+
+	helper.inUse++
+	helper.lastUsedAt = time.Now()
+
+	return func() {
+		s.helperMu.Lock()
+		defer s.helperMu.Unlock()
+		if current := s.helperByVolume[volumeName]; current == helper {
+			helper.inUse--
+			helper.lastUsedAt = time.Now()
+		}
+	}, true
+}
+
+// startHelperContainerInternal creates and starts a volume helper container and
+// returns a cleanup that removes it. Tracking of reusable read-only helpers is
+// the caller's responsibility.
+func (s *VolumeService) startHelperContainerInternal(ctx context.Context, dockerClient *client.Client, volumeName string, readOnly bool) (string, func(), error) {
 	helperImage, err := getVolumeHelperImageInternal(ctx, s.dockerService, s.imageService, dockerClient)
 	if err != nil {
 		return "", nil, err
@@ -764,14 +870,7 @@ func (s *VolumeService) createTempContainerInternal(ctx context.Context, volumeN
 	}
 
 	cleanup := func() {
-		_, _ = dockerClient.ContainerRemove(ctx, resp.ID, volumehelper.RemoveOptions())
-	}
-
-	if readOnly {
-		s.helperMu.Lock()
-		s.helperByVolume[volumeName] = &volumeHelper{id: resp.ID, lastUsedAt: time.Now()}
-		s.helperMu.Unlock()
-		return resp.ID, func() {}, nil
+		_, _ = dockerClient.ContainerRemove(context.WithoutCancel(ctx), resp.ID, volumehelper.RemoveOptions())
 	}
 
 	return resp.ID, cleanup, nil
@@ -873,6 +972,12 @@ func (s *VolumeService) collectStaleHelperIDsInternal(now time.Time, idleTimeout
 	for volumeName, helper := range s.helperByVolume {
 		if helper == nil {
 			delete(s.helperByVolume, volumeName)
+			continue
+		}
+		// A helper with active holds is serving a request right now (e.g. a
+		// download streaming for longer than the idle timeout); it becomes
+		// reapable once released, since release refreshes lastUsedAt.
+		if helper.inUse > 0 {
 			continue
 		}
 		if now.Sub(helper.lastUsedAt) >= idleTimeout {

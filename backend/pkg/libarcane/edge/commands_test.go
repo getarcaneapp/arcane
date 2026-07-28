@@ -75,7 +75,7 @@ func TestCollectCommandResponse(t *testing.T) {
 	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandAck}
 	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandOutput, Body: []byte("hello ")}
 	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandComplete, Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: []byte("world")}
-	require.NoError(t, tunnel.Close())
+	require.NoError(t, tunnel.CloseWithReason(""))
 
 	status, headers, body, err := collectCommandResponseInternal(context.Background(), tunnel, pending, "")
 	require.NoError(t, err)
