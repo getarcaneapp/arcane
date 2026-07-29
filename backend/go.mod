@@ -37,7 +37,7 @@ require (
 	github.com/labstack/echo/v5 v5.3.1
 	github.com/libtnb/sqlite v1.2.1
 	github.com/lmittmann/tint v1.2.0
-	github.com/moby/buildkit v0.31.2
+	github.com/moby/buildkit v0.32.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.0
 	github.com/nicholas-fedor/shoutrrr v0.16.2
@@ -97,7 +97,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.33.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.38.0 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.45.0 // indirect
-	github.com/aws/smithy-go v1.27.3 // indirect
+	github.com/aws/smithy-go v1.27.4 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/buger/goterm v1.0.4 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
@@ -105,11 +105,11 @@ require (
 	github.com/cloudflare/circl v1.6.3 // indirect
 	github.com/containerd/console v1.0.5 // indirect
 	github.com/containerd/containerd/api v1.11.1 // indirect
-	github.com/containerd/containerd/v2 v2.3.2 // indirect
+	github.com/containerd/containerd/v2 v2.3.3 // indirect
 	github.com/containerd/continuity v0.5.0 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
 	github.com/containerd/log v0.1.0 // indirect
-	github.com/containerd/ttrpc v1.2.8 // indirect
+	github.com/containerd/ttrpc v1.2.9 // indirect
 	github.com/containerd/typeurl/v2 v2.3.0 // indirect
 	github.com/cyphar/filepath-securejoin v0.6.1 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
@@ -165,7 +165,7 @@ require (
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/mitchellh/hashstructure/v2 v2.0.2 // indirect
 	github.com/moby/docker-image-spec v1.3.1 // indirect
-	github.com/moby/go-archive v0.2.0 // indirect
+	github.com/moby/go-archive v0.2.1 // indirect
 	github.com/moby/locker v1.0.1 // indirect
 	github.com/moby/patternmatcher v0.6.1 // indirect
 	github.com/moby/sys/atomicwriter v0.1.0 // indirect
@@ -198,7 +198,7 @@ require (
 	github.com/sethvargo/go-retry v0.4.0 // indirect
 	github.com/shibumi/go-pathspec v1.3.0 // indirect
 	github.com/sigstore/sigstore v1.10.8 // indirect
-	github.com/sigstore/sigstore-go v1.2.1 // indirect
+	github.com/sigstore/sigstore-go v1.2.2 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/skeema/knownhosts v1.3.2 // indirect
 	github.com/skratchdot/open-golang v0.0.0-20200116055534-eef842397966 // indirect
@@ -207,7 +207,7 @@ require (
 	github.com/tklauser/go-sysconf v0.4.0 // indirect
 	github.com/tklauser/numcpus v0.12.0 // indirect
 	github.com/tonistiigi/dchapes-mode v0.0.0-20250318174251-73d941a28323 // indirect
-	github.com/tonistiigi/fsutil v0.0.0-20260716115106-30cd4fc5d911 // indirect
+	github.com/tonistiigi/fsutil v0.0.0-20260717003753-6d9dc2ebad62 // indirect
 	github.com/tonistiigi/go-csvvalue v0.0.0-20240814133006-030d3b2625d0 // indirect
 	github.com/tonistiigi/units v0.0.0-20180711220420-6950e57a87ea // indirect
 	github.com/tonistiigi/vt100 v0.0.0-20240514184818-90bafcd6abab // indirect
