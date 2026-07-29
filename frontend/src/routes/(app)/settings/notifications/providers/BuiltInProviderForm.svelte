@@ -16,8 +16,10 @@
 
 	// Go template syntax is deliberately kept out of the translatable messages:
 	// the `{{ }}` delimiters collide with the message compiler's own placeholder
-	// syntax, and the example is code rather than prose to translate.
-	const GENERIC_TEMPLATE_PLACEHOLDER = ['{', '  "msgType": "text",', '  "text": "{{.message}}"', '}'].join('\n');
+	// syntax, and the variable names are code rather than prose to translate.
+	const GENERIC_PAYLOAD_TEMPLATE_PLACEHOLDER = '{"text": "{{.message}}"}';
+	const GENERIC_PAYLOAD_TEMPLATE_VARS =
+		'{{.title}}, {{.message}}, {{.environment}}, {{.environmentId}}, {{.event}}, {{.timestamp}}';
 
 	interface Props {
 		provider: NotificationProviderKey;
@@ -77,6 +79,10 @@
 		matrix: {
 			title: m.notifications_matrix_title(),
 			description: m.notifications_matrix_description()
+		},
+		googlechat: {
+			title: m.notifications_googlechat_title(),
+			description: m.notifications_googlechat_description()
 		},
 		generic: {
 			title: m.notifications_generic_title(),
@@ -344,6 +350,16 @@
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.host, 'host', m.common_required());
 			}),
+		googlechat: z
+			.object({
+				enabled: z.boolean(),
+				webhookUrl: z.string(),
+				...eventSubscriptionSchemaFields
+			})
+			.superRefine((d, ctx) => {
+				if (!d.enabled) return;
+				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Google Chat is enabled');
+			}),
 		generic: z
 			.object({
 				enabled: z.boolean(),
@@ -353,25 +369,13 @@
 				titleKey: z.string(),
 				messageKey: z.string(),
 				customHeaders: z.string(),
-				template: z.string(),
+				payloadTemplate: z.string(),
+				successBodyContains: z.string(),
 				...eventSubscriptionSchemaFields
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
 				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Generic Webhook is enabled');
-
-				// A template with no placeholder at all would send the same static body
-				// for every notification, which is silently useless — flag it early.
-				// Any `{{ .field }}` reference counts, since the backend also exposes
-				// the raw variants and the configured title/message key aliases.
-				const template = d.template.trim();
-				if (template && !/\{\{[^}]*\./.test(template)) {
-					ctx.addIssue({
-						code: 'custom',
-						message: m.notifications_generic_template_invalid(),
-						path: ['template']
-					});
-				}
 			})
 	};
 
@@ -1035,6 +1039,16 @@
 				description: m.use_http_instead_of_https_not_recommended_for_production()
 			}
 		],
+		googlechat: [
+			{
+				kind: 'input',
+				key: 'webhookUrl',
+				id: 'googlechat-webhook-url',
+				label: m.webhook_url(),
+				placeholder: m.notifications_googlechat_webhook_url_placeholder(),
+				helpText: m.notifications_googlechat_webhook_url_help()
+			}
+		],
 		generic: [
 			{
 				kind: 'input',
@@ -1086,12 +1100,20 @@
 			},
 			{
 				kind: 'textarea',
-				key: 'template',
-				id: 'generic-template',
-				label: m.notifications_generic_template_label(),
-				placeholder: GENERIC_TEMPLATE_PLACEHOLDER,
-				helpText: m.notifications_generic_template_help(),
-				rows: 5
+				key: 'payloadTemplate',
+				id: 'generic-payload-template',
+				label: m.notifications_generic_payload_template_label(),
+				placeholder: GENERIC_PAYLOAD_TEMPLATE_PLACEHOLDER,
+				helpText: `${m.notifications_generic_payload_template_help()} ${GENERIC_PAYLOAD_TEMPLATE_VARS}`,
+				rows: 4
+			},
+			{
+				kind: 'input',
+				key: 'successBodyContains',
+				id: 'generic-success-body-contains',
+				label: m.notifications_generic_success_body_label(),
+				placeholder: m.notifications_generic_success_body_placeholder(),
+				helpText: m.notifications_generic_success_body_help()
 			}
 		]
 	};

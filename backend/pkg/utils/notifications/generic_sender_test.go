@@ -419,173 +419,53 @@ func TestBuildGenericURL_PreservesUserShoutrrrConfigKeys(t *testing.T) {
 	}
 }
 
-func TestRenderGenericTemplate(t *testing.T) {
-	tests := []struct {
-		name     string
-		config   models.GenericConfig
-		title    string
-		message  string
-		wantBody string
-		wantErr  string
-	}{
-		{
-			name: "nested payload for Lark/Feishu style endpoint",
-			config: models.GenericConfig{
-				Template: `{"receiveId":"oc_2e3f","receiveIdType":"chat_id","msgType":"text","text":"{{.message}}"}`,
-			},
-			message:  "Container nginx updated",
-			wantBody: `{"receiveId":"oc_2e3f","receiveIdType":"chat_id","msgType":"text","text":"Container nginx updated"}`,
-		},
-		{
-			name: "title and message are both available",
-			config: models.GenericConfig{
-				Template: `{"subject":"{{.title}}","body":"{{.message}}"}`,
-			},
-			title:    "Image Update",
-			message:  "nginx:latest",
-			wantBody: `{"subject":"Image Update","body":"nginx:latest"}`,
-		},
-		{
-			name: "configured keys are exposed as aliases",
-			config: models.GenericConfig{
-				TitleKey:   "subject",
-				MessageKey: "content",
-				Template:   `{"a":"{{.subject}}","b":"{{.content}}"}`,
-			},
-			title:    "Alert",
-			message:  "disk full",
-			wantBody: `{"a":"Alert","b":"disk full"}`,
-		},
-		{
-			name: "configured key aliases never shadow the canonical names",
-			config: models.GenericConfig{
-				// A TitleKey of "message" must not repoint `.message` at the title.
-				TitleKey: "message",
-				Template: `{"a":"{{.message}}","b":"{{.title}}"}`,
-			},
-			title:    "Alert",
-			message:  "disk full",
-			wantBody: `{"a":"disk full","b":"Alert"}`,
-		},
-		{
-			name: "quotes in message are escaped to keep JSON valid",
-			config: models.GenericConfig{
-				Template: `{"text":"{{.message}}"}`,
-			},
-			message:  `container "web" said "hi"`,
-			wantBody: `{"text":"container \"web\" said \"hi\""}`,
-		},
-		{
-			name: "newlines and backslashes are escaped",
-			config: models.GenericConfig{
-				Template: `{"text":"{{.message}}"}`,
-			},
-			message:  "line1\nline2\\end",
-			wantBody: `{"text":"line1\nline2\\end"}`,
-		},
-		{
-			name: "raw values are available unescaped for non-JSON bodies",
-			config: models.GenericConfig{
-				ContentType: "text/plain",
-				Template:    `{{.messageRaw}}`,
-			},
-			message:  `plain "text" body`,
-			wantBody: `plain "text" body`,
-		},
-		{
-			name: "non-JSON body such as form encoding is supported",
-			config: models.GenericConfig{
-				ContentType: "application/x-www-form-urlencoded",
-				Template:    `text={{.message}}&priority=high`,
-			},
-			message:  "hello",
-			wantBody: `text=hello&priority=high`,
-		},
-		{
-			name: "invalid template syntax is reported",
-			config: models.GenericConfig{
-				Template: `{"text":"{{.message}`,
-			},
-			message: "hi",
-			wantErr: "invalid webhook payload template",
-		},
-		{
-			name: "template rendering malformed JSON is rejected",
-			config: models.GenericConfig{
-				Template: `{"text":"{{.message}}"`,
-			},
-			message: "hi",
-			wantErr: "did not render valid JSON",
-		},
-		{
-			name: "malformed JSON is allowed when content type is not JSON",
-			config: models.GenericConfig{
-				ContentType: "text/plain",
-				Template:    `not json {{.message}}`,
-			},
-			message:  "hi",
-			wantBody: `not json hi`,
-		},
-		{
-			name: "JSON suffix content types are validated",
-			config: models.GenericConfig{
-				ContentType: "application/vnd.api+json; charset=utf-8",
-				Template:    `{"text":"{{.message}}"`,
-			},
-			message: "hi",
-			wantErr: "did not render valid JSON",
-		},
-	}
+// TestBuildGenericURL_PayloadTemplate verifies that a configured payload
+// template switches the Shoutrrr template to the named "arcane" template and
+// defaults the content type to JSON, while a user-supplied inline template
+// query key still wins.
+func TestBuildGenericURL_PayloadTemplate(t *testing.T) {
+	gotURL, err := BuildGenericURL(models.GenericConfig{
+		WebhookURL:      "https://webhook.example.com/notify",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, gotURL, "template=arcane")
+	assert.Contains(t, gotURL, "contenttype=application%2Fjson")
+	assert.NotContains(t, gotURL, "template=json")
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			got, err := RenderGenericTemplate(tt.config, tt.title, tt.message)
-
-			if tt.wantErr != "" {
-				require.Error(t, err)
-				assert.Contains(t, err.Error(), tt.wantErr)
-				return
-			}
-
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantBody, got)
-		})
-	}
+	gotURL, err = BuildGenericURL(models.GenericConfig{
+		WebhookURL:      "https://webhook.example.com/notify?template=custom",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	})
+	require.NoError(t, err)
+	assert.Contains(t, gotURL, "template=custom")
+	assert.NotContains(t, gotURL, "template=arcane")
 }
 
-// TestRenderGenericTemplate_EscapedOutputIsValidJSON guards the escaping
-// contract: a template that embeds the message inside a JSON string literal
-// must still produce parseable JSON for hostile message content.
-func TestRenderGenericTemplate_EscapedOutputIsValidJSON(t *testing.T) {
+// TestRenderGenericPayloadTemplate_EscapesJSON guards the escaping contract: a
+// template embedding values inside JSON string literals must render valid JSON
+// for hostile message content, and the event vars must be available.
+func TestRenderGenericPayloadTemplate_EscapesJSON(t *testing.T) {
 	config := models.GenericConfig{
-		Template: `{"receiveId":"oc_1","msgType":"text","text":"{{.message}}"}`,
+		PayloadTemplate: `{"text": "{{.title}}: {{.message}}", "env": "{{.environment}}", "event": "{{.event}}"}`,
 	}
+	vars := map[string]string{"environment": "Local Docker", "environmentId": "0", "event": "image_update", "timestamp": "2026-07-28T00:00:00Z"}
 
-	body, err := RenderGenericTemplate(config, "", "he said \"stop\"\nnew\tline \\ end")
+	body, err := RenderGenericPayloadTemplate(config, "Image \"Update\"", "he said \"stop\"\nnew line \\ end", vars)
 	require.NoError(t, err)
 
 	var decoded map[string]string
 	require.NoError(t, json.Unmarshal([]byte(body), &decoded), "rendered body must be valid JSON: %s", body)
-	assert.Equal(t, "he said \"stop\"\nnew\tline \\ end", decoded["text"])
+	assert.Equal(t, "Image \"Update\": he said \"stop\"\nnew line \\ end", decoded["text"])
+	assert.Equal(t, "Local Docker", decoded["env"])
+	assert.Equal(t, "image_update", decoded["event"])
 }
 
-func TestBuildGenericPayload_FallsBackToFlatJSON(t *testing.T) {
-	config := models.GenericConfig{
-		TitleKey:   "subject",
-		MessageKey: "content",
-	}
-
-	body, err := buildGenericPayload(config, "Alert", "disk full")
-	require.NoError(t, err)
-
-	var decoded map[string]string
-	require.NoError(t, json.Unmarshal(body, &decoded))
-	assert.Equal(t, map[string]string{"subject": "Alert", "content": "disk full"}, decoded)
-}
-
-// TestSendGenericWithTitle_CustomTemplate verifies the full send path: a
-// configured template must reach the endpoint verbatim as the request body.
-func TestSendGenericWithTitle_CustomTemplate(t *testing.T) {
+// TestSendGenericWithTitle_PayloadTemplate exercises the Shoutrrr send path
+// end to end: the payload template registered on the located service must
+// reach the endpoint as the rendered request body, with the configured custom
+// headers and JSON content type applied.
+func TestSendGenericWithTitle_PayloadTemplate(t *testing.T) {
 	var gotBody []byte
 	var gotContentType, gotMethod, gotAuth string
 
@@ -599,16 +479,15 @@ func TestSendGenericWithTitle_CustomTemplate(t *testing.T) {
 	defer server.Close()
 
 	config := models.GenericConfig{
-		WebhookURL:    server.URL + "/open-apis/im/v1/messages",
-		Template:      `{"receiveId":"oc_2e3f361ab6703bab63ef058a2a862194","receiveIdType":"chat_id","msgType":"text","text":"{{.message}}"}`,
-		CustomHeaders: map[string]string{"Authorization": "Bearer t0ken"},
+		WebhookURL:      server.URL + "/v1/spaces/FOO/messages",
+		PayloadTemplate: `{"text": "{{.title}}\n{{.message}} ({{.environment}})"}`,
+		CustomHeaders:   map[string]string{"Authorization": "Bearer t0ken"},
 	}
+	vars := map[string]string{"environment": "Local Docker", "environmentId": "0", "event": "image_update", "timestamp": "2026-07-28T00:00:00Z"}
 
-	require.NoError(t, SendGenericWithTitle(t.Context(), config, "Image Update", "nginx:latest updated"))
+	require.NoError(t, SendGenericWithTitle(t.Context(), config, "Image Update", "nginx:latest updated", vars))
 
-	assert.JSONEq(t,
-		`{"receiveId":"oc_2e3f361ab6703bab63ef058a2a862194","receiveIdType":"chat_id","msgType":"text","text":"nginx:latest updated"}`,
-		string(gotBody))
+	assert.JSONEq(t, `{"text": "Image Update\nnginx:latest updated (Local Docker)"}`, string(gotBody))
 	assert.Equal(t, http.MethodPost, gotMethod)
 	assert.Equal(t, "application/json", gotContentType)
 	assert.Equal(t, "Bearer t0ken", gotAuth)
@@ -617,7 +496,9 @@ func TestSendGenericWithTitle_CustomTemplate(t *testing.T) {
 // TestSendGenericWithTitle_TemplateWithSuccessBodyContains verifies the two
 // direct-send features compose: template rendering plus response validation.
 func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"code":900,"msg":"failed"}`))
 	}))
@@ -625,32 +506,65 @@ func TestSendGenericWithTitle_TemplateWithSuccessBodyContains(t *testing.T) {
 
 	config := models.GenericConfig{
 		WebhookURL:          server.URL,
-		Template:            `{"text":"{{.message}}"}`,
+		PayloadTemplate:     `{"text": "{{.message}}"}`,
 		SuccessBodyContains: `"code":200`,
 	}
 
-	err := SendGenericWithTitle(t.Context(), config, "", "hello")
+	err := SendGenericWithTitle(t.Context(), config, "", "hello", nil)
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "did not contain expected success indicator")
+	assert.JSONEq(t, `{"text": "hello"}`, string(gotBody))
 }
 
-// TestSendGenericWithTitle_InvalidTemplateDoesNotSend ensures a malformed
-// template surfaces as an error instead of posting an empty body.
-func TestSendGenericWithTitle_InvalidTemplateDoesNotSend(t *testing.T) {
-	called := false
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		called = true
-		w.WriteHeader(http.StatusOK)
-	}))
-	defer server.Close()
-
-	config := models.GenericConfig{
-		WebhookURL: server.URL,
-		Template:   `{"text":"{{.message}`,
+func TestValidateGenericPayloadTemplate(t *testing.T) {
+	tests := []struct {
+		name    string
+		config  models.GenericConfig
+		wantErr string
+	}{
+		{
+			name:   "no template is always valid",
+			config: models.GenericConfig{},
+		},
+		{
+			name: "valid JSON template",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}}", "when": "{{.timestamp}}"}`,
+			},
+		},
+		{
+			name: "invalid template syntax is reported",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}`,
+			},
+			wantErr: "invalid webhook payload template",
+		},
+		{
+			name: "template rendering malformed JSON is rejected",
+			config: models.GenericConfig{
+				PayloadTemplate: `{"text": "{{.message}}"`,
+			},
+			wantErr: "did not render valid JSON",
+		},
+		{
+			name: "malformed JSON is allowed for non-JSON content types",
+			config: models.GenericConfig{
+				ContentType:     "text/plain",
+				PayloadTemplate: `event={{.event}} message={{.message}}`,
+			},
+		},
 	}
 
-	err := SendGenericWithTitle(t.Context(), config, "", "hello")
-	require.Error(t, err)
-	assert.Contains(t, err.Error(), "invalid webhook payload template")
-	assert.False(t, called, "webhook must not be called when the template is invalid")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := ValidateGenericPayloadTemplate(tt.config)
+
+			if tt.wantErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.wantErr)
+				return
+			}
+			require.NoError(t, err)
+		})
+	}
 }

@@ -17,6 +17,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -39,6 +40,9 @@ var notificationCredentialFieldsByProviderInternal = map[models.NotificationProv
 	models.NotificationProviderPushover: {"token"},
 	models.NotificationProviderGotify:   {"token"},
 	models.NotificationProviderMatrix:   {"password"},
+	// The Google Chat incoming webhook URL embeds the key and token query
+	// parameters, so the whole URL is treated as a credential.
+	models.NotificationProviderGoogleChat: {"webhookUrl"},
 }
 
 var notificationTargetFieldByProviderInternal = map[models.NotificationProvider]string{
@@ -265,6 +269,19 @@ func (s *NotificationService) GetSettingsByProvider(ctx context.Context, provide
 }
 
 func (s *NotificationService) CreateOrUpdateSettings(ctx context.Context, provider models.NotificationProvider, enabled bool, config models.JSON) (*models.NotificationSettings, error) {
+	if provider == models.NotificationProviderGeneric {
+		genericConfig, decodeErr := notifications.DecodeConfig[models.GenericConfig](config, "Generic")
+		if decodeErr != nil {
+			return nil, decodeErr
+		}
+		// Shoutrrr renders the payload template internally at send time, so a
+		// broken template is validated here where the error surfaces against
+		// the user's own configuration instead of as an opaque send failure.
+		if validateErr := notifications.ValidateGenericPayloadTemplate(genericConfig); validateErr != nil {
+			return nil, common.Classify(common.ErrInvalidNotificationPayloadTemplate, validateErr)
+		}
+	}
+
 	var setting models.NotificationSettings
 
 	err := s.db.WithContext(ctx).Where("provider = ?", provider).First(&setting).Error
@@ -741,6 +758,7 @@ func (s *NotificationService) sendImageUpdateNotificationForTargetInternal(ctx c
 		"eventType":     string(eventType),
 	}
 	content := s.imageUpdateNotificationContentInternal(target.EnvironmentName, imageRef, updateInfo)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, eventType)
 	return s.notifyEnabledProvidersInternal(ctx, target, eventType, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -776,6 +794,7 @@ func (s *NotificationService) sendContainerUpdateNotificationForTargetInternal(c
 		"eventType":     string(models.NotificationEventContainerUpdate),
 	}
 	content := s.containerUpdateNotificationContentInternal(target.EnvironmentName, containerName, imageRef, oldDigest, newDigest)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventContainerUpdate)
 	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventContainerUpdate, imageRef, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -826,6 +845,7 @@ func (s *NotificationService) sendVulnerabilityNotificationForTargetInternal(ctx
 		"eventType":    string(models.NotificationEventVulnerabilityFound),
 	}
 	content := s.vulnerabilityNotificationContentInternal(target.EnvironmentName, payload)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventVulnerabilityFound)
 	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventVulnerabilityFound, payload.ImageName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -890,6 +910,7 @@ func (s *NotificationService) sendBatchImageUpdateNotificationForTargetInternal(
 		"batch":       true,
 	}
 	content := s.batchImageUpdateNotificationContentInternal(target.EnvironmentName, updatesWithChanges)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventImageUpdate)
 	return s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventImageUpdate, strings.Join(imageRefs, ", "), metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -935,6 +956,7 @@ func (s *NotificationService) sendPruneReportNotificationForTargetInternal(ctx c
 		"eventType":      string(models.NotificationEventPruneReport),
 	}
 	content := s.pruneReportNotificationContentInternal(target.EnvironmentName, result)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventPruneReport)
 	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventPruneReport, "System Prune Report", metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -990,6 +1012,7 @@ func (s *NotificationService) sendAutoHealNotificationForTargetInternal(ctx cont
 		"eventType":   string(models.NotificationEventAutoHeal),
 	}
 	content := s.autoHealNotificationContentInternal(target.EnvironmentName, containerName)
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, models.NotificationEventAutoHeal)
 	_, err := s.notifyEnabledProvidersInternal(ctx, target, models.NotificationEventAutoHeal, containerName, metadata, func(ctx context.Context, provider models.NotificationProvider, config models.JSON) (bool, error) {
 		return notifications.Deliver(ctx, provider, config, content)
 	})
@@ -1124,6 +1147,14 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	}
 
 	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
+	// Stamp the event vars so the Test button exercises a configured generic
+	// payload template. The simple test renders image-update content, so it
+	// reports that event type.
+	testEventType := notificationEventTypeForTestTypeInternal(testType)
+	if testEventType == "" {
+		testEventType = models.NotificationEventImageUpdate
+	}
+	content.Vars = notifications.EventVars(target.EnvironmentName, target.EnvironmentID, testEventType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
 	if !handled {
 		return "", unknownNotificationProviderErrorInternal(provider)
