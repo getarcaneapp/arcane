@@ -313,6 +313,8 @@ func (h *RoleHandler) SetUserRoleAssignments(ctx context.Context, input *SetUser
 	}
 	if err := h.roleService.SetUserAssignments(ctx, input.UserID, desired); err != nil {
 		switch {
+		case errors.Is(err, services.ErrUserNotFound):
+			return nil, huma.Error404NotFound(err.Error())
 		case errors.Is(err, common.ErrInvalidRoleAssignment):
 			return nil, huma.Error400BadRequest(err.Error())
 		case errors.Is(err, common.ErrNoGlobalAdminRemains):

@@ -484,7 +484,7 @@ func (h *AuthHandler) UpdateMyProfile(ctx context.Context, input *UpdateMyProfil
 		mergePreferencesInternal(&userModel.Preferences, p)
 	}
 
-	updated, err := h.userService.UpdateUser(ctx, userModel)
+	updated, err := h.userService.UpdateUser(ctx, userModel, nil)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to update user")
 	}
