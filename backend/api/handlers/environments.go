@@ -705,7 +705,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 	h.handleEnvironmentPairingInternal(ctx, input.ID, &input.Body, updates, isLocalEnv)
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -794,7 +794,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -1445,7 +1445,7 @@ func (h *EnvironmentHandler) logMTLSAuditEventInternal(ctx context.Context, env 
 		return
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)

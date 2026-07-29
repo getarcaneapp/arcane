@@ -5,8 +5,8 @@ import (
 	"io"
 	"testing"
 
+	"github.com/coder/websocket"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -42,7 +42,7 @@ func TestTunnelMessageToManagerProto_StreamDataUsesWebSocketPayload(t *testing.T
 		ID:            "stream-1",
 		Type:          MessageTypeStreamData,
 		Body:          []byte("hello"),
-		WSMessageType: websocket.TextMessage,
+		WSMessageType: int(websocket.MessageText),
 	}
 
 	protoMsg, err := tunnelMessageToManagerProto(original, false)
@@ -138,7 +138,7 @@ func TestTunnelMessageToAgentProto_RoundTripStreamDataPreservesWebSocketType(t *
 		ID:            "stream-1",
 		Type:          MessageTypeStreamData,
 		Body:          []byte(`{"cpu":10}`),
-		WSMessageType: websocket.TextMessage,
+		WSMessageType: int(websocket.MessageText),
 	}
 
 	protoMsg, err := tunnelMessageToAgentProto(original)
@@ -194,7 +194,7 @@ func TestTunnelMessageToManagerProto_StreamDataParityEncoding(t *testing.T) {
 		ID:            "stream-1",
 		Type:          MessageTypeStreamData,
 		Body:          []byte("hello"),
-		WSMessageType: websocket.TextMessage,
+		WSMessageType: int(websocket.MessageText),
 	}
 
 	// Legacy agents receive the ws_data re-encode and see ws_data.

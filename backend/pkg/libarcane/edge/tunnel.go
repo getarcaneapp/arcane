@@ -6,12 +6,12 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"time"
 
 	"emperror.dev/errors"
 
+	"github.com/coder/websocket"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -107,9 +107,10 @@ func (t *TunnelConn) Send(msg *TunnelMessage) error {
 	if err != nil {
 		return err
 	}
-	_ = t.conn.SetWriteDeadline(time.Now().Add(DefaultWriteTimeout))
-	if err := t.conn.WriteMessage(websocket.TextMessage, data); err != nil {
-		// A gorilla connection is unusable after a write error.
+	wctx, cancel := context.WithTimeout(context.Background(), DefaultWriteTimeout)
+	defer cancel()
+	if err := t.conn.Write(wctx, websocket.MessageText, data); err != nil {
+		// coder/websocket closes the connection after a failed or expired write.
 		t.closed.Store(true)
 		return err
 	}
@@ -122,10 +123,12 @@ func (t *TunnelConn) Receive() (*TunnelMessage, error) {
 		return nil, ErrTunnelConnectionClosed
 	}
 
-	_ = t.conn.SetReadDeadline(time.Now().Add(tunnelReadWait))
-	_, data, err := t.conn.ReadMessage()
+	rctx, cancel := context.WithTimeout(context.Background(), tunnelReadWait)
+	defer cancel()
+	_, data, err := t.conn.Read(rctx)
 	if err != nil {
-		// Read-deadline expiry and network errors are terminal for gorilla conns.
+		// Read-timeout expiry and network errors are terminal: coder/websocket
+		// closes the connection when a read context expires.
 		t.closed.Store(true)
 		return nil, err
 	}
@@ -150,26 +153,22 @@ func (t *TunnelConn) IsExpectedReceiveError(err error) bool {
 		return true
 	}
 
-	return websocket.IsCloseError(err,
-		websocket.CloseNormalClosure,
-		websocket.CloseGoingAway,
-		websocket.CloseNoStatusReceived,
-	)
+	return wshub.IsExpectedClose(err)
 }
 
 // Close closes the WebSocket tunnel connection, sending a close frame on the
 // first call so the peer observes a normal closure instead of 1006.
 func (t *TunnelConn) Close() error {
 	if t.closed.Swap(true) {
-		return t.conn.Close()
+		return t.conn.CloseNow()
 	}
 
-	// WriteControl is safe concurrently with a data writer, so a stuck Send
-	// cannot block teardown.
-	_ = t.conn.WriteControl(websocket.CloseMessage,
-		websocket.FormatCloseMessage(websocket.CloseNormalClosure, ""),
-		time.Now().Add(DefaultWriteTimeout))
-	return t.conn.Close()
+	// Close performs the close handshake with its own internal timeout and is
+	// safe concurrently with a data writer, so a stuck Send cannot block teardown.
+	if err := t.conn.Close(websocket.StatusNormalClosure, ""); err != nil {
+		return t.conn.CloseNow()
+	}
+	return nil
 }
 
 // IsClosed returns whether the connection is closed.

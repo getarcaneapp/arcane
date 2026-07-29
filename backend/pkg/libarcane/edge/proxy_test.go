@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -25,15 +25,14 @@ import (
 // It receives requests and sends back responses
 func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMessage) (*httptest.Server, *AgentTunnel) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			_, data, err := conn.ReadMessage()
+			_, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -44,17 +43,14 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 			if msg.Type == MessageTypeRequest || msg.Type == MessageTypeCommandRequest {
 				resp := handler(&msg)
 				respData, _ := json.Marshal(resp)
-				_ = conn.WriteMessage(websocket.TextMessage, respData)
+				_ = conn.Write(r.Context(), websocket.MessageText, respData)
 			}
 		}
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnel := newWebSocketAgentTunnel("env-1", conn)
 
@@ -304,7 +300,7 @@ func TestCommandRequestFailsWhenTunnelCloses(t *testing.T) {
 
 func TestHasActiveTunnel(t *testing.T) {
 	conn := createTestConn(t)
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 	tunnel := newWebSocketAgentTunnel("env-active", conn)
 
 	registry := GetRegistry()
@@ -457,7 +453,7 @@ func TestHandleRequest_SetsHostField(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-host-1",
@@ -489,7 +485,7 @@ func TestHandleRequest_ForwardsBody(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-body-1",
@@ -521,7 +517,7 @@ func TestHandleRequest_NoBrowserHeadersInTunnelMessage(t *testing.T) {
 
 	client := NewTunnelClient(&Config{}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	// Simulate an old manager that doesn't strip Origin
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
@@ -593,15 +589,14 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 	var receivedBody string
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			_, data, err := conn.ReadMessage()
+			_, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -619,18 +614,15 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 					Body:    []byte(`{"ok":true}`),
 				}
 				respData, _ := json.Marshal(resp)
-				_ = conn.WriteMessage(websocket.TextMessage, respData)
+				_ = conn.Write(r.Context(), websocket.MessageText, respData)
 			}
 		}
 	}))
 	defer server.Close()
 
 	url := "ws" + server.URL[4:]
-	wsConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	wsConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnel := newWebSocketAgentTunnel("env-body-test", wsConn)
 	defer func() { _ = tunnel.CloseWithReason("") }()

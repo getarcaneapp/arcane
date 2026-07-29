@@ -846,7 +846,7 @@ func (h *VolumeHandler) UploadFile(ctx context.Context, input *UploadFileInput) 
 	}
 	defer func() { _ = file.Close() }()
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -908,7 +908,7 @@ type volumePathActivityConfigInternal struct {
 }
 
 func (h *VolumeHandler) runVolumePathActivityInternal(ctx context.Context, environmentID, volumeName, volumePath string, cfg volumePathActivityConfigInternal) (*base.ApiResponse[base.MessageResponse], error) {
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  environmentID,
@@ -1124,7 +1124,7 @@ func (h *VolumeHandler) ListBackupFiles(ctx context.Context, input *ListBackupFi
 }
 
 func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInput) (*DeleteBackupOutput, error) {
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
 	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
 		EnvironmentID:  input.EnvironmentID,
@@ -1155,7 +1155,7 @@ func (h *VolumeHandler) DeleteBackup(ctx context.Context, input *DeleteBackupInp
 }
 
 func (h *VolumeHandler) DownloadBackup(ctx context.Context, input *DownloadBackupInput) (*huma.StreamResponse, error) {
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	reader, size, err := h.volumeService.DownloadBackup(ctx, input.BackupID, user)
 	if err != nil {
 		return nil, huma.Error500InternalServerError(err.Error())

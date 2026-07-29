@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 // benchWSServer creates a test WebSocket server for benchmarks.
@@ -19,25 +19,22 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 	b.Helper()
 
 	ctx, cancel := context.WithCancel(context.Background())
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 		go func() {
 			// Drain reads until context cancelled
 			for {
-				if _, _, err := conn.ReadMessage(); err != nil {
+				if _, _, err := conn.Read(ctx); err != nil {
 					return
 				}
 			}
 		}()
 		<-ctx.Done()
-		if err := conn.Close(); err != nil {
-			b.Logf("close websocket connection: %v", err)
-		}
+		_ = conn.CloseNow()
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -60,14 +57,9 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 
 	var conns []*websocket.Conn
 	for range numClients {
-		conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+		conn, _, err := websocket.Dial(ctx, wsURL, nil)
 		if err != nil {
 			b.Fatal(err)
-		}
-		if resp != nil {
-			if err := resp.Body.Close(); err != nil {
-				b.Logf("close dial response body: %v", err)
-			}
 		}
 		conns = append(conns, conn)
 
@@ -89,9 +81,7 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 	return h, cancel, func() {
 		cancel()
 		for _, c := range conns {
-			if err := c.Close(); err != nil {
-				b.Logf("close websocket connection: %v", err)
-			}
+			_ = c.CloseNow()
 		}
 		serverCleanup()
 	}
@@ -309,14 +299,9 @@ func BenchmarkHub_MemoryPerClient(b *testing.B) {
 			b.ResetTimer()
 
 			for b.Loop() {
-				conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+				conn, _, err := websocket.Dial(ctx, wsURL, nil)
 				if err != nil {
 					b.Fatal(err)
-				}
-				if resp != nil {
-					if err := resp.Body.Close(); err != nil {
-						b.Logf("close dial response body: %v", err)
-					}
 				}
 				c := NewClient(conn, sendBuf)
 				h.register <- c

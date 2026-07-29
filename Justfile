@@ -319,7 +319,8 @@ _lint-js:
 # Lint Go backend
 [group('quality')]
 _lint-backend:
-    cd backend && golangci-lint run -c ../.github/.golangci.yml ./...
+    golangci-lint custom
+    cd backend && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint Go CLI
 [group('quality')]

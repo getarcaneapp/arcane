@@ -604,7 +604,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 
 			runtimeCtx := utils.ActivityRuntimeContext(humaCtx.Context(), h.appCtx)
 			rawWriter := humaCtx.BodyWriter()
-			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -616,6 +616,7 @@ func (h *ImageHandler) PullImage(ctx context.Context, input *PullImageInput) (*h
 				"Pulling image",
 				"Image pull started",
 				models.JSON{"imageName": fullImageName},
+				true,
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {
@@ -661,7 +662,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 			if strings.TrimSpace(resourceName) == "" {
 				resourceName = input.Body.ContextDir
 			}
-			activityID, runtimeCtx := activitylib.StartQueuedHandlerActivityForUser(
+			activityID, runtimeCtx := activitylib.StartHandlerActivity(
 				runtimeCtx,
 				h.activityService,
 				input.EnvironmentID,
@@ -673,6 +674,7 @@ func (h *ImageHandler) BuildImage(ctx context.Context, input *BuildImageInput) (
 				"Building image",
 				"Image build started",
 				models.JSON{"contextDir": input.Body.ContextDir, "tags": input.Body.Tags},
+				true,
 			)
 			activitylib.WriteStartedLine(rawWriter, activityID)
 			if f, ok := rawWriter.(http.Flusher); ok {

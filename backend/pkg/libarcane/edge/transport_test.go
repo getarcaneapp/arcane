@@ -12,8 +12,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -88,7 +89,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		defer GetRegistry().Unregister(envID)
 
 		conn := createTestConn(t)
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		tunnel := newWebSocketAgentTunnel(envID, conn)
 		GetRegistry().Register(envID, tunnel)
@@ -332,18 +333,17 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	b.Helper()
 
 	responseBody := make([]byte, payloadSize)
-	upgrader := websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 
 		for {
 			var msg TunnelMessage
-			if err := conn.ReadJSON(&msg); err != nil {
-				_ = conn.Close()
+			if err := wsjson.Read(r.Context(), conn, &msg); err != nil {
+				_ = conn.CloseNow()
 				return
 			}
 
@@ -357,21 +357,18 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 				Status: http.StatusOK,
 				Body:   responseBody,
 			}
-			if err := conn.WriteJSON(resp); err != nil {
-				_ = conn.Close()
+			if err := wsjson.Write(r.Context(), conn, resp); err != nil {
+				_ = conn.CloseNow()
 				return
 			}
 		}
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
 	if err != nil {
 		server.Close()
 		b.Fatalf("failed to dial websocket server: %v", err)
-	}
-	if resp != nil {
-		_ = resp.Body.Close()
 	}
 
 	tunnel := NewAgentTunnelWithConn("bench-websocket", NewTunnelConn(conn))

@@ -290,7 +290,7 @@ func (h *UserHandler) UpdateUser(ctx context.Context, input *UpdateUserInput) (*
 	// target, nor set another user's password. The service re-enforces the
 	// target-admin check.
 	callerPerms, _ := humamw.PermissionsFromContext(ctx)
-	caller, _ := humamw.GetCurrentUserFromContext(ctx)
+	caller, _ := models.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() {
 		if input.Body.Password != nil && *input.Body.Password != "" && caller != nil && caller.ID != userModel.ID {
 			return nil, huma.Error403Forbidden(services.ErrInsufficientPrivilege.Error())
@@ -341,7 +341,7 @@ func (h *UserHandler) DeleteUser(ctx context.Context, input *DeleteUserInput) (*
 	// target. The service enforces the same check; this pre-check produces a
 	// clean 403 without entering the delete path.
 	callerPerms, _ := humamw.PermissionsFromContext(ctx)
-	caller, _ := humamw.GetCurrentUserFromContext(ctx)
+	caller, _ := models.CurrentUserFromContext(ctx)
 	if callerPerms != nil && !callerPerms.IsGlobalAdmin() && caller != nil && caller.ID != input.UserID {
 		targetPerms, err := h.userService.ResolveUserPermissions(ctx, input.UserID)
 		if err != nil {

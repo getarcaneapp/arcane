@@ -143,10 +143,6 @@ func CamelCaseToSnakeCase(str string) string {
 	return strings.ToLower(result.String())
 }
 
-func CamelCaseToScreamingSnakeCase(s string) string {
-	return strings.ToUpper(CamelCaseToSnakeCase(s))
-}
-
 func GenerateRandomString(length int) string {
 	bytes := make([]byte, length)
 	if _, err := rand.Read(bytes); err != nil {

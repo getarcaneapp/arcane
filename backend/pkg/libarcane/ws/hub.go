@@ -132,7 +132,7 @@ func (h *Hub) remove(c *Client) {
 	if exists {
 		delete(h.clients, c)
 		close(c.send)
-		_ = c.conn.Close()
+		_ = c.conn.CloseNow()
 	}
 	// Capture onEmpty under the lock so we can call it outside.
 	var onEmpty func()
@@ -152,7 +152,7 @@ func (h *Hub) closeAll() {
 	h.mu.Lock()
 	for c := range h.clients {
 		close(c.send)
-		_ = c.conn.Close()
+		_ = c.conn.CloseNow()
 		delete(h.clients, c)
 	}
 	h.mu.Unlock()

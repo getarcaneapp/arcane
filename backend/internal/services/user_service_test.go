@@ -222,7 +222,7 @@ func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Renamed Admin")
-	actorCtx := models.WithCurrentUser(ctx, other)
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
 	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
 	require.NoError(t, err)
 }
@@ -258,7 +258,7 @@ func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
 	require.NoError(t, err)
 
 	admin.DisplayName = new("Self Rename")
-	actorCtx := models.WithCurrentUser(ctx, admin)
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, admin)
 	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
 	require.NoError(t, err)
 }
@@ -301,6 +301,6 @@ func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
 	otherPerms, err := roleSvc.ResolvePermissions(ctx, other)
 	require.NoError(t, err)
 
-	actorCtx := models.WithCurrentUser(ctx, other)
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
 	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }

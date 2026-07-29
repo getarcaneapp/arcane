@@ -189,12 +189,6 @@ func TestParseSecurityOpts(t *testing.T) {
 	}
 }
 
-func TestNormalizeNetworkMode(t *testing.T) {
-	require.Equal(t, "", NormalizeNetworkMode(""))
-	require.Equal(t, "", NormalizeNetworkMode(" \t\n "))
-	require.Equal(t, "arcane-external", NormalizeNetworkMode("arcane-external"))
-}
-
 func TestParseDockerHost(t *testing.T) {
 	tests := []struct {
 		name           string

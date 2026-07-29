@@ -62,6 +62,23 @@ func ValidateWebSocketOrigin(appURL string) func(r *http.Request) bool {
 	}
 }
 
+// IsWebSocketUpgradeRequest reports whether r is a WebSocket handshake: the
+// Connection header contains "upgrade" (it can be a list, e.g. Firefox sends
+// "keep-alive, Upgrade") and Upgrade is "websocket".
+func IsWebSocketUpgradeRequest(r *http.Request) bool {
+	connection := strings.ToLower(r.Header.Get("Connection"))
+	upgrade := strings.ToLower(r.Header.Get("Upgrade"))
+
+	switch {
+	case !strings.Contains(connection, "upgrade"):
+		return false
+	case upgrade != "websocket":
+		return false
+	default:
+		return true
+	}
+}
+
 func isLocalhost(host string) bool {
 	hostOnly := host
 	if idx := strings.LastIndex(host, ":"); idx != -1 {

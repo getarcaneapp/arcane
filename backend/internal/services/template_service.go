@@ -70,10 +70,6 @@ const remoteIDPrefix = "remote"
 
 var errNoRemoteTemplates = errors.New("remote template registries returned no templates")
 
-func makeRemoteID(registryID, slug string) string {
-	return fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registryID, slug)
-}
-
 func NewTemplateService(ctx context.Context, db *database.DB, httpClient *http.Client, settingsService *SettingsService) *TemplateService {
 	if httpClient == nil {
 		httpClient = http.DefaultClient
@@ -713,7 +709,7 @@ func (s *TemplateService) fetchRegistryManifest(ctx context.Context, url string)
 }
 
 func (s *TemplateService) convertRemoteToLocal(remote tmpl.RemoteTemplate, registry *models.TemplateRegistry) models.ComposeTemplate {
-	publicID := makeRemoteID(registry.ID, remote.ID)
+	publicID := fmt.Sprintf("%s:%s:%s", remoteIDPrefix, registry.ID, remote.ID)
 
 	return models.ComposeTemplate{
 		BaseModel:   models.BaseModel{ID: publicID},
@@ -863,7 +859,7 @@ func (s *TemplateService) DownloadTemplate(ctx context.Context, remoteTemplate *
 	if err != nil {
 		return nil, err
 	}
-	srcDesc := projects.ImportedComposeDescription(dir)
+	srcDesc := fmt.Sprintf("Imported from %s/compose.yaml", dir)
 
 	return s.downloadTemplateTransaction(ctx, remoteTemplate, base, composePath, envPath, srcDesc)
 }

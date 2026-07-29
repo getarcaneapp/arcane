@@ -1,13 +1,14 @@
 package ws
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,24 +25,19 @@ func TestProxyHTTP_RequiresOriginValidator(t *testing.T) {
 func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 	// 1. Create a "remote" WebSocket server that echoes messages
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-		conn, err := up.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() {
-			if err := conn.Close(); err != nil {
-				t.Logf("close websocket connection: %v", err)
-			}
-		}()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, msg, err := conn.ReadMessage()
+			mt, msg, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
 			// Echo with prefix
-			if err := conn.WriteMessage(mt, append([]byte("echo:"), msg...)); err != nil {
+			if err := conn.Write(r.Context(), mt, append([]byte("echo:"), msg...)); err != nil {
 				return
 			}
 		}
@@ -58,23 +54,21 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 
 	// 3. Connect a client to the proxy
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	// 4. Send messages and verify they get proxied and echoed
 	testMessages := []string{"hello", "world", "test123"}
 	for _, msg := range testMessages {
-		err := clientConn.WriteMessage(websocket.TextMessage, []byte(msg))
+		err := clientConn.Write(t.Context(), websocket.MessageText, []byte(msg))
 		require.NoError(t, err)
 
-		_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, received, err := clientConn.ReadMessage()
+		readCtx, readCancel := context.WithTimeout(t.Context(), 2*time.Second)
+		_, received, err := clientConn.Read(readCtx)
+		readCancel()
 		require.NoError(t, err)
 		assert.Equal(t, "echo:"+msg, string(received))
 	}
@@ -83,15 +77,12 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 func TestProxyHTTP_RemoteClose(t *testing.T) {
 	// Remote server that closes immediately after upgrade
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-		conn, err := up.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 		// Close immediately
-		_ = conn.WriteMessage(websocket.CloseMessage,
-			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
-		if err := conn.Close(); err != nil {
+		if err := conn.Close(websocket.StatusNormalClosure, "bye"); err != nil {
 			t.Logf("close websocket connection: %v", err)
 		}
 	}))
@@ -106,13 +97,10 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	// The proxy should complete (not hang)
@@ -132,13 +120,10 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	select {
@@ -152,23 +137,18 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 func TestProxyHTTP_BinaryMessages(t *testing.T) {
 	// Remote server that echoes binary messages
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-		conn, err := up.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() {
-			if err := conn.Close(); err != nil {
-				t.Logf("close websocket connection: %v", err)
-			}
-		}()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, msg, err := conn.ReadMessage()
+			mt, msg, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
-			if err := conn.WriteMessage(mt, msg); err != nil {
+			if err := conn.Write(r.Context(), mt, msg); err != nil {
 				return
 			}
 		}
@@ -183,23 +163,21 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	binaryData := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD}
-	err = clientConn.WriteMessage(websocket.BinaryMessage, binaryData)
+	err = clientConn.Write(t.Context(), websocket.MessageBinary, binaryData)
 	require.NoError(t, err)
 
-	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	mt, received, err := clientConn.ReadMessage()
+	readCtx, readCancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer readCancel()
+	mt, received, err := clientConn.Read(readCtx)
 	require.NoError(t, err)
-	assert.Equal(t, websocket.BinaryMessage, mt)
+	assert.Equal(t, websocket.MessageBinary, mt)
 	assert.Equal(t, binaryData, received)
 }
 
@@ -207,14 +185,11 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 	headersCh := make(chan http.Header, 1)
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headersCh <- r.Header.Clone()
-		up := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-		conn, err := up.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		if err := conn.Close(); err != nil {
-			t.Logf("close websocket connection: %v", err)
-		}
+		_ = conn.CloseNow()
 	}))
 	defer remoteServer.Close()
 
@@ -231,13 +206,10 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	select {

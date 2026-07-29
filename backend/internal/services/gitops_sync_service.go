@@ -2004,7 +2004,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 	}
 
 	if hasEffective {
-		if err := projects.WriteEnvFile(projectsDir, stagePath, effective); err != nil {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, ".env", effective); err != nil {
 			return errors.WrapIf(err, "seed stage .env")
 		}
 	} else {
@@ -2013,7 +2013,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 		if mergeErr != nil {
 			return errors.WrapIf(mergeErr, "build effective env from pre-existing project")
 		}
-		if err := projects.WriteEnvFile(projectsDir, stagePath, merged); err != nil {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, ".env", merged); err != nil {
 			return errors.WrapIf(err, "seed stage .env")
 		}
 	}
@@ -2326,13 +2326,16 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 	)
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, err := projects.LoadComposeProjectLenient(
+	project, err := projects.LoadComposeProject(
 		ctx,
 		filepath.Join(stagePath, composeFileName),
 		projects.NormalizeProjectName(projectName),
 		projectsDir,
 		autoInjectEnv,
 		pathMapper,
+		nil,
+		nil,
+		true,
 	)
 	if err != nil {
 		return 0, err

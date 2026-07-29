@@ -11,7 +11,3 @@ func IsInternalTunnelRequest(ctx context.Context) bool {
 	isInternal, _ := ctx.Value(internalTunnelRequestContextKey{}).(bool)
 	return isInternal
 }
-
-func withInternalTunnelRequestInternal(ctx context.Context) context.Context {
-	return context.WithValue(ctx, internalTunnelRequestContextKey{}, true)
-}

@@ -296,7 +296,7 @@ func (s *DockerClientService) listContainersInternal(ctx context.Context) ([]con
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	containerList, err := dockerClient.ContainerList(apiCtx, client.ContainerListOptions{All: true})
@@ -313,7 +313,7 @@ func (s *DockerClientService) listImagesInternal(ctx context.Context) ([]image.S
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{All: true})
@@ -330,7 +330,7 @@ func (s *DockerClientService) listNetworksInternal(ctx context.Context) ([]netwo
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	networkList, err := libarcane.NetworkListWithCompatibility(apiCtx, dockerClient, client.NetworkListOptions{})
@@ -347,7 +347,7 @@ func (s *DockerClientService) listVolumesInternal(ctx context.Context) (*client.
 	}
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	volResp, err := dockerClient.VolumeList(apiCtx, client.VolumeListOptions{})

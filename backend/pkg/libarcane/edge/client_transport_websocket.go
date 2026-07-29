@@ -11,7 +11,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
@@ -21,10 +21,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	}
 	c.managerURL = managerWSURL
 
-	dialer := websocket.Dialer{
-		Proxy:            http.ProxyFromEnvironment,
-		HandshakeTimeout: 30 * time.Second,
-	}
+	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
 	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
 		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)
 		if err != nil {
@@ -33,7 +30,7 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 		if tlsConfig == nil {
 			tlsConfig = &tls.Config{MinVersion: tls.VersionTLS12}
 		}
-		dialer.TLSClientConfig = tlsConfig
+		transport.TLSClientConfig = tlsConfig
 	}
 
 	headers := http.Header{}
@@ -43,9 +40,15 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 
 	slog.DebugContext(ctx, "Dialing manager for websocket edge tunnel", "url", managerWSURL)
 
-	conn, resp, err := dialer.DialContext(ctx, managerWSURL, headers)
+	// The dial context bounds only the handshake; the connection outlives it.
+	dialCtx, dialCancel := context.WithTimeout(ctx, 30*time.Second)
+	defer dialCancel()
+	conn, resp, err := websocket.Dial(dialCtx, managerWSURL, &websocket.DialOptions{
+		HTTPClient: &http.Client{Transport: transport},
+		HTTPHeader: headers,
+	})
 	if err != nil {
-		if resp != nil {
+		if resp != nil && resp.Body != nil {
 			defer func() { _ = resp.Body.Close() }()
 			body, _ := io.ReadAll(resp.Body)
 			return errors.WrapIff(err, "failed to connect to manager websocket endpoint (status: %d, body: %s)", resp.StatusCode, string(body))

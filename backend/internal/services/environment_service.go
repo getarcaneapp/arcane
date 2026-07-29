@@ -1976,7 +1976,7 @@ func buildEnvironmentEndpointURLInternal(apiURL, endpointPath string) (string, e
 func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
 	if s != nil && s.settingsService != nil {
 		settings := s.settingsService.GetSettingsConfig()
-		return timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
+		return context.WithTimeout(ctx, timeouts.GetDuration(settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest))
 	}
 
 	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest)

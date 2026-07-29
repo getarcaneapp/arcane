@@ -611,7 +611,7 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	pinnedDigest := digest.FromString("stale-pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	repository := "ghcr.io/fosrl/newt"
-	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
+	recordID := fmt.Sprintf("ref::%s@latest", strings.ToLower(strings.TrimSpace(repository)))
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             recordID,
 		Repository:     repository,
@@ -1002,7 +1002,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 
 	var saved models.ImageUpdateRecord
 	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
-	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", fmt.Sprintf("ref::%s@alpine", strings.ToLower(strings.TrimSpace(repository)))).First(&saved).Error)
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	require.NotNil(t, saved.LastError)
@@ -1036,18 +1036,12 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 
 	var saved models.ImageUpdateRecord
 	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
-	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", fmt.Sprintf("ref::%s@alpine", strings.ToLower(strings.TrimSpace(repository)))).First(&saved).Error)
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	assert.True(t, saved.HasUpdate)
 	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 	assert.Nil(t, saved.LastError)
-}
-
-func TestBuildSyntheticImageUpdateRecordIDInternal_UsesUnambiguousSeparator(t *testing.T) {
-	id := buildSyntheticImageUpdateRecordIDInternal("docker.io/library/nginx", "sha256:abcdef")
-
-	require.Equal(t, "ref::docker.io/library/nginx@sha256:abcdef", id)
 }
 
 func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsAndPersistsCurrentImage(t *testing.T) {

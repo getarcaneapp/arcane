@@ -1828,7 +1828,7 @@ func (h *SwarmHandler) auditSwarmMutation(ctx context.Context, environmentID, ac
 
 	var userID *string
 	var username *string
-	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok {
+	if user, ok := models.CurrentUserFromContext(ctx); ok {
 		userID = new(user.ID)
 		username = new(user.Username)
 	}

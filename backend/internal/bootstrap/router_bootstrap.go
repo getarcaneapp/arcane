@@ -234,12 +234,13 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
+	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
 		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
+		tunnelRegistry,
 		// Proxied WebSocket upgrades enforce the same Origin policy as the local
 		// endpoints, so a cross-origin page cannot ride a session cookie into a
 		// remote environment.
@@ -339,7 +340,7 @@ func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.M
 				secure = true
 			}
 			if secure {
-				c.SetRequest(req.WithContext(cookie.WithSecureCookieContext(req.Context(), true)))
+				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
 			}
 			return next(c)
 		}

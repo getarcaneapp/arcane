@@ -71,7 +71,7 @@ func TestDeleteUserReturnsConflictForLastAdmin(t *testing.T) {
 // PermissionSet, matching what the auth bridge attaches in production.
 func callerContext(u *models.User, ps *authz.PermissionSet) context.Context {
 	ctx := context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, ps)
-	return models.WithCurrentUser(ctx, u)
+	return context.WithValue(ctx, models.CurrentUserContextKey{}, u)
 }
 
 func grantRole(t *testing.T, roleSvc *services.RoleService, userID, roleID string) {

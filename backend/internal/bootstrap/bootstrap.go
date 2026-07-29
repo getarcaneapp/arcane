@@ -52,7 +52,7 @@ func Bootstrap(ctx context.Context) error {
 	// Tee all slog output into the in-memory ring buffer that powers the
 	// diagnostics live log tail.
 	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
-	ConfigureGormLogger(cfg)
+	database.SetGormLogger(BuildGormLogger(cfg))
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
 

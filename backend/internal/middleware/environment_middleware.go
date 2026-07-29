@@ -17,7 +17,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	wsutil "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 )
 
@@ -69,11 +68,6 @@ type EnvironmentMiddleware struct {
 	// page could ride the caller's session cookie into a remote environment's
 	// terminal or log stream.
 	checkOrigin func(*http.Request) bool
-}
-
-// NewEnvProxyMiddlewareWithParam creates middleware that proxies requests to remote environments.
-func NewEnvProxyMiddlewareWithParam(localID, paramName string, resolver EnvResolver, authValidator AuthValidator, matcher *authz.PermissionMatcher, checkOrigin func(*http.Request) bool) echo.MiddlewareFunc {
-	return NewEnvProxyMiddlewareWithParamAndRegistry(localID, paramName, resolver, authValidator, matcher, edge.GetRegistry(), checkOrigin)
 }
 
 // NewEnvProxyMiddlewareWithParamAndRegistry creates middleware with an injected tunnel registry.
@@ -176,7 +170,7 @@ func (m *EnvironmentMiddleware) Handle(c *echo.Context, next echo.HandlerFunc) e
 
 	target := m.buildTargetURL(c, envID, apiURL)
 
-	if m.isWebSocketUpgrade(c) {
+	if httputils.IsWebSocketUpgradeRequest(c.Request()) {
 		return m.proxyWebSocket(c, target, accessToken, envID)
 	}
 	return m.proxyHTTP(c, target, accessToken)
@@ -258,7 +252,7 @@ func (m *EnvironmentMiddleware) setProxyContextHeadersInternal(c *echo.Context, 
 
 func (m *EnvironmentMiddleware) proxyThroughTunnelInternal(c *echo.Context, tunnel *edge.AgentTunnel, envID string) error {
 	proxyPath := m.buildProxyPath(c, envID)
-	if m.isWebSocketUpgrade(c) {
+	if httputils.IsWebSocketUpgradeRequest(c.Request()) {
 		return edge.ProxyWebSocketRequest(c, tunnel, proxyPath, m.checkOrigin)
 	}
 	return edge.ProxyHTTPRequest(c, tunnel, proxyPath)
@@ -367,11 +361,6 @@ func (m *EnvironmentMiddleware) buildTargetURL(c *echo.Context, envID, apiURL st
 // buildProxyPath constructs the path sent through the edge tunnel.
 func (m *EnvironmentMiddleware) buildProxyPath(c *echo.Context, envID string) string {
 	return path.Join(apiEnvironmentsPrefix, m.localID) + m.buildResourceSuffix(c.Request().URL.Path, envID)
-}
-
-// isWebSocketUpgrade checks if this is a WebSocket upgrade request.
-func (m *EnvironmentMiddleware) isWebSocketUpgrade(c *echo.Context) bool {
-	return websocket.IsWebSocketUpgrade(c.Request())
 }
 
 func isEdgeEnvironmentURLInternal(apiURL string) bool {

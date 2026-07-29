@@ -10,8 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,20 +39,19 @@ func TestTunnelMessage_MarshalJSON(t *testing.T) {
 func TestTunnelConn(t *testing.T) {
 	// Start a test server
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, message, err := conn.ReadMessage()
+			mt, message, err := conn.Read(r.Context())
 			if err != nil {
 				break
 			}
 			// Echo back
-			err = conn.WriteMessage(mt, message)
+			err = conn.Write(r.Context(), mt, message)
 			if err != nil {
 				break
 			}
@@ -62,12 +61,9 @@ func TestTunnelConn(t *testing.T) {
 
 	// Connect to the server
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	conn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 
 	tunnelConn := NewTunnelConn(conn)
 
@@ -153,30 +149,26 @@ func (b *blockingGRPCManagerStream) Context() context.Context { return b.ctx }
 func TestTunnelConn_CloseSendsCloseFrame(t *testing.T) {
 	peerRead := make(chan error, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
-		_, _, err = conn.ReadMessage()
+		defer func() { _ = conn.CloseNow() }()
+		_, _, err = conn.Read(r.Context())
 		peerRead <- err
 	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnelConn := NewTunnelConn(conn)
 	require.NoError(t, tunnelConn.Close())
 
 	select {
 	case err := <-peerRead:
-		assert.True(t, websocket.IsCloseError(err, websocket.CloseNormalClosure),
+		assert.Equal(t, websocket.StatusNormalClosure, websocket.CloseStatus(err),
 			"peer should observe a normal closure, got: %v", err)
 	case <-time.After(5 * time.Second):
 		t.Fatal("timed out waiting for peer read to return")
@@ -189,23 +181,19 @@ func TestTunnelConn_ReceiveDeadlineMarksClosed(t *testing.T) {
 	t.Cleanup(func() { tunnelReadWait = previousReadWait })
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 		// Keep the socket open but never send anything.
-		_, _, _ = conn.ReadMessage()
+		_, _, _ = conn.Read(r.Context())
 	}))
 	defer server.Close()
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.Dial(t.Context(), wsURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
 
 	tunnelConn := NewTunnelConn(conn)
 	_, err = tunnelConn.Receive()

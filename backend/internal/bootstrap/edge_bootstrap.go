@@ -90,7 +90,7 @@ func registerEdgeTunnelRoutes(
 		return nil
 	}
 
-	server := edge.NewTunnelServer(resolver, statusCallback)
+	server := edge.NewTunnelServerWithRegistry(edge.GetRegistry(), resolver, statusCallback)
 	server.SetConfig(&edge.Config{
 		EdgeMTLSMode:       cfg.EdgeMTLSMode,
 		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,

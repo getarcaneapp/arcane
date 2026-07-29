@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -33,9 +33,8 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 
 	// Set up a test WS server that upgrades and serves the client
 	serverReady := make(chan struct{})
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -45,13 +44,10 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	defer server.Close()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	<-serverReady
@@ -65,8 +61,9 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	h.Broadcast([]byte("test message"))
 
 	// Client should receive it
-	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
-	_, msg, err := clientConn.ReadMessage()
+	readCtx, readCancel := context.WithTimeout(t.Context(), 2*time.Second)
+	defer readCancel()
+	_, msg, err := clientConn.Read(readCtx)
 	require.NoError(t, err)
 	assert.Equal(t, "test message", string(msg))
 }
@@ -76,9 +73,8 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	ctx := t.Context()
 	go h.Run(ctx)
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -87,18 +83,15 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	defer server.Close()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 
 	require.Eventually(t, func() bool {
 		return h.ClientCount() == 1
 	}, time.Second, 5*time.Millisecond)
 
 	// Close the client connection
-	require.NoError(t, clientConn.Close())
+	_ = clientConn.CloseNow()
 
 	// The hub should eventually remove the client
 	require.Eventually(t, func() bool {
@@ -113,9 +106,8 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 
 	clientCtx, clientCancel := context.WithCancel(context.Background())
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -124,13 +116,10 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 	defer server.Close()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	require.Eventually(t, func() bool {
@@ -159,17 +148,17 @@ func TestIsExpectedCloseError(t *testing.T) {
 		},
 		{
 			name:     "normal closure",
-			err:      &websocket.CloseError{Code: websocket.CloseNormalClosure},
+			err:      websocket.CloseError{Code: websocket.StatusNormalClosure},
 			expected: true,
 		},
 		{
 			name:     "going away",
-			err:      &websocket.CloseError{Code: websocket.CloseGoingAway},
+			err:      websocket.CloseError{Code: websocket.StatusGoingAway},
 			expected: true,
 		},
 		{
 			name:     "no status received",
-			err:      &websocket.CloseError{Code: websocket.CloseNoStatusReceived},
+			err:      websocket.CloseError{Code: websocket.StatusNoStatusRcvd},
 			expected: true,
 		},
 		{
@@ -194,7 +183,7 @@ func TestIsExpectedCloseError(t *testing.T) {
 		},
 		{
 			name:     "protocol error",
-			err:      &websocket.CloseError{Code: websocket.CloseProtocolError},
+			err:      websocket.CloseError{Code: websocket.StatusProtocolError},
 			expected: false,
 		},
 	}
@@ -213,9 +202,8 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 	go h.Run(ctx)
 
 	serverReady := make(chan struct{})
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -225,13 +213,10 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 	defer server.Close()
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 	defer func() {
-		require.NoError(t, clientConn.Close())
+		_ = clientConn.CloseNow()
 	}()
 
 	<-serverReady
@@ -246,9 +231,10 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 		h.Broadcast([]byte(m))
 	}
 
-	_ = clientConn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	readCtx, readCancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer readCancel()
 	for _, expected := range messages {
-		_, msg, err := clientConn.ReadMessage()
+		_, msg, err := clientConn.Read(readCtx)
 		require.NoError(t, err)
 		assert.Equal(t, expected, string(msg))
 	}

@@ -536,10 +536,6 @@ func collectNotificationSendResultInternal(errors *[]string, provider models.Not
 	return "failed", &msg
 }
 
-func unknownNotificationProviderErrorInternal(provider models.NotificationProvider) error {
-	return errors.Errorf("unknown provider: %s", provider)
-}
-
 const (
 	notificationTestTypeSimple           = "simple"
 	notificationTestTypeImageUpdate      = "image-update"
@@ -1126,7 +1122,7 @@ func (s *NotificationService) TestNotification(ctx context.Context, environmentI
 	content := s.testNotificationContentInternal(target.EnvironmentName, testType)
 	handled, sendErr := notifications.Deliver(ctx, provider, setting.Config, content)
 	if !handled {
-		return "", unknownNotificationProviderErrorInternal(provider)
+		return "", errors.Errorf("unknown provider: %s", provider)
 	}
 	return warning, sendErr
 }

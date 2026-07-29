@@ -13,10 +13,11 @@ import (
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
@@ -39,13 +40,6 @@ const (
 	streamDeliveryTimeout = 5 * time.Second
 )
 
-var tunnelUpgrader = websocket.Upgrader{
-	ReadBufferSize:    64 * 1024,
-	WriteBufferSize:   64 * 1024,
-	EnableCompression: true,
-	CheckOrigin:       func(r *http.Request) bool { return true },
-}
-
 // EnvironmentResolver resolves an agent token to an environment ID.
 type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
 
@@ -65,11 +59,6 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 // reenrolled is true when an environment that had already enrolled receives
 // assets again after the enrollment cooldown.
 type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool)
-
-// NewTunnelServer creates a new tunnel server.
-func NewTunnelServer(resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
-	return NewTunnelServerWithRegistry(GetRegistry(), resolver, statusCallback)
-}
 
 // NewTunnelServerWithRegistry creates a new tunnel server using an injected tunnel registry.
 func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
@@ -134,8 +123,9 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	ctx := req.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
-	// Upgrade to WebSocket.
-	conn, err := tunnelUpgrader.Upgrade(c.Response(), req, nil)
+	// Upgrade to WebSocket. Agents authenticate with tokens/mTLS, not browser
+	// cookies, so no Origin check is needed here.
+	conn, err := wshub.Accept(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade edge tunnel connection", "error", err)
 		return nil
@@ -707,7 +697,7 @@ func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionS
 	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Request, envID string) error {
@@ -741,7 +731,7 @@ func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context
 		}
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) edgeMTLSModeInternal() string {

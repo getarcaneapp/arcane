@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/require"
 )
 
@@ -54,6 +54,14 @@ func startStatsHubPipeline(ctx context.Context, hub *Hub) {
 	}()
 }
 
+// readOneWithTimeout reads a single message with a timeout, discarding the payload.
+func readOneWithTimeout(conn *websocket.Conn, timeout time.Duration) error {
+	readCtx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	_, _, err := conn.Read(readCtx)
+	return err
+}
+
 // ============================================================================
 // CPU Regression Benchmarks
 //
@@ -79,10 +87,8 @@ func startStatsHubPipeline(ctx context.Context, hub *Hub) {
 // A healthy result shows constant goroutine count and stable allocations.
 // A regression shows goroutine count growing linearly with iterations.
 func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -105,18 +111,14 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 	b.ResetTimer()
 
 	for i := range b.N {
-		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if resp != nil {
-			require.NoError(b, resp.Body.Close())
-		}
 
 		// Read one message to exercise the pipeline
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, _, _ = conn.ReadMessage()
-		require.NoError(b, conn.Close())
+		_ = readOneWithTimeout(conn, 2*time.Second)
+		_ = conn.CloseNow()
 
 		// Brief settle for cleanup
 		time.Sleep(50 * time.Millisecond)
@@ -141,10 +143,8 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 // BenchmarkCPU_ContainerLogReloadSimulation simulates reloading a container
 // logs page with JSON batched output (the most complex pipeline).
 func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -198,17 +198,13 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 	b.ResetTimer()
 
 	for i := range b.N {
-		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if resp != nil {
-			require.NoError(b, resp.Body.Close())
-		}
 
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, _, _ = conn.ReadMessage()
-		require.NoError(b, conn.Close())
+		_ = readOneWithTimeout(conn, 2*time.Second)
+		_ = conn.CloseNow()
 		time.Sleep(50 * time.Millisecond)
 		if (i+1)%10 == 0 || i == b.N-1 {
 			current := runtime.NumGoroutine()
@@ -228,10 +224,8 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 	for _, concurrency := range []int{1, 5, 10, 20} {
 		b.Run(fmt.Sprintf("concurrent_%d", concurrency), func(b *testing.B) {
-			upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
-
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				conn, err := upgrader.Upgrade(w, r, nil)
+				conn, err := websocket.Accept(w, r, nil)
 				if err != nil {
 					return
 				}
@@ -257,24 +251,20 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				// Open `concurrency` connections simultaneously
 				conns := make([]*websocket.Conn, concurrency)
 				for j := range concurrency {
-					conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+					conn, _, err := websocket.Dial(b.Context(), url, nil)
 					if err != nil {
 						b.Fatal(err)
-					}
-					if resp != nil {
-						require.NoError(b, resp.Body.Close())
 					}
 					conns[j] = conn
 				}
 
 				for _, c := range conns {
-					_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
-					_, _, _ = c.ReadMessage()
+					_ = readOneWithTimeout(c, 2*time.Second)
 				}
 
 				// Close all
 				for _, conn := range conns {
-					require.NoError(b, conn.Close())
+					_ = conn.CloseNow()
 				}
 
 				time.Sleep(100 * time.Millisecond)
@@ -294,9 +284,8 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 // an active streaming connection over time. This catches CPU drift from
 // inefficient polling or tight loops.
 func BenchmarkCPU_SustainedStreaming(b *testing.B) {
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -312,20 +301,16 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 	b.ReportAllocs()
 	b.ResetTimer()
 	for b.Loop() {
-		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if resp != nil {
-			require.NoError(b, resp.Body.Close())
-		}
 		for range 10 {
-			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-			if _, _, err := conn.ReadMessage(); err != nil {
+			if err := readOneWithTimeout(conn, 2*time.Second); err != nil {
 				break
 			}
 		}
-		require.NoError(b, conn.Close())
+		_ = conn.CloseNow()
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -338,9 +323,8 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 	baseline := runtime.NumGoroutine()
 	t.Logf("baseline goroutines: %d", baseline)
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -356,14 +340,10 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 
 	peakGoroutines := baseline
 	for i := range 30 {
-		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
+		conn, _, err := websocket.Dial(t.Context(), url, nil)
 		require.NoError(t, err)
-		if resp != nil {
-			require.NoError(t, resp.Body.Close())
-		}
-		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
-		_, _, _ = conn.ReadMessage()
-		require.NoError(t, conn.Close())
+		_ = readOneWithTimeout(conn, 2*time.Second)
+		_ = conn.CloseNow()
 		time.Sleep(50 * time.Millisecond)
 		current := runtime.NumGoroutine()
 		if current > peakGoroutines {

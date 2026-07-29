@@ -145,10 +145,6 @@ func GetTemplatesDirectory(ctx context.Context, templatesDir string) (string, er
 }
 
 func ReadProjectDirectoryFiles(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string) ([]project.IncludeFile, error) {
-	return readProjectDirectoryFilesInternal(projectPath, shownFiles, maxDepth, skipDirectories, false)
-}
-
-func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string]bool, maxDepth int, skipDirectories string, includeContent bool) ([]project.IncludeFile, error) {
 	if maxDepth <= 0 {
 		maxDepth = config.LoadProjectFilesConfig().ProjectScanMaxDepth
 	}
@@ -161,7 +157,7 @@ func readProjectDirectoryFilesInternal(projectPath string, shownFiles map[string
 	}
 	defer func() { _ = root.Close() }()
 
-	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories), includeContent)
+	err = collectProjectDirectoryFilesInternal(root, ".", projectPath, shownFiles, &dirFiles, 0, maxDepth, projectScanSkipDirectorySetInternal(skipDirectories), false)
 
 	return dirFiles, err
 }
@@ -403,10 +399,6 @@ func RemoveStaleComposeFiles(projectPath, composeFileName string, syncedFiles []
 	return nil
 }
 
-func CopyDirectoryContents(srcDir, destDir string) error {
-	return copyDirectoryContentsInternal(srcDir, destDir, nil)
-}
-
 // CopyDirectoryContentsTolerant copies srcDir into destDir like
 // CopyDirectoryContents, except that files (or whole subdirectories) which
 // cannot be read because of a permission error are skipped instead of aborting
@@ -414,18 +406,18 @@ func CopyDirectoryContents(srcDir, destDir string) error {
 // callers can avoid deleting them on a later restore. Any non-permission error
 // still aborts the copy.
 func CopyDirectoryContentsTolerant(srcDir, destDir string) (skipped []string, err error) {
-	err = copyDirectoryContentsInternal(srcDir, destDir, func(relPath string) {
+	err = CopyDirectoryContents(srcDir, destDir, func(relPath string) {
 		skipped = append(skipped, relPath)
 	})
 	slices.Sort(skipped)
 	return skipped, err
 }
 
-// copyDirectoryContentsInternal copies srcDir into destDir. When skipUnreadable
+// CopyDirectoryContents copies srcDir into destDir. When skipUnreadable
 // is non-nil and a file or subdirectory cannot be read because of a permission
 // error, the offending project-relative path is reported via skipUnreadable and
 // the copy continues; otherwise the error aborts the copy.
-func copyDirectoryContentsInternal(srcDir, destDir string, skipUnreadable func(relPath string)) error {
+func CopyDirectoryContents(srcDir, destDir string, skipUnreadable func(relPath string)) error {
 	srcRoot, err := os.OpenRoot(srcDir)
 	if err != nil {
 		return err
@@ -515,7 +507,7 @@ func MirrorDirectoryContentsPreserving(srcDir, destDir string, preserve []string
 	if err := pruneDirectoryContentsInternal(srcDir, destDir, preserveSet); err != nil {
 		return err
 	}
-	return CopyDirectoryContents(srcDir, destDir)
+	return CopyDirectoryContents(srcDir, destDir, nil)
 }
 
 func pruneDirectoryContentsInternal(srcDir, destDir string, preserve map[string]struct{}) error {
@@ -748,8 +740,4 @@ func ResolvePathWithinDir(baseDir, path string) (string, error) {
 	}
 
 	return resolvedPath, nil
-}
-
-func SaveOrUpdateProjectFiles(projectsRoot, projectPath, composeContent string, envContent *string) error {
-	return WriteProjectFiles(projectsRoot, projectPath, composeContent, envContent)
 }

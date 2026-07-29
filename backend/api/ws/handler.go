@@ -15,7 +15,7 @@ import (
 
 	"emperror.dev/errors"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/hot"
 	"github.com/shirou/gopsutil/v4/cpu"
@@ -49,7 +49,7 @@ type WebSocketHandler struct {
 	swarmService       *services.SwarmService
 	systemService      *services.SystemService
 	diagnosticsService *services.DiagnosticsService
-	wsUpgrader         websocket.Upgrader
+	checkWSOrigin      func(*http.Request) bool
 	wsMetrics          *wshub.WebSocketMetrics
 	activeConnections  sync.Map
 	logStreamsMu       sync.Mutex
@@ -232,12 +232,7 @@ func NewWebSocketHandler(
 		diskUsagePathCache: hot.NewHotCache[struct{}, string](hot.LRU, 1).
 			WithTTL(5 * time.Minute).
 			Build(),
-		wsUpgrader: websocket.Upgrader{
-			CheckOrigin:       httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
-			ReadBufferSize:    32 * 1024,
-			WriteBufferSize:   32 * 1024,
-			EnableCompression: true,
-		},
+		checkWSOrigin: httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	}
 	wsGroup := group.Group("/environments/:id/ws", authMiddleware.WithAdminNotRequired().Add())
 	for _, r := range handler.proxiedRoutes() {
@@ -298,7 +293,7 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 	params logStreamParams,
 	hubBuilder func(streamKey string, onEmpty func(*wsLogStream)) *wsLogStream,
 ) {
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return
 	}
@@ -320,7 +315,7 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 		// here means it was torn down out from under us; drop our reference
 		// rather than leaking the connection and the metrics entry.
 		slog.Debug("log stream hub stopped before client registration", "streamKey", streamKey)
-		_ = conn.Close()
+		_ = conn.CloseNow()
 		release()
 	}
 }
@@ -650,7 +645,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 		return c.JSON(http.StatusBadRequest, map[string]any{"success": false, "error": "Container ID is required"})
 	}
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		slog.DebugContext(c.Request().Context(), "Failed to upgrade WebSocket for container stats", "containerID", containerID, "error", err)
 		return nil
@@ -677,7 +672,7 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	}
 
 	slog.WarnContext(c.Request().Context(), "failed to register container stats client", "containerID", containerID)
-	_ = conn.Close()
+	_ = conn.CloseNow()
 	onRemove()
 	return nil
 }
@@ -808,37 +803,36 @@ func (h *WebSocketHandler) ContainerExec(c *echo.Context) error {
 
 	shell := queryParamWithDefaultInternal(c, "shell", "/bin/sh")
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerExec, containerID))
 	defer h.wsMetrics.UnregisterConnection(connID)
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close container exec websocket connection", "containerID", containerID, "error", err)
 		}
 	}()
 
+	// Allow large terminal pastes; coder/websocket's default limit is 32KB.
+	conn.SetReadLimit(1 << 20)
+
 	ctx, cancel := context.WithCancel(c.Request().Context())
 	defer cancel()
 
-	const execPongWait = 60 * time.Second
-	_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(execPongWait))
-		return nil
-	})
-	go h.pingExecConnInternal(ctx, conn, execPongWait*9/10)
+	go h.pingExecConnInternal(ctx, cancel, conn, 54*time.Second)
 
 	h.runContainerExecInternal(ctx, cancel, conn, containerID, shell)
 	return nil
 }
 
-// pingExecConnInternal keeps the exec websocket alive; pongs refresh the read
-// deadline so a silently-dead client fails the next read instead of blocking
-// forever. WriteControl is safe concurrently with the exec output writer.
-func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *websocket.Conn, period time.Duration) {
+// pingExecConnInternal keeps the exec websocket alive. Ping round-trips (the
+// pong is serviced by the concurrent stdin reader) and is safe concurrently
+// with the exec output writer. A failed ping means the client is gone, so it
+// cancels the exec session — a silently-dead client would otherwise keep the
+// session open until an output write fails.
+func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, period time.Duration) {
 	ticker := time.NewTicker(period)
 	defer ticker.Stop()
 	for {
@@ -846,7 +840,11 @@ func (h *WebSocketHandler) pingExecConnInternal(ctx context.Context, conn *webso
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			if err := conn.WriteControl(websocket.PingMessage, nil, time.Now().Add(time.Second)); err != nil {
+			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+			err := conn.Ping(pctx)
+			pcancel()
+			if err != nil {
+				cancel()
 				return
 			}
 		}
@@ -857,14 +855,14 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	// Create exec instance
 	execID, err := h.containerService.CreateExec(ctx, containerID, []string{shell})
 	if err != nil {
-		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error creating exec"))
+		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error creating exec"))
 		return
 	}
 
 	// Attach to exec
 	execSession, err := h.containerService.AttachExec(ctx, containerID, execID)
 	if err != nil {
-		h.writeExecErrorInternal(conn, errors.WithMessage(err, "Error attaching to exec"))
+		h.writeExecErrorInternal(ctx, conn, errors.WithMessage(err, "Error attaching to exec"))
 		return
 	}
 	cleanup := h.execCleanupFuncInternal(ctx, execSession, execID, containerID)
@@ -878,8 +876,10 @@ func (h *WebSocketHandler) runContainerExecInternal(ctx context.Context, cancel 
 	<-done
 }
 
-func (h *WebSocketHandler) writeExecErrorInternal(conn *websocket.Conn, err error) {
-	_ = conn.WriteMessage(websocket.TextMessage, []byte(err.Error()+"\r\n"))
+func (h *WebSocketHandler) writeExecErrorInternal(ctx context.Context, conn *websocket.Conn, err error) {
+	wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	_ = conn.Write(wctx, websocket.MessageText, []byte(err.Error()+"\r\n"))
 }
 
 func (h *WebSocketHandler) execCleanupFuncInternal(ctx context.Context, execSession *services.ExecSession, execID, containerID string) func() {
@@ -918,7 +918,7 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 			return
 		}
 		if n > 0 {
-			if err := conn.WriteMessage(websocket.BinaryMessage, buf[:n]); err != nil {
+			if err := conn.Write(ctx, websocket.MessageBinary, buf[:n]); err != nil {
 				slog.Debug("Exec websocket write error", "execID", execID, "containerID", containerID, "error", err)
 				return
 			}
@@ -928,13 +928,7 @@ func (h *WebSocketHandler) pipeExecOutputInternal(ctx context.Context, conn *web
 
 func (h *WebSocketHandler) pipeExecInputInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn, stdin io.Writer, execID, containerID string) {
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-		}
-
-		_, data, err := conn.ReadMessage()
+		_, data, err := conn.Read(ctx)
 		if err != nil {
 			slog.Debug("Exec websocket read error", "execID", execID, "containerID", containerID, "error", err)
 			cancel()
@@ -1307,14 +1301,14 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 	}
 	defer h.releaseRateLimitInternal(clientIP, count)
 
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindSystemStats, ""))
 	defer h.wsMetrics.UnregisterConnection(connID)
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close system stats websocket connection", "clientIP", clientIP, "error", err)
 		}
 	}()
@@ -1324,18 +1318,9 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 		interval = 2
 	}
 
-	const (
-		statsPongWait      = 60 * time.Second
-		statsPingWriteWait = 1 * time.Second
-	)
-	statsPingPeriod := statsPongWait * 9 / 10
+	const statsPingPeriod = 54 * time.Second
 
 	conn.SetReadLimit(512)
-	_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
-	conn.SetPongHandler(func(string) error {
-		_ = conn.SetReadDeadline(time.Now().Add(statsPongWait))
-		return nil
-	})
 
 	ticker := time.NewTicker(time.Duration(interval) * time.Second)
 	defer ticker.Stop()
@@ -1354,8 +1339,13 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 
 	send := func() error {
 		stats := h.latestSystemStatsSnapshotInternal()
-		_ = conn.SetWriteDeadline(time.Now().Add(10 * time.Second))
-		return conn.WriteJSON(stats)
+		b, err := json.Marshal(stats)
+		if err != nil {
+			return err
+		}
+		wctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		return conn.Write(wctx, websocket.MessageText, b)
 	}
 
 	if err := send(); err != nil {
@@ -1371,8 +1361,11 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 				return nil
 			}
 		case <-pingTicker.C:
-			_ = conn.SetWriteDeadline(time.Now().Add(statsPingWriteWait))
-			if err := conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// Ping round-trips; the pong is serviced by readSystemStatsPumpInternal.
+			pctx, pcancel := context.WithTimeout(ctx, 10*time.Second)
+			err := conn.Ping(pctx)
+			pcancel()
+			if err != nil {
 				return nil
 			}
 		}
@@ -1383,14 +1376,9 @@ func (h *WebSocketHandler) SystemStats(c *echo.Context) error {
 // Do not add additional readers for this connection.
 func (h *WebSocketHandler) readSystemStatsPumpInternal(ctx context.Context, cancel context.CancelFunc, conn *websocket.Conn) {
 	for {
-		select {
-		case <-ctx.Done():
+		if _, _, err := conn.Read(ctx); err != nil {
+			cancel()
 			return
-		default:
-			if _, _, err := conn.ReadMessage(); err != nil {
-				cancel()
-				return
-			}
 		}
 	}
 }

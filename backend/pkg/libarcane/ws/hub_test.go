@@ -3,9 +3,7 @@ package ws
 import (
 	"bytes"
 	"context"
-	"errors"
 	"log/slog"
-	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -14,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -24,9 +22,8 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	t.Helper()
 	serverReady := make(chan *websocket.Conn, 1)
 
-	upgrader := websocket.Upgrader{CheckOrigin: func(r *http.Request) bool { return true }}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
@@ -34,21 +31,16 @@ func newTestWSPair(t *testing.T) (clientConn *websocket.Conn, serverConn *websoc
 	}))
 
 	url := "ws" + strings.TrimPrefix(server.URL, "http")
-	cc, resp, err := websocket.DefaultDialer.Dial(url, nil)
+	cc, _, err := websocket.Dial(t.Context(), url, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		require.NoError(t, resp.Body.Close())
-	}
 
 	sc := <-serverReady
 
 	return cc, sc, func() {
-		require.NoError(t, cc.Close())
+		_ = cc.CloseNow()
 		// The hub and the forwarders own the server side and may already have
-		// closed it, so only an unexpected failure is worth reporting.
-		if err := sc.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
-			t.Errorf("close server websocket connection: %v", err)
-		}
+		// closed it, so close errors here are expected.
+		_ = sc.CloseNow()
 		server.Close()
 	}
 }

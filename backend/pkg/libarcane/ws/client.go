@@ -2,19 +2,20 @@ package ws
 
 import (
 	"context"
+	"errors"
+	"io"
 	"log/slog"
+	"net"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
 )
 
 const (
-	writeWait     = 10 * time.Second
-	pingWriteWait = 1 * time.Second // shorter so writePump doesn't block long on dead conns
-	pongWait      = 60 * time.Second
-	pingPeriod    = pongWait * 9 / 10
+	writeWait  = 10 * time.Second
+	pingPeriod = 54 * time.Second
 
 	maxMessageSize   = 64 * 1024
 	clientSendBuffer = 256
@@ -29,8 +30,7 @@ type Client struct {
 }
 
 func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
-	// Enable per-message deflate if negotiated (safe to ignore error)
-	_ = conn.SetCompressionLevel(1)
+	conn.SetReadLimit(maxMessageSize)
 	return &Client{
 		conn: conn,
 		send: make(chan []byte, sendBuffer),
@@ -79,25 +79,14 @@ func (c *Client) readPump(ctx context.Context, hub *Hub) {
 	// unserviced channel. Use hub.remove which is safe when the hub has exited.
 	defer c.safeRemove(hub)
 
-	c.conn.SetReadLimit(maxMessageSize)
-	_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
-	c.conn.SetPongHandler(func(string) error {
-		_ = c.conn.SetReadDeadline(time.Now().Add(pongWait))
-		return nil
-	})
-
 	for {
-		select {
-		case <-ctx.Done():
-			return
-		default:
-			// We ignore application messages; reads are only for control frames (close/pong).
-			if _, _, err := c.conn.ReadMessage(); err != nil {
-				if !isExpectedCloseError(err) {
-					slog.Debug("websocket readPump end", "err", err)
-				}
-				return
+		// We ignore application messages; this read loop exists to notice the
+		// peer going away and to service control frames (close/pong).
+		if _, _, err := c.conn.Read(ctx); err != nil {
+			if !isExpectedCloseError(err) {
+				slog.Debug("websocket readPump end", "err", err)
 			}
+			return
 		}
 	}
 }
@@ -118,12 +107,14 @@ func (c *Client) writePump(ctx context.Context, hub *Hub) {
 		case <-ctx.Done():
 			return
 		case msg, ok := <-c.send:
-			_ = c.conn.SetWriteDeadline(time.Now().Add(writeWait))
 			if !ok {
-				_ = c.conn.WriteMessage(websocket.CloseMessage, []byte{})
+				_ = c.conn.Close(websocket.StatusNormalClosure, "")
 				return
 			}
-			if err := c.conn.WriteMessage(websocket.TextMessage, msg); err != nil {
+			wctx, cancel := context.WithTimeout(ctx, writeWait)
+			err := c.conn.Write(wctx, websocket.MessageText, msg)
+			cancel()
+			if err != nil {
 				if !isExpectedCloseError(err) {
 					slog.Debug("websocket write error", "err", err)
 				}
@@ -135,8 +126,12 @@ func (c *Client) writePump(ctx context.Context, hub *Hub) {
 				return
 			default:
 			}
-			_ = c.conn.SetWriteDeadline(time.Now().Add(pingWriteWait))
-			if err := c.conn.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// Ping round-trips: it fails within writeWait unless the peer pongs,
+			// which readPump services. A failed ping tears the client down.
+			pctx, cancel := context.WithTimeout(ctx, writeWait)
+			err := c.conn.Ping(pctx)
+			cancel()
+			if err != nil {
 				return
 			}
 			pingTimer.Reset(pingPeriod)
@@ -149,10 +144,11 @@ func isExpectedCloseError(err error) bool {
 		return true
 	}
 
-	if websocket.IsCloseError(err,
-		websocket.CloseNormalClosure,
-		websocket.CloseGoingAway,
-		websocket.CloseNoStatusReceived) {
+	if IsExpectedClose(err) {
+		return true
+	}
+
+	if errors.Is(err, io.EOF) || errors.Is(err, net.ErrClosed) || errors.Is(err, context.Canceled) {
 		return true
 	}
 

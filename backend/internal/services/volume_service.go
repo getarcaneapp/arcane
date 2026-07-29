@@ -118,7 +118,7 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	vol := volResult.Volume
 
 	settings := s.settingsService.GetSettingsConfig()
-	usageCtx, usageCancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	usageCtx, usageCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer usageCancel()
 	if usageVolumes, ok := docker.GetVolumeUsageDataStaleWhileRevalidate(usageCtx, dockerClient).Get(); ok {
 		for _, uv := range usageVolumes {
@@ -2051,7 +2051,7 @@ type VolumeSizeData struct {
 func (s *VolumeService) GetVolumeSizes(ctx context.Context) (map[string]VolumeSizeData, error) {
 	slog.DebugContext(ctx, "volume service: get volume sizes")
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	dockerClient, err := s.dockerService.GetClient(apiCtx)
@@ -2317,7 +2317,7 @@ func (s *VolumeService) ListVolumesPaginated(ctx context.Context, params paginat
 	containerChan := make(chan containerMapResult, 1)
 
 	settings := s.settingsService.GetSettingsConfig()
-	apiCtx, cancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
+	apiCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI))
 	defer cancel()
 
 	go func(ctx context.Context) {

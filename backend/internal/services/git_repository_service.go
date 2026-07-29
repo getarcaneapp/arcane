@@ -299,7 +299,7 @@ func (s *GitRepositoryService) DeleteRepository(ctx context.Context, id string, 
 
 func (s *GitRepositoryService) TestConnection(ctx context.Context, id string, branch string, actor models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
-	ctx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
+	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
 	defer cancel()
 
 	repository, err := s.GetRepositoryByID(ctx, id)
@@ -373,7 +373,7 @@ func (s *GitRepositoryService) GetAuthConfig(ctx context.Context, repository *mo
 
 func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]gitops.BranchInfo, error) {
 	settings := s.settingsService.GetSettingsConfig()
-	listCtx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
+	listCtx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
 	defer cancel()
 
 	repository, err := s.GetRepositoryByID(listCtx, id)
@@ -404,7 +404,7 @@ func (s *GitRepositoryService) ListBranches(ctx context.Context, id string) ([]g
 
 func (s *GitRepositoryService) BrowseFiles(ctx context.Context, id, branch, path string) (*gitops.BrowseResponse, error) {
 	settings := s.settingsService.GetSettingsConfig()
-	ctx, cancel := timeouts.WithTimeout(ctx, settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation)
+	ctx, cancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.GitOperationTimeout.AsInt(), timeouts.DefaultGitOperation))
 	defer cancel()
 
 	repository, err := s.GetRepositoryByID(ctx, id)

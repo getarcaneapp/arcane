@@ -478,7 +478,7 @@ func (s *ProjectService) loadComposeProjectForProjectInternal(ctx context.Contex
 		dockerClient,
 	)
 
-	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper)
+	composeProject, loadErr := projects.LoadComposeProject(ctx, composeFileFullPath, projects.NormalizeProjectName(proj.Name), projectsDirectory, utils.BoolOrDefault(cfg.AutoInjectEnv.Value, false), pathMapper, nil, nil, false)
 	if loadErr != nil {
 		return nil, "", loadErr
 	}
@@ -749,7 +749,7 @@ func (s *ProjectService) pullAndReconcileImageInternal(
 
 	settings := s.settingsService.GetSettingsConfig()
 
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	if err := s.imageService.PullImage(pullCtx, imageRef, progressWriter, user, credentials); err != nil {
@@ -2245,7 +2245,7 @@ func (s *ProjectService) createProjectInternal(ctx context.Context, name, compos
 		return nil, errors.WrapIf(err, "invalid compose file")
 	}
 
-	if err := projects.SaveOrUpdateProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
+	if err := projects.WriteProjectFiles(projectsDirectory, projectPath, composeContent, envContent); err != nil {
 		// Best-effort cleanup to restore pre-transaction behavior.
 		_ = os.RemoveAll(projectPath)
 		return nil, errors.WrapIf(err, "failed to save project files")
@@ -3199,7 +3199,7 @@ func (s *ProjectService) prepareProjectRenameVolumeMigrationForUpdateInternal(ct
 		}
 	}()
 
-	if err := projects.CopyDirectoryContents(proj.Path, previewPath); err != nil {
+	if err := projects.CopyDirectoryContents(proj.Path, previewPath, nil); err != nil {
 		return nil, errors.WrapIf(err, "failed to prepare project update preview")
 	}
 

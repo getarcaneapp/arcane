@@ -192,7 +192,7 @@ func migrateDatabaseToVersionInternal(ctx context.Context, db *sql.DB, dbProvide
 		return errors.WrapIff(err, "failed to determine current migration version for %s", dbProvider)
 	}
 
-	logMigrationStateInternal(dbProvider, currentVersion, requiredVersion)
+	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 
 	if currentVersion > requiredVersion {
 		if !options.AllowDowngrade {
@@ -216,7 +216,7 @@ func migrateDatabaseToVersionInternal(ctx context.Context, db *sql.DB, dbProvide
 	}
 
 	if currentVersion == requiredVersion {
-		logUpToDateStateInternal(dbProvider, currentVersion)
+		slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", currentVersion)
 		return nil
 	}
 
@@ -514,10 +514,6 @@ func appliedLiteralInternal(dbProvider string) string {
 	return "1"
 }
 
-func logUpToDateStateInternal(dbProvider string, version int64) {
-	slog.Info("Database schema is up to date", "provider", dbProvider, "migrationVersion", version)
-}
-
 func getHighestEmbeddedMigrationVersionInternal(dbProvider string) (int64, error) {
 	versions, err := getEmbeddedMigrationVersionsInternal(dbProvider)
 	if err != nil {
@@ -610,10 +606,6 @@ func missingEmbeddedDowngradeMigrationsInternal(ctx context.Context, db *sql.DB,
 	}
 
 	return missing, nil
-}
-
-func logMigrationStateInternal(dbProvider string, currentVersion, requiredVersion int64) {
-	slog.Info("Resolved database migration state", "provider", dbProvider, "currentVersion", currentVersion, "requiredVersion", requiredVersion)
 }
 
 func parseSqliteConnectionStringInternal(connString string) (string, error) {

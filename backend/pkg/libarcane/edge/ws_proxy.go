@@ -6,28 +6,21 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/coder/websocket"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 )
 
 const (
-	// tunnelWSPongWait is the deadline for the next pong (or any read) on the
-	// browser-facing side of a proxied WebSocket. Reverse proxies (Caddy,
-	// Nginx, ...) silently drop idle TCP connections; without a heartbeat the
-	// master would hold a dead stream open until something else terminates it.
-	tunnelWSPongWait      = 60 * time.Second
-	tunnelWSPingWriteWait = 1 * time.Second
+	// tunnelWSPingWait bounds the ping round-trip on the browser-facing side of
+	// a proxied WebSocket. Reverse proxies (Caddy, Nginx, ...) silently drop
+	// idle TCP connections; without a heartbeat the master would hold a dead
+	// stream open until something else terminates it.
+	tunnelWSPingWait      = 10 * time.Second
+	tunnelWSPingPeriod    = 54 * time.Second
 	tunnelWSDataWriteWait = 10 * time.Second
 )
-
-var tunnelWSPingPeriod = tunnelWSPongWait * 9 / 10
-
-var wsUpgraderForProxy = websocket.Upgrader{
-	ReadBufferSize:    64 * 1024,
-	WriteBufferSize:   64 * 1024,
-	EnableCompression: true,
-}
 
 // ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel.
 // This handles logs, stats, and other streaming endpoints.
@@ -44,22 +37,16 @@ func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath stri
 		slog.ErrorContext(ctx, "Refusing edge WebSocket proxy without an origin validator", "path", targetPath)
 		return echo.NewHTTPError(http.StatusForbidden, "websocket origin validation unavailable")
 	}
-
-	proxyUpgrader := wsUpgraderForProxy
-	proxyUpgrader.CheckOrigin = checkOrigin
-
-	clientWS, err := proxyUpgrader.Upgrade(c.Response(), req, nil)
+	clientWS, err := wshub.Accept(c.Response(), req, checkOrigin)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade WebSocket for edge proxy", "error", err)
 		return nil
 	}
-	defer func() { _ = clientWS.Close() }()
-
-	_ = clientWS.SetReadDeadline(time.Now().Add(tunnelWSPongWait))
-	clientWS.SetPongHandler(func(string) error {
-		_ = clientWS.SetReadDeadline(time.Now().Add(tunnelWSPongWait))
-		return nil
-	})
+	defer func() { _ = clientWS.CloseNow() }()
+	// Client frames are forwarded into tunnel messages capped at
+	// maxGRPCTunnelMessageSize; allow the same size here instead of
+	// coder/websocket's 32KB default.
+	clientWS.SetReadLimit(maxGRPCTunnelMessageSize)
 
 	streamID := uuid.New().String()
 	streamCtx, cancel := context.WithCancel(ctx)
@@ -114,27 +101,20 @@ func buildWebSocketHeaders(req *http.Request) map[string]string {
 func forwardClientToAgent(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, tunnel *AgentTunnel, streamID string, doneCh chan<- struct{}) {
 	defer close(doneCh)
 	for {
-		if streamCtx.Err() != nil {
-			return
-		}
-
-		msgType, data, err := clientWS.ReadMessage()
+		msgType, data, err := clientWS.Read(streamCtx)
 		if err != nil {
-			if !websocket.IsCloseError(err,
-				websocket.CloseNormalClosure,
-				websocket.CloseGoingAway,
-				websocket.CloseNoStatusReceived) {
+			if !wshub.IsExpectedClose(err) {
 				slog.DebugContext(ctx, "Client WebSocket read error", "error", err)
 			}
 			sendWebSocketClose(tunnel, streamID)
 			return
 		}
 
-		if !isForwardableWSMessage(msgType) {
+		if !isForwardableWSMessage(int(msgType)) {
 			continue
 		}
 
-		if err := sendWebSocketData(tunnel, streamID, msgType, data); err != nil {
+		if err := sendStreamDataInternal(tunnel, streamID, int(msgType), data); err != nil {
 			slog.DebugContext(ctx, "Failed to send WebSocket data to agent", "error", err)
 			return
 		}
@@ -156,8 +136,11 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 		case <-clientDoneCh:
 			return
 		case <-pingTicker.C:
-			_ = clientWS.SetWriteDeadline(time.Now().Add(tunnelWSPingWriteWait))
-			if err := clientWS.WriteMessage(websocket.PingMessage, nil); err != nil {
+			// Ping round-trips; the pong is serviced by forwardClientToAgent's read.
+			pctx, pcancel := context.WithTimeout(streamCtx, tunnelWSPingWait)
+			err := clientWS.Ping(pctx)
+			pcancel()
+			if err != nil {
 				slog.DebugContext(ctx, "Failed to ping client WebSocket", "stream_id", streamID, "error", err)
 				sendWebSocketClose(tunnel, streamID)
 				return
@@ -166,7 +149,7 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 			if !ok {
 				return
 			}
-			if shouldStop, err := handleAgentMessage(ctx, clientWS, msg, streamID); err != nil {
+			if shouldStop, err := handleAgentMessage(ctx, streamCtx, clientWS, msg, streamID); err != nil {
 				slog.DebugContext(ctx, "Failed to write to client WebSocket", "error", err)
 				return
 			} else if shouldStop {
@@ -176,10 +159,10 @@ func forwardAgentToClient(ctx context.Context, streamCtx context.Context, client
 	}
 }
 
-func handleAgentMessage(ctx context.Context, clientWS *websocket.Conn, msg *TunnelMessage, streamID string) (bool, error) {
+func handleAgentMessage(ctx context.Context, streamCtx context.Context, clientWS *websocket.Conn, msg *TunnelMessage, streamID string) (bool, error) {
 	switch msg.Type {
 	case MessageTypeWebSocketData, MessageTypeStreamData:
-		return false, writeWebSocketData(clientWS, msg)
+		return false, writeWebSocketData(streamCtx, clientWS, msg)
 	case MessageTypeWebSocketClose, MessageTypeStreamClose, MessageTypeStreamEnd:
 		slog.DebugContext(ctx, "Agent closed WebSocket stream", "stream_id", streamID)
 		return true, nil
@@ -206,14 +189,15 @@ func handleAgentMessage(ctx context.Context, clientWS *websocket.Conn, msg *Tunn
 	}
 }
 
-func writeWebSocketData(clientWS *websocket.Conn, msg *TunnelMessage) error {
-	msgType := msg.WSMessageType
-	if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
-		slog.Warn("Dropping WebSocket message with unsupported type", "messageType", msgType)
+func writeWebSocketData(streamCtx context.Context, clientWS *websocket.Conn, msg *TunnelMessage) error {
+	msgType := websocket.MessageType(msg.WSMessageType)
+	if msgType != websocket.MessageText && msgType != websocket.MessageBinary {
+		slog.Warn("Dropping WebSocket message with unsupported type", "messageType", msg.WSMessageType)
 		return nil
 	}
-	_ = clientWS.SetWriteDeadline(time.Now().Add(tunnelWSDataWriteWait))
-	return clientWS.WriteMessage(msgType, msg.Body)
+	wctx, cancel := context.WithTimeout(streamCtx, tunnelWSDataWriteWait)
+	defer cancel()
+	return clientWS.Write(wctx, msgType, msg.Body)
 }
 
 func sendStreamDataInternal(tunnel *AgentTunnel, streamID string, msgType int, data []byte) error {
@@ -234,10 +218,6 @@ func sendWebSocketClose(tunnel *AgentTunnel, streamID string) {
 	_ = tunnel.Conn.Send(closeMsg)
 }
 
-func sendWebSocketData(tunnel *AgentTunnel, streamID string, msgType int, data []byte) error {
-	return sendStreamDataInternal(tunnel, streamID, msgType, data)
-}
-
 func isForwardableWSMessage(msgType int) bool {
-	return msgType == websocket.TextMessage || msgType == websocket.BinaryMessage
+	return msgType == int(websocket.MessageText) || msgType == int(websocket.MessageBinary)
 }

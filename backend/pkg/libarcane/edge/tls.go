@@ -633,10 +633,6 @@ func edgeMTLSAppURLInternal(cfg *Config) string {
 	return strings.TrimSpace(cfg.GetManagerBaseURL())
 }
 
-func edgeMTLSTrustDomainInternal(cfg *Config) string {
-	return certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(cfg))
-}
-
 func expectedEdgeMTLSURIPathInternal(envID string) string {
 	safeEnvID := generatedAssetNameSanitizer.ReplaceAllString(strings.TrimSpace(envID), "_")
 	if safeEnvID == "" {

@@ -109,7 +109,7 @@ func TestNewAuthBridge_AcceptsEnvironmentAccessTokenViaAPIKey(t *testing.T) {
 		Path:        "/secure",
 		Security:    []map[string][]string{{"ApiKeyAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		user, ok := GetCurrentUserFromContext(ctx)
+		user, ok := models.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "environment:env-self", user.ID)
 		require.Equal(t, "Self Target", user.Username)
@@ -180,7 +180,7 @@ func TestNewAuthBridge_UsesBearerWhenLoopbackProxySendsEnvironmentAccessToken(t 
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*secureOutput, error) {
-		user, ok := GetCurrentUserFromContext(ctx)
+		user, ok := models.CurrentUserFromContext(ctx)
 		require.True(t, ok)
 		require.Equal(t, "u-loopback", user.ID)
 

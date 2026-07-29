@@ -139,7 +139,7 @@ var rootCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		cmd.SetContext(runtimectx.WithAppContext(cmd.Context(), app))
+		cmd.SetContext(context.WithValue(cmd.Context(), runtimectx.AppContextKey, app))
 		runstate.Set(runstate.State{
 			EnvOverride:    envOverride,
 			OutputMode:     outputMode,

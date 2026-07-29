@@ -75,7 +75,7 @@ func toPaginationResponseInternal(p pagination.Response) base.PaginationResponse
 
 // requireUserInternal returns the authenticated user from the request context or a 401 error.
 func requireUserInternal(ctx context.Context) (*models.User, error) {
-	user, exists := humamw.GetCurrentUserFromContext(ctx)
+	user, exists := models.CurrentUserFromContext(ctx)
 	if !exists || user == nil {
 		return nil, huma.Error401Unauthorized("Not authenticated")
 	}
@@ -107,46 +107,6 @@ func registerSecuredInternal[I, O any](
 	humamw.RegisterWithPermission(api, op, permission, handler)
 }
 
-func registerCustomizeSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "Customize", permission, handler)
-}
-
-func registerGitOpsSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerTaggedSecuredInternal(api, operationID, method, path, summary, description, "GitOps Syncs", permission, handler)
-}
-
-func registerTaggedSecuredInternal[I, O any](
-	api huma.API,
-	operationID string,
-	method string,
-	path string,
-	summary string,
-	description string,
-	tag string,
-	permission string,
-	handler func(context.Context, *I) (*O, error),
-) {
-	registerSecuredInternal(api, operationInternal(operationID, method, path, summary, description, tag), permission, handler)
-}
-
 func operationInternal(operationID, method, path, summary, description string, tags ...string) huma.Operation {
 	return huma.Operation{
 		OperationID: operationID,
@@ -160,7 +120,7 @@ func operationInternal(operationID, method, path, summary, description string, t
 
 func currentActorInternal(ctx context.Context) models.User {
 	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 	return actor

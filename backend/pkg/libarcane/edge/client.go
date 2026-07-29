@@ -14,8 +14,9 @@ import (
 	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
+	"github.com/coder/websocket"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/samber/mo"
 )
 
@@ -29,9 +30,7 @@ const (
 	// maxPollRetryInterval caps the exponential backoff applied to failed poll
 	// control requests. Successful polls return to the manager-advertised interval.
 	maxPollRetryInterval = 60 * time.Second
-)
 
-const (
 	// DefaultHeartbeatInterval is how often the client sends heartbeats
 	DefaultHeartbeatInterval = 30 * time.Second
 	// DefaultWriteTimeout is the timeout for write operations
@@ -50,11 +49,11 @@ const (
 	// broken gRPC path is retried at most this often but never disabled.
 	maxWebSocketPreferenceTTL = 30 * time.Minute
 	defaultCommandChunkSize   = 256 * 1024
-)
 
-// errTunnelRegistrationTimeout marks a registration attempt where the manager
-// accepted the connection but never answered the register message.
-const errTunnelRegistrationTimeout = errors.Sentinel("timed out waiting for tunnel registration response")
+	// errTunnelRegistrationTimeout marks a registration attempt where the manager
+	// accepted the connection but never answered the register message.
+	errTunnelRegistrationTimeout = errors.Sentinel("timed out waiting for tunnel registration response")
+)
 
 func (t *commandRequestTransfer) stopInternal() {
 	if t == nil {
@@ -65,13 +64,6 @@ func (t *commandRequestTransfer) stopInternal() {
 	if t.timer != nil {
 		t.timer.Stop()
 	}
-}
-
-// setConn stores the active tunnel connection. The connection is reassigned on
-// every (re)connect while goroutines (heartbeat, request handlers, stream send
-// helpers) read it, so access goes through an atomic swap.
-func (c *TunnelClient) setConn(conn TunnelConnection) {
-	c.conn.Store(&connBox{conn: conn})
 }
 
 // getConn returns the active tunnel connection, or nil if none is established.
@@ -227,7 +219,8 @@ func (c *TunnelClient) connectAndServe(ctx context.Context) error {
 }
 
 func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context) error {
-	if c.shouldAttemptGRPCTunnelInternal() {
+	transports := c.managedTunnelTransportsInternal()
+	if transports.grpc {
 		if preferredUntil, ok := c.preferredWebSocketUntilInternal(time.Now()).Get(); ok {
 			slog.InfoContext(ctx, "Temporarily preferring websocket edge tunnel transport after recent websocket success",
 				"preferred_until", preferredUntil,
@@ -242,7 +235,7 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 				return ctx.Err()
 			}
 			c.noteGRPCTunnelFailureInternal()
-			if c.shouldFallbackToWebSocketInternal() {
+			if transports.websocket {
 				managerWSURL := c.managerWebSocketURLInternal()
 				slog.WarnContext(ctx, "gRPC edge tunnel connection failed, falling back to websocket transport",
 					"error", err,
@@ -259,24 +252,10 @@ func (c *TunnelClient) connectAndServeManagedTunnelInternal(ctx context.Context)
 		}
 		return nil
 	}
-	if c.shouldAttemptWebSocketTunnelInternal() {
+	if transports.websocket {
 		return c.connectAndServeWebSocket(ctx)
 	}
 	return errors.New("no edge tunnel transport is available")
-}
-
-func (c *TunnelClient) shouldFallbackToWebSocketInternal() bool {
-	return c.shouldAttemptWebSocketTunnelInternal()
-}
-
-func (c *TunnelClient) shouldAttemptGRPCTunnelInternal() bool {
-	transports := c.managedTunnelTransportsInternal()
-	return transports.grpc
-}
-
-func (c *TunnelClient) shouldAttemptWebSocketTunnelInternal() bool {
-	transports := c.managedTunnelTransportsInternal()
-	return transports.websocket
 }
 
 func (c *TunnelClient) managedTunnelTransportsInternal() managedTunnelTransportsInternal {
@@ -351,7 +330,9 @@ func (c *TunnelClient) websocketPreferenceTTLInternal() time.Duration {
 }
 
 func (c *TunnelClient) preferredWebSocketUntilInternal(now time.Time) mo.Option[time.Time] {
-	if c == nil || !c.shouldAttemptGRPCTunnelInternal() || !c.shouldAttemptWebSocketTunnelInternal() {
+	// A nil client yields a zero transports struct, so this also guards nil.
+	transports := c.managedTunnelTransportsInternal()
+	if !transports.grpc || !transports.websocket {
 		return mo.None[time.Time]()
 	}
 
@@ -378,7 +359,7 @@ func (c *TunnelClient) markTransportConnectedInternal(transport string) {
 		c.preferWebSocketUntil = time.Time{}
 		c.grpcFailureStreak = 0
 	case EdgeTransportWebSocket:
-		if c.shouldAttemptGRPCTunnelInternal() && c.shouldAttemptWebSocketTunnelInternal() {
+		if transports := c.managedTunnelTransportsInternal(); transports.grpc && transports.websocket {
 			// Back the preference window off exponentially while gRPC keeps
 			// failing so each reconnect does not re-pay the registration
 			// timeout against a persistently broken gRPC path.
@@ -474,7 +455,7 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 // serveTunnelSessionInternal runs the shared register/heartbeat/message
 // lifecycle on an established tunnel connection, for every transport.
 func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn TunnelConnection, managerAddr string) error {
-	c.setConn(conn)
+	c.conn.Store(&connBox{conn: conn})
 	setActiveAgentTunnelConn(conn)
 	defer clearActiveAgentTunnelConn(conn)
 	// Always tear down through the wrapper so the peer sees a clean close
@@ -776,7 +757,7 @@ func (c *TunnelClient) handleRequest(ctx context.Context, conn TunnelConnection,
 
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeoutInternal())
 	defer cancel()
-	reqCtx = withInternalTunnelRequestInternal(reqCtx)
+	reqCtx = context.WithValue(reqCtx, internalTunnelRequestContextKey{}, true)
 
 	slog.DebugContext(reqCtx, "Processing tunneled request", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
@@ -828,7 +809,7 @@ func isGRPCConnection(conn TunnelConnection) bool {
 func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
 	reqCtx, cancel := context.WithTimeout(ctx, c.requestTimeoutInternal())
 	defer cancel()
-	reqCtx = withInternalTunnelRequestInternal(reqCtx)
+	reqCtx = context.WithValue(reqCtx, internalTunnelRequestContextKey{}, true)
 
 	slog.DebugContext(reqCtx, "Processing tunneled request (streaming)", "id", msg.ID, "method", msg.Method, "path", msg.Path, "bodyLength", len(msg.Body))
 
@@ -860,7 +841,8 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConn
 	headers := c.buildLocalWebSocketHeadersInternal(msg)
 
 	ws, resp, err := c.dialLocalWebSocket(ctx, localURL, headers)
-	if resp != nil {
+	// coder/websocket leaves resp.Body nil on a successful handshake.
+	if resp != nil && resp.Body != nil {
 		defer func() { _ = resp.Body.Close() }()
 	}
 	if err != nil {
@@ -940,13 +922,13 @@ func (c *TunnelClient) localWebSocketHostInternal() string {
 // localDialSkipHeaders lists headers that must not be forwarded when the
 // agent dials its own local HTTP server for a proxied WebSocket stream.
 // This includes:
-//   - Standard WebSocket handshake headers (gorilla/websocket sets its own)
+//   - Standard WebSocket handshake headers (coder/websocket sets its own)
 //   - Browser-specific headers that were forwarded through the tunnel from
 //     the manager.  These cause handshake failures because the agent's
 //     WebSocket upgrader validates the Origin against localhost, not the
 //     browser's remote origin.
 var localDialSkipHeaders = map[string]bool{
-	// WebSocket handshake (gorilla/websocket adds its own)
+	// WebSocket handshake (coder/websocket adds its own)
 	"Sec-Websocket-Key":        true,
 	"Sec-Websocket-Version":    true,
 	"Sec-Websocket-Extensions": true,
@@ -987,11 +969,18 @@ func (c *TunnelClient) buildLocalWebSocketHeadersInternal(msg *TunnelMessage) ht
 }
 
 func (c *TunnelClient) dialLocalWebSocket(ctx context.Context, localURL string, headers http.Header) (*websocket.Conn, *http.Response, error) {
-	dialer := websocket.Dialer{
-		HandshakeTimeout: 30 * time.Second,
-	}
+	dialCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
 
-	return dialer.DialContext(ctx, localURL, headers)
+	ws, resp, err := websocket.Dial(dialCtx, localURL, &websocket.DialOptions{HTTPHeader: headers})
+	if err != nil {
+		return nil, resp, err
+	}
+	// Local stream frames (exec output, log lines) are forwarded into tunnel
+	// messages capped at maxGRPCTunnelMessageSize; allow the same size here
+	// instead of coder/websocket's 32KB default.
+	ws.SetReadLimit(maxGRPCTunnelMessageSize)
+	return ws, resp, nil
 }
 
 func (c *TunnelClient) registerStream(conn TunnelConnection, streamID string, ws *websocket.Conn, cancel context.CancelFunc) *activeWSStream {
@@ -1016,7 +1005,7 @@ func (c *TunnelClient) closeWebSocketStream(streamID string, stream *activeWSStr
 	stream.mu.Unlock()
 
 	stream.cancel()
-	_ = stream.ws.Close()
+	_ = stream.ws.CloseNow()
 	c.activeStreams.Delete(streamID)
 }
 
@@ -1043,23 +1032,16 @@ func (c *TunnelClient) startLocalWebSocketReadLoop(ctx context.Context, streamCt
 	}()
 
 	for {
-		if streamCtx.Err() != nil {
-			return
-		}
-
-		msgType, data, err := ws.ReadMessage()
+		msgType, data, err := ws.Read(streamCtx)
 		if err != nil {
-			if !websocket.IsCloseError(err,
-				websocket.CloseNormalClosure,
-				websocket.CloseGoingAway,
-				websocket.CloseNoStatusReceived) {
+			if !wshub.IsExpectedClose(err) {
 				slog.DebugContext(ctx, "Local WebSocket read error", "error", err)
 			}
 			c.sendWebSocketClose(stream.conn, streamID)
 			return
 		}
 
-		if err := c.sendWebSocketData(stream.conn, streamID, msgType, data); err != nil {
+		if err := c.sendWebSocketData(stream.conn, streamID, int(msgType), data); err != nil {
 			slog.DebugContext(ctx, "Failed to send WebSocket data to manager", "error", err)
 			return
 		}
@@ -1075,12 +1057,12 @@ func (c *TunnelClient) startLocalWebSocketWriteLoop(ctx context.Context, streamC
 			if !ok {
 				return
 			}
-			msgType := payload.messageType
-			if msgType != websocket.TextMessage && msgType != websocket.BinaryMessage {
-				slog.WarnContext(ctx, "Dropping WebSocket message with unsupported type", "messageType", msgType)
+			msgType := websocket.MessageType(payload.messageType)
+			if msgType != websocket.MessageText && msgType != websocket.MessageBinary {
+				slog.WarnContext(ctx, "Dropping WebSocket message with unsupported type", "messageType", payload.messageType)
 				continue
 			}
-			if err := ws.WriteMessage(msgType, payload.data); err != nil {
+			if err := ws.Write(streamCtx, msgType, payload.data); err != nil {
 				slog.DebugContext(ctx, "Failed to write to local WebSocket", "error", err)
 				cancel()
 				return

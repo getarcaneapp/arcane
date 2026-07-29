@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"io"
 	"log/slog"
 	"maps"
 	"os"
@@ -244,12 +243,11 @@ func cloneEnvMapInternal(src EnvMap) EnvMap {
 }
 
 func parseProjectEnvFileExistingInternal(path string, contextEnv EnvMap) (EnvMap, error) {
-	f, err := os.Open(path)
+	content, err := os.ReadFile(path)
 	if err != nil {
-		return nil, errors.WrapIf(err, "open file")
+		return nil, errors.WrapIf(err, "read file")
 	}
-	defer func() { _ = f.Close() }()
-	return parseEnvWithContext(f, contextEnv)
+	return ParseProjectEnvContent(string(content), contextEnv)
 }
 
 // ParseProjectEnvFile parses a project .env file with variable expansion using the provided
@@ -262,9 +260,23 @@ func ParseProjectEnvFile(path string, contextEnv EnvMap) (EnvMap, error) {
 	return parseProjectEnvFileExistingInternal(path, contextEnv)
 }
 
-// ParseProjectEnvContent parses project .env content from a string with variable expansion.
+// ParseProjectEnvContent parses project .env content from a string using
+// compose-go's dotenv parser with variable expansion. Lookups check contextEnv
+// first (previously loaded vars), then the process environment.
 func ParseProjectEnvContent(content string, contextEnv EnvMap) (EnvMap, error) {
-	return parseEnvWithContext(strings.NewReader(content), contextEnv)
+	lookupFn := func(key string) (string, bool) {
+		if val, ok := contextEnv[key]; ok {
+			return val, true
+		}
+		return os.LookupEnv(key)
+	}
+
+	envMap, err := dotenv.ParseWithLookup(strings.NewReader(content), lookupFn)
+	if err != nil {
+		return nil, errors.WrapIf(err, "parse env")
+	}
+
+	return envMap, nil
 }
 
 // WithTransientValidationEnvFile temporarily writes a project .env file while
@@ -295,7 +307,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 		if effectiveEnvContent != nil {
 			content = *effectiveEnvContent
 		}
-		if writeErr := WriteEnvFile(projectPath, projectPath, content); writeErr != nil {
+		if writeErr := WriteProjectFile(projectPath, projectPath, ".env", content); writeErr != nil {
 			return errors.WrapIf(writeErr, "prepare env file for compose validation")
 		}
 
@@ -303,7 +315,7 @@ func WithTransientValidationEnvFile(projectPath string, effectiveEnvContent *str
 			var restoreErr error
 			switch {
 			case originalExists:
-				restoreErr = WriteEnvFile(projectPath, projectPath, string(originalContent))
+				restoreErr = WriteProjectFile(projectPath, projectPath, ".env", string(originalContent))
 			case effectiveEnvContent != nil:
 				restoreErr = os.Remove(envPath)
 			default:
@@ -355,13 +367,6 @@ func BuildEffectiveEnvContent(gitContent, overrideContent string) (string, error
 	}
 }
 
-// BuildOverrideEnvContent derives the editable override file from git-backed and
-// effective env content. Content that already contains only real overrides is
-// returned verbatim; derived or cleaned output uses Arcane's canonical format.
-func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error) {
-	return buildOverrideEnvContentInternal(gitContent, effectiveContent)
-}
-
 // BuildAdditiveOverrideEnvContent derives override content from a pre-git local
 // .env file. Like other generated env helpers, the result is normalized and does
 // not preserve comments or original key ordering.
@@ -389,7 +394,10 @@ func BuildAdditiveOverrideEnvContent(gitContent, localContent string) (string, e
 	return formatEnvMapInternal(override), nil
 }
 
-func buildOverrideEnvContentInternal(gitContent, effectiveContent string) (string, error) {
+// BuildOverrideEnvContent derives the editable override file from git-backed and
+// effective env content. Content that already contains only real overrides is
+// returned verbatim; derived or cleaned output uses Arcane's canonical format.
+func BuildOverrideEnvContent(gitContent, effectiveContent string) (string, error) {
 	contextEnv := make(EnvMap)
 
 	gitEnv, err := ParseProjectEnvContent(gitContent, contextEnv)
@@ -500,7 +508,7 @@ func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unread
 
 	switch fileName {
 	case EffectiveEnvFileName:
-		return WriteEnvFile(projectsDirectory, projectPath, content)
+		return WriteProjectFile(projectsDirectory, projectPath, ".env", content)
 	case GitSourceEnvFileName:
 		return WriteProjectFile(projectsDirectory, projectPath, GitSourceEnvFileName, content)
 	case OverrideEnvFileName:
@@ -511,27 +519,6 @@ func WriteManagedEnvFile(projectsDirectory, projectPath, fileName string, unread
 	default:
 		return errors.Errorf("write managed env file: unsupported file name %q", fileName)
 	}
-}
-
-// parseEnvWithContext parses environment variables from an io.Reader using compose-go's
-// dotenv parser with variable expansion using the provided context lookup map.
-func parseEnvWithContext(r io.Reader, contextEnv EnvMap) (EnvMap, error) {
-	// Create lookup function for variable expansion
-	// Checks contextEnv first (previously loaded vars), then process environment
-	lookupFn := func(key string) (string, bool) {
-		if val, ok := contextEnv[key]; ok {
-			return val, true
-		}
-		return os.LookupEnv(key)
-	}
-
-	// Use compose-go's dotenv parser with lookup support for variable expansion
-	envMap, err := dotenv.ParseWithLookup(r, lookupFn)
-	if err != nil {
-		return nil, errors.WrapIf(err, "parse env")
-	}
-
-	return envMap, nil
 }
 
 // readOptionalProjectFileInternal reads fileName from projectPath. A missing
