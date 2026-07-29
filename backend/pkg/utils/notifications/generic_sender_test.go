@@ -568,3 +568,24 @@ func TestValidateGenericPayloadTemplate(t *testing.T) {
 		})
 	}
 }
+
+// TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID guards against
+// the configured payload being registered under an ID the URL does not select:
+// a user-supplied inline `?template=custom` must still resolve to the
+// configured payload template instead of failing template resolution.
+func TestSendGenericWithTitle_PayloadTemplateWithInlineTemplateID(t *testing.T) {
+	var gotBody []byte
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotBody, _ = io.ReadAll(r.Body)
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+
+	config := models.GenericConfig{
+		WebhookURL:      server.URL + "/notify?template=custom",
+		PayloadTemplate: `{"text": "{{.message}}"}`,
+	}
+
+	require.NoError(t, SendGenericWithTitle(t.Context(), config, "", "hello", nil))
+	assert.JSONEq(t, `{"text": "hello"}`, string(gotBody))
+}

@@ -270,8 +270,15 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 
 	senderOptions := shoutrrrTypes.SenderOptions{HTTPClient: genericHTTPClient}
 
+	// A user-supplied inline `?template=<id>` in the webhook URL wins over the
+	// default "arcane" ID, so the payload template must be registered under the
+	// effective ID for Shoutrrr to resolve it. An inline `template=json`
+	// selects Shoutrrr's built-in JSON template instead, which does its own
+	// escaping — send through the plain path so params are not double-escaped.
 	if strings.TrimSpace(config.PayloadTemplate) != "" {
-		return sendGenericTemplatedInternal(config, shoutrrrURL, senderOptions, title, message, vars)
+		if templateID := effectiveGenericTemplateIDInternal(shoutrrrURL); templateID != "json" && templateID != "JSON" {
+			return sendGenericTemplatedInternal(config, shoutrrrURL, templateID, senderOptions, title, message, vars)
+		}
 	}
 
 	sender, err := shoutrrr.CreateSenderWithOptions(senderOptions, shoutrrrURL)
@@ -295,12 +302,28 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 	return nil
 }
 
+// effectiveGenericTemplateIDInternal returns the template ID the built
+// Shoutrrr URL selects for payload rendering. BuildGenericURL always sets a
+// template query key, so an empty result only happens on an unparseable URL;
+// fall back to the default ID in that case.
+func effectiveGenericTemplateIDInternal(shoutrrrURL string) string {
+	parsed, err := url.Parse(shoutrrrURL)
+	if err != nil {
+		return genericPayloadTemplateID
+	}
+	if id := parsed.Query().Get("template"); id != "" {
+		return id
+	}
+	return genericPayloadTemplateID
+}
+
 // sendGenericTemplatedInternal sends through Shoutrrr's generic service with
-// the user's payload template registered on the service instance. Templates
-// are resolved per service instance, which router.Send does not expose, so the
-// service is obtained via Locate — the full initService path (scheme
-// extraction, config parse, HTTP client injection) — and sent on directly.
-func sendGenericTemplatedInternal(config models.GenericConfig, shoutrrrURL string, opts shoutrrrTypes.SenderOptions, title, message string, vars map[string]string) error {
+// the user's payload template registered on the service instance under
+// templateID — the ID the URL's template key selects. Templates are resolved
+// per service instance, which router.Send does not expose, so the service is
+// obtained via Locate — the full initService path (scheme extraction, config
+// parse, HTTP client injection) — and sent on directly.
+func sendGenericTemplatedInternal(config models.GenericConfig, shoutrrrURL, templateID string, opts shoutrrrTypes.SenderOptions, title, message string, vars map[string]string) error {
 	sender, err := shoutrrr.CreateSenderWithOptions(opts)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Generic sender")
@@ -311,7 +334,7 @@ func sendGenericTemplatedInternal(config models.GenericConfig, shoutrrrURL strin
 		return errors.WrapIf(err, "failed to initialize shoutrrr Generic service")
 	}
 
-	if err := service.SetTemplateString(genericPayloadTemplateID, config.PayloadTemplate); err != nil {
+	if err := service.SetTemplateString(templateID, config.PayloadTemplate); err != nil {
 		return errors.WrapIf(err, "invalid webhook payload template")
 	}
 
