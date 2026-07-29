@@ -2,7 +2,7 @@ package startup
 
 import (
 	"context"
-	"fmt"
+	"log/slog"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -61,7 +61,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	inContainer := runningInContainerInternal(os.Getenv, os.Stat)
 	req, warning, err := loadRuntimeIdentityRequestInternal(cfg, inContainer)
 	if warning != "" {
-		fmt.Fprintf(os.Stderr, "Runtime identity warning: %s\n", warning)
+		slog.WarnContext(ctx, "Runtime identity warning", "warning", warning)
 	}
 	if err != nil {
 		return err
@@ -82,8 +82,8 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 	}
 
 	if os.Geteuid() != 0 {
-		fmt.Fprintf(os.Stderr, "Runtime identity warning: process is not root (euid=%d), cannot switch to PUID=%d PGID=%d; continuing as current user\n",
-			os.Geteuid(), runtimeUID, runtimeGID)
+		slog.WarnContext(ctx, "Runtime identity warning: process is not root, continuing as current user",
+			"euid", os.Geteuid(), "puid", runtimeUID, "pgid", runtimeGID)
 		if err := ensureRuntimeDockerConfigInternal(cfg, os.Setenv, runtimeUID, runtimeGID, inContainer); err != nil {
 			return err
 		}

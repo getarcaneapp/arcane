@@ -16,7 +16,7 @@ import (
 
 	"emperror.dev/errors"
 	"github.com/golang-jwt/jwt/v5"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 

@@ -103,10 +103,10 @@ func (s *VolumeService) GetVolumeByName(ctx context.Context, name string) (*volu
 	}
 
 	volResult, err := dockerClient.VolumeInspect(ctx, name, client.VolumeInspectOptions{})
-	vol := volResult.Volume
 	if err != nil {
 		return nil, errors.WrapIf(err, "volume not found")
 	}
+	vol := volResult.Volume
 
 	settings := s.settingsService.GetSettingsConfig()
 	usageCtx, usageCancel := timeouts.WithTimeout(ctx, settings.DockerAPITimeout.AsInt(), timeouts.DefaultDockerAPI)
@@ -319,8 +319,13 @@ func (s *VolumeService) ListDirectory(ctx context.Context, volumeName, dirPath s
 	defer cleanup()
 
 	targetPath := path.Join("/volume", sanitizedPath)
-	quotedPath := strconv.Quote(targetPath)
-	cmd := []string{"sh", "-c", fmt.Sprintf("find %s -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c \"%%s %%Y %%f %%A\" -- \"$f\" 2>/dev/null) || continue; printf \"%%s\\0%%s\\0\" \"$f\" \"$out\"; done", quotedPath)}
+	cmd := []string{
+		"sh",
+		"-c",
+		`find "$1" -mindepth 1 -maxdepth 1 | while IFS= read -r f; do out=$(stat -c "%s %Y %f %A" -- "$f" 2>/dev/null) || continue; printf "%s\0%s\0" "$f" "$out"; done`,
+		"sh",
+		targetPath,
+	}
 	stdout, _, err := s.execInContainerInternal(ctx, containerID, cmd)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list directory")
@@ -1123,7 +1128,6 @@ func (s *VolumeService) UploadFile(ctx context.Context, volumeName, destPath str
 		return err
 	}
 	if _, err := tw.Write(contentBytes); err != nil {
-		_ = tw.Close()
 		return err
 	}
 	if err := tw.Close(); err != nil {

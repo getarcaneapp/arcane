@@ -7,7 +7,7 @@ import (
 	"testing"
 
 	"emperror.dev/errors"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"

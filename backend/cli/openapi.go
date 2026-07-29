@@ -1,7 +1,6 @@
 package cli
 
 import (
-	"fmt"
 	"os"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api"
@@ -35,19 +34,19 @@ var openapiCmd = &cobra.Command{
 		}
 
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Error generating OpenAPI spec: %v\n", err)
+			cmd.PrintErrf("Error generating OpenAPI spec: %v\n", err)
 			os.Exit(1)
 		}
 
 		// Write to file or stdout
 		if outputFile != "" {
 			if err := os.WriteFile(outputFile, output, 0o600); err != nil {
-				fmt.Fprintf(os.Stderr, "Error writing file: %v\n", err)
+				cmd.PrintErrf("Error writing file: %v\n", err)
 				os.Exit(1)
 			}
-			fmt.Fprintf(os.Stderr, "OpenAPI spec written to %s\n", outputFile)
+			cmd.PrintErrf("OpenAPI spec written to %s\n", outputFile)
 		} else {
-			fmt.Println(string(output))
+			cmd.Println(string(output))
 		}
 	},
 }

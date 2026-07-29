@@ -18,8 +18,8 @@ func setupUserAndRoleServices(t *testing.T) (*UserService, *RoleService) {
 	db := setupAuthServiceTestDB(t)
 	role := NewRoleService(db)
 	require.NoError(t, role.EnsureBuiltInRoles(context.Background()))
-	user := NewUserService(db).WithRoleService(role)
-	return user, role
+	userRecord := NewUserService(db).WithRoleService(role)
+	return userRecord, role
 }
 
 func createTestUser(t *testing.T, svc *UserService, id, username string) *models.User {
@@ -96,15 +96,15 @@ func TestListUsersPaginatedSetsCanDeleteFromGlobalAdminCount(t *testing.T) {
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
 		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
 		Filters:    map[string]string{},
 	})
 	require.NoError(t, err)
 	require.Len(t, users, 2)
 
 	canDeleteByID := make(map[string]bool, len(users))
-	for _, user := range users {
-		canDeleteByID[user.ID] = user.CanDelete
+	for _, userRecord := range users {
+		canDeleteByID[userRecord.ID] = userRecord.CanDelete
 	}
 
 	require.False(t, canDeleteByID[lastAdmin.ID])
@@ -127,7 +127,7 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
 		Params:     pagination.Params{Start: 0, Limit: 20},
-		SortParams: pagination.SortParams{Sort: "Username", Order: pagination.SortOrder("asc")},
+		SortParams: pagination.SortParams{Sort: "Username", Order: "asc"},
 		Filters:    map[string]string{},
 	})
 	require.NoError(t, err)

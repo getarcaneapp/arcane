@@ -2,7 +2,7 @@ package models
 
 import (
 	"database/sql/driver"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"time"
 
 	"emperror.dev/errors"

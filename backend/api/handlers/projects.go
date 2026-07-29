@@ -982,12 +982,12 @@ func (h *ProjectHandler) RestartProject(ctx context.Context, input *RestartProje
 
 // UpdateProjectServices pulls the latest images for the given services and recreates them.
 func (h *ProjectHandler) UpdateProjectServices(ctx context.Context, input *UpdateProjectServicesInput) (*UpdateProjectServicesOutput, error) {
-	var services []string
+	var serviceNames []string
 	if input.Body != nil {
-		services = input.Body.Services
+		serviceNames = input.Body.Services
 	}
 
-	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.updateProjectServicesActivityConfigInternal(services))
+	response, err := h.runProjectActivityActionResponseInternal(ctx, input.EnvironmentID, input.ProjectID, h.updateProjectServicesActivityConfigInternal(serviceNames))
 	if err != nil {
 		return nil, err
 	}

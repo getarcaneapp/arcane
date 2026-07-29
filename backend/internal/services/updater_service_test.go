@@ -583,7 +583,7 @@ func TestUpdaterService_RecordUpdateRunAdapterInternal(t *testing.T) {
 	require.NoError(t, db.First(&record, "resource_id = ?", "container-1").Error)
 	assert.Equal(t, "web", record.ResourceName)
 	assert.Equal(t, "container", record.ResourceType)
-	assert.Equal(t, models.AutoUpdateStatus(string(updater.StatusUpdated)), record.Status)
+	assert.Equal(t, models.AutoUpdateStatus(updater.StatusUpdated), record.Status)
 	assert.True(t, record.UpdateAvailable)
 	assert.True(t, record.UpdateApplied)
 	assert.Equal(t, "nginx:1.2.3", record.OldImageVersions["main"])

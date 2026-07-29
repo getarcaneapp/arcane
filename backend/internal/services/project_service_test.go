@@ -29,7 +29,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	projecttypes "github.com/getarcaneapp/arcane/types/v2/project"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	dockertypesimage "github.com/moby/moby/api/types/image"
 	dockerregistry "github.com/moby/moby/api/types/registry"
@@ -1333,11 +1333,11 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumes.JournalSource)
 		require.True(t, ok)
-		volumes := journalSource.JournalVolumes()
-		require.Len(t, volumes, 1)
-		require.Equal(t, "data", volumes[0].Key)
-		require.Equal(t, "nginx_data", volumes[0].OldName)
-		require.Equal(t, "web_data", volumes[0].NewName)
+		journalVolumes := journalSource.JournalVolumes()
+		require.Len(t, journalVolumes, 1)
+		require.Equal(t, "data", journalVolumes[0].Key)
+		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
+		require.Equal(t, "web_data", journalVolumes[0].NewName)
 		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
 	})
 
@@ -1350,11 +1350,11 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumes.JournalSource)
 		require.True(t, ok)
-		volumes := journalSource.JournalVolumes()
-		require.Len(t, volumes, 1)
-		require.Equal(t, "data", volumes[0].Key)
-		require.Equal(t, "nginx_data", volumes[0].OldName)
-		require.Equal(t, "web_data", volumes[0].NewName)
+		journalVolumes := journalSource.JournalVolumes()
+		require.Len(t, journalVolumes, 1)
+		require.Equal(t, "data", journalVolumes[0].Key)
+		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
+		require.Equal(t, "web_data", journalVolumes[0].NewName)
 		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
 	})
 
@@ -1367,11 +1367,11 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 		require.NotNil(t, migration)
 		journalSource, ok := migration.(volumes.JournalSource)
 		require.True(t, ok)
-		volumes := journalSource.JournalVolumes()
-		require.Len(t, volumes, 1)
-		require.Equal(t, "data", volumes[0].Key)
-		require.Equal(t, "nginx_data", volumes[0].OldName)
-		require.Equal(t, "web_data", volumes[0].NewName)
+		journalVolumes := journalSource.JournalVolumes()
+		require.Len(t, journalVolumes, 1)
+		require.Equal(t, "data", journalVolumes[0].Key)
+		require.Equal(t, "nginx_data", journalVolumes[0].OldName)
+		require.Equal(t, "web_data", journalVolumes[0].NewName)
 		require.Empty(t, projectUpdatePreviewDirsInternal(t, projectsDir))
 	})
 }

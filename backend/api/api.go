@@ -2,7 +2,7 @@ package api
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"io"
 	"maps"
 	"net/http"

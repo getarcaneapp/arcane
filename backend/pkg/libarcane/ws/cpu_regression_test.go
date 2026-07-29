@@ -110,13 +110,13 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(b, resp.Body.Close())
 		}
 
 		// Read one message to exercise the pipeline
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		require.NoError(b, conn.Close())
 
 		// Brief settle for cleanup
 		time.Sleep(50 * time.Millisecond)
@@ -203,12 +203,12 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(b, resp.Body.Close())
 		}
 
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		require.NoError(b, conn.Close())
 		time.Sleep(50 * time.Millisecond)
 		if (i+1)%10 == 0 || i == b.N-1 {
 			current := runtime.NumGoroutine()
@@ -262,7 +262,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 						b.Fatal(err)
 					}
 					if resp != nil {
-						resp.Body.Close()
+						require.NoError(b, resp.Body.Close())
 					}
 					conns[j] = conn
 				}
@@ -274,7 +274,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 
 				// Close all
 				for _, conn := range conns {
-					conn.Close()
+					require.NoError(b, conn.Close())
 				}
 
 				time.Sleep(100 * time.Millisecond)
@@ -317,7 +317,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(b, resp.Body.Close())
 		}
 		for range 10 {
 			_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
@@ -325,7 +325,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 				break
 			}
 		}
-		conn.Close()
+		require.NoError(b, conn.Close())
 		time.Sleep(50 * time.Millisecond)
 	}
 }
@@ -359,11 +359,11 @@ func TestCPU_GoroutineCountReport(t *testing.T) {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err)
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		require.NoError(t, conn.Close())
 		time.Sleep(50 * time.Millisecond)
 		current := runtime.NumGoroutine()
 		if current > peakGoroutines {

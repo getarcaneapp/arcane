@@ -2,7 +2,6 @@ package volumes
 
 import (
 	"context"
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -489,12 +488,4 @@ func TestDockerProjectVolumeRenameMigrationInternal_CommitPreflightsAllTargetsBe
 	require.Equal(t, "web_cache", missingTarget.TargetVolume)
 	require.False(t, firstSourceRemoved.Load(), "no source volume should be removed until every target is verified")
 	require.False(t, secondSourceRemoved.Load())
-}
-
-func setProjectVolumeCopyArchiveStatHeaderInternal(t *testing.T, w http.ResponseWriter) {
-	t.Helper()
-
-	payload, err := json.Marshal(container.PathStat{Name: "."})
-	require.NoError(t, err)
-	w.Header().Set("X-Docker-Container-Path-Stat", base64.StdEncoding.EncodeToString(payload))
 }

@@ -229,7 +229,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	permissionMatcher := authz.NewPermissionMatcher()
 
 	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
-		types.LOCAL_DOCKER_ENVIRONMENT_ID,
+		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(deps),

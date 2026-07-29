@@ -118,8 +118,7 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 }
 
 func TestJobScheduler_RegisterBusWatcherManualRunOption(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := t.Context()
 
 	js := NewJobScheduler(ctx, nil)
 	manualWatcher := &testBusWatcherInternal{

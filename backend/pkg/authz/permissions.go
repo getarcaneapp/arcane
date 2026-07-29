@@ -83,9 +83,10 @@ const (
 	PermGitReposTest   = "git-repositories:test"
 	PermGitReposSync   = "git-repositories:sync"
 
-	PermEventsRead      = "events:read"
-	PermEventsDelete    = "events:delete"
-	PermCustomizeManage = "customize:manage"
+	PermEventsRead          = "events:read"
+	PermEventsDelete        = "events:delete"
+	PermCustomizeManage     = "customize:manage"
+	PermNotificationsManage = "notifications:manage"
 
 	// PermDiagnosticsRead gates the admin-only runtime diagnostics surface
 	// (runtime/memory/GC stats, WebSocket metrics, pprof profiles, and the live
@@ -178,9 +179,8 @@ const (
 	PermWebhooksUpdate = "webhooks:update"
 	PermWebhooksDelete = "webhooks:delete"
 
-	PermJobsManage          = "jobs:manage"
-	PermNotificationsManage = "notifications:manage"
-	PermDashboardRead       = "dashboard:read"
+	PermJobsManage    = "jobs:manage"
+	PermDashboardRead = "dashboard:read"
 
 	PermSystemRead    = "system:read"
 	PermSystemPrune   = "system:prune"

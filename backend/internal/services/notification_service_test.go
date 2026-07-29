@@ -14,10 +14,11 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -162,7 +163,7 @@ func TestNotificationService_DispatchNotification_UnsupportedKindReturnsSentinel
 	}).Error)
 
 	_, err := svc.DispatchNotification(ctx, token, notificationdto.DispatchRequest{
-		Kind: notificationdto.DispatchKind("bogus_kind"),
+		Kind: "bogus_kind",
 	})
 
 	require.Error(t, err)
@@ -575,6 +576,41 @@ func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhen
 	decrypted, err := crypto.Decrypt(stored.Config["token"].(string))
 	require.NoError(t, err)
 	require.Equal(t, "initial-gotify-token", decrypted)
+}
+
+func TestNotificationService_CreateOrUpdateSettingsRejectsTargetChangeWithStoredCredentialInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil)
+
+	created, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"port":  443,
+		"token": "initial-gotify-token",
+	})
+	require.NoError(t, err)
+	originalToken := created.Config["token"]
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "attacker.example",
+		"port":  443,
+		"token": "",
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGotify).First(&stored).Error)
+	require.Equal(t, "gotify.example", stored.Config["host"])
+	require.Equal(t, originalToken, stored.Config["token"])
+
+	updated, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGotify, true, models.JSON{
+		"host":  "gotify.example",
+		"port":  8443,
+		"token": "",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 8443, updated.Config["port"])
+	require.Equal(t, originalToken, updated.Config["token"])
 }
 
 func TestNotificationService_CreateOrUpdateSettingsClearsEmailPasswordWhenAuthModeNoneInternal(t *testing.T) {

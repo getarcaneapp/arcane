@@ -20,7 +20,11 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				t.Logf("close websocket connection: %v", err)
+			}
+		}()
 
 		for {
 			mt, msg, err := conn.ReadMessage()
@@ -48,9 +52,11 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	// 4. Send messages and verify they get proxied and echoed
 	testMessages := []string{"hello", "world", "test123"}
@@ -76,7 +82,9 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 		// Close immediately
 		_ = conn.WriteMessage(websocket.CloseMessage,
 			websocket.FormatCloseMessage(websocket.CloseNormalClosure, "bye"))
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Logf("close websocket connection: %v", err)
+		}
 	}))
 	defer remoteServer.Close()
 
@@ -92,9 +100,11 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	// The proxy should complete (not hang)
 	select {
@@ -116,9 +126,11 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	select {
 	case err := <-proxyDone:
@@ -136,7 +148,11 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 		if err != nil {
 			return
 		}
-		defer conn.Close()
+		defer func() {
+			if err := conn.Close(); err != nil {
+				t.Logf("close websocket connection: %v", err)
+			}
+		}()
 
 		for {
 			mt, msg, err := conn.ReadMessage()
@@ -161,9 +177,11 @@ func TestProxyHTTP_BinaryMessages(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	binaryData := []byte{0x00, 0x01, 0x02, 0xFF, 0xFE, 0xFD}
 	err = clientConn.WriteMessage(websocket.BinaryMessage, binaryData)
@@ -185,7 +203,9 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 		if err != nil {
 			return
 		}
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			t.Logf("close websocket connection: %v", err)
+		}
 	}))
 	defer remoteServer.Close()
 
@@ -205,9 +225,11 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	select {
 	case receivedHeaders := <-headersCh:

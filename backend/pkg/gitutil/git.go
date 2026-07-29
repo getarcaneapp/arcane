@@ -3,9 +3,9 @@ package git
 import (
 	"context"
 	stderrors "errors"
-	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	nethttp "net/http"
 	"os"
@@ -181,7 +181,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 			return nil, errors.WrapIf(err, "failed to create known_hosts file")
 		}
 		if err := file.Close(); err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: failed to close known_hosts file %s: %v\n", knownHostsPath, err)
+			slog.Warn("Failed to close known_hosts file", "path", knownHostsPath, "error", err)
 		}
 	}
 
@@ -210,7 +210,7 @@ func (c *Client) createAcceptNewHostKeyCallback() (gossh.HostKeyCallback, error)
 		if err := addHostKey(knownHostsPath, hostname, key); err != nil {
 			// Log the error but don't fail - still allow the connection
 			// The host key just won't be remembered for next time
-			fmt.Fprintf(os.Stderr, "Warning: failed to save host key for %s: %v\n", hostname, err)
+			slog.Warn("Failed to save host key", "hostname", hostname, "error", err)
 		}
 
 		return nil
@@ -254,7 +254,11 @@ func addHostKey(knownHostsPath, hostname string, key gossh.PublicKey) (err error
 	if err := fileLock.Lock(); err != nil {
 		return errors.WrapIf(err, "failed to acquire lock on known_hosts file")
 	}
-	defer fileLock.Unlock() //nolint:errcheck
+	defer func() {
+		if unlockErr := fileLock.Unlock(); unlockErr != nil && err == nil {
+			err = errors.WrapIf(unlockErr, "failed to release lock on known_hosts file")
+		}
+	}()
 
 	// Append to the file
 	file, err := os.OpenFile(knownHostsPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)

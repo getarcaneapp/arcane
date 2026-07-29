@@ -2,7 +2,7 @@ package notifications
 
 import (
 	"encoding/base64"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"log/slog"
 
 	"emperror.dev/errors"

@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/getarcaneapp/arcane/types/v2/jobschedule"
 	settingstypes "github.com/getarcaneapp/arcane/types/v2/settings"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -37,7 +37,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 	require.NoError(t, db.AutoMigrate(&models.Environment{}))
 
 	now := time.Now()
-	env := &models.Environment{
+	envRecord := &models.Environment{
 		BaseModel: models.BaseModel{
 			ID:        "env-remote",
 			CreatedAt: now,
@@ -49,7 +49,7 @@ func setupRemoteHandlerEnvironmentServiceInternal(t *testing.T, server *httptest
 		Enabled: true,
 		IsEdge:  false,
 	}
-	require.NoError(t, db.WithContext(context.Background()).Create(env).Error)
+	require.NoError(t, db.WithContext(context.Background()).Create(envRecord).Error)
 
 	return services.NewEnvironmentService(&database.DB{DB: db}, server.Client(), nil, nil, nil, nil)
 }

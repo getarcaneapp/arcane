@@ -3,7 +3,7 @@ package configschema
 import (
 	"bytes"
 	"encoding/json/jsontext"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"go/ast"
 	"go/format"
 	"go/parser"

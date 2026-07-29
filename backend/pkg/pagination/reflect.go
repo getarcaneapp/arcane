@@ -43,10 +43,7 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 		limit = 100
 	}
 
-	page := 1
-	if limit > 0 {
-		page = (params.Start / limit) + 1
-	}
+	page := (params.Start / limit) + 1
 
 	return paginateDB(page, limit, query, result, params.SkipCount)
 }

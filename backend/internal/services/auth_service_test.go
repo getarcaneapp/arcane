@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
@@ -297,10 +297,10 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 		t.Errorf("expiresAt nil")
 	}
 	// Check approx expiry within [start+7s, start+12s] to allow CI slop
-	min := start.Add(7 * time.Second)
-	max := start.Add(12 * time.Second)
-	if user.OidcAccessTokenExpiresAt.Before(min) || user.OidcAccessTokenExpiresAt.After(max) {
-		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, min, max)
+	earliest := start.Add(7 * time.Second)
+	latest := start.Add(12 * time.Second)
+	if user.OidcAccessTokenExpiresAt.Before(earliest) || user.OidcAccessTokenExpiresAt.After(latest) {
+		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, earliest, latest)
 	}
 }
 

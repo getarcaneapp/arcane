@@ -1,13 +1,25 @@
 <script lang="ts">
 	import ArcaneTable from '#lib/components/arcane-table/arcane-table.svelte';
-	import { UniversalMobileCard, type ColumnSpec, type MobileFieldVisibility } from '#lib/components/arcane-table';
+	import RowActionsMenu from '#lib/components/arcane-table/row-actions-menu.svelte';
+	import * as DropdownMenu from '#lib/components/ui/dropdown-menu/index.js';
+	import { Spinner } from '#lib/components/ui/spinner/index.js';
+	import {
+		UniversalMobileCard,
+		type BulkAction,
+		type ColumnSpec,
+		type MobileFieldVisibility
+	} from '#lib/components/arcane-table';
 	import DigestCell from '#lib/components/arcane-table/cells/digest-cell.svelte';
 	import CheckedAtCell from '#lib/components/arcane-table/cells/checked-at-cell.svelte';
+	import IfPermitted from '#lib/components/if-permitted.svelte';
 	import { m } from '#lib/paraglide/messages';
 	import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 	import type { Project } from '#lib/types/swarm';
 	import type { ImageUpdateInfoDto } from '#lib/types/docker';
-	import { ProjectsIcon, ImagesIcon } from '#lib/icons';
+	import { ProjectsIcon, ImagesIcon, UpdateIcon } from '#lib/icons';
+	import { hasPermission } from '#lib/utils/auth';
+	import { bulkConfirmAndRun, confirmAndRun } from '#lib/utils/bulk-actions';
+	import { applyScopedUpdate, summarizeUpdateResult, throwOnUpdateFailure } from '#lib/utils/update-actions';
 	import { formatImageUpdateCheckedAt, formatImageUpdateValue } from '#lib/utils/image-updates';
 
 	type ProjectUpdateRow = {
@@ -32,6 +44,8 @@
 
 	let selectedIds = $state<string[]>([]);
 	let mobileFieldVisibility = $state<MobileFieldVisibility>({});
+	let updatingProjectIds = $state<Record<string, boolean>>({});
+	let bulkUpdating = $state(false);
 
 	function summarizeImageRefs(imageRefs: string[]): string {
 		if (imageRefs.length === 0) return '-';
@@ -95,6 +109,59 @@
 		{ id: 'latestValue', label: m.image_update_latest_digest_label(), defaultVisible: true },
 		{ id: 'checkedAt', label: m.common_updated(), defaultVisible: true }
 	];
+
+	// A scoped updater run only touches the services whose images actually
+	// changed, unlike a full project redeploy.
+	function handleUpdateProject(item: ProjectUpdateRow) {
+		confirmAndRun({
+			title: m.common_update(),
+			message: m.updates_update_confirm_message({ name: item.name }),
+			confirmLabel: m.common_update(),
+			setLoading: (loading) => {
+				updatingProjectIds = { ...updatingProjectIds, [item.projectId]: loading };
+			},
+			run: () => applyScopedUpdate('project', item.projectId),
+			failureMessage: m.updates_apply_all_failed(),
+			onSuccess: async (result) => {
+				summarizeUpdateResult(result);
+				await onRefreshData(requestOptions);
+			}
+		});
+	}
+
+	function handleBulkUpdate(ids: string[]) {
+		bulkConfirmAndRun({
+			ids,
+			title: m.updates_bulk_update_confirm_title({ count: ids.length }),
+			message: m.updates_bulk_update_confirm_message({ count: ids.length }),
+			confirmLabel: m.common_update(),
+			run: (id) => applyScopedUpdate('project', id).then(throwOnUpdateFailure),
+			messages: {
+				success: (count) => m.updates_bulk_update_success({ count }),
+				partial: (success, total, failed) => m.updates_bulk_update_partial({ success, total, failed }),
+				failure: () => m.updates_bulk_update_failed()
+			},
+			setLoading: (loading) => (bulkUpdating = loading),
+			onComplete: () => onRefreshData(requestOptions),
+			clearSelection: () => (selectedIds = [])
+		});
+	}
+
+	const bulkActions = $derived<BulkAction[]>(
+		hasPermission('image-updates:check')
+			? [
+					{
+						id: 'update',
+						label: m.updates_bulk_update({ count: selectedIds.length }),
+						action: 'update',
+						onClick: handleBulkUpdate,
+						loading: bulkUpdating,
+						disabled: bulkUpdating,
+						icon: UpdateIcon
+					}
+				]
+			: []
+	);
 </script>
 
 {#snippet NameCell({ item }: { item: ProjectUpdateRow })}
@@ -124,6 +191,21 @@
 	<CheckedAtCell {value} />
 {/snippet}
 
+{#snippet RowActions({ item }: { item: ProjectUpdateRow })}
+	<IfPermitted perm="image-updates:check">
+		<RowActionsMenu>
+			<DropdownMenu.Item onclick={() => handleUpdateProject(item)} disabled={!!updatingProjectIds[item.projectId]}>
+				{#if updatingProjectIds[item.projectId]}
+					<Spinner class="size-4" />
+				{:else}
+					<UpdateIcon class="size-4" />
+				{/if}
+				{m.common_update()}
+			</DropdownMenu.Item>
+		</RowActionsMenu>
+	</IfPermitted>
+{/snippet}
+
 {#snippet ProjectUpdatesMobileCard({ item }: { item: ProjectUpdateRow })}
 	<UniversalMobileCard
 		{item}
@@ -147,6 +229,7 @@
 				getValue: (item: ProjectUpdateRow) => formatImageUpdateCheckedAt(item.checkedAt)
 			}
 		]}
+		rowActions={RowActions}
 		onclick={(item: ProjectUpdateRow) => {
 			if (item.project.isDiscovered) return;
 			window.location.href = `/projects/${item.projectId}`;
@@ -170,7 +253,8 @@
 	}}
 	{columns}
 	{mobileFields}
+	{bulkActions}
+	rowActions={RowActions}
 	mobileCard={ProjectUpdatesMobileCard}
 	withoutFilters
-	selectionDisabled
 />

@@ -363,16 +363,16 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 		return nil, errors.New("job service or scheduler not initialized")
 	}
 
-	meta, ok := meta.GetJobMetadata(jobID)
+	jobMeta, ok := meta.GetJobMetadata(jobID)
 	if !ok {
 		return nil, errors.Errorf("unknown job: %s", jobID)
 	}
 
-	if !meta.CanRunManually {
+	if !jobMeta.CanRunManually {
 		return nil, errors.Errorf("job %s cannot be run manually", jobID)
 	}
 
-	if s.cfg != nil && s.cfg.AgentMode && meta.ManagerOnly {
+	if s.cfg != nil && s.cfg.AgentMode && jobMeta.ManagerOnly {
 		return nil, errors.Errorf("job %s is manager-only and cannot run in agent mode", jobID)
 	}
 

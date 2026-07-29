@@ -42,7 +42,7 @@ func (s *CustomizeSearchService) buildCategoriesFromModel() []category.Category 
 
 	// map category id -> list of customizations
 	categories := map[string][]meta.Metadata{}
-	categoryOrder := []string{} // Track order from first appearance in struct
+	var categoryOrder []string // Track order from first appearance in struct
 
 	rt := reflect.TypeFor[models.CustomizeItem]()
 	for field := range rt.Fields() {

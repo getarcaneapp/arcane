@@ -5,10 +5,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -125,9 +126,9 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 	// GetSettings should clone the in-memory snapshot and not touch the database.
 	svc.db = nil
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "http://cached", settings.BaseServerURL.Value)
+	require.Equal(t, "http://cached", settingsCfg.BaseServerURL.Value)
 }
 
 func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
@@ -149,6 +150,121 @@ func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
 	current, err = svc.GetSettings(ctx)
 	require.NoError(t, err)
 	require.Equal(t, "8", current.AvatarMaxUploadSizeMb.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		OidcIssuerUrl:    new("https://attacker.example.com"),
+		OidcClientSecret: new(""),
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://issuer.example.com", current.OidcIssuerUrl.Value)
+	require.Equal(t, "old-client-secret", current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecretInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		OidcIssuerUrl:    new("https://replacement.example.com"),
+		OidcClientSecret: new("new-client-secret"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.OidcIssuerUrl.Value)
+	require.Equal(t, "new-client-secret", current.OidcClientSecret.Value)
+}
+
+func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new("https://attacker.example.com"),
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://trivy.example.com", current.TrivyServerUrl.Value)
+	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl:   new("https://replacement.example.com"),
+		TrivyServerToken: new("new-trivy-token"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
+	require.Equal(t, "new-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new(""),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Empty(t, current.TrivyServerUrl.Value)
+	require.Equal(t, "old-trivy-token", current.TrivyServerToken.Value)
+}
+
+func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := NewSettingsService(ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		TrivyServerUrl: new("https://replacement.example.com"),
+	})
+	require.NoError(t, err)
+
+	current, loadErr := svc.GetSettings(ctx)
+	require.NoError(t, loadErr)
+	require.Equal(t, "https://replacement.example.com", current.TrivyServerUrl.Value)
 }
 
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
@@ -185,9 +301,9 @@ func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.True(t, settings.OidcMergeAccounts.IsTrue())
+	require.True(t, settingsCfg.OidcMergeAccounts.IsTrue())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) {
@@ -199,9 +315,9 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) 
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, 1800, settings.TrivyScanTimeout.AsInt())
+	require.Equal(t, 1800, settingsCfg.TrivyScanTimeout.AsInt())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.T) {
@@ -215,11 +331,11 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.False(t, settings.TrivyResourceLimitsEnabled.IsTrue())
-	require.Equal(t, "2.5", settings.TrivyCpuLimit.Value)
-	require.Equal(t, 2048, settings.TrivyMemoryLimitMb.AsInt())
+	require.False(t, settingsCfg.TrivyResourceLimitsEnabled.IsTrue())
+	require.Equal(t, "2.5", settingsCfg.TrivyCpuLimit.Value)
+	require.Equal(t, 2048, settingsCfg.TrivyMemoryLimitMb.AsInt())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
@@ -231,9 +347,9 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "arcane-external", settings.TrivyNetwork.Value)
+	require.Equal(t, "arcane-external", settingsCfg.TrivyNetwork.Value)
 }
 
 func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testing.T) {
@@ -245,9 +361,9 @@ func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testin
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.True(t, settings.FollowProjectSymlinks.IsTrue())
+	require.True(t, settingsCfg.FollowProjectSymlinks.IsTrue())
 }
 
 func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing.T) {
@@ -260,10 +376,10 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settings.TrivySecurityOpts.Value)
-	require.True(t, settings.TrivyPrivileged.IsTrue())
+	require.Equal(t, "label=disable,\nlabel=type:container_runtime_t", settingsCfg.TrivySecurityOpts.Value)
+	require.True(t, settingsCfg.TrivyPrivileged.IsTrue())
 }
 
 func TestSettingsService_GetStringSetting_EnvOverride_SwarmStackSourcesDirectory(t *testing.T) {
@@ -344,9 +460,9 @@ func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 
 	require.Equal(t, "https://arcane.test", svc.GetSettingsConfig().BaseServerURL.Value)
 
-	settings, err := svc.GetSettings(ctx)
+	settingsCfg, err := svc.GetSettings(ctx)
 	require.NoError(t, err)
-	require.Equal(t, "https://arcane.test", settings.BaseServerURL.Value)
+	require.Equal(t, "https://arcane.test", settingsCfg.BaseServerURL.Value)
 }
 
 func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCallback(t *testing.T) {
@@ -405,11 +521,11 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 	b.ResetTimer()
 
 	for b.Loop() {
-		settings, err := svc.GetSettings(ctx)
+		settingsCfg, err := svc.GetSettings(ctx)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if settings == nil {
+		if settingsCfg == nil {
 			b.Fatal("settings should not be nil")
 		}
 	}

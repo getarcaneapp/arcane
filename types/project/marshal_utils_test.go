@@ -1,7 +1,7 @@
 package project
 
 import (
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"testing"
 
 	composetypes "github.com/compose-spec/compose-go/v2/types"

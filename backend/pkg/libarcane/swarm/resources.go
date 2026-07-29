@@ -96,7 +96,7 @@ func planManagedFileResourcesInternal(
 			Labels:     resource.Labels,
 			IsExternal: bool(resource.External),
 		}
-		if bool(resource.External) {
+		if resource.External {
 			result[key] = plan
 			continue
 		}
@@ -126,7 +126,7 @@ func ensureSwarmNetworksInternal(ctx context.Context, dockerClient *dockerclient
 		cfg := project.Networks[key]
 		networkName := result[key]
 
-		if bool(cfg.External) {
+		if cfg.External {
 			if networkName == "bridge" || networkName == "host" || networkName == "none" {
 				continue
 			}

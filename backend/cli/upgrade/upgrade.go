@@ -85,11 +85,10 @@ func runUpgrade(cmd *cobra.Command, args []string) error {
 		slog.Info("Found Arcane container", "name", containerName, "id", targetContainer.ID[:12])
 	} else {
 		inspectResult, inspectErr := libarcane.ContainerInspectWithCompatibility(ctx, dockerClient, containerName, client.ContainerInspectOptions{})
-		targetContainer = inspectResult.Container
-		err = inspectErr
-		if err != nil {
-			return errors.WrapIff(err, "failed to inspect container %s", containerName)
+		if inspectErr != nil {
+			return errors.WrapIff(inspectErr, "failed to inspect container %s", containerName)
 		}
+		targetContainer = inspectResult.Container
 	}
 
 	// Determine image to pull

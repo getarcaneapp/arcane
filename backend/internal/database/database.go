@@ -16,8 +16,8 @@ import (
 
 	"emperror.dev/errors"
 
-	sqlite "github.com/libtnb/sqlite"
-	goose "github.com/pressly/goose/v3"
+	"github.com/libtnb/sqlite"
+	"github.com/pressly/goose/v3"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
@@ -59,11 +59,21 @@ func SetGormLogger(l logger.Interface) {
 	customGormLogger = l
 }
 
-func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (*DB, error) {
+func Initialize(ctx context.Context, databaseURL string, options MigrationOptions) (database *DB, err error) {
 	db, err := connectDatabaseInternal(ctx, databaseURL)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to connect to database")
 	}
+	// Initialization opens a connection pool before it can fail on migrations or
+	// provider detection; release it rather than leaking it into a failed startup.
+	defer func() {
+		if err == nil {
+			return
+		}
+		if closeErr := db.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "Failed to close database after initialization failure", "error", closeErr)
+		}
+	}()
 
 	if err := ctx.Err(); err != nil {
 		return nil, err

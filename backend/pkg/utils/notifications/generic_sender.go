@@ -3,7 +3,7 @@ package notifications
 import (
 	"bytes"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"net/http"

@@ -10,11 +10,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 )
 
-// MetaRequiredPermission is re-exported from the authz package for callers that
-// reference it via this middleware package. The authoritative definition (and
-// the matcher that consumes it) lives in authz.
-const MetaRequiredPermission = authz.MetaRequiredPermission
-
 // RegisterWithPermission registers a Huma operation that requires perm. It
 // attaches the RequirePermission middleware AND records perm in the operation
 // metadata (authz.MetaRequiredPermission) so the remote environment proxy can

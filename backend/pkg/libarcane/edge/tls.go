@@ -8,7 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"crypto/x509"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"encoding/pem"
 	"fmt"
 	"io"

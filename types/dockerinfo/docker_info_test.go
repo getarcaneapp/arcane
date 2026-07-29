@@ -1,7 +1,7 @@
 package dockerinfo
 
 import (
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"testing"
 
 	"github.com/moby/moby/api/types/system"

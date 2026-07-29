@@ -263,7 +263,7 @@ func (h *OidcHandler) GetOidcStatus(ctx context.Context, _ *GetOidcStatusInput) 
 
 // GetOidcConfig returns the OIDC client configuration.
 func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInput) (*GetOidcConfigOutput, error) {
-	config, err := h.authService.GetOidcConfig(ctx)
+	oidcConfig, err := h.authService.GetOidcConfig(ctx)
 	if err != nil {
 		return nil, huma.Error500InternalServerError("Failed to get OIDC configuration")
 	}
@@ -276,14 +276,14 @@ func (h *OidcHandler) GetOidcConfig(ctx context.Context, input *GetOidcConfigInp
 
 	return &GetOidcConfigOutput{
 		Body: auth.OidcConfigResponse{
-			ClientID:                    config.ClientID,
+			ClientID:                    oidcConfig.ClientID,
 			RedirectUri:                 h.oidcService.GetOidcRedirectURL(origin),
-			IssuerUrl:                   config.IssuerURL,
-			AuthorizationEndpoint:       config.AuthorizationEndpoint,
-			TokenEndpoint:               config.TokenEndpoint,
-			UserinfoEndpoint:            config.UserinfoEndpoint,
-			DeviceAuthorizationEndpoint: config.DeviceAuthorizationEndpoint,
-			Scopes:                      config.Scopes,
+			IssuerUrl:                   oidcConfig.IssuerURL,
+			AuthorizationEndpoint:       oidcConfig.AuthorizationEndpoint,
+			TokenEndpoint:               oidcConfig.TokenEndpoint,
+			UserinfoEndpoint:            oidcConfig.UserinfoEndpoint,
+			DeviceAuthorizationEndpoint: oidcConfig.DeviceAuthorizationEndpoint,
+			Scopes:                      oidcConfig.Scopes,
 		},
 	}, nil
 }

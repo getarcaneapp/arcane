@@ -1,12 +1,15 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"testing"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -15,6 +18,56 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestEnvironmentHandlerTestConnectionRequiresUpdatePermissionForCustomURLInternal(t *testing.T) {
+	permissions := authz.NewPermissionSet()
+	permissions.AddGlobal(authz.PermEnvironmentsRead)
+	ctx := context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissions)
+
+	output, err := (&EnvironmentHandler{}).TestConnection(ctx, &TestConnectionInput{
+		ID: "0",
+		Body: &envtypes.TestConnectionRequest{
+			ApiUrl: new("http://10.0.0.2:3553"),
+		},
+	})
+
+	require.Nil(t, output)
+	require.ErrorContains(t, err, "permission denied: "+authz.PermEnvironmentsUpdate)
+}
+
+func TestEnvironmentHandlerTestConnectionReturnsOpaqueBadRequestForCustomURLInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupActivityHandlerTestDBInternal(t)
+	env := &models.Environment{Name: "Test", ApiUrl: "http://stored.example", Enabled: true}
+	env.ID = "env-1"
+	require.NoError(t, db.Create(env).Error)
+
+	permissions := authz.NewPermissionSet()
+	permissions.AddGlobal(authz.PermEnvironmentsUpdate)
+	ctx := context.WithValue(context.Background(), humamw.ContextKeyUserPermissions, permissions)
+	handler := &EnvironmentHandler{
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil),
+	}
+
+	output, err := handler.TestConnection(ctx, &TestConnectionInput{
+		ID: "env-1",
+		Body: &envtypes.TestConnectionRequest{
+			ApiUrl: new(server.URL),
+		},
+	})
+
+	require.NotNil(t, output)
+	require.False(t, output.Body.Success)
+	require.Nil(t, output.Body.Data.Message)
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	require.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
+	require.Equal(t, "Environment connection test failed", statusErr.Error())
+}
 
 func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {
 	testCases := []struct {

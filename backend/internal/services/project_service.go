@@ -3,7 +3,7 @@ package services
 import (
 	"bufio"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	stderrors "errors"
 	"fmt"
 	"io"
@@ -304,8 +304,8 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 		return nil, false, nil
 	}
 
-	var project models.Project
-	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&project).Error; err != nil {
+	var projectModel models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", projectID).First(&projectModel).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			s.invalidateCachedComposeProjectIDInternal(normalizedName)
 			return nil, false, nil
@@ -315,12 +315,12 @@ func (s *ProjectService) lookupProjectByCachedComposeNameInternal(ctx context.Co
 		}
 		return nil, false, errors.WrapIf(err, "failed to get project by cached compose name")
 	}
-	if projects.NormalizeProjectName(project.Name) != normalizedName {
+	if projects.NormalizeProjectName(projectModel.Name) != normalizedName {
 		s.invalidateCachedComposeProjectIDInternal(normalizedName)
 		return nil, false, nil
 	}
 
-	return &project, true, nil
+	return &projectModel, true, nil
 }
 
 func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) error {
@@ -348,8 +348,8 @@ func (s *ProjectService) rebuildComposeNameCacheInternal(ctx context.Context) er
 }
 
 func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id string) (*models.Project, error) {
-	var project models.Project
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&project).Error; err != nil {
+	var projectModel models.Project
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&projectModel).Error; err != nil {
 		if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
 			return nil, errors.New("request canceled or timed out")
 		}
@@ -358,7 +358,7 @@ func (s *ProjectService) GetProjectFromDatabaseByID(ctx context.Context, id stri
 		}
 		return nil, errors.WrapIf(err, "failed to get project")
 	}
-	return &project, nil
+	return &projectModel, nil
 }
 
 func (s *ProjectService) GetProjectByComposeName(ctx context.Context, name string) (*models.Project, error) {
@@ -402,12 +402,12 @@ func (s *ProjectService) resolveProjectComposeFileInternal(ctx context.Context, 
 	}
 
 	if proj.GitOpsManagedBy != nil && strings.TrimSpace(*proj.GitOpsManagedBy) != "" {
-		var sync models.GitOpsSync
+		var syncRecord models.GitOpsSync
 		if err := s.db.WithContext(ctx).
 			Select("compose_path").
 			Where("id = ?", *proj.GitOpsManagedBy).
-			First(&sync).Error; err == nil {
-			composeFileName := strings.TrimSpace(filepath.Base(sync.ComposePath))
+			First(&syncRecord).Error; err == nil {
+			composeFileName := strings.TrimSpace(filepath.Base(syncRecord.ComposePath))
 			if composeFileName != "" && composeFileName != "." {
 				candidate := filepath.Join(proj.Path, composeFileName)
 				if info, statErr := os.Stat(candidate); statErr == nil {
@@ -1431,11 +1431,11 @@ func (s *ProjectService) enrichWithProjectFiles(ctx context.Context, projectPath
 
 func (s *ProjectService) enrichWithGitOpsInfo(ctx context.Context, proj *models.Project, resp *project.Details) {
 	if proj.GitOpsManagedBy != nil {
-		var sync models.GitOpsSync
-		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&sync).Error; err == nil {
-			resp.LastSyncCommit = sync.LastSyncCommit
-			if sync.Repository != nil {
-				resp.GitRepositoryURL = sync.Repository.URL
+		var syncRecord models.GitOpsSync
+		if err := s.db.WithContext(ctx).Preload("Repository").Where("id = ?", *proj.GitOpsManagedBy).First(&syncRecord).Error; err == nil {
+			resp.LastSyncCommit = syncRecord.LastSyncCommit
+			if syncRecord.Repository != nil {
+				resp.GitRepositoryURL = syncRecord.Repository.URL
 			}
 		}
 	}
@@ -1652,8 +1652,8 @@ func (s activeProjectRenameSyncStateInternal) skipDiscoveredPathInternal(path st
 }
 
 func (s activeProjectRenameSyncStateInternal) markProtectedPathsSeenInternal(seen map[string]struct{}) {
-	for path := range s.protectSeenPaths {
-		seen[path] = struct{}{}
+	for seenPath := range s.protectSeenPaths {
+		seen[seenPath] = struct{}{}
 	}
 }
 
@@ -2084,7 +2084,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		}
 	}
 
-	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
+	projectModel, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if derr != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
@@ -2097,7 +2097,7 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	}
 
 	progressWriter, _ := ctx.Value(dockerutil.ProgressWriterKey{}).(io.Writer)
-	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, project, progressWriter, credentials, &user, resolvedPullPolicy); perr != nil {
+	if perr := s.prepareProjectImagesForDeploy(ctx, projectID, projectModel, progressWriter, credentials, &user, resolvedPullPolicy); perr != nil {
 		s.restoreProjectStatusAfterFailedDeployInternal(ctx, projectID)
 		return errors.WrapIf(perr, "failed to prepare project images for deploy")
 	}
@@ -2105,10 +2105,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 	gitOpsManaged := projectFromDb.GitOpsManagedBy != nil && *projectFromDb.GitOpsManagedBy != ""
 	removeOrphans := resolveRemoveOrphansInternal(gitOpsManaged, options)
 
-	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", project.Name, "services", len(project.Services), "removeOrphans", removeOrphans)
+	slog.Info("starting compose up with health check support", "projectID", projectID, "projectName", projectModel.Name, "services", len(projectModel.Services), "removeOrphans", removeOrphans)
 	// Health/progress streaming (if any) is handled inside projects.ComposeUp via ctx.
-	if err := projects.ComposeUp(ctx, project, nil, removeOrphans, forceRecreate, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
-		slog.Error("compose up failed", "projectName", project.Name, "projectID", projectID, "error", err)
+	if err := projects.ComposeUp(ctx, projectModel, nil, removeOrphans, forceRecreate, s.composeRegistryAuthConfigsInternal(ctx)); err != nil {
+		slog.Error("compose up failed", "projectName", projectModel.Name, "projectID", projectID, "error", err)
 		if containers, psErr := s.GetProjectServices(ctx, projectID); psErr == nil {
 			slog.Info("containers after failed deploy", "projectID", projectID, "containers", containers)
 		}
@@ -2121,10 +2121,10 @@ func (s *ProjectService) DeployProject(ctx context.Context, projectID string, us
 		}
 		return errors.WrapIf(err, "failed to deploy project")
 	}
-	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", project.Name)
+	slog.Info("compose up completed successfully", "projectID", projectID, "projectName", projectModel.Name)
 
-	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": project.Name}
-	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, project.Name, user, metadata, "could not log project deployment action")
+	metadata := models.JSON{"action": "deploy", "projectID": projectID, "projectName": projectModel.Name}
+	s.logProjectEventInternal(ctx, models.EventTypeProjectDeploy, projectID, projectModel.Name, user, metadata, "could not log project deployment action")
 
 	err = s.updateProjectStatusandCountsInternal(ctx, projectID, models.ProjectStatusRunning)
 	if err != nil {
@@ -2346,8 +2346,8 @@ func (s *ProjectService) projectRedeployDisabledInternal(ctx context.Context, pr
 	containersByProject := groupComposeContainersByProjectInternal(containers)
 
 	currentContainerID, currentContainerErr := cgroup.CurrentContainerID()
-	for _, container := range lookupProjectContainers(proj, containersByProject) {
-		if labels.ShouldDisableArcaneServerRedeploy(container.Labels, container.ID, currentContainerID, currentContainerErr) {
+	for _, containerSummary := range lookupProjectContainers(proj, containersByProject) {
+		if labels.ShouldDisableArcaneServerRedeploy(containerSummary.Labels, containerSummary.ID, currentContainerID, currentContainerErr) {
 			return true
 		}
 	}
@@ -2392,12 +2392,12 @@ func (s *ProjectService) BuildProjectServices(ctx context.Context, projectID str
 		return err
 	}
 
-	project, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
+	projectModel, _, derr := s.loadComposeProjectForProjectInternal(ctx, projectFromDb, nil)
 	if derr != nil {
 		return errors.WrapIff(derr, "failed to load compose project in %s", projectFromDb.Path)
 	}
 
-	return s.buildProjectServicesInternal(ctx, projectID, project, options, progressWriter, user)
+	return s.buildProjectServicesInternal(ctx, projectID, projectModel, options, progressWriter, user)
 }
 
 // EnsureProjectImagesPresent checks all compose service images for the project and
@@ -2565,7 +2565,7 @@ func (s *ProjectService) buildServiceImageForDeploy(
 		project.Services[serviceName] = updatedSvc
 	}
 
-	if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, serviceName, user); err != nil {
+	if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentID, buildReq, progressWriter, serviceName, user); err != nil {
 		return err
 	}
 
@@ -2748,7 +2748,7 @@ func (s *ProjectService) buildProjectServicesInternal(ctx context.Context, proje
 		}
 
 		buildCount++
-		if _, err := s.buildService.BuildImage(ctx, types.LOCAL_DOCKER_ENVIRONMENT_ID, buildReq, progressWriter, name, user); err != nil {
+		if _, err := s.buildService.BuildImage(ctx, types.LocalDockerEnvironmentID, buildReq, progressWriter, name, user); err != nil {
 			return err
 		}
 	}

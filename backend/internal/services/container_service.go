@@ -3,7 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json/jsontext"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"io"
 	"log/slog"
@@ -453,9 +453,9 @@ func (s *ContainerService) tryRedeployViaComposeProjectInternal(ctx context.Cont
 	if s.projectService == nil || containerInfo.Config == nil {
 		return "", false, nil
 	}
-	labels := containerInfo.Config.Labels
-	projectName := dockerutils.ComposeProjectLabel(labels)
-	serviceName := dockerutils.ComposeServiceLabel(labels)
+	containerLabels := containerInfo.Config.Labels
+	projectName := dockerutils.ComposeProjectLabel(containerLabels)
+	serviceName := dockerutils.ComposeServiceLabel(containerLabels)
 	if projectName == "" || serviceName == "" {
 		return "", false, nil
 	}

@@ -120,7 +120,7 @@ func buildServiceSpecInternal(
 	if len(service.DNS) > 0 || len(service.DNSSearch) > 0 || len(service.DNSOpts) > 0 {
 		spec.TaskTemplate.ContainerSpec.DNSConfig = &swarm.DNSConfig{
 			Nameservers: parseIPListInternal(service.DNS),
-			Search:      []string(service.DNSSearch),
+			Search:      service.DNSSearch,
 			Options:     service.DNSOpts,
 		}
 	}
@@ -700,7 +700,7 @@ func toStringSliceInternal(command composegotypes.ShellCommand) []string {
 	if len(command) == 0 {
 		return nil
 	}
-	return []string(command)
+	return command
 }
 
 func convertDurationPtrInternal(duration *composegotypes.Duration) *time.Duration {

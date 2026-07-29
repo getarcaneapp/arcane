@@ -23,11 +23,13 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/image"
 	"github.com/moby/moby/client"
 	"github.com/samber/mo"
 	"go.getarcane.app/sys/crypto"
 	"go.getarcane.app/updater/digest"
+	"go.getarcane.app/updater/labels"
 	"go.getarcane.app/updater/refs"
 	"golang.org/x/sync/errgroup"
 	"gorm.io/gorm"
@@ -247,6 +249,9 @@ func (s *ImageUpdateService) CheckImageUpdate(ctx context.Context, imageRef stri
 	var snapshot *localImageSnapshot
 	if err == nil {
 		digestResult, snapshot, err = s.checkDigestUpdateWithSnapshotInternal(ctx, parts, composeBuildRefs)
+	}
+	if err == nil && digestResult == nil {
+		err = errors.New("digest update check returned no result")
 	}
 	if err != nil {
 		result := &imageupdate.Response{
@@ -551,14 +556,14 @@ func (s *ImageUpdateService) getImageRefByIDInternal(ctx context.Context, imageI
 
 	imageID = strings.TrimPrefix(imageID, "sha256:")
 
-	if ref, refErr := s.resolveImageRefFromInspect(ctx, dockerClient, imageID); refErr == nil {
-		return ref, nil
+	if imageRef, refErr := s.resolveImageRefFromInspect(ctx, dockerClient, imageID); refErr == nil {
+		return imageRef, nil
 	}
 
 	// Fallback: if the image was pruned, look up the image reference from
 	// running containers that were started from this image ID.
-	if ref, refErr := s.resolveImageRefFromContainers(ctx, dockerClient, imageID); refErr == nil {
-		return ref, nil
+	if imageRef, refErr := s.resolveImageRefFromContainers(ctx, dockerClient, imageID); refErr == nil {
+		return imageRef, nil
 	}
 
 	return "", errors.Errorf("image not found: no local image or running container found for %s", imageID)
@@ -577,9 +582,9 @@ func (s *ImageUpdateService) resolveImageRefFromInspect(ctx context.Context, doc
 			return tag, nil
 		}
 	}
-	for _, digest := range inspectResponse.RepoDigests {
-		if digest != "<none>@<none>" {
-			if repo, _, ok := strings.Cut(digest, "@"); ok {
+	for _, digestValue := range inspectResponse.RepoDigests {
+		if digestValue != "<none>@<none>" {
+			if repo, _, ok := strings.Cut(digestValue, "@"); ok {
 				return repo + ":latest", nil
 			}
 		}
@@ -613,35 +618,124 @@ func (s *ImageUpdateService) getAllImageRefsInternal(ctx context.Context, limit 
 		return nil, err
 	}
 
-	apiCtx, cancel := s.dockerAPIContextInternal(ctx)
-	defer cancel()
-
-	imageList, err := dockerClient.ImageList(apiCtx, client.ImageListOptions{})
+	imageCtx, cancelImage := s.dockerAPIContextInternal(ctx)
+	imageList, err := dockerClient.ImageList(imageCtx, client.ImageListOptions{})
+	cancelImage()
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to list Docker images")
 	}
 
-	return dedupeImageRefsFromSummariesInternal(imageList.Items, limit), nil
+	containerCtx, cancelContainers := s.dockerAPIContextInternal(ctx)
+	containerList, err := dockerClient.ContainerList(containerCtx, client.ContainerListOptions{All: true})
+	cancelContainers()
+	if err != nil {
+		slog.WarnContext(ctx, "failed to list Docker containers; continuing without updater opt-out filtering", "error", err.Error())
+		return imageRefsFromSummariesInternal(imageList.Items, limit), nil
+	}
+
+	return filterImageSummariesByContainerOptOutInternal(imageList.Items, containerList.Items, limit), nil
 }
 
-func dedupeImageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
+func imageRefsFromSummariesInternal(images []image.Summary, limit int) []string {
 	seen := make(map[string]struct{})
-	var imageRefs []string
-	for _, img := range images {
-		for _, tag := range img.RepoTags {
-			if tag != "<none>:<none>" {
-				if _, exists := seen[tag]; exists {
-					continue
-				}
-				seen[tag] = struct{}{}
-				imageRefs = append(imageRefs, tag)
+	imageRefs := make([]string, 0)
+
+	for _, summary := range images {
+		for _, imageRef := range summary.RepoTags {
+			if imageRef == "<none>:<none>" {
+				continue
 			}
+			if _, exists := seen[imageRef]; exists {
+				continue
+			}
+
+			seen[imageRef] = struct{}{}
+			imageRefs = append(imageRefs, imageRef)
 			if limit > 0 && len(imageRefs) >= limit {
-				return imageRefs[:limit]
+				return imageRefs
 			}
 		}
 	}
+
 	return imageRefs
+}
+
+type imageContainerUsageInternal struct {
+	optedOut bool
+	eligible bool
+}
+
+func filterImageSummariesByContainerOptOutInternal(images []image.Summary, containers []container.Summary, limit int) []string {
+	usageByImageID := make(map[string]imageContainerUsageInternal)
+	usageByRef := make(map[string]imageContainerUsageInternal)
+
+	for _, summary := range containers {
+		disabled := labels.IsUpdateDisabled(summary.Labels)
+		usage := imageContainerUsageInternal{
+			optedOut: disabled,
+			eligible: !disabled,
+		}
+
+		if imageID := strings.TrimSpace(summary.ImageID); imageID != "" {
+			usageByImageID[imageID] = mergeImageContainerUsageInternal(usageByImageID[imageID], usage)
+		}
+
+		imageRef := strings.TrimSpace(summary.Image)
+		if imageRef == "" || refs.IsImageIDLikeReference(imageRef) {
+			continue
+		}
+
+		normalizedRef := refs.NormalizeImageUpdateRef(imageRef)
+		if normalizedRef == "" {
+			continue
+		}
+
+		usageByRef[normalizedRef] = mergeImageContainerUsageInternal(usageByRef[normalizedRef], usage)
+	}
+
+	seen := make(map[string]struct{})
+	filtered := make([]string, 0)
+
+	for _, summary := range images {
+		imageUsage, hasImageUsage := usageByImageID[strings.TrimSpace(summary.ID)]
+
+		for _, imageRef := range summary.RepoTags {
+			if imageRef == "<none>:<none>" {
+				continue
+			}
+			if _, exists := seen[imageRef]; exists {
+				continue
+			}
+
+			usage := imageUsage
+			hasUsage := hasImageUsage
+
+			normalizedRef := refs.NormalizeImageUpdateRef(imageRef)
+			if refUsage, hasRefUsage := usageByRef[normalizedRef]; hasRefUsage {
+				usage = mergeImageContainerUsageInternal(usage, refUsage)
+				hasUsage = true
+			}
+
+			if hasUsage && usage.optedOut && !usage.eligible {
+				continue
+			}
+
+			seen[imageRef] = struct{}{}
+			filtered = append(filtered, imageRef)
+			if limit > 0 && len(filtered) >= limit {
+				return filtered
+			}
+		}
+	}
+
+	return filtered
+}
+
+func mergeImageContainerUsageInternal(current, next imageContainerUsageInternal) imageContainerUsageInternal {
+	return imageContainerUsageInternal{
+		optedOut: current.optedOut || next.optedOut,
+		eligible: current.eligible || next.eligible,
+	}
 }
 
 func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Context, imageRef string, composeBuildRefs map[string]struct{}) (*localImageSnapshot, error) {
@@ -665,16 +759,16 @@ func (s *ImageUpdateService) inspectLocalImageSnapshotInternal(ctx context.Conte
 	// Extract all digests from RepoDigests
 	if len(inspectResponse.RepoDigests) > 0 {
 		for _, repoDigest := range inspectResponse.RepoDigests {
-			digest, ok := digest.FromReferenceSuffix(repoDigest)
+			digestValue, ok := digest.FromReferenceSuffix(repoDigest)
 			if !ok {
 				continue
 			}
 
-			allDigests = append(allDigests, digest)
+			allDigests = append(allDigests, digestValue)
 
 			// Use first digest as primary if not yet set
 			if primaryDigest == "" {
-				primaryDigest = digest
+				primaryDigest = digestValue
 			}
 		}
 	}
@@ -1096,8 +1190,8 @@ func (r *batchImageProgressRecorder) recordInternal(refs []string, res *imageupd
 
 	r.completed++
 	progress := 10 + int(float64(r.completed)/float64(r.total)*80)
-	for _, ref := range refs {
-		r.results[ref] = res
+	for _, imageRef := range refs {
+		r.results[imageRef] = res
 	}
 	return progress
 }
@@ -1108,15 +1202,15 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 	var images []batchImage
 	indexByNormalizedRef := make(map[string]int)
 
-	for _, ref := range imageRefs {
-		if result, ok := digestPinnedImageUpdateResultInternal(ref).Get(); ok {
-			results[ref] = result
+	for _, imageRef := range imageRefs {
+		if result, ok := digestPinnedImageUpdateResultInternal(imageRef).Get(); ok {
+			results[imageRef] = result
 			continue
 		}
 
-		parts := s.parseImageReference(ref)
+		parts := s.parseImageReference(imageRef)
 		if parts == nil {
-			results[ref] = &imageupdate.Response{
+			results[imageRef] = &imageupdate.Response{
 				Error:          "Invalid image reference format",
 				CheckTime:      time.Now(),
 				ResponseTimeMs: 0,
@@ -1129,14 +1223,14 @@ func (s *ImageUpdateService) parseAndGroupImagesInternal(imageRefs []string) (ma
 		regRepos[parts.Registry][s.normalizeRepository(parts.Registry, parts.Repository)] = struct{}{}
 		normalizedRef := strings.ToLower(fmt.Sprintf("%s/%s:%s", parts.Registry, s.normalizeRepository(parts.Registry, parts.Repository), parts.Tag))
 		if idx, exists := indexByNormalizedRef[normalizedRef]; exists {
-			images[idx].refs = append(images[idx].refs, ref)
+			images[idx].refs = append(images[idx].refs, imageRef)
 			continue
 		}
 
 		indexByNormalizedRef[normalizedRef] = len(images)
 		images = append(images, batchImage{
-			refs:         []string{ref},
-			canonicalRef: ref,
+			refs:         []string{imageRef},
+			canonicalRef: imageRef,
 			parts:        parts,
 		})
 	}
@@ -1266,12 +1360,12 @@ func (s *ImageUpdateService) resolveBatchCredentialsInternal(ctx context.Context
 }
 
 func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activityID string, resolvedCreds []containerregistry.Credential, img batchImage, composeBuildRefs map[string]struct{}, recorder *batchImageProgressRecorder) error {
-	registry := img.parts.Registry
+	registryRecord := img.parts.Registry
 
-	if err := s.registryLimiter.Acquire(ctx, registry); err != nil {
+	if err := s.registryLimiter.Acquire(ctx, registryRecord); err != nil {
 		slog.DebugContext(ctx, "skipping image check: registry limiter acquire failed",
 			"imageRef", img.canonicalRef,
-			"registry", registry,
+			"registry", registryRecord,
 			"error", err.Error())
 		if ctx.Err() != nil {
 			return ctx.Err()
@@ -1286,7 +1380,7 @@ func (s *ImageUpdateService) checkBatchImageInternal(ctx context.Context, activi
 		s.recordBatchImageCheckInternal(ctx, activityID, img, res, nil, recorder)
 		return nil
 	}
-	defer s.registryLimiter.Release(registry)
+	defer s.registryLimiter.Release(registryRecord)
 
 	res, snapshot := s.checkSingleImageInBatchInternal(ctx, resolvedCreds, img.parts, composeBuildRefs)
 	if ctx.Err() != nil {

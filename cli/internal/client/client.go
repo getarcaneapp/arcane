@@ -608,16 +608,11 @@ func (c *Client) DoRaw(ctx context.Context, method, path string, body any) ([]by
 	return b, nil
 }
 
-// DecodeResponse decodes an API response into the given type.
-// It reads the response body, unmarshals it as JSON, and returns the typed
-// result. If the response indicates failure (Success=false) with a 4xx/5xx
-// status code, an error is returned with the error message from the API.
-// Note: This function closes the response body.
-func DecodeResponse[T any](resp *http.Response) (*APIResponse[T], error) {
-	return DecodeResponseStrict[T](resp)
-}
-
-// DecodeResponseStrict decodes a response envelope and enforces HTTP and API success.
+// DecodeResponseStrict decodes an API response into the given type and enforces
+// HTTP and API success. It reads the response body, unmarshals it as JSON, and
+// returns the typed result. If the response indicates failure (Success=false) or
+// carries a non-2xx status code, an error is returned with the message from the
+// API. Note: This function closes the response body.
 func DecodeResponseStrict[T any](resp *http.Response) (*APIResponse[T], error) {
 	defer func() { _ = resp.Body.Close() }()
 

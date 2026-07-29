@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/google/go-containerregistry/pkg/v1/static"
-	"github.com/google/go-containerregistry/pkg/v1/types"
 	"github.com/klauspost/compress/zstd"
 )
 
@@ -22,7 +21,7 @@ func TestReadAttestationLayerBytesInternalDecompressesGzip(t *testing.T) {
 		t.Fatalf("gzip close: %v", err)
 	}
 
-	layer := static.NewLayer(buf.Bytes(), types.MediaType(inTotoLayerMediaTypeInternal))
+	layer := static.NewLayer(buf.Bytes(), inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -35,7 +34,7 @@ func TestReadAttestationLayerBytesInternalDecompressesGzip(t *testing.T) {
 func TestReadAttestationLayerBytesInternalPassesThroughRawJSON(t *testing.T) {
 	statement := []byte(`{"predicateType":"https://spdx.dev/Document"}`)
 
-	layer := static.NewLayer(statement, types.MediaType(inTotoLayerMediaTypeInternal))
+	layer := static.NewLayer(statement, inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -57,7 +56,7 @@ func TestReadAttestationLayerBytesInternalDecompressesZstd(t *testing.T) {
 		t.Fatalf("zstd close: %v", err)
 	}
 
-	layer := static.NewLayer(compressed, types.MediaType(inTotoLayerMediaTypeInternal))
+	layer := static.NewLayer(compressed, inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

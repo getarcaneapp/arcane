@@ -35,9 +35,6 @@ func TestCustomSchemaNamer_PrefixesArcaneTypesByPackage(t *testing.T) {
 	if envName != "EnvSummary" {
 		t.Fatalf("expected EnvSummary, got %q", envName)
 	}
-	if imageName == envName {
-		t.Fatalf("expected unique schema names, got same value %q", imageName)
-	}
 }
 
 func TestCustomSchemaNamer_PointerMatchesValue(t *testing.T) {

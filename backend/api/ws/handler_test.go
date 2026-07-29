@@ -232,7 +232,9 @@ func TestWebSocketHandler_ProjectLogs_CompletedSourceStartsFreshStream(t *testin
 
 	path := "/api/environments/0/ws/projects/project-1/logs?follow=false"
 	conn1 := dialWebSocket(t, server.URL, path)
-	defer conn1.Close()
+	defer func() {
+		require.NoError(t, conn1.Close())
+	}()
 
 	_ = conn1.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg1, err := conn1.ReadMessage()
@@ -246,7 +248,9 @@ func TestWebSocketHandler_ProjectLogs_CompletedSourceStartsFreshStream(t *testin
 	}
 
 	conn2 := dialWebSocket(t, server.URL, path)
-	defer conn2.Close()
+	defer func() {
+		require.NoError(t, conn2.Close())
+	}()
 
 	_ = conn2.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, msg2, err := conn2.ReadMessage()
@@ -276,7 +280,9 @@ func TestWebSocketHandler_ContainerLogs_BroadcastsStreamErrors(t *testing.T) {
 	defer server.Close()
 
 	conn := dialWebSocket(t, server.URL, "/api/environments/0/ws/containers/container-1/logs")
-	defer conn.Close()
+	defer func() {
+		require.NoError(t, conn.Close())
+	}()
 
 	var got []string
 
@@ -317,7 +323,9 @@ func TestWebSocketHandler_ContainerLogs_ErrorStartsFreshStreamForNewSubscribers(
 
 	path := "/api/environments/0/ws/containers/container-1/logs"
 	conn1 := dialWebSocket(t, server.URL, path)
-	defer conn1.Close()
+	defer func() {
+		require.NoError(t, conn1.Close())
+	}()
 
 	got1 := make([]string, 0, 2)
 	for range 2 {
@@ -332,7 +340,9 @@ func TestWebSocketHandler_ContainerLogs_ErrorStartsFreshStreamForNewSubscribers(
 	}, got1)
 
 	conn2 := dialWebSocket(t, server.URL, path)
-	defer conn2.Close()
+	defer func() {
+		require.NoError(t, conn2.Close())
+	}()
 
 	got2 := make([]string, 0, 2)
 	for range 2 {

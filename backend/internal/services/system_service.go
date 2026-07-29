@@ -312,8 +312,8 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 	// Limit concurrency to avoid overwhelming Docker daemon
 	g.SetLimit(5)
 
-	for _, container := range containers {
-		c := container // capture loop var
+	for _, containerSummary := range containers {
+		c := containerSummary // capture loop var
 		if !shouldProcess(c) {
 			continue
 		}

@@ -27,6 +27,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/settings"
 )
 
@@ -360,8 +361,8 @@ func (s *SettingsService) isEnvOverrideActiveInternal(key string) bool {
 }
 
 func (s *SettingsService) GetSettings(ctx context.Context) (*models.Settings, error) {
-	settings := s.getEffectiveSettingsConfigInternal(ctx)
-	return settings, nil
+	settingsCfg := s.getEffectiveSettingsConfigInternal(ctx)
+	return settingsCfg, nil
 }
 
 // GetSettingsOrDefaults is a convenience for hot paths that need a snapshot but cannot
@@ -380,9 +381,9 @@ func (s *SettingsService) GetSettingsOrDefaults(ctx context.Context) *models.Set
 }
 
 func (s *SettingsService) getEffectiveSettingsConfigInternal(ctx context.Context) *models.Settings {
-	settings := s.GetSettingsConfig().Clone()
-	s.applyEnvOverrides(ctx, settings)
-	return settings
+	settingsCfg := s.GetSettingsConfig().Clone()
+	s.applyEnvOverrides(ctx, settingsCfg)
+	return settingsCfg
 }
 
 func (s *SettingsService) UpdateSetting(ctx context.Context, key, value string) error {
@@ -406,24 +407,56 @@ func (s *SettingsService) updateSettingValueNoRefreshInternal(ctx context.Contex
 func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.Update) ([]models.SettingVariable, error) {
 	defaultCfg := s.getDefaultSettings()
 	cfg := s.GetSettingsConfig().Clone()
+	trivyServerTokenUpdated := updates.TrivyServerToken != nil && *updates.TrivyServerToken != "" && !s.isEnvOverrideActiveInternal("trivyServerToken")
+	normalizeTargetURL := func(value string) string {
+		normalized, err := normalizeEnvironmentBaseURLInternal(value)
+		if err != nil {
+			return strings.TrimSpace(value)
+		}
+		return normalized
+	}
+
+	if err := validation.ValidateCredentialTargetChange(
+		"OIDC issuer URL",
+		cfg.OidcIssuerUrl.Value,
+		updates.OidcIssuerUrl,
+		normalizeTargetURL,
+		map[string]bool{"oidcClientSecret": cfg.OidcClientSecret.Value != ""},
+		map[string]bool{"oidcClientSecret": updates.OidcClientSecret != nil && *updates.OidcClientSecret != ""},
+	); err != nil {
+		return nil, err
+	}
+
+	if err := validation.ValidateCredentialTargetChange(
+		"Trivy server URL",
+		cfg.TrivyServerUrl.Value,
+		updates.TrivyServerUrl,
+		normalizeTargetURL,
+		map[string]bool{"trivyServerToken": cfg.TrivyServerToken.Value != ""},
+		map[string]bool{"trivyServerToken": trivyServerTokenUpdated},
+	); err != nil {
+		return nil, err
+	}
 
 	valuesToUpdate, changedPolling, changedAutoUpdate, changedScheduledPrune, changedVulnerabilityScan, changedAutoHeal, changedTimeouts, err := s.prepareUpdateValues(updates, cfg, defaultCfg)
 	if err != nil {
 		return nil, err
+	}
+	if updates.OidcClientSecret != nil && *updates.OidcClientSecret != "" {
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "oidcClientSecret", Value: *updates.OidcClientSecret})
+	}
+	if trivyServerTokenUpdated {
+		valuesToUpdate = append(valuesToUpdate, models.SettingVariable{Key: "trivyServerToken", Value: *updates.TrivyServerToken})
 	}
 
 	if err := s.persistSettings(ctx, valuesToUpdate); err != nil {
 		return nil, err
 	}
 
-	if err := s.handleOidcConfigUpdate(ctx, updates); err != nil {
-		return nil, err
-	}
-
 	if err := s.refreshSettingsCacheInternal(ctx); err != nil {
 		return nil, err
 	}
-	settings := s.GetSettingsConfig()
+	settingsCfg := s.GetSettingsConfig()
 
 	// Now call callbacks after in-memory config is updated
 	if changedPolling && s.OnImagePollingSettingsChanged != nil {
@@ -455,7 +488,7 @@ func (s *SettingsService) UpdateSettings(ctx context.Context, updates settings.U
 		s.OnTimeoutSettingsChanged(ctx, changedTimeouts)
 	}
 
-	return settings.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false), nil
+	return settingsCfg.ToSettingVariableSlice(models.SettingVisibilityNonAdmin, false), nil
 }
 
 func (s *SettingsService) prepareUpdateValues(updates settings.Update, cfg, defaultCfg *models.Settings) ([]models.SettingVariable, bool, bool, bool, bool, bool, []libarcane.SettingUpdate, error) {
@@ -572,31 +605,6 @@ func (s *SettingsService) persistSettings(ctx context.Context, values []models.S
 		}
 		return nil
 	})
-}
-
-func (s *SettingsService) handleOidcConfigUpdate(ctx context.Context, updates settings.Update) error {
-	// Handle new individual field for client secret (sensitive field)
-	if updates.OidcClientSecret != nil {
-		secret := *updates.OidcClientSecret
-
-		// If empty secret provided, preserve existing secret
-		if secret == "" {
-			current, err := s.GetSettings(ctx)
-			if err != nil {
-				return errors.WrapIf(err, "failed to load current settings for secret")
-			}
-			if current.OidcClientSecret.Value != "" {
-				// Keep existing secret, don't update
-				return nil
-			}
-		}
-
-		if err := s.updateSettingValueNoRefreshInternal(ctx, "oidcClientSecret", secret); err != nil {
-			return errors.WrapIf(err, "failed to update oidcClientSecret")
-		}
-	}
-
-	return nil
 }
 
 func (s *SettingsService) EnsureDefaultSettings(ctx context.Context) error {

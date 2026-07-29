@@ -1,8 +1,6 @@
 package cmdutil
 
 import (
-	"strings"
-
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/cli/v2/internal/client"
@@ -56,18 +54,4 @@ func AssumeYes(cmd *cobra.Command) bool {
 		return app.AssumeYes()
 	}
 	return false
-}
-
-// ResolveOutputMode validates a free-form output mode value.
-func ResolveOutputMode(mode string) (runtimectx.OutputMode, error) {
-	normalized := strings.ToLower(strings.TrimSpace(mode))
-	if normalized == "" {
-		return runtimectx.OutputModeText, nil
-	}
-	switch runtimectx.OutputMode(normalized) {
-	case runtimectx.OutputModeText, runtimectx.OutputModeJSON:
-		return runtimectx.OutputMode(normalized), nil
-	default:
-		return "", errors.Errorf("invalid output mode %q", mode)
-	}
 }

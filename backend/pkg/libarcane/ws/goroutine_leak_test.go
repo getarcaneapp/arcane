@@ -146,7 +146,7 @@ func TestLeak_ServeClientFullLifecycle(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 
 	require.Eventually(t, func() bool {
@@ -159,7 +159,7 @@ func TestLeak_ServeClientFullLifecycle(t *testing.T) {
 	assert.Greater(t, midpoint, baseline, "should have active goroutines while connected")
 
 	// Client disconnects (simulates browser close/reload)
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	require.Eventually(t, func() bool {
 		return h.ClientCount() == 0
@@ -201,7 +201,7 @@ func TestLeak_OnEmptyCallbackCancelsContext(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 
 	require.Eventually(t, func() bool {
@@ -209,7 +209,7 @@ func TestLeak_OnEmptyCallbackCancelsContext(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// Close client -> triggers safeRemove -> hub.remove -> OnEmpty -> cancel()
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	// Hub.Run should exit because OnEmpty called cancel()
 	actual := waitForGoroutineCount(t, baseline, 3, 5*time.Second)
@@ -246,14 +246,14 @@ func TestLeak_RepeatedConnectDisconnect(t *testing.T) {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err, "iteration %d", i)
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 
 		// Brief moment to let registration happen
 		time.Sleep(10 * time.Millisecond)
 
 		// Close (simulates page reload)
-		conn.Close()
+		require.NoError(t, conn.Close())
 
 		// Brief moment for cleanup
 		time.Sleep(20 * time.Millisecond)
@@ -321,7 +321,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 
 	// Read a few messages to confirm the pipeline works
@@ -330,7 +330,7 @@ func TestLeak_HubWithForwardLinesLifecycle(t *testing.T) {
 	require.NoError(t, err)
 
 	// Close client -> OnEmpty -> cancel() -> all goroutines should exit
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	actual := waitForGoroutineCount(t, baseline, 3, 5*time.Second)
 	assert.LessOrEqual(t, actual, baseline+3,
@@ -401,7 +401,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 
 	// Read a message to confirm the full pipeline works
@@ -415,7 +415,7 @@ func TestLeak_HubWithForwardLogJSONBatchedLifecycle(t *testing.T) {
 	assert.NotEmpty(t, batch)
 
 	// Disconnect
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	actual := waitForGoroutineCount(t, baseline, 3, 5*time.Second)
 	assert.LessOrEqual(t, actual, baseline+3,
@@ -523,14 +523,14 @@ func TestLeak_ContainerStatsHubPattern(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 	_ = clientConn.SetReadDeadline(time.Now().Add(2 * time.Second))
 	_, raw, err := clientConn.ReadMessage()
 	require.NoError(t, err)
 	var stats map[string]any
 	require.NoError(t, json.Unmarshal(raw, &stats))
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	actual := waitForGoroutineCount(t, baseline, 3, 5*time.Second)
 	assert.LessOrEqual(t, actual, baseline+3,
@@ -563,12 +563,12 @@ func TestLeak_RepeatedStatsHubCycles(t *testing.T) {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err, "iteration %d", i)
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 
 		_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
 		_, _, _ = conn.ReadMessage()
-		conn.Close()
+		require.NoError(t, conn.Close())
 		time.Sleep(30 * time.Millisecond)
 	}
 
@@ -622,7 +622,7 @@ func TestLeak_MultipleClientsOnSameHub(t *testing.T) {
 		conn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 		require.NoError(t, err)
 		if resp != nil {
-			resp.Body.Close()
+			require.NoError(t, resp.Body.Close())
 		}
 		clients = append(clients, conn)
 	}
@@ -633,7 +633,7 @@ func TestLeak_MultipleClientsOnSameHub(t *testing.T) {
 
 	// Close all clients
 	for _, c := range clients {
-		c.Close()
+		require.NoError(t, c.Close())
 	}
 
 	// OnEmpty should fire after last client leaves, cancelling context

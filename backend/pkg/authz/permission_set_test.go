@@ -1,6 +1,9 @@
 package authz
 
-import "testing"
+import (
+	"slices"
+	"testing"
+)
 
 func TestPermissionSetAllowsGlobal(t *testing.T) {
 	ps := NewPermissionSet()
@@ -221,7 +224,7 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		if !IsOrgLevel(permission) {
 			t.Fatalf("variable permission %q must be global", permission)
 		}
-		if permissionSliceContainsInternal(BuiltInMonitorPermissions(), permission) {
+		if slices.Contains(BuiltInMonitorPermissions(), permission) {
 			t.Fatalf("Monitor must not receive %q", permission)
 		}
 	}
@@ -232,7 +235,7 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
 	} {
 		for _, permission := range variablePermissions {
-			if !permissionSliceContainsInternal(permissions, permission) {
+			if !slices.Contains(permissions, permission) {
 				t.Fatalf("%s must receive %q", name, permission)
 			}
 		}
@@ -242,11 +245,11 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		"Viewer":   BuiltInViewerPermissions(),
 		"Deployer": BuiltInDeployerPermissions(),
 	} {
-		if !permissionSliceContainsInternal(permissions, PermVariablesRead) {
+		if !slices.Contains(permissions, PermVariablesRead) {
 			t.Fatalf("%s must receive %q", name, PermVariablesRead)
 		}
 		for _, permission := range variablePermissions[1:] {
-			if permissionSliceContainsInternal(permissions, permission) {
+			if slices.Contains(permissions, permission) {
 				t.Fatalf("%s must not receive %q", name, permission)
 			}
 		}
@@ -259,15 +262,6 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 			t.Fatalf("template grants must not satisfy %q", permission)
 		}
 	}
-}
-
-func permissionSliceContainsInternal(permissions []string, permission string) bool {
-	for _, candidate := range permissions {
-		if candidate == permission {
-			return true
-		}
-	}
-	return false
 }
 
 func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
@@ -315,5 +309,25 @@ func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 		if _, exists := seen[permission]; !exists {
 			t.Fatalf("AllPermissions includes %q outside catalog", permission)
 		}
+	}
+}
+
+func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
+	if !IsOrgLevel(PermNotificationsManage) {
+		t.Fatal("notifications:manage must be org-level for manager-global notification settings")
+	}
+	if IsEnvScoped(PermNotificationsManage) {
+		t.Fatal("notifications:manage must not be environment-scoped")
+	}
+
+	ps := NewPermissionSet()
+	ps.AddEnv("env-1", PermNotificationsManage)
+	if ps.Allows(PermNotificationsManage, "") {
+		t.Fatal("an environment-scoped notification grant must not authorize the global resource")
+	}
+
+	ps.AddGlobal(PermNotificationsManage)
+	if !ps.Allows(PermNotificationsManage, "") {
+		t.Fatal("a global notification grant must authorize the global resource")
 	}
 }

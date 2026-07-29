@@ -2,7 +2,7 @@ package system
 
 import (
 	stdjson "encoding/json"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 )
 
 type PruneContainerMode string

@@ -31,13 +31,13 @@ const (
 // Detection is cached for gpuDetectionTTL; once a vendor is detected, subsequent Stats
 // calls invoke the vendor-specific tool directly.
 type GPUMonitor struct {
-	enabled        bool
 	configuredType string
 
-	detectionMu   sync.Mutex
-	detectionDone bool
-
+	detectionMu    sync.Mutex
 	detectionCache *hot.HotCache[struct{}, gpuDetection]
+	detectionDone  bool
+
+	enabled bool
 }
 
 type gpuDetection struct {

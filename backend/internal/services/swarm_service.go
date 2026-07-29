@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"context"
 	stdjson "encoding/json"
-	json "encoding/json/v2"
-	stderrors "errors"
+	"encoding/json/v2"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -16,7 +15,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"syscall"
 	"time"
 
 	"emperror.dev/errors"
@@ -2583,16 +2581,6 @@ func (s *SwarmService) deleteStackSourceInternal(ctx context.Context, environmen
 	environmentDir := filepath.Dir(stackSourceDir)
 	if environmentDir != rootDir {
 		if err := os.Remove(environmentDir); err != nil && !errors.Is(err, os.ErrNotExist) {
-			if errno, ok := stderrors.AsType[syscall.Errno](err); ok && (errno == syscall.ENOTEMPTY || errno == syscall.EACCES) {
-				slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
-				return nil
-			}
-
-			if errors.Is(err, os.ErrPermission) {
-				slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
-				return nil
-			}
-
 			slog.DebugContext(ctx, "swarm stack source environment directory cleanup skipped", "dir", environmentDir, "error", err)
 		}
 	}

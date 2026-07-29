@@ -35,7 +35,9 @@ func benchWSServer(b *testing.B) (url string, cleanup func()) {
 			}
 		}()
 		<-ctx.Done()
-		conn.Close()
+		if err := conn.Close(); err != nil {
+			b.Logf("close websocket connection: %v", err)
+		}
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
@@ -63,7 +65,9 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 			b.Fatal(err)
 		}
 		if resp != nil {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				b.Logf("close dial response body: %v", err)
+			}
 		}
 		conns = append(conns, conn)
 
@@ -85,7 +89,9 @@ func benchHub(b *testing.B, numClients int, hubBuf int) (*Hub, context.CancelFun
 	return h, cancel, func() {
 		cancel()
 		for _, c := range conns {
-			c.Close()
+			if err := c.Close(); err != nil {
+				b.Logf("close websocket connection: %v", err)
+			}
 		}
 		serverCleanup()
 	}
@@ -308,7 +314,9 @@ func BenchmarkHub_MemoryPerClient(b *testing.B) {
 					b.Fatal(err)
 				}
 				if resp != nil {
-					resp.Body.Close()
+					if err := resp.Body.Close(); err != nil {
+						b.Logf("close dial response body: %v", err)
+					}
 				}
 				c := NewClient(conn, sendBuf)
 				h.register <- c

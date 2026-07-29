@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"
@@ -128,7 +128,10 @@ func (s *VersionService) fetchLatestReleaseInternal(ctx context.Context) (latest
 
 func (s *VersionService) GetLatestVersion(ctx context.Context) (string, error) {
 	rel, err := s.getLatestReleaseInternal(ctx)
-	return rel.TagName, err
+	if err != nil {
+		return "", err
+	}
+	return rel.TagName, nil
 }
 
 func (s *VersionService) IsNewer(latest, current string) bool {
@@ -213,21 +216,21 @@ func (s *VersionService) GetVersionInformation(ctx context.Context, currentVersi
 
 // isSemverVersion checks if a version string is semver-based (e.g., v1.0.0)
 func (s *VersionService) isSemverVersion() bool {
-	version := strings.TrimSpace(s.version)
-	if !strings.HasPrefix(version, "v") {
-		version = "v" + version
+	versionValue := strings.TrimSpace(s.version)
+	if !strings.HasPrefix(versionValue, "v") {
+		versionValue = "v" + versionValue
 	}
-	return semver.IsValid(version)
+	return semver.IsValid(versionValue)
 }
 
 // getDisplayVersion formats the version for display purposes
 // Semver versions (including prereleases like 2.4.0-next.1) display as v<version>
 func (s *VersionService) getDisplayVersion() string {
-	version := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
+	versionValue := strings.TrimPrefix(strings.TrimSpace(s.version), "v")
 	if s.isSemverVersion() {
-		return "v" + version
+		return "v" + versionValue
 	}
-	return version
+	return versionValue
 }
 
 // GetAppVersionInfo returns application version information including display version

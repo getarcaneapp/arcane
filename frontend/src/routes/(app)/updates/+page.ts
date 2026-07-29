@@ -1,5 +1,6 @@
 import { containerService, type ContainerListRequestOptions } from '#lib/services/container-service';
 import { projectService } from '#lib/services/project-service';
+import { settingsService } from '#lib/services/settings-service';
 import { queryKeys } from '#lib/query/query-keys';
 import type { SearchPaginationSortRequest } from '#lib/types/shared';
 import { resolveInitialTableRequest } from '#lib/utils/tables';
@@ -28,8 +29,9 @@ export const load: PageLoad = async ({ parent }) => {
 
 	let containers;
 	let projects;
+	let settings;
 	try {
-		[containers, projects] = await Promise.all([
+		[containers, projects, settings] = await Promise.all([
 			queryClient.fetchQuery({
 				queryKey: queryKeys.containers.list(envId, containerRequestOptions),
 				queryFn: () => containerService.getContainersForEnvironment(envId, containerRequestOptions)
@@ -37,6 +39,11 @@ export const load: PageLoad = async ({ parent }) => {
 			queryClient.fetchQuery({
 				queryKey: queryKeys.projects.list(envId, projectRequestOptions),
 				queryFn: () => projectService.getProjectsForEnvironment(envId, projectRequestOptions)
+			}),
+			// `autoUpdateExcludedContainers` drives the ignored state on container rows.
+			queryClient.fetchQuery({
+				queryKey: queryKeys.settings.byEnvironment(envId),
+				queryFn: () => settingsService.getSettingsForEnvironmentMerged(envId)
 			})
 		]);
 	} catch (err) {
@@ -47,6 +54,7 @@ export const load: PageLoad = async ({ parent }) => {
 		envId,
 		containers,
 		projects,
+		settings,
 		containerRequestOptions,
 		projectRequestOptions
 	};

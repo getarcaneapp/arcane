@@ -2,7 +2,7 @@ package handlers
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"net/url"
 
 	"emperror.dev/errors"

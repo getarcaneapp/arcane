@@ -75,15 +75,17 @@ type LogoutAllOtherSessionsOutput struct {
 	Body base.ApiResponse[base.MessageResponse]
 }
 
+type UpdateMyProfileBody struct {
+	DisplayName *string           `json:"displayName,omitempty"`
+	Email       *string           `json:"email,omitempty"`
+	Locale      *string           `json:"locale,omitempty"`
+	TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
+	FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
+	Preferences *user.Preferences `json:"preferences,omitempty"`
+}
+
 type UpdateMyProfileInput struct {
-	Body struct {
-		DisplayName *string           `json:"displayName,omitempty"`
-		Email       *string           `json:"email,omitempty"`
-		Locale      *string           `json:"locale,omitempty"`
-		TimeFormat  *user.TimeFormat  `json:"timeFormat,omitempty" enum:"auto,12h,24h"`
-		FontSize    *int              `json:"fontSize,omitempty" minimum:"12" maximum:"20"`
-		Preferences *user.Preferences `json:"preferences,omitempty"`
-	}
+	Body UpdateMyProfileBody
 }
 
 type UpdateMyProfileOutput struct {

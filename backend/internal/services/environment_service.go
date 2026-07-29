@@ -4,7 +4,7 @@ import (
 	"github.com/samber/mo"
 
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -15,6 +15,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
@@ -24,6 +25,7 @@ import (
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/mapper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/validation"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
@@ -411,12 +413,12 @@ func (s *EnvironmentService) GetActiveRemoteEnvironmentSnapshot(environmentID st
 	}
 
 	s.remoteEnvMu.RLock()
-	environment, ok := s.remoteEnvs[environmentID]
+	envRecord, ok := s.remoteEnvs[environmentID]
 	s.remoteEnvMu.RUnlock()
-	if !ok || !isActiveRemoteEnvironmentInternal(environment) {
+	if !ok || !isActiveRemoteEnvironmentInternal(envRecord) {
 		return mo.None[models.Environment]()
 	}
-	return mo.Some(environment)
+	return mo.Some(envRecord)
 }
 
 func isActiveRemoteEnvironmentInternal(environment models.Environment) bool {
@@ -429,9 +431,9 @@ func (s *EnvironmentService) syncRemoteEnvironmentSnapshotsInternal(environments
 	}
 
 	next := make(map[string]models.Environment, len(environments))
-	for _, environment := range environments {
-		if isActiveRemoteEnvironmentInternal(environment) {
-			next[environment.ID] = environment
+	for _, envRecord := range environments {
+		if isActiveRemoteEnvironmentInternal(envRecord) {
+			next[envRecord.ID] = envRecord
 		}
 	}
 
@@ -473,13 +475,13 @@ func (s *EnvironmentService) updateRemoteEnvironmentSnapshotInternal(environment
 	s.remoteEnvMu.Lock()
 	defer s.remoteEnvMu.Unlock()
 
-	environment, ok := s.remoteEnvs[environmentID]
+	envRecord, ok := s.remoteEnvs[environmentID]
 	if !ok {
 		return
 	}
-	update(&environment)
-	if isActiveRemoteEnvironmentInternal(environment) {
-		s.remoteEnvs[environmentID] = environment
+	update(&envRecord)
+	if isActiveRemoteEnvironmentInternal(envRecord) {
+		s.remoteEnvs[environmentID] = envRecord
 	} else {
 		delete(s.remoteEnvs, environmentID)
 	}
@@ -627,20 +629,20 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 	parentEnvironmentID, nodeID, environmentID string,
 	rebind bool,
 ) (*models.Environment, error) {
-	var environment models.Environment
+	var envRecord models.Environment
 	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		if err := tx.Where("id = ?", environmentID).First(&environment).Error; err != nil {
+		if err := tx.Where("id = ?", environmentID).First(&envRecord).Error; err != nil {
 			return errors.WrapIf(err, "failed to load environment for swarm node binding")
 		}
-		if environment.Hidden {
+		if envRecord.Hidden {
 			return errors.New("dedicated agent environments cannot be attached as visible environments")
 		}
-		if !environment.Enabled {
+		if !envRecord.Enabled {
 			return errors.New("disabled environments cannot be attached to swarm nodes")
 		}
 
-		boundElsewhere := environment.ParentEnvironmentID != nil && environment.SwarmNodeID != nil &&
-			(strings.TrimSpace(*environment.ParentEnvironmentID) != parentEnvironmentID || strings.TrimSpace(*environment.SwarmNodeID) != nodeID)
+		boundElsewhere := envRecord.ParentEnvironmentID != nil && envRecord.SwarmNodeID != nil &&
+			(strings.TrimSpace(*envRecord.ParentEnvironmentID) != parentEnvironmentID || strings.TrimSpace(*envRecord.SwarmNodeID) != nodeID)
 		if boundElsewhere && !rebind {
 			return errors.New("environment is already bound to another swarm node; explicit rebinding is required")
 		}
@@ -670,14 +672,14 @@ func (s *EnvironmentService) BindSwarmNodeEnvironment(
 			return errors.WrapIf(err, "failed to bind environment to swarm node")
 		}
 
-		return tx.Where("id = ?", environmentID).First(&environment).Error
+		return tx.Where("id = ?", environmentID).First(&envRecord).Error
 	})
 	if err != nil {
 		return nil, err
 	}
 
-	s.cacheRemoteEnvironmentSnapshotInternal(environment)
-	return &environment, nil
+	s.cacheRemoteEnvironmentSnapshotInternal(envRecord)
+	return &envRecord, nil
 }
 
 // DetachSwarmNodeEnvironment clears a visible environment binding from a node.
@@ -695,17 +697,17 @@ func (s *EnvironmentService) DetachSwarmNodeEnvironment(ctx context.Context, par
 // DeleteSwarmNodeAgentDeployment removes a dedicated hidden agent registration
 // while leaving visible remote environments untouched.
 func (s *EnvironmentService) DeleteSwarmNodeAgentDeployment(ctx context.Context, parentEnvironmentID, nodeID string, userID, username *string) error {
-	var environment models.Environment
+	var envRecord models.Environment
 	if err := s.db.WithContext(ctx).
 		Where("hidden = ? AND parent_environment_id = ? AND swarm_node_id = ?", true, parentEnvironmentID, nodeID).
-		First(&environment).Error; err != nil {
+		First(&envRecord).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil
 		}
 		return errors.WrapIf(err, "failed to load swarm node agent deployment")
 	}
 
-	return s.DeleteEnvironment(ctx, environment.ID, userID, username)
+	return s.DeleteEnvironment(ctx, envRecord.ID, userID, username)
 }
 
 func buildSwarmNodeAgentNameInternal(hostname, nodeID string) string {
@@ -827,14 +829,14 @@ func (s *EnvironmentService) UpdateSwarmNodeIdentity(ctx context.Context, envID,
 }
 
 func (s *EnvironmentService) GetEnvironmentByID(ctx context.Context, id string) (*models.Environment, error) {
-	var environment models.Environment
-	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&environment).Error; err != nil {
+	var envRecord models.Environment
+	if err := s.db.WithContext(ctx).Where("id = ?", id).First(&envRecord).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, errors.New("environment not found")
 		}
 		return nil, errors.WrapIf(err, "failed to get environment")
 	}
-	return &environment, nil
+	return &envRecord, nil
 }
 
 func (s *EnvironmentService) ListEnvironmentsPaginated(ctx context.Context, params pagination.QueryParams, accessibleEnvIDs []string) ([]environment.Environment, pagination.Response, error) {
@@ -1111,6 +1113,35 @@ func (s *EnvironmentService) SyncRegistriesToRemoteEnvironments(ctx context.Cont
 }
 
 func (s *EnvironmentService) UpdateEnvironment(ctx context.Context, id string, updates map[string]any, userID, username *string) (*models.Environment, error) {
+	current, err := s.GetEnvironmentByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	var nextAPIURL *string
+	if rawAPIURL, ok := updates["api_url"]; ok {
+		if apiURL, isString := rawAPIURL.(string); isString {
+			nextAPIURL = new(apiURL)
+		}
+	}
+	_, accessTokenUpdated := updates["access_token"]
+	if err := validation.ValidateCredentialTargetChange(
+		"environment API URL",
+		current.ApiUrl,
+		nextAPIURL,
+		func(value string) string {
+			normalized, normalizeErr := normalizeEnvironmentBaseURLInternal(value)
+			if normalizeErr != nil {
+				return strings.TrimSpace(value)
+			}
+			return normalized
+		},
+		map[string]bool{"accessToken": current.AccessToken != nil && *current.AccessToken != ""},
+		map[string]bool{"accessToken": accessTokenUpdated},
+	); err != nil {
+		return nil, err
+	}
+
 	updates["updated_at"] = new(time.Now())
 
 	if err := s.db.WithContext(ctx).Model(&models.Environment{}).Where("id = ?", id).Updates(updates).Error; err != nil {
@@ -1205,9 +1236,16 @@ func (s *EnvironmentService) DeleteEnvironment(ctx context.Context, id string, u
 }
 
 func (s *EnvironmentService) TestConnection(ctx context.Context, id string, customApiUrl *string) (string, error) {
-	environment, err := s.GetEnvironmentByID(ctx, id)
+	envRecord, err := s.GetEnvironmentByID(ctx, id)
 	if err != nil {
 		return "error", err
+	}
+	connectionFailure := func(status string, failure error) (string, error) {
+		if customApiUrl == nil {
+			return status, failure
+		}
+		slog.WarnContext(ctx, "Environment custom URL connection test failed", "environment_id", id, "error", failure)
+		return "error", common.ErrEnvironmentConnectionTestFailed
 	}
 
 	// Special handling for local Docker environment (ID "0")
@@ -1216,12 +1254,12 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	}
 
 	// For edge environments, check if there's an active tunnel and route through it
-	if environment.IsEdge && customApiUrl == nil {
+	if envRecord.IsEdge && customApiUrl == nil {
 		return s.testEdgeConnection(ctx, id)
 	}
 
-	apiUrl := environment.ApiUrl
-	if customApiUrl != nil && *customApiUrl != "" {
+	apiUrl := envRecord.ApiUrl
+	if customApiUrl != nil {
 		apiUrl = *customApiUrl
 	}
 
@@ -1230,7 +1268,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "invalid environment API URL")
+		return connectionFailure("offline", errors.WrapIf(err, "invalid environment API URL"))
 	}
 
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
@@ -1240,14 +1278,14 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "failed to create request")
+		return connectionFailure("offline", errors.WrapIf(err, "failed to create request"))
 	}
 	resp, err := s.httpClient.Do(req)
 	if err != nil {
 		if customApiUrl == nil {
 			_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusOffline))
 		}
-		return "offline", errors.WrapIf(err, "connection failed")
+		return connectionFailure("offline", errors.WrapIf(err, "connection failed"))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
@@ -1261,7 +1299,7 @@ func (s *EnvironmentService) TestConnection(ctx context.Context, id string, cust
 	if customApiUrl == nil {
 		_ = s.updateEnvironmentStatusInternal(ctx, id, string(models.EnvironmentStatusError))
 	}
-	return "error", errors.Errorf("unexpected status code: %d", resp.StatusCode)
+	return connectionFailure("error", errors.Errorf("unexpected status code: %d", resp.StatusCode))
 }
 
 // testEdgeConnection tests connection to an edge agent via its tunnel
@@ -1431,16 +1469,16 @@ func (s *EnvironmentService) createEnvironmentEvent(ctx context.Context, envID, 
 	})
 }
 
-func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, encryptedKey string, userID, username string, envName string) error {
+func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, envID string, newApiKeyID string, apiKey string, userID, username string, envName string) error {
 	// Trim once at the boundary so the value persisted, the value cached,
 	// and the value returned by callers (which already TrimSpace before
 	// returning) all stay byte-identical. Any divergence here would surface
 	// as a 401 "invalid agent token" because lookup is direct equality.
-	encryptedKey = strings.TrimSpace(encryptedKey)
+	apiKey = strings.TrimSpace(apiKey)
 
 	updates := map[string]any{
 		"api_key_id":   newApiKeyID,
-		"access_token": encryptedKey,
+		"access_token": apiKey,
 		"status":       string(models.EnvironmentStatusPending),
 		"last_seen":    nil, // Clear last seen time
 	}
@@ -1449,11 +1487,11 @@ func (s *EnvironmentService) RegenerateEnvironmentApiKey(ctx context.Context, en
 		return errors.WrapIf(err, "failed to update environment with new API key")
 	}
 
-	s.syncEnvironmentTokenCacheInternal(envID, encryptedKey)
+	s.syncEnvironmentTokenCacheInternal(envID, apiKey)
 	now := time.Now()
 	s.updateRemoteEnvironmentSnapshotInternal(envID, func(environment *models.Environment) {
 		environment.ApiKeyID = &newApiKeyID
-		environment.AccessToken = &encryptedKey
+		environment.AccessToken = &apiKey
 		environment.Status = string(models.EnvironmentStatusPending)
 		environment.LastSeen = nil
 		environment.UpdatedAt = &now
@@ -1757,12 +1795,12 @@ type remoteEnvironmentTargetInternal struct {
 }
 
 func (s *EnvironmentService) resolveRemoteEnvironmentTargetInternal(ctx context.Context, envID string) (*remoteEnvironmentTargetInternal, error) {
-	environment, err := s.GetEnvironmentByID(ctx, envID)
+	envRecord, err := s.GetEnvironmentByID(ctx, envID)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to get environment")
 	}
 
-	return s.remoteEnvironmentTargetFromModelInternal(*environment)
+	return s.remoteEnvironmentTargetFromModelInternal(*envRecord)
 }
 
 func (s *EnvironmentService) remoteEnvironmentTargetFromModelInternal(environment models.Environment) (*remoteEnvironmentTargetInternal, error) {

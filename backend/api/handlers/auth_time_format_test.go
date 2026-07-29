@@ -10,7 +10,7 @@ import (
 
 func TestUpdateMyProfileTimeFormatValidation(t *testing.T) {
 	registry := huma.NewMapRegistry("#/components/schemas/", huma.DefaultSchemaNamer)
-	schema := registry.Schema(reflect.TypeOf(UpdateMyProfileInput{}.Body), true, "UpdateMyProfileBody")
+	schema := registry.Schema(reflect.TypeFor[UpdateMyProfileBody](), true, "UpdateMyProfileBody")
 
 	for _, test := range []struct {
 		name      string

@@ -2,7 +2,7 @@ package ws
 
 import (
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"time"
 )
 

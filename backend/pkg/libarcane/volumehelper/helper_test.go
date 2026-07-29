@@ -131,9 +131,9 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 func newTestDockerClientInternal(t *testing.T, server *httptest.Server) *client.Client {
 	t.Helper()
 
-	dockerClient, err := client.NewClientWithOpts(
+	dockerClient, err := client.New(
 		client.WithHost(server.URL),
-		client.WithVersion("1.54"),
+		client.WithAPIVersion("1.54"),
 	)
 	require.NoError(t, err)
 	return dockerClient

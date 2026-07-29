@@ -438,3 +438,44 @@ func TestResolveRelativeProjectPaths(t *testing.T) {
 	require.Len(t, service.Volumes, 1)
 	assert.Equal(t, filepath.Join(dir, "config.conf"), service.Volumes[0].Source)
 }
+
+// Reproduces the reported case where a relative bind path escaping the projects
+// mount resolved against Arcane's container path instead of the host path
+// `docker compose up` would use, while checking that in-mount relative paths and
+// intentionally absolute paths keep their current behavior.
+func TestLoadComposeProject_RemapsRelativeBindEscapingProjectsMount(t *testing.T) {
+	t.Parallel()
+
+	projectsRoot := t.TempDir()
+	projectDir := filepath.Join(projectsRoot, "goclaw")
+	require.NoError(t, os.MkdirAll(projectDir, 0o755))
+
+	composePath := filepath.Join(projectDir, "compose.yaml")
+	require.NoError(t, os.WriteFile(composePath, []byte(`services:
+  goclaw:
+    image: nginx:alpine
+    volumes:
+      - ../../../../goclaw/data:/app/data
+      - ./data:/app/cache
+      - /mnt/nas/media:/media
+`), 0o600))
+
+	pathMapper := NewPathMapper(projectsRoot, "/docker/112/arcane/arcane-data/projects")
+	require.True(t, pathMapper.IsNonMatchingMount())
+
+	project, err := LoadComposeProject(context.Background(), composePath, "goclaw", projectsRoot, false, pathMapper)
+	require.NoError(t, err)
+
+	sources := make(map[string]string)
+	for _, volume := range project.Services["goclaw"].Volumes {
+		sources[volume.Target] = volume.Source
+	}
+
+	// Escapes the mount: must land where `docker compose up` in the host project
+	// directory would put it, not at the container-resolved "/goclaw/data".
+	assert.Equal(t, "/docker/112/goclaw/data", sources["/app/data"])
+	// Stays inside the mount: already correct today, must not change.
+	assert.Equal(t, "/docker/112/arcane/arcane-data/projects/goclaw/data", sources["/app/cache"])
+	// Absolute host path: must be passed through untouched.
+	assert.Equal(t, "/mnt/nas/media", sources["/media"])
+}

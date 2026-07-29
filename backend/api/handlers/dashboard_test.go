@@ -18,7 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	"github.com/stretchr/testify/require"

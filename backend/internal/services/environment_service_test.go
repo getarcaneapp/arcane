@@ -13,10 +13,11 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -557,6 +558,42 @@ func TestEnvironmentService_UpdateEnvironment_ClearingAccessTokenInvalidatesCach
 	_, err = svc.ResolveEdgeEnvironmentByToken(ctx, oldToken)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "invalid agent token")
+}
+
+func TestEnvironmentServiceUpdateEnvironmentRejectsTargetChangeWithStoredTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	oldToken := "stored-agent-token"
+	createTestEnvironment(t, db, "env-target", "http://agent.example:3553", &oldToken)
+	updates := map[string]any{"api_url": "http://attacker.example:3553"}
+
+	_, err := svc.UpdateEnvironment(ctx, "env-target", updates, nil, nil)
+	require.ErrorIs(t, err, common.ErrValidation)
+	require.NotContains(t, updates, "updated_at")
+
+	var stored models.Environment
+	require.NoError(t, db.WithContext(ctx).First(&stored, "id = ?", "env-target").Error)
+	require.Equal(t, "http://agent.example:3553", stored.ApiUrl)
+	require.Equal(t, oldToken, *stored.AccessToken)
+}
+
+func TestEnvironmentServiceUpdateEnvironmentAllowsTargetChangeWithReplacementTokenInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
+
+	oldToken := "stored-agent-token"
+	createTestEnvironment(t, db, "env-target", "http://agent.example:3553", &oldToken)
+
+	updated, err := svc.UpdateEnvironment(ctx, "env-target", map[string]any{
+		"api_url":      "http://replacement.example:3553",
+		"access_token": "replacement-agent-token",
+	}, nil, nil)
+	require.NoError(t, err)
+	require.Equal(t, "http://replacement.example:3553", updated.ApiUrl)
+	require.Equal(t, "replacement-agent-token", *updated.AccessToken)
 }
 
 func TestEnvironmentService_getCachedEnvironmentIDForTokenInternal_ExpiresAndCleansReverseIndex(t *testing.T) {
@@ -1129,8 +1166,41 @@ func TestEnvironmentService_TestConnection_RejectsInvalidCustomURL(t *testing.T)
 	createTestEnvironment(t, db, "env-1", "http://example.com", nil)
 	status, err := svc.TestConnection(ctx, "env-1", new("ftp://example.com"))
 	require.Error(t, err)
-	require.Equal(t, "offline", status)
-	require.Contains(t, err.Error(), "invalid environment API URL")
+	require.Equal(t, "error", status)
+	require.EqualError(t, err, "Environment connection test failed")
+}
+
+func TestEnvironmentServiceTestConnectionHidesCustomURLFailureInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTeapot)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
+	createTestEnvironment(t, db, "env-1", "http://stored.example", nil)
+
+	status, err := svc.TestConnection(ctx, "env-1", new(server.URL))
+	require.Equal(t, "error", status)
+	require.EqualError(t, err, "Environment connection test failed")
+	require.NotContains(t, err.Error(), "418")
+}
+
+func TestEnvironmentServiceTestConnectionAllowsStoredPrivateURLInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	ctx := context.Background()
+	db := setupEnvironmentServiceTestDB(t)
+	svc := NewEnvironmentService(db, server.Client(), nil, nil, nil, nil)
+	createTestEnvironment(t, db, "env-private", server.URL, nil)
+
+	status, err := svc.TestConnection(ctx, "env-private", nil)
+	require.NoError(t, err)
+	require.Equal(t, "online", status)
 }
 
 func TestEnvironmentService_ExecuteRemoteRequest_RejectsInvalidEnvironmentURL(t *testing.T) {

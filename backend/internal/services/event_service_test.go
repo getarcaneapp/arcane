@@ -14,7 +14,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -326,7 +326,7 @@ func TestEventService_ListEventsPaginated_TypeCategoryFilter(t *testing.T) {
 		require.NoError(t, err)
 		types := make([]string, 0, len(events))
 		for _, e := range events {
-			types = append(types, string(e.Type))
+			types = append(types, e.Type)
 		}
 		return types
 	}

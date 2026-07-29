@@ -238,8 +238,7 @@ func TestHTTP2APIResponsesDoNotUseAPIGzipInternal(t *testing.T) {
 }
 
 func TestHTTPServerStopCancelsStreamingRequestContextsInternal(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	defer cancelApp()
+	appCtx := t.Context()
 
 	handlerEntered := make(chan struct{})
 	router := echo.New()
@@ -339,8 +338,7 @@ func TestRollbackCancelHookRunsBeforeEarlierStopsInternal(t *testing.T) {
 }
 
 func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
-	appCtx, cancelApp := context.WithCancel(context.Background())
-	defer cancelApp()
+	appCtx := t.Context()
 
 	lifecycle := fxtest.NewLifecycle(t)
 	jobScheduler := newJobScheduler(appCtx, lifecycle, &config.Config{}, nil, nil, nil)

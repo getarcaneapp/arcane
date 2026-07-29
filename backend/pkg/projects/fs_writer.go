@@ -293,7 +293,7 @@ func RollbackRenamedProjectDirectory(oldPath, newPath string) (pathsMissing bool
 		if err := os.Rename(newPath, oldPath); err != nil {
 			return false, errors.WrapIf(err, "rollback project directory rename")
 		}
-	case !oldExists && !newExists:
+	case !oldExists:
 		pathsMissing = true
 		slog.Warn("project rename directory paths are missing during rollback", "oldPath", oldPath, "newPath", newPath)
 	}

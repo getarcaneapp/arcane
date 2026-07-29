@@ -3,7 +3,7 @@ package services
 import (
 	"bufio"
 	"context"
-	json "encoding/json/v2"
+	"encoding/json/v2"
 	"fmt"
 	"log/slog"
 	"net/http"

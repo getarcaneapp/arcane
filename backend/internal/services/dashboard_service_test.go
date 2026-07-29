@@ -16,7 +16,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
 	dockermount "github.com/moby/moby/api/types/mount"

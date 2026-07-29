@@ -97,7 +97,7 @@ var accessSurfacesInternal = []AccessSurface{
 	settingsCategorySurfaceInternal("authentication", "/settings/authentication", "Authentication", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("build", "/settings/builds", "Builds", AccessScopeModeGlobalOnly, []string{PermSettingsRead}),
 	settingsCategorySurfaceInternal("jobschedule", "", "Automations", AccessScopeModeSelectedEnvPlusGlobal, []string{PermJobsManage}),
-	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeSelectedEnvPlusGlobal, []string{PermNotificationsManage}),
+	settingsCategorySurfaceInternal("notifications", "/settings/notifications", "Notifications", AccessScopeModeGlobalOnly, []string{PermNotificationsManage}),
 	settingsCategorySurfaceInternal("roles", "/settings/roles", "Roles", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}),
 	routeSurfaceInternal("route.settings.roles.new", "/settings/roles/new", "Create role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),
 	routeSurfaceInternal("route.settings.roles.detail", "/settings/roles/{id}", "Role", AccessScopeModeGlobalOnly, []string{PermRolesList, PermRolesRead}, 0),

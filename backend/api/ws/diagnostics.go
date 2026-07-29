@@ -1,7 +1,8 @@
 package ws
 
 import (
-	json "encoding/json/v2"
+	"encoding/json/v2"
+	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"time"
@@ -64,7 +65,11 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			slog.Debug("Failed to close diagnostics websocket connection", "error", err)
+		}
+	}()
 
 	done := diagnosticsReadLoopInternal(conn)
 	write := func() bool {
@@ -98,7 +103,11 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	if err != nil {
 		return nil
 	}
-	defer conn.Close()
+	defer func() {
+		if err := conn.Close(); err != nil {
+			slog.Debug("Failed to close server logs websocket connection", "error", err)
+		}
+	}()
 
 	// Subscribe before replaying the backlog so no entry is missed in the gap; at
 	// worst the newest backlog entry is delivered twice, which is harmless.

@@ -55,7 +55,7 @@ func convertServiceMountsInternal(
 			if entry.VolumeOptions == nil {
 				entry.VolumeOptions = &mount.VolumeOptions{}
 			}
-			if !bool(projectVolume.External) {
+			if !projectVolume.External {
 				entry.VolumeOptions.Labels = mergeLabelsInternal(entry.VolumeOptions.Labels, mergeLabelsInternal(projectVolume.Labels, stackLabels))
 				entry.VolumeOptions.DriverConfig = &mount.Driver{
 					Name:    projectVolume.Driver,

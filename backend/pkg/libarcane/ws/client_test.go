@@ -47,9 +47,11 @@ func TestServeClient_ReceivesBroadcast(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	<-serverReady
 
@@ -87,7 +89,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
 
 	require.Eventually(t, func() bool {
@@ -95,7 +97,7 @@ func TestServeClient_ClientDisconnect(t *testing.T) {
 	}, time.Second, 5*time.Millisecond)
 
 	// Close the client connection
-	clientConn.Close()
+	require.NoError(t, clientConn.Close())
 
 	// The hub should eventually remove the client
 	require.Eventually(t, func() bool {
@@ -124,9 +126,11 @@ func TestServeClient_ContextCancellation(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	require.Eventually(t, func() bool {
 		return h.ClientCount() == 1
@@ -223,9 +227,11 @@ func TestServeClient_MultipleMessages(t *testing.T) {
 	clientConn, resp, err := websocket.DefaultDialer.Dial(url, nil)
 	require.NoError(t, err)
 	if resp != nil {
-		resp.Body.Close()
+		require.NoError(t, resp.Body.Close())
 	}
-	defer clientConn.Close()
+	defer func() {
+		require.NoError(t, clientConn.Close())
+	}()
 
 	<-serverReady
 

@@ -60,7 +60,7 @@ func summarizeRoleAssignments(assignments []user.RoleAssignmentSummary) string {
 		hasGlobal bool
 	}
 	buckets := map[string]*bucket{}
-	order := []string{}
+	var order []string
 	for _, a := range assignments {
 		b, ok := buckets[a.RoleID]
 		if !ok {

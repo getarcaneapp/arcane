@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	sqlite "github.com/libtnb/sqlite"
+	"github.com/libtnb/sqlite"
 	"github.com/samber/mo"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"

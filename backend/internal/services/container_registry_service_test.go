@@ -76,9 +76,9 @@ func newDockerHubRateLimitTestClient(t *testing.T, handler http.HandlerFunc) *ht
 	targetURL, err := url.Parse(server.URL)
 	require.NoError(t, err)
 
-	client := server.Client()
-	baseTransport := client.Transport
-	client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+	httpClient := server.Client()
+	baseTransport := httpClient.Transport
+	httpClient.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Host == "registry-1.docker.io" || req.URL.Host == "auth.docker.io" {
 			rewritten := req.Clone(req.Context())
 			rewritten.URL.Scheme = targetURL.Scheme
@@ -89,7 +89,7 @@ func newDockerHubRateLimitTestClient(t *testing.T, handler http.HandlerFunc) *ht
 		return baseTransport.RoundTrip(req)
 	})
 
-	return client
+	return httpClient
 }
 
 func TestNewContainerRegistryService_InitializesDistributionHTTPClient(t *testing.T) {
@@ -512,6 +512,48 @@ func TestContainerRegistryService_UpdateRegistry_AllowsTargetChangeWhenTokenIsRe
 	decryptedToken, decryptErr := crypto.Decrypt(updated.Token)
 	require.NoError(t, decryptErr)
 	assert.Equal(t, "new-token", decryptedToken)
+}
+
+func TestContainerRegistryService_UpdateRegistryRejectsECRTargetChangeWithStoredCredentialsInternal(t *testing.T) {
+	_, db := setupImageServiceAuthTest(t)
+	svc := NewContainerRegistryService(db, nil, nil)
+
+	registry, err := svc.CreateRegistry(context.Background(), models.CreateContainerRegistryRequest{
+		URL:                "123456789012.dkr.ecr.us-east-1.amazonaws.com",
+		RegistryType:       registryTypeECR,
+		AWSAccessKeyID:     "old-access-key",
+		AWSSecretAccessKey: "old-secret-key",
+		AWSRegion:          "us-east-1",
+	})
+	require.NoError(t, err)
+	originalSecret := registry.AWSSecretAccessKey
+
+	_, err = svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL: new("999999999999.dkr.ecr.us-east-1.amazonaws.com"),
+	})
+	require.Error(t, err)
+
+	var apiErr *models.APIError
+	require.ErrorAs(t, err, &apiErr)
+	require.Equal(t, models.APIErrorCodeValidationError, apiErr.Code)
+	require.ElementsMatch(t, []string{"awsAccessKeyId", "awsSecretAccessKey"}, apiErr.Details.(map[string]any)["fields"])
+
+	stored, loadErr := svc.GetRegistryByID(context.Background(), registry.ID)
+	require.NoError(t, loadErr)
+	require.Equal(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com", stored.URL)
+	require.Equal(t, originalSecret, stored.AWSSecretAccessKey)
+
+	updated, err := svc.UpdateRegistry(context.Background(), registry.ID, models.UpdateContainerRegistryRequest{
+		URL:                new("999999999999.dkr.ecr.us-east-1.amazonaws.com"),
+		AWSAccessKeyID:     new("new-access-key"),
+		AWSSecretAccessKey: new("new-secret-key"),
+	})
+	require.NoError(t, err)
+	require.Equal(t, "999999999999.dkr.ecr.us-east-1.amazonaws.com", updated.URL)
+
+	decryptedSecret, decryptErr := crypto.Decrypt(updated.AWSSecretAccessKey)
+	require.NoError(t, decryptErr)
+	require.Equal(t, "new-secret-key", decryptedSecret)
 }
 
 func TestContainerRegistryService_UpdateRegistry_RejectsChangingRegistryType(t *testing.T) {
