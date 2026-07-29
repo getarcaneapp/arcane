@@ -40,13 +40,28 @@ func NewClient(conn *websocket.Conn, sendBuffer int) *Client {
 // ServeClientWithOnRemove registers the client with the hub and starts read/write pumps.
 // Caller is responsible for creating/closing the websocket.Conn.
 // If onRemove is non-nil, it is invoked when the client is removed from the hub.
-func ServeClientWithOnRemove(ctx context.Context, hub *Hub, conn *websocket.Conn, onRemove func()) {
+//
+// It reports whether registration succeeded. Registration fails when the hub's
+// Run has already exited (or ctx is done) — landing on that boundary used to
+// block forever on the unbuffered register channel, leaking the caller's
+// goroutine and the socket. On failure nothing is registered and onRemove is
+// never invoked, so the caller can retry against a fresh hub with the same
+// connection, or close it and release its own bookkeeping.
+func ServeClientWithOnRemove(ctx context.Context, hub *Hub, conn *websocket.Conn, onRemove func()) bool {
 	c := NewClient(conn, clientSendBuffer)
 	c.onRemove = onRemove
-	hub.register <- c
+
+	select {
+	case hub.register <- c:
+	case <-hub.stopped:
+		return false
+	case <-ctx.Done():
+		return false
+	}
 
 	go c.writePump(ctx, hub)
 	go c.readPump(ctx, hub)
+	return true
 }
 
 func (c *Client) safeRemove(hub *Hub) {
@@ -59,6 +74,7 @@ func (c *Client) safeRemove(hub *Hub) {
 }
 
 func (c *Client) readPump(ctx context.Context, hub *Hub) {
+	defer trackWorkerGoroutine()()
 	// Ensure client is removed from hub without sending on a potentially
 	// unserviced channel. Use hub.remove which is safe when the hub has exited.
 	defer c.safeRemove(hub)
@@ -87,6 +103,8 @@ func (c *Client) readPump(ctx context.Context, hub *Hub) {
 }
 
 func (c *Client) writePump(ctx context.Context, hub *Hub) {
+	defer trackWorkerGoroutine()()
+
 	// Timer instead of Ticker: no drain-after-Stop, and we can reset after each ping
 	// so shutdown sees ctx.Done() without waiting for an extra tick.
 	pingTimer := time.NewTimer(pingPeriod)

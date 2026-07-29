@@ -317,8 +317,10 @@ func (h *OidcHandler) GetOidcAuthUrl(ctx context.Context, input *GetOidcAuthUrlI
 		return nil, huma.Error500InternalServerError(errors.WithMessage(err, "Failed to generate OIDC auth URL").Error())
 	}
 
-	// Build state cookie (600 seconds = 10 minutes)
-	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, false)
+	// Build state cookie (600 seconds = 10 minutes). Secure is resolved from the
+	// request the same way the session token cookie resolves it, rather than
+	// being hard-coded off.
+	stateCookie := cookie.BuildOidcStateCookieString(stateCookieValue, 600, cookie.SecureCookieFromContext(ctx))
 
 	return &GetOidcAuthUrlOutput{
 		SetCookie: stateCookie,
@@ -365,7 +367,7 @@ func (h *OidcHandler) HandleOidcCallback(ctx context.Context, input *HandleOidcC
 	// Build cookies: clear the state cookie always; only set the session
 	// token cookie for browser flows (mobile clients use Bearer tokens from
 	// the JSON body and never consume the cookie).
-	clearStateCookie := cookie.BuildClearOidcStateCookieString(false)
+	clearStateCookie := cookie.BuildClearOidcStateCookieString(cookie.SecureCookieFromContext(ctx))
 	setCookies := []string{clearStateCookie}
 	if mobileRedirectURI == "" {
 		maxAge := max(int(time.Until(tokenPair.ExpiresAt).Seconds()), 0)

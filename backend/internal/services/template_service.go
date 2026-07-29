@@ -578,7 +578,9 @@ func (s *TemplateService) loadRemoteTemplates(ctx context.Context) ([]models.Com
 			continue
 		}
 
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "template worker")
+
 			remoteTemplates, err := s.fetchRegistryTemplates(groupCtx, &reg)
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch templates from registry", "registry", reg.Name, "url", reg.URL, "error", err)
@@ -781,7 +783,9 @@ func (s *TemplateService) enrichRemoteTemplateIcons(ctx context.Context, templat
 
 	for i := range templates {
 		idx := i
-		group.Go(func() error {
+		group.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "template worker")
+
 			composeContent, envContent, err := s.fetchRemoteTemplateFiles(groupCtx, &templates[idx])
 			if err != nil {
 				slog.WarnContext(groupCtx, "failed to fetch remote template content for icon extraction", "templateID", templates[idx].ID, "error", err)
@@ -820,13 +824,24 @@ func (s *TemplateService) newSafeRequestInternal(ctx context.Context, method, ra
 		return nil, nil, err
 	}
 
+	// Double-checked under registryMu: the lazy init ran unsynchronized, so
+	// concurrent template downloads raced on s.safeHTTPClient — a data race, and
+	// each loser silently built and leaked its own client.
+	s.registryMu.RLock()
 	client := s.safeHTTPClient
+	s.registryMu.RUnlock()
+
 	if client == nil {
-		client = s.newSafeHTTPClientInternal()
+		s.registryMu.Lock()
+		if s.safeHTTPClient == nil {
+			s.safeHTTPClient = s.newSafeHTTPClientInternal()
+		}
+		client = s.safeHTTPClient
+		s.registryMu.Unlock()
+
 		if client == nil {
 			return nil, nil, errors.New("failed to configure safe HTTP client")
 		}
-		s.safeHTTPClient = client
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, parsedURL.String(), nil)

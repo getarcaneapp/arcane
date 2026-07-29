@@ -308,13 +308,21 @@ func (h *WebSocketHandler) serveLogStreamInternal(
 		return hubBuilder(streamKey, onEmpty)
 	})
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, kind, resourceID))
+	release := func() {
+		h.wsMetrics.UnregisterConnection(connID)
+		h.releaseLogStreamInternal(streamKey, stream)
+	}
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled via the hub's OnEmpty callback
 	// which triggers when all clients disconnect.
-	wshub.ServeClientWithOnRemove(context.Background(), stream.hub, conn, func() {
-		h.wsMetrics.UnregisterConnection(connID)
-		h.releaseLogStreamInternal(streamKey, stream)
-	})
+	if !wshub.ServeClientWithOnRemove(context.Background(), stream.hub, conn, release) {
+		// The stream refcount normally keeps this hub alive, so a stopped hub
+		// here means it was torn down out from under us; drop our reference
+		// rather than leaking the connection and the metrics entry.
+		slog.Debug("log stream hub stopped before client registration", "streamKey", streamKey)
+		_ = conn.Close()
+		release()
+	}
 }
 
 // broadcastLogStreamErrorInternal emits an error message to every client of a log stream.
@@ -649,13 +657,28 @@ func (h *WebSocketHandler) ContainerStats(c *echo.Context) error {
 	}
 
 	connID := h.wsMetrics.RegisterConnection(buildWSConnectionInfoInternal(c, systemtypes.WSKindContainerStats, containerID))
-	hub := h.getOrCreateContainerStatsHubInternal(containerID)
 	onRemove := func() {
 		h.wsMetrics.UnregisterConnection(connID)
 	}
+
+	// A reconnect can land exactly on the 5s idle-teardown boundary and load a
+	// hub whose Run has already exited. Drop that hub and retry once so the
+	// client gets a live producer instead of a silent socket.
 	// WebSocket connections use context.Background() because they are long-lived and should not
 	// be tied to the HTTP request context. Cleanup is handled by the shared hub when it idles.
-	wshub.ServeClientWithOnRemove(context.Background(), hub, conn, onRemove)
+	for attempt := range 2 {
+		hub := h.getOrCreateContainerStatsHubInternal(containerID)
+		if wshub.ServeClientWithOnRemove(context.Background(), hub, conn, onRemove) {
+			return nil
+		}
+		h.containerStatsHubs.CompareAndDelete(containerID, hub)
+		slog.DebugContext(c.Request().Context(), "container stats hub stopped before client registration; retrying",
+			"containerID", containerID, "attempt", attempt+1)
+	}
+
+	slog.WarnContext(c.Request().Context(), "failed to register container stats client", "containerID", containerID)
+	_ = conn.Close()
+	onRemove()
 	return nil
 }
 
@@ -680,6 +703,10 @@ func (h *WebSocketHandler) getOrCreateContainerStatsHubInternal(containerID stri
 	h.runContainerStatsHubInternal(containerID, hub)
 	return hub
 }
+
+// containerStatsErrorDrainGrace is how long a failed stats hub stays alive after
+// broadcasting its error frame, so clients receive it before the hub shuts down.
+const containerStatsErrorDrainGrace = 2 * time.Second
 
 func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub *wshub.Hub) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -722,7 +749,29 @@ func (h *WebSocketHandler) runContainerStatsHubInternal(containerID string, hub 
 	statsChan := make(chan any, 64)
 	go func(ctx context.Context) {
 		defer close(statsChan)
-		_ = h.containerService.StreamStats(ctx, containerID, statsChan)
+
+		err := h.containerService.StreamStats(ctx, containerID, statsChan)
+		if err == nil || errors.Is(err, context.Canceled) || ctx.Err() != nil {
+			return
+		}
+
+		// The producer died but the hub stayed cached, so clients kept an open
+		// socket that would never emit another sample. Tell them why, then drop
+		// the hub so the next connect rebuilds a producer instead of attaching
+		// to this dead one.
+		slog.Warn("container stats stream failed", "containerID", containerID, "error", err)
+		if b, marshalErr := json.Marshal(map[string]any{
+			"error":     "Failed to stream container stats: " + err.Error(),
+			"timestamp": wshub.NowRFC3339(),
+		}); marshalErr == nil {
+			hub.Broadcast(b)
+		}
+		h.containerStatsHubs.CompareAndDelete(containerID, hub)
+
+		// Cancelling immediately would race hub.Run between ctx.Done and the
+		// queued error frame, dropping the very message clients need. Give the
+		// broadcast a moment to drain, then tear the hub down.
+		time.AfterFunc(containerStatsErrorDrainGrace, cancel)
 	}(ctx)
 
 	go func() {
@@ -923,7 +972,10 @@ func (h *WebSocketHandler) checkRateLimitInternal(clientIP string) (*int32, bool
 func (h *WebSocketHandler) releaseRateLimitInternal(clientIP string, count *int32) {
 	newCount := atomic.AddInt32(count, -1)
 	if newCount <= 0 {
-		h.activeConnections.Delete(clientIP)
+		// CompareAndDelete, not Delete: a plain delete removed whatever counter
+		// was stored for this IP, which after a racing reconnect is a live one —
+		// wiping its count and letting that IP exceed the limit.
+		h.activeConnections.CompareAndDelete(clientIP, count)
 	}
 }
 

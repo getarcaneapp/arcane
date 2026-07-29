@@ -430,7 +430,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 		DrainPrevious: drainPrevious,
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
-		_ = tunnel.Close()
+		_ = tunnel.CloseWithReason("")
 		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
 		if removed && !active {
 			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
@@ -456,6 +456,14 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 
 // messageLoop processes incoming messages from the agent.
 func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
+	// One reusable timer for stream delivery deadlines. time.After per message
+	// left a live 5s runtime timer for every frame, so a chatty log tail through
+	// a tunnel accumulated thousands of them. This loop is the only user, so the
+	// timer is never touched concurrently.
+	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
+	deliveryTimer.Stop()
+	defer deliveryTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -469,12 +477,12 @@ func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
 				return
 			}
 
-			s.handleTunnelMessage(ctx, tunnel, msg)
+			s.handleTunnelMessage(ctx, tunnel, msg, deliveryTimer)
 		}
 	}
 }
 
-func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	switch msg.Type {
 	case MessageTypeHeartbeat:
 		s.handleHeartbeat(ctx, tunnel, msg)
@@ -485,7 +493,7 @@ func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTun
 	case MessageTypeEvent:
 		s.handleEvent(ctx, tunnel, msg)
 	case MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeWebSocketData, MessageTypeWebSocketClose, MessageTypeStreamClose:
-		s.deliverStream(ctx, tunnel, msg)
+		s.deliverStream(ctx, tunnel, msg, deliveryTimer)
 	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse, MessageTypeCommandRequest, MessageTypeStreamOpen, MessageTypeCancelRequest:
 		slog.DebugContext(ctx, "Ignoring message type from agent", "type", msg.Type, "environment_id", tunnel.EnvironmentID)
 	case MessageTypeRegister:
@@ -525,17 +533,23 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 	slog.WarnContext(ctx, "Received response for unknown request", "id", msg.ID)
 }
 
-func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	if req, ok := tunnel.Pending.Load(msg.ID); ok {
 		pending, isPending := req.(*PendingRequest)
 		if !isPending {
 			return
 		}
+
+		// Go 1.23+ timers drop any stale value on Stop/Reset, so no drain is needed.
+		deliveryTimer.Stop()
+		deliveryTimer.Reset(streamDeliveryTimeout)
+		defer deliveryTimer.Stop()
+
 		select {
 		case pending.ResponseCh <- msg:
 		case <-ctx.Done():
 			return
-		case <-time.After(streamDeliveryTimeout):
+		case <-deliveryTimer.C:
 			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err

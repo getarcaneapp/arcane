@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/gorilla/websocket"
 )
 
@@ -13,12 +14,23 @@ var upgrader = websocket.Upgrader{
 	ReadBufferSize:    32 * 1024,
 	WriteBufferSize:   32 * 1024,
 	EnableCompression: true,
-	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
 // ProxyHTTP upgrades the incoming client connection and bridges it to remoteWS.
-func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header) error {
-	clientConn, err := upgrader.Upgrade(w, r, nil)
+//
+// checkOrigin must be the same Origin validator the local WebSocket endpoints
+// use. It is required: this upgrade is reached with the caller's session cookie
+// already validated, so accepting any Origin would let an attacker-controlled
+// page open a terminal or log stream in a remote environment.
+func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header http.Header, checkOrigin func(*http.Request) bool) error {
+	if checkOrigin == nil {
+		return errors.New("websocket proxy requires an origin validator")
+	}
+
+	proxyUpgrader := upgrader
+	proxyUpgrader.CheckOrigin = checkOrigin
+
+	clientConn, err := proxyUpgrader.Upgrade(w, r, nil)
 	if err != nil {
 		slog.Error("failed to upgrade client connection", "remoteWS", remoteWS, "err", err)
 		return err

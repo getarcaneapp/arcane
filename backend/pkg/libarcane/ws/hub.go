@@ -16,11 +16,16 @@ type Hub struct {
 	register   chan *Client
 	unregister chan *Client
 	broadcast  chan []byte
-	onFirst    func()
-	onActive   func()
-	onEmpty    func()
-	dropped    atomic.Uint64
-	lastWarned atomic.Int64
+	// stopped is closed when Run returns, so registration attempts against a
+	// torn-down hub fail fast instead of blocking forever on the unbuffered
+	// register channel.
+	stopped     chan struct{}
+	stoppedOnce sync.Once
+	onFirst     func()
+	onActive    func()
+	onEmpty     func()
+	dropped     atomic.Uint64
+	lastWarned  atomic.Int64
 }
 
 func NewHub(buffer int) *Hub {
@@ -29,6 +34,7 @@ func NewHub(buffer int) *Hub {
 		register:   make(chan *Client),
 		unregister: make(chan *Client),
 		broadcast:  make(chan []byte, buffer),
+		stopped:    make(chan struct{}),
 	}
 }
 
@@ -51,7 +57,12 @@ func (h *Hub) SetOnEmpty(fn func()) {
 }
 
 func (h *Hub) Run(ctx context.Context) {
+	defer trackWorkerGoroutine()()
 	defer h.closeAll()
+	// Signalled before closeAll so a registration racing this shutdown fails fast
+	// instead of joining a hub that is already draining. stoppedOnce keeps it safe
+	// if Run is ever (incorrectly) started twice.
+	defer func() { h.stoppedOnce.Do(func() { close(h.stopped) }) }()
 
 	for {
 		select {

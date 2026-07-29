@@ -1285,7 +1285,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 	if err == nil && proj != nil {
-		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
+		meta = s.projectService.getProjectMetadataForProject(ctx, *proj, nil)
 	}
 	if s.iconMetaCache != nil {
 		s.iconMetaCache.Set(projectName, meta)

@@ -574,13 +574,16 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	})
 
 	tunnel := NewAgentTunnelWithConn("env-edge", &fakeServerTunnelConn{})
+	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
+	deliveryTimer.Stop()
+	defer deliveryTimer.Stop()
 	server.handleTunnelMessage(context.Background(), tunnel, &TunnelMessage{
 		Type: MessageTypeEvent,
 		Event: &TunnelEvent{
 			Type:  "container.start",
 			Title: "Container started",
 		},
-	})
+	}, deliveryTimer)
 
 	select {
 	case <-called:

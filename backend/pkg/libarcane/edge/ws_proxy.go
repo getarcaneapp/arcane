@@ -27,16 +27,28 @@ var wsUpgraderForProxy = websocket.Upgrader{
 	ReadBufferSize:    64 * 1024,
 	WriteBufferSize:   64 * 1024,
 	EnableCompression: true,
-	CheckOrigin:       func(r *http.Request) bool { return true },
 }
 
 // ProxyWebSocketRequest proxies a WebSocket upgrade through an edge tunnel.
 // This handles logs, stats, and other streaming endpoints.
-func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) error {
+//
+// checkOrigin must be the same Origin validator the local WebSocket endpoints
+// use. It is required: the caller's session cookie has already been validated by
+// the time this runs, so accepting any Origin would let an attacker-controlled
+// page open a terminal or log stream in the tunnelled environment.
+func ProxyWebSocketRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string, checkOrigin func(*http.Request) bool) error {
 	req := c.Request()
 	ctx := req.Context()
 
-	clientWS, err := wsUpgraderForProxy.Upgrade(c.Response(), req, nil)
+	if checkOrigin == nil {
+		slog.ErrorContext(ctx, "Refusing edge WebSocket proxy without an origin validator", "path", targetPath)
+		return echo.NewHTTPError(http.StatusForbidden, "websocket origin validation unavailable")
+	}
+
+	proxyUpgrader := wsUpgraderForProxy
+	proxyUpgrader.CheckOrigin = checkOrigin
+
+	clientWS, err := proxyUpgrader.Upgrade(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade WebSocket for edge proxy", "error", err)
 		return nil

@@ -94,17 +94,38 @@ func NewContainerRegistryService(db *database.DB, dockerClient registryDaemonGet
 		kvService:              kvService,
 	}
 	backgroundLoader := func(imageRefs []string) (map[string]string, error) {
-		ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry)
-		defer cancel()
 		digests := make(map[string]string, len(imageRefs))
+		var firstErr error
 		for _, imageRef := range imageRefs {
-			result, err := service.inspectImageDigestInternal(ctx, imageRef, nil)
+			// Per-ref timeout: a single deadline shared across the whole
+			// sequential batch left later refs with whatever the earlier ones
+			// had not already spent, so one slow registry starved the tail.
+			result, err := func() (*registryDigestResult, error) {
+				ctx, cancel := context.WithTimeout(context.Background(), timeouts.DefaultRegistry)
+				defer cancel()
+				return service.inspectImageDigestInternal(ctx, imageRef, nil)
+			}()
 			if err != nil {
-				return nil, err
+				slog.Debug("registry revalidation failed for image", "imageRef", imageRef, "error", err)
+				if firstErr == nil {
+					firstErr = err
+				}
+				continue
 			}
 			digests[imageRef] = result.Digest
 		}
-		return digests, nil
+
+		// Returning an error alongside results makes hot discard the whole map,
+		// so report success whenever anything resolved: one unreachable registry
+		// used to throw away every digest already fetched, forcing the entire
+		// batch to be refetched on the next tick. Refs that failed are simply
+		// left uncached (this cache has no missing-key cache) and retried on
+		// next access; only a fully failed batch surfaces the error, which
+		// KeepOnError turns into "retain the previous digests".
+		if len(digests) > 0 {
+			return digests, nil
+		}
+		return nil, firstErr
 	}
 	service.cache = hot.NewHotCache[string, string](hot.LRU, 4096).
 		WithTTL(registryCacheTTL).

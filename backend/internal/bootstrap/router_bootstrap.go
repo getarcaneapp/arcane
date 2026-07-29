@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"go.uber.org/fx"
 )
@@ -208,6 +209,12 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
+	// Agent event ingestion authenticates on the agent token alone and sits
+	// outside the auth middleware, so it needs its own brute-force ceiling.
+	// The allowance is generous because busy agents legitimately batch events.
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/events"}, 60, 30,
+	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
 	tunnelRegistry := edge.NewTunnelRegistry()
@@ -233,6 +240,10 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		envResolver,
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
+		// Proxied WebSocket upgrades enforce the same Origin policy as the local
+		// endpoints, so a cross-origin page cannot ride a session cookie into a
+		// remote environment.
+		httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
 

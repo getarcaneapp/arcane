@@ -61,12 +61,32 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 	followProjectSymlinks := settings.FollowProjectSymlinks.IsTrue()
 	j.logRecursiveProjectsWatchLimitWarningInternal(ctx, projectsDirectory)
 
-	sw, err := fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptionsInternal(followProjectSymlinks))
+	// Watchers are held locally until both are running, then published under the
+	// lock: assigning to j.projectsWatcher/j.templatesWatcher as they were built
+	// raced with Stop and RestartProjectsWatcher, and left every watcher created
+	// on a path that later failed holding its inotify/kqueue descriptors.
+	var projectsWatcher, templatesWatcher *fswatch.Watcher
+	published := false
+	defer func() {
+		if published {
+			return
+		}
+		// Startup failed somewhere below; release whatever was built. The job
+		// never took ownership of these, so nothing else will free them.
+		for _, watcher := range []*fswatch.Watcher{projectsWatcher, templatesWatcher} {
+			if watcher == nil {
+				continue
+			}
+			if stopErr := watcher.Stop(); stopErr != nil {
+				slog.ErrorContext(ctx, "Failed to stop watcher after startup error", "error", stopErr)
+			}
+		}
+	}()
+
+	projectsWatcher, err = fswatch.NewWatcher(projectsDirectory, j.projectWatcherOptionsInternal(followProjectSymlinks))
 	if err != nil {
 		return err
 	}
-
-	j.projectsWatcher = sw
 
 	templatesDir, err := projects.GetTemplatesDirectory(ctx, settings.TemplatesDirectory.Value)
 	if err != nil {
@@ -80,7 +100,7 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 				"projectsDirectory", projectsDirectory,
 				"templatesDirectory", templatesDir)
 		} else {
-			tw, err := fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
+			templatesWatcher, err = fswatch.NewWatcher(templatesDir, fswatch.WatcherOptions{
 				Debounce: 3 * time.Second,
 				OnChange: j.handleTemplatesChange,
 				MaxDepth: 1,
@@ -88,25 +108,27 @@ func (j *FilesystemWatcherJob) Start(ctx context.Context) error {
 			if err != nil {
 				return err
 			}
-			j.templatesWatcher = tw
 		}
 	}
 
-	if err := j.projectsWatcher.Start(ctx); err != nil {
+	if err := projectsWatcher.Start(ctx); err != nil {
 		return err
 	}
-	if j.templatesWatcher != nil {
-		if err := j.templatesWatcher.Start(ctx); err != nil {
-			if stopErr := j.projectsWatcher.Stop(); stopErr != nil {
-				slog.ErrorContext(ctx, "Failed to stop projects watcher after templates watcher start error", "error", stopErr)
-			}
+	if templatesWatcher != nil {
+		if err := templatesWatcher.Start(ctx); err != nil {
 			return err
 		}
 	}
 
+	j.mu.Lock()
+	j.projectsWatcher = projectsWatcher
+	j.templatesWatcher = templatesWatcher
+	j.mu.Unlock()
+	published = true
+
 	slog.InfoContext(ctx, "Filesystem watcher started for projects directory",
 		"path", projectsDirectory)
-	if j.templatesWatcher != nil {
+	if templatesWatcher != nil {
 		slog.InfoContext(ctx, "Filesystem watcher started for templates directory",
 			"path", templatesDir)
 	}
@@ -213,6 +235,9 @@ func (j *FilesystemWatcherJob) RestartProjectsWatcher(ctx context.Context) error
 
 	// Start the new watcher
 	if err := sw.Start(ctx); err != nil {
+		if stopErr := sw.Stop(); stopErr != nil {
+			slog.ErrorContext(ctx, "Failed to stop projects watcher after restart error", "error", stopErr)
+		}
 		return err
 	}
 

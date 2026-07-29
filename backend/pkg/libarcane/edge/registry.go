@@ -35,12 +35,41 @@ func (t *AgentTunnel) GetLastHeartbeat() time.Time {
 	return t.LastHeartbeat
 }
 
-// Close closes the tunnel connection
-func (t *AgentTunnel) Close() error {
-	return t.CloseWithReason("")
+// TunnelMetadataSnapshot is a consistent copy of a tunnel's mutable metadata.
+type TunnelMetadataSnapshot struct {
+	ConnectedAt   time.Time
+	LastHeartbeat time.Time
+	SessionID     string
+	AgentInstance string
+	SecurityMode  string
+	Capabilities  []string
+	State         string
 }
 
-// CloseWithReason closes the tunnel connection and records the disconnect reason.
+// MetadataSnapshot returns the tunnel's mutable metadata under one read lock.
+// Reading the fields directly races with the writers that take t.mu (heartbeats,
+// registration, CloseWithReason) and can mix state from either side of a close.
+func (t *AgentTunnel) MetadataSnapshot() TunnelMetadataSnapshot {
+	if t == nil {
+		return TunnelMetadataSnapshot{}
+	}
+
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	return TunnelMetadataSnapshot{
+		ConnectedAt:   t.ConnectedAt,
+		LastHeartbeat: t.LastHeartbeat,
+		SessionID:     t.SessionID,
+		AgentInstance: t.AgentInstance,
+		SecurityMode:  t.SecurityMode,
+		Capabilities:  append([]string(nil), t.Capabilities...),
+		State:         t.State,
+	}
+}
+
+// CloseWithReason closes the tunnel connection and records the disconnect
+// reason. Pass "" when there is no reason to record.
 func (t *AgentTunnel) CloseWithReason(reason string) error {
 	if t == nil {
 		return nil
@@ -85,7 +114,7 @@ func (r *TunnelRegistry) Register(envID string, tunnel *AgentTunnel) {
 	// Close existing tunnel if any
 	if existing, ok := r.tunnels[envID]; ok {
 		slog.Info("Replacing existing edge tunnel")
-		_ = existing.Close()
+		_ = existing.CloseWithReason("")
 	}
 
 	r.tunnels[envID] = tunnel
@@ -135,7 +164,7 @@ func (r *TunnelRegistry) Unregister(envID string) {
 	defer r.mu.Unlock()
 
 	if tunnel, ok := r.tunnels[envID]; ok {
-		_ = tunnel.Close()
+		_ = tunnel.CloseWithReason("")
 		delete(r.tunnels, envID)
 		slog.Info("Edge agent tunnel unregistered")
 	}
@@ -160,7 +189,7 @@ func (r *TunnelRegistry) UnregisterCurrent(envID string, current *AgentTunnel) (
 		return false, false
 	}
 
-	_ = existing.Close()
+	_ = existing.CloseWithReason("")
 	delete(r.tunnels, envID)
 	slog.Info("Edge agent tunnel unregistered", "environment_id", envID, "session_id", current.SessionID)
 	return true, false

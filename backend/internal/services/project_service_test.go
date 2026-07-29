@@ -4297,7 +4297,7 @@ func TestProjectService_MapProjectToDto_SetsRedeployDisabledFromRuntimeServices(
 						Labels: tt.labels,
 					},
 				},
-			}, tt.currentContainerID, tt.currentErr)
+			}, tt.currentContainerID, tt.currentErr, nil)
 
 			require.Equal(t, tt.wantProject, details.RedeployDisabled)
 			require.Len(t, details.RuntimeServices, 1)

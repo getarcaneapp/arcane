@@ -86,7 +86,7 @@ func TestProxyRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
@@ -110,7 +110,7 @@ func TestProxyHTTPRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -251,7 +251,7 @@ func TestDoRequest(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	// Register tunnel globally
 	registry := GetRegistry()
@@ -314,7 +314,7 @@ func TestHasActiveTunnel(t *testing.T) {
 	assert.True(t, HasActiveTunnel("env-active"))
 	assert.False(t, HasActiveTunnel("non-existent"))
 
-	_ = tunnel.Close()
+	_ = tunnel.CloseWithReason("")
 	assert.False(t, HasActiveTunnel("env-active"))
 }
 
@@ -371,7 +371,7 @@ func TestProxyHTTPRequest_StripsBrowserHeaders(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -429,7 +429,7 @@ func TestProxyHTTPRequest_ForwardsBodyCorrectly(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	requestBody := `{"name":"My Project"}`
 
@@ -569,7 +569,7 @@ func TestProxyHTTPRequest_EndToEnd_BrowserOriginStripped(t *testing.T) {
 
 	server, tunnel := setupMockAgentServer(t, agentHandler)
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	e := echo.New()
 	w := httptest.NewRecorder()
@@ -633,7 +633,7 @@ func TestProxyHTTPRequest_BodyPreservation_WebSocket(t *testing.T) {
 	}
 
 	tunnel := newWebSocketAgentTunnel("env-body-test", wsConn)
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	go func() {
 		for {

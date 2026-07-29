@@ -391,7 +391,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	}()
 
 	return tunnel, func() {
-		_ = tunnel.Close()
+		_ = tunnel.CloseWithReason("")
 		server.Close()
 		<-dispatchDone
 	}
