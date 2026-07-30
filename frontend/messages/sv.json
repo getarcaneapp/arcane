@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Välj ett namn på ett arkiv som är konfigurerat för detta register",
   "registries_none_enabled": "Inga aktiverade register. Konfigurera ett i registerinställningarna.",
   "registries_no_list_permission": "Du har inte behörighet att visa registren. Be en administratör om åtkomst.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Inga namn på arkiv har konfigurerats för detta register. Lägg till dem i registerinställningarna.",
   "dockerfile": "Dockerfil",
   "dockerfile_description": "Sökväg till Dockerfile (relativt till sammanhang)",
   "target": "Target",
