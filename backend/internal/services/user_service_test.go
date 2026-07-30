@@ -47,7 +47,7 @@ func TestDeleteUserRejectsDeletingOnlyAdmin(t *testing.T) {
 	admin := createTestUser(t, userSvc, "admin-1", "arcane")
 	grantGlobalAdmin(t, roleSvc, admin.ID)
 
-	err := userSvc.DeleteUser(ctx, admin.ID)
+	err := userSvc.DeleteUser(ctx, admin.ID, nil)
 	require.ErrorIs(t, err, ErrCannotRemoveLastAdmin)
 
 	stillThere, err := userSvc.GetUserByID(ctx, admin.ID)
@@ -63,7 +63,7 @@ func TestDeleteUserAllowsDeletingNonAdmin(t *testing.T) {
 	grantGlobalAdmin(t, roleSvc, admin.ID)
 	nonAdmin := createTestUser(t, userSvc, "user-1", "user")
 
-	err := userSvc.DeleteUser(ctx, nonAdmin.ID)
+	err := userSvc.DeleteUser(ctx, nonAdmin.ID, nil)
 	require.NoError(t, err)
 
 	_, err = userSvc.GetUserByID(ctx, nonAdmin.ID)
@@ -79,7 +79,7 @@ func TestDeleteUserAllowsDeletingAdminWhenAnotherAdminExists(t *testing.T) {
 	backup := createTestUser(t, userSvc, "admin-2", "backup")
 	grantGlobalAdmin(t, roleSvc, backup.ID)
 
-	err := userSvc.DeleteUser(ctx, adminToDelete.ID)
+	err := userSvc.DeleteUser(ctx, adminToDelete.ID, nil)
 	require.NoError(t, err)
 
 	_, err = userSvc.GetUserByID(ctx, adminToDelete.ID)
@@ -122,7 +122,7 @@ func TestDeleteUserRejectsDeletingOnlyCustomAllPermissionsAdmin(t *testing.T) {
 		{RoleID: customRole.ID, EnvironmentID: nil},
 	}))
 
-	err = userSvc.DeleteUser(ctx, customAdmin.ID)
+	err = userSvc.DeleteUser(ctx, customAdmin.ID, nil)
 	require.ErrorIs(t, err, ErrCannotRemoveLastAdmin)
 
 	users, _, err := userSvc.ListUsersPaginated(ctx, pagination.QueryParams{
@@ -144,7 +144,7 @@ func TestUpdateUserPersistsFontSizeAndMapsToDto(t *testing.T) {
 	require.Nil(t, u.FontSize, "new users default to no explicit font size")
 
 	u.FontSize = new(16)
-	_, err := userSvc.UpdateUser(ctx, u)
+	_, err := userSvc.UpdateUser(ctx, u, nil)
 	require.NoError(t, err)
 
 	reloaded, err := userSvc.GetUserByID(ctx, u.ID)
@@ -172,7 +172,7 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 	} {
 		t.Run(string(timeFormat), func(t *testing.T) {
 			u.TimeFormat = timeFormat
-			_, err := userSvc.UpdateUser(ctx, u)
+			_, err := userSvc.UpdateUser(ctx, u, nil)
 			require.NoError(t, err)
 
 			reloaded, err := userSvc.GetUserByID(ctx, u.ID)
@@ -184,4 +184,123 @@ func TestUpdateUserPersistsTimeFormatAndMapsToDto(t *testing.T) {
 			require.Equal(t, timeFormat, dto.TimeFormat)
 		})
 	}
+}
+
+func TestUpdateUserRejectsNonAdminActorEditingAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	manager := createTestUser(t, userSvc, "mgr-1", "manager")
+	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
+	require.NoError(t, err)
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+		{RoleID: managerRole.ID, EnvironmentID: nil},
+	}))
+	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
+	require.NoError(t, err)
+
+	admin.PasswordHash = "attacker-controlled-hash"
+	_, err = userSvc.UpdateUser(ctx, admin, managerPerms)
+	require.ErrorIs(t, err, ErrInsufficientPrivilege)
+
+	reloaded, err := userSvc.GetUserByID(ctx, admin.ID)
+	require.NoError(t, err)
+	require.NotEqual(t, "attacker-controlled-hash", reloaded.PasswordHash)
+}
+
+func TestUpdateUserAllowsGlobalAdminActorEditingAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	other := createTestUser(t, userSvc, "admin-2", "backup")
+	grantGlobalAdmin(t, roleSvc, other.ID)
+	otherPerms, err := roleSvc.ResolvePermissions(ctx, other)
+	require.NoError(t, err)
+
+	admin.DisplayName = new("Renamed Admin")
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
+	_, err = userSvc.UpdateUser(actorCtx, admin, otherPerms)
+	require.NoError(t, err)
+}
+
+func TestUpdateUserAllowsNonAdminActorEditingNonAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	manager := createTestUser(t, userSvc, "mgr-1", "manager")
+	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersUpdate})
+	require.NoError(t, err)
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+		{RoleID: managerRole.ID, EnvironmentID: nil},
+	}))
+	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
+	require.NoError(t, err)
+
+	target := createTestUser(t, userSvc, "user-1", "plain-user")
+	target.DisplayName = new("New Name")
+	_, err = userSvc.UpdateUser(ctx, target, managerPerms)
+	require.NoError(t, err)
+}
+
+func TestUpdateUserAllowsSelfEditByNonAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	adminPerms, err := roleSvc.ResolvePermissions(ctx, admin)
+	require.NoError(t, err)
+
+	admin.DisplayName = new("Self Rename")
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, admin)
+	_, err = userSvc.UpdateUser(actorCtx, admin, adminPerms)
+	require.NoError(t, err)
+}
+
+func TestDeleteUserRejectsNonAdminActorDeletingAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	backup := createTestUser(t, userSvc, "admin-2", "backup")
+	grantGlobalAdmin(t, roleSvc, backup.ID)
+	manager := createTestUser(t, userSvc, "mgr-1", "manager")
+	managerRole, err := roleSvc.CreateRole(ctx, "User Manager", nil, []string{authz.PermUsersDelete})
+	require.NoError(t, err)
+	require.NoError(t, roleSvc.SetUserAssignments(ctx, manager.ID, []models.UserRoleAssignment{
+		{RoleID: managerRole.ID, EnvironmentID: nil},
+	}))
+	managerPerms, err := roleSvc.ResolvePermissions(ctx, manager)
+	require.NoError(t, err)
+
+	// Two admins exist, so the last-admin guard would not fire — the
+	// actor-vs-target privilege check is what must block this delete.
+	err = userSvc.DeleteUser(ctx, admin.ID, managerPerms)
+	require.ErrorIs(t, err, ErrInsufficientPrivilege)
+
+	stillThere, err := userSvc.GetUserByID(ctx, admin.ID)
+	require.NoError(t, err)
+	require.Equal(t, admin.ID, stillThere.ID)
+}
+
+func TestDeleteUserAllowsGlobalAdminActorDeletingAdmin(t *testing.T) {
+	userSvc, roleSvc := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	admin := createTestUser(t, userSvc, "admin-1", "arcane")
+	grantGlobalAdmin(t, roleSvc, admin.ID)
+	other := createTestUser(t, userSvc, "admin-2", "backup")
+	grantGlobalAdmin(t, roleSvc, other.ID)
+	otherPerms, err := roleSvc.ResolvePermissions(ctx, other)
+	require.NoError(t, err)
+
+	actorCtx := context.WithValue(ctx, models.CurrentUserContextKey{}, other)
+	require.NoError(t, userSvc.DeleteUser(actorCtx, admin.ID, otherPerms))
 }

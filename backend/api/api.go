@@ -397,4 +397,5 @@ func registerHandlersInternal(api huma.API, deps HandlerDeps, handlerAppCtx hand
 	handlers.RegisterWebhooks(api, deps.Webhook)
 	handlers.RegisterVulnerability(api, deps.Vulnerability, handlerAppCtx)
 	handlers.RegisterDashboard(api, deps.Dashboard, deps.Environment)
+	handlers.RegisterStream(api, deps.Dashboard, deps.Activity, deps.Environment)
 }

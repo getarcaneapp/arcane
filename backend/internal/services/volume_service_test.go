@@ -432,6 +432,36 @@ func TestCollectStaleHelperIDsInternal(t *testing.T) {
 	require.Contains(t, s.helperByVolume, "fresh")
 }
 
+// A helper serving a request longer than the idle timeout (e.g. a slow download)
+// must not be reaped mid-stream; it becomes collectible once released, with the
+// idle clock measured from the release.
+func TestCollectStaleHelperIDsInternalSkipsInUseHelpers(t *testing.T) {
+	now := time.Now()
+	s := &VolumeService{
+		helperByVolume: map[string]*volumeHelper{
+			"vol-a": {id: "c-a", lastUsedAt: now.Add(-30 * time.Minute)},
+		},
+	}
+
+	release, ok := s.acquireHelperInternal("vol-a", "c-a")
+	require.True(t, ok)
+
+	require.Empty(t, s.collectStaleHelperIDsInternal(now, 10*time.Minute),
+		"an in-use helper must survive the reaper regardless of lastUsedAt")
+	require.Contains(t, s.helperByVolume, "vol-a")
+
+	release()
+	require.Empty(t, s.collectStaleHelperIDsInternal(now, 10*time.Minute),
+		"release refreshes the idle clock, so the helper is fresh again")
+	stale := s.collectStaleHelperIDsInternal(now.Add(11*time.Minute), 10*time.Minute)
+	require.Equal(t, []string{"c-a"}, stale)
+
+	// Acquiring a helper that was reaped (or replaced) since resolve must fail
+	// so the caller re-resolves instead of using a dead container.
+	_, ok = s.acquireHelperInternal("vol-a", "c-a")
+	require.False(t, ok)
+}
+
 func TestTakeHelperIDInternal(t *testing.T) {
 	s := &VolumeService{
 		helperByVolume: map[string]*volumeHelper{

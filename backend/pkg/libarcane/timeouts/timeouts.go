@@ -1,7 +1,6 @@
 package timeouts
 
 import (
-	"context"
 	"time"
 )
 
@@ -35,8 +34,4 @@ func GetDuration(settingSeconds int, defaultDuration time.Duration) time.Duratio
 		return time.Duration(settingSeconds) * time.Second
 	}
 	return defaultDuration
-}
-
-func WithTimeout(ctx context.Context, settingSeconds int, defaultDuration time.Duration) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, GetDuration(settingSeconds, defaultDuration))
 }

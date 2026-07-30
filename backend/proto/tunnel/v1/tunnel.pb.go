@@ -7,12 +7,11 @@
 package tunnelpb
 
 import (
+	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
+	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 	reflect "reflect"
 	sync "sync"
 	unsafe "unsafe"
-
-	protoreflect "google.golang.org/protobuf/reflect/protoreflect"
-	protoimpl "google.golang.org/protobuf/runtime/protoimpl"
 )
 
 const (
@@ -40,6 +39,7 @@ type AgentMessage struct {
 	//	*AgentMessage_CommandComplete
 	//	*AgentMessage_FileChunk
 	//	*AgentMessage_StreamClose
+	//	*AgentMessage_CancelRequest
 	Payload       isAgentMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -199,6 +199,15 @@ func (x *AgentMessage) GetStreamClose() *StreamClose {
 	return nil
 }
 
+func (x *AgentMessage) GetCancelRequest() *CancelRequest {
+	if x != nil {
+		if x, ok := x.Payload.(*AgentMessage_CancelRequest); ok {
+			return x.CancelRequest
+		}
+	}
+	return nil
+}
+
 type isAgentMessage_Payload interface {
 	isAgentMessage_Payload()
 }
@@ -255,6 +264,12 @@ type AgentMessage_StreamClose struct {
 	StreamClose *StreamClose `protobuf:"bytes,13,opt,name=stream_close,json=streamClose,proto3,oneof"`
 }
 
+type AgentMessage_CancelRequest struct {
+	// Only sent when the manager advertised the proto-parity-v1 capability;
+	// older managers decode an unknown oneof case as a nil payload.
+	CancelRequest *CancelRequest `protobuf:"bytes,14,opt,name=cancel_request,json=cancelRequest,proto3,oneof"`
+}
+
 func (*AgentMessage_HttpResponse) isAgentMessage_Payload() {}
 
 func (*AgentMessage_HeartbeatPing) isAgentMessage_Payload() {}
@@ -281,6 +296,8 @@ func (*AgentMessage_FileChunk) isAgentMessage_Payload() {}
 
 func (*AgentMessage_StreamClose) isAgentMessage_Payload() {}
 
+func (*AgentMessage_CancelRequest) isAgentMessage_Payload() {}
+
 // Messages sent from the manager to the agent.
 type ManagerMessage struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
@@ -297,6 +314,8 @@ type ManagerMessage struct {
 	//	*ManagerMessage_StreamClose
 	//	*ManagerMessage_CancelRequest
 	//	*ManagerMessage_FileChunk
+	//	*ManagerMessage_StreamData
+	//	*ManagerMessage_StreamEnd
 	Payload       isManagerMessage_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -438,6 +457,24 @@ func (x *ManagerMessage) GetFileChunk() *FileChunk {
 	return nil
 }
 
+func (x *ManagerMessage) GetStreamData() *StreamData {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_StreamData); ok {
+			return x.StreamData
+		}
+	}
+	return nil
+}
+
+func (x *ManagerMessage) GetStreamEnd() *StreamEnd {
+	if x != nil {
+		if x, ok := x.Payload.(*ManagerMessage_StreamEnd); ok {
+			return x.StreamEnd
+		}
+	}
+	return nil
+}
+
 type isManagerMessage_Payload interface {
 	isManagerMessage_Payload()
 }
@@ -486,6 +523,16 @@ type ManagerMessage_FileChunk struct {
 	FileChunk *FileChunk `protobuf:"bytes,11,opt,name=file_chunk,json=fileChunk,proto3,oneof"`
 }
 
+type ManagerMessage_StreamData struct {
+	// Only sent when the agent advertised the proto-parity-v1 capability;
+	// older agents decode an unknown oneof case as a nil payload.
+	StreamData *StreamData `protobuf:"bytes,12,opt,name=stream_data,json=streamData,proto3,oneof"`
+}
+
+type ManagerMessage_StreamEnd struct {
+	StreamEnd *StreamEnd `protobuf:"bytes,13,opt,name=stream_end,json=streamEnd,proto3,oneof"`
+}
+
 func (*ManagerMessage_HttpRequest) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_HeartbeatPong) isManagerMessage_Payload() {}
@@ -507,6 +554,10 @@ func (*ManagerMessage_StreamClose) isManagerMessage_Payload() {}
 func (*ManagerMessage_CancelRequest) isManagerMessage_Payload() {}
 
 func (*ManagerMessage_FileChunk) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_StreamData) isManagerMessage_Payload() {}
+
+func (*ManagerMessage_StreamEnd) isManagerMessage_Payload() {}
 
 type RegisterRequest struct {
 	state           protoimpl.MessageState `protogen:"open.v1"`
@@ -585,6 +636,7 @@ type RegisterResponse struct {
 	SecurityMode  string                 `protobuf:"bytes,5,opt,name=security_mode,json=securityMode,proto3" json:"security_mode,omitempty"`
 	Capabilities  []string               `protobuf:"bytes,6,rep,name=capabilities,proto3" json:"capabilities,omitempty"`
 	DrainPrevious bool                   `protobuf:"varint,7,opt,name=drain_previous,json=drainPrevious,proto3" json:"drain_previous,omitempty"`
+	Id            string                 `protobuf:"bytes,8,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -666,6 +718,13 @@ func (x *RegisterResponse) GetDrainPrevious() bool {
 		return x.DrainPrevious
 	}
 	return false
+}
+
+func (x *RegisterResponse) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 type CommandRequest struct {
@@ -986,6 +1045,7 @@ type FileChunk struct {
 	Data          []byte                 `protobuf:"bytes,2,opt,name=data,proto3" json:"data,omitempty"`
 	Sequence      int64                  `protobuf:"varint,3,opt,name=sequence,proto3" json:"sequence,omitempty"`
 	Eof           bool                   `protobuf:"varint,4,opt,name=eof,proto3" json:"eof,omitempty"`
+	Metadata      map[string]string      `protobuf:"bytes,5,rep,name=metadata,proto3" json:"metadata,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1046,6 +1106,13 @@ func (x *FileChunk) GetEof() bool {
 		return x.Eof
 	}
 	return false
+}
+
+func (x *FileChunk) GetMetadata() map[string]string {
+	if x != nil {
+		return x.Metadata
+	}
+	return nil
 }
 
 type StreamOpen struct {
@@ -1487,6 +1554,7 @@ func (x *StreamEnd) GetRequestId() string {
 
 type HeartbeatPing struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1521,8 +1589,16 @@ func (*HeartbeatPing) Descriptor() ([]byte, []int) {
 	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{16}
 }
 
+func (x *HeartbeatPing) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 type HeartbeatPong struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
+	Id            string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1555,6 +1631,13 @@ func (x *HeartbeatPong) ProtoReflect() protoreflect.Message {
 // Deprecated: Use HeartbeatPong.ProtoReflect.Descriptor instead.
 func (*HeartbeatPong) Descriptor() ([]byte, []int) {
 	return file_tunnel_v1_tunnel_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *HeartbeatPong) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
 }
 
 type WebSocketStart struct {
@@ -1742,6 +1825,7 @@ type EventLog struct {
 	UserId        string                 `protobuf:"bytes,8,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Username      string                 `protobuf:"bytes,9,opt,name=username,proto3" json:"username,omitempty"`
 	MetadataJson  []byte                 `protobuf:"bytes,10,opt,name=metadata_json,json=metadataJson,proto3" json:"metadata_json,omitempty"`
+	Id            string                 `protobuf:"bytes,11,opt,name=id,proto3" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1846,11 +1930,18 @@ func (x *EventLog) GetMetadataJson() []byte {
 	return nil
 }
 
+func (x *EventLog) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
 var File_tunnel_v1_tunnel_proto protoreflect.FileDescriptor
 
 const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\n" +
-	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\x9b\x06\n" +
+	"\x16tunnel/v1/tunnel.proto\x12\ttunnel.v1\"\xde\x06\n" +
 	"\fAgentMessage\x12>\n" +
 	"\rhttp_response\x18\x01 \x01(\v2\x17.tunnel.v1.HttpResponseH\x00R\fhttpResponse\x12A\n" +
 	"\x0eheartbeat_ping\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPingH\x00R\rheartbeatPing\x123\n" +
@@ -1869,8 +1960,9 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x10command_complete\x18\v \x01(\v2\x1a.tunnel.v1.CommandCompleteH\x00R\x0fcommandComplete\x125\n" +
 	"\n" +
 	"file_chunk\x18\f \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunk\x12;\n" +
-	"\fstream_close\x18\r \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamCloseB\t\n" +
-	"\apayload\"\xc3\x05\n" +
+	"\fstream_close\x18\r \x01(\v2\x16.tunnel.v1.StreamCloseH\x00R\vstreamClose\x12A\n" +
+	"\x0ecancel_request\x18\x0e \x01(\v2\x18.tunnel.v1.CancelRequestH\x00R\rcancelRequestB\t\n" +
+	"\apayload\"\xb4\x06\n" +
 	"\x0eManagerMessage\x12;\n" +
 	"\fhttp_request\x18\x01 \x01(\v2\x16.tunnel.v1.HttpRequestH\x00R\vhttpRequest\x12A\n" +
 	"\x0eheartbeat_pong\x18\x02 \x01(\v2\x18.tunnel.v1.HeartbeatPongH\x00R\rheartbeatPong\x126\n" +
@@ -1885,14 +1977,18 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x0ecancel_request\x18\n" +
 	" \x01(\v2\x18.tunnel.v1.CancelRequestH\x00R\rcancelRequest\x125\n" +
 	"\n" +
-	"file_chunk\x18\v \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunkB\t\n" +
+	"file_chunk\x18\v \x01(\v2\x14.tunnel.v1.FileChunkH\x00R\tfileChunk\x128\n" +
+	"\vstream_data\x18\f \x01(\v2\x15.tunnel.v1.StreamDataH\x00R\n" +
+	"streamData\x125\n" +
+	"\n" +
+	"stream_end\x18\r \x01(\v2\x14.tunnel.v1.StreamEndH\x00R\tstreamEndB\t\n" +
 	"\apayload\"\xae\x01\n" +
 	"\x0fRegisterRequest\x12\x1f\n" +
 	"\vagent_token\x18\x01 \x01(\tR\n" +
 	"agentToken\x12*\n" +
 	"\x11agent_instance_id\x18\x02 \x01(\tR\x0fagentInstanceId\x12\"\n" +
 	"\fcapabilities\x18\x03 \x03(\tR\fcapabilities\x12*\n" +
-	"\x11resume_session_id\x18\x04 \x01(\tR\x0fresumeSessionId\"\xfa\x01\n" +
+	"\x11resume_session_id\x18\x04 \x01(\tR\x0fresumeSessionId\"\x8a\x02\n" +
 	"\x10RegisterResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12%\n" +
 	"\x0eenvironment_id\x18\x02 \x01(\tR\renvironmentId\x12\x14\n" +
@@ -1901,7 +1997,8 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"session_id\x18\x04 \x01(\tR\tsessionId\x12#\n" +
 	"\rsecurity_mode\x18\x05 \x01(\tR\fsecurityMode\x12\"\n" +
 	"\fcapabilities\x18\x06 \x03(\tR\fcapabilities\x12%\n" +
-	"\x0edrain_previous\x18\a \x01(\bR\rdrainPrevious\"\x9a\x04\n" +
+	"\x0edrain_previous\x18\a \x01(\bR\rdrainPrevious\x12\x0e\n" +
+	"\x02id\x18\b \x01(\tR\x02id\"\x9a\x04\n" +
 	"\x0eCommandRequest\x12\x1d\n" +
 	"\n" +
 	"command_id\x18\x01 \x01(\tR\tcommandId\x12!\n" +
@@ -1942,13 +2039,17 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\tstreaming\x18\x06 \x01(\bR\tstreaming\x1a:\n" +
 	"\fHeadersEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
-	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"n\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\xeb\x01\n" +
 	"\tFileChunk\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\tR\n" +
 	"transferId\x12\x12\n" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12\x1a\n" +
 	"\bsequence\x18\x03 \x01(\x03R\bsequence\x12\x10\n" +
-	"\x03eof\x18\x04 \x01(\bR\x03eof\"\x8f\x02\n" +
+	"\x03eof\x18\x04 \x01(\bR\x03eof\x12>\n" +
+	"\bmetadata\x18\x05 \x03(\v2\".tunnel.v1.FileChunk.MetadataEntryR\bmetadata\x1a;\n" +
+	"\rMetadataEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01\"\x8f\x02\n" +
 	"\n" +
 	"StreamOpen\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12!\n" +
@@ -1995,9 +2096,11 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType\"*\n" +
 	"\tStreamEnd\x12\x1d\n" +
 	"\n" +
-	"request_id\x18\x01 \x01(\tR\trequestId\"\x0f\n" +
-	"\rHeartbeatPing\"\x0f\n" +
-	"\rHeartbeatPong\"\xd5\x01\n" +
+	"request_id\x18\x01 \x01(\tR\trequestId\"\x1f\n" +
+	"\rHeartbeatPing\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\x1f\n" +
+	"\rHeartbeatPong\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\"\xd5\x01\n" +
 	"\x0eWebSocketStart\x12\x1b\n" +
 	"\tstream_id\x18\x01 \x01(\tR\bstreamId\x12\x12\n" +
 	"\x04path\x18\x02 \x01(\tR\x04path\x12\x14\n" +
@@ -2011,7 +2114,7 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\x04data\x18\x02 \x01(\fR\x04data\x12!\n" +
 	"\fmessage_type\x18\x03 \x01(\x05R\vmessageType\"-\n" +
 	"\x0eWebSocketClose\x12\x1b\n" +
-	"\tstream_id\x18\x01 \x01(\tR\bstreamId\"\xb7\x02\n" +
+	"\tstream_id\x18\x01 \x01(\tR\bstreamId\"\xc7\x02\n" +
 	"\bEventLog\x12\x12\n" +
 	"\x04type\x18\x01 \x01(\tR\x04type\x12\x1a\n" +
 	"\bseverity\x18\x02 \x01(\tR\bseverity\x12\x14\n" +
@@ -2024,9 +2127,10 @@ const file_tunnel_v1_tunnel_proto_rawDesc = "" +
 	"\auser_id\x18\b \x01(\tR\x06userId\x12\x1a\n" +
 	"\busername\x18\t \x01(\tR\busername\x12#\n" +
 	"\rmetadata_json\x18\n" +
-	" \x01(\fR\fmetadataJson2R\n" +
+	" \x01(\fR\fmetadataJson\x12\x0e\n" +
+	"\x02id\x18\v \x01(\tR\x02id2R\n" +
 	"\rTunnelService\x12A\n" +
-	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BWZUgithub.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1;tunnelpbb\x06proto3"
+	"\aConnect\x12\x17.tunnel.v1.AgentMessage\x1a\x19.tunnel.v1.ManagerMessage(\x010\x01BDZBgithub.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1;tunnelpbb\x06proto3"
 
 var (
 	file_tunnel_v1_tunnel_proto_rawDescOnce sync.Once
@@ -2040,7 +2144,7 @@ func file_tunnel_v1_tunnel_proto_rawDescGZIP() []byte {
 	return file_tunnel_v1_tunnel_proto_rawDescData
 }
 
-var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_tunnel_v1_tunnel_proto_msgTypes = make([]protoimpl.MessageInfo, 30)
 var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	(*AgentMessage)(nil),     // 0: tunnel.v1.AgentMessage
 	(*ManagerMessage)(nil),   // 1: tunnel.v1.ManagerMessage
@@ -2067,10 +2171,11 @@ var file_tunnel_v1_tunnel_proto_goTypes = []any{
 	nil,                      // 22: tunnel.v1.CommandRequest.HeadersEntry
 	nil,                      // 23: tunnel.v1.CommandRequest.MetadataEntry
 	nil,                      // 24: tunnel.v1.CommandComplete.HeadersEntry
-	nil,                      // 25: tunnel.v1.StreamOpen.HeadersEntry
-	nil,                      // 26: tunnel.v1.HttpRequest.HeadersEntry
-	nil,                      // 27: tunnel.v1.HttpResponse.HeadersEntry
-	nil,                      // 28: tunnel.v1.WebSocketStart.HeadersEntry
+	nil,                      // 25: tunnel.v1.FileChunk.MetadataEntry
+	nil,                      // 26: tunnel.v1.StreamOpen.HeadersEntry
+	nil,                      // 27: tunnel.v1.HttpRequest.HeadersEntry
+	nil,                      // 28: tunnel.v1.HttpResponse.HeadersEntry
+	nil,                      // 29: tunnel.v1.WebSocketStart.HeadersEntry
 }
 var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
 	13, // 0: tunnel.v1.AgentMessage.http_response:type_name -> tunnel.v1.HttpResponse
@@ -2086,31 +2191,35 @@ var file_tunnel_v1_tunnel_proto_depIdxs = []int32{
 	7,  // 10: tunnel.v1.AgentMessage.command_complete:type_name -> tunnel.v1.CommandComplete
 	8,  // 11: tunnel.v1.AgentMessage.file_chunk:type_name -> tunnel.v1.FileChunk
 	10, // 12: tunnel.v1.AgentMessage.stream_close:type_name -> tunnel.v1.StreamClose
-	12, // 13: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
-	17, // 14: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
-	18, // 15: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
-	19, // 16: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
-	20, // 17: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
-	3,  // 18: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
-	4,  // 19: tunnel.v1.ManagerMessage.command_request:type_name -> tunnel.v1.CommandRequest
-	9,  // 20: tunnel.v1.ManagerMessage.stream_open:type_name -> tunnel.v1.StreamOpen
-	10, // 21: tunnel.v1.ManagerMessage.stream_close:type_name -> tunnel.v1.StreamClose
-	11, // 22: tunnel.v1.ManagerMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
-	8,  // 23: tunnel.v1.ManagerMessage.file_chunk:type_name -> tunnel.v1.FileChunk
-	22, // 24: tunnel.v1.CommandRequest.headers:type_name -> tunnel.v1.CommandRequest.HeadersEntry
-	23, // 25: tunnel.v1.CommandRequest.metadata:type_name -> tunnel.v1.CommandRequest.MetadataEntry
-	24, // 26: tunnel.v1.CommandComplete.headers:type_name -> tunnel.v1.CommandComplete.HeadersEntry
-	25, // 27: tunnel.v1.StreamOpen.headers:type_name -> tunnel.v1.StreamOpen.HeadersEntry
-	26, // 28: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
-	27, // 29: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
-	28, // 30: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
-	0,  // 31: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
-	1,  // 32: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
-	32, // [32:33] is the sub-list for method output_type
-	31, // [31:32] is the sub-list for method input_type
-	31, // [31:31] is the sub-list for extension type_name
-	31, // [31:31] is the sub-list for extension extendee
-	0,  // [0:31] is the sub-list for field type_name
+	11, // 13: tunnel.v1.AgentMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
+	12, // 14: tunnel.v1.ManagerMessage.http_request:type_name -> tunnel.v1.HttpRequest
+	17, // 15: tunnel.v1.ManagerMessage.heartbeat_pong:type_name -> tunnel.v1.HeartbeatPong
+	18, // 16: tunnel.v1.ManagerMessage.ws_start:type_name -> tunnel.v1.WebSocketStart
+	19, // 17: tunnel.v1.ManagerMessage.ws_data:type_name -> tunnel.v1.WebSocketData
+	20, // 18: tunnel.v1.ManagerMessage.ws_close:type_name -> tunnel.v1.WebSocketClose
+	3,  // 19: tunnel.v1.ManagerMessage.register_response:type_name -> tunnel.v1.RegisterResponse
+	4,  // 20: tunnel.v1.ManagerMessage.command_request:type_name -> tunnel.v1.CommandRequest
+	9,  // 21: tunnel.v1.ManagerMessage.stream_open:type_name -> tunnel.v1.StreamOpen
+	10, // 22: tunnel.v1.ManagerMessage.stream_close:type_name -> tunnel.v1.StreamClose
+	11, // 23: tunnel.v1.ManagerMessage.cancel_request:type_name -> tunnel.v1.CancelRequest
+	8,  // 24: tunnel.v1.ManagerMessage.file_chunk:type_name -> tunnel.v1.FileChunk
+	14, // 25: tunnel.v1.ManagerMessage.stream_data:type_name -> tunnel.v1.StreamData
+	15, // 26: tunnel.v1.ManagerMessage.stream_end:type_name -> tunnel.v1.StreamEnd
+	22, // 27: tunnel.v1.CommandRequest.headers:type_name -> tunnel.v1.CommandRequest.HeadersEntry
+	23, // 28: tunnel.v1.CommandRequest.metadata:type_name -> tunnel.v1.CommandRequest.MetadataEntry
+	24, // 29: tunnel.v1.CommandComplete.headers:type_name -> tunnel.v1.CommandComplete.HeadersEntry
+	25, // 30: tunnel.v1.FileChunk.metadata:type_name -> tunnel.v1.FileChunk.MetadataEntry
+	26, // 31: tunnel.v1.StreamOpen.headers:type_name -> tunnel.v1.StreamOpen.HeadersEntry
+	27, // 32: tunnel.v1.HttpRequest.headers:type_name -> tunnel.v1.HttpRequest.HeadersEntry
+	28, // 33: tunnel.v1.HttpResponse.headers:type_name -> tunnel.v1.HttpResponse.HeadersEntry
+	29, // 34: tunnel.v1.WebSocketStart.headers:type_name -> tunnel.v1.WebSocketStart.HeadersEntry
+	0,  // 35: tunnel.v1.TunnelService.Connect:input_type -> tunnel.v1.AgentMessage
+	1,  // 36: tunnel.v1.TunnelService.Connect:output_type -> tunnel.v1.ManagerMessage
+	36, // [36:37] is the sub-list for method output_type
+	35, // [35:36] is the sub-list for method input_type
+	35, // [35:35] is the sub-list for extension type_name
+	35, // [35:35] is the sub-list for extension extendee
+	0,  // [0:35] is the sub-list for field type_name
 }
 
 func init() { file_tunnel_v1_tunnel_proto_init() }
@@ -2132,6 +2241,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*AgentMessage_CommandComplete)(nil),
 		(*AgentMessage_FileChunk)(nil),
 		(*AgentMessage_StreamClose)(nil),
+		(*AgentMessage_CancelRequest)(nil),
 	}
 	file_tunnel_v1_tunnel_proto_msgTypes[1].OneofWrappers = []any{
 		(*ManagerMessage_HttpRequest)(nil),
@@ -2145,6 +2255,8 @@ func file_tunnel_v1_tunnel_proto_init() {
 		(*ManagerMessage_StreamClose)(nil),
 		(*ManagerMessage_CancelRequest)(nil),
 		(*ManagerMessage_FileChunk)(nil),
+		(*ManagerMessage_StreamData)(nil),
+		(*ManagerMessage_StreamEnd)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -2152,7 +2264,7 @@ func file_tunnel_v1_tunnel_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_tunnel_v1_tunnel_proto_rawDesc), len(file_tunnel_v1_tunnel_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   29,
+			NumMessages:   30,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

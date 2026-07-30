@@ -84,6 +84,16 @@ func (fw *Watcher) Start(ctx context.Context) error {
 	}
 
 	if err := fw.watcher.Add(fw.watchedPath); err != nil {
+		// The underlying fsnotify watcher already holds an inotify/kqueue
+		// descriptor. A caller whose Start failed has no reason to call Stop, so
+		// release it here and mark the watcher spent. fsnotify's Close is
+		// idempotent, so a later Stop remains safe.
+		fw.stopped = true
+		if closeErr := fw.watcher.Close(); closeErr != nil {
+			slog.WarnContext(ctx, "Failed to close filesystem watcher after failed start",
+				"path", fw.watchedPath,
+				"error", closeErr)
+		}
 		return err
 	}
 

@@ -43,9 +43,11 @@ func PaginateAndSortDB(params QueryParams, query *gorm.DB, result any) (Response
 		limit = 100
 	}
 
-	page := (params.Start / limit) + 1
-
-	return paginateDB(page, limit, query, result, params.SkipCount)
+	// The caller's offset is passed through as-is. Converting it to a page number
+	// and back rounded it down to a page boundary, so ?start=25&limit=20 returned
+	// rows 20-39 instead of 25-44 — and clamping limit above skewed it further,
+	// since the clamped limit divided a start computed from the requested one.
+	return paginateDB(params.Start, limit, query, result, params.SkipCount)
 }
 
 // paginateDBAll returns all results without pagination limits.
@@ -83,12 +85,18 @@ func paginateDBAll(query *gorm.DB, result any, skipCount bool) (Response, error)
 // paginateDB applies offset/limit pagination. When skipCount is true the COUNT(*) is elided
 // and TotalItems/TotalPages are returned as UnknownTotal.
 // Count runs before Find so it sees a clean session (Find sets Statement.Dest in GORM v2).
-func paginateDB(page int, pageSize int, query *gorm.DB, result any, skipCount bool) (Response, error) {
-	if page < 1 {
-		page = 1
+func paginateDB(offset int, pageSize int, query *gorm.DB, result any, skipCount bool) (Response, error) {
+	if offset < 0 {
+		offset = 0
+	}
+	if pageSize < 1 {
+		pageSize = 1
 	}
 
-	offset := (page - 1) * pageSize
+	// CurrentPage is a display value derived from the offset; the query itself
+	// uses the exact offset, so an offset that does not land on a page boundary
+	// is honoured rather than rounded.
+	page := (offset / pageSize) + 1
 
 	var totalItems int64
 	if !skipCount {

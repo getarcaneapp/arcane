@@ -38,6 +38,8 @@ func (f *fakeEventTunnelConn) Close() error { f.closed = true; return nil }
 
 func (f *fakeEventTunnelConn) IsClosed() bool { return f.closed }
 
+func (f *fakeEventTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 func TestPublishEventToManager_NoActiveTunnel(t *testing.T) {
 	clearActiveAgentTunnelConn(getActiveAgentTunnelConn())
 

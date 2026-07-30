@@ -136,7 +136,11 @@ function collectDashboardRequestPaths(page: Page): string[] {
 
 	page.on('request', (request) => {
 		const pathname = new URL(request.url()).pathname;
-		if (pathname.startsWith('/api/environments/') || pathname.startsWith('/api/dashboard/')) {
+		if (
+			pathname === '/api/stream' ||
+			pathname.startsWith('/api/environments/') ||
+			pathname.startsWith('/api/dashboard/')
+		) {
 			requestPaths.push(pathname);
 		}
 	});
@@ -173,7 +177,7 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.waitForLoadState('load');
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 
-		await expect.poll(() => requestPaths).toContain('/api/dashboard/stream');
+		await expect.poll(() => requestPaths).toContain('/api/stream');
 
 		expect(
 			countMatchingRequests(requestPaths, /\/api\/environments\/[^/]+\/system\/docker\/info$/)

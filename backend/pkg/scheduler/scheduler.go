@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
 	"github.com/samber/mo"
@@ -78,6 +79,9 @@ func (js *JobScheduler) RegisterBusWatcher(watcher schedulertypes.BusWatcher, ca
 	}
 
 	js.watcherWG.Go(func() {
+		// A panic in a watcher goroutine would crash the process; contain it the
+		// same way scheduled job runs are contained.
+		defer utils.RecoverToError(nil, "bus watcher", "name", watcher.Name())
 		if err := watcher.Start(js.context); err != nil {
 			slog.ErrorContext(js.context, "Bus watcher failed", "name", watcher.Name(), "error", err)
 		}
@@ -275,6 +279,10 @@ func (js *JobScheduler) upsertJobInternal(ctx context.Context, job schedulertype
 // lifecycle context. Callers must hold js.mu.
 func (js *JobScheduler) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
 	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
+		// robfig/cron has no default panic recovery, so a panic in any job would
+		// otherwise take down the whole process. Recovering here covers every
+		// scheduled job in one place.
+		defer utils.RecoverToError(nil, "scheduled job", "name", job.Name(), "schedule", schedule)
 		slog.InfoContext(js.context, "Job starting", "name", job.Name(), "schedule", schedule)
 		job.Run(js.context)
 		slog.InfoContext(js.context, "Job finished", "name", job.Name())

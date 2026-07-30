@@ -357,7 +357,7 @@ func createManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 	}
 
 	if err := root.MkdirAll(path.Dir(rel), pkgutils.DirPerm); err != nil {
-		return mapProjectRootErrorInternal("create parent directory", err)
+		return errors.WrapIf(err, "create parent directory")
 	}
 
 	// O_EXCL makes the exists-check-and-create atomic; os.Root confines the
@@ -367,7 +367,7 @@ func createManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 		if errors.Is(err, os.ErrExist) {
 			return errors.Errorf("project file already exists: %s", rel)
 		}
-		return mapProjectRootErrorInternal("create project file", err)
+		return errors.WrapIf(err, "create project file")
 	}
 	_, writeErr := f.WriteString(content)
 	if closeErr := f.Close(); writeErr == nil {
@@ -390,10 +390,10 @@ func createManagedProjectFolderInternal(root *os.Root, protected map[string]bool
 	if _, err := root.Lstat(rel); err == nil {
 		return errors.Errorf("project folder already exists: %s", rel)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return mapProjectRootErrorInternal("inspect project folder", err)
+		return errors.WrapIf(err, "inspect project folder")
 	}
 	if err := root.MkdirAll(rel, pkgutils.DirPerm); err != nil {
-		return mapProjectRootErrorInternal("create project folder", err)
+		return errors.WrapIf(err, "create project folder")
 	}
 	return nil
 }
@@ -414,7 +414,7 @@ func updateManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.Errorf("project file not found: %s", rel)
 		}
-		return mapProjectRootErrorInternal("inspect project file", err)
+		return errors.WrapIf(err, "inspect project file")
 	}
 	if info.IsDir() {
 		return errors.Errorf("path is a folder: %s", rel)
@@ -424,7 +424,7 @@ func updateManagedProjectFileInternal(root *os.Root, protected map[string]bool, 
 	}
 
 	if err := root.WriteFile(rel, []byte(content), pkgutils.FilePerm); err != nil {
-		return mapProjectRootErrorInternal("update project file", err)
+		return errors.WrapIf(err, "update project file")
 	}
 	return nil
 }
@@ -442,7 +442,7 @@ func renameManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.Errorf("project path not found: %s", rel)
 		}
-		return mapProjectRootErrorInternal("inspect project path", err)
+		return errors.WrapIf(err, "inspect project path")
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink paths are not supported")
@@ -458,11 +458,11 @@ func renameManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 	if _, err := root.Lstat(targetRel); err == nil {
 		return errors.Errorf("project path already exists: %s", targetRel)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return mapProjectRootErrorInternal("inspect project path", err)
+		return errors.WrapIf(err, "inspect project path")
 	}
 
 	if err := root.Rename(rel, targetRel); err != nil {
-		return mapProjectRootErrorInternal("rename project path", err)
+		return errors.WrapIf(err, "rename project path")
 	}
 	return nil
 }
@@ -497,7 +497,7 @@ func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, re
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.Errorf("project path not found: %s", rel)
 		}
-		return mapProjectRootErrorInternal("inspect project path", err)
+		return errors.WrapIf(err, "inspect project path")
 	}
 	if sourceInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink paths are not supported")
@@ -526,11 +526,11 @@ func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, re
 	if _, err := root.Lstat(targetRel); err == nil {
 		return errors.Errorf("project path already exists: %s", targetRel)
 	} else if !errors.Is(err, os.ErrNotExist) {
-		return mapProjectRootErrorInternal("inspect project path", err)
+		return errors.WrapIf(err, "inspect project path")
 	}
 
 	if err := root.Rename(rel, targetRel); err != nil {
-		return mapProjectRootErrorInternal("move project path", err)
+		return errors.WrapIf(err, "move project path")
 	}
 	return nil
 }
@@ -548,7 +548,7 @@ func validateProjectMoveParentInternal(root *os.Root, parentRel string) error {
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.Errorf("destination folder not found: %s", parentRel)
 		}
-		return mapProjectRootErrorInternal("inspect destination folder", err)
+		return errors.WrapIf(err, "inspect destination folder")
 	}
 	if parentInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink destination folders are not supported")
@@ -572,7 +572,7 @@ func deleteManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 		if errors.Is(err, os.ErrNotExist) {
 			return errors.Errorf("project path not found: %s", rel)
 		}
-		return mapProjectRootErrorInternal("inspect project path", err)
+		return errors.WrapIf(err, "inspect project path")
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink paths are not supported")
@@ -589,18 +589,14 @@ func deleteManagedProjectPathInternal(root *os.Root, protected map[string]bool, 
 
 	if info.IsDir() {
 		if err := root.RemoveAll(rel); err != nil {
-			return mapProjectRootErrorInternal("delete project folder", err)
+			return errors.WrapIf(err, "delete project folder")
 		}
 		return nil
 	}
 	if err := root.Remove(rel); err != nil {
-		return mapProjectRootErrorInternal("delete project file", err)
+		return errors.WrapIf(err, "delete project file")
 	}
 	return nil
-}
-
-func mapProjectRootErrorInternal(action string, err error) error {
-	return errors.WrapIff(err, "%s", action)
 }
 
 func ensureProjectPathHasNoSymlinkInternal(root *os.Root, rel string) error {
@@ -622,7 +618,7 @@ func ensureProjectPathHasNoSymlinkInternal(root *os.Root, rel string) error {
 			if errors.Is(err, os.ErrNotExist) {
 				return nil
 			}
-			return mapProjectRootErrorInternal("inspect project path", err)
+			return errors.WrapIf(err, "inspect project path")
 		}
 		if info.Mode()&os.ModeSymlink != 0 {
 			return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink paths are not supported")

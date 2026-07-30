@@ -1,9 +1,7 @@
 import { browser } from '$app/env';
 import { environmentStore, LOCAL_DOCKER_ENVIRONMENT_ID } from '#lib/stores/environment.store.svelte';
+import { clientStream } from '#lib/stores/client-stream.svelte';
 import type { Environment } from '#lib/types/environment';
-
-const MAX_RECONNECT_DELAY = 15_000;
-const MAX_RECONNECT_ATTEMPTS = 20;
 
 export type StreamEnvStateBase = {
 	id: string;
@@ -36,7 +34,8 @@ export interface EnvStreamCoreConfig<TState extends StreamEnvStateBase, TEvent e
 	/** Used in console warnings, e.g. 'Dashboard' / 'Activity'. */
 	label: string;
 	createEnvironmentState(environment: Pick<Environment, 'id' | 'name'>): TState;
-	openStream(signal: AbortSignal): Promise<Response>;
+	/** Channel to subscribe to on the shared client stream. */
+	channel: string;
 	/** Handles every event type except 'heartbeat' (core owns connection state). */
 	applyEvent(environmentId: string, event: TEvent): void;
 	/** Fully owns a per-environment REST refresh, including generation/removal guards via core helpers. */
@@ -61,18 +60,28 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 	let _environmentStates = $state<Record<string, TState>>({});
 
 	let started = false;
+	// REST snapshots belong to this store lifecycle, not the shared transport's reconnect lifecycle.
+	let lifecycleGeneration = 0;
 	let unsubscribeEnvironment: (() => void) | null = null;
 	let unsubscribeEnvironmentFilter: (() => void) | null = null;
-	// A single aggregated stream carries every environment's events; per-env
-	// connections would multiply requests and exhaust the browser's
-	// 6-per-origin HTTP/1.1 limit.
-	let streamAbortController: AbortController | null = null;
-	let removePageLifecycleListeners: (() => void) | null = null;
-	let reconnectTimer: ReturnType<typeof setTimeout> | null = null;
-	let reconnectAttempt = 0;
-	let streamGeneration = 0;
-	let _streamConnected = $state(false);
-	let _streamFailed = $state(false);
+
+	let unsubscribeChannel: (() => void) | null = null;
+
+	const channelHandlers = {
+		// A fresh stream re-emits error events for environments that are still
+		// failing, so stale per-environment errors are cleared on every (re)connect.
+		onConnected: () => clearAllEnvironmentErrors(),
+		onEvent: (payload: unknown) => {
+			const event = payload as TEvent;
+			const environmentId = event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
+			// The aggregated stream can keep delivering events for an environment
+			// for a short while after it was removed locally; don't resurrect it.
+			if (!environmentState(environmentId)) {
+				return;
+			}
+			config.applyEvent(environmentId, event);
+		}
+	};
 
 	function environmentState(environmentId: string): TState | undefined {
 		return _environmentStates[environmentId];
@@ -118,53 +127,6 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		}
 	}
 
-	function nextGeneration(): number {
-		streamGeneration += 1;
-		return streamGeneration;
-	}
-
-	function isCurrentGeneration(generation: number): boolean {
-		return streamGeneration === generation;
-	}
-
-	function clearReconnectTimer() {
-		if (reconnectTimer) {
-			clearTimeout(reconnectTimer);
-			reconnectTimer = null;
-		}
-	}
-
-	function abortStream() {
-		clearReconnectTimer();
-		streamAbortController?.abort();
-		streamAbortController = null;
-		_streamConnected = false;
-	}
-
-	// Closing a tab leaves teardown to whenever the browser gets around to
-	// dropping the socket. Until it does, the server keeps writing heartbeats
-	// into a connection nobody is reading — so tear down explicitly instead.
-	function watchPageLifecycle() {
-		if (!browser || removePageLifecycleListeners) {
-			return;
-		}
-
-		const onPageHide = () => abortStream();
-		// A bfcache restore comes back with the stream already torn down.
-		const onPageShow = (event: PageTransitionEvent) => {
-			if (event.persisted && started && !streamAbortController) {
-				void connectStream(nextGeneration());
-			}
-		};
-
-		window.addEventListener('pagehide', onPageHide);
-		window.addEventListener('pageshow', onPageShow);
-		removePageLifecycleListeners = () => {
-			window.removeEventListener('pagehide', onPageHide);
-			window.removeEventListener('pageshow', onPageShow);
-		};
-	}
-
 	function removeEnvironment(environmentId: string) {
 		const nextStates = { ..._environmentStates };
 		delete nextStates[environmentId];
@@ -172,134 +134,9 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		config.onEnvironmentRemoved?.(environmentId);
 	}
 
-	async function refresh(generation = streamGeneration) {
+	async function refresh(generation = lifecycleGeneration) {
 		reconcileEnvironments();
 		await Promise.all(Object.keys(_environmentStates).map((environmentId) => config.fetchSnapshot(environmentId, generation)));
-	}
-
-	async function connectStream(generation: number) {
-		if (!browser || !isCurrentGeneration(generation)) {
-			return;
-		}
-
-		// Overlapping connects would otherwise strand the previous controller:
-		// abortStream() only ever reaches the newest one, so the older request
-		// would keep an open connection the server has no way to notice.
-		streamAbortController?.abort();
-
-		const controller = new AbortController();
-		streamAbortController = controller;
-		try {
-			const response = await config.openStream(controller.signal);
-			if (!isCurrentGeneration(generation) || !response.body) {
-				// The response body is live even though nobody will read it;
-				// dropping it on the floor leaves the server streaming into a
-				// connection that stays open until its TCP timers expire.
-				controller.abort();
-				if (streamAbortController === controller) {
-					streamAbortController = null;
-				}
-				return;
-			}
-
-			_streamConnected = true;
-			_streamFailed = false;
-			reconnectAttempt = 0;
-			clearAllEnvironmentErrors();
-			await readJSONLines(response.body, generation);
-		} catch (error) {
-			if (!controller.signal.aborted && isCurrentGeneration(generation)) {
-				console.warn(`${config.label} stream disconnected:`, error);
-			}
-		} finally {
-			if (streamAbortController === controller) {
-				streamAbortController = null;
-			}
-			if (isCurrentGeneration(generation)) {
-				_streamConnected = false;
-				if (!controller.signal.aborted) {
-					scheduleReconnect(generation);
-				}
-			} else if (!controller.signal.aborted) {
-				// A superseded generation has no owner left to abort it.
-				controller.abort();
-			}
-		}
-	}
-
-	async function readJSONLines(stream: ReadableStream<Uint8Array>, generation: number) {
-		const reader = stream.getReader();
-		const decoder = new TextDecoder();
-		let buffer = '';
-
-		try {
-			while (isCurrentGeneration(generation)) {
-				const { done, value } = await reader.read();
-				if (done) {
-					break;
-				}
-
-				buffer += decoder.decode(value, { stream: true });
-				const lines = buffer.split('\n');
-				buffer = lines.pop() ?? '';
-				for (const line of lines) {
-					handleStreamLine(line);
-				}
-			}
-
-			buffer += decoder.decode();
-			if (buffer.trim()) {
-				handleStreamLine(buffer);
-			}
-		} finally {
-			// The loop also exits when the generation advances, with the stream
-			// still open. Cancelling is what actually closes the fetch and lets
-			// the server see the disconnect; releaseLock alone does not.
-			await reader.cancel().catch(() => {});
-			reader.releaseLock();
-		}
-	}
-
-	function handleStreamLine(line: string) {
-		const trimmed = line.trim();
-		if (!trimmed) {
-			return;
-		}
-
-		try {
-			const event = JSON.parse(trimmed) as TEvent;
-			const environmentId = event.environmentId || LOCAL_DOCKER_ENVIRONMENT_ID;
-			if (event.type === 'heartbeat') {
-				_streamConnected = true;
-				return;
-			}
-			// The aggregated stream can keep delivering events for an environment
-			// for a short while after it was removed locally; don't resurrect it.
-			if (!environmentState(environmentId)) {
-				return;
-			}
-			config.applyEvent(environmentId, event);
-		} catch (error) {
-			console.warn(`Failed to parse ${config.label.toLowerCase()} stream line:`, error);
-		}
-	}
-
-	function scheduleReconnect(generation: number) {
-		if (!browser || !started || !isCurrentGeneration(generation)) {
-			return;
-		}
-
-		if (reconnectAttempt >= MAX_RECONNECT_ATTEMPTS) {
-			_streamFailed = true;
-			return;
-		}
-
-		clearReconnectTimer();
-		const delay = Math.min(1000 * 2 ** reconnectAttempt, MAX_RECONNECT_DELAY);
-		reconnectAttempt += 1;
-		reconnectTimer = setTimeout(() => {
-			void connectStream(generation);
-		}, delay);
 	}
 
 	function reconcileEnvironments() {
@@ -335,8 +172,8 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 				// An already-open aggregated stream only picks new environments
 				// up on its server-side reconcile tick; fetch once so the first
 				// snapshot doesn't take up to that interval to appear.
-				if (streamAbortController) {
-					void config.fetchSnapshot(environmentId, streamGeneration);
+				if (clientStream.hasActiveStream) {
+					void config.fetchSnapshot(environmentId, lifecycleGeneration);
 				}
 				continue;
 			}
@@ -362,25 +199,22 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			_environmentStates = value;
 		},
 		get streamConnected(): boolean {
-			return _streamConnected;
-		},
-		set streamConnected(value: boolean) {
-			_streamConnected = value;
+			return clientStream.streamConnected;
 		},
 		get streamFailed(): boolean {
-			return _streamFailed;
+			return clientStream.streamFailed;
 		},
 		get generation(): number {
-			return streamGeneration;
+			return lifecycleGeneration;
 		},
 		get hasActiveStream(): boolean {
-			return streamAbortController !== null;
+			return clientStream.hasActiveStream;
 		},
 		environmentState,
 		updateEnvironmentState,
 		setEnvironmentError,
 		clearEnvironmentError,
-		isCurrentGeneration,
+		isCurrentGeneration: (generation: number) => generation === lifecycleGeneration,
 		reconcileEnvironments,
 		refresh,
 		async start() {
@@ -389,18 +223,17 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			}
 
 			started = true;
+			const generation = ++lifecycleGeneration;
 			await environmentStore.ready;
-			if (!started) {
+			if (generation !== lifecycleGeneration) {
 				return;
 			}
 			config.onSelectedEnvironment?.(environmentStore.selected);
-			watchPageLifecycle();
 			reconcileEnvironments();
-			const generation = nextGeneration();
+			unsubscribeChannel = clientStream.subscribe(config.channel, channelHandlers);
 			if (config.refreshOnStart) {
 				void refresh(generation);
 			}
-			void connectStream(generation);
 			unsubscribeEnvironment = environmentStore.subscribeSelected((environment) => {
 				config.onSelectedEnvironment?.(environment);
 				reconcileEnvironments();
@@ -410,32 +243,24 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 		stop(options?: { resetState?: boolean; resetStreamFailed?: boolean }) {
 			const wasStarted = started;
 			started = false;
+			lifecycleGeneration += 1;
 			unsubscribeEnvironment?.();
 			unsubscribeEnvironment = null;
 			unsubscribeEnvironmentFilter?.();
 			unsubscribeEnvironmentFilter = null;
-			removePageLifecycleListeners?.();
-			removePageLifecycleListeners = null;
-			nextGeneration();
-			abortStream();
-			reconnectAttempt = 0;
+			unsubscribeChannel?.();
+			unsubscribeChannel = null;
 			if (options?.resetState) {
 				_environmentStates = {};
-			}
-			if (options?.resetState || options?.resetStreamFailed) {
-				_streamFailed = false;
 			}
 			return wasStarted;
 		},
 		retryStream() {
-			_streamFailed = false;
-			reconnectAttempt = 0;
 			// Environments may have been added/removed while the stream was down;
 			// reconcile so the new stream's snapshots aren't dropped as unknown.
 			reconcileEnvironments();
 			clearAllEnvironmentErrors();
-			abortStream();
-			void connectStream(nextGeneration());
+			clientStream.retry();
 		},
 		// Tear down and reopen the stream without touching existing environment
 		// data (e.g. when a flag encoded in the stream URL changes).
@@ -443,8 +268,7 @@ export function createEnvironmentStreamStore<TState extends StreamEnvStateBase, 
 			// Same as retryStream: pick up environments added since the last
 			// reconcile so their first snapshots aren't discarded.
 			reconcileEnvironments();
-			abortStream();
-			void connectStream(nextGeneration());
+			clientStream.restart();
 		}
 	};
 }

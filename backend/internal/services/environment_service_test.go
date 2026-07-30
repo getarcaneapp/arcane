@@ -17,6 +17,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 
+	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -26,7 +27,6 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
-	"github.com/gorilla/websocket"
 	"go.getarcane.app/sys/crypto"
 )
 
@@ -1086,20 +1086,19 @@ func newTestWebSocketTunnelInternal(t *testing.T, envID string) (*edge.AgentTunn
 	t.Helper()
 
 	connCh := make(chan *websocket.Conn, 1)
-	upgrader := websocket.Upgrader{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		require.NoError(t, err)
 		connCh <- conn
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	clientConn, _, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	clientConn, _, err := websocket.Dial(t.Context(), wsURL, nil)
 	require.NoError(t, err)
 
 	serverConn := <-connCh
 	return edge.NewAgentTunnelWithConn(envID, edge.NewTunnelConn(serverConn)), func() {
-		_ = clientConn.Close()
+		_ = clientConn.CloseNow()
 		server.Close()
 	}
 }

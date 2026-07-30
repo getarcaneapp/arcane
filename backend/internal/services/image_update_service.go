@@ -80,7 +80,7 @@ func (s *ImageUpdateService) dockerAPIContextInternal(ctx context.Context) (cont
 	if s != nil && s.settingsService != nil {
 		timeoutSeconds = s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt()
 	}
-	return timeouts.WithTimeout(ctx, timeoutSeconds, timeouts.DefaultDockerAPI)
+	return context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultDockerAPI))
 }
 
 func (s *ImageUpdateService) registryContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
@@ -88,7 +88,7 @@ func (s *ImageUpdateService) registryContextInternal(ctx context.Context) (conte
 	if s != nil && s.settingsService != nil {
 		timeoutSeconds = s.settingsService.GetSettingsConfig().RegistryTimeout.AsInt()
 	}
-	return timeouts.WithTimeout(ctx, timeoutSeconds, timeouts.DefaultRegistry)
+	return context.WithTimeout(ctx, timeouts.GetDuration(timeoutSeconds, timeouts.DefaultRegistry))
 }
 
 func (s *ImageUpdateService) dockerClientInternal(ctx context.Context) (*client.Client, error) {
@@ -839,7 +839,7 @@ func (s *ImageUpdateService) saveUpdateResultWithSnapshotInternal(ctx context.Co
 	imageID, err := s.getImageIDByRef(ctx, imageRef)
 	if err != nil {
 		repository := buildImageUpdateRepositoryInternal(parts)
-		syntheticID := buildSyntheticImageUpdateRecordIDInternal(repository, parts.Tag)
+		syntheticID := fmt.Sprintf("ref::%s@%s", strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(parts.Tag))
 		slog.DebugContext(ctx, "Saving image update result with synthetic ref ID",
 			"imageRef", imageRef,
 			"error", err.Error(),
@@ -868,10 +868,6 @@ func buildImageUpdateRepositoryInternal(parts *ImageParts) string {
 	}
 
 	return fmt.Sprintf("%s/%s", strings.TrimSpace(parts.Registry), repository)
-}
-
-func buildSyntheticImageUpdateRecordIDInternal(repository, tag string) string {
-	return fmt.Sprintf("ref::%s@%s", strings.ToLower(strings.TrimSpace(repository)), strings.TrimSpace(tag))
 }
 
 func countBatchResultOutcomesInternal(imageRefs []string, results map[string]*imageupdate.Response) (int, int) {

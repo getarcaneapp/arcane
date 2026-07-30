@@ -271,7 +271,7 @@ func (s *SettingsService) loadDatabaseConfigFromEnv(ctx context.Context, db *dat
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 
 		// debug: log each env name checked and whether a value exists
 		if val, ok := os.LookupEnv(envVarName); ok {
@@ -334,7 +334,7 @@ func resolveSettingsEnvOverridesInternal() []settingsEnvOverride {
 			continue
 		}
 
-		envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+		envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 		if val, ok := os.LookupEnv(envVarName); ok && val != "" {
 			overrides = append(overrides, settingsEnvOverride{
 				fieldIndex: i,
@@ -705,7 +705,7 @@ func (s *SettingsService) processEnvField(ctx context.Context, tx *gorm.DB, fiel
 		return nil
 	}
 
-	envVarName := utils.CamelCaseToScreamingSnakeCase(key)
+	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(key))
 	envVal, ok := os.LookupEnv(envVarName)
 	if !ok {
 		return nil
@@ -978,7 +978,7 @@ func (s *SettingsService) NormalizeProjectsDirectory(ctx context.Context, projec
 
 func (s *SettingsService) NormalizeBuildsDirectory(ctx context.Context) error {
 	const buildsKey = "buildsDirectory"
-	envVarName := utils.CamelCaseToScreamingSnakeCase(buildsKey)
+	envVarName := strings.ToUpper(utils.CamelCaseToSnakeCase(buildsKey))
 	if envVal, ok := os.LookupEnv(envVarName); ok && strings.TrimSpace(envVal) != "" {
 		slog.DebugContext(ctx, "BUILDS_DIRECTORY environment variable is set, skipping normalization", "value", envVal)
 		return nil

@@ -24,6 +24,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"go.uber.org/fx"
 )
@@ -44,8 +45,7 @@ var loggerSkipPatterns = []string{
 	// ends, so it reports the full connection lifetime as request latency —
 	// which reads as a multi-minute hung request. The handlers log their own
 	// termination instead.
-	"GET /api/dashboard/stream",
-	"GET /api/activities/stream",
+	"GET /api/stream",
 	"GET /_app/*",
 	"GET /img",
 	"GET /api/health",
@@ -209,6 +209,12 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
+	// Agent event ingestion authenticates on the agent token alone and sits
+	// outside the auth middleware, so it needs its own brute-force ceiling.
+	// The allowance is generous because busy agents legitimately batch events.
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/events"}, 60, 30,
+	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
 	tunnelRegistry := edge.NewTunnelRegistry()
@@ -228,12 +234,17 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
+	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
 		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
+		tunnelRegistry,
+		// Proxied WebSocket upgrades enforce the same Origin policy as the local
+		// endpoints, so a cross-origin page cannot ride a session cookie into a
+		// remote environment.
+		httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
 
@@ -329,7 +340,7 @@ func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.M
 				secure = true
 			}
 			if secure {
-				c.SetRequest(req.WithContext(cookie.WithSecureCookieContext(req.Context(), true)))
+				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
 			}
 			return next(c)
 		}

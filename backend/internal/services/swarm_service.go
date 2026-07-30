@@ -26,6 +26,7 @@ import (
 	libswarm "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/swarm"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	appfs "github.com/getarcaneapp/arcane/backend/v2/pkg/projects"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	networktypes "github.com/moby/moby/api/types/network"
 	"github.com/moby/moby/api/types/swarm"
@@ -700,7 +701,9 @@ func (s *SwarmService) resolveNodeAgentCoverageInternal(ctx context.Context, env
 	g.SetLimit(swarmNodeIdentityProbeConcurrency)
 	for _, candidate := range probeEnvsByID {
 		env := candidate
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "swarm worker")
+
 			runtime := s.resolveSwarmNodeAgentRuntimeInternal(groupCtx, &env)
 			runtimeMu.Lock()
 			runtimeByEnvID[env.ID] = runtime
@@ -913,7 +916,9 @@ func (s *SwarmService) JoinEnvironments(ctx context.Context, managerEnvironmentI
 		if target.Role != swarmtypes.SwarmJoinEnvironmentRoleWorker {
 			continue
 		}
-		group.Go(func() error {
+		group.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "swarm worker")
+
 			if groupCtx.Err() == nil {
 				processTargetInternal(index)
 			}

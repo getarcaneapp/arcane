@@ -48,25 +48,6 @@ func TestCamelCaseToSnakeCase(t *testing.T) {
 	}
 }
 
-func TestCamelCaseToScreamingSnakeCase(t *testing.T) {
-	tests := []struct {
-		name     string
-		input    string
-		expected string
-	}{
-		{"empty string", "", ""},
-		{"simple", "camelCase", "CAMEL_CASE"},
-		{"multiple words", "thisIsALongerString", "THIS_IS_A_LONGER_STRING"},
-		{"with number", "version2", "VERSION2"},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			assert.Equal(t, tt.expected, CamelCaseToScreamingSnakeCase(tt.input))
-		})
-	}
-}
-
 func TestGenerateRandomString(t *testing.T) {
 	t.Run("length check", func(t *testing.T) {
 		length := 32

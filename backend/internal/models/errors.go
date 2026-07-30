@@ -72,22 +72,6 @@ func NewAPIErrorWithDetails(message string, code APIErrorCode, statusCode int, d
 	}
 }
 
-func NewNotFoundError(message string) *APIError {
-	return NewAPIError(message, APIErrorCodeNotFound, http.StatusNotFound)
-}
-
-func NewConflictError(message string) *APIError {
-	return NewAPIError(message, APIErrorCodeConflict, http.StatusConflict)
-}
-
-func NewInternalServerError(message string) *APIError {
-	return NewAPIError(message, APIErrorCodeInternalServerError, http.StatusInternalServerError)
-}
-
-func NewValidationError(message string, details any) *APIError {
-	return NewAPIErrorWithDetails(message, APIErrorCodeValidationError, http.StatusBadRequest, details)
-}
-
 type DockerAPIError struct {
 	Message    string
 	StatusCode int
@@ -126,7 +110,7 @@ func ToAPIError(err error) *APIError {
 		if len(details) == 0 {
 			details = nil
 		}
-		return NewValidationError(err.Error(), details)
+		return NewAPIErrorWithDetails(err.Error(), APIErrorCodeValidationError, http.StatusBadRequest, details)
 	case errors.Is(err, common.ErrBadRequest):
 		return NewAPIError(err.Error(), APIErrorCodeBadRequest, http.StatusBadRequest)
 	case errors.Is(err, common.ErrUnauthorized):
@@ -134,14 +118,14 @@ func ToAPIError(err error) *APIError {
 	case errors.Is(err, common.ErrForbidden):
 		return NewAPIError(err.Error(), APIErrorCodeForbidden, http.StatusForbidden)
 	case errors.Is(err, common.ErrNotFound):
-		return NewNotFoundError(err.Error())
+		return NewAPIError(err.Error(), APIErrorCodeNotFound, http.StatusNotFound)
 	case errors.Is(err, common.ErrConflict):
-		return NewConflictError(err.Error())
+		return NewAPIError(err.Error(), APIErrorCodeConflict, http.StatusConflict)
 	case errors.Is(err, common.ErrTimeout):
 		return NewAPIError(err.Error(), APIErrorCodeTimeout, http.StatusGatewayTimeout)
 	case errors.Is(err, common.ErrUnavailable):
 		return NewAPIError(err.Error(), APIErrorCodeInternalServerError, http.StatusServiceUnavailable)
 	}
 
-	return NewInternalServerError(err.Error())
+	return NewAPIError(err.Error(), APIErrorCodeInternalServerError, http.StatusInternalServerError)
 }

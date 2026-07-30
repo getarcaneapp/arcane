@@ -21,6 +21,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
+	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
 )
 
 func setupActivityHandlerTestDBInternal(t *testing.T) *database.DB {
@@ -146,10 +147,9 @@ func createStreamTestRemoteEnvironmentInternal(t *testing.T, db *database.DB, en
 	}).Error)
 }
 
-// runStreamAllInternal drives streamAllActivitiesInternal through a pipe and
-// returns each decoded event to onEvent until it reports done or the stream
-// ends; remaining output is drained so a blocked writer can always finish.
-func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
+// runActivityClientStreamInternal drives the activities channel through a pipe
+// and returns each decoded activity event to onEvent until it reports done.
+func runActivityClientStreamInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *ActivityHandler, ps *authz.PermissionSet, onEvent func(activity.StreamEvent) bool) {
 	t.Helper()
 
 	pr, pw := io.Pipe()
@@ -157,14 +157,18 @@ func runStreamAllInternal(t *testing.T, ctx context.Context, cancel context.Canc
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllActivitiesInternal(ctx, ps, 50, pw, func() {})
+		streamHandler := &StreamHandler{activity: handler}
+		streamHandler.streamClientInternal(ctx, ps, &StreamClientInput{
+			Channels: streamtypes.ChannelActivities,
+			Limit:    50,
+		}, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
 	for scanner.Scan() {
-		var event activity.StreamEvent
+		var event streamtypes.Event
 		require.NoError(t, json.Unmarshal(scanner.Bytes(), &event))
-		if onEvent(event) {
+		if event.Activity != nil && onEvent(*event.Activity) {
 			cancel()
 			break
 		}
@@ -207,7 +211,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 	}
 
 	var localSnapshot, remoteSnapshot bool
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" && len(event.Activities) == 1 {
 			require.Equal(t, local.ID, event.Activities[0].ID)
 			require.Equal(t, "0", event.Activities[0].SourceEnvironmentID)
@@ -262,7 +266,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 	}
 
 	remoteSnapshotCount := 0
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type != "snapshot" || event.EnvironmentID != "remote-1" {
 			return false
 		}
@@ -315,7 +319,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 	}
 
 	var localSnapshot, remoteError bool
-	runStreamAllInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, authz.SudoPermissionSet(), func(event activity.StreamEvent) bool {
 		if event.Type == "snapshot" && event.EnvironmentID == "0" {
 			localSnapshot = true
 		}
@@ -366,7 +370,7 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 	ps.AddEnv("remote-allowed", authz.PermActivitiesRead)
 
 	seenEnvironments := make(map[string]struct{})
-	runStreamAllInternal(t, ctx, cancel, handler, ps, func(event activity.StreamEvent) bool {
+	runActivityClientStreamInternal(t, ctx, cancel, handler, ps, func(event activity.StreamEvent) bool {
 		if event.EnvironmentID != "" {
 			seenEnvironments[event.EnvironmentID] = struct{}{}
 		}

@@ -2,7 +2,6 @@ package projects
 
 import (
 	"context"
-	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -69,10 +68,6 @@ func EnsureTemplateDir(ctx context.Context, templatesDir, base string) (dir, com
 	composePath = filepath.Join(dir, "compose.yaml")
 	envPath = filepath.Join(dir, ".env.example")
 	return dir, composePath, envPath, nil
-}
-
-func ImportedComposeDescription(dir string) string {
-	return fmt.Sprintf("Imported from %s/compose.yaml", dir)
 }
 
 func WriteTemplateFiles(composePath, envPath, composeContent, envContent string) (*string, error) {

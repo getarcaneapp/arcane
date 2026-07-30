@@ -430,7 +430,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	)
 	if !nm.IsContainer() {
 		apiVersion = libarcane.DetectDockerAPIVersion(ctx, dockerClient)
-		if apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
+		if apiVersion != "" && !libarcane.IsDockerAPIVersionAtLeast(apiVersion, libarcane.NetworkScopedMacAddressMinAPIVersion) {
 			slog.Info("daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
 				"dockerAPIVersion", apiVersion,
 				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,

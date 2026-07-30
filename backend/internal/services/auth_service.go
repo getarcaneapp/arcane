@@ -274,7 +274,7 @@ func (s *AuthService) Login(ctx context.Context, username, password string, meta
 	// Use new(*user) to create a safe copy of the user struct to avoid data race
 	userCopy := new(*user)
 	s.runInBackground(ctx, "update_last_login", func(ctx context.Context) error {
-		if _, err := s.userService.UpdateUser(ctx, userCopy); err != nil {
+		if _, err := s.userService.UpdateUser(ctx, userCopy, nil); err != nil {
 			return errors.WrapIf(err, "failed to update user's last login time")
 		}
 		return nil
@@ -477,7 +477,7 @@ func (s *AuthService) updateOidcUser(ctx context.Context, user *models.User, use
 	s.persistOidcTokens(user, tokenResp)
 
 	user.LastLogin = new(time.Now())
-	if _, err := s.userService.UpdateUser(ctx, user); err != nil {
+	if _, err := s.userService.UpdateUser(ctx, user, nil); err != nil {
 		return err
 	}
 	if err := s.syncOidcRoleAssignments(ctx, user, userInfo, tokenResp); err != nil {
@@ -797,7 +797,7 @@ func (s *AuthService) ChangePassword(ctx context.Context, userID, currentPasswor
 
 	user.PasswordHash = hashedPassword
 	user.RequiresPasswordChange = false
-	if _, err = s.userService.UpdateUser(ctx, user); err != nil {
+	if _, err = s.userService.UpdateUser(ctx, user, nil); err != nil {
 		return err
 	}
 	keys := make([]string, 0)

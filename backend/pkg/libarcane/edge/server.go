@@ -6,16 +6,18 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
@@ -29,17 +31,14 @@ import (
 const (
 	// TunnelStaleTimeout is how long before a tunnel is considered stale.
 	TunnelStaleTimeout = 2 * time.Minute
+	// tunnelStaleSweepInterval is how often stale tunnels are reaped. The sweep
+	// is a backstop behind read-deadline liveness, so it runs well under
+	// TunnelStaleTimeout to keep the dead-but-selectable window short.
+	tunnelStaleSweepInterval = time.Minute
 	// streamDeliveryTimeout bounds per-message delivery wait to a pending consumer.
 	// This prevents silent data loss while avoiding indefinite blocking.
 	streamDeliveryTimeout = 5 * time.Second
 )
-
-var tunnelUpgrader = websocket.Upgrader{
-	ReadBufferSize:    64 * 1024,
-	WriteBufferSize:   64 * 1024,
-	EnableCompression: true,
-	CheckOrigin:       func(r *http.Request) bool { return true },
-}
 
 // EnvironmentResolver resolves an agent token to an environment ID.
 type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
@@ -60,11 +59,6 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 // reenrolled is true when an environment that had already enrolled receives
 // assets again after the enrollment cooldown.
 type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool)
-
-// NewTunnelServer creates a new tunnel server.
-func NewTunnelServer(resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
-	return NewTunnelServerWithRegistry(GetRegistry(), resolver, statusCallback)
-}
 
 // NewTunnelServerWithRegistry creates a new tunnel server using an injected tunnel registry.
 func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
@@ -129,8 +123,9 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	ctx := req.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
-	// Upgrade to WebSocket.
-	conn, err := tunnelUpgrader.Upgrade(c.Response(), req, nil)
+	// Upgrade to WebSocket. Agents authenticate with tokens/mTLS, not browser
+	// cookies, so no Origin check is needed here.
+	conn, err := wshub.Accept(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade edge tunnel connection", "error", err)
 		return nil
@@ -289,7 +284,9 @@ func (s *TunnelServer) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMes
 		return status.Error(codes.Unauthenticated, err.Error())
 	}
 
-	tunnel := NewAgentTunnelWithConn(envID, NewGRPCManagerTunnelConn(stream))
+	managerConn := NewGRPCManagerTunnelConn(stream)
+	managerConn.SetParityEncoding(slices.Contains(register.GetCapabilities(), tunnelCapabilityProtoParity))
+	tunnel := NewAgentTunnelWithConn(envID, managerConn)
 	s.populateSessionMetadata(tunnel, &TunnelMessage{
 		AgentInstance: register.GetAgentInstanceId(),
 		Capabilities:  append([]string(nil), register.GetCapabilities()...),
@@ -314,11 +311,8 @@ func (s *TunnelServer) populateSessionMetadata(tunnel *AgentTunnel, registerMsg 
 		tunnel.Capabilities = append([]string(nil), registerMsg.Capabilities...)
 	}
 
-	switch tunnel.Conn.(type) {
-	case *GRPCManagerTunnelConn:
-		tunnel.Transport = EdgeTransportGRPC
-	default:
-		tunnel.Transport = EdgeTransportWebSocket
+	if tunnel.Conn != nil {
+		tunnel.Transport = tunnel.Conn.Transport()
 	}
 }
 
@@ -333,16 +327,17 @@ func (s *TunnelServer) resolveEnvironment(ctx context.Context, token string) (st
 	return s.resolver(ctx, token)
 }
 
+// agentTokenHeaderPriority is the shared credential fallback order for both
+// header- and metadata-based token extraction, so the transports cannot drift.
+var agentTokenHeaderPriority = []string{HeaderAgentToken, HeaderAPIKey}
+
 func tokenFromMetadataInternal(ctx context.Context) string {
 	md, ok := metadata.FromIncomingContext(ctx)
 	if !ok {
 		return ""
 	}
-	for _, key := range []string{
-		strings.ToLower(HeaderAgentToken),
-		strings.ToLower(HeaderAPIKey),
-	} {
-		values := md.Get(key)
+	for _, header := range agentTokenHeaderPriority {
+		values := md.Get(strings.ToLower(header))
 		for _, value := range values {
 			trimmed := strings.TrimSpace(value)
 			if trimmed != "" {
@@ -371,7 +366,7 @@ func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
 	if req == nil {
 		return "", ""
 	}
-	for _, header := range []string{HeaderAgentToken, HeaderAPIKey} {
+	for _, header := range agentTokenHeaderPriority {
 		if token := strings.TrimSpace(req.Header.Get(header)); token != "" {
 			return token, header
 		}
@@ -406,17 +401,26 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 		"security_mode", tunnel.SecurityMode,
 	)
 
+	// Echo the agent's capabilities and append the manager's own so the agent
+	// learns what this manager supports (older agents ignore extra strings).
+	capabilities := append([]string(nil), tunnel.Capabilities...)
+	for _, capability := range []string{tunnelCapabilityProtoParity, tunnelCapabilityChunkedRequest} {
+		if !slices.Contains(capabilities, capability) {
+			capabilities = append(capabilities, capability)
+		}
+	}
+
 	if err := tunnel.Conn.Send(&TunnelMessage{
 		Type:          MessageTypeRegisterResponse,
 		Accepted:      true,
 		EnvironmentID: tunnel.EnvironmentID,
 		SessionID:     tunnel.SessionID,
 		SecurityMode:  tunnel.SecurityMode,
-		Capabilities:  append([]string(nil), tunnel.Capabilities...),
+		Capabilities:  capabilities,
 		DrainPrevious: drainPrevious,
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
-		_ = tunnel.Close()
+		_ = tunnel.CloseWithReason("")
 		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
 		if removed && !active {
 			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
@@ -442,6 +446,14 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 
 // messageLoop processes incoming messages from the agent.
 func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
+	// One reusable timer for stream delivery deadlines. time.After per message
+	// left a live 5s runtime timer for every frame, so a chatty log tail through
+	// a tunnel accumulated thousands of them. This loop is the only user, so the
+	// timer is never touched concurrently.
+	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
+	deliveryTimer.Stop()
+	defer deliveryTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -455,12 +467,12 @@ func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
 				return
 			}
 
-			s.handleTunnelMessage(ctx, tunnel, msg)
+			s.handleTunnelMessage(ctx, tunnel, msg, deliveryTimer)
 		}
 	}
 }
 
-func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	switch msg.Type {
 	case MessageTypeHeartbeat:
 		s.handleHeartbeat(ctx, tunnel, msg)
@@ -471,7 +483,7 @@ func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTun
 	case MessageTypeEvent:
 		s.handleEvent(ctx, tunnel, msg)
 	case MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeWebSocketData, MessageTypeWebSocketClose, MessageTypeStreamClose:
-		s.deliverStream(ctx, tunnel, msg)
+		s.deliverStream(ctx, tunnel, msg, deliveryTimer)
 	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse, MessageTypeCommandRequest, MessageTypeStreamOpen, MessageTypeCancelRequest:
 		slog.DebugContext(ctx, "Ignoring message type from agent", "type", msg.Type, "environment_id", tunnel.EnvironmentID)
 	case MessageTypeRegister:
@@ -511,17 +523,23 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 	slog.WarnContext(ctx, "Received response for unknown request", "id", msg.ID)
 }
 
-func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	if req, ok := tunnel.Pending.Load(msg.ID); ok {
 		pending, isPending := req.(*PendingRequest)
 		if !isPending {
 			return
 		}
+
+		// Go 1.23+ timers drop any stale value on Stop/Reset, so no drain is needed.
+		deliveryTimer.Stop()
+		deliveryTimer.Reset(streamDeliveryTimeout)
+		defer deliveryTimer.Stop()
+
 		select {
 		case pending.ResponseCh <- msg:
 		case <-ctx.Done():
 			return
-		case <-time.After(streamDeliveryTimeout):
+		case <-deliveryTimer.C:
 			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
@@ -561,7 +579,7 @@ func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg
 // StartCleanupLoop periodically cleans up stale tunnels.
 func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 	defer close(s.cleanupDone)
-	ticker := time.NewTicker(5 * time.Minute)
+	ticker := time.NewTicker(tunnelStaleSweepInterval)
 	defer ticker.Stop()
 
 	for {
@@ -679,7 +697,7 @@ func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionS
 	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Request, envID string) error {
@@ -713,7 +731,7 @@ func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context
 		}
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) edgeMTLSModeInternal() string {

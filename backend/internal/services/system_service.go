@@ -150,7 +150,9 @@ func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.P
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	if req.Images != nil && req.Images.Mode != system.PruneImageModeNone {
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
 			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning images", 40)
 			slog.InfoContext(groupCtx, "Pruning images...", "mode", req.Images.Mode, "until", req.Images.Until)
 			localResult := &system.PruneAllResult{}
@@ -171,7 +173,9 @@ func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.P
 	}
 
 	if req.BuildCache != nil && req.BuildCache.Mode != system.PruneBuildCacheModeNone {
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
 			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning build cache", 45)
 			slog.InfoContext(groupCtx, "Pruning build cache...", "mode", req.BuildCache.Mode, "until", req.BuildCache.Until)
 			localResult := &system.PruneAllResult{}
@@ -194,7 +198,9 @@ func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.P
 	}
 
 	if req.Volumes != nil && req.Volumes.Mode != system.PruneVolumeModeNone {
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
 			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning volumes", 55)
 			slog.InfoContext(groupCtx, "Pruning volumes...", "mode", req.Volumes.Mode)
 			localResult := &system.PruneAllResult{}
@@ -215,7 +221,9 @@ func (s *SystemService) runSystemPruneInternal(ctx context.Context, req system.P
 	}
 
 	if req.Networks != nil && req.Networks.Mode != system.PruneNetworkModeNone {
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
 			s.appendSystemPruneActivityMessageInternal(groupCtx, activityID, "Pruning networks", 65)
 			slog.InfoContext(groupCtx, "Pruning networks...", "mode", req.Networks.Mode, "until", req.Networks.Until)
 			localResult := &system.PruneAllResult{}
@@ -318,7 +326,9 @@ func (s *SystemService) performBatchContainerAction(ctx context.Context, contain
 			continue
 		}
 
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "system info worker")
+
 			err := action(groupCtx, c.ID)
 
 			mu.Lock()

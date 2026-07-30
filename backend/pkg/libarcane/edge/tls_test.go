@@ -270,7 +270,7 @@ func TestTunnelServerRequireCertificateIdentityInternal_RejectsWrongEnvironmentU
 		PeerCertificates: []*x509.Certificate{cert},
 		VerifiedChains:   [][]*x509.Certificate{{cert}},
 	}
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -320,7 +320,7 @@ func TestValidateManagerMTLSConfig_RejectsMissingOrMalformedCAFile(t *testing.T)
 }
 
 func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -331,7 +331,7 @@ func TestTunnelServerRequiredMTLS_AllowsHTTPRequestsWithoutVisibleTLSState(t *te
 }
 
 func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertificate(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
 
 	req := httptest.NewRequest(http.MethodGet, "https://manager.example.com/api/tunnel/connect", nil)
@@ -343,7 +343,7 @@ func TestTunnelServerRequiredMTLS_RejectsDirectTLSWithoutVerifiedClientCertifica
 }
 
 func TestTunnelServerRequiredMTLS_DetectsOnlyDirectTLSForRequestSecurityMode(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{
 		EdgeMTLSMode: EdgeMTLSModeRequired,
 		AppURL:       "https://manager.example.com",
@@ -387,7 +387,7 @@ func TestTunnelServerRequiredMTLS_IgnoresProxyVerificationHeaders(t *testing.T) 
 }
 
 func TestTunnelServerRequiredMTLS_AllowsGRPCContextsWithoutVisibleTLSState(t *testing.T) {
-	server := NewTunnelServer(nil, nil)
+	server := NewTunnelServerWithRegistry(GetRegistry(), nil, nil)
 	server.SetConfig(&Config{EdgeMTLSMode: EdgeMTLSModeRequired})
 
 	t.Run("missing peer", func(t *testing.T) {

@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	dashboardtypes "github.com/getarcaneapp/arcane/types/v2/dashboard"
+	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
 	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
@@ -137,25 +138,33 @@ func TestDashboardHandlerGetDashboardReturnsSnapshot(t *testing.T) {
 	}, snapshot.ActionItems.Items)
 }
 
-// runDashboardStreamAllInternal drives streamAllDashboardsInternal through a
-// pipe and returns each decoded event to onEvent until it reports done or the
-// stream ends; remaining output is drained so a blocked writer can finish.
+// runDashboardStreamAllInternal drives the dashboard channel of the multiplexed
+// client stream through a pipe and returns each decoded event to onEvent until
+// it reports done or the stream ends; remaining output is drained so a blocked
+// writer can finish.
 func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel context.CancelFunc, handler *DashboardHandler, ps *authz.PermissionSet, onEvent func(dashboardtypes.StreamEvent) bool) {
 	t.Helper()
+
+	streamHandler := &StreamHandler{dashboard: handler}
+	input := &StreamClientInput{Channels: streamtypes.ChannelDashboard}
 
 	pr, pw := io.Pipe()
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		defer func() { _ = pw.Close() }()
-		handler.streamAllDashboardsInternal(ctx, ps, false, pw, func() {})
+		streamHandler.streamClientInternal(ctx, ps, input, pw, func() {})
 	}()
 
 	scanner := bufio.NewScanner(pr)
 	for scanner.Scan() {
-		var event dashboardtypes.StreamEvent
-		require.NoError(t, json.Unmarshal(scanner.Bytes(), &event))
-		if onEvent(event) {
+		var envelope streamtypes.Event
+		require.NoError(t, json.Unmarshal(scanner.Bytes(), &envelope))
+		// Heartbeats are connection keepalives, not dashboard events.
+		if envelope.Dashboard == nil {
+			continue
+		}
+		if onEvent(*envelope.Dashboard) {
 			cancel()
 			break
 		}

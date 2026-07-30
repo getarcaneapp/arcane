@@ -52,7 +52,7 @@ func TestRestoreProjectUpdateBackup_RestoresExternalEnvSymlinkTarget(t *testing.
 	require.NoError(t, err)
 	require.NotNil(t, backup.envSymlink)
 
-	require.NoError(t, WriteEnvFile(projectDir, projectDir, "VALUE=updated\n"))
+	require.NoError(t, WriteProjectFile(projectDir, projectDir, ".env", "VALUE=updated\n"))
 	require.NoError(t, RestoreProjectUpdateBackup(projectDir, backup))
 
 	restoredContent, err := os.ReadFile(targetPath)
@@ -86,7 +86,7 @@ func TestRestoreProjectUpdateBackup_RejectsRetargetedEnvSymlink(t *testing.T) {
 	backup, err := BackupProjectUpdateScope(projectDir, t.TempDir(), ProjectUpdateBackupScope{TopLevelFiles: true})
 	require.NoError(t, err)
 
-	require.NoError(t, WriteEnvFile(projectDir, projectDir, "VALUE=updated\n"))
+	require.NoError(t, WriteProjectFile(projectDir, projectDir, ".env", "VALUE=updated\n"))
 	require.NoError(t, os.Remove(envPath))
 	require.NoError(t, os.Symlink(newTarget, envPath))
 

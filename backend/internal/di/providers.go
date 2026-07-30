@@ -70,8 +70,28 @@ func provideProjectServiceInternal(db *database.DB, settings *services.SettingsS
 		WithRegistryCredentialsProvider(environment.GetEnabledRegistryCredentials)
 }
 
-func provideUpdaterServiceInternal(db *database.DB, settings *services.SettingsService, docker *services.DockerClientService, project *services.ProjectService, imageUpdate *services.ImageUpdateService, registry *services.ContainerRegistryService, event *services.EventService, image *services.ImageService, notification *services.NotificationService, systemUpgrade *services.SystemUpgradeService, activity *services.ActivityService) (*services.UpdaterService, error) {
-	return services.NewUpdaterService(db, settings, docker, project, imageUpdate, registry, event, image, notification, systemUpgrade, activity)
+// updaterServiceParams collects the updater's dependencies. The dedicated
+// provider exists because NewUpdaterService takes its self-upgrade dependency
+// as an unexported interface, which fx cannot supply directly; the adapter
+// narrows *SystemUpgradeService to that interface.
+type updaterServiceParams struct {
+	fx.In
+
+	DB            *database.DB
+	Settings      *services.SettingsService
+	Docker        *services.DockerClientService
+	Project       *services.ProjectService
+	ImageUpdate   *services.ImageUpdateService
+	Registry      *services.ContainerRegistryService
+	Event         *services.EventService
+	Image         *services.ImageService
+	Notification  *services.NotificationService
+	SystemUpgrade *services.SystemUpgradeService
+	Activity      *services.ActivityService
+}
+
+func provideUpdaterServiceInternal(p updaterServiceParams) (*services.UpdaterService, error) {
+	return services.NewUpdaterService(p.DB, p.Settings, p.Docker, p.Project, p.ImageUpdate, p.Registry, p.Event, p.Image, p.Notification, p.SystemUpgrade, p.Activity)
 }
 
 func provideUserServiceInternal(db *database.DB, role *services.RoleService) *services.UserService {
@@ -91,10 +111,6 @@ func provideAuthMiddlewareInternal(auth *services.AuthService, apiKey *services.
 		WithApiKeyValidator(apiKey).
 		WithEnvironmentAccessTokenResolver(env).
 		WithPermissionResolver(role)
-}
-
-func provideAnalyticsJobInternal(settings *services.SettingsService, kv *services.KVService, cfg *config.Config) *scheduler.AnalyticsJob {
-	return scheduler.NewAnalyticsJob(settings, kv, nil, cfg)
 }
 
 func provideFilesystemWatcherJobInternal(ctx context.Context, project *services.ProjectService, template *services.TemplateService, settings *services.SettingsService, cfg *config.Config) *scheduler.FilesystemWatcherJob {

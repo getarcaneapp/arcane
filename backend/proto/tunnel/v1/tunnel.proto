@@ -2,7 +2,7 @@ syntax = "proto3";
 
 package tunnel.v1;
 
-option go_package = "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1;tunnelpb";
+option go_package = "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1;tunnelpb";
 
 // TunnelService is the reverse tunnel between an edge agent and manager.
 service TunnelService {
@@ -26,6 +26,9 @@ message AgentMessage {
     CommandComplete command_complete = 11;
     FileChunk file_chunk = 12;
     StreamClose stream_close = 13;
+    // Only sent when the manager advertised the proto-parity-v1 capability;
+    // older managers decode an unknown oneof case as a nil payload.
+    CancelRequest cancel_request = 14;
   }
 }
 
@@ -43,6 +46,10 @@ message ManagerMessage {
     StreamClose stream_close = 9;
     CancelRequest cancel_request = 10;
     FileChunk file_chunk = 11;
+    // Only sent when the agent advertised the proto-parity-v1 capability;
+    // older agents decode an unknown oneof case as a nil payload.
+    StreamData stream_data = 12;
+    StreamEnd stream_end = 13;
   }
 }
 
@@ -61,6 +68,7 @@ message RegisterResponse {
   string security_mode = 5;
   repeated string capabilities = 6;
   bool drain_previous = 7;
+  string id = 8;
 }
 
 message CommandRequest {
@@ -101,6 +109,7 @@ message FileChunk {
   bytes data = 2;
   int64 sequence = 3;
   bool eof = 4;
+  map<string, string> metadata = 5;
 }
 
 message StreamOpen {
@@ -148,9 +157,13 @@ message StreamEnd {
   string request_id = 1;
 }
 
-message HeartbeatPing {}
+message HeartbeatPing {
+  string id = 1;
+}
 
-message HeartbeatPong {}
+message HeartbeatPong {
+  string id = 1;
+}
 
 message WebSocketStart {
   string stream_id = 1;
@@ -181,4 +194,5 @@ message EventLog {
   string user_id = 8;
   string username = 9;
   bytes metadata_json = 10;
+  string id = 11;
 }

@@ -2,6 +2,7 @@ package validation
 
 import (
 	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 
@@ -49,8 +50,10 @@ func ValidateCredentialTargetChange(
 		return common.Classify(common.ErrValidation, errors.WithDetails(errors.Errorf("Changing %s requires re-supplying or clearing the %s", targetName, missingFields[0]), "field", missingFields[0]))
 	}
 
-	return models.NewValidationError(
+	return models.NewAPIErrorWithDetails(
 		fmt.Sprintf("Changing %s requires updating all stored credentials", targetName),
+		models.APIErrorCodeValidationError,
+		http.StatusBadRequest,
 		map[string]any{"fields": missingFields},
 	)
 }

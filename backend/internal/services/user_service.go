@@ -48,7 +48,14 @@ type UserService struct {
 	argon2Params *Argon2Params
 }
 
-const ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
+const (
+	ErrCannotRemoveLastAdmin = errors.Sentinel("cannot remove the last admin user")
+
+	// ErrInsufficientPrivilege is returned when a caller attempts to modify a
+	// target whose effective privilege is equal to or higher than the caller's
+	// (e.g. a delegated users:update holder trying to edit a global admin).
+	ErrInsufficientPrivilege = errors.Sentinel("insufficient privilege to modify this user")
+)
 
 func NewUserService(db *database.DB) *UserService {
 	return &UserService{
@@ -172,16 +179,92 @@ func (s *UserService) GetUserByEmail(ctx context.Context, email string) (*models
 	return dbutil.FirstWhere[models.User](ctx, s.db.DB, ErrUserNotFound, "email = ?", email)
 }
 
-func (s *UserService) UpdateUser(ctx context.Context, user *models.User) (*models.User, error) {
+// ResolveUserPermissions returns the effective PermissionSet for the given
+// user ID, or nil when no RoleService is wired (RBAC disabled paths).
+func (s *UserService) ResolveUserPermissions(ctx context.Context, userID string) (*authz.PermissionSet, error) {
+	if s.roleService == nil {
+		return nil, nil
+	}
+	return s.roleService.ResolvePermissions(ctx, &models.User{BaseModel: models.BaseModel{ID: userID}})
+}
+
+// checkTargetPrivilegeInternal enforces actor-vs-target privilege ordering: a
+// caller may not modify a target whose effective permissions make them a global
+// admin unless the caller is itself a global admin. This prevents holders of
+// delegated users:update/users:delete from seizing or removing admin accounts.
+// A nil actorPerms denotes a trusted internal caller (e.g. the auth service
+// acting on behalf of the account owner) and skips the privilege check.
+//
+// The target and any request-time global-admin actor are locked together before
+// permissions are resolved through tx (never the TTL cache). Role-assignment
+// writes lock the same user rows, so a concurrent promotion or demotion is
+// serialized with the mutation. The request-time actor permissions remain part
+// of the decision so revalidation can only reduce, never elevate, authority.
+func (s *UserService) checkTargetPrivilegeInternal(ctx context.Context, tx *gorm.DB, actorPerms *authz.PermissionSet, targetID string) error {
+	revalidateActor := actorPerms != nil && !actorPerms.Sudo && actorPerms.IsGlobalAdmin() && s.roleService != nil
+	actorID := ""
+	if revalidateActor {
+		actor, ok := models.CurrentUserFromContext(ctx)
+		if !ok || actor == nil || actor.ID == "" {
+			return ErrInsufficientPrivilege
+		}
+		actorID = actor.ID
+	}
+
+	userIDs := []string{targetID}
+	if actorID != "" && actorID != targetID {
+		userIDs = append(userIDs, actorID)
+	}
+	var lockedUsers []models.User
+	if err := tx.
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", userIDs).
+		Order("id ASC").
+		Find(&lockedUsers).Error; err != nil {
+		return errors.WrapIf(err, "failed to lock users")
+	}
+	targetFound := false
+	actorFound := actorID == ""
+	for i := range lockedUsers {
+		targetFound = targetFound || lockedUsers[i].ID == targetID
+		actorFound = actorFound || lockedUsers[i].ID == actorID
+	}
+	if !targetFound {
+		return ErrUserNotFound
+	}
+	if !actorFound {
+		return ErrInsufficientPrivilege
+	}
+
+	if actorPerms == nil || actorPerms.Sudo || s.roleService == nil {
+		return nil
+	}
+	if revalidateActor {
+		currentActorPerms, err := s.roleService.resolveUserPermissionsInternal(ctx, tx, actorID)
+		if err != nil {
+			return errors.WrapIf(err, "failed to resolve actor permissions")
+		}
+		if currentActorPerms != nil && currentActorPerms.IsGlobalAdmin() {
+			return nil
+		}
+	}
+	targetPerms, err := s.roleService.resolveUserPermissionsInternal(ctx, tx, targetID)
+	if err != nil {
+		return errors.WrapIf(err, "failed to resolve target permissions")
+	}
+	if targetPerms != nil && targetPerms.IsGlobalAdmin() {
+		return ErrInsufficientPrivilege
+	}
+	return nil
+}
+
+// UpdateUser persists the given user. actorPerms identifies the caller
+// performing the change; authenticated global-admin callers must also be
+// present in ctx. Pass nil for internal service-to-service calls.
+func (s *UserService) UpdateUser(ctx context.Context, user *models.User, actorPerms *authz.PermissionSet) (*models.User, error) {
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", user.ID).
-			First(&models.User{}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return errors.WrapIf(err, "failed to load user")
+		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, user.ID); err != nil {
+			return err
 		}
 		if err := tx.Save(user).Error; err != nil {
 			return errors.WrapIf(err, "failed to update user")
@@ -334,7 +417,11 @@ func (s *UserService) CreateDefaultAdmin(ctx context.Context) error {
 	return nil
 }
 
-func (s *UserService) DeleteUser(ctx context.Context, id string) error {
+// DeleteUser removes the user with the given id. actorPerms identifies the
+// caller performing the deletion; authenticated global-admin callers must also
+// be present in ctx. Pass nil for internal service-to-service calls. A
+// non-admin caller may not delete a global admin target.
+func (s *UserService) DeleteUser(ctx context.Context, id string, actorPerms *authz.PermissionSet) error {
 	// Last-admin guard: if this user's effective permissions make them the only
 	// global admin, refuse the delete. Checked outside the transaction because
 	// RoleService uses its own session and the guard spans rows.
@@ -354,14 +441,8 @@ func (s *UserService) DeleteUser(ctx context.Context, id string) error {
 		}
 	}
 	return dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
-		if err := tx.
-			Clauses(clause.Locking{Strength: "UPDATE"}).
-			Where("id = ?", id).
-			First(&models.User{}).Error; err != nil {
-			if errors.Is(err, gorm.ErrRecordNotFound) {
-				return ErrUserNotFound
-			}
-			return errors.WrapIf(err, "failed to load user")
+		if err := s.checkTargetPrivilegeInternal(ctx, tx, actorPerms, id); err != nil {
+			return err
 		}
 
 		if err := tx.Delete(&models.User{}, "id = ?", id).Error; err != nil {

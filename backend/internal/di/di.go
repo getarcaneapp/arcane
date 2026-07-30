@@ -71,7 +71,7 @@ var JobOptions = fx.Options(
 		scheduler.NewAutoUpdateJob,
 		scheduler.NewImageUpdateWatcher,
 		scheduler.NewDockerClientRefreshJob,
-		provideAnalyticsJobInternal,
+		scheduler.NewAnalyticsJob,
 		scheduler.NewEventCleanupJob,
 		scheduler.NewPruningVolumeHelperJob,
 		scheduler.NewExpiredSessionsCleanupJob,

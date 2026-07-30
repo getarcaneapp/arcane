@@ -157,7 +157,7 @@ func shouldStartRedeployedContainerInternal(containerInfo container.InspectRespo
 
 func (s *ContainerService) pullRedeployImageInternal(ctx context.Context, dockerClient *client.Client, imageName, containerID, containerName string, user models.User) error {
 	settings := s.settingsService.GetSettingsConfig()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	pullOptions, authErr := s.imageService.getPullOptionsWithAuth(ctx, imageName, nil)
@@ -816,7 +816,7 @@ func (s *ContainerService) CreateContainer(ctx context.Context, config *containe
 		}
 
 		settings := s.settingsService.GetSettingsConfig()
-		pullCtx, pullCancel := timeouts.WithTimeout(ctx, settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull)
+		pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(settings.DockerImagePullTimeout.AsInt(), timeouts.DefaultDockerImagePull))
 		defer pullCancel()
 
 		reader, pullErr := dockerClient.ImagePull(pullCtx, config.Image, pullOptions)
@@ -1285,7 +1285,7 @@ func (s *ContainerService) getCachedProjectIconMetadataInternal(ctx context.Cont
 	meta := projects.ArcaneComposeMetadata{ServiceIconSets: map[string]projects.IconSet{}}
 	proj, err := s.projectService.GetProjectByComposeName(ctx, projectName)
 	if err == nil && proj != nil {
-		meta = s.projectService.getProjectMetadataForProject(ctx, *proj)
+		meta = s.projectService.getProjectMetadataForProject(ctx, *proj, nil)
 	}
 	if s.iconMetaCache != nil {
 		s.iconMetaCache.Set(projectName, meta)

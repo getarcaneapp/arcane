@@ -175,19 +175,6 @@ func TestApplyProjectFileChanges_WrapsForbiddenSentinelErrors(t *testing.T) {
 	assert.ErrorIs(t, err, ErrProjectFileSymlinkPath)
 }
 
-func TestMapProjectRootErrorInternal_DoesNotClassifyByErrorMessage(t *testing.T) {
-	t.Parallel()
-
-	err := mapProjectRootErrorInternal("inspect project path", &os.PathError{
-		Op:   "lstat",
-		Path: "notes.txt",
-		Err:  errors.New("disk check escapes normal retry path"),
-	})
-
-	require.Error(t, err)
-	assert.NotErrorIs(t, err, ErrProjectFileOutsideProjectDirectory)
-}
-
 func TestApplyProjectFileChanges_UsesRevisionConflictDetection(t *testing.T) {
 	t.Parallel()
 

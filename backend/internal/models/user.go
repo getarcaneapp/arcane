@@ -36,20 +36,16 @@ func (User) TableName() string {
 	return "users"
 }
 
-// currentUserContextKeyInternal is the context key holding the authenticated
-// user model. It lives here (rather than in api/middleware) so that services,
-// which cannot import the middleware package, can read the requesting user for
-// per-user preferences.
-type currentUserContextKeyInternal struct{}
-
-// WithCurrentUser returns a context carrying the authenticated user.
-func WithCurrentUser(ctx context.Context, u *User) context.Context {
-	return context.WithValue(ctx, currentUserContextKeyInternal{}, u)
-}
+// CurrentUserContextKey is the context key holding the authenticated user
+// model, set via context.WithValue(ctx, models.CurrentUserContextKey{}, user).
+// It lives here (rather than in api/middleware) so that services, which cannot
+// import the middleware package, can read the requesting user for per-user
+// preferences.
+type CurrentUserContextKey struct{}
 
 // CurrentUserFromContext retrieves the authenticated user from the context.
 // Returns nil, false on unauthenticated paths (background jobs, agent proxying).
 func CurrentUserFromContext(ctx context.Context) (*User, bool) {
-	u, ok := ctx.Value(currentUserContextKeyInternal{}).(*User)
+	u, ok := ctx.Value(CurrentUserContextKey{}).(*User)
 	return u, ok
 }

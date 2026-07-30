@@ -17,7 +17,7 @@ permissions:
 
 jobs:
   release:
-    runs-on: depot-ubuntu-latest
+    runs-on: depot-ubuntu-24.04-8
 
     env:
       MANAGER_IMAGE_NAME: ghcr.io/${{ github.repository_owner }}/arcane
@@ -47,12 +47,14 @@ jobs:
 
       - name: Set up Depot CLI
         uses: depot/setup-action@v1
+        with:
+          oidc: true
 
       - name: Setup depot buildx driver
         run: depot configure-docker
 
       - name: Login to GHCR
-        uses: docker/login-action@v4.4.0
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.repository_owner }}

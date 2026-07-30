@@ -124,7 +124,7 @@ func (h *WebhookHandler) CreateWebhook(ctx context.Context, input *CreateWebhook
 	}
 
 	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 
@@ -173,7 +173,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 	}
 
 	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 
@@ -194,7 +194,7 @@ func (h *WebhookHandler) UpdateWebhook(ctx context.Context, input *UpdateWebhook
 // DeleteWebhook removes a webhook.
 func (h *WebhookHandler) DeleteWebhook(ctx context.Context, input *DeleteWebhookInput) (*DeleteWebhookOutput, error) {
 	actor := models.User{}
-	if currentUser, exists := humamw.GetCurrentUserFromContext(ctx); exists && currentUser != nil {
+	if currentUser, exists := models.CurrentUserFromContext(ctx); exists && currentUser != nil {
 		actor = *currentUser
 	}
 

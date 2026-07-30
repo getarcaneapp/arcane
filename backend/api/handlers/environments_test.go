@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"reflect"
 	"testing"
 	"time"
 
@@ -267,4 +268,23 @@ func TestEnvironmentHandlerApplyEdgeRuntimeState(t *testing.T) {
 		assert.Nil(t, env.LastHeartbeat)
 		assert.NotNil(t, env.LastPollAt)
 	})
+}
+
+// The environment stream suppresses redundant sends by comparing a fingerprint
+// of the visible list. A field added to Environment but not to the fingerprint
+// would stop propagating to connected clients until the 30s floor, so pin the
+// field count: if this fails, add the new field to
+// fingerprintEnvironmentsInternal and bump the constant.
+func TestEnvironmentFingerprintCoversEveryField(t *testing.T) {
+	const environmentFingerprintFieldCount = 19
+	require.Equal(t, environmentFingerprintFieldCount, reflect.TypeOf(envtypes.Environment{}).NumField(),
+		"environment.Environment gained or lost a field; update fingerprintEnvironmentsInternal to match")
+}
+
+func TestFingerprintEnvironmentsDetectsFieldChange(t *testing.T) {
+	base := []envtypes.Environment{{ID: "1", Name: "prod", Status: "online", Enabled: true}}
+	renamed := []envtypes.Environment{{ID: "1", Name: "production", Status: "online", Enabled: true}}
+
+	assert.Equal(t, fingerprintEnvironmentsInternal(base), fingerprintEnvironmentsInternal(base))
+	assert.NotEqual(t, fingerprintEnvironmentsInternal(base), fingerprintEnvironmentsInternal(renamed))
 }

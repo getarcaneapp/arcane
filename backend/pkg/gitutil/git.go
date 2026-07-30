@@ -792,7 +792,7 @@ func isBinaryContent(content []byte) bool {
 	checkSize := min(len(content), 512)
 
 	// Use net/http's content type detection
-	contentType := detectContentType(content[:checkSize])
+	contentType := nethttp.DetectContentType(content[:checkSize])
 
 	// Text types are not binary
 	if strings.HasPrefix(contentType, "text/") {
@@ -826,9 +826,4 @@ func isBinaryContent(content []byte) bool {
 		strings.HasPrefix(contentType, "image/") ||
 		strings.HasPrefix(contentType, "video/") ||
 		strings.HasPrefix(contentType, "audio/")
-}
-
-// detectContentType wraps nethttp.DetectContentType for easier testing
-func detectContentType(data []byte) string {
-	return nethttp.DetectContentType(data)
 }

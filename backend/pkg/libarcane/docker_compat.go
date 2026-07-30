@@ -54,22 +54,6 @@ func DetectDockerAPIVersion(ctx context.Context, dockerClient client.APIClient) 
 	return strings.TrimSpace(serverVersion.APIVersion)
 }
 
-// SupportsDockerCreateMultiEndpointNetworking reports whether the connected
-// daemon API supports attaching multiple endpoints during ContainerCreate.
-//
-// On older daemon APIs, sending multiple EndpointsConfig entries can fail with
-// daemon-side networking errors even though newer Compose CLIs may appear to
-// "work" by using a different fallback sequence under the hood.
-func SupportsDockerCreateMultiEndpointNetworking(apiVersion string) bool {
-	return IsDockerAPIVersionAtLeast(apiVersion, MultiEndpointContainerCreateMinAPIVersion)
-}
-
-// SupportsDockerCreatePerNetworkMACAddress reports whether the daemon API
-// supports per-network mac-address on container create (Docker API >= 1.44).
-func SupportsDockerCreatePerNetworkMACAddress(apiVersion string) bool {
-	return IsDockerAPIVersionAtLeast(apiVersion, NetworkScopedMacAddressMinAPIVersion)
-}
-
 // IsDockerAPIVersionAtLeast performs numeric dot-segment comparison for Docker
 // API versions (e.g. "1.43", "1.44.1"). Returns false when either version
 // cannot be parsed.
@@ -104,7 +88,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 		return nil
 	}
 
-	keepPerNetworkMAC := SupportsDockerCreatePerNetworkMACAddress(apiVersion)
+	keepPerNetworkMAC := IsDockerAPIVersionAtLeast(apiVersion, NetworkScopedMacAddressMinAPIVersion)
 	cloned := make(map[string]*network.EndpointSettings, len(endpoints))
 
 	for networkName, endpoint := range endpoints {
@@ -136,7 +120,7 @@ func SanitizeContainerCreateEndpointSettingsForDockerAPI(endpoints map[string]*n
 // explains why a shell `docker compose up` can succeed while Arcane's embedded
 // or manual create paths fail unless we perform the split ourselves.
 func PrepareContainerCreateOptionsForDockerAPI(options client.ContainerCreateOptions, apiVersion string) (client.ContainerCreateOptions, map[string]*network.EndpointSettings) {
-	if SupportsDockerCreateMultiEndpointNetworking(apiVersion) || options.NetworkingConfig == nil || len(options.NetworkingConfig.EndpointsConfig) <= 1 {
+	if IsDockerAPIVersionAtLeast(apiVersion, MultiEndpointContainerCreateMinAPIVersion) || options.NetworkingConfig == nil || len(options.NetworkingConfig.EndpointsConfig) <= 1 {
 		return options, nil
 	}
 

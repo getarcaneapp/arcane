@@ -54,7 +54,7 @@ func TestBuildImageRefsFromComposeProject_UsesMergedComposeOverrides(t *testing.
     build: ./app
 `), 0o644))
 
-	project, err := LoadComposeProject(context.Background(), composePath, "override-demo", dir, false, nil)
+	project, err := LoadComposeProject(context.Background(), composePath, "override-demo", dir, false, nil, nil, nil, false)
 	require.NoError(t, err)
 
 	assert.Equal(t, []string{"overridden-app:latest"}, BuildImageRefsFromComposeProject(project))

@@ -19,9 +19,9 @@ import (
 	"testing"
 	"time"
 
-	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge/proto/tunnel/v1"
+	"github.com/coder/websocket"
 	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
-	"github.com/gorilla/websocket"
+	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
 	"github.com/labstack/echo/v5"
 	slogecho "github.com/samber/slog-echo/v2"
 	"github.com/stretchr/testify/assert"
@@ -43,11 +43,13 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 
 	// 2. Setup Mock Manager (that agent connects TO)
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer func() { _ = conn.Close() }()
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
 
-		_, registerData, _ := conn.ReadMessage()
+		_, registerData, _ := conn.Read(r.Context())
 		var registerMsg TunnelMessage
 		_ = json.Unmarshal(registerData, &registerMsg)
 		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
@@ -56,7 +58,7 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 			Accepted:  true,
 			SessionID: "session-1",
 		})
-		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 
 		// Send a request to the agent
 		reqMsg := &TunnelMessage{
@@ -66,10 +68,10 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 			Path:   "/local/api",
 		}
 		data, _ := json.Marshal(reqMsg)
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.Write(r.Context(), websocket.MessageText, data)
 
 		// Wait for response
-		_, respData, _ := conn.ReadMessage()
+		_, respData, _ := conn.Read(r.Context())
 		var resp TunnelMessage
 		_ = json.Unmarshal(respData, &resp)
 
@@ -105,20 +107,19 @@ func TestTunnelClient_HandleRequest(t *testing.T) {
 func TestTunnelClient_WebSocketProxy(t *testing.T) {
 	// 1. Setup Local Service with WS
 	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, data, err := conn.ReadMessage()
+			mt, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
 			// Echo
-			_ = conn.WriteMessage(mt, append([]byte("local echo: "), data...))
+			_ = conn.Write(r.Context(), mt, append([]byte("local echo: "), data...))
 		}
 	}))
 	defer localServer.Close()
@@ -127,11 +128,13 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 
 	// 2. Setup Mock Manager
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer func() { _ = conn.Close() }()
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
 
-		_, registerData, _ := conn.ReadMessage()
+		_, registerData, _ := conn.Read(r.Context())
 		var registerMsg TunnelMessage
 		_ = json.Unmarshal(registerData, &registerMsg)
 		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
@@ -140,7 +143,7 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 			Accepted:  true,
 			SessionID: "session-1",
 		})
-		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 
 		// Send WS Start
 		startMsg := &TunnelMessage{
@@ -149,20 +152,20 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 			Path: "/", // Connect to root of local server
 		}
 		data, _ := json.Marshal(startMsg)
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.Write(r.Context(), websocket.MessageText, data)
 
 		// Send Data
 		dataMsg := &TunnelMessage{
 			ID:            "ws-1",
 			Type:          MessageTypeWebSocketData,
 			Body:          []byte("hello"),
-			WSMessageType: websocket.TextMessage,
+			WSMessageType: int(websocket.MessageText),
 		}
 		data, _ = json.Marshal(dataMsg)
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.Write(r.Context(), websocket.MessageText, data)
 
 		// Read Echo
-		_, respData, _ := conn.ReadMessage()
+		_, respData, _ := conn.Read(r.Context())
 		var resp TunnelMessage
 		_ = json.Unmarshal(respData, &resp)
 
@@ -195,18 +198,17 @@ func TestTunnelClient_WebSocketProxy(t *testing.T) {
 func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 	// Local WS echo server the agent proxies to.
 	localServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 		for {
-			mt, data, err := conn.ReadMessage()
+			mt, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
-			_ = conn.WriteMessage(mt, append([]byte("local echo: "), data...))
+			_ = conn.Write(r.Context(), mt, append([]byte("local echo: "), data...))
 		}
 	}))
 	defer localServer.Close()
@@ -218,15 +220,14 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 	stopManager := make(chan struct{})
 
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		// Every connection registers first.
-		if _, _, err := conn.ReadMessage(); err != nil {
+		if _, _, err := conn.Read(r.Context()); err != nil {
 			return
 		}
 		registerResp, _ := json.Marshal(&TunnelMessage{
@@ -234,7 +235,7 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 			Accepted:  true,
 			SessionID: "session-1",
 		})
-		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 
 		if connCount.Add(1) > 1 {
 			// Post-reconnect connection: stay up so the agent stops reconnecting
@@ -246,16 +247,16 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 		// First connection: open a stream and prove it is live by round-tripping
 		// data through the local echo server, then force a disconnect.
 		startMsg, _ := json.Marshal(&TunnelMessage{ID: "ws-1", Type: MessageTypeWebSocketStart, Path: "/"})
-		_ = conn.WriteMessage(websocket.TextMessage, startMsg)
+		_ = conn.Write(r.Context(), websocket.MessageText, startMsg)
 		dataMsg, _ := json.Marshal(&TunnelMessage{
 			ID:            "ws-1",
 			Type:          MessageTypeWebSocketData,
 			Body:          []byte("hello"),
-			WSMessageType: websocket.TextMessage,
+			WSMessageType: int(websocket.MessageText),
 		})
-		_ = conn.WriteMessage(websocket.TextMessage, dataMsg)
+		_ = conn.Write(r.Context(), websocket.MessageText, dataMsg)
 
-		_, respData, err := conn.ReadMessage()
+		_, respData, err := conn.Read(r.Context())
 		if err != nil {
 			return
 		}
@@ -307,11 +308,13 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 	// Setup Mock Manager
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer func() { _ = conn.Close() }()
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
 
-		_, registerData, _ := conn.ReadMessage()
+		_, registerData, _ := conn.Read(r.Context())
 		var registerMsg TunnelMessage
 		_ = json.Unmarshal(registerData, &registerMsg)
 		assert.Equal(t, MessageTypeRegister, registerMsg.Type)
@@ -320,7 +323,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 			Accepted:  true,
 			SessionID: "session-1",
 		})
-		_ = conn.WriteMessage(websocket.TextMessage, registerResp)
+		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
 
 		// 1. Send request with invalid URL to trigger error
 		reqMsg := &TunnelMessage{
@@ -330,10 +333,10 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 			Path:   "://invalid-url",
 		}
 		data, _ := json.Marshal(reqMsg)
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.Write(r.Context(), websocket.MessageText, data)
 
 		// Expect error response
-		_, respData, _ := conn.ReadMessage()
+		_, respData, _ := conn.Read(r.Context())
 		var resp TunnelMessage
 		_ = json.Unmarshal(respData, &resp)
 
@@ -346,7 +349,7 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 			Type: "unknown_type",
 		}
 		data, _ = json.Marshal(unknownMsg)
-		_ = conn.WriteMessage(websocket.TextMessage, data)
+		_ = conn.Write(r.Context(), websocket.MessageText, data)
 	}))
 	defer managerServer.Close()
 
@@ -368,12 +371,14 @@ func TestTunnelClient_HandleRequest_Errors(t *testing.T) {
 func TestTunnelClient_InternalHelpers(t *testing.T) {
 	// Mock connection
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		upgrader := websocket.Upgrader{}
-		conn, _ := upgrader.Upgrade(w, r, nil)
-		defer func() { _ = conn.Close() }()
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			_, _, err := conn.ReadMessage()
+			_, _, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -389,18 +394,15 @@ func TestTunnelClient_InternalHelpers(t *testing.T) {
 
 	// Manually connect
 	serverURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(serverURL, nil)
+	conn, _, err := websocket.Dial(t.Context(), serverURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = conn.Close() }()
+	defer func() { _ = conn.CloseNow() }()
 
 	tunnelConn := NewTunnelConn(conn)
-	client.setConn(tunnelConn)
+	client.conn.Store(&connBox{conn: tunnelConn})
 
 	// Test sendWebSocketData
-	err = client.sendWebSocketData(tunnelConn, "stream-1", websocket.TextMessage, []byte("data"))
+	err = client.sendWebSocketData(tunnelConn, "stream-1", int(websocket.MessageText), []byte("data"))
 	require.NoError(t, err)
 
 	// Test sendWebSocketClose
@@ -589,16 +591,17 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 			return
 		}
 
-		upgrader := websocket.Upgrader{
-			CheckOrigin: httputil.ValidateWebSocketOrigin(managerURL),
+		if !httputil.ValidateWebSocketOrigin(managerURL)(r) {
+			http.Error(w, "forbidden", http.StatusForbidden)
+			return
 		}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
-		require.NoError(t, conn.WriteMessage(websocket.TextMessage, []byte("ok")))
+		require.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte("ok")))
 	}))
 	defer localServer.Close()
 
@@ -630,16 +633,13 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 	assert.Empty(t, headers.Get("Cookie"))
 	assert.Empty(t, headers.Get("Authorization"))
 
-	ws, resp, err := client.dialLocalWebSocket(t.Context(), client.buildLocalWebSocketURLInternal(msg), headers)
+	ws, _, err := client.dialLocalWebSocket(t.Context(), client.buildLocalWebSocketURLInternal(msg), headers)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = ws.Close() }()
+	defer func() { _ = ws.CloseNow() }()
 
-	msgType, body, err := ws.ReadMessage()
+	msgType, body, err := ws.Read(t.Context())
 	require.NoError(t, err)
-	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, websocket.MessageText, msgType)
 	assert.Equal(t, "ok", string(body))
 }
 
@@ -669,7 +669,7 @@ func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingR
 		EdgeTransport: EdgeTransportGRPC,
 	}, localHandler)
 	conn := &capturingTunnelConnForHandleRequest{}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	client.handleRequest(context.Background(), conn, &TunnelMessage{
 		ID:     "req-fallback-1",
@@ -689,7 +689,7 @@ func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) 
 	client := &TunnelClient{
 		heartbeatInterval: 5 * time.Millisecond,
 	}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
@@ -719,6 +719,8 @@ func (f *fakeTunnelConnForTransportCheck) Close() error {
 func (f *fakeTunnelConnForTransportCheck) IsClosed() bool {
 	return false
 }
+
+func (f *fakeTunnelConnForTransportCheck) Transport() string { return EdgeTransportWebSocket }
 
 type capturingTunnelConnForHandleRequest struct {
 	sent []*TunnelMessage
@@ -753,6 +755,8 @@ func (c *capturingTunnelConnForHandleRequest) IsClosed() bool {
 	return false
 }
 
+func (c *capturingTunnelConnForHandleRequest) Transport() string { return EdgeTransportWebSocket }
+
 type failingHeartbeatConn struct {
 	closeCalled bool
 }
@@ -777,6 +781,8 @@ func (f *failingHeartbeatConn) Close() error {
 func (f *failingHeartbeatConn) IsClosed() bool {
 	return false
 }
+
+func (f *failingHeartbeatConn) Transport() string { return EdgeTransportWebSocket }
 
 type stallingTunnelService struct {
 	tunnelpb.UnimplementedTunnelServiceServer
@@ -825,6 +831,8 @@ func (c *blockingRegistrationConn) IsClosed() bool {
 	}
 }
 
+func (c *blockingRegistrationConn) Transport() string { return EdgeTransportWebSocket }
+
 func (s *stallingTunnelService) Connect(stream grpc.BidiStreamingServer[tunnelpb.AgentMessage, tunnelpb.ManagerMessage]) error {
 	s.connectCount.Add(1)
 	if _, err := stream.Recv(); err != nil {
@@ -849,7 +857,7 @@ func TestTunnelClient_GRPC_EndToEnd(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(resolver, nil)
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer func() {
 		cancel()
@@ -912,7 +920,7 @@ func TestTunnelClient_GRPC_ChunkedRequestBodyEndToEnd(t *testing.T) {
 	GetRegistry().Unregister(envID)
 	defer GetRegistry().Unregister(envID)
 
-	tunnelServer := NewTunnelServer(func(_ context.Context, token string) (string, error) {
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), func(_ context.Context, token string) (string, error) {
 		if token != "valid-token" {
 			return "", errors.New("invalid token")
 		}
@@ -1060,7 +1068,7 @@ func TestTunnelClient_connectAndServeGRPC_RegistrationRejected(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(resolver, nil)
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer func() {
 		cancel()
@@ -1097,33 +1105,35 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 		ManagerApiUrl: managerURL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServeGRPC(ctx)
 	require.Error(t, err)
+	assert.ErrorIs(t, err, errTunnelRegistrationTimeout)
 	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
+	assert.Contains(t, err.Error(), "not forwarding gRPC")
 	assert.EqualValues(t, 1, service.connectCount.Load())
 	assert.True(t, client.getConn() == nil || client.getConn().IsClosed())
 }
 
-func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
+func TestTunnelClient_awaitRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
 	defer cancel()
 
 	conn := newBlockingRegistrationConnInternal()
 	client := &TunnelClient{
-		grpcRegistrationTimeout: time.Second,
+		registrationTimeout: time.Second,
 	}
-	client.setConn(conn)
+	client.conn.Store(&connBox{conn: conn})
 
-	msg, err := client.awaitGRPCRegistrationInternal(ctx)
+	msg, err := client.awaitRegistrationInternal(ctx)
 	require.Nil(t, msg)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.True(t, conn.IsClosed())
 	assert.EqualValues(t, 1, conn.closeCount.Load())
 }
 
-func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
+func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnChanges(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -1135,9 +1145,9 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 	})
 
 	client := &TunnelClient{
-		grpcRegistrationTimeout: time.Second,
+		registrationTimeout: time.Second,
 	}
-	client.setConn(firstConn)
+	client.conn.Store(&connBox{conn: firstConn})
 
 	type registrationResult struct {
 		msg *TunnelMessage
@@ -1145,7 +1155,7 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 	}
 	resultCh := make(chan registrationResult, 1)
 	go func() {
-		msg, err := client.awaitGRPCRegistrationInternal(ctx)
+		msg, err := client.awaitRegistrationInternal(ctx)
 		resultCh <- registrationResult{msg: msg, err: err}
 	}()
 
@@ -1155,7 +1165,7 @@ func TestTunnelClient_awaitGRPCRegistrationInternal_ClosesAttemptConnWhenClientC
 		t.Fatal("registration receive did not start")
 	}
 
-	client.setConn(secondConn)
+	client.conn.Store(&connBox{conn: secondConn})
 	cancel()
 
 	select {
@@ -1186,7 +1196,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(resolver, nil)
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer func() {
 		cancel()
@@ -1216,23 +1226,18 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		default:
 		}
 
-		upgrader := websocket.Upgrader{
-			CheckOrigin: func(*http.Request) bool { return true },
-			Error: func(_ http.ResponseWriter, _ *http.Request, status int, reason error) {
-				select {
-				case upgradeErrCh <- reason.Error():
-				default:
-				}
-			},
-		}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, &websocket.AcceptOptions{InsecureSkipVerify: true})
 		if err != nil {
+			select {
+			case upgradeErrCh <- err.Error():
+			default:
+			}
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		for {
-			mt, data, err := conn.ReadMessage()
+			mt, data, err := conn.Read(r.Context())
 			if err != nil {
 				return
 			}
@@ -1240,7 +1245,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 			case receivedMsgCh <- string(data):
 			default:
 			}
-			if err := conn.WriteMessage(mt, append([]byte("local echo: "), data...)); err != nil {
+			if err := conn.Write(r.Context(), mt, append([]byte("local echo: "), data...)); err != nil {
 				return
 			}
 		}
@@ -1275,30 +1280,27 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 		if !ok || tunnel == nil {
 			return c.NoContent(http.StatusServiceUnavailable)
 		}
-		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats")
+		return ProxyWebSocketRequest(c, tunnel, "/api/environments/0/ws/system/stats", func(*http.Request) bool { return true })
 	})
 
 	proxyServer := httptest.NewServer(router)
 	defer proxyServer.Close()
 
 	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http") + "/proxy-ws?tail=100"
-	proxyConn, resp, err := websocket.DefaultDialer.Dial(proxyURL, nil)
+	proxyConn, _, err := websocket.Dial(ctx, proxyURL, nil)
 	require.NoError(t, err)
-	if resp != nil {
-		defer func() { _ = resp.Body.Close() }()
-	}
-	defer func() { _ = proxyConn.Close() }()
+	defer func() { _ = proxyConn.CloseNow() }()
 
-	require.NoError(t, proxyConn.WriteMessage(websocket.TextMessage, []byte("hello-grpc-ws")))
+	require.NoError(t, proxyConn.Write(ctx, websocket.MessageText, []byte("hello-grpc-ws")))
 
-	msgType, payload, err := proxyConn.ReadMessage()
+	msgType, payload, err := proxyConn.Read(ctx)
 	select {
 	case upgradeErr := <-upgradeErrCh:
 		t.Fatalf("local websocket upgrade failed: %s", upgradeErr)
 	default:
 	}
 	require.NoError(t, err)
-	assert.Equal(t, websocket.TextMessage, msgType)
+	assert.Equal(t, websocket.MessageText, msgType)
 	assert.Equal(t, "local echo: hello-grpc-ws", string(payload))
 
 	select {
@@ -1347,12 +1349,11 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 			return
 		}
 
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		select {
 		case wsConnectedCh <- struct{}{}:
@@ -1407,7 +1408,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1445,7 +1446,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	errCh := make(chan error, 1)
 	go func() {
@@ -1482,7 +1483,7 @@ func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.
 	grpcAddr, releaseGRPCAddr := reserveTCPAddressInternal(t)
 	defer releaseGRPCAddr()
 	client.managerGRPCAddr = grpcAddr
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -1509,7 +1510,7 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(resolver, nil)
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer tunnelServer.WaitForCleanupDone()
 
@@ -1556,14 +1557,13 @@ func startTestWebSocketTunnelManagerInternal(t *testing.T, ctx context.Context) 
 			return
 		}
 
-		upgrader := websocket.Upgrader{}
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
-		if _, _, err := conn.ReadMessage(); err != nil {
+		if _, _, err := conn.Read(r.Context()); err != nil {
 			return
 		}
 
@@ -1576,7 +1576,7 @@ func startTestWebSocketTunnelManagerInternal(t *testing.T, ctx context.Context) 
 		if err != nil {
 			return
 		}
-		if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+		if err := conn.Write(r.Context(), websocket.MessageText, registerResp); err != nil {
 			return
 		}
 
@@ -1715,7 +1715,7 @@ func TestTunnelClient_connectAndServePoll_OpensGRPCWhenRequired(t *testing.T) {
 		return envID, nil
 	}
 
-	tunnelServer := NewTunnelServer(resolver, nil)
+	tunnelServer := NewTunnelServerWithRegistry(GetRegistry(), resolver, nil)
 	go tunnelServer.StartCleanupLoop(ctx)
 	defer tunnelServer.WaitForCleanupDone()
 
@@ -1767,14 +1767,13 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 				PollIntervalSeconds: 1,
 			}))
 		case "/api/tunnel/connect":
-			upgrader := websocket.Upgrader{}
-			conn, err := upgrader.Upgrade(w, r, nil)
+			conn, err := websocket.Accept(w, r, nil)
 			if err != nil {
 				return
 			}
-			defer func() { _ = conn.Close() }()
+			defer func() { _ = conn.CloseNow() }()
 
-			if _, _, err := conn.ReadMessage(); err != nil {
+			if _, _, err := conn.Read(r.Context()); err != nil {
 				return
 			}
 			registerResp, err := json.Marshal(&TunnelMessage{
@@ -1786,7 +1785,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 			if err != nil {
 				return
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+			if err := conn.Write(r.Context(), websocket.MessageText, registerResp); err != nil {
 				return
 			}
 
@@ -1807,7 +1806,7 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -1924,14 +1923,13 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 				PollIntervalSeconds: 1,
 			}))
 		case "/api/tunnel/connect":
-			upgrader := websocket.Upgrader{}
-			conn, err := upgrader.Upgrade(w, r, nil)
+			conn, err := websocket.Accept(w, r, nil)
 			if err != nil {
 				return
 			}
-			defer func() { _ = conn.Close() }()
+			defer func() { _ = conn.CloseNow() }()
 
-			if _, _, err := conn.ReadMessage(); err != nil {
+			if _, _, err := conn.Read(r.Context()); err != nil {
 				return
 			}
 			registerResp, err := json.Marshal(&TunnelMessage{
@@ -1943,7 +1941,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 			if err != nil {
 				return
 			}
-			if err := conn.WriteMessage(websocket.TextMessage, registerResp); err != nil {
+			if err := conn.Write(r.Context(), websocket.MessageText, registerResp); err != nil {
 				return
 			}
 
@@ -1964,7 +1962,7 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 		ManagerApiUrl: managerServer.URL,
 		AgentToken:    "valid-token",
 	}, http.NotFoundHandler())
-	client.grpcRegistrationTimeout = 100 * time.Millisecond
+	client.registrationTimeout = 100 * time.Millisecond
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
@@ -2098,7 +2096,7 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 			name: "legacy response",
 			run: func(t *testing.T, client *TunnelClient) {
 				conn := &capturingTunnelConnForHandleRequest{}
-				client.setConn(conn)
+				client.conn.Store(&connBox{conn: conn})
 
 				client.handleRequest(context.Background(), conn, &TunnelMessage{
 					ID:     "req-legacy",
@@ -2117,7 +2115,7 @@ func TestTunnelClient_InternalRequestSkipsSlogEcho(t *testing.T) {
 			name: "streaming response",
 			run: func(t *testing.T, client *TunnelClient) {
 				conn := &fakeTunnelConn{}
-				client.setConn(conn)
+				client.conn.Store(&connBox{conn: conn})
 
 				client.handleRequestStreaming(context.Background(), conn, &TunnelMessage{
 					ID:     "req-stream",
@@ -2208,6 +2206,8 @@ func (f *fakeTunnelConn) IsClosed() bool {
 	return f.closed
 }
 
+func (f *fakeTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 func TestStreamingResponseRecorder_Sequence(t *testing.T) {
 	conn := &fakeTunnelConn{}
 	r := newStreamingResponseRecorder("req-1", conn)
@@ -2250,4 +2250,61 @@ func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
 	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
 	assert.Equal(t, http.StatusCreated, conn.msgs[0].Status)
 	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[1].Type)
+}
+
+func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
+	registered := make(chan struct{})
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+
+		_, _, err = conn.Read(r.Context())
+		if err != nil {
+			return
+		}
+		registerResp, _ := json.Marshal(&TunnelMessage{
+			Type:      MessageTypeRegisterResponse,
+			Accepted:  true,
+			SessionID: "session-cancel",
+		})
+		_ = conn.Write(r.Context(), websocket.MessageText, registerResp)
+		close(registered)
+		// Go silent: keep reading so the socket stays open.
+		for {
+			if _, _, err := conn.Read(r.Context()); err != nil {
+				return
+			}
+		}
+	}))
+	defer managerServer.Close()
+
+	cfg := &Config{
+		EdgeTransport: EdgeTransportWebSocket,
+		ManagerApiUrl: managerServer.URL,
+		AgentToken:    "test-token",
+	}
+	client := NewTunnelClient(cfg, http.NotFoundHandler())
+	client.managerURL = "ws" + strings.TrimPrefix(managerServer.URL, "http")
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() { done <- client.connectAndServeWebSocket(ctx) }()
+
+	select {
+	case <-registered:
+	case <-time.After(5 * time.Second):
+		t.Fatal("timed out waiting for registration")
+	}
+	cancel()
+
+	select {
+	case <-done:
+		// Cancellation must close the socket and unblock the message loop well
+		// under the poll-managed teardown timeout.
+	case <-time.After(defaultPollManagedSessionStopTimeout):
+		t.Fatal("messageLoop did not unblock after context cancellation")
+	}
 }

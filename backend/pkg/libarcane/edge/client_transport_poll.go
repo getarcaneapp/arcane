@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+
+	"github.com/cenkalti/backoff/v5"
 )
 
 const defaultTunnelPollRequestTimeout = 15 * time.Second
@@ -30,6 +32,17 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 
 	pollURL := managerBaseURL + "/api/tunnel/poll"
 	interval := DefaultTunnelPollInterval
+	// Failed polls back off exponentially instead of retrying every 2s forever;
+	// a successful poll restores the manager-advertised interval. No jitter: the
+	// default randomization lets the very first retry exceed the advertised
+	// interval by up to 50%, and poll cycles are already phase-spread across
+	// agents (each notices an outage at its own next tick), so there is no
+	// synchronized herd for jitter to break up. The first retry is therefore
+	// deterministically the poll interval itself.
+	retryBackoff := backoff.NewExponentialBackOff()
+	retryBackoff.InitialInterval = interval
+	retryBackoff.RandomizationFactor = 0
+	retryBackoff.MaxInterval = maxPollRetryInterval
 	var session *pollManagedTunnelSession
 	defer func() {
 		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), defaultPollManagedSessionStopTimeout)
@@ -57,12 +70,13 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 				return ctx.Err()
 			}
 
+			retryInterval := retryBackoff.NextBackOff()
 			slog.WarnContext(ctx, "Poll control request failed, retrying after interval",
 				"error", err,
-				"interval", interval,
+				"interval", retryInterval,
 			)
 
-			session, err = waitForNextPollCycleInternal(ctx, session, interval)
+			session, err = waitForNextPollCycleInternal(ctx, session, retryInterval)
 			if err != nil {
 				return err
 			}
@@ -72,6 +86,10 @@ func (c *TunnelClient) connectAndServePoll(ctx context.Context) error {
 		if status.PollIntervalSeconds > 0 {
 			interval = time.Duration(status.PollIntervalSeconds) * time.Second
 		}
+		// Reset copies InitialInterval into the current interval, so the
+		// manager-advertised value must be applied before resetting.
+		retryBackoff.InitialInterval = interval
+		retryBackoff.Reset()
 
 		session, err = c.syncPollManagedSessionInternal(ctx, session, status.Status)
 		if err != nil {
@@ -174,9 +192,9 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, pollURL st
 		return nil, errors.WrapIf(err, "failed to create poll request")
 	}
 	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set(HeaderAgentToken, c.cfg.AgentToken)
-	req.Header.Set(HeaderAPIKey, c.cfg.AgentToken)
-	req.Header.Set(HeaderAuthorization, "Bearer "+c.cfg.AgentToken)
+	for header, value := range agentAuthCredentialsInternal(c.cfg.AgentToken) {
+		req.Header.Set(header, value)
+	}
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
