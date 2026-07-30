@@ -50,6 +50,7 @@
 	import { cn } from '$lib/utils';
 	import { bulkConfirmAndRun } from '$lib/utils/bulk-actions';
 	import { extractApiErrorMessage } from '$lib/utils/api';
+	import SelectWithLabel from '$lib/components/form/select-with-label.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();
 
@@ -71,6 +72,12 @@
 	let s3Destinations = $state<S3Destination[]>([]);
 	let showBackupPolicy = $state(false);
 	let editingBackupPolicyId = $state<string | undefined>();
+	let showS3DestinationDialog = $state(false);
+	let onDemandDestination = $state<'s3' | 'local_s3'>('s3');
+	let onDemandS3DestinationId = $state('');
+	const s3DestinationOptions = $derived(
+		s3Destinations.map((destination) => ({ label: destination.name, value: destination.id }))
+	);
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },
@@ -112,10 +119,30 @@
 			const result = await volumeBackupService.createBackup(volumeName, request);
 			toast.success(m.common_success(), activityToastOptions(extractActivityId(result)));
 			await loadData(requestOptions);
+			return true;
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.common_failed());
+			return false;
 		} finally {
 			creating = false;
+		}
+	}
+
+	function openS3DestinationDialog(destination: 's3' | 'local_s3') {
+		onDemandDestination = destination;
+		onDemandS3DestinationId = s3Destinations.length === 1 ? (s3Destinations[0]?.id ?? '') : '';
+		showS3DestinationDialog = true;
+	}
+
+	async function createS3Backup() {
+		if (!onDemandS3DestinationId) return;
+		const created = await handleCreate({
+			destination: onDemandDestination,
+			s3DestinationId: onDemandS3DestinationId
+		});
+		if (created) {
+			showS3DestinationDialog = false;
+			onDemandS3DestinationId = '';
 		}
 	}
 
@@ -457,30 +484,14 @@
 					<DropdownMenu.Content align="end" class="w-64">
 						<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
 						<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
-							{m.volume_backup_destination_local()}
+							{m.backups_destination_local()}
 						</DropdownMenu.Item>
-						{#each s3Destinations as s3Destination (s3Destination.id)}
-							<DropdownMenu.Item onclick={() => handleCreate({ destination: 's3', s3DestinationId: s3Destination.id })}>
-								{m.volume_backup_destination_s3()} · {s3Destination.name}
-							</DropdownMenu.Item>
-							<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local_s3', s3DestinationId: s3Destination.id })}>
-								{m.volume_backup_destination_local_s3()} · {s3Destination.name}
-							</DropdownMenu.Item>
-						{/each}
-						{#each backupPolicies as policy (policy.id)}
-							<DropdownMenu.Item onclick={() => handleCreate({ policyId: policy.id })}>
-								<div class="flex flex-col gap-0.5">
-									<span>{policy.schedule}</span>
-									<span class="text-xs text-muted-foreground"
-										>{policy.s3Enabled
-											? policy.localEnabled
-												? m.backups_destination_local_s3()
-												: m.backups_destination_s3()
-											: m.backups_destination_local()}</span
-									>
-								</div>
-							</DropdownMenu.Item>
-						{/each}
+						<DropdownMenu.Item onclick={() => openS3DestinationDialog('s3')}>
+							{m.backups_destination_s3()}
+						</DropdownMenu.Item>
+						<DropdownMenu.Item onclick={() => openS3DestinationDialog('local_s3')}>
+							{m.backups_destination_local_s3()}
+						</DropdownMenu.Item>
 					</DropdownMenu.Content>
 				</DropdownMenu.Root>
 			</ButtonGroup.Root>
@@ -701,6 +712,39 @@
 				disabled={restoringFiles || selectedPaths.length === 0}
 			/>
 		{/if}
+	{/snippet}
+</ResponsiveDialog>
+
+<ResponsiveDialog
+	bind:open={showS3DestinationDialog}
+	title={m.volume_backup_choose_s3_destination()}
+	description={m.volume_backup_choose_s3_destination_description()}
+	contentClass="sm:max-w-[520px]"
+>
+	{#snippet children()}
+		<div class="py-2">
+			<SelectWithLabel
+				id="on-demand-volume-backup-s3-destination"
+				value={onDemandS3DestinationId}
+				onValueChange={(value) => (onDemandS3DestinationId = value)}
+				label={m.volume_backup_s3_destination_label()}
+				description={m.volume_backup_s3_destination_description()}
+				options={s3DestinationOptions}
+			/>
+			{#if s3Destinations.length === 0}
+				<p class="mt-2 text-xs text-muted-foreground">{m.volume_backup_no_s3_destinations()}</p>
+			{/if}
+		</div>
+	{/snippet}
+	{#snippet footer()}
+		<ArcaneButton action="cancel" onclick={() => (showS3DestinationDialog = false)} disabled={creating} />
+		<ArcaneButton
+			action="create"
+			customLabel={m.volumes_backup_create()}
+			onclick={createS3Backup}
+			loading={creating}
+			disabled={creating || !onDemandS3DestinationId}
+		/>
 	{/snippet}
 </ResponsiveDialog>
 
