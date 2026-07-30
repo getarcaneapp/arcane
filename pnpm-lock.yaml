@@ -174,8 +174,8 @@ importers:
         specifier: ^2.0.2
         version: 2.0.2
       marked:
-        specifier: ^18.0.6
-        version: 18.0.6
+        specifier: ^18.0.7
+        version: 18.0.7
       mode-watcher:
         specifier: ^1.1.0
         version: 1.1.0(svelte@5.56.8)
@@ -2050,8 +2050,8 @@ packages:
     engines: {node: '>= 18'}
     hasBin: true
 
-  marked@18.0.6:
-    resolution: {integrity: sha512-MrV5puXBfuiy6wl6DLaq3BtIJQAJToAd5zt/ZKhRfGRAuFPALE7/4Y7jnxRQoEgK/pBgurGqLyAuRgZ2xOjr6w==}
+  marked@18.0.7:
+    resolution: {integrity: sha512-iDVQ5ldaiKXn6b2JroX5kgRfmwgqolW7NpaEzTl1k/2Zh1njIEN9yniyLV/mOvWwtsE8OGgkjsCYvijuPk1dtA==}
     engines: {node: '>= 20'}
     hasBin: true
 
@@ -4317,7 +4317,7 @@ snapshots:
 
   marked@15.0.12: {}
 
-  marked@18.0.6: {}
+  marked@18.0.7: {}
 
   mdn-data@2.27.1: {}
 
