@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "請選擇已為此註冊表設定的儲存庫名稱",
   "registries_none_enabled": "目前沒有啟用的登錄檔。請在「登錄設定」中進行設定。",
   "registries_no_list_permission": "無權列出登錄檔。請向管理員申請存取權限。",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "此註冊表尚未配置任何儲存庫名稱。請在「註冊表設定」中新增這些名稱。",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Dockerfile 的路徑 (相對於內容)",
   "target": "目標",
