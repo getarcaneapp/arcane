@@ -2932,6 +2932,8 @@
   "s3_destination_save_failed": "Failed to save S3 destination",
   "s3_destination_test_success": "Connection to {name} succeeded",
   "s3_destination_test_failed": "Failed to connect to {name}",
+  "s3_destination_test_required": "Test this connection successfully before saving.",
+  "s3_destination_test_verified": "Connection verified. You can now save this destination.",
   "s3_destination_delete_title": "Delete {name}?",
   "s3_destination_delete_message": "This destination can only be deleted when no backup configuration or retained remote backup uses it.",
   "s3_destination_deleted": "Deleted {name}",

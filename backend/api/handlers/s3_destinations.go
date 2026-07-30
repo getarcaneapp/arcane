@@ -68,6 +68,10 @@ type TestS3DestinationInput struct {
 	Body *backuptypes.UpdateS3Destination `json:"body,omitempty"`
 }
 
+type TestS3DestinationConfigurationInput struct {
+	Body backuptypes.CreateS3Destination
+}
+
 type SyncS3DestinationsInput struct {
 	Body backuptypes.S3DestinationSyncRequest
 }
@@ -131,6 +135,15 @@ func RegisterS3Destinations(api huma.API, service *services.S3DestinationService
 	}, authz.PermSettingsWrite, handler.Update)
 
 	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "test-s3-destination-configuration",
+		Method:      http.MethodPost,
+		Path:        "/s3-destinations/test",
+		Summary:     "Test unsaved S3 destination configuration",
+		Description: "Verify upload, download, and delete access before saving an S3 destination",
+		Tags:        []string{"S3 Destinations"},
+	}, authz.PermSettingsWrite, handler.TestConfiguration)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "test-s3-destination",
 		Method:      http.MethodPost,
 		Path:        "/s3-destinations/{id}/test",
@@ -180,6 +193,9 @@ func (h *S3DestinationHandler) Get(ctx context.Context, input *S3DestinationInpu
 }
 
 func (h *S3DestinationHandler) Create(ctx context.Context, input *CreateS3DestinationInput) (*S3DestinationOutput, error) {
+	if err := h.service.TestS3DestinationConfiguration(ctx, input.Body); err != nil {
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	destination, err := h.service.CreateS3Destination(ctx, input.Body)
 	if err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
@@ -189,6 +205,12 @@ func (h *S3DestinationHandler) Create(ctx context.Context, input *CreateS3Destin
 }
 
 func (h *S3DestinationHandler) Update(ctx context.Context, input *UpdateS3DestinationInput) (*S3DestinationOutput, error) {
+	if err := h.service.TestS3Destination(ctx, input.ID, &input.Body); err != nil {
+		if errors.Is(err, services.ErrS3DestinationNotFound) {
+			return nil, huma.Error404NotFound(err.Error())
+		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
 	destination, err := h.service.UpdateS3Destination(ctx, input.ID, input.Body)
 	if errors.Is(err, services.ErrS3DestinationNotFound) {
 		return nil, huma.Error404NotFound(err.Error())
@@ -223,6 +245,16 @@ func (h *S3DestinationHandler) Test(ctx context.Context, input *TestS3Destinatio
 		if errors.Is(err, services.ErrS3DestinationNotFound) {
 			return nil, huma.Error404NotFound(err.Error())
 		}
+		return nil, huma.Error400BadRequest(err.Error())
+	}
+	return &TestS3DestinationOutput{Body: base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: "S3 connection test succeeded"},
+	}}, nil
+}
+
+func (h *S3DestinationHandler) TestConfiguration(ctx context.Context, input *TestS3DestinationConfigurationInput) (*TestS3DestinationOutput, error) {
+	if err := h.service.TestS3DestinationConfiguration(ctx, input.Body); err != nil {
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &TestS3DestinationOutput{Body: base.ApiResponse[base.MessageResponse]{

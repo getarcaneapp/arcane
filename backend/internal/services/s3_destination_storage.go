@@ -113,7 +113,28 @@ func (s *S3DestinationService) TestS3Destination(ctx context.Context, id string,
 			cfg.S3SecretAccessKey = strings.TrimSpace(input.SecretAccessKey)
 		}
 	}
+	return s.testS3DestinationConfigurationInternal(ctx, cfg)
+}
 
+func (s *S3DestinationService) TestS3DestinationConfiguration(ctx context.Context, input backuptypes.CreateS3Destination) error {
+	if err := validateS3DestinationInputInternal(input.Name, input.Endpoint, input.Bucket, input.Region, input.AccessKeyID, input.SecretAccessKey, true); err != nil {
+		return err
+	}
+	cfg := s3DestinationConfiguration{
+		S3DestinationName: strings.TrimSpace(input.Name),
+		S3Endpoint:        strings.TrimSpace(input.Endpoint),
+		S3Bucket:          strings.TrimSpace(input.Bucket),
+		S3Region:          strings.TrimSpace(input.Region),
+		S3AccessKeyID:     strings.TrimSpace(input.AccessKeyID),
+		S3SecretAccessKey: strings.TrimSpace(input.SecretAccessKey),
+		S3Prefix:          strings.Trim(strings.TrimSpace(input.Prefix), "/"),
+		S3UseSSL:          input.UseSSL,
+		S3ForcePathStyle:  input.ForcePathStyle,
+	}
+	return s.testS3DestinationConfigurationInternal(ctx, cfg)
+}
+
+func (s *S3DestinationService) testS3DestinationConfigurationInternal(ctx context.Context, cfg s3DestinationConfiguration) (err error) {
 	payload := []byte("arcane-s3-connection-test")
 	remoteKey := path.Join(cfg.S3Prefix, ".arcane-connection-test-"+uuid.NewString())
 	if err := s.putObjectInternal(ctx, cfg, bytes.NewReader(payload), remoteKey, int64(len(payload))); err != nil {

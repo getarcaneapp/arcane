@@ -67,20 +67,50 @@
 
 	let { inputs, ...form } = $derived(createForm<typeof formSchema>(formSchema, formData));
 	let testing = $state(false);
+	let testedConfiguration = $state<string | null>(null);
+	const currentConfiguration = $derived(
+		JSON.stringify({
+			endpoint: $inputs.endpoint.value.trim(),
+			bucket: $inputs.bucket.value.trim(),
+			region: $inputs.region.value.trim(),
+			accessKeyId: $inputs.accessKeyId.value.trim(),
+			secretAccessKey: $inputs.secretAccessKey.value.trim(),
+			prefix: $inputs.prefix.value.trim().replace(/^\/+|\/+$/g, ''),
+			useSsl: $inputs.useSsl.value,
+			forcePathStyle: $inputs.forcePathStyle.value
+		})
+	);
+	const connectionVerified = $derived(testedConfiguration === currentConfiguration);
+
+	$effect(() => {
+		open;
+		destination?.id;
+		testedConfiguration = null;
+	});
 
 	function handleSubmit() {
 		const data = form.validate();
 		if (!data) return;
+		if (!connectionVerified) {
+			toast.error(m.s3_destination_test_required());
+			return;
+		}
 		onSubmit(data);
 	}
 
 	async function handleTest() {
-		if (!destination) return;
 		const data = form.validate();
 		if (!data) return;
+		const testedCandidate = currentConfiguration;
+		testedConfiguration = null;
 		testing = true;
 		try {
-			await s3DestinationService.test(destination.id, data);
+			if (destination) {
+				await s3DestinationService.test(destination.id, data);
+			} else {
+				await s3DestinationService.testConfiguration(data);
+			}
+			testedConfiguration = testedCandidate;
 			toast.success(m.s3_destination_test_success({ name: data.name }));
 		} catch (error) {
 			toast.error(error instanceof Error ? error.message : m.s3_destination_test_failed({ name: data.name }));
@@ -142,23 +172,24 @@
 	{/snippet}
 	{#snippet footer()}
 		<div class="flex w-full flex-col gap-2">
-			{#if destination}
-				<ArcaneButton
-					action="base"
-					type="button"
-					class="w-full"
-					icon={TestIcon}
-					customLabel={m.test_connection()}
-					disabled={saving || testing}
-					loading={testing}
-					onclick={handleTest}
-				/>
-			{/if}
+			<ArcaneButton
+				action="base"
+				type="button"
+				class="w-full"
+				icon={TestIcon}
+				customLabel={m.test_connection()}
+				disabled={saving || testing}
+				loading={testing}
+				onclick={handleTest}
+			/>
+			<p class={connectionVerified ? 'text-xs text-green-600' : 'text-xs text-muted-foreground'}>
+				{connectionVerified ? m.s3_destination_test_verified() : m.s3_destination_test_required()}
+			</p>
 			<SheetFooterActions
 				bind:open
 				cancelDisabled={saving || testing}
 				submitAction={destination ? 'save' : 'create'}
-				submitDisabled={saving || testing}
+				submitDisabled={saving || testing || !connectionVerified}
 				submitLoading={saving}
 				onSubmit={handleSubmit}
 				submitLabel={destination ? m.common_save_changes() : m.s3_destination_add_title()}

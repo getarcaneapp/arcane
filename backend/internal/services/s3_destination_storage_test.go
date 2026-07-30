@@ -42,6 +42,17 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	defer server.Close()
 
 	service, _ := setupS3DestinationServiceTestInternal(t)
+	require.NoError(t, service.TestS3DestinationConfiguration(context.Background(), backuptypes.CreateS3Destination{
+		Name:            "Unsaved destination",
+		Endpoint:        server.URL,
+		Bucket:          "arcane-backups",
+		Region:          "",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "secret-key",
+		Prefix:          "production",
+		UseSSL:          false,
+		ForcePathStyle:  true,
+	}))
 	destination, err := service.CreateS3Destination(context.Background(), backuptypes.CreateS3Destination{
 		Name:            "Test destination",
 		Endpoint:        server.URL,
@@ -70,6 +81,7 @@ func TestS3DestinationService_TestS3DestinationRoundTrip(t *testing.T) {
 	}))
 
 	require.Equal(t, []string{
+		http.MethodPut, http.MethodGet, http.MethodDelete,
 		http.MethodPut, http.MethodGet, http.MethodDelete,
 		http.MethodPut, http.MethodGet, http.MethodDelete,
 	}, requestMethods)
