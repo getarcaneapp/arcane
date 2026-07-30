@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Selecciona un nombre de repositorio configurado para este registro",
   "registries_none_enabled": "No hay registros activados. Configura uno en los ajustes del Registro.",
   "registries_no_list_permission": "No se dispone de permiso para ver la lista de registros. Solicita acceso a un administrador.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "No hay nombres de repositorios configurados para este registro. Añádelos en la configuración del registro.",
   "dockerfile": "Archivo Docker",
   "dockerfile_description": "Ruta al Dockerfile (relativo al contexto)",
   "target": "Destino",
