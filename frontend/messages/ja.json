@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "このレジストリ用に設定されたリポジトリ名を選択してください",
   "registries_none_enabled": "有効なレジストリがありません。「レジストリ設定」で設定してください。",
   "registries_no_list_permission": "レジストリの一覧を表示する権限がありません。アクセス権については、管理者に問い合わせてください。",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "このレジストリにはリポジトリ名が設定されていません。レジストリ設定で追加してください。",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Dockerfileへのパス (コンテキストからの相対パス)",
   "target": "Target",
