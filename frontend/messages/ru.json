@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Выберите название репозитория, настроенного для данного реестра",
   "registries_none_enabled": "Реестры не включены. Настройте один из них в параметрах реестра.",
   "registries_no_list_permission": "Нет прав на просмотр списка реестров. Обратитесь к администратору для получения доступа.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Для этого реестра не настроены названия репозиториев. Добавьте их в настройках реестра.",
   "dockerfile": "Файл Dockerfile",
   "dockerfile_description": "Путь к Dockerfile (относительно контекста)",
   "target": "Target",
