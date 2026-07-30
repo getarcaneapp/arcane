@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Sélectionnez le nom d'un référentiel configuré pour ce registre",
   "registries_none_enabled": "Aucun registre n'est activé. Veuillez en configurer un dans les paramètres du registre.",
   "registries_no_list_permission": "Vous n'êtes pas autorisé à consulter la liste des registres. Demandez l'accès à un administrateur.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Aucun nom de référentiel n'est configuré pour ce registre. Ajoutez-les dans les paramètres du registre.",
   "dockerfile": "Fichier Docker",
   "dockerfile_description": "Chemin vers le fichier Dockerfile (relatif au contexte)",
   "target": "Cible",
