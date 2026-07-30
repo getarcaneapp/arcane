@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -85,6 +86,31 @@ func TestSystemBackupPolicyRequiresConfiguredRecoveryKeyWhenEnabled(t *testing.T
 		Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 7, LocalEnabled: true,
 	}})
 	require.ErrorContains(t, err, "configure a recovery key")
+}
+
+func TestSystemBackupPolicyRetentionIgnoresFailedRuns(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:system-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.SystemBackupRun{}))
+
+	policyID := "policy-1"
+	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
+		PolicyID: policyID, Status: models.VolumeBackupStatusSucceeded,
+		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
+	}).Error)
+	require.NoError(t, gormDB.Create(&models.SystemBackupRun{
+		PolicyID: policyID, Status: models.VolumeBackupStatusFailed,
+		CreatedAt: time.Now(),
+	}).Error)
+
+	service := &SystemBackupService{db: &database.DB{DB: gormDB}}
+	require.NoError(t, service.applyRetentionInternal(context.Background(), policyID, 1))
+
+	var backups []models.SystemBackupRun
+	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
+	require.Len(t, backups, 2)
+	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
+	require.Equal(t, models.VolumeBackupStatusFailed, backups[1].Status)
 }
 
 func TestRecoveryEnvironmentInternalIncludesRuntimeSecrets(t *testing.T) {

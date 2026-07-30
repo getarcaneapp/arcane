@@ -293,7 +293,15 @@ func (s *SystemBackupService) RegisterBackupJobOnStartup(ctx context.Context) {
 
 func (s *SystemBackupService) applyRetentionInternal(ctx context.Context, policyID string, keep int) error {
 	var expired []models.SystemBackupRun
-	if err := s.db.WithContext(ctx).Where("policy_id = ?", policyID).Order("created_at DESC").Offset(keep).Find(&expired).Error; err != nil {
+	if err := s.db.WithContext(ctx).
+		Where(
+			"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
+			policyID,
+			models.VolumeBackupStatusSucceeded,
+		).
+		Order("created_at DESC").
+		Offset(keep).
+		Find(&expired).Error; err != nil {
 		return err
 	}
 	for i := range expired {

@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -81,6 +82,31 @@ func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
 	require.Len(t, collection.Policies, 2)
 	require.Equal(t, "succeeded", collection.Policies[0].LastRun.Status)
 	require.Equal(t, "failed", collection.Policies[1].LastRun.Status)
+}
+
+func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}))
+
+	policyID := "policy-1"
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusSucceeded,
+		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
+	}).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusFailed,
+		CreatedAt: time.Now(),
+	}).Error)
+
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	require.NoError(t, service.applyVolumeBackupRetentionInternal(context.Background(), policyID, 1))
+
+	var backups []models.VolumeBackup
+	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
+	require.Len(t, backups, 2)
+	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
+	require.Equal(t, models.VolumeBackupStatusFailed, backups[1].Status)
 }
 
 func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {

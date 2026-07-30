@@ -208,7 +208,11 @@ func (s *VolumeService) UpdateBackupPolicies(ctx context.Context, volumeName str
 func (s *VolumeService) applyVolumeBackupRetentionInternal(ctx context.Context, policyID string, retentionCount int) error {
 	var expired []models.VolumeBackup
 	if err := s.db.WithContext(ctx).
-		Where("policy_id = ?", policyID).
+		Where(
+			"policy_id = ? AND status = ? AND (COALESCE(local_snapshot_id, '') <> '' OR COALESCE(remote_snapshot_id, '') <> '')",
+			policyID,
+			models.VolumeBackupStatusSucceeded,
+		).
 		Order("created_at DESC").
 		Offset(retentionCount).
 		Find(&expired).Error; err != nil {
