@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Elektu nomon de deponejo konfiguritan por ĉi tiu registro.",
   "registries_none_enabled": "Neniuj aktivigitaj registroj. Agordu unu en la agordoj de la registro.",
   "registries_no_list_permission": "Ne estas permeso listigi registrojn. Petu al administranto aliron.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Por ĉi tiu registro ne estas agorditaj nomoj de deponejoj. Aldonu ilin en la agordoj de la registro.",
   "dockerfile": "Dokero-dosiero",
   "dockerfile_description": "Vojo al Dockerfile (relativa al la kunteksto)",
   "target": "Celo",
