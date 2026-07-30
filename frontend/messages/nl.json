@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Selecteer een repositorynaam die voor dit register is geconfigureerd",
   "registries_none_enabled": "Er zijn geen registers ingeschakeld. Stel er een in via de registerinstellingen.",
   "registries_no_list_permission": "Je hebt geen toestemming om registers weer te geven. Vraag een beheerder om toegang.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Er zijn geen repository-namen geconfigureerd voor dit register. Voeg ze toe in de registerinstellingen.",
   "dockerfile": "Dockerbestand",
   "dockerfile_description": "Pad naar Docker-bestand (t.o.v. context)",
   "target": "Target",
