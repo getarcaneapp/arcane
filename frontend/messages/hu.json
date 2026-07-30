@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Válassza ki a nyilvántartáshoz beállított adattár nevét",
   "registries_none_enabled": "Nincs engedélyezett rendszerleíró adatbázis. Állítson be egyet a Rendszerleíró adatbázis beállításai között.",
   "registries_no_list_permission": "Nincs jogosultság a nyilvántartások felsorolására. Kérjen hozzáférést egy rendszergazdától.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Ehhez a rendszerleíró adatbázishoz nincs beállítva tárolónév. Adja hozzá őket a Rendszerleíró adatbázis beállításaiban.",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Path to Dockerfile (relative to context)",
   "target": "Target",
