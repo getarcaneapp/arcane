@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "이 레지스트리에 대해 구성된 리포지토리 이름을 선택하십시오",
   "registries_none_enabled": "활성화된 레지스트리가 없습니다. 레지스트리 설정에서 하나를 구성하십시오.",
   "registries_no_list_permission": "레지스트리 목록을 표시할 권한이 없습니다. 관리자에게 액세스 권한을 요청하십시오.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "이 레지스트리에 대해 구성된 저장소 이름이 없습니다. 레지스트리 설정에서 저장소를 추가하십시오.",
   "dockerfile": "도커파일",
   "dockerfile_description": "Dockerfile 경로 (컨텍스트 기준)",
   "target": "빌드 대상 (Target)",
