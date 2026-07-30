@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Wählen Sie einen für diese Registry konfigurierten Repository-Namen aus",
   "registries_none_enabled": "Es sind keine Registrierungen aktiviert. Konfigurieren Sie eine in den Registrierungseinstellungen.",
   "registries_no_list_permission": "Keine Berechtigung zum Auflisten von Registries. Bitten Sie einen Administrator um Zugriff.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Für diese Registry sind keine Repository-Namen konfiguriert. Fügen Sie diese in den Registry-Einstellungen hinzu.",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Pfad zur Dockerfile (relativ zum Context)",
   "target": "Ziel",
