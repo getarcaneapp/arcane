@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Chọn tên kho lưu trữ đã được cấu hình cho hệ thống đăng ký này",
   "registries_none_enabled": "Chưa có sổ đăng ký nào được kích hoạt. Hãy cấu hình một sổ đăng ký trong phần Cài đặt sổ đăng ký.",
   "registries_no_list_permission": "Không có quyền truy cập danh sách các cơ sở dữ liệu đăng ký. Vui lòng liên hệ với quản trị viên để được cấp quyền truy cập.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Chưa có tên kho lưu trữ nào được cấu hình cho hệ thống đăng ký này. Hãy thêm chúng vào phần Cài đặt hệ thống đăng ký.",
   "dockerfile": "Tập tin Dockerfile",
   "dockerfile_description": "Đường dẫn đến Dockerfile (tương đối so với bối cảnh)",
   "target": "Mục tiêu",
