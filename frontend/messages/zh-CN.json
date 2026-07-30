@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "选择为该注册表配置的仓库名称",
   "registries_none_enabled": "没有启用的注册表。请在“注册表设置”中配置一个。",
   "registries_no_list_permission": "无权列出注册表。请向管理员申请访问权限。",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "此注册表未配置任何存储库名称。请在“注册表设置”中添加。",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Dockerfile 路径 (相对于环境)",
   "target": "目标",
