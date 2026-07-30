@@ -83,7 +83,7 @@ func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *te
 func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -190,7 +190,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -236,7 +236,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -302,7 +302,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -339,7 +339,7 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 	_, err = activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})

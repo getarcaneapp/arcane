@@ -133,7 +133,7 @@ func setupFederatedCredentialServiceInternal(t *testing.T, issuer *federatedTest
 	roleSvc := NewRoleService(db)
 	userSvc := NewUserService(db).WithRoleService(roleSvc)
 	sessionSvc := NewSessionService(db)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	eventSvc := NewEventService(db, &config.Config{}, nil)
 	authSvc := NewAuthService(userSvc, settingsSvc, eventSvc, sessionSvc, roleSvc, "test-federated-secret", &config.Config{

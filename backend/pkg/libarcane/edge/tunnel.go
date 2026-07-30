@@ -368,11 +368,21 @@ func (t *GRPCAgentTunnelConn) Close() error {
 		return nil
 	}
 
+	// Preserve a clean half-close unless an in-flight send must be cancelled first.
+	locked := t.mu.TryLock()
+	if !locked {
+		if t.cancel != nil {
+			t.cancel()
+		}
+		t.mu.Lock()
+	}
+	defer t.mu.Unlock()
+
 	var err error
 	if t.stream != nil {
 		err = t.stream.CloseSend()
 	}
-	if t.cancel != nil {
+	if locked && t.cancel != nil {
 		t.cancel()
 	}
 	return err

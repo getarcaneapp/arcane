@@ -38,7 +38,7 @@ func TestDefaultSwarmListenAddrInternal(t *testing.T) {
 func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAccessToken(t *testing.T) {
 	ctx := context.Background()
 	db := setupEnvironmentServiceTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	envSvc := NewEnvironmentService(db, nil, nil, nil, settingsSvc, nil)
 
@@ -82,7 +82,7 @@ func TestSwarmService_UpdateAndGetStackSource_UsesStoredFilesWithoutSwarmManager
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)
@@ -140,7 +140,7 @@ func TestSwarmService_UpdateAndGetStackSource_RoundTripsOverride(t *testing.T) {
 	rootDir := t.TempDir()
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", rootDir)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	svc := NewSwarmService(nil, settingsSvc, nil, nil, nil)

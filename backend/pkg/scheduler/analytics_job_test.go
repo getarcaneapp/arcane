@@ -30,7 +30,7 @@ func setupAnalyticsStateServicesInternal(t *testing.T) (*database.DB, *services.
 	require.NoError(t, db.AutoMigrate(&models.KVEntry{}))
 
 	wrappedDB := &database.DB{DB: db}
-	settingsService, err := services.NewSettingsService(ctx, wrappedDB)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "instanceId", "test-instance"))
 
@@ -157,7 +157,7 @@ func TestAnalyticsJob_Run_SkipsWithinHeartbeatWindowAfterRestart(t *testing.T) {
 	job.now = func() time.Time { return firstAttemptAt }
 	job.Run(ctx)
 
-	reloadedSettingsService, err := services.NewSettingsService(ctx, wrappedDB)
+	reloadedSettingsService, err := newSettingsServiceForTestInternal(t, ctx, wrappedDB)
 	require.NoError(t, err)
 	restartedJob := NewAnalyticsJob(reloadedSettingsService, services.NewKVService(wrappedDB), server.Client(), cfg)
 	restartedJob.heartbeatURL = server.URL

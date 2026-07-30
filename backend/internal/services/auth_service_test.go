@@ -324,7 +324,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 func TestRefreshToken_Valid(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -355,7 +355,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -470,7 +470,7 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -499,7 +499,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -658,7 +658,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_Creat
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
@@ -694,7 +694,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
@@ -736,7 +736,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))

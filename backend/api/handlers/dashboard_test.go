@@ -34,7 +34,7 @@ func setupDashboardHandlerTestDB(t *testing.T) (*database.DB, *services.Settings
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := services.NewSettingsService(context.Background(), databaseDB)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 
 	return databaseDB, settingsSvc
@@ -187,7 +187,7 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -231,7 +231,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -283,7 +283,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -326,7 +326,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	allowedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -370,7 +370,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 func TestDashboardHandlerRemoteFetchReusesLoadedEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

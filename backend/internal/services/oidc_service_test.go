@@ -61,7 +61,7 @@ func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
 func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	if err != nil {
 		t.Fatalf("NewSettingsService: %v", err)
 	}

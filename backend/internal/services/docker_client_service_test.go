@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
@@ -17,6 +18,7 @@ import (
 	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 )
 
 func TestNewDockerClient_PinsEffectiveAPIVersion(t *testing.T) {
@@ -187,6 +189,68 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testi
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for image state resync event")
 	}
+}
+
+func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *testing.T) {
+	streamStarted := make(chan struct{})
+	streamStopped := make(chan struct{})
+	server := newDockerPingTestServerWithHandlerInternal(t, func(w http.ResponseWriter, r *http.Request) {
+		switch dockerTestPathInternal(r.URL.Path) {
+		case "/_ping":
+			w.Header().Set("Api-Version", "1.41")
+			w.WriteHeader(http.StatusOK)
+		case "/events":
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusOK)
+			if flusher, ok := w.(http.Flusher); ok {
+				flusher.Flush()
+			}
+			close(streamStarted)
+			<-r.Context().Done()
+			close(streamStopped)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	lifecycle := fxtest.NewLifecycle(t)
+	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	service := newDockerClientServiceForTestInternal(server.URL)
+	t.Cleanup(service.Close)
+
+	eventsCh, unsubscribe := service.EventBus().Subscribe(events.ImageEventType)
+	t.Cleanup(unsubscribe)
+	runner, err := actors.NewRunner(t.Context(), actorRuntime, "docker-events-test", "stream", "Docker event watcher", 3, func(ctx context.Context) error {
+		service.WatchEvents(ctx)
+		return nil
+	})
+	require.NoError(t, err)
+
+	select {
+	case <-streamStarted:
+	case <-time.After(time.Second):
+		t.Fatal("Docker event stream did not start")
+	}
+	select {
+	case message := <-eventsCh:
+		require.Equal(t, dockerImageStateResyncActionInternal, message.Action)
+	case <-time.After(time.Second):
+		t.Fatal("Docker event stream did not publish reconnect resync")
+	}
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, runner.Stop(stopCtx))
+	require.Eventually(t, func() bool {
+		select {
+		case <-streamStopped:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, time.Millisecond)
+	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
 func TestCountImageUsage_UsesContainerImageIDs(t *testing.T) {

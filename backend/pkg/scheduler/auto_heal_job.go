@@ -6,14 +6,15 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
+	"emperror.dev/errors"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
 	"github.com/robfig/cron/v3"
 	"golang.org/x/sync/errgroup"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -24,6 +25,7 @@ import (
 
 const AutoHealJobName = "auto-heal"
 const autoHealInspectConcurrency = 4
+const autoHealAdmissionScopeInternal = "auto-heal"
 
 // restartRecord tracks restart timestamps for a single container.
 type restartRecord struct {
@@ -35,11 +37,7 @@ type AutoHealJob struct {
 	settingsService     *services.SettingsService
 	eventService        *services.EventService
 	notificationService *services.NotificationService
-
-	// running guards against overlapping cron ticks: inspecting every candidate
-	// can outlast the (as low as 30s) interval, and stacked runs re-evaluate the
-	// same unhealthy containers concurrently.
-	running atomic.Bool
+	admissionGate       *actors.Gate[actors.AdmissionKey]
 
 	mu       sync.Mutex
 	restarts map[string]*restartRecord
@@ -59,14 +57,19 @@ func NewAutoHealJob(
 	settingsService *services.SettingsService,
 	eventService *services.EventService,
 	notificationService *services.NotificationService,
-) *AutoHealJob {
+	admissionGate *actors.Gate[actors.AdmissionKey],
+) (*AutoHealJob, error) {
+	if admissionGate == nil {
+		return nil, errors.New("auto-heal admission gate unavailable")
+	}
 	return &AutoHealJob{
 		dockerClientService: dockerClientService,
 		settingsService:     settingsService,
 		eventService:        eventService,
 		notificationService: notificationService,
+		admissionGate:       admissionGate,
 		restarts:            make(map[string]*restartRecord),
-	}
+	}, nil
 }
 
 func (j *AutoHealJob) Name() string {
@@ -99,11 +102,16 @@ func (j *AutoHealJob) Run(ctx context.Context) {
 		return
 	}
 
-	if !j.running.CompareAndSwap(false, true) {
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: autoHealAdmissionScopeInternal})
+	if err != nil {
+		slog.ErrorContext(ctx, "auto-heal admission failed", "error", err)
+		return
+	}
+	if !admitted {
 		slog.WarnContext(ctx, "auto-heal run still in progress; skipping overlapping run")
 		return
 	}
-	defer j.running.Store(false)
+	defer lease.Release()
 
 	dockerClient, err := j.getDockerClientInternal(ctx)
 	if err != nil {

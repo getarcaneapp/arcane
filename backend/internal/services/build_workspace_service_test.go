@@ -12,7 +12,7 @@ import (
 func TestBuildWorkspaceServiceDeleteFileRejectsCurrentDirectoryInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	root := t.TempDir()

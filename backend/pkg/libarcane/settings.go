@@ -44,8 +44,9 @@ var cronSettingKeys = []string{
 
 var cronParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow)
 
-func IsTimeoutSettingKey(key string) bool {
-	return slices.Contains(timeoutSettingKeys, key)
+// TimeoutSettingKeys returns the settings propagated to remote environments.
+func TimeoutSettingKeys() []string {
+	return slices.Clone(timeoutSettingKeys)
 }
 
 func IsCronSettingKey(key string) bool {

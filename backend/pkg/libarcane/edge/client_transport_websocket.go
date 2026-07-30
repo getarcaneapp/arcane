@@ -19,8 +19,6 @@ func (c *TunnelClient) connectAndServeWebSocket(ctx context.Context) error {
 	if managerWSURL == "" {
 		return errors.New("manager WebSocket URL is empty")
 	}
-	c.managerURL = managerWSURL
-
 	transport := &http.Transport{Proxy: http.ProxyFromEnvironment}
 	if strings.HasPrefix(strings.ToLower(managerWSURL), "wss://") {
 		tlsConfig, err := buildManagerClientTLSConfigInternal(c.cfg)

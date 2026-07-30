@@ -12,7 +12,6 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
-	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	apitypes "github.com/getarcaneapp/arcane/types/v2/settings"
 	"github.com/libtnb/sqlite"
@@ -76,7 +75,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(&models.SettingVariable{}))
 
-	settingsSvc, err := services.NewSettingsService(ctx, &database.DB{DB: db})
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, &database.DB{DB: db})
 	require.NoError(t, err)
 
 	originalDir := settingsSvc.GetSettingsConfig().ProjectsDirectory.Value

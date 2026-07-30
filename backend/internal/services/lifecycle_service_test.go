@@ -32,7 +32,7 @@ func setupLifecycleTestDB(t *testing.T) *database.DB {
 
 func newLifecycleTestService(t *testing.T, db *database.DB) (*LifecycleService, *SettingsService) {
 	t.Helper()
-	settings, err := NewSettingsService(context.Background(), db)
+	settings, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	events := NewEventService(db, nil, nil)
 	return NewLifecycleService(db, settings, events, nil), settings

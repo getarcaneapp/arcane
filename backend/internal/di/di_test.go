@@ -82,6 +82,7 @@ func TestOptionsValidate(t *testing.T) {
 			&http.Client{},
 		),
 		fx.Provide(func() context.Context { return context.Background() }),
+		ActorOptions,
 		ServiceOptions,
 		JobOptions,
 		fx.Invoke(func(graphParams) {}),

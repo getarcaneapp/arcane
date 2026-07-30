@@ -316,21 +316,25 @@ _lint-js:
     @just _lint-tests
     @just _lint-email-templates
 
+# Build golangci-lint with the custom linters enabled by the shared config
+[group('quality')]
+_build-golangci-lint:
+    golangci-lint custom
+
 # Lint Go backend
 [group('quality')]
-_lint-backend:
-    golangci-lint custom
+_lint-backend: _build-golangci-lint
     cd backend && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint Go CLI
 [group('quality')]
-_lint-cli:
-    cd cli && golangci-lint run -c ../.github/.golangci.yml ./...
+_lint-cli: _build-golangci-lint
+    cd cli && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint Types
 [group('quality')]
-_lint-types:
-    cd types && golangci-lint run -c ../.github/.golangci.yml ./...
+_lint-types: _build-golangci-lint
+    cd types && ../.bin/golangci-lint-custom run -c ../.github/.golangci.yml ./...
 
 # Lint edge tunnel protobuf definitions.
 [group('quality')]

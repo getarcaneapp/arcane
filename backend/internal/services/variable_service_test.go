@@ -50,7 +50,7 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 
 	projectsDir := t.TempDir()
 	dbWrap := &database.DB{DB: db}
-	settingsSvc, err := NewSettingsService(context.Background(), dbWrap)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), dbWrap)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", projectsDir))
 

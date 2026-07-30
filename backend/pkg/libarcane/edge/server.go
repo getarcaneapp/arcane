@@ -378,7 +378,16 @@ func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
 }
 
 func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
-	accepted, drainPrevious, rejectReason := s.registry.RegisterSession(tunnel, TunnelStaleTimeout)
+	accepted, drainPrevious, rejectReason, err := s.registry.RegisterSession(callbackCtx, tunnel, TunnelStaleTimeout)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to register edge agent session",
+			"environment_id", tunnel.EnvironmentID,
+			"agent_instance_id", tunnel.AgentInstance,
+			"error", err,
+		)
+		_ = tunnel.CloseWithReason("edge agent session registration unavailable")
+		return
+	}
 	if !accepted {
 		slog.WarnContext(ctx, "Rejected duplicate edge agent session",
 			"environment_id", tunnel.EnvironmentID,
@@ -421,7 +430,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
 		_ = tunnel.CloseWithReason("")
-		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		removed, active := s.registry.UnregisterCurrent(callbackCtx, tunnel.EnvironmentID, tunnel)
 		if removed && !active {
 			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
 		}
@@ -431,7 +440,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 	s.updateConnectionStatusInternal(callbackCtx, tunnel, true)
 
 	defer func() {
-		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		removed, active := s.registry.UnregisterCurrent(callbackCtx, tunnel.EnvironmentID, tunnel)
 		if !removed {
 			return
 		}
@@ -587,7 +596,7 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			removed := s.registry.CleanupStale(TunnelStaleTimeout)
+			removed := s.registry.CleanupStale(ctx, TunnelStaleTimeout)
 			for _, tunnel := range removed {
 				s.updateConnectionStatusInternal(context.WithoutCancel(ctx), tunnel, false)
 			}

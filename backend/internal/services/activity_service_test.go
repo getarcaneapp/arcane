@@ -373,7 +373,7 @@ func setupQueuedActivityServiceInternal(t *testing.T) (*ActivityService, context
 	require.NoError(t, err)
 	sqlDB.SetMaxOpenConns(1)
 
-	settings, err := NewSettingsService(ctx, wrapped)
+	settings, err := newSettingsServiceForTestInternal(t, ctx, wrapped)
 	require.NoError(t, err)
 	require.NoError(t, settings.SetIntSetting(ctx, maxConcurrentActivitiesSettingKey, 1))
 	return NewActivityService(wrapped, settings), ctx

@@ -3,12 +3,17 @@ package services
 import (
 	"context"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/libtnb/sqlite"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -25,10 +30,57 @@ func setupSettingsTestDB(t *testing.T) *database.DB {
 	return &database.DB{DB: db}
 }
 
+func newSettingsServiceForTestInternal(t testing.TB, ctx context.Context, db *database.DB) (*SettingsService, error) {
+	t.Helper()
+	lifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	executor, err := actors.NewExecutor(t.Context(), runtime, "settings-test", t.Name(), 3)
+	require.NoError(t, err)
+	effects, err := actors.NewExecutor(t.Context(), runtime, "settings-effects-test", t.Name(), 3)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, executor.Stop(stopCtx))
+		require.NoError(t, effects.Stop(stopCtx))
+		require.NoError(t, lifecycle.Stop(stopCtx))
+	})
+	return NewSettingsService(ctx, db, executor, effects)
+}
+
+func newAdmissionGateForTestInternal(t testing.TB) *actors.Gate[actors.AdmissionKey] {
+	t.Helper()
+	lifecycle := fxtest.NewLifecycle(t)
+	runtime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), runtime, "services-test-admission", t.Name())
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, gate.Stop(stopCtx))
+		require.NoError(t, lifecycle.Stop(stopCtx))
+	})
+	return gate
+}
+
+func waitForSettingsNotificationsInternal(t *testing.T, svc *SettingsService) {
+	t.Helper()
+	_, err := actors.Execute(t.Context(), svc.writes, "wait for settings notification submission", func(context.Context) (actors.NoPayload, error) {
+		return actors.NoPayload{}, nil
+	}, nil)
+	require.NoError(t, err)
+	_, err = actors.Execute(t.Context(), svc.effects, "wait for settings notifications", func(context.Context) (actors.NoPayload, error) {
+		return actors.NoPayload{}, nil
+	}, nil)
+	require.NoError(t, err)
+}
+
 func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
@@ -91,7 +143,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyImage", "ghcr.io/aquasecurity/trivy:latest"))
@@ -105,7 +157,7 @@ func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *te
 func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.db.WithContext(ctx).
@@ -118,7 +170,7 @@ func TestSettingsService_GetSettings_UnknownKeysIgnored(t *testing.T) {
 func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.SetStringSetting(ctx, "baseServerUrl", "http://cached"))
@@ -134,7 +186,7 @@ func TestSettingsService_GetSettings_UsesCachedSnapshotWithoutDatabase(t *testin
 func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	current, err := svc.GetSettings(ctx)
@@ -155,7 +207,7 @@ func TestSettingsService_AvatarMaxUploadSizeDefaultAndUpdate(t *testing.T) {
 func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
@@ -175,7 +227,7 @@ func TestSettingsServiceUpdateSettingsRejectsOIDCIssuerChangeWithStoredSecretInt
 func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecretInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcIssuerUrl", "https://issuer.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "oidcClientSecret", "old-client-secret"))
@@ -195,7 +247,7 @@ func TestSettingsServiceUpdateSettingsAllowsOIDCIssuerChangeWithReplacementSecre
 func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredTokenInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
@@ -214,7 +266,7 @@ func TestSettingsServiceUpdateSettingsRejectsTrivyServerChangeWithStoredTokenInt
 func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementTokenInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
@@ -234,7 +286,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithReplacementToke
 func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredTokenInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerToken", "old-trivy-token"))
@@ -253,7 +305,7 @@ func TestSettingsServiceUpdateSettingsAllowsClearingTrivyServerWithStoredTokenIn
 func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredTokenInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "trivyServerUrl", "https://trivy.example.com"))
 
@@ -270,7 +322,7 @@ func TestSettingsServiceUpdateSettingsAllowsTrivyServerChangeWithoutStoredTokenI
 func TestSettingsService_PruneUnknownSettings_RemovesStaleKeys(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "/tmp/projects"))
@@ -297,7 +349,7 @@ func TestSettingsService_GetSettings_EnvOverride_OidcMergeAccounts(t *testing.T)
 	db := setupSettingsTestDB(t)
 	t.Setenv("OIDC_MERGE_ACCOUNTS", "true")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -311,7 +363,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyScanTimeout(t *testing.T) 
 	db := setupSettingsTestDB(t)
 	t.Setenv("TRIVY_SCAN_TIMEOUT", "1800")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -327,7 +379,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyResourceLimits(t *testing.
 	t.Setenv("TRIVY_CPU_LIMIT", "2.5")
 	t.Setenv("TRIVY_MEMORY_LIMIT_MB", "2048")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -343,7 +395,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyNetwork(t *testing.T) {
 	db := setupSettingsTestDB(t)
 	t.Setenv("TRIVY_NETWORK", "arcane-external")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -357,7 +409,7 @@ func TestSettingsService_GetSettings_EnvOverride_FollowProjectSymlinks(t *testin
 	db := setupSettingsTestDB(t)
 	t.Setenv("FOLLOW_PROJECT_SYMLINKS", "true")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -372,7 +424,7 @@ func TestSettingsService_GetSettings_EnvOverride_TrivyRuntimeSecurity(t *testing
 	t.Setenv("TRIVY_SECURITY_OPTS", "label=disable,\nlabel=type:container_runtime_t")
 	t.Setenv("TRIVY_PRIVILEGED", "true")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -387,7 +439,7 @@ func TestSettingsService_GetStringSetting_EnvOverride_SwarmStackSourcesDirectory
 	db := setupSettingsTestDB(t)
 	t.Setenv("SWARM_STACK_SOURCES_DIRECTORY", "/mnt/swarm-from-env")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateSetting(ctx, "swarmStackSourcesDirectory", "/tmp/swarm-from-db"))
 
@@ -399,17 +451,17 @@ func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.False(t, svc.isEnvOverrideActiveInternal("oidcEnabled"))
 
 	t.Setenv("OIDC_ENABLED", "false")
-	svcWithOverride, err := NewSettingsService(ctx, db)
+	svcWithOverride, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.True(t, svcWithOverride.isEnvOverrideActiveInternal("oidcEnabled"))
 
 	t.Setenv("AUTH_SESSION_TIMEOUT", "120")
-	svcWithNonOverrideEnv, err := NewSettingsService(ctx, db)
+	svcWithNonOverrideEnv, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.False(t, svcWithNonOverrideEnv.isEnvOverrideActiveInternal("authSessionTimeout"))
 }
@@ -417,7 +469,7 @@ func TestSettingsService_isEnvOverrideActiveInternal(t *testing.T) {
 func TestSettingsService_GetSetHelpers(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Defaults for missing keys
@@ -439,7 +491,7 @@ func TestSettingsService_GetSetHelpers(t *testing.T) {
 func TestSettingsService_UpdateSetting(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, svc.UpdateSetting(ctx, "pruneImageMode", "all"))
@@ -449,10 +501,24 @@ func TestSettingsService_UpdateSetting(t *testing.T) {
 	require.Equal(t, "all", sv.Value)
 }
 
+func TestSettingsService_UpdateSettingRejectsInvalidCronBeforePersistence(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+
+	require.NoError(t, svc.UpdateSetting(ctx, "pollingInterval", "*/5 * * * * *"))
+	require.Error(t, svc.UpdateSetting(ctx, "pollingInterval", "not a cron schedule"))
+
+	var setting models.SettingVariable
+	require.NoError(t, svc.db.WithContext(ctx).Where("key = ?", "pollingInterval").First(&setting).Error)
+	require.Equal(t, "*/5 * * * * *", setting.Value)
+}
+
 func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.Equal(t, "http://localhost", svc.GetSettingsConfig().BaseServerURL.Value)
@@ -468,38 +534,172 @@ func TestSettingsService_UpdateSetting_RefreshesCachedSnapshot(t *testing.T) {
 func TestSettingsService_UpdateSettings_PruneModesDoNotTriggerScheduledPruneCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	callbackCalls := 0
-	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]libarcane.SettingUpdate) {
 		callbackCalls++
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{
 		PruneImageMode:      new("all"),
 		PruneContainerUntil: new("24h"),
 	})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.Equal(t, 0, callbackCalls)
 }
 
 func TestSettingsService_UpdateSettings_ScheduledPruneScheduleTriggersCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	callbackCalls := 0
-	svc.OnScheduledPruneSettingsChanged = func(context.Context) {
+	svc.SubscribeSettingsChanges([]string{"scheduledPruneEnabled", "scheduledPruneInterval"}, func([]libarcane.SettingUpdate) {
 		callbackCalls++
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{
 		ScheduledPruneEnabled: new("true"),
 	})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.Equal(t, 1, callbackCalls)
+}
+
+func TestSettingsServiceActorSerializesConcurrentUpdatesInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	go func() {
+		<-start
+		_, updateErr := svc.UpdateSettings(ctx, settings.Update{ProjectsDirectory: new("/data/projects-a")})
+		results <- updateErr
+	}()
+	go func() {
+		<-start
+		_, updateErr := svc.UpdateSettings(ctx, settings.Update{TemplatesDirectory: new("/data/templates-b")})
+		results <- updateErr
+	}()
+	close(start)
+
+	require.NoError(t, <-results)
+	require.NoError(t, <-results)
+	current := svc.GetSettingsConfig()
+	require.Equal(t, "/data/projects-a", current.ProjectsDirectory.Value)
+	require.Equal(t, "/data/templates-b", current.TemplatesDirectory.Value)
+}
+
+func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotificationInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	callbackStarted := make(chan string, 1)
+	releaseCallback := make(chan struct{})
+	svc.SubscribeSettingsChanges([]string{"baseServerUrl"}, func(_ []libarcane.SettingUpdate) {
+		callbackStarted <- svc.GetSettingsConfig().BaseServerURL.Value
+		<-releaseCallback
+	})
+
+	updateResult := make(chan error, 1)
+	go func() {
+		_, updateErr := svc.UpdateSettings(ctx, settings.Update{BaseServerURL: new("https://actor.example")})
+		updateResult <- updateErr
+	}()
+
+	require.Equal(t, "https://actor.example", <-callbackStarted)
+	select {
+	case err := <-updateResult:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("settings update waited for notification callback")
+	}
+
+	secondUpdate := make(chan error, 1)
+	go func() {
+		_, updateErr := svc.UpdateSettings(ctx, settings.Update{ProjectsDirectory: new("/data/unblocked")})
+		secondUpdate <- updateErr
+	}()
+	select {
+	case err := <-secondUpdate:
+		require.NoError(t, err)
+	case <-time.After(time.Second):
+		t.Fatal("settings subscriber blocked the next settings writer")
+	}
+	close(releaseCallback)
+}
+
+func TestSettingsServiceActorNotifiesSubscriberOnceForMultipleMatchingKeysInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var calls atomic.Int32
+	notified := make(chan []libarcane.SettingUpdate, 1)
+	svc.SubscribeSettingsChanges([]string{"pollingEnabled", "pollingInterval"}, func(updates []libarcane.SettingUpdate) {
+		calls.Add(1)
+		notified <- updates
+	})
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{
+		PollingEnabled:  new("false"),
+		PollingInterval: new("0 */5 * * * *"),
+	})
+	require.NoError(t, err)
+	require.Len(t, <-notified, 2)
+	require.Equal(t, int32(1), calls.Load())
+}
+
+func TestSettingsServiceActorDoesNotPublishSensitiveValuesInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	var calls atomic.Int32
+	svc.SubscribeSettingsChanges([]string{"oidcClientSecret"}, func([]libarcane.SettingUpdate) {
+		calls.Add(1)
+	})
+	_, err = svc.UpdateSettings(ctx, settings.Update{OidcClientSecret: new("should-not-leave-settings-service")})
+	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
+	require.Zero(t, calls.Load())
+}
+
+func TestSettingsServiceActorSerializesContainerExclusionUpdatesInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+
+	start := make(chan struct{})
+	results := make(chan error, 2)
+	for _, name := range []string{"api", "worker"} {
+		go func() {
+			<-start
+			results <- svc.SetContainerAutoUpdateExclusionInternal(ctx, name, true)
+		}()
+	}
+	close(start)
+
+	require.NoError(t, <-results)
+	require.NoError(t, <-results)
+	require.ElementsMatch(t, []string{"api", "worker"}, strings.Split(svc.GetStringSetting(ctx, "autoUpdateExcludedContainers", ""), ","))
 }
 
 func BenchmarkSettingsService_GetSettings(b *testing.B) {
@@ -512,7 +712,7 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 		b.Fatal(err)
 	}
 	settingsDB := &database.DB{DB: db}
-	svc, err := NewSettingsService(ctx, settingsDB)
+	svc, err := newSettingsServiceForTestInternal(b, ctx, settingsDB)
 	if err != nil {
 		b.Fatal(err)
 	}
@@ -534,7 +734,7 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	k1, err := svc.EnsureEncryptionKey(ctx)
@@ -553,7 +753,7 @@ func TestSettingsService_EnsureEncryptionKey(t *testing.T) {
 func TestSettingsService_LoadDatabaseSettings_ReloadsChanges(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Initially empty DB -> defaults (not persisted yet)
@@ -580,7 +780,7 @@ func TestSettingsService_LoadDatabaseSettings_UIConfigurationDisabled_Env(t *tes
 
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Reload explicitly (NewSettingsService already did, but explicit for clarity)
@@ -596,7 +796,7 @@ func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyI
 	db := setupSettingsTestDB(t)
 	t.Setenv("TRIVY_IMAGE", "ghcr.io/aquasecurity/trivy:latest")
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -611,7 +811,7 @@ func TestSettingsService_PersistEnvSettingsIfMissing_DoesNotOverrideForcedTrivyI
 func TestSettingsService_UpdateSettings_RefreshesCache(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -640,7 +840,7 @@ func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T)
 
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -662,17 +862,18 @@ func TestSettingsService_UpdateSettings_ReturnsEnvOverriddenValues(t *testing.T)
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyScanTimeout: new("1200")})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 
 	require.NotNil(t, callbackPayload)
 	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyScanTimeout", Value: "1200"})
@@ -681,14 +882,14 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyScanTimeout(
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimits(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{
 		TrivyResourceLimitsEnabled: new("false"),
@@ -696,6 +897,7 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 		TrivyMemoryLimitMb:         new("3072"),
 	})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 
 	require.NotNil(t, callbackPayload)
 	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyResourceLimitsEnabled", Value: "false"})
@@ -706,17 +908,18 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyResourceLimi
 func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentScanContainers(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyConcurrentScanContainers: new("4")})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 
 	require.NotNil(t, callbackPayload)
 	require.Contains(t, callbackPayload, libarcane.SettingUpdate{Key: "trivyConcurrentScanContainers", Value: "4"})
@@ -725,81 +928,85 @@ func TestSettingsService_UpdateSettings_TimeoutCallbackIncludesTrivyConcurrentSc
 func TestSettingsService_UpdateSettings_TrivyNetworkTriggersVulnerabilityCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	callbackCalled := false
-	svc.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
+	svc.SubscribeSettingsChanges([]string{"trivyNetwork"}, func(_ []libarcane.SettingUpdate) {
 		callbackCalled = true
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.True(t, callbackCalled)
 }
 
 func TestSettingsService_UpdateSettings_TrivyNetworkDoesNotTriggerTimeoutCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyNetwork: new("arcane-external")})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.Nil(t, callbackPayload)
 }
 
 func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityTriggersVulnerabilityCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	callbackCalled := false
-	svc.OnVulnerabilityScanSettingsChanged = func(_ context.Context) {
+	svc.SubscribeSettingsChanges([]string{"trivySecurityOpts", "trivyPrivileged"}, func(_ []libarcane.SettingUpdate) {
 		callbackCalled = true
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{
 		TrivySecurityOpts: new("label=disable"),
 		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.True(t, callbackCalled)
 }
 
 func TestSettingsService_UpdateSettings_TrivyRuntimeSecurityDoesNotTriggerTimeoutCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{
 		TrivySecurityOpts: new("label=disable"),
 		TrivyPrivileged:   new("true"),
 	})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.Nil(t, callbackPayload)
 }
 
 func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -819,17 +1026,18 @@ func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePrunePersists(
 func TestSettingsService_UpdateSettings_TrivyPreserveCacheOnVolumePruneDoesNotTriggerTimeoutCallback(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
 	var callbackPayload []libarcane.SettingUpdate
-	svc.OnTimeoutSettingsChanged = func(_ context.Context, timeoutSettings []libarcane.SettingUpdate) {
+	svc.SubscribeSettingsChanges(libarcane.TimeoutSettingKeys(), func(timeoutSettings []libarcane.SettingUpdate) {
 		callbackPayload = timeoutSettings
-	}
+	})
 
 	_, err = svc.UpdateSettings(ctx, settings.Update{TrivyPreserveCacheOnVolumePrune: new("false")})
 	require.NoError(t, err)
+	waitForSettingsNotificationsInternal(t, svc)
 	require.Nil(t, callbackPayload)
 }
 
@@ -845,7 +1053,7 @@ func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T)
 	internalVal := "test-instance-id"
 	require.NoError(t, db.DB.Create(&models.SettingVariable{Key: internalKey, Value: internalVal}).Error)
 
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Reload explicitly to trigger the env loading path
@@ -859,7 +1067,7 @@ func TestSettingsService_LoadDatabaseSettings_InternalKeys_EnvMode(t *testing.T)
 func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Seed with relative path
@@ -882,7 +1090,7 @@ func TestSettingsService_NormalizeProjectsDirectory_ConvertsRelativeToAbsolute(t
 func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Seed with relative path
@@ -901,7 +1109,7 @@ func TestSettingsService_NormalizeProjectsDirectory_SkipsWhenEnvSet(t *testing.T
 func TestSettingsService_NormalizeProjectsDirectory_LeavesOtherPathsUnchanged(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	customPath := "/custom/projects/path"
@@ -920,7 +1128,7 @@ func TestSettingsService_NormalizeProjectsDirectory_LeavesOtherPathsUnchanged(t 
 func TestSettingsService_NormalizeProjectsDirectory_HandlesNotFound(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// Don't create the setting at all
@@ -933,7 +1141,7 @@ func TestSettingsService_NormalizeProjectsDirectory_HandlesNotFound(t *testing.T
 func TestSettingsService_NormalizeProjectsDirectory_UpdatesCacheAfterNormalization(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	svc, err := NewSettingsService(ctx, db)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, svc.EnsureDefaultSettings(ctx))
 
@@ -954,4 +1162,26 @@ func TestSettingsService_NormalizeProjectsDirectory_UpdatesCacheAfterNormalizati
 	expectedPath, _ := filepath.Abs("data/projects")
 	require.Equal(t, expectedPath, cfg2.ProjectsDirectory.Value)
 	require.True(t, filepath.IsAbs(cfg2.ProjectsDirectory.Value), "path should be absolute")
+}
+
+func TestSettingsService_NormalizeProjectsDirectoryPublishesChangeInternal(t *testing.T) {
+	ctx := t.Context()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+	require.NoError(t, svc.UpdateSetting(ctx, "projectsDirectory", "data/projects"))
+
+	notified := make(chan []libarcane.SettingUpdate, 1)
+	unsubscribe := svc.SubscribeSettingsChanges([]string{"projectsDirectory"}, func(updates []libarcane.SettingUpdate) {
+		notified <- updates
+	})
+	defer unsubscribe()
+
+	require.NoError(t, svc.NormalizeProjectsDirectory(ctx, ""))
+	waitForSettingsNotificationsInternal(t, svc)
+	updates := <-notified
+	require.Len(t, updates, 1)
+	require.Equal(t, "projectsDirectory", updates[0].Key)
+	require.True(t, filepath.IsAbs(updates[0].Value))
 }

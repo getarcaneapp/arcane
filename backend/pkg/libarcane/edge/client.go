@@ -9,13 +9,16 @@ import (
 	"net"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"emperror.dev/errors"
 
 	"github.com/cenkalti/backoff/v5"
 	"github.com/coder/websocket"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/google/uuid"
 	"github.com/samber/mo"
 )
@@ -29,7 +32,8 @@ const (
 	healthyTunnelSessionDuration = 60 * time.Second
 	// maxPollRetryInterval caps the exponential backoff applied to failed poll
 	// control requests. Successful polls return to the manager-advertised interval.
-	maxPollRetryInterval = 60 * time.Second
+	maxPollRetryInterval            = 60 * time.Second
+	tunnelSessionWorkerDrainTimeout = 10 * time.Second
 
 	// DefaultHeartbeatInterval is how often the client sends heartbeats
 	DefaultHeartbeatInterval = 30 * time.Second
@@ -66,14 +70,6 @@ func (t *commandRequestTransfer) stopInternal() {
 	}
 }
 
-// getConn returns the active tunnel connection, or nil if none is established.
-func (c *TunnelClient) getConn() TunnelConnection {
-	if box := c.conn.Load(); box != nil {
-		return box.conn
-	}
-	return nil
-}
-
 // NewTunnelClient creates a new tunnel client
 func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 	reconnectInterval := time.Duration(cfg.EdgeReconnectInterval) * time.Second
@@ -104,8 +100,6 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 		managerURL:             managerURL,
 		managerGRPCAddr:        managerGRPCAddr,
 		localPort:              localPort,
-		httpClient:             &http.Client{},
-		stopCh:                 make(chan struct{}),
 		requestTimeout:         DefaultRequestTimeout,
 		agentInstanceID:        uuid.NewString(),
 	}
@@ -113,11 +107,10 @@ func NewTunnelClient(cfg *Config, handler http.Handler) *TunnelClient {
 
 // StartWithErrorChan runs the tunnel client and optionally emits connection errors.
 func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error) {
-	slog.InfoContext(ctx, "Starting edge agent session client", StartupLogAttrs(c.cfg)...)
 	if errCh != nil {
 		defer close(errCh)
 	}
-
+	slog.InfoContext(ctx, "Starting edge agent session client", StartupLogAttrs(c.cfg)...)
 	// A fixed reconnect interval meant a permanently broken or unauthorized agent
 	// hammered the manager's auth and DB path forever. Back off exponentially
 	// (with jitter) up to maxReconnectInterval, and reset only once a session has
@@ -131,19 +124,15 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 		case <-ctx.Done():
 			slog.InfoContext(ctx, "Edge tunnel client shutting down")
 			return
-		case <-c.stopCh:
-			slog.InfoContext(ctx, "Edge tunnel client stopped")
-			return
 		default:
 			sessionStart := time.Now()
 			if err := c.connectAndServe(ctx); err != nil {
+				slog.WarnContext(ctx, "Edge tunnel disconnected", "error", err)
 				if errCh != nil {
 					select {
 					case errCh <- err:
 					default:
 					}
-				} else {
-					slog.WarnContext(ctx, "Edge tunnel disconnected", "error", err)
 				}
 			}
 
@@ -156,9 +145,6 @@ func (c *TunnelClient) StartWithErrorChan(ctx context.Context, errCh chan error)
 			reconnectTimer := time.NewTimer(delay)
 			select {
 			case <-ctx.Done():
-				reconnectTimer.Stop()
-				return
-			case <-c.stopCh:
 				reconnectTimer.Stop()
 				return
 			case <-reconnectTimer.C:
@@ -393,20 +379,20 @@ func (c *TunnelClient) grpcFailureStreakInternal() int {
 func (c *TunnelClient) registerMessageInternal() *TunnelMessage {
 	capabilities := AdvertisedEdgeCommands()
 	capabilities = append(capabilities, tunnelCapabilityChunkedRequest, tunnelCapabilityProtoParity)
+	registration, _ := c.registration.Load()
 	return &TunnelMessage{
 		Type:          MessageTypeRegister,
 		AgentToken:    c.cfg.AgentToken,
 		AgentInstance: c.agentInstanceID,
 		Capabilities:  capabilities,
-		ResumeSession: c.sessionID,
+		ResumeSession: registration.sessionID,
 	}
 }
 
-func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMessage, error) {
+func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context, conn TunnelConnection) (*TunnelMessage, error) {
 	if c == nil {
 		return nil, errors.New("edge tunnel connection is not initialized")
 	}
-	conn := c.getConn()
 	if conn == nil {
 		return nil, errors.New("edge tunnel connection is not initialized")
 	}
@@ -446,8 +432,7 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 		if !result.msg.Accepted {
 			return nil, errors.Errorf("manager rejected tunnel registration: %s", result.msg.Error)
 		}
-		c.sessionID = result.msg.SessionID
-		c.managerCapabilities = append([]string(nil), result.msg.Capabilities...)
+		c.registration.Store(clientRegistrationInternal{sessionID: result.msg.SessionID})
 		return result.msg, nil
 	}
 }
@@ -455,19 +440,32 @@ func (c *TunnelClient) awaitRegistrationInternal(ctx context.Context) (*TunnelMe
 // serveTunnelSessionInternal runs the shared register/heartbeat/message
 // lifecycle on an established tunnel connection, for every transport.
 func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn TunnelConnection, managerAddr string) error {
-	c.conn.Store(&connBox{conn: conn})
+	box := &connBox{conn: conn}
+	c.conn.Store(box)
 	setActiveAgentTunnelConn(conn)
-	defer clearActiveAgentTunnelConn(conn)
-	// Always tear down through the wrapper so the peer sees a clean close
-	// (websocket close frame / gRPC half-close) and later Sends hit the
-	// closed guard instead of the dead socket.
-	defer func() { _ = conn.Close() }()
+	connCtx, connCancel := context.WithCancel(ctx)
+	var workers sync.WaitGroup
+	stopCloseWatch := context.AfterFunc(connCtx, func() { _ = conn.Close() })
+	defer func() {
+		connCancel()
+		c.closeAllStreams()
+		c.clearCommandRequestTransfersInternal(conn)
+		_ = conn.Close()
+		stopCloseWatch()
+		drainCtx, cancelDrain := context.WithTimeout(context.WithoutCancel(ctx), tunnelSessionWorkerDrainTimeout)
+		if err := utils.WaitGroup(drainCtx, &workers); err != nil {
+			slog.WarnContext(context.WithoutCancel(ctx), "Timed out waiting for edge tunnel session workers", "error", err)
+		}
+		cancelDrain()
+		c.conn.CompareAndSwap(box, nil)
+		clearActiveAgentTunnelConn(conn)
+	}()
 
 	if err := conn.Send(c.registerMessageInternal()); err != nil {
 		return errors.WrapIff(err, "failed to send %s tunnel register message", conn.Transport())
 	}
 
-	registerMsg, err := c.awaitRegistrationInternal(ctx)
+	registerMsg, err := c.awaitRegistrationInternal(ctx, conn)
 	if err != nil {
 		return err
 	}
@@ -480,21 +478,13 @@ func (c *TunnelClient) serveTunnelSessionInternal(ctx context.Context, conn Tunn
 	)
 	c.markTransportConnectedInternal(conn.Transport())
 
-	connCtx, connCancel := context.WithCancel(ctx)
-	defer connCancel()
-	// A blocked websocket Receive is not ctx-aware; closing the connection is
-	// what unblocks messageLoop when the session context is cancelled.
-	go func() {
-		<-connCtx.Done()
-		_ = conn.Close()
-	}()
-	go c.heartbeatLoop(connCtx)
+	workers.Go(func() { c.heartbeatLoop(connCtx, conn) })
 
-	return c.messageLoop(connCtx)
+	return c.messageLoop(connCtx, conn, &workers)
 }
 
 // heartbeatLoop sends periodic heartbeats
-func (c *TunnelClient) heartbeatLoop(ctx context.Context) {
+func (c *TunnelClient) heartbeatLoop(ctx context.Context, conn TunnelConnection) {
 	ticker := time.NewTicker(c.heartbeatInterval)
 	defer ticker.Stop()
 
@@ -503,7 +493,6 @@ func (c *TunnelClient) heartbeatLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			conn := c.getConn()
 			if conn == nil || conn.IsClosed() {
 				return
 			}
@@ -527,13 +516,7 @@ func (c *TunnelClient) heartbeatLoop(ctx context.Context) {
 }
 
 // messageLoop processes incoming messages from the manager
-func (c *TunnelClient) messageLoop(ctx context.Context) error {
-	// Tear down any streams opened on this connection when the loop exits so a
-	// reconnect does not leak goroutines, local sockets, or activeStreams entries.
-	defer c.closeAllStreams()
-
-	conn := c.getConn()
-	defer c.clearCommandRequestTransfersInternal(conn)
+func (c *TunnelClient) messageLoop(ctx context.Context, conn TunnelConnection, workers *sync.WaitGroup) error {
 	for {
 		select {
 		case <-ctx.Done():
@@ -546,19 +529,19 @@ func (c *TunnelClient) messageLoop(ctx context.Context) error {
 
 			switch msg.Type {
 			case MessageTypeRequest:
-				go c.handleRequest(ctx, conn, msg)
+				workers.Go(func() { c.handleRequest(ctx, conn, msg) })
 			case MessageTypeCommandRequest:
 				if transferID := strings.TrimSpace(msg.Metadata[bodyTransferMetadataKey]); transferID != "" {
 					c.beginCommandRequestTransferInternal(ctx, conn, transferID, msg)
 				} else {
-					go c.handleCommandRequest(ctx, conn, msg)
+					workers.Go(func() { c.handleCommandRequest(ctx, conn, msg) })
 				}
 			case MessageTypeFileChunk:
-				c.handleCommandRequestChunkInternal(ctx, msg)
+				c.handleCommandRequestChunkInternal(ctx, msg, workers)
 			case MessageTypeWebSocketStart:
-				c.handleWebSocketStart(ctx, conn, msg)
+				c.handleWebSocketStart(ctx, conn, msg, workers)
 			case MessageTypeStreamOpen:
-				c.handleStreamOpen(ctx, conn, msg)
+				c.handleStreamOpen(ctx, conn, msg, workers)
 			case MessageTypeWebSocketData:
 				c.handleWebSocketData(ctx, msg)
 			case MessageTypeStreamData:
@@ -614,7 +597,7 @@ func (c *TunnelClient) beginCommandRequestTransferInternal(ctx context.Context, 
 	}
 }
 
-func (c *TunnelClient) handleCommandRequestChunkInternal(ctx context.Context, msg *TunnelMessage) {
+func (c *TunnelClient) handleCommandRequestChunkInternal(ctx context.Context, msg *TunnelMessage, workers *sync.WaitGroup) {
 	if c == nil || msg == nil {
 		return
 	}
@@ -647,7 +630,7 @@ func (c *TunnelClient) handleCommandRequestChunkInternal(ctx context.Context, ms
 	if c.requestTransfers.CompareAndDelete(msg.ID, transfer) {
 		transfer.stopInternal()
 		transfer.request.Body = append([]byte(nil), transfer.body.Bytes()...)
-		go c.handleCommandRequest(ctx, transfer.conn, transfer.request)
+		workers.Go(func() { c.handleCommandRequest(ctx, transfer.conn, transfer.request) })
 	}
 }
 
@@ -828,7 +811,7 @@ func (c *TunnelClient) handleRequestStreaming(ctx context.Context, conn TunnelCo
 }
 
 // handleWebSocketStart handles a WebSocket stream start request from the manager.
-func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
+func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConnection, msg *TunnelMessage, workers *sync.WaitGroup) {
 	if msg.Command == "" {
 		if commandName, ok := ResolveEdgeCommandName(http.MethodGet, msg.Path, true).Get(); ok {
 			msg.Command = commandName
@@ -865,11 +848,11 @@ func (c *TunnelClient) handleWebSocketStart(ctx context.Context, conn TunnelConn
 	streamCtx, cancel := context.WithCancel(ctx)
 	stream := c.registerStream(conn, streamID, ws, cancel)
 
-	go c.startLocalWebSocketReadLoop(ctx, streamCtx, streamID, ws, stream)
-	go c.startLocalWebSocketWriteLoop(ctx, streamCtx, ws, stream, cancel)
+	workers.Go(func() { c.startLocalWebSocketReadLoop(ctx, streamCtx, streamID, ws, stream) })
+	workers.Go(func() { c.startLocalWebSocketWriteLoop(ctx, streamCtx, ws, stream, cancel) })
 }
 
-func (c *TunnelClient) handleStreamOpen(ctx context.Context, conn TunnelConnection, msg *TunnelMessage) {
+func (c *TunnelClient) handleStreamOpen(ctx context.Context, conn TunnelConnection, msg *TunnelMessage, workers *sync.WaitGroup) {
 	if !ValidateEdgeCommand(msg.Command, http.MethodGet, msg.Path, true) {
 		c.sendStreamCloseMessage(conn, msg.ID, "unsupported edge stream")
 		return
@@ -882,7 +865,7 @@ func (c *TunnelClient) handleStreamOpen(ctx context.Context, conn TunnelConnecti
 		Path:    msg.Path,
 		Query:   msg.Query,
 		Headers: msg.Headers,
-	})
+	}, workers)
 }
 
 func (c *TunnelClient) buildLocalWebSocketURLInternal(msg *TunnelMessage) string {
@@ -1439,8 +1422,8 @@ func (r *streamingResponseRecorder) writeHeaderLocked(statusCode int) error {
 	return nil
 }
 
-// StartTunnelClientWithErrors starts the tunnel client and returns a channel for connection errors.
-func StartTunnelClientWithErrors(ctx context.Context, cfg *Config, handler http.Handler) (<-chan error, error) {
+// StartTunnelClient starts the tunnel client on the shared actor runtime.
+func StartTunnelClient(ctx context.Context, runtime *actors.Runtime, cfg *Config, handler http.Handler) (func(context.Context) error, error) {
 	if !cfg.EdgeAgent {
 		return nil, errors.New("edge tunnel disabled")
 	}
@@ -1471,7 +1454,12 @@ func StartTunnelClientWithErrors(ctx context.Context, cfg *Config, handler http.
 	}
 
 	client := NewTunnelClient(cfg, handler)
-	errCh := make(chan error, 1)
-	go client.StartWithErrorChan(ctx, errCh)
-	return errCh, nil
+	runner, err := actors.NewRunner(ctx, runtime, "edge", "agent-client", "Edge tunnel client", 3, func(runCtx context.Context) error {
+		client.StartWithErrorChan(runCtx, nil)
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return runner.Stop, nil
 }

@@ -689,12 +689,10 @@ func TestTunnelClient_HeartbeatLoop_ClosesConnectionOnSendFailure(t *testing.T) 
 	client := &TunnelClient{
 		heartbeatInterval: 5 * time.Millisecond,
 	}
-	client.conn.Store(&connBox{conn: conn})
-
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
 	defer cancel()
 
-	client.heartbeatLoop(ctx)
+	client.heartbeatLoop(ctx, conn)
 	assert.True(t, conn.closeCalled)
 }
 
@@ -989,17 +987,17 @@ func TestTunnelClient_useTLSForManagerGRPC(t *testing.T) {
 	}
 }
 
-func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
+func TestStartTunnelClient_GRPCValidation(t *testing.T) {
 	ctx := t.Context()
 
 	t.Run("edge mode required", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &Config{}, http.NotFoundHandler())
+		_, err := StartTunnelClient(ctx, nil, &Config{}, http.NotFoundHandler())
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "edge tunnel disabled")
 	})
 
 	t.Run("manager url required for grpc transport", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &Config{
+		_, err := StartTunnelClient(ctx, nil, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			AgentToken:    "token",
@@ -1009,7 +1007,7 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("agent token required", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &Config{
+		_, err := StartTunnelClient(ctx, nil, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "https://manager.example.com/arcane/api",
@@ -1019,7 +1017,7 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("mtls requires https manager url", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &Config{
+		_, err := StartTunnelClient(ctx, nil, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "http://manager.example.com/api",
@@ -1031,7 +1029,7 @@ func TestStartTunnelClientWithErrors_GRPCValidation(t *testing.T) {
 	})
 
 	t.Run("required mtls auto-enrollment failure surfaces", func(t *testing.T) {
-		_, err := StartTunnelClientWithErrors(ctx, &Config{
+		_, err := StartTunnelClient(ctx, nil, &Config{
 			EdgeAgent:     true,
 			EdgeTransport: EdgeTransportGRPC,
 			ManagerApiUrl: "https://127.0.0.1:1/api",
@@ -1113,7 +1111,8 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
 	assert.Contains(t, err.Error(), "not forwarding gRPC")
 	assert.EqualValues(t, 1, service.connectCount.Load())
-	assert.True(t, client.getConn() == nil || client.getConn().IsClosed())
+	active := client.conn.Load()
+	assert.True(t, active == nil || active.conn.IsClosed())
 }
 
 func TestTunnelClient_awaitRegistrationInternal_ClosesConnOnContextDone(t *testing.T) {
@@ -1126,7 +1125,7 @@ func TestTunnelClient_awaitRegistrationInternal_ClosesConnOnContextDone(t *testi
 	}
 	client.conn.Store(&connBox{conn: conn})
 
-	msg, err := client.awaitRegistrationInternal(ctx)
+	msg, err := client.awaitRegistrationInternal(ctx, conn)
 	require.Nil(t, msg)
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 	assert.True(t, conn.IsClosed())
@@ -1155,7 +1154,7 @@ func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnC
 	}
 	resultCh := make(chan registrationResult, 1)
 	go func() {
-		msg, err := client.awaitRegistrationInternal(ctx)
+		msg, err := client.awaitRegistrationInternal(ctx, firstConn)
 		resultCh <- registrationResult{msg: msg, err: err}
 	}()
 
@@ -1842,14 +1841,13 @@ func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *test
 	})
 
 	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
-	client.httpClient = &http.Client{Transport: rewriteTransport}
+	httpClient := &http.Client{Transport: rewriteTransport}
 
-	resp, err := client.pollTunnelControlInternal(context.Background(), "http://127.0.0.1:1/api/tunnel/poll", false)
+	resp, err := client.pollTunnelControlInternal(context.Background(), httpClient, "http://127.0.0.1:1/api/tunnel/poll", false)
 	require.NoError(t, err)
 	assert.Equal(t, TunnelStatusIdle, resp.Status)
 	assert.Equal(t, 1, resp.PollIntervalSeconds)
-	assert.NotNil(t, client.httpClient)
-	assert.NotSame(t, http.DefaultClient, client.httpClient)
+	assert.NotSame(t, http.DefaultClient, httpClient)
 
 	defaultReq, err := http.NewRequestWithContext(context.Background(), http.MethodPost, "http://127.0.0.1:1/api/tunnel/poll", nil)
 	require.NoError(t, err)
@@ -2006,9 +2004,19 @@ func TestTunnelClient_syncPollManagedSessionInternal_IdleUsesBoundedStopTimeout(
 	}
 
 	nextSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), session, TunnelStatusIdle)
-	require.Nil(t, nextSession)
+	require.Same(t, session, nextSession)
 	require.Error(t, err)
 	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
+
+	fencedSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), nextSession, TunnelStatusRequired)
+	require.NoError(t, err)
+	require.Same(t, session, fencedSession)
+
+	started := time.Now()
+	stillDraining, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), nextSession, TunnelStatusIdle)
+	require.NoError(t, err)
+	require.Same(t, session, stillDraining)
+	require.Less(t, time.Since(started), defaultPollManagedSessionStopTimeout)
 }
 
 func startTestPollAndGRPCManagerInternal(t *testing.T, ctx context.Context, service tunnelpb.TunnelServiceServer, pollResp TunnelPollResponse) (string, func()) {

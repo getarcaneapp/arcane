@@ -18,6 +18,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -160,9 +161,12 @@ type RouterParams struct {
 	fx.In
 
 	Context        context.Context
+	Lifecycle      fx.Lifecycle
+	ActorRuntime   *actors.Runtime
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *middleware.AuthMiddleware
+	TunnelRegistry *edge.TunnelRegistry
 }
 
 func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
@@ -217,8 +221,6 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
-	tunnelRegistry := edge.NewTunnelRegistry()
-	edge.SetDefaultRegistry(tunnelRegistry)
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
 		env, err := deps.Environment.GetEnvironmentByID(ctx, id)
 		if err != nil || env == nil {
@@ -240,7 +242,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 		envResolver,
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
-		tunnelRegistry,
+		p.TunnelRegistry,
 		// Proxied WebSocket upgrades enforce the same Origin policy as the local
 		// endpoints, so a cross-origin page cannot ride a session cookie into a
 		// remote environment.
@@ -268,7 +270,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, cfg, apiGroup, deps.Environment, deps.Event)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment, deps.Event, p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {

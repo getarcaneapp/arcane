@@ -34,7 +34,7 @@ func setupDashboardServiceTestDB(t *testing.T) (*database.DB, *SettingsService) 
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := NewSettingsService(context.Background(), databaseDB)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 
 	return databaseDB, settingsSvc

@@ -3,14 +3,15 @@ package scheduler
 import (
 	"context"
 	"log/slog"
-	"sync"
+	"maps"
+	"slices"
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/robfig/cron/v3"
-	"github.com/samber/mo"
 )
 
 // cronScheduleParser is the shared parser for all cron settings: six fields
@@ -18,115 +19,164 @@ import (
 // schedule with the same spec so Jobs-UI cron values behave identically.
 var cronScheduleParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
 
-type JobScheduler struct {
-	// mu guards jobs, jobsByID, entryIDs and schedules. It is held across the cron
-	// add/remove calls (which are themselves quick and never block on job
-	// execution) but never across job.Run — Run executes on cron's own
-	// goroutine, so a running job must not call back into a locking method here.
-	mu        sync.Mutex
-	cron      *cron.Cron
-	jobs      []schedulertypes.Job
-	jobsByID  map[string]schedulertypes.Job
-	watchers  map[string]schedulertypes.BusWatcher
-	entryIDs  map[string]cron.EntryID
-	schedules map[string]string
-	parser    cron.Parser
-	context   context.Context
-	location  *time.Location
-	watcherWG sync.WaitGroup
+var errJobSchedulerStoppedInternal = errors.Sentinel("job scheduler stopped")
+
+type schedulerStateInternal struct {
+	jobs        []schedulertypes.Job
+	jobsByID    map[string]schedulertypes.Job
+	watchers    map[string]schedulertypes.BusWatcher
+	allWatchers map[string]schedulertypes.BusWatcher
+	runners     map[string]*actors.Runner
+	entryIDs    map[string]cron.EntryID
+	schedules   map[string]string
+	stopping    bool
 }
 
-// NewJobScheduler creates a new job scheduler with the specified timezone location.
-// The location is used for interpreting cron expressions.
-// If location is nil, UTC is used.
-func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler {
+type watcherRegistrationInternal struct {
+	watcher schedulertypes.BusWatcher
+	runner  *actors.Runner
+}
+
+type schedulerShutdownInternal struct {
+	cronDone <-chan struct{}
+	watchers []watcherRegistrationInternal
+}
+
+// jobSchedulerInternal serializes its control plane through one shared actor executor.
+// robfig/cron remains the timing engine and invokes job bodies outside the actor.
+type jobSchedulerInternal struct {
+	cron     *cron.Cron
+	parser   cron.Parser
+	context  context.Context
+	location *time.Location
+	runtime  *actors.Runtime
+	state    *actors.State[schedulerStateInternal]
+}
+
+// NewJobScheduler creates an actor-owned scheduler control plane.
+func NewJobScheduler(ctx context.Context, runtime *actors.Runtime, location *time.Location) (schedulertypes.JobScheduler, error) {
+	if ctx == nil {
+		return nil, errors.New("job scheduler context unavailable")
+	}
+	if runtime == nil {
+		return nil, errors.New("actor runtime unavailable")
+	}
 	if location == nil {
 		location = time.UTC
 	}
+	initial := schedulerStateInternal{
+		jobs:        []schedulertypes.Job{},
+		jobsByID:    make(map[string]schedulertypes.Job),
+		watchers:    make(map[string]schedulertypes.BusWatcher),
+		allWatchers: make(map[string]schedulertypes.BusWatcher),
+		runners:     make(map[string]*actors.Runner),
+		entryIDs:    make(map[string]cron.EntryID),
+		schedules:   make(map[string]string),
+	}
+	state, err := actors.NewState(ctx, runtime, "scheduler", "control-plane", 3, initial, func(value schedulerStateInternal) schedulerStateInternal {
+		value.jobs = slices.Clone(value.jobs)
+		value.jobsByID = maps.Clone(value.jobsByID)
+		value.watchers = maps.Clone(value.watchers)
+		value.allWatchers = maps.Clone(value.allWatchers)
+		value.runners = maps.Clone(value.runners)
+		value.entryIDs = maps.Clone(value.entryIDs)
+		value.schedules = maps.Clone(value.schedules)
+		return value
+	})
+	if err != nil {
+		return nil, err
+	}
 	parser := cronScheduleParser
+	scheduler := &jobSchedulerInternal{
+		cron:     cron.New(cron.WithParser(parser), cron.WithLocation(location)),
+		parser:   parser,
+		context:  ctx,
+		location: location,
+		runtime:  runtime,
+		state:    state,
+	}
 	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
-	return &JobScheduler{
-		cron:      cron.New(cron.WithParser(parser), cron.WithLocation(location)),
-		jobs:      []schedulertypes.Job{},
-		jobsByID:  make(map[string]schedulertypes.Job),
-		watchers:  make(map[string]schedulertypes.BusWatcher),
-		entryIDs:  make(map[string]cron.EntryID),
-		schedules: make(map[string]string),
-		parser:    parser,
-		context:   ctx,
-		location:  location,
-	}
+	return scheduler, nil
 }
 
-// RegisterJob records a static job to be scheduled when StartScheduler runs. Use
-// AddJob for jobs added dynamically at runtime.
-func (js *JobScheduler) RegisterJob(job schedulertypes.Job) {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-	js.jobs = append(js.jobs, job)
-	js.jobsByID[job.Name()] = job
-}
-
-// RegisterBusWatcher starts a continuous event watcher on the scheduler lifecycle.
-func (js *JobScheduler) RegisterBusWatcher(watcher schedulertypes.BusWatcher, canRunManually bool) {
-	if watcher == nil {
-		return
+// RegisterJob records a static job to be scheduled when StartScheduler runs.
+func (js *jobSchedulerInternal) RegisterJob(job schedulertypes.Job) error {
+	if job == nil {
+		return errors.New("scheduler job unavailable")
 	}
-	if canRunManually {
-		js.mu.Lock()
-		js.watchers[watcher.Name()] = watcher
-		js.mu.Unlock()
-	}
-
-	js.watcherWG.Go(func() {
-		// A panic in a watcher goroutine would crash the process; contain it the
-		// same way scheduled job runs are contained.
-		defer utils.RecoverToError(nil, "bus watcher", "name", watcher.Name())
-		if err := watcher.Start(js.context); err != nil {
-			slog.ErrorContext(js.context, "Bus watcher failed", "name", watcher.Name(), "error", err)
+	return js.state.Apply(js.context, "register scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
 		}
+		state.jobs = append(state.jobs, job)
+		state.jobsByID[job.Name()] = job
+		return nil
+	})
+}
+
+// RegisterBusWatcher starts a continuous watcher through a shared actor runner.
+func (js *jobSchedulerInternal) RegisterBusWatcher(watcher schedulertypes.BusWatcher, canRunManually bool) error {
+	if watcher == nil {
+		return errors.New("scheduler bus watcher unavailable")
+	}
+	return js.state.Apply(js.context, "register scheduler bus watcher", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
+		}
+		runner, err := actors.NewRunner(js.context, js.runtime, "scheduler-watchers", watcher.Name(), "bus watcher "+watcher.Name(), 3, watcher.Start) //nolint:contextcheck // watcher lifetime belongs to the scheduler, not one state-actor receiver incarnation.
+		if err != nil {
+			return err
+		}
+		state.runners[watcher.Name()] = runner
+		state.allWatchers[watcher.Name()] = watcher
+		if canRunManually {
+			state.watchers[watcher.Name()] = watcher
+		}
+		return nil
 	})
 }
 
 // RunBusWatcherNow runs a watcher through its serialized manual path.
-func (js *JobScheduler) RunBusWatcherNow(ctx context.Context, watcherID string) error {
-	js.mu.Lock()
-	watcher, ok := js.watchers[watcherID]
-	js.mu.Unlock()
+func (js *jobSchedulerInternal) RunBusWatcherNow(ctx context.Context, watcherID string) error {
+	snapshot, ok := js.state.Load()
+	if !ok {
+		return errors.New("job scheduler state unavailable")
+	}
+	watcher, ok := snapshot.watchers[watcherID]
 	if !ok {
 		return errors.Errorf("bus watcher %s is not manually runnable", watcherID)
 	}
-
 	return watcher.RunNow(ctx)
 }
 
-func (js *JobScheduler) GetJob(jobID string) mo.Option[schedulertypes.Job] {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-	job, ok := js.jobsByID[jobID]
-	return mo.TupleToOption(job, ok)
+func (js *jobSchedulerInternal) GetJob(jobID string) (schedulertypes.Job, bool) {
+	snapshot, ok := js.state.Load()
+	if !ok {
+		return nil, false
+	}
+	job, ok := snapshot.jobsByID[jobID]
+	return job, ok
 }
 
 // GetJobRuntimeState returns the schedule currently installed for a registered job.
-func (js *JobScheduler) GetJobRuntimeState(jobID string) mo.Option[schedulertypes.JobRuntimeState] {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-
-	if _, ok := js.jobsByID[jobID]; !ok {
-		return mo.None[schedulertypes.JobRuntimeState]()
-	}
-
-	state := schedulertypes.JobRuntimeState{Schedule: js.schedules[jobID]}
-	entryID, ok := js.entryIDs[jobID]
+func (js *jobSchedulerInternal) GetJobRuntimeState(jobID string) (schedulertypes.JobRuntimeState, bool) {
+	snapshot, ok := js.state.Load()
 	if !ok {
-		return mo.Some(state)
+		return schedulertypes.JobRuntimeState{}, false
+	}
+	if _, ok := snapshot.jobsByID[jobID]; !ok {
+		return schedulertypes.JobRuntimeState{}, false
 	}
 
+	state := schedulertypes.JobRuntimeState{Schedule: snapshot.schedules[jobID]}
+	entryID, ok := snapshot.entryIDs[jobID]
+	if !ok {
+		return state, true
+	}
 	entry := js.cron.Entry(entryID)
 	if entry.ID == 0 {
-		return mo.Some(state)
+		return state, true
 	}
-
 	state.Scheduled = true
 	nextRun := entry.Next
 	if nextRun.IsZero() && entry.Schedule != nil {
@@ -135,102 +185,139 @@ func (js *JobScheduler) GetJobRuntimeState(jobID string) mo.Option[schedulertype
 	if !nextRun.IsZero() {
 		state.NextRun = new(nextRun)
 	}
-
-	return mo.Some(state)
+	return state, true
 }
 
-// HasJob reports whether a job with the given name is currently registered.
-func (js *JobScheduler) HasJob(jobID string) bool {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-	_, ok := js.jobsByID[jobID]
+// HasJob reports whether a job with the given name is registered.
+func (js *jobSchedulerInternal) HasJob(jobID string) bool {
+	snapshot, ok := js.state.Load()
+	if !ok {
+		return false
+	}
+	_, ok = snapshot.jobsByID[jobID]
 	return ok
 }
 
-func (js *JobScheduler) StartScheduler() {
-	js.mu.Lock()
-	for _, job := range js.jobs {
-		if err := js.upsertJobInternal(js.context, job); err != nil {
-			slog.ErrorContext(js.context, "Failed to schedule job", "name", job.Name(), "error", err)
+// StartScheduler installs static schedules and starts cron.
+func (js *jobSchedulerInternal) StartScheduler() error {
+	return js.state.Apply(js.context, "start job scheduler", func(actorCtx context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
 		}
-	}
-	js.mu.Unlock()
-	js.cron.Start()
-}
-
-// AddJob registers and schedules a job at runtime. It is an idempotent upsert: a
-// replacement expression is validated before the existing entry is removed, then
-// the replacement is installed without leaking a second live entry.
-// Safe to call before or after StartScheduler.
-func (js *JobScheduler) AddJob(ctx context.Context, job schedulertypes.Job) error {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-	return js.upsertJobInternal(ctx, job)
-}
-
-// RemoveJob unschedules and forgets a job by name. It is a no-op (not an error)
-// when no job with that name is registered.
-func (js *JobScheduler) RemoveJob(ctx context.Context, jobName string) {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-
-	if entryID, ok := js.entryIDs[jobName]; ok {
-		js.cron.Remove(entryID)
-		delete(js.entryIDs, jobName)
-	}
-	delete(js.jobsByID, jobName)
-	delete(js.schedules, jobName)
-	for i, j := range js.jobs {
-		if j.Name() == jobName {
-			js.jobs = append(js.jobs[:i], js.jobs[i+1:]...)
-			break
+		for _, job := range state.jobs {
+			if err := js.upsertJobInternal(actorCtx, state, job); err != nil {
+				slog.ErrorContext(actorCtx, "Failed to schedule job; continuing scheduler startup", "name", job.Name(), "error", err)
+			}
 		}
+		js.cron.Start()
+		return nil
+	})
+}
+
+// AddJob registers and schedules a job at runtime.
+func (js *jobSchedulerInternal) AddJob(ctx context.Context, job schedulertypes.Job) error {
+	return js.state.Apply(ctx, "add scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
+		}
+		return js.upsertJobInternal(ctx, state, job)
+	})
+}
+
+// RemoveJob unschedules and forgets a job. Actor failures are logged because
+// DynamicScheduler preserves the historical no-result removal contract.
+func (js *jobSchedulerInternal) RemoveJob(ctx context.Context, jobName string) {
+	err := js.state.Apply(ctx, "remove scheduler job", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
+		}
+		if entryID, ok := state.entryIDs[jobName]; ok {
+			js.cron.Remove(entryID)
+			delete(state.entryIDs, jobName)
+		}
+		delete(state.jobsByID, jobName)
+		delete(state.schedules, jobName)
+		for index, job := range state.jobs {
+			if job.Name() == jobName {
+				state.jobs = append(state.jobs[:index], state.jobs[index+1:]...)
+				break
+			}
+		}
+		slog.DebugContext(ctx, "Job removed", "name", jobName)
+		return nil
+	})
+	if err != nil && !errors.Is(err, errJobSchedulerStoppedInternal) {
+		slog.ErrorContext(ctx, "Failed to remove scheduler job", "name", jobName, "error", err)
 	}
-	slog.DebugContext(ctx, "Job removed", "name", jobName)
 }
 
-func (js *JobScheduler) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
-	js.mu.Lock()
-	defer js.mu.Unlock()
-	return js.upsertJobInternal(ctx, job)
+func (js *jobSchedulerInternal) RescheduleJob(ctx context.Context, job schedulertypes.Job) error {
+	return js.state.Apply(ctx, "reschedule job", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
+		}
+		return js.upsertJobInternal(ctx, state, job)
+	})
 }
 
-// GetLocation returns the timezone location used by the scheduler for cron expressions.
-func (js *JobScheduler) GetLocation() *time.Location {
+func (js *jobSchedulerInternal) GetLocation() *time.Location {
 	return js.location
 }
 
-// Stop stops the scheduler and waits for running jobs and bus watchers to finish.
-// If ctx is canceled or reaches its deadline first, Stop returns ctx.Err().
-func (js *JobScheduler) Stop(ctx context.Context) error {
-	cronDone := js.cron.Stop().Done()
-	watchersDone := make(chan struct{})
-	go func() {
-		js.watcherWG.Wait()
-		close(watchersDone)
-	}()
-
-	select {
-	case <-cronDone:
-	case <-ctx.Done():
-		return ctx.Err()
-	}
-
-	select {
-	case <-watchersDone:
+// Stop fences the control plane, stops cron, and joins every actor-owned watcher.
+func (js *jobSchedulerInternal) Stop(ctx context.Context) error {
+	var shutdown schedulerShutdownInternal
+	err := js.state.Apply(ctx, "stop job scheduler", func(_ context.Context, state *schedulerStateInternal) error {
+		if state.stopping {
+			return errJobSchedulerStoppedInternal
+		}
+		state.stopping = true
+		registrations := make([]watcherRegistrationInternal, 0, len(state.runners))
+		for name, runner := range state.runners {
+			registrations = append(registrations, watcherRegistrationInternal{watcher: state.allWatchers[name], runner: runner})
+		}
+		shutdown = schedulerShutdownInternal{cronDone: js.cron.Stop().Done(), watchers: registrations}
 		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	})
+	if errors.Is(err, errJobSchedulerStoppedInternal) {
+		return js.state.Stop(ctx)
 	}
+	var stopErr error
+	if err != nil {
+		if snapshot, ok := js.state.Load(); ok && snapshot.stopping {
+			return nil
+		}
+		stopErr = err
+		shutdown.cronDone = js.cron.Stop().Done()
+		if snapshot, ok := js.state.Load(); ok {
+			shutdown.watchers = make([]watcherRegistrationInternal, 0, len(snapshot.runners))
+			for name, runner := range snapshot.runners {
+				shutdown.watchers = append(shutdown.watchers, watcherRegistrationInternal{watcher: snapshot.allWatchers[name], runner: runner})
+			}
+		}
+	}
+
+	for _, registration := range shutdown.watchers {
+		stopErr = errors.Combine(stopErr, registration.runner.Stop(ctx))
+		if stopper, ok := registration.watcher.(schedulertypes.StoppableBusWatcher); ok {
+			stopErr = errors.Combine(stopErr, stopper.Stop(ctx))
+		}
+	}
+	select {
+	case <-shutdown.cronDone:
+	case <-ctx.Done():
+		stopErr = errors.Combine(stopErr, ctx.Err())
+	}
+	return errors.Combine(stopErr, js.state.Stop(ctx))
 }
 
-// upsertJobInternal records the job and (re)schedules it. A replacement expression
-// is parsed before the previous entry is removed so invalid input leaves the last
-// valid entry untouched. Callers must hold js.mu.
-func (js *JobScheduler) upsertJobInternal(ctx context.Context, job schedulertypes.Job) error {
+func (js *jobSchedulerInternal) upsertJobInternal(ctx context.Context, state *schedulerStateInternal, job schedulertypes.Job) error {
+	if job == nil {
+		return errors.New("scheduler job unavailable")
+	}
 	jobName := job.Name()
-	previousSchedule := js.schedules[jobName]
-	previousEntryID, hadPreviousEntry := js.entryIDs[jobName]
+	previousSchedule := state.schedules[jobName]
+	previousEntryID, hadPreviousEntry := state.entryIDs[jobName]
 	schedule := job.Schedule(ctx)
 
 	shouldSchedule := true
@@ -255,33 +342,26 @@ func (js *JobScheduler) upsertJobInternal(ctx context.Context, job schedulertype
 
 	if hadPreviousEntry {
 		js.cron.Remove(previousEntryID)
-		delete(js.entryIDs, jobName)
+		delete(state.entryIDs, jobName)
 	}
 	if shouldSchedule {
 		entryID, nextRun = js.addCronEntryInternal(job, schedule, parsedSchedule)
-		js.entryIDs[jobName] = entryID
+		state.entryIDs[jobName] = entryID
 	}
-
-	js.jobsByID[jobName] = job
-	js.schedules[jobName] = schedule
+	state.jobsByID[jobName] = job
+	state.schedules[jobName] = schedule
 
 	if previousSchedule == "" && shouldSchedule {
 		slog.InfoContext(ctx, "Starting Job", "name", jobName, "schedule", schedule)
 	} else if previousSchedule != schedule || hadPreviousEntry != shouldSchedule {
 		slog.InfoContext(ctx, "Job rescheduled", "name", jobName, "previousSchedule", previousSchedule, "newSchedule", schedule, "nextRun", nextRun)
 	}
-
 	slog.DebugContext(ctx, "Job scheduled", "name", jobName, "scheduled", shouldSchedule, "contextCanceled", ctx.Err() != nil)
 	return nil
 }
 
-// addCronEntryInternal adds a job closure that always runs with the scheduler's
-// lifecycle context. Callers must hold js.mu.
-func (js *JobScheduler) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
+func (js *jobSchedulerInternal) addCronEntryInternal(job schedulertypes.Job, schedule string, parsedSchedule cron.Schedule) (cron.EntryID, *time.Time) {
 	entryID := js.cron.Schedule(parsedSchedule, cron.FuncJob(func() {
-		// robfig/cron has no default panic recovery, so a panic in any job would
-		// otherwise take down the whole process. Recovering here covers every
-		// scheduled job in one place.
 		defer utils.RecoverToError(nil, "scheduled job", "name", job.Name(), "schedule", schedule)
 		slog.InfoContext(js.context, "Job starting", "name", job.Name(), "schedule", schedule)
 		job.Run(js.context)
@@ -296,6 +376,5 @@ func (js *JobScheduler) addCronEntryInternal(job schedulertypes.Job, schedule st
 	if nextRun.IsZero() {
 		return entryID, nil
 	}
-
 	return entryID, new(nextRun)
 }

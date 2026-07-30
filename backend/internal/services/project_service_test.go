@@ -70,7 +70,7 @@ func setupProjectTestDB(t *testing.T) *database.DB {
 func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectPath := t.TempDir()
@@ -106,7 +106,7 @@ func TestProjectService_RefreshProjectImageRefs_PersistsBuildMetadata(t *testing
 func TestProjectService_BackfillProjectImageRefs_RetriesOnlyMissingMetadata(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	validPath := t.TempDir()
@@ -167,7 +167,7 @@ func setupProjectDestroyTestServiceInternal(t *testing.T) (*ProjectService, *dat
 
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -291,7 +291,7 @@ func TestProjectService_GetProjectFromDatabaseByID(t *testing.T) {
 	ctx := context.Background()
 
 	// Setup dependencies
-	settingsService, _ := NewSettingsService(ctx, db)
+	settingsService, _ := newSettingsServiceForTestInternal(t, ctx, db)
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 
 	// Create test project
@@ -613,7 +613,7 @@ func TestProjectService_PullProjectImages_UpdatesCurrentImageRecordAfterPull(t *
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -711,7 +711,7 @@ func TestProjectService_EnsureImagesPresent_UpdatesCurrentImageRecordAfterPull(t
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/api:2.0.0"
@@ -763,7 +763,7 @@ func TestProjectService_PullImageForService_UpdatesCurrentImageRecordAfterPull(t
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/worker:3.1.4"
@@ -812,7 +812,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_ReconcilesOnlyOnSucc
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	privateImageRef := "registry.example.com/team/app:9.9.9"
@@ -932,7 +932,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	imageRef := "registry.example.com/team/app:9.9.9"
@@ -991,7 +991,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1061,7 +1061,7 @@ func TestProjectService_UpdateProjectServicesForcesRecreateInternal(t *testing.T
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1151,7 +1151,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1221,7 +1221,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_AppliesVolumeMigrati
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1268,7 +1268,7 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1383,7 +1383,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_RollsBackVolumeMigra
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1432,7 +1432,7 @@ func TestProjectService_ApplyProjectUpdateWithRenameJournal_SucceedsCommittedRen
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1482,7 +1482,7 @@ func TestProjectService_UpdateProject_ClearsJournalForNonRenameWhenRecoveryDocke
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1548,7 +1548,7 @@ func TestProjectService_UpdateProject_AllowsRenameAfterJournalRecoveryDockerUnav
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1611,7 +1611,7 @@ func TestProjectService_UpdateProject_RenamesDirectoryWhenNameChanges(t *testing
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1660,7 +1660,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenTargetDirectoryExists(t *te
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1707,7 +1707,7 @@ func TestProjectService_UpdateProject_RenameFailsWhenProjectRunning(t *testing.T
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1751,7 +1751,7 @@ func TestProjectService_UpdateProject_RenameRejectsStaleStoppedWhenRuntimeIsRunn
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1809,7 +1809,7 @@ func TestProjectService_UpdateProject_RenameResolvesUnknownStoppedStatusBeforeVo
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1867,7 +1867,7 @@ func TestProjectService_UpdateProject_RenameRejectsUnknownWhenRuntimeIsRunning(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -1931,7 +1931,7 @@ func TestProjectService_UpdateProject_ValidatesComposeUsingExistingProjectName(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -1974,7 +1974,7 @@ func TestProjectService_UpdateProject_AllowsMissingEnvFileDuringComposeValidatio
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2019,7 +2019,7 @@ func TestProjectService_UpdateProject_AllowsMissingLocalIncludeDuringComposeVali
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2084,7 +2084,7 @@ func TestProjectService_UpdateProject_RejectsMissingExternalIncludeDuringCompose
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2129,7 +2129,7 @@ func TestProjectService_CreateProject_RejectsExternalInclude(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2165,7 +2165,7 @@ func TestProjectService_CreateProject_RejectsArrayPathInclude(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2203,7 +2203,7 @@ func TestProjectService_CreateProject_WritesStagedProjectFiles(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2257,7 +2257,7 @@ func TestProjectService_GetProjectDetails_UsesFileTreeMaxDepthForProjectFiles(t 
 	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "3")
 	t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "8")
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2300,7 +2300,7 @@ func TestProjectService_UpdateProject_AppliesStagedProjectFileChanges(t *testing
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2343,7 +2343,7 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2380,7 +2380,7 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	t.Setenv("PROJECT_SCAN_MAX_DEPTH", "3")
 	t.Setenv("PROJECT_FILE_TREE_MAX_DEPTH", "8")
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2419,7 +2419,7 @@ func TestProjectService_GetProjectFileContent_RejectsExternalInclude(t *testing.
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2460,7 +2460,7 @@ func TestProjectService_GetProjectFileContent_RejectsSymlinkInclude(t *testing.T
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2504,7 +2504,7 @@ func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkInclude(
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2548,7 +2548,7 @@ func TestProjectService_GetProjectFileContent_RejectsIntermediateSymlinkProjectF
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2585,7 +2585,7 @@ func TestProjectService_UpdateProject_UsesExistingEnvFileDuringComposeValidation
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2635,7 +2635,7 @@ func newProjectServiceForOverrideTestInternal(t *testing.T, dirName, baseCompose
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2746,7 +2746,7 @@ func TestProjectService_UpdateProject_UsesProvidedEnvContentDuringComposeValidat
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2793,7 +2793,7 @@ func TestProjectService_UpdateProject_ReturnsEnvParseErrorDuringComposeValidatio
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2838,7 +2838,7 @@ func TestProjectService_UpdateProject_UsesGlobalEnvDuringComposeValidation(t *te
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2887,7 +2887,7 @@ func TestProjectService_UpdateProject_DoesNotResolveHostEnvThroughGlobalEnvDurin
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 	t.Setenv("HOST_ONLY_PATH", "/host/secret")
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2931,7 +2931,7 @@ func TestProjectService_UpdateProject_DerivesProjectOverrideEnvWhenGitSourceExis
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -2978,7 +2978,7 @@ func TestProjectService_UpdateProject_UnchangedGitEnvLeavesFilesUntouched(t *tes
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3077,7 +3077,7 @@ func TestProjectService_UpdateProject_DeletingGitBackedKeyFallsBackToGit(t *test
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3127,7 +3127,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_MigratesDirectEnvIntoProjectOve
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3178,7 +3178,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3239,7 +3239,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_NormalizesStaleCopiedGitOverrid
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3287,7 +3287,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesLegacyDeletedGitMasks(t 
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3336,7 +3336,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_RemovesGitEnvSource(t *testing.
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3380,7 +3380,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_WritesAndRemovesComposeOverride
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3431,7 +3431,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_UsesGlobalEnvDuringComposeValid
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3482,7 +3482,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_TolerantOfUndefinedComposeVar(t
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3530,7 +3530,7 @@ func TestProjectService_PersistGitSyncEnvFiles_UsesPreparedState(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3568,7 +3568,7 @@ func TestProjectService_GetProjectDetails_ReturnsEffectiveEnvContent(t *testing.
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	eventService := NewEventService(db, nil, nil)
@@ -3694,7 +3694,7 @@ func TestProjectService_GetProjectDetails_IncludesUpdateInfo(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -3742,7 +3742,7 @@ func TestProjectService_GetProjectDetails_RefreshesRuntimeStatusWithoutRuntimeSe
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -3815,7 +3815,7 @@ func TestProjectService_GetProjectDetails_PopulatesRuntimeServicesFromComposePs(
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -3869,7 +3869,7 @@ func TestProjectService_ListProjects_FiltersByUpdateStatus(t *testing.T) {
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -4081,7 +4081,7 @@ func TestProjectService_ListProjects_FiltersArchivedProjects(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	projectsRoot := t.TempDir()
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
@@ -4143,7 +4143,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	ctx := context.Background()
 
 	projectsRoot := t.TempDir()
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -4173,7 +4173,7 @@ func TestProjectService_ArchiveProject_TogglesArchiveFlag(t *testing.T) {
 	ctx := context.Background()
 
 	projectsRoot := t.TempDir()
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsRoot))
 
@@ -4310,7 +4310,7 @@ func TestProjectService_ListProjects_WithDerivedStatusFilter_AllowsAllPageSizeSe
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4542,7 +4542,7 @@ func TestProjectService_PrepareServiceBuildRequest_GeneratedImageProviderGuardra
 func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4580,7 +4580,7 @@ func TestProjectService_DeployProject_StopsOnBuildPreparationError(t *testing.T)
 func TestProjectService_DeployProject_BuildsGeneratedImageWithoutPull(t *testing.T) {
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4621,7 +4621,7 @@ func TestProjectService_SyncProjectsFromFileSystem_IgnoresSymlinkedProjectDirsWh
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4647,7 +4647,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsSymlinkedProjectDirsWh
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4673,7 +4673,7 @@ func TestProjectService_CountProjectFolders_RespectsFollowProjectSymlinks(t *tes
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4701,7 +4701,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversNestedProjectsAndRel
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4734,7 +4734,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RespectsConfiguredScanMaxDept
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4758,7 +4758,7 @@ func TestProjectService_ListProjects_LoadsProjectIconFromGlobalEnvInIncludedMeta
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4809,7 +4809,7 @@ func TestProjectService_CountProjectFolders_RecursivelyCountsNestedProjects(t *t
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4830,7 +4830,7 @@ func TestProjectService_CountProjectFolders_RespectsConfiguredScanMaxDepth(t *te
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4851,7 +4851,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesDeletedNestedProject(t
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4882,7 +4882,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PrunesLeakedScratchRow(t *tes
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4912,7 +4912,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectsWhenDirector
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	// An existing-but-empty projects directory simulates a mis-mapped or unmounted
@@ -4947,7 +4947,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesProjectWithAmbiguous
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -4983,7 +4983,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesProjectsBeyondReducedS
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5029,7 +5029,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesDBRecordsWhenDirecto
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5078,7 +5078,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DiscoversReadableProjectsDesp
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5129,7 +5129,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AllowsDuplicateLeafDirectorie
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5157,7 +5157,7 @@ func TestProjectService_SyncProjectsFromFileSystem_DetectsNestedSymlinkedProject
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5188,7 +5188,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RemovesSymlinkedProjectsWhenD
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5222,7 +5222,7 @@ func TestProjectService_SyncProjectsFromFileSystem_RefreshesServiceCountOnCompos
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5249,7 +5249,7 @@ func TestProjectService_SyncProjectsFromFileSystem_AlignsNameToEffectiveComposeN
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5278,7 +5278,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesValidCustomNameWitho
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5311,7 +5311,7 @@ func TestProjectService_SyncProjectsFromFileSystem_PreservesGitOpsProjectWithCus
 	ctx := context.Background()
 	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5361,7 +5361,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	ctx := context.Background()
 	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5414,7 +5414,7 @@ func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testi
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5463,7 +5463,7 @@ func TestProjectService_UpdateProject_WritesThroughExternalEnvSymlink(t *testing
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5521,7 +5521,7 @@ func TestProjectService_UpdateProject_RestoresExternalEnvSymlinkTargetWhenProjec
 	db := setupProjectTestDB(t)
 	ctx := context.Background()
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsRoot := t.TempDir()
@@ -5690,7 +5690,7 @@ func TestProjectService_UpdateProject_RenameRollsBackWhenFileRevisionIsStale(t *
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 
@@ -7492,7 +7492,7 @@ func TestProjectService_UpdateProject_FileChangeFailureRollsBackScoped(t *testin
 	projectsDir := t.TempDir()
 	t.Setenv("PROJECTS_DIRECTORY", projectsDir)
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.SetStringSetting(ctx, "projectsDirectory", projectsDir))
 

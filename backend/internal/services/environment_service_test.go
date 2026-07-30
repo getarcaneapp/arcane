@@ -18,6 +18,7 @@ import (
 	"gorm.io/gorm"
 
 	"github.com/coder/websocket"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -28,7 +29,30 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
 	"go.getarcane.app/sys/crypto"
+	"go.uber.org/fx/fxtest"
 )
+
+func TestEnvironmentService_OverlappingHealthCheckIsSkippedInternal(t *testing.T) {
+	lifecycle := fxtest.NewLifecycle(t)
+	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), actorRuntime, "environment-test-admission", "overlap")
+	require.NoError(t, err)
+
+	key := actors.AdmissionKey{Scope: environmentHealthAdmissionScopeInternal, ID: "environment-id"}
+	lease, admitted, err := gate.TryAcquire(t.Context(), key)
+	require.NoError(t, err)
+	require.True(t, admitted)
+
+	service := &EnvironmentService{admissionGate: gate}
+	service.runHealthCheckInternal(t.Context(), "environment-id")
+	lease.Release()
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, gate.Stop(stopCtx))
+	require.NoError(t, lifecycle.Stop(stopCtx))
+}
 
 func setupEnvironmentServiceTestDB(t *testing.T) *database.DB {
 	t.Helper()
@@ -149,7 +173,7 @@ func TestEnvironmentService_DeleteEnvironment_CascadesGitOpsSyncs(t *testing.T) 
 
 	scheduler := &gitOpsSyncTestSchedulerInternal{}
 	svc := NewEnvironmentService(db, nil, nil, nil, nil, nil)
-	svc.SetScheduler(ctx, scheduler)
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newAdmissionGateForTestInternal(t)))
 
 	require.NoError(t, svc.DeleteEnvironment(ctx, "env-delete-gitops", nil, nil))
 

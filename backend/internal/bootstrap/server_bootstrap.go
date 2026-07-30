@@ -108,9 +108,6 @@ func NewHTTPServer(lc fx.Lifecycle, p HTTPServerParams) (*http.Server, error) {
 			if grpcServer != nil {
 				grpcServer.GracefulStop()
 			}
-			if p.TunnelServer != nil {
-				p.TunnelServer.WaitForCleanupDone()
-			}
 			if shutdownErr == nil {
 				slog.InfoContext(ctx, "Server stopped gracefully")
 			}

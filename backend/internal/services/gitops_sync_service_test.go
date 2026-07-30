@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
@@ -19,6 +20,7 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.uber.org/fx/fxtest"
 	"gorm.io/gorm"
 )
 
@@ -29,7 +31,7 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	db := setupProjectTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.GitOpsSync{}))
 
-	settingsService, err := NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	projectsDir := t.TempDir()
@@ -39,6 +41,31 @@ func setupGitOpsSyncDirectoryTestService(t *testing.T) (*GitOpsSyncService, *dat
 	projectService := NewProjectService(db, settingsService, eventService, nil, nil, nil, nil, nil, config.Load())
 
 	return NewGitOpsSyncService(db, nil, projectService, nil, eventService, settingsService), db, projectsDir
+}
+
+func TestGitOpsSyncService_OverlappingSyncPreservesSuccessShapedSkipInternal(t *testing.T) {
+	lifecycle := fxtest.NewLifecycle(t)
+	actorRuntime, err := actors.NewRuntime(t.Context(), lifecycle)
+	require.NoError(t, err)
+	gate, err := actors.NewGate[actors.AdmissionKey](t.Context(), actorRuntime, "gitops-test-admission", "overlap")
+	require.NoError(t, err)
+
+	key := actors.AdmissionKey{Scope: gitOpsSyncAdmissionScopeInternal, ID: "sync-id"}
+	lease, admitted, err := gate.TryAcquire(t.Context(), key)
+	require.NoError(t, err)
+	require.True(t, admitted)
+
+	service := &GitOpsSyncService{admissionGate: gate}
+	result, err := service.PerformSync(t.Context(), "0", "sync-id", models.User{})
+	require.NoError(t, err)
+	require.False(t, result.Success)
+	require.Equal(t, "sync already in progress", result.Message)
+	lease.Release()
+
+	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, gate.Stop(stopCtx))
+	require.NoError(t, lifecycle.Stop(stopCtx))
 }
 
 type gitOpsSyncTestSchedulerInternal struct {
@@ -178,7 +205,7 @@ func TestGitOpsSyncService_RegisterAutoSyncJobsOnStartup_SkipsOrphans(t *testing
 	}).Error)
 
 	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, scheduler)
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newAdmissionGateForTestInternal(t)))
 	svc.RegisterAutoSyncJobsOnStartup(ctx)
 
 	require.Equal(t, []string{gitOpsSyncJobNameInternal("sync-live")}, scheduler.added)
@@ -216,7 +243,7 @@ func TestGitOpsSyncService_DeleteSync_SucceedsWhenEnvironmentMismatched(t *testi
 	ctx := context.Background()
 	svc, db, _ := setupGitOpsSyncDirectoryTestService(t)
 	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, scheduler)
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newAdmissionGateForTestInternal(t)))
 
 	sync := &models.GitOpsSync{
 		BaseModel:     models.BaseModel{ID: "sync-env-mismatch"},
@@ -273,7 +300,7 @@ func TestGitOpsSyncService_RunScheduledSync_UnregistersMissingSync(t *testing.T)
 	ctx := context.Background()
 	svc, _, _ := setupGitOpsSyncDirectoryTestService(t)
 	scheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, scheduler)
+	require.NoError(t, svc.SetScheduler(ctx, scheduler, newAdmissionGateForTestInternal(t)))
 
 	svc.runScheduledSyncInternal(ctx, "0", "ghost-sync")
 
@@ -355,7 +382,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t *testing.T) {
 	ctx := context.Background()
 	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
-	svc.SetScheduler(ctx, &gitOpsSyncTestSchedulerInternal{})
+	require.NoError(t, svc.SetScheduler(ctx, &gitOpsSyncTestSchedulerInternal{}, newAdmissionGateForTestInternal(t)))
 
 	require.NoError(t, os.MkdirAll(filepath.Join(projectsDir, "Dozzle"), 0o755))
 
@@ -1117,7 +1144,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 	ctx := context.Background()
 	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
 	testScheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, testScheduler)
+	require.NoError(t, svc.SetScheduler(ctx, testScheduler, newAdmissionGateForTestInternal(t)))
 
 	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
@@ -1172,7 +1199,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_DisablesAutoSyncWhenBoundProject
 	ctx := context.Background()
 	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
 	testScheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, testScheduler)
+	require.NoError(t, svc.SetScheduler(ctx, testScheduler, newAdmissionGateForTestInternal(t)))
 
 	for _, dirName := range []string{"Radarr-3", "Radarr-30"} {
 		projectPath := filepath.Join(projectsDir, dirName)
@@ -1227,7 +1254,7 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	ctx := context.Background()
 	svc, db, projectsDir := setupGitOpsSyncDirectoryTestService(t)
 	testScheduler := &gitOpsSyncTestSchedulerInternal{}
-	svc.SetScheduler(ctx, testScheduler)
+	require.NoError(t, svc.SetScheduler(ctx, testScheduler, newAdmissionGateForTestInternal(t)))
 
 	missingProjectID := "missing-project"
 	sync := &models.GitOpsSync{
@@ -1286,7 +1313,7 @@ func TestEnvContentChangedInternal(t *testing.T) {
 func TestGitOpsSyncService_GetEnvironmentSyncLimits(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "gitSyncMaxFiles", 123))
@@ -1309,7 +1336,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 	t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "")
 
 	db := setupSettingsTestDB(t)
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	require.NoError(t, settingsSvc.SetIntSetting(ctx, "gitSyncMaxFiles", 200))
@@ -1364,7 +1391,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "10000")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "1024")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "12")
-		settingsSvcEnv, svcErr := NewSettingsService(ctx, db)
+		settingsSvcEnv, svcErr := newSettingsServiceForTestInternal(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 
@@ -1385,7 +1412,7 @@ func TestGitOpsSyncService_GetEffectiveSyncLimits(t *testing.T) {
 		t.Setenv("GIT_SYNC_MAX_FILES", "0")
 		t.Setenv("GIT_SYNC_MAX_TOTAL_SIZE_MB", "0")
 		t.Setenv("GIT_SYNC_MAX_BINARY_SIZE_MB", "0")
-		settingsSvcEnv, svcErr := NewSettingsService(ctx, db)
+		settingsSvcEnv, svcErr := newSettingsServiceForTestInternal(t, ctx, db)
 		require.NoError(t, svcErr)
 		svcEnv := &GitOpsSyncService{settingsService: settingsSvcEnv}
 

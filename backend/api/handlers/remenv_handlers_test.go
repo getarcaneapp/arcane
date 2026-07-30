@@ -141,7 +141,7 @@ func TestSettingsHandler_GetSettings_RemoteFiltersNonAdminVisibility(t *testing.
 	defer server.Close()
 
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(context.Background(), db)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	handler := &SettingsHandler{
 		settingsService:    settingsService,
@@ -167,7 +167,7 @@ func TestSettingsHandler_GetSettings_RemotePreservesAdminResponse(t *testing.T) 
 	defer server.Close()
 
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(context.Background(), db)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	handler := &SettingsHandler{
 		settingsService:    settingsService,
