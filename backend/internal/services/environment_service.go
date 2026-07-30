@@ -53,6 +53,16 @@ type EnvironmentService struct {
 	// runningHealthChecks guards against a per-environment health check overlapping
 	// with itself (replaces the old single job's atomic "running" guard).
 	runningHealthChecks sync.Map
+
+	// variableSyncer is injected post-construction via SetVariableSyncer
+	// (manager-only) to avoid a wire cycle with VariableService.
+	variableSyncer VariableSyncer
+}
+
+// VariableSyncer pushes the effective global-variable set to one environment.
+// Implemented by VariableService.
+type VariableSyncer interface {
+	SyncEnvironment(ctx context.Context, envID string) error
 }
 
 const (
@@ -106,6 +116,12 @@ func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler Dynamic
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
+}
+
+// SetVariableSyncer injects the global-variable syncer. Called during
+// bootstrap on the manager only; agents leave it nil.
+func (s *EnvironmentService) SetVariableSyncer(syncer VariableSyncer) {
+	s.variableSyncer = syncer
 }
 
 func (s *EnvironmentService) schedulerCtxInternal(ctx context.Context) context.Context {
@@ -251,6 +267,11 @@ func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID s
 	}
 	if err := s.SyncRepositoriesToEnvironment(syncCtx, envID); err != nil {
 		slog.WarnContext(syncCtx, "failed to sync git repositories during health check", "environment_id", envID, "error", err)
+	}
+	if s.variableSyncer != nil {
+		if err := s.variableSyncer.SyncEnvironment(syncCtx, envID); err != nil {
+			slog.WarnContext(syncCtx, "failed to sync global variables during health check", "environment_id", envID, "error", err)
+		}
 	}
 }
 

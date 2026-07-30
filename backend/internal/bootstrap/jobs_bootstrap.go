@@ -102,6 +102,7 @@ func registerDynamicJobs(appCtx context.Context, newScheduler *scheduler.JobSche
 func setupSettingsCallbacks(lifecycleCtx context.Context, appServices *di.Services, appConfig *config.Config, newScheduler *scheduler.JobScheduler, jobs *di.Jobs) {
 	appServices.Settings.OnImagePollingSettingsChanged = func(_ context.Context) {
 		if jobs.ImageUpdateWatcher != nil {
+			jobs.ImageUpdateWatcher.RefreshSchedule()
 			jobs.ImageUpdateWatcher.Trigger()
 		}
 		if err := newScheduler.RescheduleJob(lifecycleCtx, jobs.AutoUpdate); err != nil {

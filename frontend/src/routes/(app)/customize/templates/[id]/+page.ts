@@ -1,8 +1,9 @@
 import { templateService } from '$lib/services/template-service';
+import { variableService } from '$lib/services/variable-service';
 import { queryKeys } from '$lib/query/query-keys';
 import { error } from '@sveltejs/kit';
 import type { Template, TemplateContentData } from '$lib/types/swarm';
-import type { Variable } from '$lib/types/shared';
+import type { GlobalVariable } from '$lib/types/variable';
 import type { PageLoad } from './$types';
 
 export const load: PageLoad = async ({
@@ -11,7 +12,7 @@ export const load: PageLoad = async ({
 }): Promise<{
 	templateData: TemplateContentData;
 	allTemplates: Template[];
-	globalVariables: Variable[];
+	globalVariables: GlobalVariable[];
 }> => {
 	const { queryClient } = await parent();
 
@@ -27,10 +28,10 @@ export const load: PageLoad = async ({
 			}),
 			queryClient
 				.fetchQuery({
-					queryKey: queryKeys.templates.globalVariables(),
-					queryFn: () => templateService.getGlobalVariables()
+					queryKey: queryKeys.variables.list(),
+					queryFn: () => variableService.list()
 				})
-				.catch(() => [] as Variable[])
+				.catch(() => [] as GlobalVariable[])
 		]);
 
 		return {

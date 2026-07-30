@@ -75,14 +75,24 @@ func (s *imageUpdateScannerFakeInternal) maxActiveInternal() int {
 }
 
 type pollingSettingReaderFakeInternal struct {
-	mu      sync.RWMutex
-	enabled bool
+	mu       sync.RWMutex
+	enabled  bool
+	schedule string
 }
 
 func (s *pollingSettingReaderFakeInternal) GetBoolSetting(context.Context, string, bool) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.enabled
+}
+
+func (s *pollingSettingReaderFakeInternal) GetStringSetting(_ context.Context, _ string, defaultValue string) string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.schedule == "" {
+		return defaultValue
+	}
+	return s.schedule
 }
 
 func (s *pollingSettingReaderFakeInternal) setEnabledInternal(enabled bool) {
@@ -166,6 +176,8 @@ func newImageUpdateWatcherForTestInternal(scanner imageUpdateScannerInternal, se
 		dockerService:      dockerEventBusProviderFakeInternal{eventBus: eventBus},
 		projectService:     backfiller,
 		triggerCh:          make(chan struct{}, 1),
+		scheduleRefreshCh:  make(chan struct{}, 1),
+		location:           time.UTC,
 		debounce:           10 * time.Millisecond,
 		backfillRetry:      10 * time.Millisecond,
 		metadataReady:      make(chan struct{}),
@@ -431,6 +443,16 @@ func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.
 		t.Fatal("watcher did not stop after cancellation")
 	}
 	require.Zero(t, scanner.countInternal())
+}
+
+func TestImageUpdateWatcher_ScheduledPollTriggersScanWithoutEvents(t *testing.T) {
+	scanner := &imageUpdateScannerFakeInternal{}
+	settings := &pollingSettingReaderFakeInternal{enabled: true, schedule: "* * * * * *"}
+	watcher := newImageUpdateWatcherForTestInternal(scanner, settings, bus.NewDockerEventBus(), nil)
+	startImageUpdateWatcherForTestInternal(t, watcher)
+
+	require.Eventually(t, func() bool { return scanner.countInternal() == 1 }, time.Second, 5*time.Millisecond)
+	require.Eventually(t, func() bool { return scanner.countInternal() >= 2 }, 3*time.Second, 10*time.Millisecond)
 }
 
 func TestImageUpdateWatcher_RunNowWaitsForMetadataReadiness(t *testing.T) {

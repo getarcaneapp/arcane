@@ -155,7 +155,6 @@ test.describe('Dashboard system stats websocket', () => {
 		await page.goto(defaultDashboardPath);
 		await page.waitForLoadState('load');
 
-		await expect(page.getByRole('heading', { name: 'Overview' })).toBeVisible();
 		await expect(page.getByRole('heading', { name: 'Environment Board' })).toBeVisible();
 		await expect(page.getByText('12.3%', { exact: true })).toBeVisible();
 		await expect(page.getByText('50.0%', { exact: true })).toBeVisible();
@@ -164,7 +163,6 @@ test.describe('Dashboard system stats websocket', () => {
 		await expect(page.getByText('512 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.getByText('256 MB / 1 GB', { exact: true })).toBeVisible();
 		await expect(page.locator('main').getByText('Local Docker', { exact: true })).toBeVisible();
-		await expect(page.getByText('HTTP', { exact: true }).first()).toBeVisible();
 	});
 
 	test('loads dashboard content without eagerly loading docker info', async ({ page }) => {

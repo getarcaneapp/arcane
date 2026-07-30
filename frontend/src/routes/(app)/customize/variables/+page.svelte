@@ -1,130 +1,127 @@
 <script lang="ts">
-	import * as Card from '$lib/components/ui/card';
-	import { ArcaneButton } from '$lib/components/arcane-button/index.js';
-	import { Input } from '$lib/components/ui/input';
-	import * as InputGroup from '$lib/components/ui/input-group/index.js';
 	import { toast } from 'svelte-sonner';
-	import { CopyButton } from '$lib/components/ui/copy-button';
-	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
-	import { templateService } from '$lib/services/template-service.js';
-	import type { Variable } from '$lib/types/shared';
 	import { untrack } from 'svelte';
+	import { ResourcePageLayout, type ActionButton } from '$lib/layouts/index.js';
+	import { openConfirmDialog } from '$lib/components/confirm-dialog';
+	import VariableFormSheet from '$lib/components/sheets/variable-form-sheet.svelte';
+	import VariableTable from './variable-table.svelte';
+	import { variableService } from '$lib/services/variable-service';
+	import type {
+		GlobalVariable,
+		GlobalVariableCreateDto,
+		GlobalVariableUpdateDto,
+		VariableEnvSyncResult
+	} from '$lib/types/variable';
 	import { m } from '$lib/paraglide/messages';
-	import { SearchIcon, CloseIcon, AlertIcon, VariableIcon } from '$lib/icons';
 	import { hasPermission } from '$lib/utils/auth';
 
+	type VariableFormPayload =
+		| { mode: 'create'; variable: GlobalVariableCreateDto }
+		| { mode: 'edit'; id: string; variable: GlobalVariableUpdateDto }
+		| { mode: 'bulk'; variables: GlobalVariableCreateDto[] };
+
 	let { data } = $props();
-	let envVars = $state<Variable[]>(untrack(() => [...data.variables]));
-	let originalVars = $state<Variable[]>(untrack(() => [...data.variables]));
-	let searchQuery = $state('');
-	let isLoading = $state(false);
 
-	const filteredVars = $derived.by(() => {
-		if (!searchQuery.trim()) return envVars;
+	let variables = $state(untrack(() => data.variables));
+	let isSheetOpen = $state(false);
+	let variableToEdit = $state<GlobalVariable | null>(null);
+	let isSubmitting = $state(false);
 
-		const query = searchQuery.toLowerCase();
-		return envVars.filter((v) => v.key.toLowerCase().includes(query) || v.value.toLowerCase().includes(query));
-	});
+	const canManageVariables = $derived(hasPermission('templates:update'));
 
-	const hasChanges = $derived.by(() => {
-		if (envVars.length !== originalVars.length) return true;
-
-		const originalMap = new Map(originalVars.map((v) => [v.key, v.value]));
-
-		for (const v of envVars) {
-			if (!v.key.trim()) continue;
-
-			const originalValue = originalMap.get(v.key);
-			if (originalValue !== v.value) return true;
-			if (originalValue === undefined) return true;
+	function reportSyncResults(results?: VariableEnvSyncResult[]) {
+		const failed = results?.filter((result) => result.status === 'error') ?? [];
+		if (failed.length > 0) {
+			toast.warning(
+				m.sync_failed_environments({
+					envs: failed.map((result) => result.environmentName || result.environmentId).join(', ')
+				})
+			);
 		}
-
-		const currentMap = new Map(envVars.filter((v) => v.key.trim()).map((v) => [v.key, v.value]));
-		for (const key of originalMap.keys()) {
-			if (!currentMap.has(key)) return true;
-		}
-
-		return false;
-	});
-
-	function addEnvVar() {
-		envVars = [...envVars, { key: '', value: '' }];
 	}
 
-	function removeEnvVar(index: number) {
-		envVars = envVars.filter((_, i) => i !== index);
+	function openCreateSheet() {
+		variableToEdit = null;
+		isSheetOpen = true;
 	}
 
-	async function onSubmit() {
-		isLoading = true;
+	function openEditSheet(variable: GlobalVariable) {
+		variableToEdit = variable;
+		isSheetOpen = true;
+	}
 
+	async function handleSheetSubmit(payload: VariableFormPayload) {
+		isSubmitting = true;
 		try {
-			const validVars = envVars
-				.filter((v) => v.key.trim() !== '')
-				.map((v) => ({
-					key: v.key.trim(),
-					value: v.value.trim()
-				}));
-
-			const keys = validVars.map((v) => v.key);
-			const uniqueKeys = new Set(keys);
-			if (keys.length !== uniqueKeys.size) {
-				toast.error(m.variables_duplicate_keys_error());
-				return;
+			let response;
+			if (payload.mode === 'edit') {
+				response = await variableService.update(payload.id, payload.variable);
+			} else if (payload.mode === 'bulk') {
+				response = await variableService.createMany(payload.variables);
+			} else {
+				response = await variableService.create(payload.variable);
 			}
 
-			await templateService.updateGlobalVariables(validVars);
+			variables = await variableService.list();
 
-			originalVars = [...validVars];
-			envVars = [...validVars];
+			if (payload.mode === 'bulk') {
+				toast.success(m.count_variables_created({ count: payload.variables.length }));
+			} else if (payload.mode === 'edit') {
+				toast.success(m.common_update_success({ resource: m.variable() }));
+			} else {
+				toast.success(m.common_create_success({ resource: m.variable() }));
+			}
+			reportSyncResults(response?.syncResults);
 
-			toast.success(m.variables_save_success());
+			isSheetOpen = false;
+			variableToEdit = null;
 		} catch (error) {
-			console.error('Failed to save global environment variables:', error);
-			toast.error(m.variables_save_failed());
+			console.error('Error saving variable:', error);
+			toast.error(
+				payload.mode === 'edit'
+					? m.common_update_failed({ resource: m.variable() })
+					: m.common_create_failed({ resource: m.variable() })
+			);
+			// A bulk create can partially succeed before the failing entry, so
+			// refresh even on error to keep the table and duplicate-key
+			// validation in sync with what was actually persisted.
+			variables = await variableService.list().catch(() => variables);
 		} finally {
-			isLoading = false;
+			isSubmitting = false;
 		}
 	}
 
-	function resetForm() {
-		envVars = [...originalVars];
-		searchQuery = '';
+	function handleDelete(variable: GlobalVariable) {
+		openConfirmDialog({
+			title: m.common_delete_title({ resource: m.variable() }),
+			message: m.common_delete_confirm({ resource: variable.key }),
+			confirm: {
+				label: m.common_delete(),
+				destructive: true,
+				action: async () => {
+					try {
+						const response = await variableService.delete(variable.id);
+						variables = await variableService.list();
+						toast.success(m.common_delete_success({ resource: m.variable() }));
+						reportSyncResults(response?.syncResults);
+					} catch (error) {
+						console.error('Error deleting variable:', error);
+						toast.error(m.common_delete_failed({ resource: m.variable() }));
+						variables = await variableService.list().catch(() => variables);
+					}
+				}
+			}
+		});
 	}
-
-	function handleKeyDown(event: KeyboardEvent) {
-		if (event.key === 'Enter') {
-			event.preventDefault();
-			addEnvVar();
-		}
-	}
-
-	$effect(() => {
-		if (envVars.length === 0) {
-			addEnvVar();
-		}
-	});
-
-	const canUpdateVariables = $derived(hasPermission('templates:update'));
 
 	const actionButtons = $derived<ActionButton[]>(
-		canUpdateVariables
+		canManageVariables
 			? [
 					{
-						id: 'reset',
-						action: 'restart',
-						label: m.common_reset(),
-						onclick: resetForm,
-						disabled: !hasChanges || isLoading
-					},
-					{
-						id: 'save',
-						action: 'save',
-						label: m.common_save(),
-						loadingLabel: m.common_saving(),
-						loading: isLoading,
-						disabled: isLoading || !hasChanges,
-						onclick: onSubmit
+						id: 'create',
+						action: 'create',
+						label: m.common_add_button({ resource: m.variable() }),
+						onclick: openCreateSheet
 					}
 				]
 			: []
@@ -133,139 +130,17 @@
 
 <ResourcePageLayout title={m.variables_title()} subtitle={m.variables_subtitle()} {actionButtons}>
 	{#snippet mainContent()}
-		<fieldset class="relative">
-			<div class="space-y-4 sm:space-y-6">
-				<Card.Root class="overflow-hidden border-primary/20 bg-primary/5 pt-0">
-					<Card.Content class="px-3 py-4 sm:px-6">
-						<div class="flex items-start gap-3">
-							<div class="mt-0.5 shrink-0 text-primary">
-								<AlertIcon class="size-5" />
-							</div>
-							<div class="space-y-1 text-sm">
-								<p class="font-medium text-foreground">{m.variables_about_title()}</p>
-								<p class="text-muted-foreground">
-									{m.variables_about_description()}
-								</p>
-							</div>
-						</div>
-					</Card.Content>
-				</Card.Root>
+		<VariableTable bind:variables environments={data.environments} onEdit={openEditSheet} onDelete={handleDelete} />
+	{/snippet}
 
-				<Card.Root class="overflow-hidden pt-0">
-					<Card.Header class="sticky top-0 z-[var(--arcane-z-sticky)] border-b bg-muted/20 !py-3">
-						<div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-							<div class="flex items-center gap-3">
-								<div class="flex size-8 items-center justify-center rounded-lg bg-primary/10 text-primary ring-1 ring-primary/20">
-									<VariableIcon class="size-4" />
-								</div>
-								<div>
-									<Card.Title class="text-base">{m.common_environment_variables()}</Card.Title>
-									<Card.Description class="text-xs">
-										{#if envVars.filter((v) => v.key.trim()).length === 1}
-											{m.variables_count_configured({ count: 1 })}
-										{:else}
-											{m.variables_count_configured_plural({ count: envVars.filter((v) => v.key.trim()).length })}
-										{/if}
-									</Card.Description>
-								</div>
-							</div>
-
-							<div class="flex items-center gap-2">
-								<div class="relative w-full sm:w-52">
-									<SearchIcon class="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
-									<Input type="text" placeholder={m.common_search()} bind:value={searchQuery} class="h-9 pl-10" />
-								</div>
-								{#if canUpdateVariables}
-									<ArcaneButton
-										action="create"
-										size="sm"
-										onclick={addEnvVar}
-										disabled={isLoading}
-										customLabel={m.variables_add_button()}
-										class="shrink-0"
-									/>
-								{/if}
-							</div>
-						</div>
-					</Card.Header>
-
-					<Card.Content class="px-3 py-4 sm:px-6">
-						{#if filteredVars.length === 0 && searchQuery.trim()}
-							<div class="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-								<SearchIcon class="mb-3 size-12 opacity-20" />
-								<p class="text-sm font-medium">{m.variables_no_results_title()}</p>
-								<p class="text-xs">{m.variables_no_results_description()}</p>
-							</div>
-						{:else if filteredVars.length === 0}
-							<div class="flex flex-col items-center justify-center py-12 text-center text-muted-foreground">
-								<VariableIcon class="mb-3 size-12 opacity-20" />
-								<p class="text-sm font-medium">{m.variables_no_variables_title()}</p>
-								<p class="text-xs">{m.variables_no_variables_description()}</p>
-							</div>
-						{:else}
-							<div class="space-y-2">
-								{#each filteredVars as envVar, index (index)}
-									{@const actualIndex = envVars.indexOf(envVar)}
-									<div class="flex flex-col gap-2 sm:flex-row sm:items-center">
-										<div class="flex flex-1 items-center gap-2">
-											<InputGroup.Root class="flex-1 sm:max-w-[200px]">
-												<InputGroup.Input
-													type="text"
-													placeholder={m.key_placeholder()}
-													bind:value={envVar.key}
-													disabled={isLoading}
-													class="font-mono text-sm"
-													onkeydown={(e) => handleKeyDown(e)}
-													oninput={(e) => {
-														const target = e.target as HTMLInputElement;
-														const cursorPos = target.selectionStart || 0;
-														const oldValue = envVar.key;
-														const newValue = target.value.toUpperCase().replace(/\s/g, '_');
-
-														envVar.key = newValue;
-
-														requestAnimationFrame(() => {
-															const diff = newValue.length - oldValue.length;
-															target.setSelectionRange(cursorPos + diff, cursorPos + diff);
-														});
-													}}
-												/>
-											</InputGroup.Root>
-											<span class="font-mono text-sm text-muted-foreground">=</span>
-											<InputGroup.Root class="flex-[2]">
-												<InputGroup.Input
-													type="text"
-													placeholder={m.value_placeholder()}
-													bind:value={envVar.value}
-													disabled={isLoading}
-													class="font-mono text-sm"
-													onkeydown={(e) => handleKeyDown(e)}
-												/>
-												<InputGroup.Addon align="inline-end">
-													<CopyButton text={envVar.value} variant="ghost" tabindex={-1} />
-													{#if canUpdateVariables}
-														<InputGroup.Button
-															variant="ghost"
-															aria-label={m.common_remove()}
-															size="icon-xs"
-															onclick={() => removeEnvVar(actualIndex)}
-															disabled={isLoading}
-															class="text-destructive hover:text-destructive"
-															title={m.common_remove()}
-														>
-															<CloseIcon />
-														</InputGroup.Button>
-													{/if}
-												</InputGroup.Addon>
-											</InputGroup.Root>
-										</div>
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</Card.Content>
-				</Card.Root>
-			</div>
-		</fieldset>
+	{#snippet additionalContent()}
+		<VariableFormSheet
+			bind:open={isSheetOpen}
+			bind:variableToEdit
+			environments={data.environments}
+			existingVariables={variables}
+			isLoading={isSubmitting}
+			onSubmit={handleSheetSubmit}
+		/>
 	{/snippet}
 </ResourcePageLayout>

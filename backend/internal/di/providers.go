@@ -65,6 +65,7 @@ type Services struct {
 	SystemBackup      *services.SystemBackupService
 	Dashboard         *services.DashboardService
 	Role              *services.RoleService
+	Variable          *services.VariableService
 	// AuthMiddleware is the shared Echo auth middleware. It's wired here so the
 	// router consumes it from the container instead of building the chain inline.
 	AuthMiddleware *middleware.AuthMiddleware

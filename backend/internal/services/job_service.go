@@ -208,6 +208,19 @@ func (s *JobService) RescheduleJobsForSettingKeys(ctx context.Context, changedKe
 			continue
 		}
 
+		// Continuous bus watchers have no cron entry to reschedule; notify the
+		// watcher so it re-reads its poll schedule instead.
+		if jobMeta.IsContinuous {
+			if jobID == "image-polling" && s.settings != nil && s.settings.OnImagePollingSettingsChanged != nil {
+				notifyCtx := ctx //nolint:contextcheck // lifecycle context preferred so the watcher outlives the request
+				if s.lifecycleCtx != nil {
+					notifyCtx = s.lifecycleCtx
+				}
+				s.settings.OnImagePollingSettingsChanged(notifyCtx)
+			}
+			continue
+		}
+
 		job, ok := s.scheduler.GetJob(jobID)
 		if !ok {
 			rescheduleErrors = append(rescheduleErrors, fmt.Errorf("job %s not found in scheduler", jobID))
@@ -370,7 +383,9 @@ func (s *JobService) getRunnableJobInternal(jobID string) (schedulertypes.Job, e
 }
 
 func (s *JobService) getJobScheduleInternal(ctx context.Context, meta meta.JobMetadata) string {
-	if meta.IsContinuous {
+	// Continuous jobs with a settings key (image-polling) are event-driven but
+	// also poll on that cron schedule, so surface the real expression.
+	if meta.IsContinuous && meta.SettingsKey == "" {
 		return "continuous"
 	}
 

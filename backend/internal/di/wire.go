@@ -61,6 +61,7 @@ var ServiceSet = wire.NewSet(
 	services.NewWebhookService,
 	services.NewS3DestinationService,
 	services.NewSystemBackupService,
+	services.NewVariableService,
 
 	// Services that require a wrapper (scalar config field, unexported parameter,
 	// or post-construction RoleService builder). See providers.go.

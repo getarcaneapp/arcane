@@ -83,6 +83,36 @@ func TestMigration065_ProjectBuildImageRefs_UpAndDown(t *testing.T) {
 	assert.Zero(t, columnCount)
 }
 
+func TestMigration066_GlobalVariables_UpAndDown(t *testing.T) {
+	ctx := context.Background()
+	rawDB, _ := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-global-variables.db")
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 65))
+	var tableCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Equal(t, 2, tableCount)
+
+	_, err := rawDB.Exec(`INSERT INTO environments (id, api_url, status, enabled) VALUES ('env-1', 'http://localhost', 'online', TRUE)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO global_variables (id, created_at, key, value, is_secret, all_environments) VALUES ('var-1', CURRENT_TIMESTAMP, 'API_URL', 'https://example.test', FALSE, FALSE)`)
+	require.NoError(t, err)
+	_, err = rawDB.Exec(`INSERT INTO global_variable_environments (global_variable_id, environment_id) VALUES ('var-1', 'env-1')`)
+	require.NoError(t, err)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}, 65))
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name IN ('global_variables', 'global_variable_environments')`).Scan(&tableCount))
+	assert.Zero(t, tableCount)
+
+	require.NoError(t, migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, 66))
+	var rowCount int
+	require.NoError(t, rawDB.QueryRow(`SELECT COUNT(*) FROM global_variables`).Scan(&rowCount))
+	assert.Zero(t, rowCount)
+}
+
 func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 	ctx := context.Background()
 	rawDB, dsn := newSQLiteSQLDBInternal(t, t.TempDir(), "arcane-future.db")

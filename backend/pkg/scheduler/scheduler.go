@@ -11,6 +11,11 @@ import (
 	"github.com/robfig/cron/v3"
 )
 
+// cronScheduleParser is the shared parser for all cron settings: six fields
+// with seconds, plus @-descriptors. The image update watcher parses its poll
+// schedule with the same spec so Jobs-UI cron values behave identically.
+var cronScheduleParser = cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+
 type JobScheduler struct {
 	// mu guards jobs, jobsByID, entryIDs and schedules. It is held across the cron
 	// add/remove calls (which are themselves quick and never block on job
@@ -36,7 +41,7 @@ func NewJobScheduler(ctx context.Context, location *time.Location) *JobScheduler
 	if location == nil {
 		location = time.UTC
 	}
-	parser := cron.NewParser(cron.Second | cron.Minute | cron.Hour | cron.Dom | cron.Month | cron.Dow | cron.Descriptor)
+	parser := cronScheduleParser
 	slog.InfoContext(ctx, "Initializing job scheduler", "timezone", location.String())
 	return &JobScheduler{
 		cron:      cron.New(cron.WithParser(parser), cron.WithLocation(location)),

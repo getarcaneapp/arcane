@@ -8,12 +8,13 @@ package di
 
 import (
 	"context"
+	"net/http"
+
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/scheduler"
 	"github.com/google/wire"
-	"net/http"
 )
 
 // Injectors from wire.go:
@@ -69,6 +70,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 	webhookService := services.NewWebhookService(db, containerService, updaterService, projectService, gitOpsSyncService, eventService, environmentService)
 	systemBackupService := services.NewSystemBackupService(db, dockerClientService, volumeService, s3DestinationService, activityService, cfg)
 	dashboardService := services.NewDashboardService(db, dockerClientService, containerService, projectService, imageService, settingsService, vulnerabilityService, environmentService, versionService)
+	variableService := services.NewVariableService(db, environmentService, settingsService, kvService)
 	authMiddleware := provideAuthMiddlewareInternal(authService, apiKeyService, environmentService, roleService, cfg)
 	diServices := &Services{
 		AppImages:         applicationImagesService,
@@ -114,6 +116,7 @@ func InitializeServices(ctx context.Context, db *database.DB, cfg *config.Config
 		SystemBackup:      systemBackupService,
 		Dashboard:         dashboardService,
 		Role:              roleService,
+		Variable:          variableService,
 		AuthMiddleware:    authMiddleware,
 	}
 	return diServices, nil
@@ -129,7 +132,7 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 	environmentService := svcs.Environment
 	dockerClientService := svcs.Docker
 	projectService := svcs.Project
-	imageUpdateWatcher := scheduler.NewImageUpdateWatcher(imageUpdateService, settingsService, environmentService, dockerClientService, projectService)
+	imageUpdateWatcher := scheduler.NewImageUpdateWatcher(cfg, imageUpdateService, settingsService, environmentService, dockerClientService, projectService)
 	dockerClientRefreshJob := scheduler.NewDockerClientRefreshJob(dockerClientService, settingsService)
 	kvService := svcs.KV
 	analyticsJob := provideAnalyticsJobInternal(settingsService, kvService, cfg)
@@ -172,7 +175,7 @@ func InitializeJobs(ctx context.Context, cfg *config.Config, svcs *Services) *Jo
 // no longer maintained by hand. wire.Struct assembles the aggregate Services.
 var ServiceSet = wire.NewSet(
 
-	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, services.NewLifecycleService, provideProjectServiceInternal, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, services.NewS3DestinationService, services.NewSystemBackupService, provideVersionServiceInternal,
+	provideResourcesFSInternal, services.NewEventService, services.NewActivityService, services.NewSettingsService, services.NewKVService, services.NewJobService, services.NewSettingsSearchService, services.NewCustomizeSearchService, services.NewApplicationImagesService, services.NewDockerClientService, services.NewRoleService, services.NewSessionService, services.NewEnvironmentService, services.NewNotificationService, services.NewVulnerabilityService, services.NewImageUpdateService, services.NewImageService, services.NewBuildService, services.NewBuildWorkspaceService, services.NewLifecycleService, provideProjectServiceInternal, services.NewContainerService, services.NewDashboardService, services.NewNetworkService, services.NewPortService, services.NewSwarmService, services.NewTemplateService, services.NewOidcService, services.NewSystemService, services.NewSystemUpgradeService, services.NewDiagnosticsService, services.NewGitOpsSyncService, services.NewWebhookService, services.NewS3DestinationService, services.NewSystemBackupService, services.NewVariableService, provideVersionServiceInternal,
 	provideGitRepositoryServiceInternal,
 	provideVolumeServiceInternal,
 	provideAuthServiceInternal,

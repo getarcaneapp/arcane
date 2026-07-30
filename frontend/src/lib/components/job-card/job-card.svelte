@@ -79,7 +79,7 @@
 			{#if headerAccessory}
 				{@render headerAccessory()}
 			{/if}
-			{#if isEnabled && !job.isContinuous && job.settingsKey}
+			{#if isEnabled && job.settingsKey}
 				<Button
 					variant="ghost"
 					size="icon"
@@ -112,7 +112,7 @@
 	<Card.Content class="space-y-2 px-4 pt-0 pb-4">
 		{#if isEnabled}
 			<div class="grid gap-2 text-xs text-muted-foreground">
-				{#if !job.isContinuous}
+				{#if !job.isContinuous || job.settingsKey}
 					<div class="flex items-center gap-2">
 						<ClockIcon class="h-3.5 w-3.5" />
 						<span>{m.jobs_schedule()}:</span>

@@ -1,7 +1,6 @@
 package services
 
 import (
-	"bufio"
 	"context"
 	json "encoding/json/v2"
 	"errors"
@@ -12,7 +11,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
@@ -255,11 +253,6 @@ func (s *TemplateService) GetAllTemplatesPaginated(ctx context.Context, params p
 
 	return result.Items, paginationResp, nil
 }
-
-// envKeyPattern is the POSIX env-name shape used to validate global variable
-// keys before they are persisted to .env.global. Keys that do not match are
-// rejected with a common.InvalidEnvKeyError.
-var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func (s *TemplateService) GetTemplate(ctx context.Context, id string) (*models.ComposeTemplate, error) {
 	if err := s.syncFilesystemTemplatesInternal(ctx); err != nil {
@@ -1093,122 +1086,6 @@ func (s *TemplateService) syncFilesystemTemplatesInternal(ctx context.Context) e
 	}
 
 	s.lastFsSync = time.Now()
-	return nil
-}
-
-func (s *TemplateService) getGlobalVariablesPath(ctx context.Context) (string, error) {
-	projectsDirectory, err := projects.GetProjectsDirectory(ctx, s.settingsService.GetStringSetting(ctx, "projectsDirectory", "/app/data/projects"))
-	if err != nil {
-		return "", fmt.Errorf("failed to get projects directory: %w", err)
-	}
-
-	return filepath.Join(projectsDirectory, ".env.global"), nil
-}
-
-func (s *TemplateService) GetGlobalVariables(ctx context.Context) ([]env.Variable, error) {
-	envPath, err := s.getGlobalVariablesPath(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := os.Stat(envPath); os.IsNotExist(err) {
-		slog.DebugContext(ctx, "Global variables file does not exist yet", "path", envPath)
-		return []env.Variable{}, nil
-	}
-
-	file, err := os.Open(envPath)
-	if err != nil {
-		return nil, fmt.Errorf("failed to open global variables file: %w", err)
-	}
-	defer func() { _ = file.Close() }()
-
-	vars := []env.Variable{}
-	scanner := bufio.NewScanner(file)
-	lineNum := 0
-
-	for scanner.Scan() {
-		lineNum++
-		line := strings.TrimSpace(scanner.Text())
-
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			slog.WarnContext(ctx, "Skipping invalid line in global variables file",
-				"line", lineNum,
-				"content", line)
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-
-		if len(value) >= 2 {
-			if (strings.HasPrefix(value, `"`) && strings.HasSuffix(value, `"`)) ||
-				(strings.HasPrefix(value, `'`) && strings.HasSuffix(value, `'`)) {
-				value = value[1 : len(value)-1]
-			}
-		}
-
-		vars = append(vars, env.Variable{
-			Key:   key,
-			Value: value,
-		})
-	}
-
-	if err := scanner.Err(); err != nil {
-		return nil, fmt.Errorf("error reading global variables file: %w", err)
-	}
-
-	return vars, nil
-}
-
-func (s *TemplateService) UpdateGlobalVariables(ctx context.Context, vars []env.Variable) error {
-	envPath, err := s.getGlobalVariablesPath(ctx)
-	if err != nil {
-		return err
-	}
-
-	projectsDirectory := filepath.Dir(envPath)
-	if err := os.MkdirAll(projectsDirectory, common.DirPerm); err != nil {
-		return fmt.Errorf("failed to create projects directory: %w", err)
-	}
-
-	var builder strings.Builder
-	builder.WriteString("# Global Environment Variables\n")
-	builder.WriteString("# These variables are available to all projects\n")
-	builder.WriteString("# Last updated: ")
-	builder.WriteString(time.Now().Format(time.RFC3339))
-	builder.WriteString("\n\n")
-
-	for _, v := range vars {
-		if strings.TrimSpace(v.Key) == "" {
-			continue
-		}
-
-		key := strings.TrimSpace(v.Key)
-		if !envKeyPattern.MatchString(key) {
-			return &common.InvalidEnvKeyError{Key: v.Key}
-		}
-		value := strings.TrimSpace(v.Value)
-
-		if strings.ContainsAny(value, " \t\n\r#") {
-			value = fmt.Sprintf(`"%s"`, strings.ReplaceAll(value, `"`, `\"`))
-		}
-
-		_, _ = fmt.Fprintf(&builder, "%s=%s\n", key, value)
-	}
-
-	if err := projects.WriteFileWithPerm(envPath, builder.String(), common.FilePerm); err != nil {
-		return fmt.Errorf("failed to write global variables file: %w", err)
-	}
-
-	slog.InfoContext(ctx, "Updated global variables",
-		"path", envPath,
-		"count", len(vars))
-
 	return nil
 }
 

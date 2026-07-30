@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
@@ -17,8 +18,9 @@ import (
 )
 
 const (
-	imageUpdateWatcherDebounce      = 2 * time.Second
-	imageUpdateWatcherBackfillRetry = 5 * time.Second
+	imageUpdateWatcherDebounce        = 2 * time.Second
+	imageUpdateWatcherBackfillRetry   = 5 * time.Second
+	imageUpdateWatcherDefaultSchedule = "0 0 * * * *"
 )
 
 type imageUpdateScannerInternal interface {
@@ -31,6 +33,7 @@ type registryCredentialLoaderInternal interface {
 
 type pollingSettingReaderInternal interface {
 	GetBoolSetting(ctx context.Context, key string, fallback bool) bool
+	GetStringSetting(ctx context.Context, key, defaultValue string) string
 }
 
 type dockerEventBusProviderInternal interface {
@@ -53,6 +56,8 @@ type ImageUpdateWatcher struct {
 	dockerService      dockerEventBusProviderInternal
 	projectService     projectImageRefsBackfillerInternal
 	triggerCh          chan struct{}
+	scheduleRefreshCh  chan struct{}
+	location           *time.Location
 	debounce           time.Duration
 	backfillRetry      time.Duration
 	metadataReady      chan struct{}
@@ -61,7 +66,11 @@ type ImageUpdateWatcher struct {
 }
 
 // NewImageUpdateWatcher constructs the image update watcher from the existing services.
-func NewImageUpdateWatcher(imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, environmentService *services.EnvironmentService, dockerService *services.DockerClientService, projectService *services.ProjectService) *ImageUpdateWatcher {
+func NewImageUpdateWatcher(cfg *config.Config, imageUpdateService *services.ImageUpdateService, settingsService *services.SettingsService, environmentService *services.EnvironmentService, dockerService *services.DockerClientService, projectService *services.ProjectService) *ImageUpdateWatcher {
+	location := time.UTC
+	if cfg != nil {
+		location = cfg.GetLocation()
+	}
 	return &ImageUpdateWatcher{
 		imageUpdateService: imageUpdateService,
 		settingsService:    settingsService,
@@ -69,6 +78,8 @@ func NewImageUpdateWatcher(imageUpdateService *services.ImageUpdateService, sett
 		dockerService:      dockerService,
 		projectService:     projectService,
 		triggerCh:          make(chan struct{}, 1),
+		scheduleRefreshCh:  make(chan struct{}, 1),
+		location:           location,
 		debounce:           imageUpdateWatcherDebounce,
 		backfillRetry:      imageUpdateWatcherBackfillRetry,
 		metadataReady:      make(chan struct{}),
@@ -108,6 +119,9 @@ func (w *ImageUpdateWatcher) Start(ctx context.Context) error {
 			}
 		}
 	})
+	listener.Go(func() {
+		w.runScheduledPollsInternal(ctx)
+	})
 
 	select {
 	case <-ctx.Done():
@@ -138,6 +152,17 @@ func (w *ImageUpdateWatcher) Trigger() {
 	}
 	select {
 	case w.triggerCh <- struct{}{}:
+	default:
+	}
+}
+
+// RefreshSchedule wakes the scheduled-poll loop so it re-reads pollingInterval.
+func (w *ImageUpdateWatcher) RefreshSchedule() {
+	if w == nil || w.scheduleRefreshCh == nil {
+		return
+	}
+	select {
+	case w.scheduleRefreshCh <- struct{}{}:
 	default:
 	}
 }
@@ -262,6 +287,47 @@ func (w *ImageUpdateWatcher) runTriggeredScansInternal(ctx context.Context) {
 		}
 		if err := w.RunNow(ctx); err != nil && !errors.Is(err, context.Canceled) {
 			slog.ErrorContext(ctx, "image update watcher scan failed", "error", err)
+		}
+	}
+}
+
+// runScheduledPollsInternal periodically queues scans based on the
+// pollingInterval cron setting so registry-side updates are detected even when
+// no local Docker image events occur. Fires funnel through Trigger, sharing
+// the same debounce and single-flight path as event-driven scans.
+func (w *ImageUpdateWatcher) runScheduledPollsInternal(ctx context.Context) {
+	if w.scheduleRefreshCh == nil {
+		return
+	}
+	location := w.location
+	if location == nil {
+		location = time.UTC
+	}
+
+	for {
+		spec := imageUpdateWatcherDefaultSchedule
+		if w.settingsService != nil {
+			spec = w.settingsService.GetStringSetting(ctx, "pollingInterval", imageUpdateWatcherDefaultSchedule)
+		}
+		schedule, err := cronScheduleParser.Parse(spec)
+		if err != nil {
+			slog.WarnContext(ctx, "invalid pollingInterval cron expression; using default schedule", "pollingInterval", spec, "default", imageUpdateWatcherDefaultSchedule, "error", err)
+			schedule, err = cronScheduleParser.Parse(imageUpdateWatcherDefaultSchedule)
+			if err != nil {
+				slog.ErrorContext(ctx, "failed to parse default image polling schedule", "error", err)
+				return
+			}
+		}
+
+		timer := time.NewTimer(time.Until(schedule.Next(time.Now().In(location))))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return
+		case <-w.scheduleRefreshCh:
+			timer.Stop()
+		case <-timer.C:
+			w.Trigger()
 		}
 	}
 }

@@ -63,13 +63,6 @@ export interface EventSeverityCounts {
 	error: number;
 }
 
-// --- Variables (key/value form helper) ---
-
-export interface Variable {
-	key: string;
-	value: string;
-}
-
 // --- System stats ---
 
 export interface SystemStats {

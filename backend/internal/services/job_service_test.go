@@ -121,9 +121,9 @@ func TestJobService_ListJobs_ImageUpdateWatcherIsContinuousAndRespectsEnabled(t 
 
 	watcher := findJobStatusByIDInternal(t, jobs.Jobs, "image-polling")
 	require.Equal(t, "Image Update Watcher", watcher.Name)
-	require.Equal(t, "continuous", watcher.Schedule)
-	require.Empty(t, watcher.SettingsKey)
-	require.Nil(t, watcher.NextRun)
+	require.Equal(t, "0 0 * * * *", watcher.Schedule)
+	require.Equal(t, "pollingInterval", watcher.SettingsKey)
+	require.NotNil(t, watcher.NextRun)
 	require.True(t, watcher.IsContinuous)
 	require.True(t, watcher.CanRunManually)
 	require.False(t, watcher.Enabled)
