@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Vyberte název repozitáře nakonfigurovaného pro tento registr",
   "registries_none_enabled": "Nejsou povoleny žádné registry. Nastavte jej v nastavení registru.",
   "registries_no_list_permission": "Nemáte oprávnění k zobrazení seznamu registrů. Požádejte správce o přístup.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Pro tento registr nejsou nakonfigurovány žádné názvy repozitářů. Přidejte je v nastavení registru.",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Cesta k souboru Dockerfile (vzhledem k aktuálnímu kontextu)",
   "target": "Cíl",
