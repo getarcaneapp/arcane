@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Виберіть назву репозиторію, налаштованого для цього реєстру",
   "registries_none_enabled": "Реєстрів не налаштовано. Налаштуйте один із них у розділі «Параметри реєстру».",
   "registries_no_list_permission": "Немає дозволу на перегляд реєстрів. Зверніться до адміністратора, щоб отримати доступ.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Для цього реєстру не налаштовано жодних імен репозиторіїв. Додайте їх у налаштуваннях реєстру.",
   "dockerfile": "Докерфайл",
   "dockerfile_description": "Шлях до Dockerfile (відносно контексту)",
   "target": "Target",
