@@ -2590,7 +2590,7 @@
   "repository_name_not_configured": "Vælg et navn på et repository, der er konfigureret til dette register",
   "registries_none_enabled": "Der er ingen aktiverede registre. Konfigurer et i registerindstillingerne.",
   "registries_no_list_permission": "Der er ikke tilladelse til at vise registre. Bed en administrator om adgang.",
-  "registries_no_repository_names": "No repository names configured for this registry. Add them in Registry settings.",
+  "registries_no_repository_names": "Der er ikke konfigureret nogen repository-navne for dette register. Tilføj dem i registerindstillingerne.",
   "dockerfile": "Dockerfile",
   "dockerfile_description": "Path to Dockerfile (relative to context)",
   "target": "Target",
