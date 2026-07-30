@@ -74,6 +74,40 @@ func TestProxyHTTP_BidirectionalMessages(t *testing.T) {
 	}
 }
 
+func TestProxyHTTP_RejectsOversizedRemoteFrame(t *testing.T) {
+	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, err := websocket.Accept(w, r, nil)
+		if err != nil {
+			return
+		}
+		defer func() { _ = conn.CloseNow() }()
+		_ = conn.Write(r.Context(), websocket.MessageBinary, make([]byte, proxyMaxMessageSize+1))
+	}))
+	defer remoteServer.Close()
+
+	remoteWS := "ws" + strings.TrimPrefix(remoteServer.URL, "http")
+	proxyDone := make(chan error, 1)
+	proxyServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		proxyDone <- ProxyHTTP(w, r, remoteWS, nil, allowAnyOriginForTest)
+	}))
+	defer proxyServer.Close()
+
+	proxyURL := "ws" + strings.TrimPrefix(proxyServer.URL, "http")
+	clientConn, _, err := websocket.Dial(t.Context(), proxyURL, nil)
+	require.NoError(t, err)
+	defer func() { _ = clientConn.CloseNow() }()
+
+	readCtx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	_, _, err = clientConn.Read(readCtx)
+	require.Error(t, err)
+	select {
+	case <-proxyDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("proxy did not close after rejecting oversized remote frame")
+	}
+}
+
 func TestProxyHTTP_RemoteClose(t *testing.T) {
 	// Remote server that closes immediately after upgrade
 	remoteServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

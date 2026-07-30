@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,6 +15,7 @@ import (
 	"time"
 
 	ref "github.com/distribution/reference"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
@@ -1497,27 +1499,30 @@ func TestImageUpdateService_MarkUpdatesAsNotified_EmptyList(t *testing.T) {
 // with "context canceled" so notifications were never dispatched (issue #2920).
 func TestImageUpdateService_SendBatchNotifications_DetachesCanceledContext(t *testing.T) {
 	db := setupImageUpdateTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
 
-	// A provider that actually delivers (returns 200), so the record is only marked
-	// notified when the send genuinely reaches it.
+	// The edge dispatch endpoint returns one delivered provider, so the record is
+	// only marked notified when the send genuinely reaches the manager.
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/notifications/dispatch", r.URL.Path)
+		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
 		calls.Add(1)
-		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"message":   "Notification dispatched successfully",
+				"delivered": 1,
+			},
+		}))
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&models.NotificationSettings{
-		Provider: models.NotificationProviderGeneric,
-		Enabled:  true,
-		Config: models.JSON{
-			"webhookUrl":  server.URL,
-			"method":      "POST",
-			"contentType": "application/json",
-		},
-	}).Error)
 
-	notif := NewNotificationService(db, nil, nil, nil)
+	notif := NewNotificationService(db, &config.Config{
+		AgentMode:     true,
+		AgentToken:    "agent-token",
+		ManagerApiUrl: server.URL,
+	}, NewEnvironmentService(db, nil, nil, nil, nil, nil), nil)
 	svc := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 
 	rec := models.ImageUpdateRecord{
@@ -1587,6 +1592,18 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 	db := setupImageUpdateTestDB(t)
 	require.NoError(t, db.AutoMigrate(&models.NotificationSettings{}))
 
+	originalTransport := http.DefaultTransport
+	http.DefaultTransport = &http.Transport{
+		DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			_, port, err := net.SplitHostPort(address)
+			if err != nil {
+				return nil, err
+			}
+			return (&net.Dialer{}).DialContext(ctx, network, net.JoinHostPort("127.0.0.1", port))
+		},
+	}
+	t.Cleanup(func() { http.DefaultTransport = originalTransport })
+
 	healthy := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
 	}))
@@ -1597,11 +1614,14 @@ func TestImageUpdateService_SendBatchNotifications_PartialFailureStillMarksNotif
 	defer broken.Close()
 
 	for _, serverURL := range []string{healthy.URL, broken.URL} {
+		parsedURL, err := url.Parse(serverURL)
+		require.NoError(t, err)
+		parsedURL.Host = net.JoinHostPort("93.184.216.34", parsedURL.Port())
 		require.NoError(t, db.Create(&models.NotificationSettings{
 			Provider: models.NotificationProviderGeneric,
 			Enabled:  true,
 			Config: models.JSON{
-				"webhookUrl":  serverURL,
+				"webhookUrl":  parsedURL.String(),
 				"method":      "POST",
 				"contentType": "application/json",
 			},

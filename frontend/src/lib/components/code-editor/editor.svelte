@@ -484,7 +484,11 @@
 					create() {
 						const dom = document.createElement('div');
 						dom.className = 'arcane-hover';
-						dom.innerHTML = `<strong>${variableRef.name}</strong><div>Source: ${variableRef.source}</div>`;
+						const name = document.createElement('strong');
+						name.textContent = variableRef.name;
+						const sourceRow = document.createElement('div');
+						sourceRow.textContent = `${m.code_editor_source()}: ${variableRef.source}`;
+						dom.append(name, sourceRow);
 						return { dom };
 					}
 				};
@@ -492,6 +496,7 @@
 
 			const yamlContext = analysisModule.findYamlPositionContext(source, position);
 			if (!yamlContext || !yamlContext.currentKey) return null;
+			const currentKey = yamlContext.currentKey;
 
 			const schemaModule = await loadComposeSchemaModule();
 			const schema = schemaState ?? (await schemaModule.getComposeSchemaContext());
@@ -508,14 +513,33 @@
 				create() {
 					const dom = document.createElement('div');
 					dom.className = 'arcane-hover';
-					const examples =
-						doc.examples && doc.examples.length > 0 ? `<div><strong>Examples:</strong> ${doc.examples.join(', ')}</div>` : '';
-					dom.innerHTML = `
-						<div><strong>${doc.title ?? yamlContext.currentKey}</strong></div>
-						${doc.description ? `<div>${doc.description}</div>` : ''}
-						${doc.defaultValue ? `<div><strong>Default:</strong> ${doc.defaultValue}</div>` : ''}
-						${examples}
-					`;
+					const title = document.createElement('strong');
+					title.textContent = doc.title ?? currentKey;
+					const titleRow = document.createElement('div');
+					titleRow.append(title);
+					dom.append(titleRow);
+
+					if (doc.description) {
+						const description = document.createElement('div');
+						description.textContent = doc.description;
+						dom.append(description);
+					}
+
+					if (doc.defaultValue) {
+						const defaultLabel = document.createElement('strong');
+						defaultLabel.textContent = `${m.code_editor_default()}: `;
+						const defaultRow = document.createElement('div');
+						defaultRow.append(defaultLabel, document.createTextNode(doc.defaultValue));
+						dom.append(defaultRow);
+					}
+
+					if (doc.examples && doc.examples.length > 0) {
+						const examplesLabel = document.createElement('strong');
+						examplesLabel.textContent = `${m.examples()}: `;
+						const examplesRow = document.createElement('div');
+						examplesRow.append(examplesLabel, document.createTextNode(doc.examples.join(', ')));
+						dom.append(examplesRow);
+					}
 					return { dom };
 				}
 			};

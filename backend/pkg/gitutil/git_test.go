@@ -372,6 +372,83 @@ func minimalCompose() []byte {
 	return []byte("services:\n  test:\n    image: alpine\n")
 }
 
+func TestFileExistsRejectsExternalSymlink(t *testing.T) {
+	repoPath := t.TempDir()
+	externalPath := filepath.Join(t.TempDir(), "secret.txt")
+	writeFileInternal(t, repoPath, "inside.txt", []byte("inside"))
+	writeFileInternal(t, filepath.Dir(externalPath), filepath.Base(externalPath), []byte("outside"))
+
+	if err := os.Symlink("inside.txt", filepath.Join(repoPath, "inside-link.txt")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	if err := os.Symlink(externalPath, filepath.Join(repoPath, "outside-link.txt")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	client := NewClient("")
+	if !client.FileExists(context.Background(), repoPath, "inside.txt") {
+		t.Fatal("expected regular repository file to exist")
+	}
+	if !client.FileExists(context.Background(), repoPath, "inside-link.txt") {
+		t.Fatal("expected in-repository symlink target to exist")
+	}
+	if client.FileExists(context.Background(), repoPath, "outside-link.txt") {
+		t.Fatal("expected symlink outside repository to be rejected")
+	}
+}
+
+func TestReadFileRejectsExternalSymlink(t *testing.T) {
+	repoPath := t.TempDir()
+	externalPath := filepath.Join(t.TempDir(), "secret.txt")
+	writeFileInternal(t, repoPath, "inside.txt", []byte("inside"))
+	writeFileInternal(t, filepath.Dir(externalPath), filepath.Base(externalPath), []byte("outside"))
+
+	if err := os.Symlink("inside.txt", filepath.Join(repoPath, "inside-link.txt")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	if err := os.Symlink(externalPath, filepath.Join(repoPath, "outside-link.txt")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	client := NewClient("")
+	content, err := client.ReadFile(context.Background(), repoPath, "inside-link.txt")
+	if err != nil {
+		t.Fatalf("expected in-repository symlink to remain readable: %v", err)
+	}
+	if content != "inside" {
+		t.Fatalf("expected in-repository content, got %q", content)
+	}
+	if content, err = client.ReadFile(context.Background(), repoPath, "outside-link.txt"); err == nil {
+		t.Fatalf("expected symlink outside repository to be rejected, got %q", content)
+	}
+}
+
+func TestBrowseTreeRejectsExternalSymlink(t *testing.T) {
+	repoPath := t.TempDir()
+	externalDir := t.TempDir()
+	writeFileInternal(t, repoPath, "inside/file.txt", []byte("inside"))
+	writeFileInternal(t, externalDir, "secret.txt", []byte("outside"))
+
+	if err := os.Symlink("inside", filepath.Join(repoPath, "inside-link")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+	if err := os.Symlink(externalDir, filepath.Join(repoPath, "outside-link")); err != nil {
+		t.Skipf("symlink creation is unavailable: %v", err)
+	}
+
+	client := NewClient("")
+	nodes, err := client.BrowseTree(context.Background(), repoPath, "inside-link")
+	if err != nil {
+		t.Fatalf("expected in-repository directory symlink to remain browsable: %v", err)
+	}
+	if len(nodes) != 1 || nodes[0].Name != "file.txt" {
+		t.Fatalf("expected in-repository directory contents, got %#v", nodes)
+	}
+	if nodes, err = client.BrowseTree(context.Background(), repoPath, "outside-link"); err == nil {
+		t.Fatalf("expected directory symlink outside repository to be rejected, got %#v", nodes)
+	}
+}
+
 func TestWalkDirectory_BasicWalk(t *testing.T) {
 	tmpDir := t.TempDir()
 	writeFileInternal(t, tmpDir, "compose.yaml", minimalCompose())

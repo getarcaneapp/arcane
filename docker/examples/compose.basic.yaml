@@ -10,8 +10,8 @@ services:
       - /host/path/to/projects:/host/path/to/projects
       - /host/path/to/builds:/builds
     environment:
-      - ENCRYPTION_KEY=replace_me_with_a_random_32_char_value
-      - JWT_SECRET=replace_me_with_a_random_32_char_value
+      - ENCRYPTION_KEY=${ENCRYPTION_KEY:?Set ENCRYPTION_KEY to a unique random value of at least 32 characters}
+      - JWT_SECRET=${JWT_SECRET:?Set JWT_SECRET to a unique random value of at least 32 characters}
       - PROJECTS_DIRECTORY=/host/path/to/projects
       # Optional: run Arcane as a specific host UID/GID instead of the default runtime user.
       # When using the mounted Docker socket, Arcane will map the socket group automatically.

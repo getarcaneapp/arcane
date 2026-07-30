@@ -122,35 +122,30 @@ func GetIntQueryParam(r *http.Request, name string, required bool) (int, error) 
 	return n, nil
 }
 
-// GetClientBaseURL determines the client's base URL from request headers.
-// It checks Origin, X-Forwarded-Host/Proto, and Host headers.
-// If none provide a valid URL, it falls back to the configured appURL.
+// GetClientBaseURL determines the client's base URL. A configured appURL is
+// authoritative so request-controlled headers cannot alter security-sensitive
+// callback URLs. Headers are used only when no canonical URL is configured.
 func GetClientBaseURL(origin, forwardedHost, forwardedProto, host, appURL string) string {
-	// 1. Trust Origin if present
+	if strings.TrimSpace(appURL) != "" {
+		return strings.TrimSuffix(appURL, "/")
+	}
+
 	if origin != "" {
 		return strings.TrimSuffix(origin, "/")
 	}
 
 	scheme := "http"
-	// Try to get scheme from AppURL as default
-	if u, err := url.Parse(appURL); err == nil && u.Scheme != "" {
-		scheme = u.Scheme
-	}
-
 	if forwardedProto != "" {
 		scheme = forwardedProto
 	}
 
-	// 2. Check X-Forwarded-Host
 	if forwardedHost != "" {
 		return fmt.Sprintf("%s://%s", scheme, forwardedHost)
 	}
 
-	// 3. Check Host
 	if host != "" {
 		return fmt.Sprintf("%s://%s", scheme, host)
 	}
 
-	// 4. Fallback
-	return strings.TrimSuffix(appURL, "/")
+	return ""
 }

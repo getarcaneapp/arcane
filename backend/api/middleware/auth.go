@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"crypto/subtle"
 	"log/slog"
 	"net/http"
 	"strings"
@@ -172,17 +173,17 @@ func tryAgentAuthInternal(ctx huma.Context, cfg *config.Config) (*models.User, b
 	// Check for agent bootstrap pairing
 	if strings.HasPrefix(path, pkgutils.AgentPairingPrefix) &&
 		cfg.AgentToken != "" &&
-		ctx.Header(pkgutils.HeaderAgentBootstrap) == cfg.AgentToken {
+		subtle.ConstantTimeCompare([]byte(ctx.Header(pkgutils.HeaderAgentBootstrap)), []byte(cfg.AgentToken)) == 1 {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for agent token
-	if tok := ctx.Header(pkgutils.HeaderAgentToken); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
+	if tok := ctx.Header(pkgutils.HeaderAgentToken); tok != "" && cfg.AgentToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(cfg.AgentToken)) == 1 {
 		return createAgentSudoUserInternal(), true
 	}
 
 	// Check for API key as agent token
-	if tok := ctx.Header(pkgutils.HeaderApiKey); tok != "" && cfg.AgentToken != "" && tok == cfg.AgentToken {
+	if tok := ctx.Header(pkgutils.HeaderApiKey); tok != "" && cfg.AgentToken != "" && subtle.ConstantTimeCompare([]byte(tok), []byte(cfg.AgentToken)) == 1 {
 		return createAgentSudoUserInternal(), true
 	}
 

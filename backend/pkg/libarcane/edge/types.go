@@ -84,17 +84,18 @@ type responseRecorder struct {
 }
 
 type commandResponseRecorder struct {
-	conn        TunnelConnection
-	headers     http.Header
-	commandID   string
-	commandName string
-	buffer      bytes.Buffer
-	statusCode  int
-	sequence    int64
-	mu          sync.Mutex
-	wroteHeader bool
-	streaming   bool
-	closed      bool
+	conn             TunnelConnection
+	headers          http.Header
+	commandID        string
+	commandName      string
+	buffer           bytes.Buffer
+	statusCode       int
+	sequence         int64
+	mu               sync.Mutex
+	wroteHeader      bool
+	streaming        bool
+	streamHeaderSent bool
+	closed           bool
 }
 
 type streamingResponseRecorder struct {
@@ -114,20 +115,22 @@ type pollManagedTunnelSession struct {
 }
 
 type CommandRequest struct {
-	ID            string
-	Command       string
-	Method        string
-	Path          string
-	Query         string
-	Headers       map[string]string
-	Body          []byte
-	TimeoutMillis int64
+	ID             string
+	Command        string
+	Method         string
+	Path           string
+	Query          string
+	Headers        map[string]string
+	Body           []byte
+	TimeoutMillis  int64
+	responseWriter http.ResponseWriter
 }
 
 type CommandResult struct {
-	Status  int
-	Headers map[string]string
-	Body    []byte
+	Status   int
+	Headers  map[string]string
+	Body     []byte
+	streamed bool
 }
 
 type CommandClient struct{}
@@ -189,10 +192,12 @@ type PollRuntimeRegistry struct {
 }
 
 type grpcResponseState struct {
-	status      int
-	respHeaders map[string]string
-	respBody    bytes.Buffer
-	gotResponse bool
+	status         int
+	respHeaders    map[string]string
+	respBody       bytes.Buffer
+	responseWriter http.ResponseWriter
+	gotResponse    bool
+	streamed       bool
 }
 
 // AgentTunnel represents an active tunnel connection from an edge agent
@@ -221,17 +226,28 @@ type TunnelRegistry struct {
 
 type internalTunnelRequestContextKey struct{}
 
+type eventCallbackWorkInternal struct {
+	ctx           context.Context
+	callback      EventCallback
+	environmentID string
+	event         *TunnelEvent
+}
+
 // TunnelServer handles incoming edge agent connections on the manager side.
 type TunnelServer struct {
-	registry           *TunnelRegistry
-	resolver           EnvironmentResolver
-	nameResolver       EnvironmentNameResolver
-	statusCallback     StatusUpdateCallback
-	eventCallback      EventCallback
-	enrollmentCallback EnrollmentCallback
-	cleanupDone        chan struct{}
-	cfg                *Config
-	statusMu           sync.Mutex
+	registry              *TunnelRegistry
+	resolver              EnvironmentResolver
+	nameResolver          EnvironmentNameResolver
+	statusCallback        StatusUpdateCallback
+	eventCallback         EventCallback
+	enrollmentCallback    EnrollmentCallback
+	cleanupDone           chan struct{}
+	cfg                   *Config
+	statusMu              sync.Mutex
+	eventCallbackMu       sync.Mutex
+	eventCallbackSpace    chan struct{}
+	activeEventCallbacks  int
+	pendingEventCallbacks []eventCallbackWorkInternal
 }
 
 type resolvedEnvironmentIDKey struct{}

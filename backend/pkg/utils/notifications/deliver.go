@@ -236,6 +236,15 @@ func deliverGeneric(ctx context.Context, config models.JSON, c Content) error {
 	if err != nil {
 		return err
 	}
+	if err := DecryptStringCredential(&genericConfig.WebhookURL); err != nil {
+		return err
+	}
+	for key, value := range genericConfig.CustomHeaders {
+		if err := DecryptStringCredential(&value); err != nil {
+			return err
+		}
+		genericConfig.CustomHeaders[key] = value
+	}
 	if genericConfig.WebhookURL == "" {
 		return errors.New("webhook URL not configured")
 	}

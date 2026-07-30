@@ -6,6 +6,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -68,6 +69,79 @@ func TestEnvironmentHandlerTestConnectionReturnsOpaqueBadRequestForCustomURLInte
 	require.ErrorAs(t, err, &statusErr)
 	require.Equal(t, http.StatusBadRequest, statusErr.GetStatus())
 	require.Equal(t, "Environment connection test failed", statusErr.Error())
+}
+
+func TestEnvironmentHandlerGetEnvironmentVersionRejectsUnsafeReleaseURLInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"currentVersion":"1.0.0","releaseUrl":"javascript:alert(1)"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupActivityHandlerTestDBInternal(t)
+	env := &models.Environment{Name: "Remote", ApiUrl: server.URL, Enabled: true}
+	env.ID = "env-version-url"
+	require.NoError(t, db.Create(env).Error)
+
+	handler := &EnvironmentHandler{
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil),
+	}
+	output, err := handler.GetEnvironmentVersion(context.Background(), &GetEnvironmentVersionInput{ID: env.ID})
+
+	require.NoError(t, err)
+	require.NotNil(t, output)
+	assert.Empty(t, output.Body.Data.ReleaseURL)
+}
+
+func TestEnvironmentHandlerGetEnvironmentVersionRejectsUnsafeRedirectInternal(t *testing.T) {
+	privateServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"currentVersion":"9.9.9"}`))
+	}))
+	t.Cleanup(privateServer.Close)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, privateServer.URL+"/private", http.StatusFound)
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupActivityHandlerTestDBInternal(t)
+	env := &models.Environment{Name: "Remote", ApiUrl: server.URL, Enabled: true}
+	env.ID = "env-version-redirect"
+	require.NoError(t, db.Create(env).Error)
+
+	handler := &EnvironmentHandler{
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil),
+	}
+	output, err := handler.GetEnvironmentVersion(context.Background(), &GetEnvironmentVersionInput{ID: env.ID})
+
+	require.Nil(t, output)
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusInternalServerError, statusErr.GetStatus())
+}
+
+func TestEnvironmentHandlerGetEnvironmentVersionBoundsResponseInternal(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(strings.Repeat("x", maxEnvironmentVersionBytes+1)))
+	}))
+	t.Cleanup(server.Close)
+
+	db := setupActivityHandlerTestDBInternal(t)
+	env := &models.Environment{Name: "Remote", ApiUrl: server.URL, Enabled: true}
+	env.ID = "env-version-size"
+	require.NoError(t, db.Create(env).Error)
+
+	handler := &EnvironmentHandler{
+		environmentService: services.NewEnvironmentService(db, server.Client(), nil, nil, nil, nil),
+	}
+	output, err := handler.GetEnvironmentVersion(context.Background(), &GetEnvironmentVersionInput{ID: env.ID})
+
+	require.Nil(t, output)
+	var statusErr huma.StatusError
+	require.ErrorAs(t, err, &statusErr)
+	assert.Equal(t, http.StatusBadGateway, statusErr.GetStatus())
 }
 
 func TestEnvironmentSecretDeploymentRoutesRequirePairPermission(t *testing.T) {

@@ -15,10 +15,11 @@ import (
 )
 
 const (
-	HeaderAPIKey        = "X-Api-Key"            // #nosec G101: header name, not a credential
-	HeaderAgentToken    = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
-	HeaderAuthorization = "Authorization"
-	bearerScheme        = "Bearer "
+	HeaderAPIKey         = "X-Api-Key"            // #nosec G101: header name, not a credential
+	HeaderAgentToken     = "X-Arcane-Agent-Token" // #nosec G101: header name, not a credential
+	HeaderAuthorization  = "Authorization"
+	bearerScheme         = "Bearer "
+	maxResponseBodyBytes = 16 << 20
 )
 
 // ExtractBearerToken returns the token portion of an "Authorization: Bearer <token>"
@@ -161,9 +162,12 @@ func (c *Client) doDirectHTTPInternal(ctx context.Context, req Request) (*Respon
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBodyBytes+1))
 	if err != nil {
 		return nil, &TransportError{Err: errors.WrapIf(err, "failed to read response body")}
+	}
+	if len(respBody) > maxResponseBodyBytes {
+		return nil, &TransportError{Err: errors.Errorf("remote response exceeded %d bytes", maxResponseBodyBytes)}
 	}
 
 	return &Response{

@@ -1,12 +1,48 @@
 package notifications
 
 import (
+	"context"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestSendGenericWithTitleRejectsPrivateTarget(t *testing.T) {
+	err := SendGenericWithTitle(context.Background(), models.GenericConfig{
+		WebhookURL: "http://127.0.0.1:8080/private",
+	}, "title", "message")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Remote URL is not allowed")
+}
+
+func TestSendGenericWithTitleBoundsResponseBody(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", genericWebhookMaxResponseBytes+1)))
+	}))
+	defer server.Close()
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, server.Listener.Addr().String())
+	}
+	previousClient := http.DefaultClient
+	http.DefaultClient = &http.Client{Transport: transport, Timeout: 5 * time.Second}
+	t.Cleanup(func() { http.DefaultClient = previousClient })
+
+	err := SendGenericWithTitle(context.Background(), models.GenericConfig{
+		WebhookURL:          "http://93.184.216.34/webhook",
+		SuccessBodyContains: "ok",
+	}, "title", "message")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "webhook response exceeded")
+}
 
 func TestBuildGenericURL(t *testing.T) {
 	tests := []struct {

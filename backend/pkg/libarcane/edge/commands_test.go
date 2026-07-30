@@ -3,6 +3,7 @@ package edge
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -77,9 +78,84 @@ func TestCollectCommandResponse(t *testing.T) {
 	pending.ResponseCh <- &TunnelMessage{ID: "cmd-1", Type: MessageTypeCommandComplete, Status: 200, Headers: map[string]string{"Content-Type": "text/plain"}, Body: []byte("world")}
 	require.NoError(t, tunnel.CloseWithReason(""))
 
-	status, headers, body, err := collectCommandResponseInternal(context.Background(), tunnel, pending, "")
+	status, headers, body, streamed, err := collectCommandResponseInternal(context.Background(), tunnel, pending, "", nil)
 	require.NoError(t, err)
 	require.Equal(t, 200, status)
 	require.Equal(t, "text/plain", headers["Content-Type"])
 	require.Equal(t, "hello world", string(body))
+	require.False(t, streamed)
+}
+
+func TestCollectCommandResponseRejectsOversizedBody(t *testing.T) {
+	testCases := []struct {
+		name     string
+		messages []*TunnelMessage
+	}{
+		{
+			name: "streamed response",
+			messages: []*TunnelMessage{
+				{Type: MessageTypeResponse, Status: http.StatusOK, Headers: map[string]string{"X-Arcane-Tunnel-Stream": "1"}, Body: make([]byte, maxProxyResponseBodySize)},
+				{Type: MessageTypeStreamData, Body: []byte{1}},
+			},
+		},
+		{
+			name: "command output",
+			messages: []*TunnelMessage{
+				{Type: MessageTypeCommandOutput, Body: make([]byte, maxProxyResponseBodySize)},
+				{Type: MessageTypeCommandComplete, Status: http.StatusOK, Body: []byte{1}},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			tunnel := NewAgentTunnelWithConn("env-oversized", &fakeServerTunnelConn{})
+			defer func() { require.NoError(t, tunnel.CloseWithReason("")) }()
+
+			pending := &PendingRequest{
+				ResponseCh: make(chan *TunnelMessage, len(tc.messages)),
+				failureCh:  make(chan error, 1),
+			}
+			for _, message := range tc.messages {
+				pending.ResponseCh <- message
+			}
+
+			status, headers, body, streamed, err := collectCommandResponseInternal(t.Context(), tunnel, pending, http.MethodGet, nil)
+			require.ErrorContains(t, err, "edge tunnel response body exceeds limit")
+			require.Zero(t, status)
+			require.Nil(t, headers)
+			require.Nil(t, body)
+			require.False(t, streamed)
+		})
+	}
+}
+
+func TestCollectCommandResponseStreamsBodyPastBufferedLimit(t *testing.T) {
+	tunnel := NewAgentTunnelWithConn("env-streamed", &fakeServerTunnelConn{})
+	defer func() { require.NoError(t, tunnel.CloseWithReason("")) }()
+
+	pending := &PendingRequest{
+		ResponseCh: make(chan *TunnelMessage, 4),
+		failureCh:  make(chan error, 1),
+	}
+	firstChunk := make([]byte, maxProxyResponseBodySize)
+	lastChunk := []byte("complete")
+	pending.ResponseCh <- &TunnelMessage{
+		Type:    MessageTypeResponse,
+		Status:  http.StatusOK,
+		Headers: map[string]string{"Content-Type": "application/octet-stream", "X-Arcane-Tunnel-Stream": "1"},
+	}
+	pending.ResponseCh <- &TunnelMessage{Type: MessageTypeCommandOutput, Body: firstChunk}
+	pending.ResponseCh <- &TunnelMessage{Type: MessageTypeCommandOutput, Body: lastChunk}
+	pending.ResponseCh <- &TunnelMessage{Type: MessageTypeCommandComplete, Status: http.StatusOK, Streaming: true}
+
+	w := httptest.NewRecorder()
+	status, headers, body, streamed, err := collectCommandResponseInternal(t.Context(), tunnel, pending, http.MethodGet, w)
+	require.NoError(t, err)
+	require.True(t, streamed)
+	require.Equal(t, http.StatusOK, status)
+	require.Equal(t, "application/octet-stream", headers["Content-Type"])
+	require.Nil(t, body)
+	require.Equal(t, len(firstChunk)+len(lastChunk), w.Body.Len())
+	require.Equal(t, "", w.Header().Get("X-Arcane-Tunnel-Stream"))
 }

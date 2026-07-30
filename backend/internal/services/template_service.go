@@ -61,6 +61,7 @@ const (
 	remoteCacheDuration         = 5 * time.Minute
 	fsSyncInterval              = 1 * time.Minute
 	remoteIconResolveLimit      = 4
+	templateMaxResponseBytes    = 8 << 20
 	templateArcaneBlockKey      = "x-arcane"
 	templateArcaneIconKey       = "icon"
 	templateArcaneIconsAliasKey = "icons"
@@ -627,9 +628,12 @@ func (s *TemplateService) doGET(ctx context.Context, url string) ([]byte, error)
 		return nil, errors.Errorf("HTTP status %d for URL %s", resp.StatusCode, url)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, templateMaxResponseBytes+1))
 	if err != nil {
 		return nil, errors.WrapIff(err, "failed to read response body from %s", url)
+	}
+	if len(body) > templateMaxResponseBytes {
+		return nil, errors.Errorf("response body from %s exceeded %d bytes", url, templateMaxResponseBytes)
 	}
 	return body, nil
 }
@@ -665,9 +669,12 @@ func (s *TemplateService) fetchRegistryTemplates(ctx context.Context, reg *model
 		return nil, errors.Errorf("unexpected status %d", resp.StatusCode)
 	}
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, templateMaxResponseBytes+1))
 	if err != nil {
 		return nil, errors.WrapIf(err, "read body")
+	}
+	if len(body) > templateMaxResponseBytes {
+		return nil, errors.Errorf("registry response exceeded %d bytes", templateMaxResponseBytes)
 	}
 
 	var regDTO tmpl.RemoteRegistry

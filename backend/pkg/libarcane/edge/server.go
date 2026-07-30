@@ -53,6 +53,13 @@ type StatusUpdateCallback func(ctx context.Context, environmentID string, connec
 // EventCallback is called when an edge agent publishes an event.
 type EventCallback func(ctx context.Context, environmentID string, event *TunnelEvent) error
 
+const (
+	maxConcurrentEventCallbacks = 8
+	// Keep temporary callback slowdown off the tunnel receive loop without
+	// allowing an event-producing agent to grow manager memory without bound.
+	maxPendingEventCallbacks = 256
+)
+
 // EnrollmentCallback is called after a successful manager-side mTLS enrollment
 // of an edge agent, allowing the host to record audit events or metrics.
 // remoteAddr is the client socket address as seen by the manager.
@@ -67,10 +74,11 @@ func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentR
 	}
 
 	return &TunnelServer{
-		registry:       registry,
-		resolver:       resolver,
-		statusCallback: statusCallback,
-		cleanupDone:    make(chan struct{}),
+		registry:           registry,
+		resolver:           resolver,
+		statusCallback:     statusCallback,
+		cleanupDone:        make(chan struct{}),
+		eventCallbackSpace: make(chan struct{}, 1),
 	}
 }
 
@@ -575,14 +583,67 @@ func (s *TunnelServer) handleEvent(ctx context.Context, tunnel *AgentTunnel, msg
 		return
 	}
 
-	eventCopy := cloneTunnelEvent(msg.Event)
-	go func() {
-		eventCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 15*time.Second)
-		defer cancel()
-		if err := s.eventCallback(eventCtx, tunnel.EnvironmentID, eventCopy); err != nil {
-			slog.WarnContext(eventCtx, "Failed to process edge event", "environment_id", tunnel.EnvironmentID, "type", eventCopy.Type, "error", err)
+	callbackCtx := context.WithoutCancel(ctx)
+	work := eventCallbackWorkInternal{
+		ctx:           callbackCtx,
+		callback:      s.eventCallback,
+		environmentID: tunnel.EnvironmentID,
+		event:         cloneTunnelEvent(msg.Event),
+	}
+
+	for {
+		s.eventCallbackMu.Lock()
+		if s.activeEventCallbacks < maxConcurrentEventCallbacks {
+			s.activeEventCallbacks++
+			s.eventCallbackMu.Unlock()
+			s.runEventCallbacksInternal(callbackCtx, work)
+			return
 		}
-	}()
+		if len(s.pendingEventCallbacks) < maxPendingEventCallbacks {
+			s.pendingEventCallbacks = append(s.pendingEventCallbacks, work)
+			s.eventCallbackMu.Unlock()
+			return
+		}
+		s.eventCallbackMu.Unlock()
+
+		select {
+		case <-s.eventCallbackSpace:
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+func (s *TunnelServer) runEventCallbacksInternal(ctx context.Context, work eventCallbackWorkInternal) {
+	go func(ctx context.Context, current eventCallbackWorkInternal) { //nolint:contextcheck // callback worker intentionally receives a detached event context.
+		for {
+			callbackCtx := context.WithoutCancel(ctx)
+			eventCtx, cancel := context.WithTimeout(callbackCtx, 15*time.Second)
+			if err := current.callback(eventCtx, current.environmentID, current.event); err != nil {
+				slog.WarnContext(eventCtx, "Failed to process edge event", "environment_id", current.environmentID, "type", current.event.Type, "error", err)
+			}
+			cancel()
+
+			s.eventCallbackMu.Lock()
+			done := len(s.pendingEventCallbacks) == 0
+			if done {
+				s.activeEventCallbacks--
+			} else {
+				current = s.pendingEventCallbacks[0]
+				s.pendingEventCallbacks[0] = eventCallbackWorkInternal{}
+				s.pendingEventCallbacks = s.pendingEventCallbacks[1:]
+				ctx = current.ctx
+			}
+			s.eventCallbackMu.Unlock()
+			select {
+			case s.eventCallbackSpace <- struct{}{}:
+			default:
+			}
+			if done {
+				return
+			}
+		}
+	}(ctx, work)
 }
 
 // StartCleanupLoop periodically cleans up stale tunnels.

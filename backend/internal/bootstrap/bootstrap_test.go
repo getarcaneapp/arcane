@@ -399,6 +399,7 @@ func TestPrepareServerTLSInternal_AllowsExternalMTLSTermination(t *testing.T) {
 
 func TestIsWeakProductionEncryptionKeyInternal(t *testing.T) {
 	assert.True(t, isWeakProductionEncryptionKeyInternal("short", "production", false))
+	assert.True(t, isWeakProductionEncryptionKeyInternal(knownInsecureEncryptionKey, "production", false))
 	assert.False(t, isWeakProductionEncryptionKeyInternal("test-encryption-key-for-edge-mtls-32bytes-min", "production", false))
 	assert.False(t, isWeakProductionEncryptionKeyInternal("hex:abc", "production", false))
 	assert.False(t, isWeakProductionEncryptionKeyInternal("short", "development", false))

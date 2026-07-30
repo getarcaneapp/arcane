@@ -102,16 +102,21 @@ func (c *CommandClient) Execute(ctx context.Context, tunnel *AgentTunnel, req *C
 		}
 	}
 
-	status, headers, body, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method)
+	status, headers, body, streamed, err := collectCommandResponseInternal(ctx, tunnel, pending, req.Method, req.responseWriter)
+	result := &CommandResult{
+		Status:   status,
+		Headers:  headers,
+		Body:     body,
+		streamed: streamed,
+	}
 	if err != nil {
+		if streamed {
+			return result, err
+		}
 		return nil, err
 	}
 
-	return &CommandResult{
-		Status:  status,
-		Headers: headers,
-		Body:    body,
-	}, nil
+	return result, nil
 }
 
 func (c *CommandClient) OpenStream(ctx context.Context, tunnel *AgentTunnel, req *CommandRequest) error {

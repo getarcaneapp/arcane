@@ -11,6 +11,8 @@ import (
 	"github.com/coder/websocket"
 )
 
+const proxyMaxMessageSize = 16 * 1024 * 1024
+
 // ProxyHTTP upgrades the incoming client connection and bridges it to remoteWS.
 //
 // checkOrigin must be the same Origin validator the local WebSocket endpoints
@@ -28,8 +30,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		return err
 	}
 	defer func() { _ = clientConn.CloseNow() }()
-	// This is a pure bridge; frame-size policing is the remote endpoint's job.
-	clientConn.SetReadLimit(-1)
+	clientConn.SetReadLimit(proxyMaxMessageSize)
 
 	slog.Debug("attempting websocket dial", "remoteWS", remoteWS, "headers", header)
 	dialCtx, dialCancel := context.WithTimeout(r.Context(), 45*time.Second)
@@ -54,7 +55,7 @@ func ProxyHTTP(w http.ResponseWriter, r *http.Request, remoteWS string, header h
 		return err
 	}
 	defer func() { _ = remoteConn.CloseNow() }()
-	remoteConn.SetReadLimit(-1)
+	remoteConn.SetReadLimit(proxyMaxMessageSize)
 
 	slog.Debug("websocket proxy established", "remoteWS", remoteWS)
 

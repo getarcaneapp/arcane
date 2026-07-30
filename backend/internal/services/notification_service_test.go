@@ -550,6 +550,72 @@ func TestNotificationService_CreateOrUpdateSettingsEncryptsCredentialFieldsInter
 	require.Equal(t, "discord-secret-token", decrypted)
 }
 
+func TestNotificationService_CreateOrUpdateSettingsEncryptsGenericCredentialsInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil)
+
+	_, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGeneric, true, models.JSON{
+		"webhookUrl": "https://hooks.example/send?token=webhook-secret",
+		"customHeaders": map[string]any{
+			"Authorization": "Bearer header-secret",
+		},
+	})
+	require.NoError(t, err)
+
+	var stored models.NotificationSettings
+	require.NoError(t, db.WithContext(ctx).Where("provider = ?", models.NotificationProviderGeneric).First(&stored).Error)
+	storedURL := stored.Config["webhookUrl"].(string)
+	require.NotEqual(t, "https://hooks.example/send?token=webhook-secret", storedURL)
+	decryptedURL, err := crypto.Decrypt(storedURL)
+	require.NoError(t, err)
+	require.Equal(t, "https://hooks.example/send?token=webhook-secret", decryptedURL)
+
+	storedHeaders := notificationStringMapInternal(stored.Config["customHeaders"])
+	require.NotEqual(t, "Bearer header-secret", storedHeaders["Authorization"])
+	decryptedHeader, err := crypto.Decrypt(storedHeaders["Authorization"])
+	require.NoError(t, err)
+	require.Equal(t, "Bearer header-secret", decryptedHeader)
+
+	redacted := RedactNotificationConfigCredentials(models.NotificationProviderGeneric, stored.Config)
+	require.Empty(t, redacted["webhookUrl"])
+	require.Empty(t, notificationStringMapInternal(redacted["customHeaders"])["Authorization"])
+}
+
+func TestNotificationService_CreateOrUpdateSettingsRejectsGenericTargetChangeWithStoredHeadersInternal(t *testing.T) {
+	ctx := context.Background()
+	db := setupNotificationTestDB(t)
+	svc := NewNotificationService(db, &config.Config{}, nil, nil)
+
+	created, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGeneric, true, models.JSON{
+		"webhookUrl": "https://hooks.example/send",
+		"customHeaders": map[string]any{
+			"Authorization": "Bearer header-secret",
+		},
+	})
+	require.NoError(t, err)
+	originalURL := created.Config["webhookUrl"]
+	originalHeaders := notificationStringMapInternal(created.Config["customHeaders"])
+
+	_, err = svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGeneric, true, models.JSON{
+		"webhookUrl": "https://attacker.example/send",
+		"customHeaders": map[string]any{
+			"Authorization": "",
+		},
+	})
+	require.ErrorIs(t, err, common.ErrValidation)
+
+	updated, err := svc.CreateOrUpdateSettings(ctx, models.NotificationProviderGeneric, true, models.JSON{
+		"webhookUrl": "",
+		"customHeaders": map[string]any{
+			"Authorization": "",
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, originalURL, updated.Config["webhookUrl"])
+	require.Equal(t, originalHeaders["Authorization"], notificationStringMapInternal(updated.Config["customHeaders"])["Authorization"])
+}
+
 func TestNotificationService_CreateOrUpdateSettingsPreservesStoredCredentialWhenEmptyInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupNotificationTestDB(t)

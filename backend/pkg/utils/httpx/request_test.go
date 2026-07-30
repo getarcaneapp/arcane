@@ -35,3 +35,23 @@ func TestIsWebSocketUpgradeRequest(t *testing.T) {
 		})
 	}
 }
+
+func TestGetClientBaseURLPrefersConfiguredAppURL(t *testing.T) {
+	got := GetClientBaseURL(
+		"https://attacker.example",
+		"forwarded.attacker.example",
+		"http",
+		"host.attacker.example",
+		"https://arcane.example/",
+	)
+	if got != "https://arcane.example" {
+		t.Fatalf("GetClientBaseURL() = %q, want canonical APP_URL", got)
+	}
+}
+
+func TestGetClientBaseURLUsesHeadersWithoutConfiguredAppURL(t *testing.T) {
+	got := GetClientBaseURL("https://arcane.example/", "", "", "", "")
+	if got != "https://arcane.example" {
+		t.Fatalf("GetClientBaseURL() = %q, want request origin fallback", got)
+	}
+}

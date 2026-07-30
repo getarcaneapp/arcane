@@ -31,6 +31,8 @@ import (
 	"go.uber.org/fx/fxevent"
 )
 
+const knownInsecureEncryptionKey = "replace_me_with_a_random_32_char_value" // #nosec G101: public example placeholder, intentionally rejected
+
 func Bootstrap(ctx context.Context) error {
 	if err := gotenv.Load(); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.WrapIf(err, "load .env")
@@ -133,6 +135,9 @@ func isWeakProductionEncryptionKeyInternal(encryptionKey, environment string, ag
 		return false
 	}
 	key := strings.TrimSpace(encryptionKey)
+	if key == knownInsecureEncryptionKey {
+		return true
+	}
 	if key == "" || strings.HasPrefix(key, "hex:") || strings.HasPrefix(key, "base64:") {
 		return false
 	}

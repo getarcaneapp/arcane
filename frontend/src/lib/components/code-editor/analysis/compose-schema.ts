@@ -7,6 +7,9 @@ const DOCKER_COMPOSE_SCHEMA_URL =
 	'https://raw.githubusercontent.com/compose-spec/compose-go/refs/heads/main/schema/compose-spec.json';
 
 const SCHEMA_CACHE_KEY = 'arcane.compose.schema.v1';
+const COMPOSE_SCHEMA_FETCH_TIMEOUT_MS = 10_000;
+const COMPOSE_SCHEMA_MAX_RESPONSE_BYTES = 2 * 1024 * 1024;
+const COMPOSE_SCHEMA_MAX_PATTERN_LENGTH = 256;
 
 type SchemaObject = Record<string, unknown>;
 
@@ -93,6 +96,7 @@ function readCachedSchema(): SchemaObject | null {
 	try {
 		const raw = localStorage.getItem(SCHEMA_CACHE_KEY);
 		if (!raw) return null;
+		if (new TextEncoder().encode(raw).byteLength > COMPOSE_SCHEMA_MAX_RESPONSE_BYTES) return null;
 		const parsed = JSON.parse(raw) as unknown;
 		return asSchemaObject(parsed);
 	} catch {
@@ -204,7 +208,17 @@ function getPathCandidates(root: SchemaObject, path: Array<string | number>): Sc
 
 				const patternProperties = asSchemaObject(node['patternProperties']);
 				if (patternProperties) {
-					for (const patternValue of Object.values(patternProperties)) {
+					for (const [pattern, patternValue] of Object.entries(patternProperties)) {
+						if (pattern.length > COMPOSE_SCHEMA_MAX_PATTERN_LENGTH) continue;
+
+						let matches = false;
+						try {
+							matches = new RegExp(pattern).test(segment);
+						} catch {
+							continue;
+						}
+						if (!matches) continue;
+
 						const fromPattern = asSchemaObject(patternValue);
 						if (fromPattern) nextCandidates.push(fromPattern);
 					}
@@ -382,12 +396,54 @@ export async function getComposeSchemaContext(): Promise<ComposeSchemaContext> {
 
 	composeSchemaPromise = (async () => {
 		try {
-			const response = await fetch(DOCKER_COMPOSE_SCHEMA_URL, { cache: 'no-store' });
-			if (!response.ok) {
-				throw new Error(`HTTP ${response.status}`);
+			const controller = new AbortController();
+			const timeout = setTimeout(() => controller.abort(), COMPOSE_SCHEMA_FETCH_TIMEOUT_MS);
+			let payload: unknown;
+			try {
+				const response = await fetch(DOCKER_COMPOSE_SCHEMA_URL, {
+					cache: 'no-store',
+					signal: controller.signal
+				});
+				if (!response.ok) {
+					throw new Error(`HTTP ${response.status}`);
+				}
+
+				const contentLength = response.headers.get('content-length');
+				if (contentLength && Number(contentLength) > COMPOSE_SCHEMA_MAX_RESPONSE_BYTES) {
+					throw new Error('Compose schema response is too large');
+				}
+				if (!response.body) throw new Error('Compose schema response body is unavailable');
+
+				const chunks: Uint8Array[] = [];
+				let responseBytes = 0;
+				const reader = response.body.getReader();
+				try {
+					while (true) {
+						const { done, value } = await reader.read();
+						if (done) break;
+
+						responseBytes += value.byteLength;
+						if (responseBytes > COMPOSE_SCHEMA_MAX_RESPONSE_BYTES) {
+							await reader.cancel().catch(() => undefined);
+							throw new Error('Compose schema response is too large');
+						}
+						chunks.push(value);
+					}
+				} finally {
+					reader.releaseLock();
+				}
+
+				const responseBody = new Uint8Array(responseBytes);
+				let offset = 0;
+				for (const chunk of chunks) {
+					responseBody.set(chunk, offset);
+					offset += chunk.byteLength;
+				}
+				payload = JSON.parse(new TextDecoder().decode(responseBody)) as unknown;
+			} finally {
+				clearTimeout(timeout);
 			}
 
-			const payload = (await response.json()) as unknown;
 			const schema = asSchemaObject(payload);
 			if (!schema) throw new Error('Invalid compose schema payload');
 

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"fmt"
+	"io"
 	"log/slog"
 	"net/http"
 	"os"
@@ -39,6 +40,7 @@ const (
 	// on the service's runtime-change signal instead.
 	environmentStreamPollInterval = 5 * time.Second
 	environmentStreamRefreshFloor = 30 * time.Second
+	maxEnvironmentVersionBytes    = 1 << 20
 )
 
 // EnvironmentHandler handles environment management endpoints.
@@ -1160,7 +1162,13 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 			return nil, huma.Error500InternalServerError("Failed to create request")
 		}
 
-		client := &http.Client{Timeout: 15 * time.Second}
+		client := &http.Client{
+			Timeout: 15 * time.Second,
+			CheckRedirect: func(req *http.Request, _ []*http.Request) error {
+				_, err := httputils.ValidateSafeRemoteURL(req.Context(), req.URL.String(), nil)
+				return err
+			},
+		}
 		resp, err := client.Do(req)
 		if err != nil {
 			return nil, huma.Error500InternalServerError("Request failed: " + err.Error())
@@ -1171,8 +1179,21 @@ func (h *EnvironmentHandler) GetEnvironmentVersion(ctx context.Context, input *G
 			return nil, huma.Error500InternalServerError(fmt.Sprintf("Unexpected status code: %d", resp.StatusCode))
 		}
 
-		if err := json.UnmarshalRead(resp.Body, &versionInfo); err != nil {
+		respBody, readErr := io.ReadAll(io.LimitReader(resp.Body, maxEnvironmentVersionBytes+1))
+		if readErr != nil {
+			return nil, huma.Error500InternalServerError("Failed to read version response")
+		}
+		if len(respBody) > maxEnvironmentVersionBytes {
+			return nil, huma.Error502BadGateway("Version response is too large")
+		}
+		if err := json.Unmarshal(respBody, &versionInfo); err != nil {
 			return nil, huma.Error500InternalServerError("Failed to decode version response")
+		}
+	}
+
+	if versionInfo.ReleaseURL != "" {
+		if _, err := httputils.ValidateOutboundHTTPURL(versionInfo.ReleaseURL); err != nil {
+			versionInfo.ReleaseURL = ""
 		}
 	}
 

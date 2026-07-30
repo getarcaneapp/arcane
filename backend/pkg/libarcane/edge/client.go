@@ -1185,6 +1185,9 @@ func (r *commandResponseRecorder) Write(b []byte) (int, error) {
 	}
 
 	r.streaming = true
+	if err := r.sendStreamHeaderLockedInternal(); err != nil {
+		return 0, err
+	}
 	if err := r.flushBufferLocked(); err != nil {
 		return 0, err
 	}
@@ -1221,6 +1224,9 @@ func (r *commandResponseRecorder) Flush() {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.streaming = true
+	if err := r.sendStreamHeaderLockedInternal(); err != nil {
+		return
+	}
 	_ = r.flushBufferLocked()
 }
 
@@ -1248,6 +1254,9 @@ func (r *commandResponseRecorder) Close() error {
 		return nil
 	}
 
+	if err := r.sendStreamHeaderLockedInternal(); err != nil {
+		return err
+	}
 	if err := r.flushBufferLocked(); err != nil {
 		return err
 	}
@@ -1263,6 +1272,29 @@ func (r *commandResponseRecorder) Close() error {
 	}
 
 	r.closed = true
+	return nil
+}
+
+func (r *commandResponseRecorder) sendStreamHeaderLockedInternal() error {
+	if r.streamHeaderSent {
+		return nil
+	}
+
+	headers := flattenResponseHeadersInternal(r.headers)
+	if headers == nil {
+		headers = make(map[string]string, 1)
+	}
+	headers["X-Arcane-Tunnel-Stream"] = "1"
+	if err := r.conn.Send(&TunnelMessage{
+		ID:      r.commandID,
+		Type:    MessageTypeResponse,
+		Status:  r.statusCode,
+		Headers: headers,
+		Command: r.commandName,
+	}); err != nil {
+		return err
+	}
+	r.streamHeaderSent = true
 	return nil
 }
 

@@ -488,25 +488,29 @@ func TestUpdaterService_PendingImageUpdatesAdapterInternal(t *testing.T) {
 func TestUpdaterService_PendingImageUpdatesFlushesPendingNotificationsInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupProjectTestDB(t)
-	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}, &models.NotificationSettings{}))
+	require.NoError(t, db.AutoMigrate(&models.ImageUpdateRecord{}))
 
 	var calls atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPost, r.Method)
+		require.Equal(t, "/api/notifications/dispatch", r.URL.Path)
+		require.Equal(t, "agent-token", r.Header.Get("X-API-Key"))
 		calls.Add(1)
-		w.WriteHeader(http.StatusOK)
+		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			"success": true,
+			"data": map[string]any{
+				"message":   "Notification dispatched successfully",
+				"delivered": 1,
+			},
+		}))
 	}))
 	defer server.Close()
-	require.NoError(t, db.Create(&models.NotificationSettings{
-		Provider: models.NotificationProviderGeneric,
-		Enabled:  true,
-		Config: models.JSON{
-			"webhookUrl":  server.URL,
-			"method":      "POST",
-			"contentType": "application/json",
-		},
-	}).Error)
 
-	notif := NewNotificationService(db, nil, nil, nil)
+	notif := NewNotificationService(db, &config.Config{
+		AgentMode:     true,
+		AgentToken:    "agent-token",
+		ManagerApiUrl: server.URL,
+	}, NewEnvironmentService(db, nil, nil, nil, nil, nil), nil)
 	imageUpdates := NewImageUpdateService(db, nil, nil, nil, nil, notif, nil)
 	svc, svcErr := NewUpdaterService(db, nil, nil, nil, imageUpdates, nil, nil, nil, notif, nil, nil)
 	require.NoError(t, svcErr)

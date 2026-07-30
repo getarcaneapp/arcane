@@ -24,7 +24,8 @@ const (
 	DefaultPollRuntimeTTL = 6 * time.Second
 	// DefaultTunnelDemandTTL is how long the manager should keep an edge tunnel
 	// marked as required after a user/API request touches the environment.
-	DefaultTunnelDemandTTL = 2 * time.Minute
+	DefaultTunnelDemandTTL       = 2 * time.Minute
+	maxTunnelPollRequestBodySize = 4 * 1024
 
 	// TunnelStatusIdle indicates that no reverse tunnel is currently needed.
 	TunnelStatusIdle = "IDLE"
@@ -107,8 +108,9 @@ func (r *TunnelDemandRegistry) DesiredStatus(envID string, hasActiveTunnel bool,
 }
 
 var (
-	defaultDemandRegistry = NewTunnelDemandRegistry()
-	defaultPollRuntime    = NewPollRuntimeRegistry()
+	defaultDemandRegistry        = NewTunnelDemandRegistry()
+	defaultPollRuntime           = NewPollRuntimeRegistry()
+	errTunnelPollRequestTooLarge = errors.Sentinel("edge tunnel poll request body is too large")
 )
 
 // GetDemandRegistry returns the process-wide tunnel demand registry.
@@ -196,8 +198,16 @@ func decodeTunnelPollRequestInternal(c *echo.Context) (*TunnelPollRequest, error
 	req := c.Request()
 	defer func() { _ = req.Body.Close() }()
 
+	body, err := io.ReadAll(io.LimitReader(req.Body, maxTunnelPollRequestBodySize+1))
+	if err != nil {
+		return nil, err
+	}
+	if len(body) > maxTunnelPollRequestBodySize {
+		return nil, errTunnelPollRequestTooLarge
+	}
+
 	var pollReq TunnelPollRequest
-	if err := json.UnmarshalRead(req.Body, &pollReq); err != nil {
+	if err := json.Unmarshal(body, &pollReq); err != nil {
 		if errors.Is(err, http.ErrBodyReadAfterClose) {
 			return &TunnelPollRequest{}, nil
 		}
@@ -233,10 +243,6 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	req := c.Request()
 	ctx := req.Context()
 
-	if _, err := decodeTunnelPollRequestInternal(c); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
-	}
-
 	// In proxy-terminated mTLS deployments, the client certificate is consumed
 	// by the TLS terminator before this request reaches Arcane. The token is
 	// still needed as the poll protocol's environment lookup claim.
@@ -265,6 +271,12 @@ func (s *TunnelServer) HandlePoll(c *echo.Context) error {
 	if err := s.requireRequestCertificateIdentityInternal(req, envID); err != nil {
 		slog.WarnContext(ctx, "Rejected edge poll request with mismatched client certificate", "environment_id", envID, "error", err)
 		return c.JSON(http.StatusUnauthorized, map[string]any{"error": err.Error()})
+	}
+	if _, err := decodeTunnelPollRequestInternal(c); err != nil {
+		if errors.Is(err, errTunnelPollRequestTooLarge) {
+			return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{"error": "poll payload too large"})
+		}
+		return c.JSON(http.StatusBadRequest, map[string]any{"error": "invalid poll payload"})
 	}
 
 	pollInterval := DefaultTunnelPollInterval

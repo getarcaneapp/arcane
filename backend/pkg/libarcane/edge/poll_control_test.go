@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -196,6 +197,32 @@ func TestTunnelServer_HandlePoll_AcceptsTokenAfterProxyTerminatedMTLS(t *testing
 	var resp TunnelPollResponse
 	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
 	assert.Equal(t, TunnelStatusIdle, resp.Status)
+}
+
+func TestTunnelServer_HandlePoll_AuthenticatesBeforeReadingBody(t *testing.T) {
+	server := NewTunnelServerWithRegistry(NewTunnelRegistry(), func(ctx context.Context, token string) (string, error) {
+		if token != "valid-token" {
+			return "", errors.New("invalid token")
+		}
+		return "env-poll-limit", nil
+	}, nil)
+
+	router := echo.New()
+	router.POST("/api/tunnel/poll", server.HandlePoll)
+	oversizedBody := strings.Repeat("x", maxTunnelPollRequestBodySize+1)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", strings.NewReader(oversizedBody))
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusUnauthorized, rec.Code)
+	assert.Contains(t, rec.Body.String(), "agent token required")
+
+	req = httptest.NewRequest(http.MethodPost, "/api/tunnel/poll", strings.NewReader(oversizedBody))
+	req.Header.Set(HeaderAgentToken, "valid-token")
+	rec = httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+	assert.Contains(t, rec.Body.String(), "poll payload too large")
 }
 
 func TestPollRuntimeRegistryGetExpiresStaleState(t *testing.T) {

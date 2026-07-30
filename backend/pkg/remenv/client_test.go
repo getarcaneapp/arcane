@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -57,6 +58,23 @@ func TestClientDo_DirectHTTPSuccess(t *testing.T) {
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
 	require.Equal(t, `{"ok":true}`, string(resp.Body))
 	require.Equal(t, "application/json", resp.Headers["Content-Type"])
+}
+
+func TestClientDo_DirectHTTPRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", maxResponseBodyBytes+1)))
+	}))
+	defer server.Close()
+
+	client := NewClient(server.Client(), nil)
+	_, err := client.Do(context.Background(), Request{
+		Method: http.MethodGet,
+		URL:    server.URL,
+		Path:   "/",
+	})
+	var transportErr *TransportError
+	require.ErrorAs(t, err, &transportErr)
+	require.Contains(t, transportErr.Error(), "remote response exceeded")
 }
 
 func TestClientDo_EdgeUsesTunnelTransport(t *testing.T) {

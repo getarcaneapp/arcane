@@ -15,7 +15,10 @@ import (
 	"github.com/cenkalti/backoff/v5"
 )
 
-const defaultTunnelPollRequestTimeout = 15 * time.Second
+const (
+	defaultTunnelPollRequestTimeout = 15 * time.Second
+	maxTunnelPollErrorBodyBytes     = 64 << 10
+)
 
 var defaultPollManagedSessionStopTimeout = 5 * time.Second
 
@@ -210,8 +213,16 @@ func (c *TunnelClient) pollTunnelControlInternal(ctx context.Context, httpClient
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
-		respBody, _ := io.ReadAll(resp.Body)
-		return nil, errors.Errorf("poll request failed with status %d: %s", resp.StatusCode, string(respBody))
+		respBody, _ := io.ReadAll(io.LimitReader(resp.Body, maxTunnelPollErrorBodyBytes+1))
+		truncated := len(respBody) > maxTunnelPollErrorBodyBytes
+		if truncated {
+			respBody = respBody[:maxTunnelPollErrorBodyBytes]
+		}
+		diagnostic := string(respBody)
+		if truncated {
+			diagnostic += " ...<truncated>"
+		}
+		return nil, errors.Errorf("poll request failed with status %d: %s", resp.StatusCode, diagnostic)
 	}
 
 	var pollResp TunnelPollResponse

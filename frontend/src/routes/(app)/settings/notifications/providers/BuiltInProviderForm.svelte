@@ -352,7 +352,7 @@
 			})
 			.superRefine((d, ctx) => {
 				if (!d.enabled) return;
-				addRequiredTrimmedFieldIssue(ctx, d.webhookUrl, 'webhookUrl', 'Webhook URL is required when Generic Webhook is enabled');
+				addRequiredCredentialIssue(ctx, d.webhookUrl, 'webhookUrl', m.common_required());
 			})
 	};
 
@@ -1023,7 +1023,8 @@
 				id: 'generic-webhook-url',
 				label: m.webhook_url(),
 				placeholder: m.notifications_generic_webhook_url_placeholder(),
-				helpText: m.notifications_generic_webhook_url_help()
+				helpText: m.notifications_generic_webhook_url_help(),
+				inputType: 'password'
 			},
 			{
 				kind: 'input',

@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -583,6 +584,124 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("timeout waiting for event callback")
 	}
+}
+
+func TestTunnelServer_HandleEventCallbackQueuesWithoutBlockingWhenSaturated(t *testing.T) {
+	release := make(chan struct{})
+	started := make(chan struct{}, maxConcurrentEventCallbacks+1)
+	var active atomic.Int32
+	var peak atomic.Int32
+
+	server := NewTunnelServerWithRegistry(NewTunnelRegistry(), nil, nil)
+	server.SetEventCallback(func(context.Context, string, *TunnelEvent) error {
+		current := active.Add(1)
+		for {
+			previous := peak.Load()
+			if current <= previous || peak.CompareAndSwap(previous, current) {
+				break
+			}
+		}
+		started <- struct{}{}
+		<-release
+		active.Add(-1)
+		return nil
+	})
+
+	tunnel := NewAgentTunnelWithConn("env-edge", &fakeServerTunnelConn{})
+	msg := &TunnelMessage{Type: MessageTypeEvent, Event: &TunnelEvent{Type: "container.start"}}
+	for range maxConcurrentEventCallbacks {
+		server.handleEvent(context.Background(), tunnel, msg)
+	}
+	for range maxConcurrentEventCallbacks {
+		select {
+		case <-started:
+		case <-time.After(time.Second):
+			t.Fatal("timed out waiting for bounded callbacks to start")
+		}
+	}
+
+	nextReturned := make(chan struct{})
+	go func() {
+		server.handleEvent(context.Background(), tunnel, msg)
+		close(nextReturned)
+	}()
+
+	select {
+	case <-nextReturned:
+	case <-time.After(time.Second):
+		t.Fatal("event ingestion blocked at the concurrency limit")
+	}
+	select {
+	case <-started:
+		t.Fatal("queued event callback started before capacity was available")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	release <- struct{}{}
+	select {
+	case <-started:
+	case <-time.After(time.Second):
+		t.Fatal("queued event callback did not start after capacity became available")
+	}
+	close(release)
+	require.Eventually(t, func() bool { return active.Load() == 0 }, time.Second, 10*time.Millisecond)
+	assert.Equal(t, int32(maxConcurrentEventCallbacks), peak.Load())
+}
+
+func TestTunnelServer_HandleEventCallbackAppliesBackpressureWhenQueueIsFull(t *testing.T) {
+	release := make(chan struct{})
+	releaseClosed := false
+	defer func() {
+		if !releaseClosed {
+			close(release)
+		}
+	}()
+
+	var invoked atomic.Int32
+	server := NewTunnelServerWithRegistry(NewTunnelRegistry(), nil, nil)
+	server.SetEventCallback(func(context.Context, string, *TunnelEvent) error {
+		invoked.Add(1)
+		<-release
+		return nil
+	})
+
+	tunnel := NewAgentTunnelWithConn("env-edge", &fakeServerTunnelConn{})
+	msg := &TunnelMessage{Type: MessageTypeEvent, Event: &TunnelEvent{Type: "container.start"}}
+	for range maxConcurrentEventCallbacks {
+		server.handleEvent(t.Context(), tunnel, msg)
+	}
+	require.Eventually(t, func() bool {
+		return invoked.Load() == int32(maxConcurrentEventCallbacks)
+	}, time.Second, 10*time.Millisecond)
+
+	for range maxPendingEventCallbacks {
+		server.handleEvent(t.Context(), tunnel, msg)
+	}
+
+	overflowReturned := make(chan struct{})
+	go func() {
+		server.handleEvent(t.Context(), tunnel, msg)
+		close(overflowReturned)
+	}()
+
+	select {
+	case <-overflowReturned:
+		t.Fatal("event intake did not apply backpressure at the queue limit")
+	case <-time.After(50 * time.Millisecond):
+	}
+
+	release <- struct{}{}
+	select {
+	case <-overflowReturned:
+	case <-time.After(time.Second):
+		t.Fatal("event intake did not resume after queue capacity became available")
+	}
+
+	close(release)
+	releaseClosed = true
+	require.Eventually(t, func() bool {
+		return invoked.Load() == int32(maxConcurrentEventCallbacks+maxPendingEventCallbacks+1)
+	}, 2*time.Second, 10*time.Millisecond)
 }
 
 type fakeServerTunnelConn struct{}

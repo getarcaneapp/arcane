@@ -493,22 +493,33 @@ func (c *Client) BrowseTree(ctx context.Context, repoPath, targetPath string) ([
 		return nil, err
 	}
 
-	fullPath := filepath.Join(repoPath, targetPath)
-
-	// Check if path exists
-	info, err := os.Stat(fullPath)
+	repoRoot, err := os.OpenRoot(repoPath)
 	if err != nil {
 		return nil, errors.WrapIf(err, "path not found")
 	}
+	defer func() { _ = repoRoot.Close() }()
 
+	targetDir, err := repoRoot.Open(filepath.Clean(targetPath))
+	if err != nil {
+		return nil, errors.WrapIf(err, "path not found")
+	}
+	defer func() { _ = targetDir.Close() }()
+
+	info, err := targetDir.Stat()
+	if err != nil {
+		return nil, errors.WrapIf(err, "path not found")
+	}
 	if !info.IsDir() {
 		return nil, errors.New("path is not a directory")
 	}
 
-	entries, err := os.ReadDir(fullPath)
+	entries, err := targetDir.ReadDir(-1)
 	if err != nil {
 		return nil, errors.WrapIf(err, "failed to read directory")
 	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].Name() < entries[j].Name()
+	})
 
 	var nodes []gitops.FileTreeNode
 	for _, entry := range entries {
@@ -584,8 +595,13 @@ func (c *Client) FileExists(ctx context.Context, repoPath, filePath string) bool
 		return false
 	}
 
-	fullPath := filepath.Join(repoPath, filePath)
-	_, err := os.Stat(fullPath)
+	repoRoot, err := os.OpenRoot(repoPath)
+	if err != nil {
+		return false
+	}
+	defer func() { _ = repoRoot.Close() }()
+
+	_, err = repoRoot.Stat(filepath.Clean(filePath))
 	return err == nil
 }
 
@@ -598,8 +614,13 @@ func (c *Client) ReadFile(ctx context.Context, repoPath, filePath string) (strin
 		return "", err
 	}
 
-	fullPath := filepath.Join(repoPath, filePath)
-	content, err := os.ReadFile(fullPath)
+	repoRoot, err := os.OpenRoot(repoPath)
+	if err != nil {
+		return "", errors.WrapIf(err, "failed to read file")
+	}
+	defer func() { _ = repoRoot.Close() }()
+
+	content, err := repoRoot.ReadFile(filepath.Clean(filePath))
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to read file")
 	}

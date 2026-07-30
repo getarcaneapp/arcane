@@ -92,7 +92,8 @@ const (
 	// knownInsecureJWTSecret is the placeholder shipped in config.go's struct
 	// tag; it must never sign real tokens. Keep in sync with the `default:` tag
 	// on Config.JWTSecret.
-	knownInsecureJWTSecret = "default-jwt-secret-change-me" // #nosec G101: public placeholder config default, intentionally rejected for production signing
+	knownInsecureJWTSecret   = "default-jwt-secret-change-me"           // #nosec G101: public placeholder config default, intentionally rejected for production signing
+	exampleInsecureJWTSecret = "replace_me_with_a_random_32_char_value" // #nosec G101: public example placeholder, intentionally rejected
 	// minJWTSecretLength matches the 32-byte floor enforced for ENCRYPTION_KEY.
 	minJWTSecretLength = 32
 )
@@ -105,7 +106,7 @@ const (
 // a random per-boot key is generated when none (or only the public default) is
 // configured, so the public default never becomes a live signing key.
 func CheckOrGenerateJwtSecret(jwtSecret string, requireExplicit bool) []byte {
-	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret
+	isDefault := jwtSecret == "" || jwtSecret == knownInsecureJWTSecret || jwtSecret == exampleInsecureJWTSecret
 
 	if requireExplicit {
 		if isDefault {

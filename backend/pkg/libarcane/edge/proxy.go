@@ -21,6 +21,12 @@ const (
 	// DefaultTunnelAcquirePollEvery is how frequently the manager checks for a
 	// newly activated edge tunnel while waiting for poll mode to connect.
 	DefaultTunnelAcquirePollEvery = 100 * time.Millisecond
+	// Leave one command chunk of headroom for the protobuf envelope when a
+	// legacy peer cannot negotiate chunked request bodies.
+	maxProxyRequestBodySize = maxGRPCTunnelMessageSize - defaultCommandChunkSize
+	// Bound the aggregate response assembled from tunnel messages. Individual
+	// frames are already capped, but streamed responses can span many frames.
+	maxProxyResponseBodySize = maxGRPCTunnelMessageSize
 )
 
 // DefaultTunnelAcquireTimeout returns a poll-aware wait timeout for acquiring
@@ -59,29 +65,29 @@ func registerPendingRequestInternal(tunnel *AgentTunnel, requestID string) (*Pen
 	return pending, nil
 }
 
-func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pending *PendingRequest, method string) (int, map[string]string, []byte, error) {
-	state := &grpcResponseState{}
+func collectCommandResponseInternal(ctx context.Context, tunnel *AgentTunnel, pending *PendingRequest, method string, responseWriter http.ResponseWriter) (int, map[string]string, []byte, bool, error) {
+	state := &grpcResponseState{responseWriter: responseWriter}
 
 	for {
 		select {
 		case <-ctx.Done():
-			return 0, nil, nil, ctx.Err()
+			return 0, nil, nil, state.streamed, ctx.Err()
 		case <-tunnel.done:
 			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
-				return status, headers, body, err
+				return status, headers, body, state.streamed, err
 			}
-			return 0, nil, nil, errors.New("edge tunnel closed while waiting for response")
+			return 0, nil, nil, state.streamed, errors.New("edge tunnel closed while waiting for response")
 		case err := <-pending.failureCh:
 			if done, status, headers, body, err := state.drainTerminalResponseInternal(pending.ResponseCh, method); done {
-				return status, headers, body, err
+				return status, headers, body, state.streamed, err
 			}
-			return 0, nil, nil, err
+			return 0, nil, nil, state.streamed, err
 		case incoming, ok := <-pending.ResponseCh:
 			if !ok {
-				return 0, nil, nil, errors.New("edge tunnel response channel closed before a response was received")
+				return 0, nil, nil, state.streamed, errors.New("edge tunnel response channel closed before a response was received")
 			}
 			if done, status, headers, body, err := state.handleTunnelMessageInternal(method, incoming); done {
-				return status, headers, body, err
+				return status, headers, body, state.streamed, err
 			}
 		}
 	}
@@ -94,10 +100,11 @@ func (s *grpcResponseState) handleTunnelMessageInternal(method string, incoming 
 
 	switch incoming.Type {
 	case MessageTypeResponse:
-		done, status, headers, body := s.handleResponse(method, incoming)
-		return done, status, headers, body, nil
+		return s.handleResponse(method, incoming)
 	case MessageTypeCommandOutput, MessageTypeStreamData, MessageTypeFileChunk:
-		s.handleStreamData(incoming)
+		if err := s.handleStreamData(incoming); err != nil {
+			return true, 0, nil, nil, err
+		}
 	case MessageTypeCommandComplete:
 		status, headers, body, err := s.handleCommandComplete(incoming)
 		return true, status, headers, body, err
@@ -138,43 +145,66 @@ func (s *grpcResponseState) drainTerminalResponseInternal(respCh <-chan *TunnelM
 	}
 }
 
-func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte) {
+func (s *grpcResponseState) handleResponse(method string, incoming *TunnelMessage) (bool, int, map[string]string, []byte, error) {
 	if !s.gotResponse {
 		s.gotResponse = true
 		s.status = incoming.Status
 		s.respHeaders = incoming.Headers
 	}
+	if s.respHeaders["X-Arcane-Tunnel-Stream"] == "1" && s.responseWriter != nil {
+		if err := s.startStreamingResponseInternal(); err != nil {
+			return true, 0, nil, nil, err
+		}
+	}
+
+	if err := s.handleStreamData(incoming); err != nil {
+		return true, 0, nil, nil, err
+	}
 
 	if s.respHeaders["X-Arcane-Tunnel-Stream"] == "1" {
-		if len(incoming.Body) > 0 {
-			s.respBody.Write(incoming.Body)
-		}
-		return false, 0, nil, nil
+		return false, 0, nil, nil, nil
 	}
 
 	if len(incoming.Body) > 0 {
-		s.respBody.Write(incoming.Body)
-		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
+		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
 	}
 
 	if method == http.MethodHead || s.status == http.StatusNoContent || s.status == http.StatusNotModified {
-		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), nil
+		return true, s.status, stripInternalTunnelHeaders(s.respHeaders), nil, nil
 	}
 
-	return false, 0, nil, nil
+	return false, 0, nil, nil, nil
 }
 
-func (s *grpcResponseState) handleStreamData(incoming *TunnelMessage) {
-	if len(incoming.Body) > 0 {
-		s.respBody.Write(incoming.Body)
+func (s *grpcResponseState) handleStreamData(incoming *TunnelMessage) error {
+	if len(incoming.Body) == 0 {
+		return nil
 	}
+	if s.streamed {
+		n, err := s.responseWriter.Write(incoming.Body)
+		if err != nil {
+			return errors.WrapIf(err, "write edge tunnel response")
+		}
+		if n != len(incoming.Body) {
+			return io.ErrShortWrite
+		}
+		if flusher, ok := s.responseWriter.(http.Flusher); ok {
+			flusher.Flush()
+		}
+		return nil
+	}
+	if len(incoming.Body) > maxProxyResponseBodySize || s.respBody.Len() > maxProxyResponseBodySize-len(incoming.Body) {
+		return errors.New("edge tunnel response body exceeds limit")
+	}
+	s.respBody.Write(incoming.Body)
+	return nil
 }
 
 func (s *grpcResponseState) handleStreamEnd() (bool, int, map[string]string, []byte) {
 	if !s.gotResponse {
 		return false, 0, nil, nil
 	}
-	return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes()
+	return true, s.status, stripInternalTunnelHeaders(s.respHeaders), s.responseBodyInternal()
 }
 
 func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int, map[string]string, []byte, error) {
@@ -183,13 +213,45 @@ func (s *grpcResponseState) handleCommandComplete(incoming *TunnelMessage) (int,
 		s.status = incoming.Status
 		s.respHeaders = incoming.Headers
 	}
-	if len(incoming.Body) > 0 {
-		s.respBody.Write(incoming.Body)
+	if err := s.handleStreamData(incoming); err != nil {
+		return 0, nil, nil, err
 	}
 	if incoming.Error != "" && incoming.Status >= http.StatusBadRequest {
-		return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), errors.New(incoming.Error)
+		return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.responseBodyInternal(), errors.New(incoming.Error)
 	}
-	return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.respBody.Bytes(), nil
+	return incoming.Status, stripInternalTunnelHeaders(s.respHeaders), s.responseBodyInternal(), nil
+}
+
+func (s *grpcResponseState) startStreamingResponseInternal() error {
+	if s.streamed {
+		return nil
+	}
+	for key, value := range stripInternalTunnelHeaders(s.respHeaders) {
+		if !isHopByHopHeader(key) {
+			s.responseWriter.Header().Set(key, value)
+		}
+	}
+	status := s.status
+	if status == 0 {
+		status = http.StatusOK
+	}
+	s.responseWriter.WriteHeader(status)
+	s.streamed = true
+	if s.respBody.Len() > 0 {
+		buffered := append([]byte(nil), s.respBody.Bytes()...)
+		s.respBody.Reset()
+		if err := s.handleStreamData(&TunnelMessage{Body: buffered}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *grpcResponseState) responseBodyInternal() []byte {
+	if s.streamed {
+		return nil
+	}
+	return s.respBody.Bytes()
 }
 
 // ProxyHTTPRequest is a helper that proxies an echo context through a tunnel
@@ -203,8 +265,12 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 	var body []byte
 	if req.Body != nil {
 		var err error
-		body, err = io.ReadAll(req.Body)
+		body, err = io.ReadAll(http.MaxBytesReader(c.Response(), req.Body, maxProxyRequestBodySize))
 		if err != nil {
+			var maxBytesError *http.MaxBytesError
+			if errors.As(err, &maxBytesError) {
+				return c.JSON(http.StatusRequestEntityTooLarge, map[string]any{"error": "request body too large"})
+			}
 			slog.ErrorContext(ctx, "Failed to read request body for tunnel proxy", "error", err)
 			return c.JSON(http.StatusInternalServerError, map[string]any{"error": "failed to read request body"})
 		}
@@ -228,12 +294,23 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 		"bodyLength", len(body),
 	)
 
-	status, respHeaders, respBody, err := ProxyRequest(proxyCtx, tunnel, req.Method, targetPath, req.URL.RawQuery, headers, body)
+	result, err := DefaultCommandClient.Execute(proxyCtx, tunnel, &CommandRequest{
+		Method:         req.Method,
+		Path:           targetPath,
+		Query:          req.URL.RawQuery,
+		Headers:        headers,
+		Body:           body,
+		responseWriter: c.Response(),
+	})
 	if err != nil {
 		slog.ErrorContext(ctx, "Edge tunnel proxy failed",
 			"environment_id", tunnel.EnvironmentID,
 			"error", err,
 		)
+
+		if result != nil && result.streamed {
+			return nil
+		}
 
 		if proxyCtx.Err() != nil {
 			return c.JSON(http.StatusGatewayTimeout, map[string]any{"error": "request timed out"})
@@ -241,14 +318,17 @@ func ProxyHTTPRequest(c *echo.Context, tunnel *AgentTunnel, targetPath string) e
 
 		return c.JSON(http.StatusBadGateway, map[string]any{"error": "failed to proxy request through tunnel"})
 	}
+	if result.streamed {
+		return nil
+	}
 
-	for k, v := range respHeaders {
+	for k, v := range result.Headers {
 		if !isHopByHopHeader(k) {
 			c.Response().Header().Set(k, v)
 		}
 	}
 
-	return c.Blob(status, respHeaders["Content-Type"], respBody)
+	return c.Blob(result.Status, result.Headers["Content-Type"], result.Body)
 }
 
 // isHopByHopHeader returns true if the header should not be forwarded

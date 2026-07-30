@@ -1453,6 +1453,8 @@
   "jobs_cron_required": "Cron expression is required",
   "jobs_cron_invalid": "Cron expression must have 6 parts (seconds minutes hours day month weekday)",
   "examples": "Examples",
+  "code_editor_source": "Source",
+  "code_editor_default": "Default",
   "jobs_cron_example_every_15min": "Every 15 minutes",
   "jobs_cron_example_hourly": "Every hour",
   "jobs_cron_example_daily": "Daily at midnight",

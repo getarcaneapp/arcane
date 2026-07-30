@@ -378,6 +378,24 @@ func TestFetchRaw_BlocksUnsafeRemoteURL(t *testing.T) {
 	require.ErrorIs(t, err, common.ErrUnsafeRemoteURL)
 }
 
+func TestFetchRaw_BoundsRemoteResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(strings.Repeat("x", templateMaxResponseBytes+1)))
+	}))
+	defer server.Close()
+
+	client, lookupIP, baseURL := makePublicTestClient(t, server)
+	service := &TemplateService{
+		httpClient:        client,
+		lookupIP:          lookupIP,
+		registryFetchMeta: make(map[string]*registryFetchMeta),
+	}
+
+	_, err := service.FetchRaw(context.Background(), baseURL+"/large.yml")
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "exceeded")
+}
+
 func TestSyncFilesystemTemplatesInternal_PopulatesIconURL(t *testing.T) {
 	tempDir := t.TempDir()
 

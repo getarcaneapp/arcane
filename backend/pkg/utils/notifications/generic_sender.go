@@ -9,12 +9,19 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"emperror.dev/errors"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
+	httputils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/nicholas-fedor/shoutrrr"
 	shoutrrrTypes "github.com/nicholas-fedor/shoutrrr/pkg/types"
+)
+
+const (
+	genericWebhookTimeout          = 15 * time.Second
+	genericWebhookMaxResponseBytes = 1 << 20
 )
 
 // resolveWebhookURLInternal parses and normalises the configured webhook URL,
@@ -129,8 +136,19 @@ func BuildGenericURL(config models.GenericConfig) (string, error) {
 // this is necessary for providers (e.g. PushPlus) that always return HTTP 200
 // but embed a success/failure indicator inside the JSON body.
 func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, title, message string) error {
-	if config.WebhookURL == "" {
-		return errors.New("webhook URL is empty")
+	webhookURL, err := resolveWebhookURLInternal(config)
+	if err != nil {
+		return err
+	}
+	if _, err := httputils.ValidateSafeRemoteURL(ctx, webhookURL.String(), nil); err != nil {
+		return err
+	}
+
+	baseClient := *http.DefaultClient
+	baseClient.Timeout = genericWebhookTimeout
+	httpClient, err := httputils.NewSafeOutboundHTTPClient(&baseClient, nil)
+	if err != nil {
+		return errors.WrapIf(err, "failed to create safe webhook client")
 	}
 
 	// When the caller needs response-body validation we make the HTTP request
@@ -138,7 +156,7 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 	// shoutrrr, which preserves the existing behaviour for everyone who does
 	// not set SuccessBodyContains.
 	if config.SuccessBodyContains != "" {
-		return sendGenericDirectInternal(ctx, config, title, message)
+		return sendGenericDirectInternal(ctx, httpClient, config, webhookURL, title, message)
 	}
 
 	shoutrrrURL, err := BuildGenericURL(config)
@@ -146,7 +164,10 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 		return errors.WrapIf(err, "failed to build shoutrrr Generic URL")
 	}
 
-	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{}, shoutrrrURL)
+	sender, err := shoutrrr.CreateSenderWithOptions(shoutrrrTypes.SenderOptions{
+		HTTPClient: httpClient,
+		Timeout:    genericWebhookTimeout,
+	}, shoutrrrURL)
 	if err != nil {
 		return errors.WrapIf(err, "failed to create shoutrrr Generic sender")
 	}
@@ -170,12 +191,7 @@ func SendGenericWithTitle(ctx context.Context, config models.GenericConfig, titl
 // sendGenericDirectInternal makes the webhook HTTP call directly, giving access
 // to the response body so that provider-level success/failure can be detected
 // even when the HTTP status is always 200.
-func sendGenericDirectInternal(ctx context.Context, config models.GenericConfig, title, message string) error {
-	webhookURL, err := resolveWebhookURLInternal(config)
-	if err != nil {
-		return err
-	}
-
+func sendGenericDirectInternal(ctx context.Context, httpClient *http.Client, config models.GenericConfig, webhookURL *url.URL, title, message string) error {
 	// Build JSON payload using the configured message/title keys.
 	msgKey := config.MessageKey
 	if msgKey == "" {
@@ -216,15 +232,18 @@ func sendGenericDirectInternal(ctx context.Context, config models.GenericConfig,
 		req.Header.Set(k, v)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpClient.Do(req)
 	if err != nil {
 		return errors.WrapIf(err, "failed to send webhook request")
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	respBody, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(io.LimitReader(resp.Body, genericWebhookMaxResponseBytes+1))
 	if err != nil {
 		return errors.WrapIf(err, "failed to read webhook response body")
+	}
+	if len(respBody) > genericWebhookMaxResponseBytes {
+		return errors.Errorf("webhook response exceeded %d bytes", genericWebhookMaxResponseBytes)
 	}
 
 	if resp.StatusCode >= http.StatusBadRequest {

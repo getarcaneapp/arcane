@@ -1856,6 +1856,49 @@ func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *test
 	assert.Contains(t, err.Error(), "127.0.0.1:1")
 }
 
+func TestTunnelClient_pollTunnelControlInternal_LimitsErrorResponseBody(t *testing.T) {
+	const terminalMarker = "poll-error-terminal-marker"
+
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+		flusher, _ := w.(http.Flusher)
+		chunk := strings.Repeat("x", 4096)
+		for range maxTunnelPollErrorBodyBytes/len(chunk) + 1 {
+			_, _ = w.Write([]byte(chunk))
+			if flusher != nil {
+				flusher.Flush()
+			}
+		}
+		_, _ = w.Write([]byte(terminalMarker))
+	}))
+	t.Cleanup(managerServer.Close)
+
+	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
+	response, err := client.pollTunnelControlInternal(t.Context(), managerServer.Client(), managerServer.URL+"/api/tunnel/poll", false)
+
+	require.Nil(t, response)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "poll request failed with status 500")
+	assert.Contains(t, err.Error(), "...<truncated>")
+	assert.NotContains(t, err.Error(), terminalMarker)
+	assert.LessOrEqual(t, len(err.Error()), maxTunnelPollErrorBodyBytes+128)
+}
+
+func TestTunnelClient_pollTunnelControlInternal_PreservesSmallErrorResponseBody(t *testing.T) {
+	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "retry later", http.StatusTooManyRequests)
+	}))
+	t.Cleanup(managerServer.Close)
+
+	client := NewTunnelClient(&Config{AgentToken: "valid-token"}, http.NotFoundHandler())
+	response, err := client.pollTunnelControlInternal(t.Context(), managerServer.Client(), managerServer.URL+"/api/tunnel/poll", false)
+
+	require.Nil(t, response)
+	require.Error(t, err)
+	assert.Contains(t, err.Error(), "poll request failed with status 429: retry later")
+	assert.NotContains(t, err.Error(), "...<truncated>")
+}
+
 func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -2258,6 +2301,30 @@ func TestStreamingResponseRecorder_WriteHeaderAndClose(t *testing.T) {
 	assert.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
 	assert.Equal(t, http.StatusCreated, conn.msgs[0].Status)
 	assert.Equal(t, MessageTypeStreamEnd, conn.msgs[1].Type)
+}
+
+func TestCommandResponseRecorderSendsHeadersBeforeStreamedOutput(t *testing.T) {
+	conn := &fakeTunnelConn{}
+	r := newCommandResponseRecorderInternal("cmd-stream", "volume.backup", conn)
+	r.Header().Set("Content-Type", "application/octet-stream")
+
+	payload := make([]byte, defaultCommandChunkSize+1)
+	n, err := r.Write(payload)
+	require.NoError(t, err)
+	require.Equal(t, len(payload), n)
+	require.NoError(t, r.Close())
+
+	require.Len(t, conn.msgs, 4)
+	require.Equal(t, MessageTypeResponse, conn.msgs[0].Type)
+	require.Equal(t, http.StatusOK, conn.msgs[0].Status)
+	require.Equal(t, "application/octet-stream", conn.msgs[0].Headers["Content-Type"])
+	require.Equal(t, "1", conn.msgs[0].Headers["X-Arcane-Tunnel-Stream"])
+	require.Equal(t, MessageTypeCommandOutput, conn.msgs[1].Type)
+	require.Len(t, conn.msgs[1].Body, defaultCommandChunkSize)
+	require.Equal(t, MessageTypeCommandOutput, conn.msgs[2].Type)
+	require.Len(t, conn.msgs[2].Body, 1)
+	require.Equal(t, MessageTypeCommandComplete, conn.msgs[3].Type)
+	require.True(t, conn.msgs[3].Streaming)
 }
 
 func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {

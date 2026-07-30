@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,52 @@ func setupMockAgentServer(t *testing.T, handler func(*TunnelMessage) *TunnelMess
 	return server, tunnel
 }
 
+type streamingProxyTunnelConn struct {
+	tunnel       *AgentTunnel
+	responseSize int
+	closed       bool
+}
+
+func (f *streamingProxyTunnelConn) Send(msg *TunnelMessage) error {
+	if msg.Type != MessageTypeCommandRequest {
+		return nil
+	}
+	pendingValue, ok := f.tunnel.Pending.Load(msg.ID)
+	if !ok {
+		return errors.New("pending request not registered")
+	}
+	pending := pendingValue.(*PendingRequest)
+	pending.ResponseCh <- &TunnelMessage{
+		ID:      msg.ID,
+		Type:    MessageTypeResponse,
+		Status:  http.StatusOK,
+		Headers: map[string]string{"Content-Type": "application/octet-stream", "X-Arcane-Tunnel-Stream": "1"},
+	}
+
+	chunk := bytes.Repeat([]byte{'a'}, defaultCommandChunkSize)
+	remaining := f.responseSize
+	for remaining > 0 {
+		chunkSize := min(remaining, len(chunk))
+		pending.ResponseCh <- &TunnelMessage{ID: msg.ID, Type: MessageTypeCommandOutput, Body: chunk[:chunkSize]}
+		remaining -= chunkSize
+	}
+	pending.ResponseCh <- &TunnelMessage{ID: msg.ID, Type: MessageTypeCommandComplete, Status: http.StatusOK, Streaming: true}
+	return nil
+}
+
+func (f *streamingProxyTunnelConn) Receive() (*TunnelMessage, error) { return nil, io.EOF }
+
+func (f *streamingProxyTunnelConn) IsExpectedReceiveError(error) bool { return false }
+
+func (f *streamingProxyTunnelConn) Close() error {
+	f.closed = true
+	return nil
+}
+
+func (f *streamingProxyTunnelConn) IsClosed() bool { return f.closed }
+
+func (f *streamingProxyTunnelConn) Transport() string { return EdgeTransportWebSocket }
+
 func TestProxyRequest(t *testing.T) {
 	server, tunnel := setupMockAgentServer(t, func(msg *TunnelMessage) *TunnelMessage {
 		return &TunnelMessage{
@@ -119,6 +166,35 @@ func TestProxyHTTPRequest(t *testing.T) {
 	assert.Equal(t, http.StatusCreated, w.Code)
 	assert.Equal(t, "application/json", w.Header().Get("Content-Type"))
 	assert.Equal(t, `{"success":true}`, w.Body.String())
+}
+
+func TestProxyHTTPRequestStreamsResponsePastBufferedLimit(t *testing.T) {
+	conn := &streamingProxyTunnelConn{responseSize: maxProxyResponseBodySize + 1}
+	tunnel := NewAgentTunnelWithConn("env-streaming-proxy", conn)
+	conn.tunnel = tunnel
+	defer func() { require.NoError(t, tunnel.CloseWithReason("")) }()
+
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/test", nil)
+	c := e.NewContext(req, w)
+
+	require.NoError(t, ProxyHTTPRequest(c, tunnel, "/api/environments/0/volumes/data/browse/download"))
+	require.Equal(t, http.StatusOK, w.Code)
+	require.Equal(t, "application/octet-stream", w.Header().Get("Content-Type"))
+	require.Equal(t, maxProxyResponseBodySize+1, w.Body.Len())
+	require.True(t, w.Flushed)
+}
+
+func TestProxyHTTPRequest_RejectsBodyLargerThanTunnelEnvelope(t *testing.T) {
+	e := echo.New()
+	w := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/test", bytes.NewReader(make([]byte, maxProxyRequestBodySize+1)))
+	c := e.NewContext(req, w)
+
+	require.NoError(t, ProxyHTTPRequest(c, nil, "/api/environments/0/projects"))
+	assert.Equal(t, http.StatusRequestEntityTooLarge, w.Code)
+	assert.Contains(t, w.Body.String(), "request body too large")
 }
 
 func TestProxyHTTPRequest_GRPCTunnel(t *testing.T) {

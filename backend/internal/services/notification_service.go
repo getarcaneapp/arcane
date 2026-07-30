@@ -39,14 +39,16 @@ var notificationCredentialFieldsByProviderInternal = map[models.NotificationProv
 	models.NotificationProviderPushover: {"token"},
 	models.NotificationProviderGotify:   {"token"},
 	models.NotificationProviderMatrix:   {"password"},
+	models.NotificationProviderGeneric:  {"webhookUrl"},
 }
 
 var notificationTargetFieldByProviderInternal = map[models.NotificationProvider]string{
-	models.NotificationProviderEmail:  "smtpHost",
-	models.NotificationProviderSignal: "host",
-	models.NotificationProviderNtfy:   "host",
-	models.NotificationProviderGotify: "host",
-	models.NotificationProviderMatrix: "host",
+	models.NotificationProviderEmail:   "smtpHost",
+	models.NotificationProviderSignal:  "host",
+	models.NotificationProviderNtfy:    "host",
+	models.NotificationProviderGotify:  "host",
+	models.NotificationProviderMatrix:  "host",
+	models.NotificationProviderGeneric: "webhookUrl",
 }
 
 const ErrUnauthorizedNotificationDispatch = errors.Sentinel("unauthorized notification dispatch")
@@ -313,6 +315,16 @@ func RedactNotificationConfigCredentials(provider models.NotificationProvider, c
 		}
 		redacted[field] = ""
 	}
+	if provider == models.NotificationProviderGeneric {
+		headers := notificationStringMapInternal(redacted["customHeaders"])
+		if len(headers) > 0 {
+			redactedHeaders := make(map[string]string, len(headers))
+			for key := range headers {
+				redactedHeaders[key] = ""
+			}
+			redacted["customHeaders"] = redactedHeaders
+		}
+	}
 	return redacted
 }
 
@@ -325,35 +337,8 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 	if provider == models.NotificationProviderEmail {
 		preserveConfig = emailCredentialPreservationConfigInternal(config, existingConfig)
 	}
-	if targetField := notificationTargetFieldByProviderInternal[provider]; targetField != "" {
-		currentTarget, _ := existingConfig[targetField].(string)
-		nextTarget, _ := encryptedConfig[targetField].(string)
-		if strings.TrimSpace(nextTarget) == "" && strings.TrimSpace(currentTarget) != "" {
-			nextTarget = currentTarget
-			encryptedConfig[targetField] = currentTarget
-		}
-
-		storedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
-		updatedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
-		for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
-			preservedValue, _ := preserveConfig[field].(string)
-			updatedValue, _ := encryptedConfig[field].(string)
-			storedCredentials[field] = preservedValue != ""
-			updatedCredentials[field] = updatedValue != ""
-		}
-
-		if err := validation.ValidateCredentialTargetChange(
-			targetField,
-			currentTarget,
-			new(nextTarget),
-			func(value string) string {
-				return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
-			},
-			storedCredentials,
-			updatedCredentials,
-		); err != nil {
-			return nil, err
-		}
+	if err := validateNotificationCredentialTargetChangeInternal(provider, encryptedConfig, existingConfig, preserveConfig); err != nil {
+		return nil, err
 	}
 	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
 		value, _ := encryptedConfig[field].(string)
@@ -370,7 +355,102 @@ func encryptNotificationConfigCredentialsInternal(provider models.NotificationPr
 		}
 		encryptedConfig[field] = encrypted
 	}
+	if provider == models.NotificationProviderGeneric {
+		if err := encryptGenericNotificationHeadersInternal(encryptedConfig, existingConfig); err != nil {
+			return nil, err
+		}
+	}
 	return encryptedConfig, nil
+}
+
+func validateNotificationCredentialTargetChangeInternal(provider models.NotificationProvider, encryptedConfig, existingConfig, preserveConfig models.JSON) error {
+	targetField := notificationTargetFieldByProviderInternal[provider]
+	if targetField == "" {
+		return nil
+	}
+
+	currentTarget, _ := existingConfig[targetField].(string)
+	nextTarget, _ := encryptedConfig[targetField].(string)
+	if provider == models.NotificationProviderGeneric && currentTarget != "" {
+		if err := notifications.DecryptStringCredential(&currentTarget); err != nil {
+			return err
+		}
+	}
+	if strings.TrimSpace(nextTarget) == "" && strings.TrimSpace(currentTarget) != "" {
+		nextTarget = currentTarget
+		encryptedConfig[targetField] = existingConfig[targetField]
+	}
+
+	storedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+	updatedCredentials := make(map[string]bool, len(notificationCredentialFieldsByProviderInternal[provider]))
+	for _, field := range notificationCredentialFieldsByProviderInternal[provider] {
+		preservedValue, _ := preserveConfig[field].(string)
+		updatedValue, _ := encryptedConfig[field].(string)
+		storedCredentials[field] = preservedValue != ""
+		updatedCredentials[field] = updatedValue != ""
+	}
+	if provider == models.NotificationProviderGeneric {
+		for key, value := range notificationStringMapInternal(existingConfig["customHeaders"]) {
+			storedCredentials["customHeaders."+key] = value != ""
+		}
+		for key, value := range notificationStringMapInternal(encryptedConfig["customHeaders"]) {
+			updatedCredentials["customHeaders."+key] = value != ""
+		}
+	}
+
+	return validation.ValidateCredentialTargetChange(
+		targetField,
+		currentTarget,
+		new(nextTarget),
+		func(value string) string {
+			return strings.ToLower(strings.TrimSuffix(strings.TrimSpace(value), "."))
+		},
+		storedCredentials,
+		updatedCredentials,
+	)
+}
+
+func encryptGenericNotificationHeadersInternal(encryptedConfig, existingConfig models.JSON) error {
+	existingHeaders := notificationStringMapInternal(existingConfig["customHeaders"])
+	updatedHeaders := notificationStringMapInternal(encryptedConfig["customHeaders"])
+	encryptedHeaders := make(map[string]string, len(updatedHeaders))
+	for key, value := range updatedHeaders {
+		if value == "" {
+			if existingValue := existingHeaders[key]; existingValue != "" {
+				encryptedHeaders[key] = existingValue
+			}
+			continue
+		}
+
+		encrypted, err := encryptNotificationCredentialInternal(value)
+		if err != nil {
+			return errors.WrapIff(err, "failed to encrypt generic webhook header %q", key)
+		}
+		encryptedHeaders[key] = encrypted
+	}
+	if len(encryptedHeaders) == 0 {
+		delete(encryptedConfig, "customHeaders")
+	} else {
+		encryptedConfig["customHeaders"] = encryptedHeaders
+	}
+	return nil
+}
+
+func notificationStringMapInternal(value any) map[string]string {
+	switch typed := value.(type) {
+	case map[string]string:
+		return typed
+	case map[string]any:
+		result := make(map[string]string, len(typed))
+		for key, item := range typed {
+			if text, ok := item.(string); ok {
+				result[key] = text
+			}
+		}
+		return result
+	default:
+		return nil
+	}
 }
 
 func signalCredentialPreservationConfigInternal(config models.JSON, existingConfig models.JSON) models.JSON {
