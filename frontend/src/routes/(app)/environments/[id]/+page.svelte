@@ -211,6 +211,7 @@
 		enabled: environment.enabled,
 		apiUrl: environment.apiUrl,
 		pollingEnabled: settings?.pollingEnabled ?? false,
+		imageEventWatcherEnabled: settings?.imageEventWatcherEnabled ?? false,
 		autoUpdate: settings?.autoUpdate ?? false,
 		autoInjectEnv: settings?.autoInjectEnv ?? false,
 		followProjectSymlinks: settings?.followProjectSymlinks ?? false,
@@ -272,6 +273,7 @@
 		if (settings) {
 			await settingsService.updateSettingsForEnvironment(environment.id, {
 				pollingEnabled: formData.pollingEnabled,
+				imageEventWatcherEnabled: formData.imageEventWatcherEnabled,
 				autoUpdate: formData.autoUpdate,
 				autoInjectEnv: formData.autoInjectEnv,
 				followProjectSymlinks: formData.followProjectSymlinks,

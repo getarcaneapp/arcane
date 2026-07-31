@@ -30,7 +30,6 @@ import (
 )
 
 const dockerClientNegotiationTimeout = 5 * time.Second
-const dockerImageStateResyncActionInternal events.Action = "arcane-resync"
 
 type DockerClientService struct {
 	db              *database.DB
@@ -254,7 +253,7 @@ func (s *DockerClientService) WatchEvents(ctx context.Context) {
 func (s *DockerClientService) publishImageStateResyncInternal() {
 	s.EventBus().Publish(events.Message{
 		Type:   events.ImageEventType,
-		Action: dockerImageStateResyncActionInternal,
+		Action: docker.ImageStateResyncAction,
 	})
 }
 

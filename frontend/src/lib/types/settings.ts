@@ -15,6 +15,7 @@ export type Settings = {
 	autoUpdateInterval: number;
 	autoUpdateExcludedContainers?: string;
 	pollingEnabled: boolean;
+	imageEventWatcherEnabled: boolean;
 	pollingInterval: number;
 	dockerClientRefreshInterval?: string;
 	environmentHealthInterval: number;

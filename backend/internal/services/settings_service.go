@@ -186,6 +186,7 @@ func DefaultSettingsConfig() *models.Settings {
 		AutoUpdateExcludedContainers:    models.SettingVariable{Value: ""},
 		PollingEnabled:                  models.SettingVariable{Value: "true"},
 		PollingInterval:                 models.SettingVariable{Value: "0 0 * * * *"},
+		ImageEventWatcherEnabled:        models.SettingVariable{Value: "false"},
 		DockerClientRefreshInterval:     models.SettingVariable{Value: "*/30 * * * * *"},
 		EventCleanupInterval:            models.SettingVariable{Value: "0 0 */6 * * *"},
 		ExpiredSessionsCleanupInterval:  models.SettingVariable{Value: "0 0 0 * * *"},

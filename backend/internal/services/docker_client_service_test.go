@@ -12,6 +12,7 @@ import (
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/events"
 	"github.com/moby/moby/api/types/image"
@@ -185,7 +186,7 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testi
 	select {
 	case message := <-eventCh:
 		require.Equal(t, events.ImageEventType, message.Type)
-		require.Equal(t, dockerImageStateResyncActionInternal, message.Action)
+		require.Equal(t, docker.ImageStateResyncAction, message.Action)
 	case <-time.After(time.Second):
 		t.Fatal("timed out waiting for image state resync event")
 	}
@@ -234,7 +235,7 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 	}
 	select {
 	case message := <-eventsCh:
-		require.Equal(t, dockerImageStateResyncActionInternal, message.Action)
+		require.Equal(t, docker.ImageStateResyncAction, message.Action)
 	case <-time.After(time.Second):
 		t.Fatal("Docker event stream did not publish reconnect resync")
 	}

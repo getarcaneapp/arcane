@@ -301,6 +301,7 @@ var expectedSettingOverrideKeys = []string{
 	"gitSyncMaxFiles",
 	"gitSyncMaxTotalSizeMb",
 	"httpClientTimeout",
+	"imageEventWatcherEnabled",
 	"lifecycleDefaultRunnerImage",
 	"lifecycleEnabled",
 	"lifecycleMaxTimeoutSec",

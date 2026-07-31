@@ -96,7 +96,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 	require.Equal(t, count1, count2)
 
 	// Spot-check core and automation defaults exist with correct values
-	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
+	for _, key := range []string{"authLocalEnabled", "projectsDirectory", "followProjectSymlinks", "autoUpdateExcludedContainers", "imageEventWatcherEnabled", "vulnerabilityScanEnabled", "vulnerabilityScanInterval", "trivyImage", "trivyNetwork", "trivySecurityOpts", "trivyPrivileged", "trivyPreserveCacheOnVolumePrune", "trivyResourceLimitsEnabled", "trivyCpuLimit", "trivyMemoryLimitMb", "trivyConcurrentScanContainers", "gitSyncMaxFiles", "gitSyncMaxTotalSizeMb", "gitSyncMaxBinarySizeMb", "lifecycleDefaultRunnerImage"} {
 		var sv models.SettingVariable
 		err := svc.db.WithContext(ctx).Where("key = ?", key).First(&sv).Error
 		require.NoErrorf(t, err, "missing default key %s", key)
@@ -106,6 +106,8 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "false", sv.Value)
 		case "autoUpdateExcludedContainers":
 			require.Equal(t, "", sv.Value)
+		case "imageEventWatcherEnabled":
+			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanEnabled":
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanInterval":
@@ -138,6 +140,23 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 			require.Equal(t, "10", sv.Value)
 		}
 	}
+}
+
+func TestSettingsService_ImageEventWatcherSettingPersists(t *testing.T) {
+	ctx := context.Background()
+	db := setupSettingsTestDB(t)
+	svc, err := newSettingsServiceForTestInternal(t, ctx, db)
+	require.NoError(t, err)
+	require.NoError(t, svc.EnsureDefaultSettings(ctx))
+	require.False(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled", true))
+
+	_, err = svc.UpdateSettings(ctx, settings.Update{ImageEventWatcherEnabled: new("true")})
+	require.NoError(t, err)
+	require.True(t, svc.GetBoolSetting(ctx, "imageEventWatcherEnabled", false))
+
+	var stored models.SettingVariable
+	require.NoError(t, db.WithContext(ctx).Where("key = ?", "imageEventWatcherEnabled").First(&stored).Error)
+	require.Equal(t, "true", stored.Value)
 }
 
 func TestSettingsService_EnsureDefaultSettings_OverridesExistingTrivyImage(t *testing.T) {
