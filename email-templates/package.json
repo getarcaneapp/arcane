@@ -12,7 +12,7 @@
 		"format:check": "oxfmt --check"
 	},
 	"dependencies": {
-		"react": "^19.2.7",
+		"react": "^19.2.8",
 		"react-dom": "^19.2.8",
 		"react-email": "6.9.1",
 		"tailwind-merge": "^3.6.0"
