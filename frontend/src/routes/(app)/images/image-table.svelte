@@ -109,7 +109,8 @@
 			onComplete: async (result) => {
 				if (result.success > 0) await refreshImages();
 			},
-			clearSelection: () => (selectedIds = [])
+			clearSelection: () => (selectedIds = []),
+			sequential: true
 		});
 	}
 
