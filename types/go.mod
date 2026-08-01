@@ -4,7 +4,7 @@ go 1.26.5
 
 require (
 	emperror.dev/errors v0.8.1
-	github.com/compose-spec/compose-go/v2 v2.13.0
+	github.com/compose-spec/compose-go/v2 v2.14.0
 	github.com/docker/go-units v0.5.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
