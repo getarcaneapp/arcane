@@ -11,7 +11,7 @@ require (
 	emperror.dev/errors v0.8.1
 	github.com/charmbracelet/x/term v0.2.2
 	github.com/fatih/color v1.19.0
-	github.com/getarcaneapp/arcane/types/v2 v2.5.0
+	github.com/getarcaneapp/arcane/types/v2 v2.6.0
 	github.com/go-viper/mapstructure/v2 v2.5.0
 	github.com/mattn/go-runewidth v0.0.27
 	github.com/samber/hot v0.13.0
