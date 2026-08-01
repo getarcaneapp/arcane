@@ -41,7 +41,7 @@ require (
 	github.com/moby/buildkit v0.32.0
 	github.com/moby/moby/api v1.55.0
 	github.com/moby/moby/client v0.5.1
-	github.com/nicholas-fedor/shoutrrr v0.16.2
+	github.com/nicholas-fedor/shoutrrr v0.16.3
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/orandin/slog-gorm v1.4.0
@@ -163,7 +163,7 @@ require (
 	github.com/labstack/gommon v0.5.0 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/mattn/go-colorable v0.1.15 // indirect
-	github.com/mattn/go-isatty v0.0.23 // indirect
+	github.com/mattn/go-isatty v0.0.24 // indirect
 	github.com/mattn/go-runewidth v0.0.27 // indirect
 	github.com/mattn/go-shellwords v1.0.13 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
