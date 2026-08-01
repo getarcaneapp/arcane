@@ -1,5 +1,6 @@
 {
-	"extends": "./.svelte-kit/tsconfig.json",
+	"extends": "$app/tsconfig",
+	"include": ["src"],
 	"compilerOptions": {
 		"target": "ES2022",
 		"verbatimModuleSyntax": true,
@@ -20,7 +21,7 @@
 		"noUncheckedIndexedAccess": true,
 		"noPropertyAccessFromIndexSignature": true,
 		"moduleResolution": "bundler",
-		"types": ["unplugin-icons/types/svelte"]
+		"types": ["$app/types", "unplugin-icons/types/svelte"]
 	},
 	"exclude": [
 		"node_modules/**",
@@ -28,7 +29,6 @@
 		"src/paraglide/**",
 		"src/service-worker.js",
 		"src/service-worker/**/*.js",
-		"src/service-worker.ts",
 		"src/service-worker/**/*.ts",
 		"src/service-worker.d.ts",
 		"src/service-worker/**/*.d.ts"

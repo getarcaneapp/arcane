@@ -33,7 +33,7 @@
     "@fontsource-variable/montserrat": "^5.3.0",
     "@internationalized/date": "^3.12.2",
     "@lezer/highlight": "^1.2.3",
-    "@sveltejs/kit": "^3.0.0-next.12",
+    "@sveltejs/kit": "^3.0.0-next.13",
     "@tanstack/svelte-query": "^6.1.38",
     "@tanstack/svelte-table": "^9.0.0-beta.58",
     "@tanstack/table-core": "9.0.0-beta.58",
@@ -66,7 +66,7 @@
   "devDependencies": {
     "@iconify/json": "^2.2.506",
     "@inlang/paraglide-js": "2.23.0",
-    "@sveltejs/adapter-static": "^4.0.0-next.1",
+    "@sveltejs/adapter-static": "^4.0.0-next.2",
     "@sveltejs/vite-plugin-svelte": "^7.2.0",
     "@tailwindcss/vite": "^4.3.3",
     "@tanstack/svelte-query-devtools": "^6.1.38",

@@ -1,6 +1,5 @@
 <script lang="ts">
 	import { goto, refreshAll } from '$app/navigation';
-	import { resolve } from '$app/paths';
 	import { formatDistanceToNow } from 'date-fns';
 	import { onDestroy, onMount, untrack } from 'svelte';
 	import { toast } from 'svelte-sonner';
@@ -595,7 +594,7 @@
 			id: `${item.environment.id}-details`,
 			action: 'inspect',
 			label: m.common_view_details(),
-			onclick: () => void goto(resolve(`/environments/${item.environment.id}`)),
+			onclick: () => void goto(`/environments/${item.environment.id}`),
 			icon: InspectIcon
 		});
 
