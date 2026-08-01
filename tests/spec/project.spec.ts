@@ -657,6 +657,7 @@ test.describe('New Compose Project Page', () => {
 			await expect(page.getByRole('button', { name: projectName, exact: true })).toBeVisible();
 
 			await page.getByRole('tab', { name: 'Services 1', exact: true }).click();
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 
 			const serviceTable = page.getByRole('table').filter({ visible: true });
 			const serviceNameWhenStopped = serviceTable
@@ -1262,6 +1263,7 @@ test.describe('Project Detail Page', () => {
 			projectId = await createProjectViaUI(page, projectName, composeContent);
 			const servicesTab = page.getByRole('tab', { name: 'Services 1', exact: true });
 			await servicesTab.click();
+			await expect.poll(() => new URL(page.url()).searchParams.get('tab')).toBe('services');
 			await expect(servicesTab).toHaveAttribute('data-state', 'active');
 
 			const port = page.getByText('8081:80', { exact: true }).filter({ visible: true }).first();
