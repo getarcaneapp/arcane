@@ -305,6 +305,25 @@ func TestConfig_AllowDowngrade(t *testing.T) {
 	})
 }
 
+func TestConfig_AllowCLIPasswordReset(t *testing.T) {
+	origAllowCLIPasswordReset := os.Getenv("ALLOW_CLI_PASSWORD_RESET")
+	defer restoreEnv("ALLOW_CLI_PASSWORD_RESET", origAllowCLIPasswordReset)
+
+	t.Run("defaults to false", func(t *testing.T) {
+		unsetEnv(t, "ALLOW_CLI_PASSWORD_RESET")
+
+		cfg := Load()
+		assert.False(t, cfg.AllowCLIPasswordReset)
+	})
+
+	t.Run("loads explicit true from env", func(t *testing.T) {
+		setEnv(t, "ALLOW_CLI_PASSWORD_RESET", "TRUE")
+
+		cfg := Load()
+		assert.True(t, cfg.AllowCLIPasswordReset)
+	})
+}
+
 func TestConfig_ListenAddr(t *testing.T) {
 	tests := []struct {
 		name     string

@@ -467,6 +467,32 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	require.True(t, errors.Is(err, common.ErrSessionRevoked))
 }
 
+func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-cached-revoked"},
+		Username:  "cached-revoked-user",
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, _ := createTestSession(t, db, user.ID, exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.NoError(t, err)
+	require.NoError(t, NewSessionService(db).RevokeSession(context.Background(), session.ID))
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.True(t, errors.Is(err, common.ErrSessionRevoked), "expected cached access token to be rejected after cross-process revocation, got %v", err)
+}
+
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)

@@ -277,6 +277,67 @@ func (s *UserService) UpdateUser(ctx context.Context, user *models.User, actorPe
 	return user, nil
 }
 
+// SetPassword hashes and persists a new password for the given user and clears
+// the first-login password-change requirement for trusted internal callers.
+func (s *UserService) SetPassword(ctx context.Context, user *models.User, password string) (*models.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+
+	hashedPassword, err := s.hashPassword(password)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to hash password")
+	}
+
+	user.PasswordHash = hashedPassword
+	user.RequiresPasswordChange = false
+	return s.UpdateUser(ctx, user, nil)
+}
+
+// SetPasswordAndRevokeSessionsExcept atomically sets a new password, clears
+// the first-login password-change requirement, and revokes every session for
+// the user except exceptSessionID. Pass an empty exceptSessionID to revoke all
+// sessions. This is for trusted internal callers.
+func (s *UserService) SetPasswordAndRevokeSessionsExcept(ctx context.Context, user *models.User, password, exceptSessionID string) (*models.User, error) {
+	if user == nil {
+		return nil, errors.New("user is nil")
+	}
+	if strings.TrimSpace(user.ID) == "" {
+		return nil, ErrUserNotFound
+	}
+
+	hashedPassword, err := s.hashPassword(password)
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to hash password")
+	}
+
+	var updatedUser models.User
+	err = dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		if err := tx.
+			Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", user.ID).
+			First(&updatedUser).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return errors.WrapIf(err, "failed to load user for password reset")
+		}
+
+		updatedUser.PasswordHash = hashedPassword
+		updatedUser.RequiresPasswordChange = false
+		if err := tx.Save(&updatedUser).Error; err != nil {
+			return errors.WrapIf(err, "failed to update user password")
+		}
+		return revokeAllUserSessionsExceptInternal(ctx, tx, updatedUser.ID, exceptSessionID)
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	*user = updatedUser
+	return user, nil
+}
+
 // AttachOidcSubjectTransactional safely links an OIDC subject to the given user inside a DB transaction.
 // It uses a row lock (FOR UPDATE) to prevent concurrent merges from racing and validates that the
 // user isn't already linked to a different subject. The provided updateFn can mutate the user (e.g.,

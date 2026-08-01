@@ -55,6 +55,30 @@ func TestDeleteUserRejectsDeletingOnlyAdmin(t *testing.T) {
 	require.Equal(t, admin.ID, stillThere.ID)
 }
 
+func TestSetPasswordUpdatesHashAndClearsPasswordChangeRequirement(t *testing.T) {
+	userSvc, _ := setupUserAndRoleServices(t)
+	ctx := context.Background()
+
+	oldHash, err := userSvc.HashPassword("old-password")
+	require.NoError(t, err)
+	user, err := userSvc.CreateUser(ctx, &models.User{
+		BaseModel:              models.BaseModel{ID: "password-user"},
+		Username:               "password-user",
+		PasswordHash:           oldHash,
+		RequiresPasswordChange: true,
+	})
+	require.NoError(t, err)
+
+	_, err = userSvc.SetPassword(ctx, user, "new-password")
+	require.NoError(t, err)
+
+	updated, err := userSvc.GetUserByID(ctx, user.ID)
+	require.NoError(t, err)
+	require.NoError(t, userSvc.ValidatePassword(updated.PasswordHash, "new-password"))
+	require.Error(t, userSvc.ValidatePassword(updated.PasswordHash, "old-password"))
+	require.False(t, updated.RequiresPasswordChange)
+}
+
 func TestDeleteUserAllowsDeletingNonAdmin(t *testing.T) {
 	userSvc, roleSvc := setupUserAndRoleServices(t)
 	ctx := context.Background()
