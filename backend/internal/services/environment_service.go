@@ -2279,20 +2279,7 @@ func (s *EnvironmentService) SyncS3DestinationsToEnvironment(ctx context.Context
 		if decryptErr != nil {
 			return fmt.Errorf("failed to decrypt S3 destination %s for sync: %w", destinations[i].ID, decryptErr)
 		}
-		syncItems = append(syncItems, backuptypes.S3DestinationSync{
-			ID:              destinations[i].ID,
-			Name:            destinations[i].Name,
-			Endpoint:        destinations[i].Endpoint,
-			Bucket:          destinations[i].Bucket,
-			Region:          destinations[i].Region,
-			AccessKeyID:     destinations[i].AccessKeyID,
-			SecretAccessKey: secret,
-			Prefix:          destinations[i].Prefix,
-			UseSSL:          destinations[i].UseSSL,
-			ForcePathStyle:  destinations[i].ForcePathStyle,
-			CreatedAt:       destinations[i].CreatedAt,
-			UpdatedAt:       destinations[i].UpdatedAt,
-		})
+		syncItems = append(syncItems, destinations[i].ToSync(secret))
 	}
 
 	body, err := json.Marshal(backuptypes.S3DestinationSyncRequest{Destinations: syncItems})

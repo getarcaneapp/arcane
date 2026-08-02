@@ -61,44 +61,15 @@ func (s *VolumeService) remoteRusticRepositoryInternal(ctx context.Context, dest
 	if s.s3Destinations == nil {
 		return rusticRepositoryInternal{}, errors.New("S3 backup service is unavailable")
 	}
-	cfg, err := s.s3Destinations.configurationInternal(ctx, destinationID)
+	configuration, err := s.s3Destinations.configurationInternal(ctx, destinationID)
 	if err != nil {
 		return rusticRepositoryInternal{}, errors.New("the selected S3 backup destination is not configured")
-	}
-	endpoint := strings.TrimSpace(cfg.S3Endpoint)
-	if endpoint != "" && !strings.Contains(endpoint, "://") {
-		if cfg.S3UseSSL {
-			endpoint = "https://" + endpoint
-		} else {
-			endpoint = "http://" + endpoint
-		}
 	}
 	instanceID := strings.TrimSpace(s.settingsService.GetSettingsConfig().InstanceID.Value)
 	if instanceID == "" {
 		return rusticRepositoryInternal{}, errors.New("arcane instance ID is unavailable")
 	}
-	repositoryRoot := path.Join("/", cfg.S3Prefix, "arcane-volume-backups", instanceID)
-	environment := []string{
-		"RUSTIC_REPOSITORY=opendal:s3",
-		"RUSTIC_REPO_OPT_BUCKET=" + cfg.S3Bucket,
-		"RUSTIC_REPO_OPT_ROOT=" + repositoryRoot,
-		"AWS_ACCESS_KEY_ID=" + cfg.S3AccessKeyID,
-		"AWS_SECRET_ACCESS_KEY=" + cfg.S3SecretAccessKey,
-		"AWS_EC2_METADATA_DISABLED=true",
-	}
-	if endpoint != "" {
-		environment = append(environment, "RUSTIC_REPO_OPT_ENDPOINT="+endpoint)
-	}
-	region := strings.TrimSpace(cfg.S3Region)
-	if region == "" {
-		region = "auto"
-	}
-	environment = append(environment, "RUSTIC_REPO_OPT_REGION="+region)
-	environment = append(environment, "AWS_REGION="+region)
-	if !cfg.S3ForcePathStyle {
-		environment = append(environment, "RUSTIC_REPO_OPT_ENABLE_VIRTUAL_HOST_STYLE=true")
-	}
-	return rusticRepositoryInternal{environment: environment}, nil
+	return rusticRepositoryInternal{environment: configuration.RusticEnvironment("arcane-volume-backups", instanceID)}, nil
 }
 
 func (s *VolumeService) ensureRusticImageInternal(ctx context.Context, dockerClient *client.Client) error {

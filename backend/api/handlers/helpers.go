@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	stderrors "errors"
+	"log/slog"
 	"mime/multipart"
 	"strings"
 
@@ -136,6 +137,31 @@ func mapOneAPIResponseInternal[S any, D any](source S, mappingMessage func(error
 		Success: true,
 		Data:    out,
 	}, nil
+}
+
+func successMessageResponseInternal(message string) base.ApiResponse[base.MessageResponse] {
+	return base.ApiResponse[base.MessageResponse]{
+		Success: true,
+		Data:    base.MessageResponse{Message: message},
+	}
+}
+
+func triggerRemoteSyncInternal(
+	ctx context.Context,
+	environmentService *services.EnvironmentService,
+	reason string,
+	failureMessage string,
+	sync func(*services.EnvironmentService, context.Context) error,
+) {
+	if environmentService == nil {
+		return
+	}
+	detachedCtx := context.WithoutCancel(ctx)
+	go func() {
+		if err := sync(environmentService, detachedCtx); err != nil {
+			slog.WarnContext(detachedCtx, failureMessage, "reason", reason, "error", err)
+		}
+	}()
 }
 
 func defaultOperationSecurityInternal() []map[string][]string {

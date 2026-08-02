@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"path"
 	"reflect"
 	"strings"
 	"sync"
@@ -177,35 +176,11 @@ func (s *SystemBackupService) localRepositoryInternal(ctx context.Context, docke
 }
 
 func (s *SystemBackupService) remoteRepositoryInternal(ctx context.Context, destinationID string) (rusticRepositoryInternal, error) {
-	cfg, err := s.s3Destinations.configurationInternal(ctx, destinationID)
+	configuration, err := s.s3Destinations.configurationInternal(ctx, destinationID)
 	if err != nil {
 		return rusticRepositoryInternal{}, errors.New("the selected S3 backup destination is not configured")
 	}
-	endpoint := strings.TrimSpace(cfg.S3Endpoint)
-	if endpoint != "" && !strings.Contains(endpoint, "://") {
-		if cfg.S3UseSSL {
-			endpoint = "https://" + endpoint
-		} else {
-			endpoint = "http://" + endpoint
-		}
-	}
-	root := path.Join("/", cfg.S3Prefix, "arcane-system-recovery")
-	environment := []string{
-		"RUSTIC_REPOSITORY=opendal:s3", "RUSTIC_REPO_OPT_BUCKET=" + cfg.S3Bucket, "RUSTIC_REPO_OPT_ROOT=" + root,
-		"AWS_ACCESS_KEY_ID=" + cfg.S3AccessKeyID, "AWS_SECRET_ACCESS_KEY=" + cfg.S3SecretAccessKey, "AWS_EC2_METADATA_DISABLED=true",
-	}
-	if endpoint != "" {
-		environment = append(environment, "RUSTIC_REPO_OPT_ENDPOINT="+endpoint)
-	}
-	region := strings.TrimSpace(cfg.S3Region)
-	if region == "" {
-		region = "auto"
-	}
-	environment = append(environment, "RUSTIC_REPO_OPT_REGION="+region, "AWS_REGION="+region)
-	if !cfg.S3ForcePathStyle {
-		environment = append(environment, "RUSTIC_REPO_OPT_ENABLE_VIRTUAL_HOST_STYLE=true")
-	}
-	return rusticRepositoryInternal{environment: environment}, nil
+	return rusticRepositoryInternal{environment: configuration.RusticEnvironment("arcane-system-recovery")}, nil
 }
 
 func (s *SystemBackupService) createSnapshotInternal(ctx context.Context, dockerClient *client.Client, repository rusticRepositoryInternal, recoveryKey string) (rusticSnapshotInternal, error) {

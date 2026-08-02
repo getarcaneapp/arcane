@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"log/slog"
 	"strings"
 
 	"emperror.dev/errors"
@@ -16,6 +15,8 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"go.getarcane.app/sys/crypto"
 )
+
+const registryRemoteSyncFailureMessageInternal = "Failed to fan out registry sync to remote environments"
 
 // ContainerRegistryHandler handles container registry management endpoints.
 type ContainerRegistryHandler struct {
@@ -237,7 +238,7 @@ func (h *ContainerRegistryHandler) CreateRegistry(ctx context.Context, input *Cr
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to create registry").Error())
 	}
 
-	h.triggerRemoteRegistrySync(ctx, "registry creation")
+	triggerRemoteSyncInternal(ctx, h.environmentService, "registry creation", registryRemoteSyncFailureMessageInternal, (*services.EnvironmentService).SyncRegistriesToRemoteEnvironments)
 
 	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.ContainerRegistry](reg)
 	if mapErr != nil {
@@ -281,7 +282,7 @@ func (h *ContainerRegistryHandler) UpdateRegistry(ctx context.Context, input *Up
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to update registry").Error())
 	}
 
-	h.triggerRemoteRegistrySync(ctx, "registry update")
+	triggerRemoteSyncInternal(ctx, h.environmentService, "registry update", registryRemoteSyncFailureMessageInternal, (*services.EnvironmentService).SyncRegistriesToRemoteEnvironments)
 
 	out, mapErr := mapper.MapOne[*models.ContainerRegistry, containerregistry.ContainerRegistry](reg)
 	if mapErr != nil {
@@ -303,7 +304,7 @@ func (h *ContainerRegistryHandler) DeleteRegistry(ctx context.Context, input *De
 		return nil, huma.NewError(apiErr.HTTPStatus(), errors.WithMessage(err, "Failed to delete registry").Error())
 	}
 
-	h.triggerRemoteRegistrySync(ctx, "registry deletion")
+	triggerRemoteSyncInternal(ctx, h.environmentService, "registry deletion", registryRemoteSyncFailureMessageInternal, (*services.EnvironmentService).SyncRegistriesToRemoteEnvironments)
 
 	return &DeleteContainerRegistryOutput{
 		Body: base.ApiResponse[base.MessageResponse]{
@@ -377,22 +378,4 @@ func (h *ContainerRegistryHandler) SyncRegistries(ctx context.Context, input *Sy
 			},
 		},
 	}, nil
-}
-
-// ============================================================================
-// Helper Methods
-// ============================================================================
-
-func (h *ContainerRegistryHandler) triggerRemoteRegistrySync(ctx context.Context, reason string) {
-	if h.environmentService == nil {
-		return
-	}
-
-	detachedCtx := context.WithoutCancel(ctx)
-
-	go func(syncCtx context.Context, syncReason string) {
-		if err := h.environmentService.SyncRegistriesToRemoteEnvironments(syncCtx); err != nil {
-			slog.WarnContext(syncCtx, "Failed to fan out registry sync to remote environments", "reason", syncReason, "error", err.Error())
-		}
-	}(detachedCtx, reason)
 }
