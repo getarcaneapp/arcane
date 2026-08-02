@@ -2459,15 +2459,10 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 		cleanup()
 		return nil, 0, errors.WrapIf(err, "failed to read tar stream")
 	}
-	if hdr.FileInfo().IsDir() {
+	if err := validateVolumeDownloadHeaderInternal(hdr); err != nil {
 		_ = reader.Close()
 		cleanup()
-		return nil, 0, errors.New("path is a directory")
-	}
-	if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink || hdr.FileInfo().Mode()&os.ModeSymlink != 0 {
-		_ = reader.Close()
-		cleanup()
-		return nil, 0, errors.New("symlink downloads are not supported")
+		return nil, 0, err
 	}
 
 	return &cleanupReadCloser{
@@ -2475,4 +2470,17 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 		Closer:  reader,
 		cleanup: cleanup,
 	}, hdr.Size, nil
+}
+
+func validateVolumeDownloadHeaderInternal(hdr *tar.Header) error {
+	if hdr.FileInfo().IsDir() {
+		return errors.New("path is a directory")
+	}
+	if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink || hdr.FileInfo().Mode()&os.ModeSymlink != 0 {
+		return errors.New("symlink downloads are not supported")
+	}
+	if !hdr.FileInfo().Mode().IsRegular() || hdr.Typeflag != tar.TypeReg {
+		return errors.New("path is not a regular file")
+	}
+	return nil
 }

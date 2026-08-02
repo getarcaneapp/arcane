@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"io"
+	"log/slog"
 	"mime/multipart"
 	"net/http"
 	"path"
@@ -859,7 +860,7 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 	}, nil
 }
 
-func volumeWorkspaceHTTPErrorInternal(err error) error {
+func volumeWorkspaceHTTPErrorInternal(ctx context.Context, operation, environmentID, volumeName string, err error) error {
 	switch {
 	case errors.Is(err, common.ErrVolumeFileConflict):
 		return huma.Error409Conflict(err.Error())
@@ -870,6 +871,12 @@ func volumeWorkspaceHTTPErrorInternal(err error) error {
 	case errors.Is(err, common.ErrVolumeFileBadRequest):
 		return huma.Error400BadRequest(err.Error())
 	default:
+		slog.ErrorContext(ctx, "volume workspace request failed",
+			"operation", operation,
+			"environment_id", environmentID,
+			"volume", volumeName,
+			"error", err,
+		)
 		return huma.Error500InternalServerError("internal error")
 	}
 }
@@ -877,7 +884,7 @@ func volumeWorkspaceHTTPErrorInternal(err error) error {
 func (h *VolumeHandler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*GetVolumeWorkspaceOutput, error) {
 	workspace, err := h.volumeService.GetVolumeWorkspace(ctx, input.VolumeName)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "read_tree", input.EnvironmentID, input.VolumeName, err)
 	}
 	return &GetVolumeWorkspaceOutput{Body: base.ApiResponse[volumetypes.Workspace]{Success: true, Data: *workspace}}, nil
 }
@@ -888,7 +895,7 @@ func (h *VolumeHandler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVo
 	}
 	file, err := h.volumeService.GetVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "read_file", input.EnvironmentID, input.VolumeName, err)
 	}
 	return &GetVolumeWorkspaceFileOutput{Body: base.ApiResponse[volumetypes.WorkspaceFileContent]{Success: true, Data: *file}}, nil
 }
@@ -974,11 +981,11 @@ func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *Update
 		return h.volumeService.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, input.RawBody.File["files"], *user)
 	})
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "save", input.EnvironmentID, input.VolumeName, err)
 	}
 	workspace, err := h.volumeService.GetVolumeWorkspace(runtimeCtx, input.VolumeName)
 	if err != nil {
-		return nil, volumeWorkspaceHTTPErrorInternal(err)
+		return nil, volumeWorkspaceHTTPErrorInternal(ctx, "refresh_after_save", input.EnvironmentID, input.VolumeName, err)
 	}
 	workspace.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
 	return &UpdateVolumeWorkspaceOutput{Body: base.ApiResponse[volumetypes.Workspace]{Success: true, Data: *workspace}}, nil
