@@ -5,14 +5,25 @@
 	import { SettingsPageLayout, type SettingsActionButton } from '#lib/layouts';
 	import { BackupIcon, EditIcon, LockIcon } from '#lib/icons';
 	import { Badge } from '#lib/components/ui/badge';
+	import { CopyButton } from '#lib/components/ui/copy-button';
+	import { Input } from '#lib/components/ui/input';
+	import { Label } from '#lib/components/ui/label';
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
 	import { systemBackupService } from '#lib/services/system-backup-service';
 	import { formatDateTimeShort } from '#lib/utils/formatting';
+	import {
+		backupDestinationFromFlags,
+		backupDestinationLabel,
+		backupDestinationOptions,
+		backupPolicyDestinationDisplay,
+		backupStatusLabel,
+		s3DestinationOptions
+	} from '#lib/utils/backups';
 	import type { SearchPaginationSortRequest } from '#lib/types/shared';
-	import type { SystemBackupDestination, SystemBackupRun } from '#lib/types/system-backup';
+	import type { SystemBackupDestination, SystemBackupPolicy, SystemBackupRun } from '#lib/types/system-backup';
 	import * as m from '#lib/paraglide/messages.js';
 	import SystemBackupTable from './system-backup-table.svelte';
 	import SystemBackupPolicyDialog from './system-backup-policy-dialog.svelte';
@@ -34,24 +45,21 @@
 	let newRecoveryKey = $state('');
 	let loading = $state(false);
 	let savingKey = $state(false);
+	let generatingKey = $state(false);
 	const isReadOnly = $derived.by(() => $settingsStore.uiConfigDisabled);
-	const destinationOptions = $derived([
-		{ label: m.volume_backup_destination_local(), value: 'local' },
-		...(data.destinations.length
-			? [
-					{ label: m.volume_backup_destination_s3(), value: 's3' },
-					{ label: m.backups_destination_local_s3(), value: 'local_s3' }
-				]
-			: [])
-	]);
-	const s3Options = $derived(data.destinations.map((item) => ({ label: item.name, value: item.id, description: item.bucket })));
+	const destinationOptions = $derived(backupDestinationOptions(data.destinations.length > 0));
+	const s3Options = $derived(s3DestinationOptions(data.destinations));
 	const configurationOptions = $derived([
 		{
 			label: m.system_backups_custom_configuration(),
 			value: 'custom',
 			description: m.system_backups_custom_configuration_description()
 		},
-		...policyCollection.policies.map((item) => ({ label: item.schedule, value: item.id, description: policyDestination(item) }))
+		...policyCollection.policies.map((item) => ({
+			label: item.schedule,
+			value: item.id,
+			description: backupPolicyDestinationDisplay(item)
+		}))
 	]);
 	const keyError = $derived(
 		recoveryKey.length > 0 && recoveryKey.trim().length < 16 ? m.system_backups_recovery_key_required() : ''
@@ -70,29 +78,24 @@
 	);
 	const invalid = $derived(Boolean(actionKeyInvalid || keyError || destinationError));
 
-	function policyDestination(policy: (typeof policyCollection.policies)[number]) {
-		const label = policy.s3Enabled
-			? policy.localEnabled
-				? m.backups_destination_local_s3()
-				: m.backups_destination_s3()
-			: m.local();
-		return policy.s3DestinationName ? `${label} · ${policy.s3DestinationName}` : label;
-	}
-
-	function backupStatusLabel(status: SystemBackupRun['status']) {
-		if (status === 'succeeded') return m.volume_backup_status_succeeded();
-		if (status === 'failed') return m.common_failed();
-		return m.common_running();
-	}
-
 	function openPolicy(id?: string) {
 		editingPolicyId = id;
 		policyOpen = true;
 	}
 
-	function openRecoveryKey() {
+	async function openRecoveryKey() {
 		newRecoveryKey = '';
 		keyOpen = true;
+		generatingKey = true;
+		try {
+			const generated = await systemBackupService.generateRecoveryKey();
+			newRecoveryKey = generated.recoveryKey;
+		} catch (error) {
+			keyOpen = false;
+			toast.error(error instanceof Error ? error.message : m.system_backups_recovery_key_generate_failed());
+		} finally {
+			generatingKey = false;
+		}
 	}
 
 	function openAction(next: typeof action, backup: SystemBackupRun | null = null) {
@@ -188,11 +191,19 @@
 	}
 
 	const actionButtons: SettingsActionButton[] = $derived.by(() => [
-		{ id: 'schedule', action: 'base', label: m.system_backups_add_schedule(), onclick: () => openPolicy(), disabled: isReadOnly },
+		{
+			id: 'schedule',
+			action: 'base',
+			label: m.system_backups_add_schedule(),
+			size: 'default',
+			onclick: () => openPolicy(),
+			disabled: isReadOnly
+		},
 		{
 			id: 'discover',
 			action: 'base',
 			label: m.system_backups_discover(),
+			size: 'default',
 			onclick: () => openAction('discover'),
 			disabled: isReadOnly || data.destinations.length === 0
 		},
@@ -200,11 +211,167 @@
 			id: 'create',
 			action: 'create',
 			label: m.volumes_backup_create(),
+			size: 'default',
 			onclick: () => openAction('create'),
 			disabled: isReadOnly
 		}
 	]);
 </script>
+
+{#snippet recoveryKeySummary()}
+	<div class="flex items-center justify-between rounded-md border px-3 py-2">
+		<div class="flex items-center gap-2">
+			<LockIcon class="size-4 text-muted-foreground" />
+			<span class="text-sm font-medium">{m.system_backups_recovery_key()}</span>
+			<Badge variant={policyCollection.recoveryKeyStored ? 'green' : 'gray'}>
+				{policyCollection.recoveryKeyStored ? m.common_configured() : m.common_not_configured()}
+			</Badge>
+		</div>
+		<ArcaneButton
+			action="edit"
+			customLabel={policyCollection.recoveryKeyStored
+				? m.system_backups_replace_recovery_key()
+				: m.system_backups_setup_recovery_key()}
+			onclick={openRecoveryKey}
+			disabled={isReadOnly}
+		/>
+	</div>
+{/snippet}
+
+{#snippet policyCard(policy: SystemBackupPolicy)}
+	<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
+		<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
+		<code class="truncate">{policy.schedule}</code>
+		<div class="flex items-center gap-1.5 justify-self-end">
+			<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
+			<ArcaneButton
+				action="edit"
+				size="icon"
+				icon={EditIcon}
+				showLabel={false}
+				customLabel={m.jobs_edit_schedule()}
+				onclick={() => openPolicy(policy.id)}
+				class="size-7"
+				disabled={isReadOnly}
+			/>
+		</div>
+		<div class="col-span-2 flex min-w-0 items-center gap-1.5">
+			<span>
+				{policy.retentionCount === 0
+					? m.volume_backup_retention_all()
+					: m.volume_backup_retention_summary({ count: policy.retentionCount })}
+			</span>
+			{#if policy.lastRun}
+				<span>·</span>
+				<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
+			{/if}
+		</div>
+		{#if policy.s3DestinationName}
+			<span class="max-w-28 justify-self-end truncate" title={policy.s3DestinationName}>{policy.s3DestinationName}</span>
+		{/if}
+	</div>
+{/snippet}
+
+{#snippet recoveryKeyDialog()}
+	<ResponsiveDialog
+		bind:open={keyOpen}
+		title={policyCollection.recoveryKeyStored ? m.system_backups_replace_recovery_key() : m.system_backups_setup_recovery_key()}
+		description={policyCollection.recoveryKeyStored
+			? m.system_backups_replace_recovery_key_description()
+			: m.system_backups_recovery_key_description()}
+		contentClass="sm:max-w-[560px]"
+	>
+		{#snippet children()}
+			<div class="space-y-2.5 py-2">
+				<Label for="system-backup-recovery-key" class="text-sm font-medium">{m.system_backups_recovery_key()}</Label>
+				<div class="flex items-center gap-2">
+					<Input
+						id="system-backup-recovery-key"
+						value={newRecoveryKey}
+						readonly
+						disabled={generatingKey}
+						spellcheck={false}
+						class="font-mono tracking-wide uppercase"
+					/>
+					{#if newRecoveryKey}<CopyButton text={newRecoveryKey} variant="outline" tabindex={0} class="shrink-0" />{/if}
+				</div>
+				{#if newKeyError}<p class="text-xs font-medium text-destructive">{newKeyError}</p>{/if}
+			</div>
+		{/snippet}
+		{#snippet footer()}
+			<ArcaneButton action="cancel" onclick={() => (keyOpen = false)} disabled={savingKey} />
+			<ArcaneButton
+				action="save"
+				onclick={saveRecoveryKey}
+				loading={savingKey}
+				disabled={savingKey || generatingKey || newKeyInvalid}
+			/>
+		{/snippet}
+	</ResponsiveDialog>
+{/snippet}
+
+{#snippet actionDialog()}
+	<ResponsiveDialog
+		bind:open={actionOpen}
+		title={dialogTitle()}
+		description={dialogDescription()}
+		contentClass="sm:max-w-[560px]"
+	>
+		{#snippet children()}
+			<div class="space-y-5 py-2">
+				{#if action === 'create'}
+					<SelectWithLabel
+						id="manual-system-backup-configuration"
+						value={backupConfiguration}
+						onValueChange={(value) => (backupConfiguration = value)}
+						label={m.system_backups_backup_configuration()}
+						options={configurationOptions}
+					/>
+					{#if backupConfiguration === 'custom'}
+						<SelectWithLabel
+							id="manual-system-backup-destination"
+							value={destination}
+							onValueChange={(value) => (destination = value as SystemBackupDestination)}
+							label={m.backups_destination_label()}
+							options={destinationOptions}
+						/>
+					{/if}
+				{/if}
+				{#if action === 'upload' || action === 'discover' || (action === 'create' && backupConfiguration === 'custom' && destination !== 'local')}
+					<SelectWithLabel
+						id="manual-system-backup-s3"
+						value={s3DestinationId}
+						onValueChange={(value) => (s3DestinationId = value)}
+						label={m.volume_backup_s3_destination_label()}
+						error={destinationError || null}
+						options={s3Options}
+					/>
+				{/if}
+				<TextInputWithLabel
+					value={recoveryKey}
+					onChange={(value) => (recoveryKey = value)}
+					error={keyError || null}
+					label={m.system_backups_recovery_key()}
+					description={policyCollection.recoveryKeyStored
+						? m.system_backups_recovery_key_saved_description()
+						: m.system_backups_recovery_key_description()}
+					type="password"
+					autocomplete="current-password"
+				/>
+			</div>
+		{/snippet}
+		{#snippet footer()}
+			<ArcaneButton action="cancel" onclick={() => (actionOpen = false)} disabled={loading} />
+			<ArcaneButton
+				action={action === 'delete' ? 'remove' : action === 'restore' ? 'confirm' : action === 'create' ? 'create' : 'save'}
+				customLabel={dialogTitle()}
+				onclick={submitAction}
+				{loading}
+				disabled={loading || invalid}
+			/>
+		{/snippet}
+	</ResponsiveDialog>
+{/snippet}
 
 <SettingsPageLayout
 	title={m.system_backups_title()}
@@ -216,70 +383,14 @@
 >
 	{#snippet mainContent()}
 		<div class="space-y-4">
-			<div class="flex items-center justify-between rounded-md border px-3 py-2">
-				<div class="flex items-center gap-2">
-					<LockIcon class="size-4 text-muted-foreground" />
-					<span class="text-sm font-medium">{m.system_backups_recovery_key()}</span>
-					<Badge variant={policyCollection.recoveryKeyStored ? 'green' : 'gray'}
-						>{policyCollection.recoveryKeyStored ? m.common_configured() : m.common_not_configured()}</Badge
-					>
-				</div>
-				<ArcaneButton
-					action="edit"
-					size="sm"
-					customLabel={policyCollection.recoveryKeyStored
-						? m.system_backups_replace_recovery_key()
-						: m.system_backups_setup_recovery_key()}
-					onclick={openRecoveryKey}
-					disabled={isReadOnly}
-				/>
-			</div>
+			{@render recoveryKeySummary()}
 
 			<div class="space-y-2">
 				<h2 class="text-lg font-semibold">{m.system_backups_schedules()}</h2>
 				{#if policyCollection.policies.length}
 					<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 						{#each policyCollection.policies as policy (policy.id)}
-							<div
-								class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1"
-							>
-								<Badge variant={policy.enabled ? 'green' : 'gray'}
-									>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge
-								>
-								<code class="truncate">{policy.schedule}</code>
-								<div class="flex items-center gap-1.5 justify-self-end">
-									<Badge variant="blue"
-										>{policy.s3Enabled
-											? policy.localEnabled
-												? m.backups_destination_local_s3()
-												: m.backups_destination_s3()
-											: m.local()}</Badge
-									>
-									<ArcaneButton
-										action="edit"
-										size="icon"
-										icon={EditIcon}
-										showLabel={false}
-										customLabel={m.jobs_edit_schedule()}
-										onclick={() => openPolicy(policy.id)}
-										class="size-7"
-										disabled={isReadOnly}
-									/>
-								</div>
-								<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-									<span
-										>{policy.retentionCount === 0
-											? m.volume_backup_retention_all()
-											: m.volume_backup_retention_summary({ count: policy.retentionCount })}</span
-									>
-									{#if policy.lastRun}<span>·</span><span class="truncate"
-											>{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span
-										>{/if}
-								</div>
-								{#if policy.s3DestinationName}<span class="max-w-28 justify-self-end truncate" title={policy.s3DestinationName}
-										>{policy.s3DestinationName}</span
-									>{/if}
-							</div>
+							{@render policyCard(policy)}
 						{/each}
 					</div>
 				{:else}
@@ -307,86 +418,7 @@
 			onSaved={(policies) => (policyCollection = { ...policyCollection, policies })}
 		/>
 
-		<ResponsiveDialog
-			bind:open={keyOpen}
-			title={policyCollection.recoveryKeyStored ? m.system_backups_replace_recovery_key() : m.system_backups_setup_recovery_key()}
-			description={policyCollection.recoveryKeyStored
-				? m.system_backups_replace_recovery_key_description()
-				: m.system_backups_recovery_key_description()}
-			contentClass="sm:max-w-[560px]"
-		>
-			{#snippet children()}<div class="py-2">
-					<TextInputWithLabel
-						value={newRecoveryKey}
-						onChange={(value) => (newRecoveryKey = value)}
-						error={newKeyError || null}
-						label={m.system_backups_recovery_key()}
-						type="password"
-						autocomplete="new-password"
-					/>
-				</div>{/snippet}
-			{#snippet footer()}<ArcaneButton action="cancel" onclick={() => (keyOpen = false)} disabled={savingKey} /><ArcaneButton
-					action="save"
-					onclick={saveRecoveryKey}
-					loading={savingKey}
-					disabled={savingKey || newKeyInvalid}
-				/>{/snippet}
-		</ResponsiveDialog>
-
-		<ResponsiveDialog
-			bind:open={actionOpen}
-			title={dialogTitle()}
-			description={dialogDescription()}
-			contentClass="sm:max-w-[560px]"
-		>
-			{#snippet children()}
-				<div class="space-y-5 py-2">
-					{#if action === 'create'}
-						<SelectWithLabel
-							id="manual-system-backup-configuration"
-							value={backupConfiguration}
-							onValueChange={(value) => (backupConfiguration = value)}
-							label={m.system_backups_backup_configuration()}
-							options={configurationOptions}
-						/>
-						{#if backupConfiguration === 'custom'}<SelectWithLabel
-								id="manual-system-backup-destination"
-								value={destination}
-								onValueChange={(value) => (destination = value as SystemBackupDestination)}
-								label={m.backups_destination_label()}
-								options={destinationOptions}
-							/>{/if}
-					{/if}
-					{#if action === 'upload' || action === 'discover' || (action === 'create' && backupConfiguration === 'custom' && destination !== 'local')}
-						<SelectWithLabel
-							id="manual-system-backup-s3"
-							value={s3DestinationId}
-							onValueChange={(value) => (s3DestinationId = value)}
-							label={m.volume_backup_s3_destination_label()}
-							error={destinationError || null}
-							options={s3Options}
-						/>
-					{/if}
-					<TextInputWithLabel
-						value={recoveryKey}
-						onChange={(value) => (recoveryKey = value)}
-						error={keyError || null}
-						label={m.system_backups_recovery_key()}
-						description={policyCollection.recoveryKeyStored
-							? m.system_backups_recovery_key_saved_description()
-							: m.system_backups_recovery_key_description()}
-						type="password"
-						autocomplete="current-password"
-					/>
-				</div>
-			{/snippet}
-			{#snippet footer()}<ArcaneButton action="cancel" onclick={() => (actionOpen = false)} disabled={loading} /><ArcaneButton
-					action={action === 'delete' ? 'remove' : action === 'restore' ? 'confirm' : action === 'create' ? 'create' : 'save'}
-					customLabel={dialogTitle()}
-					onclick={submitAction}
-					{loading}
-					disabled={loading || invalid}
-				/>{/snippet}
-		</ResponsiveDialog>
+		{@render recoveryKeyDialog()}
+		{@render actionDialog()}
 	{/snippet}
 </SettingsPageLayout>

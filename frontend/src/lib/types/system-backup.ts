@@ -1,19 +1,8 @@
-export type SystemBackupDestination = 'local' | 's3' | 'local_s3';
+import type { BackupDestination, BackupRun } from './backup';
 
-export type SystemBackupRun = {
-	id: string;
-	size: number;
-	createdAt: string;
-	status: 'running' | 'succeeded' | 'failed';
-	trigger: 'manual' | 'scheduled' | 'safety';
-	destination: SystemBackupDestination;
-	localSnapshotId?: string;
-	remoteSnapshotId?: string;
-	s3DestinationId?: string;
-	s3DestinationName?: string;
-	policyId?: string;
-	error?: string;
-};
+export type SystemBackupDestination = BackupDestination;
+
+export type SystemBackupRun = BackupRun;
 
 export type SystemBackupPolicy = {
 	id: string;
@@ -32,6 +21,10 @@ export type UpdateSystemBackupPolicy = Omit<SystemBackupPolicy, 's3DestinationNa
 export type SystemBackupPolicyCollection = {
 	policies: SystemBackupPolicy[];
 	recoveryKeyStored: boolean;
+};
+
+export type SystemBackupRecoveryKey = {
+	recoveryKey: string;
 };
 
 export type CreateSystemBackup = {

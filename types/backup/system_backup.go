@@ -60,7 +60,7 @@ type SystemBackupRecoveryKeyStatus struct {
 	Configured bool `json:"configured"`
 }
 
-type SetSystemBackupRecoveryKeyRequest struct {
+type SystemBackupRecoveryKey struct {
 	RecoveryKey string `json:"recoveryKey"`
 }
 

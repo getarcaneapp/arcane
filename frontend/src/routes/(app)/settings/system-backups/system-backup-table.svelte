@@ -8,6 +8,7 @@
 	import type { SystemBackupRun } from '#lib/types/system-backup';
 	import { BackupIcon, RestartIcon, TrashIcon, UploadIcon, ClockIcon } from '#lib/icons';
 	import { bytes, formatDateTimeShort } from '#lib/utils/formatting';
+	import { backupDestinationDisplay, backupStatusLabel, backupStatusVariant, backupTriggerLabel } from '#lib/utils/backups';
 	import * as m from '#lib/paraglide/messages.js';
 
 	let {
@@ -42,38 +43,14 @@
 		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true }
 	];
-
-	function statusLabel(status: SystemBackupRun['status']) {
-		return status === 'succeeded'
-			? m.volume_backup_status_succeeded()
-			: status === 'failed'
-				? m.common_failed()
-				: m.common_running();
-	}
-	function triggerLabel(trigger: SystemBackupRun['trigger']) {
-		return trigger === 'scheduled'
-			? m.backups_trigger_scheduled()
-			: trigger === 'safety'
-				? m.backups_trigger_safety()
-				: m.backups_trigger_manual();
-	}
-	function destinationLabel(item: SystemBackupRun) {
-		const label =
-			item.destination === 'local_s3'
-				? m.backups_destination_local_s3()
-				: item.destination === 's3'
-					? m.backups_destination_s3()
-					: m.local();
-		return item.s3DestinationName ? `${label} · ${item.s3DestinationName}` : label;
-	}
 </script>
 
 {#snippet IdCell({ item }: { item: SystemBackupRun })}<code class="text-xs">{item.id.slice(0, 18)}…</code>{/snippet}
-{#snippet StatusCell({ item }: { item: SystemBackupRun })}<Badge
-		variant={item.status === 'succeeded' ? 'green' : item.status === 'failed' ? 'red' : 'blue'}>{statusLabel(item.status)}</Badge
+{#snippet StatusCell({ item }: { item: SystemBackupRun })}<Badge variant={backupStatusVariant(item.status)}
+		>{backupStatusLabel(item.status)}</Badge
 	>{/snippet}
-{#snippet TriggerCell({ item }: { item: SystemBackupRun })}{triggerLabel(item.trigger)}{/snippet}
-{#snippet DestinationCell({ item }: { item: SystemBackupRun })}{destinationLabel(item)}{/snippet}
+{#snippet TriggerCell({ item }: { item: SystemBackupRun })}{backupTriggerLabel(item.trigger)}{/snippet}
+{#snippet DestinationCell({ item }: { item: SystemBackupRun })}{backupDestinationDisplay(item)}{/snippet}
 {#snippet SizeCell({ item }: { item: SystemBackupRun })}{bytes(item.size)}{/snippet}
 {#snippet CreatedCell({ item }: { item: SystemBackupRun })}{formatDateTimeShort(item.createdAt)}{/snippet}
 {#snippet ErrorCell({ item }: { item: SystemBackupRun })}<span class="max-w-72 truncate text-red-500">{item.error || '-'}</span
@@ -98,17 +75,17 @@
 	<UniversalMobileCard
 		{item}
 		icon={{ component: BackupIcon, variant: 'blue' }}
-		title={(item) => destinationLabel(item)}
+		title={(item) => backupDestinationDisplay(item)}
 		badges={[
 			(item) => ({
-				variant: item.status === 'succeeded' ? 'green' : item.status === 'failed' ? 'red' : 'blue',
-				text: statusLabel(item.status)
+				variant: backupStatusVariant(item.status),
+				text: backupStatusLabel(item.status)
 			})
 		]}
 		fields={[
 			{
 				label: m.volume_backup_trigger(),
-				getValue: (item) => triggerLabel(item.trigger),
+				getValue: (item) => backupTriggerLabel(item.trigger),
 				icon: BackupIcon,
 				iconVariant: 'gray',
 				show: mobileFieldVisibility['trigger'] ?? true

@@ -748,6 +748,14 @@ func (s *SystemBackupService) recoveryKeyConfiguredInternal(ctx context.Context)
 	return count > 0, nil
 }
 
+func (s *SystemBackupService) GenerateRecoveryKey() (*backuptypes.SystemBackupRecoveryKey, error) {
+	recoveryKey, err := uuid.NewRandom()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate recovery key: %w", err)
+	}
+	return &backuptypes.SystemBackupRecoveryKey{RecoveryKey: strings.ToUpper(recoveryKey.String())}, nil
+}
+
 func (s *SystemBackupService) SetRecoveryKey(ctx context.Context, recoveryKey string) (*backuptypes.SystemBackupRecoveryKeyStatus, error) {
 	if err := validateRecoveryKeyInternal(recoveryKey); err != nil {
 		return nil, err

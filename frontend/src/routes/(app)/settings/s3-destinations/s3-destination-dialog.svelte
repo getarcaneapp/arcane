@@ -120,6 +120,46 @@
 	}
 </script>
 
+{#snippet destinationFields()}
+	<FormInput bind:input={$inputs.name} label={m.common_name()} />
+	<FormInput
+		bind:input={$inputs.endpoint}
+		label={m.backups_s3_endpoint_label()}
+		description={m.backups_s3_endpoint_description()}
+	/>
+	<FormInput bind:input={$inputs.bucket} label={m.backups_s3_bucket_label()} />
+	<FormInput bind:input={$inputs.region} label={m.backups_s3_region_label()} description={m.backups_s3_region_description()} />
+{/snippet}
+
+{#snippet credentialFields()}
+	<FormInput bind:input={$inputs.accessKeyId} label={m.backups_s3_access_key_label()} autocomplete="off" />
+	<FormInput
+		bind:input={$inputs.secretAccessKey}
+		label={m.backups_s3_secret_key_label()}
+		description={destination?.secretConfigured ? m.s3_destination_secret_keep_description() : undefined}
+		type="password"
+		autocomplete="new-password"
+	/>
+{/snippet}
+
+{#snippet connectionOptions()}
+	<FormInput bind:input={$inputs.prefix} label={m.backups_s3_prefix_label()} description={m.backups_s3_prefix_description()} />
+	<div class="mt-1 grid gap-4 border-t pt-5 sm:grid-cols-2">
+		<LabeledSwitch
+			id="s3-destination-ssl"
+			bind:checked={$inputs.useSsl.value}
+			label={m.backups_s3_ssl_label()}
+			description={m.backups_s3_ssl_description()}
+		/>
+		<LabeledSwitch
+			id="s3-destination-path-style"
+			bind:checked={$inputs.forcePathStyle.value}
+			label={m.backups_s3_path_style_label()}
+			description={m.backups_s3_path_style_description()}
+		/>
+	</div>
+{/snippet}
+
 <ResponsiveDialog
 	bind:open
 	variant="sheet"
@@ -129,45 +169,9 @@
 >
 	{#snippet children()}
 		<form onsubmit={preventDefault(handleSubmit)} class="grid gap-4 py-6">
-			<FormInput bind:input={$inputs.name} label={m.common_name()} />
-			<FormInput
-				bind:input={$inputs.endpoint}
-				label={m.backups_s3_endpoint_label()}
-				description={m.backups_s3_endpoint_description()}
-			/>
-			<FormInput bind:input={$inputs.bucket} label={m.backups_s3_bucket_label()} />
-			<FormInput
-				bind:input={$inputs.region}
-				label={m.backups_s3_region_label()}
-				description={m.backups_s3_region_description()}
-			/>
-			<FormInput bind:input={$inputs.accessKeyId} label={m.backups_s3_access_key_label()} autocomplete="off" />
-			<FormInput
-				bind:input={$inputs.secretAccessKey}
-				label={m.backups_s3_secret_key_label()}
-				description={destination?.secretConfigured ? m.s3_destination_secret_keep_description() : undefined}
-				type="password"
-				autocomplete="new-password"
-			/>
-			<FormInput
-				bind:input={$inputs.prefix}
-				label={m.backups_s3_prefix_label()}
-				description={m.backups_s3_prefix_description()}
-			/>
-			<div class="mt-1 grid gap-4 border-t pt-5 sm:grid-cols-2">
-				<LabeledSwitch
-					id="s3-destination-ssl"
-					bind:checked={$inputs.useSsl.value}
-					label={m.backups_s3_ssl_label()}
-					description={m.backups_s3_ssl_description()}
-				/>
-				<LabeledSwitch
-					id="s3-destination-path-style"
-					bind:checked={$inputs.forcePathStyle.value}
-					label={m.backups_s3_path_style_label()}
-					description={m.backups_s3_path_style_description()}
-				/>
-			</div>
+			{@render destinationFields()}
+			{@render credentialFields()}
+			{@render connectionOptions()}
 		</form>
 	{/snippet}
 	{#snippet footer()}

@@ -3,6 +3,7 @@ import type { Paginated, SearchPaginationSortRequest } from '#lib/types/shared';
 import type {
 	CreateSystemBackup,
 	SystemBackupPolicyCollection,
+	SystemBackupRecoveryKey,
 	SystemBackupRun,
 	UpdateSystemBackupPolicy
 } from '#lib/types/system-backup';
@@ -20,6 +21,10 @@ class SystemBackupService extends BaseAPIService {
 
 	async updatePolicies(policies: UpdateSystemBackupPolicy[]): Promise<SystemBackupPolicyCollection> {
 		return this.handleResponse(this.api.put('/system-backups/policies', { policies }));
+	}
+
+	async generateRecoveryKey(): Promise<SystemBackupRecoveryKey> {
+		return this.handleResponse(this.api.post('/system-backups/recovery-key/generate'));
 	}
 
 	async setRecoveryKey(recoveryKey: string): Promise<{ configured: boolean }> {

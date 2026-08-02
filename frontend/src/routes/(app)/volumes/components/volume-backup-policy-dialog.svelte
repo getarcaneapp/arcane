@@ -1,17 +1,17 @@
 <script lang="ts">
 	import { ResponsiveDialog } from '#lib/components/ui/responsive-dialog';
 	import { ArcaneButton } from '#lib/components/arcane-button';
-	import LabeledSwitch from '#lib/components/form/labeled-switch.svelte';
-	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
-	import TextInputWithLabel from '#lib/components/form/text-input-with-label.svelte';
+	import BackupPolicyFields from '#lib/components/backup-policy-fields.svelte';
+	import type { BackupPolicyForm } from '#lib/types/backup';
 	import type { UpdateVolumeBackupPolicy, VolumeBackupPolicy } from '#lib/types/shared';
 	import type { S3Destination } from '#lib/types/s3-destination';
 	import { s3DestinationService } from '#lib/services/s3-destination-service';
 	import { volumeBackupService } from '#lib/services/volume-backup-service';
+	import { backupDestinationFromFlags, backupPolicyDestinationValues } from '#lib/utils/backups';
 	import { toast } from 'svelte-sonner';
 	import * as m from '#lib/paraglide/messages.js';
 
-	type PolicyForm = UpdateVolumeBackupPolicy & { destination: 'local' | 's3' | 'local_s3'; serverError?: string };
+	type PolicyForm = UpdateVolumeBackupPolicy & BackupPolicyForm & { serverError?: string };
 
 	let {
 		open = $bindable(),
@@ -31,27 +31,29 @@
 	let deleting = $state(false);
 	let s3Destinations = $state<S3Destination[]>([]);
 	let s3DestinationsLoading = $state(false);
-	let forms = $state<PolicyForm[]>([]);
-
-	const destinationOptions = $derived([
-		{ label: m.volume_backup_destination_local(), value: 'local', description: m.volume_backup_destination_local_description() },
-		...(s3Destinations.length
-			? [
-					{ label: m.volume_backup_destination_s3(), value: 's3', description: m.volume_backup_destination_s3_description() },
-					{
-						label: m.backups_destination_local_s3(),
-						value: 'local_s3',
-						description: m.volume_backup_destination_local_s3_description()
-					}
-				]
-			: [])
-	]);
-	const s3DestinationOptions = $derived(
-		s3Destinations.map((item) => ({ label: item.name, value: item.id, description: item.bucket }))
+	let form = $state<PolicyForm>(newPolicy());
+	const scheduleError = $derived(
+		!form.schedule.trim()
+			? m.jobs_cron_required()
+			: form.schedule.trim().split(/\s+/).length !== 6
+				? m.jobs_cron_invalid()
+				: (form.serverError ?? null)
 	);
-	const formInvalid = $derived(
-		forms.some((_, index) => Boolean(scheduleError(index) || retentionError(index) || destinationError(index)))
+	const retentionError = $derived(
+		Number.isInteger(Number(form.retentionCount)) && form.retentionCount >= 0 && form.retentionCount <= 3650
+			? null
+			: m.volume_backup_retention_invalid()
 	);
+	const destinationError = $derived(
+		form.destination === 'local' || s3DestinationsLoading
+			? null
+			: !form.s3DestinationId
+				? m.volume_backup_s3_destination_required()
+				: s3Destinations.some((item) => item.id === form.s3DestinationId)
+					? null
+					: m.volume_backup_destination_unavailable()
+	);
+	const formInvalid = $derived(Boolean(scheduleError || retentionError || destinationError));
 
 	function newPolicy(): PolicyForm {
 		return {
@@ -65,26 +67,6 @@
 			s3DestinationId: '',
 			destination: 'local'
 		};
-	}
-
-	function scheduleError(index: number): string | null {
-		const form = forms[index];
-		if (!form) return null;
-		if (!form.schedule.trim()) return m.jobs_cron_required();
-		if (form.schedule.trim().split(/\s+/).length !== 6) return m.jobs_cron_invalid();
-		return form.serverError ?? null;
-	}
-
-	function retentionError(index: number): string | null {
-		const value = Number(forms[index]?.retentionCount);
-		return Number.isInteger(value) && value >= 0 && value <= 3650 ? null : m.volume_backup_retention_invalid();
-	}
-
-	function destinationError(index: number): string | null {
-		const form = forms[index];
-		if (!form || form.destination === 'local' || s3DestinationsLoading) return null;
-		if (!form.s3DestinationId) return m.volume_backup_s3_destination_required();
-		return s3Destinations.some((item) => item.id === form.s3DestinationId) ? null : m.volume_backup_destination_unavailable();
 	}
 
 	async function loadS3Destinations() {
@@ -101,26 +83,24 @@
 	$effect(() => {
 		if (!open) return;
 		const policy = policies.find((item) => item.id === policyId);
-		forms = policy
-			? [
-					{
-						id: policy.id,
-						enabled: policy.enabled,
-						schedule: policy.schedule,
-						retentionCount: policy.retentionCount,
-						stopContainers: policy.stopContainers,
-						localEnabled: policy.localEnabled,
-						s3Enabled: policy.s3Enabled,
-						s3DestinationId: policy.s3DestinationId || '',
-						destination: policy.s3Enabled ? (policy.localEnabled ? 'local_s3' : 's3') : 'local'
-					}
-				]
-			: [newPolicy()];
+		form = policy
+			? {
+					id: policy.id,
+					enabled: policy.enabled,
+					schedule: policy.schedule,
+					retentionCount: policy.retentionCount,
+					stopContainers: policy.stopContainers,
+					localEnabled: policy.localEnabled,
+					s3Enabled: policy.s3Enabled,
+					s3DestinationId: policy.s3DestinationId || '',
+					destination: backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled)
+				}
+			: newPolicy();
 		void loadS3Destinations();
 	});
 
-	function updateForm(index: number, values: Partial<PolicyForm>) {
-		forms = forms.map((form, itemIndex) => (itemIndex === index ? { ...form, ...values, serverError: undefined } : form));
+	function updateForm(values: Partial<BackupPolicyForm>) {
+		form = { ...form, ...values, serverError: undefined };
 	}
 
 	function policyUpdatePayload(policy: VolumeBackupPolicy): UpdateVolumeBackupPolicy {
@@ -140,15 +120,12 @@
 		if (formInvalid) return;
 		saving = true;
 		try {
-			const payload = forms.map(({ destination, serverError: _, ...form }) => ({
-				...form,
-				retentionCount: Number(form.retentionCount),
-				localEnabled: destination !== 's3',
-				s3Enabled: destination !== 'local',
-				s3DestinationId: destination === 'local' ? '' : form.s3DestinationId
-			}));
-			const currentPolicy = payload[0];
-			if (!currentPolicy) return;
+			const { destination, serverError: _, ...values } = form;
+			const currentPolicy: UpdateVolumeBackupPolicy = {
+				...values,
+				retentionCount: Number(values.retentionCount),
+				...backupPolicyDestinationValues(destination, values.s3DestinationId)
+			};
 			const existingPolicies = policies.map(policyUpdatePayload);
 			const nextPolicies = policyId
 				? existingPolicies.map((policy) => (policy.id === policyId ? currentPolicy : policy))
@@ -159,7 +136,7 @@
 			toast.success(m.volume_backup_policy_saved());
 		} catch (error) {
 			const message = error instanceof Error ? error.message : m.volume_backup_policy_save_failed();
-			if (/cron|schedule/i.test(message) && forms.length) updateForm(0, { serverError: message });
+			if (/cron|schedule/i.test(message)) form = { ...form, serverError: message };
 			else toast.error(message);
 		} finally {
 			saving = false;
@@ -191,64 +168,19 @@
 >
 	{#snippet children()}
 		<div class="space-y-4 py-2">
-			{#each forms as form, index (form.id || index)}
-				<div class="space-y-5">
-					<LabeledSwitch
-						id={`volume-backup-policy-enabled-${index}`}
-						checked={form.enabled}
-						onCheckedChange={(checked) => updateForm(index, { enabled: checked })}
-						label={m.backups_enabled()}
-						description={m.volume_backup_policy_enabled_description()}
-					/>
-					<TextInputWithLabel
-						value={form.schedule}
-						error={scheduleError(index)}
-						onChange={(schedule) => updateForm(index, { schedule })}
-						label={m.jobs_schedule()}
-						description={m.backups_schedule_description()}
-						helpText={scheduleError(index) ? undefined : m.jobs_cron_expression_help()}
-						reserveHelpTextSpace
-						placeholder="0 0 2 * * *"
-					/>
-					<TextInputWithLabel
-						value={form.retentionCount}
-						error={retentionError(index)}
-						onChange={(retentionCount) => updateForm(index, { retentionCount: Number(retentionCount) })}
-						label={m.backups_retention_label()}
-						description={m.backups_retention_description()}
-						reserveHelpTextSpace
-						type="number"
-					/>
-					<LabeledSwitch
-						id={`volume-backup-policy-stop-containers-${index}`}
-						checked={form.stopContainers}
-						onCheckedChange={(checked) => updateForm(index, { stopContainers: checked })}
-						label={m.volume_backup_stop_containers()}
-						description={m.volume_backup_stop_containers_description()}
-					/>
-					<SelectWithLabel
-						id={`volume-backup-policy-destination-${index}`}
-						value={form.destination}
-						onValueChange={(destination) => updateForm(index, { destination: destination as PolicyForm['destination'] })}
-						label={m.backups_destination_label()}
-						description={m.volume_backup_destination_description()}
-						error={destinationError(index)}
-						options={destinationOptions}
-					/>
-					{#if form.destination !== 'local'}
-						<SelectWithLabel
-							id={`volume-backup-policy-s3-destination-${index}`}
-							value={form.s3DestinationId}
-							onValueChange={(s3DestinationId) => updateForm(index, { s3DestinationId })}
-							label={m.volume_backup_s3_destination_label()}
-							description={m.volume_backup_s3_destination_description()}
-							error={destinationError(index)}
-							disabled={s3DestinationsLoading}
-							options={s3DestinationOptions}
-						/>
-					{/if}
-				</div>
-			{/each}
+			<BackupPolicyFields
+				idPrefix="volume-backup-policy"
+				{form}
+				destinations={s3Destinations}
+				{scheduleError}
+				{retentionError}
+				{destinationError}
+				enabledDescription={m.volume_backup_policy_enabled_description()}
+				schedulePlaceholder="0 0 2 * * *"
+				showStopContainers
+				destinationsLoading={s3DestinationsLoading}
+				onChange={updateForm}
+			/>
 		</div>
 	{/snippet}
 	{#snippet footer()}

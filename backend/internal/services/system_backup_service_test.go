@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	backuptypes "github.com/getarcaneapp/arcane/types/v2/backup"
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
+	"github.com/google/uuid"
 	sqlite "github.com/libtnb/sqlite"
 	containertypes "github.com/moby/moby/api/types/container"
 	mounttypes "github.com/moby/moby/api/types/mount"
@@ -21,6 +23,16 @@ import (
 func TestValidateRecoveryKeyInternal(t *testing.T) {
 	require.Error(t, validateRecoveryKeyInternal("too-short"))
 	require.NoError(t, validateRecoveryKeyInternal("correct horse battery staple"))
+}
+
+func TestGenerateRecoveryKey(t *testing.T) {
+	recoveryKey, err := (&SystemBackupService{}).GenerateRecoveryKey()
+	require.NoError(t, err)
+	require.Equal(t, strings.ToUpper(recoveryKey.RecoveryKey), recoveryKey.RecoveryKey)
+
+	parsed, err := uuid.Parse(recoveryKey.RecoveryKey)
+	require.NoError(t, err)
+	require.Equal(t, uuid.Version(4), parsed.Version())
 }
 
 func TestRecoveryHelperExecutableInternal(t *testing.T) {

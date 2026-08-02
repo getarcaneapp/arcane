@@ -104,7 +104,9 @@ export interface FileContentResponse {
 	mimeType: string;
 }
 
-export type VolumeBackupDestination = 'local' | 's3' | 'local_s3';
+import type { BackupDestination, BackupRun } from './backup';
+
+export type VolumeBackupDestination = BackupDestination;
 
 export interface CreateVolumeBackupRequest {
 	destination?: VolumeBackupDestination;
@@ -112,20 +114,8 @@ export interface CreateVolumeBackupRequest {
 	s3DestinationId?: string;
 }
 
-export interface BackupEntry {
-	id: string;
+export interface BackupEntry extends BackupRun {
 	volumeName: string;
-	size: number;
-	createdAt: string;
-	status: 'running' | 'succeeded' | 'failed';
-	trigger: 'manual' | 'scheduled' | 'safety';
-	destination: VolumeBackupDestination;
-	localSnapshotId?: string;
-	remoteSnapshotId?: string;
-	s3DestinationId?: string;
-	s3DestinationName?: string;
-	policyId?: string;
-	error?: string;
 }
 
 export interface VolumeBackupPolicy {

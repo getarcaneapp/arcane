@@ -1,4 +1,4 @@
-import type { Action } from '#lib/components/arcane-button/index.js';
+import type { Action, ArcaneButtonSize } from '#lib/components/arcane-button/index.js';
 import type { IconType } from '#lib/icons';
 
 export interface SettingsActionButton {
@@ -8,6 +8,7 @@ export interface SettingsActionButton {
 	loadingLabel?: string;
 	loading?: boolean;
 	disabled?: boolean;
+	size?: ArcaneButtonSize;
 	onclick: () => void;
 	showOnMobile?: boolean;
 }

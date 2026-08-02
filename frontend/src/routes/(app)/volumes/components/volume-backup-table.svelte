@@ -50,6 +50,16 @@
 	import { cn } from '#lib/utils';
 	import { bulkConfirmAndRun } from '#lib/utils/bulk-actions';
 	import { extractApiErrorMessage } from '#lib/utils/api';
+	import {
+		backupDestinationFromFlags,
+		backupDestinationDisplay,
+		backupDestinationLabel,
+		backupDestinationName,
+		backupStatusLabel,
+		backupStatusVariant,
+		backupTriggerLabel,
+		s3DestinationOptions as buildS3DestinationOptions
+	} from '#lib/utils/backups';
 	import SelectWithLabel from '#lib/components/form/select-with-label.svelte';
 
 	let { volumeName }: { volumeName: string } = $props();
@@ -75,9 +85,7 @@
 	let showS3DestinationDialog = $state(false);
 	let onDemandDestination = $state<'s3' | 'local_s3'>('s3');
 	let onDemandS3DestinationId = $state('');
-	const s3DestinationOptions = $derived(
-		s3Destinations.map((destination) => ({ label: destination.name, value: destination.id }))
-	);
+	const s3DestinationOptions = $derived(buildS3DestinationOptions(s3Destinations));
 
 	let requestOptions = $state<SearchPaginationSortRequest>({
 		pagination: { page: 1, limit: 10 },
@@ -294,40 +302,6 @@
 
 	function formatBytes(value: number): string {
 		return bytes.format(value, { unitSeparator: ' ' }) ?? '-';
-	}
-
-	function backupStatusLabel(status: BackupEntry['status']) {
-		if (status === 'succeeded') return m.volume_backup_status_succeeded();
-		if (status === 'failed') return m.common_failed();
-		return m.common_running();
-	}
-
-	function backupStatusVariant(status: BackupEntry['status']): 'green' | 'red' | 'blue' {
-		if (status === 'succeeded') return 'green';
-		if (status === 'failed') return 'red';
-		return 'blue';
-	}
-
-	function backupTriggerLabel(trigger: BackupEntry['trigger']) {
-		if (trigger === 'scheduled') return m.backups_trigger_scheduled();
-		if (trigger === 'safety') return m.backups_trigger_safety();
-		return m.backups_trigger_manual();
-	}
-
-	function backupDestinationLabel(destination: BackupEntry['destination']) {
-		if (destination === 'local_s3') return m.backups_destination_local_s3();
-		if (destination === 's3') return m.backups_destination_s3();
-		return m.local();
-	}
-
-	function backupDestinationName(backup: BackupEntry) {
-		return backup.s3DestinationName || backup.s3DestinationId || '';
-	}
-
-	function backupDestinationDisplay(backup: BackupEntry) {
-		const label = backupDestinationLabel(backup.destination);
-		const name = backupDestinationName(backup);
-		return name && backup.destination !== 'local' ? `${label} · ${name}` : label;
 	}
 
 	onMount(async () => {
@@ -549,62 +523,58 @@
 	/>
 {/snippet}
 
+{#snippet PolicyCard(policy: VolumeBackupPolicy)}
+	<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
+		<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
+		<code class="truncate">{policy.schedule}</code>
+		<div class="flex items-center gap-1.5 justify-self-end">
+			<Badge variant="blue">{backupDestinationLabel(backupDestinationFromFlags(policy.localEnabled, policy.s3Enabled))}</Badge>
+			{#if canBackupVolume}
+				<ArcaneButton
+					action="edit"
+					size="icon"
+					icon={EditIcon}
+					showLabel={false}
+					customLabel={m.jobs_edit_schedule()}
+					onclick={() => {
+						editingBackupPolicyId = policy.id;
+						showBackupPolicy = true;
+					}}
+					class="size-7"
+				/>
+			{/if}
+		</div>
+		<div class="col-span-2 flex min-w-0 items-center gap-1.5">
+			<span>
+				{policy.retentionCount === 0
+					? m.volume_backup_retention_all()
+					: m.volume_backup_retention_summary({ count: policy.retentionCount })}
+			</span>
+			<span>·</span>
+			<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
+			{#if policy.lastRun}
+				<span>·</span>
+				<span class="truncate">{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span>
+			{/if}
+		</div>
+		{#if policy.s3Enabled && (policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId)}
+			<span
+				class="max-w-28 justify-self-end truncate"
+				title={policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+			>
+				{policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
+			</span>
+		{/if}
+	</div>
+{/snippet}
+
 <div class="space-y-4">
 	<div class="flex items-center justify-between">
 		<h2 class="text-lg font-semibold">{m.volumes_backups_title()}</h2>
 	</div>
 	<div class="grid grid-cols-1 gap-1.5 text-xs text-muted-foreground sm:grid-cols-2 xl:grid-cols-3">
 		{#each backupPolicies as policy (policy.id)}
-			<div class="grid min-w-0 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-1.5 gap-y-0.5 rounded-md border px-2 py-1">
-				<Badge variant={policy.enabled ? 'green' : 'gray'}>{policy.enabled ? m.common_enabled() : m.common_disabled()}</Badge>
-				<code class="truncate">{policy.schedule}</code>
-				<div class="flex items-center gap-1.5 justify-self-end">
-					<Badge variant="blue"
-						>{policy.s3Enabled
-							? policy.localEnabled
-								? m.backups_destination_local_s3()
-								: m.backups_destination_s3()
-							: m.local()}</Badge
-					>
-					{#if canBackupVolume}
-						<ArcaneButton
-							action="edit"
-							size="icon"
-							icon={EditIcon}
-							showLabel={false}
-							customLabel={m.jobs_edit_schedule()}
-							onclick={() => {
-								editingBackupPolicyId = policy.id;
-								showBackupPolicy = true;
-							}}
-							class="size-7"
-						/>
-					{/if}
-				</div>
-				<div class="col-span-2 flex min-w-0 items-center gap-1.5">
-					<span
-						>{policy.retentionCount === 0
-							? m.volume_backup_retention_all()
-							: m.volume_backup_retention_summary({ count: policy.retentionCount })}</span
-					>
-					<span>·</span>
-					<span>{policy.stopContainers ? m.volume_backup_containers_stopped() : m.volume_backup_containers_running()}</span>
-					{#if policy.lastRun}
-						<span>·</span>
-						<span class="truncate"
-							>{backupStatusLabel(policy.lastRun.status)} · {formatDateTimeShort(policy.lastRun.createdAt)}</span
-						>
-					{/if}
-				</div>
-				{#if policy.s3Enabled && (policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId)}
-					<span
-						class="max-w-28 justify-self-end truncate"
-						title={policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
-					>
-						{policy.s3DestinationName || policy.s3Bucket || policy.s3DestinationId}
-					</span>
-				{/if}
-			</div>
+			{@render PolicyCard(policy)}
 		{/each}
 	</div>
 

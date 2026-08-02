@@ -56,7 +56,7 @@
 			loading={button.loading}
 			disabled={button.disabled}
 			onclick={button.onclick}
-			size="sm"
+			size={button.size ?? 'sm'}
 		/>
 	{/each}
 {/snippet}

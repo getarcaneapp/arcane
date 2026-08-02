@@ -46,10 +46,13 @@ type UpdateSystemBackupPoliciesInput struct {
 	Body backuptypes.UpdateSystemBackupPolicies
 }
 type SetSystemBackupRecoveryKeyInput struct {
-	Body backuptypes.SetSystemBackupRecoveryKeyRequest
+	Body backuptypes.SystemBackupRecoveryKey
 }
 type SystemBackupRecoveryKeyOutput struct {
 	Body backuptypes.SystemBackupRecoveryKeyStatus
+}
+type GenerateSystemBackupRecoveryKeyOutput struct {
+	Body backuptypes.SystemBackupRecoveryKey
 }
 type CreateSystemBackupInput struct {
 	Body backuptypes.CreateSystemBackupRequest
@@ -81,6 +84,7 @@ func RegisterSystemBackups(api huma.API, service *services.SystemBackupService, 
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "list-system-backups", Method: http.MethodGet, Path: "/system-backups", Summary: "List Arcane system backups", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsRead, h.List)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "get-system-backup-policies", Method: http.MethodGet, Path: "/system-backups/policies", Summary: "Get Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsRead, h.GetPolicies)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "update-system-backup-policies", Method: http.MethodPut, Path: "/system-backups/policies", Summary: "Update Arcane system backup policies", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsWrite, h.UpdatePolicies)
+	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "generate-system-backup-recovery-key", Method: http.MethodPost, Path: "/system-backups/recovery-key/generate", Summary: "Generate an Arcane system backup recovery key", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsWrite, h.GenerateRecoveryKey)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "set-system-backup-recovery-key", Method: http.MethodPut, Path: "/system-backups/recovery-key", Summary: "Configure Arcane system backup recovery key", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsWrite, h.SetRecoveryKey)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "create-system-backup", Method: http.MethodPost, Path: "/system-backups", Summary: "Create Arcane system backup", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsWrite, h.Create)
 	humamw.RegisterWithPermission(api, huma.Operation{OperationID: "discover-system-backups", Method: http.MethodPost, Path: "/system-backups/discover", Summary: "Discover Arcane system backups in S3", Tags: []string{"System Backups"}, Middlewares: adminOnly}, authz.PermSettingsWrite, h.Discover)
@@ -127,6 +131,14 @@ func (h *SystemBackupHandler) UpdatePolicies(ctx context.Context, input *UpdateS
 		return nil, huma.Error400BadRequest(err.Error())
 	}
 	return &SystemBackupPoliciesOutput{Body: *policies}, nil
+}
+
+func (h *SystemBackupHandler) GenerateRecoveryKey(_ context.Context, _ *struct{}) (*GenerateSystemBackupRecoveryKeyOutput, error) {
+	recoveryKey, err := h.service.GenerateRecoveryKey()
+	if err != nil {
+		return nil, huma.Error500InternalServerError(err.Error())
+	}
+	return &GenerateSystemBackupRecoveryKeyOutput{Body: *recoveryKey}, nil
 }
 
 func (h *SystemBackupHandler) SetRecoveryKey(ctx context.Context, input *SetSystemBackupRecoveryKeyInput) (*SystemBackupRecoveryKeyOutput, error) {
