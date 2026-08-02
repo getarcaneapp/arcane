@@ -22,6 +22,7 @@ type User struct {
 	Preferences            user.Preferences `json:"preferences" gorm:"column:preferences;serializer:json"`
 	RequiresPasswordChange bool             `json:"requiresPasswordChange" gorm:"column:requires_password_change"`
 	IsServiceAccount       bool             `json:"isServiceAccount" gorm:"column:is_service_account;not null;default:false"`
+	PasskeyMFAEnabled      bool             `json:"passkeyMfaEnabled" gorm:"column:passkey_mfa_enabled;not null;default:false"`
 
 	// Avatar metadata
 	HasAvatar bool `json:"hasAvatar" gorm:"column:has_avatar;not null;default:false"`
