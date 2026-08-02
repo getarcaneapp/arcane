@@ -117,7 +117,7 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 		return ps
 	}
-	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, bool) {
+	return func(ctx context.Context, c *echo.Context) (*authz.PermissionSet, *models.User, bool) {
 		req := c.Request()
 		// Check for API key authentication
 		if apiKey := req.Header.Get("X-Api-Key"); apiKey != "" {
@@ -125,16 +125,16 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 			// permissions; scoped keys are limited to their own grants.
 			if user, key, err := deps.ApiKey.ValidateApiKeyWithID(ctx, apiKey); err == nil && user != nil {
 				if key != nil && key.Kind != models.ApiKeyKindPersonal {
-					return resolveKey(ctx, key.ID), true
+					return resolveKey(ctx, key.ID), user, true
 				}
-				return resolveUser(ctx, user), true
+				return resolveUser(ctx, user), user, true
 			}
 			// Environment bootstrap key (user_id = NULL): used by the proxy when forwarding
 			// requests to a remote env whose apiUrl resolves back to this manager.
 			if envID, err := deps.ApiKey.GetEnvironmentByApiKey(ctx, apiKey); err == nil && envID != nil {
-				return authz.EnvironmentPermissionSet(*envID), true
+				return authz.EnvironmentPermissionSet(*envID), nil, true
 			}
-			return nil, false
+			return nil, nil, false
 		}
 
 		// Check for Bearer token authentication
@@ -146,14 +146,14 @@ func createAuthValidatorInternal(deps api.HandlerDeps) middleware.AuthValidator 
 		}
 
 		if token == "" {
-			return nil, false
+			return nil, nil, false
 		}
 
 		user, _, err := deps.Auth.VerifyToken(ctx, token)
 		if err != nil || user == nil {
-			return nil, false
+			return nil, nil, false
 		}
-		return resolveUser(ctx, user), true
+		return resolveUser(ctx, user), user, true
 	}
 }
 
