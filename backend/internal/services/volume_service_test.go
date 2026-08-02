@@ -2,16 +2,30 @@ package services
 
 import (
 	"context"
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/volumehelper"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	volumetypes "github.com/getarcaneapp/arcane/types/v2/volume"
+	"github.com/libtnb/sqlite"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/mount"
 	"github.com/moby/moby/api/types/volume"
+	"github.com/moby/moby/client"
 	"github.com/stretchr/testify/require"
+	"go.getarcane.app/sys/crypto"
+	"gorm.io/gorm"
 )
 
 func TestIsLegacyVolumeHelperContainerInternal(t *testing.T) {
@@ -448,4 +462,398 @@ func TestTouchHelperInternal(t *testing.T) {
 	// Missing volume is a no-op (must not panic or create an entry).
 	s.touchHelperInternal("missing")
 	require.NotContains(t, s.helperByVolume, "missing")
+}
+
+type volumeBackupPolicySchedulerInternal struct {
+	jobs map[string]schedulertypes.Job
+}
+
+func (s *volumeBackupPolicySchedulerInternal) AddJob(_ context.Context, job schedulertypes.Job) error {
+	s.jobs[job.Name()] = job
+	return nil
+}
+
+func (s *volumeBackupPolicySchedulerInternal) RemoveJob(_ context.Context, name string) {
+	delete(s.jobs, name)
+}
+
+func (s *volumeBackupPolicySchedulerInternal) HasJob(name string) bool {
+	_, ok := s.jobs[name]
+	return ok
+}
+
+func TestVolumeBackupPolicy_UpdateRegistersIndependentJobsAndSettings(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-schedule?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
+	db := &database.DB{DB: gormDB}
+	scheduler := &volumeBackupPolicySchedulerInternal{jobs: make(map[string]schedulertypes.Job)}
+	service := &VolumeService{db: db}
+	service.SetScheduler(context.Background(), scheduler)
+
+	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{
+		{Enabled: true, Schedule: "0 */15 * * * *", RetentionCount: 5, StopContainers: true, LocalEnabled: true},
+		{Enabled: true, Schedule: "0 0 2 * * *", RetentionCount: 30, LocalEnabled: true},
+	})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 2)
+	require.Equal(t, 5, collection.Policies[0].RetentionCount)
+	require.True(t, collection.Policies[0].StopContainers)
+	require.Equal(t, 30, collection.Policies[1].RetentionCount)
+	require.Len(t, scheduler.jobs, 2)
+
+	firstID := collection.Policies[0].ID
+	collection, err = service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
+		ID: firstID, Schedule: "0 */30 * * * *", RetentionCount: 9, LocalEnabled: true,
+	}})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 1)
+	require.Equal(t, firstID, collection.Policies[0].ID)
+	require.Equal(t, 9, collection.Policies[0].RetentionCount)
+	require.Empty(t, scheduler.jobs)
+}
+
+func TestVolumeBackupPolicy_GetReturnsLastRunForEachPolicy(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-last-runs?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
+	first := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 2 * * *", LocalEnabled: true}
+	second := &models.VolumeBackupPolicy{VolumeName: "app-data", Schedule: "0 0 14 * * *", LocalEnabled: true}
+	require.NoError(t, gormDB.Create(first).Error)
+	require.NoError(t, gormDB.Create(second).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: first.ID, Status: models.VolumeBackupStatusSucceeded}).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{VolumeName: "app-data", PolicyID: second.ID, Status: models.VolumeBackupStatusFailed}).Error)
+
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	collection, err := service.GetBackupPolicies(context.Background(), "app-data")
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 2)
+	require.Equal(t, "succeeded", collection.Policies[0].LastRun.Status)
+	require.Equal(t, "failed", collection.Policies[1].LastRun.Status)
+}
+
+func TestVolumeBackupPolicy_RetentionIgnoresFailedRuns(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-retention-failed?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}))
+
+	policyID := "policy-1"
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusSucceeded,
+		LocalSnapshotID: "snapshot-1", CreatedAt: time.Now().Add(-time.Hour),
+	}).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName: "app-data", PolicyID: policyID, Status: models.VolumeBackupStatusFailed,
+		CreatedAt: time.Now(),
+	}).Error)
+
+	service := &VolumeService{db: &database.DB{DB: gormDB}}
+	require.NoError(t, service.applyVolumeBackupRetentionInternal(context.Background(), policyID, 1))
+
+	var backups []models.VolumeBackup
+	require.NoError(t, gormDB.Order("created_at ASC").Find(&backups).Error)
+	require.Len(t, backups, 2)
+	require.Equal(t, "snapshot-1", backups[0].LocalSnapshotID)
+	require.Equal(t, models.VolumeBackupStatusFailed, backups[1].Status)
+}
+
+func TestVolumeBackupPolicy_UpdateRejectsInvalidCron(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "not a cron", LocalEnabled: true}})
+	require.ErrorContains(t, err, "invalid volume backup schedule")
+}
+
+func TestVolumeBackupPolicy_ScheduledRunCreatesActivity(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-scheduled-activity?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}, &models.Activity{}))
+	db := &database.DB{DB: gormDB}
+	policy := &models.VolumeBackupPolicy{
+		VolumeName:     "app-data",
+		Enabled:        true,
+		Schedule:       "0 0 2 * * *",
+		RetentionCount: 7,
+		LocalEnabled:   true,
+	}
+	require.NoError(t, gormDB.Create(policy).Error)
+	service := &VolumeService{db: db, activityService: NewActivityService(db, nil)}
+	service.runningBackups.Store(policy.VolumeName, struct{}{})
+	defer service.runningBackups.Delete(policy.VolumeName)
+
+	service.buildVolumeBackupJobInternal(policy.ID, policy.Schedule).Run(context.Background())
+
+	var activity models.Activity
+	require.NoError(t, gormDB.Where("resource_type = ?", "volume_backup").First(&activity).Error)
+	require.Equal(t, models.ActivityStatusFailed, activity.Status)
+	require.Equal(t, "scheduled_volume_backup", activity.Metadata["action"])
+	require.Equal(t, policy.Schedule, activity.Metadata["schedule"])
+}
+
+func TestVolumeBackupPolicy_UpdateRejectsMissingDestination(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{Schedule: "0 0 2 * * *", RetentionCount: 7}})
+	require.ErrorContains(t, err, "select at least one volume backup destination")
+}
+
+func TestVolumeBackupPolicy_UpdateUsesSelectedS3Destination(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-s3-secret?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}, &models.S3Destination{}))
+	db := &database.DB{DB: gormDB}
+	crypto.InitEncryption(&crypto.Config{
+		EncryptionKey: "test-encryption-key-for-volume-backups-32bytes",
+		Environment:   "test",
+	})
+	encryptedSecret, err := crypto.Encrypt("destination-s3-secret")
+	require.NoError(t, err)
+	destination := &models.S3Destination{
+		Name:            "Offsite",
+		Bucket:          "volume-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "destination-access-key",
+		SecretAccessKey: encryptedSecret,
+		UseSSL:          true,
+	}
+	require.NoError(t, gormDB.Create(destination).Error)
+	service := &VolumeService{
+		db:             db,
+		s3Destinations: NewS3DestinationService(db),
+	}
+	collection, err := service.UpdateBackupPolicies(context.Background(), "app-data", []volumetypes.UpdateBackupPolicy{{
+		Schedule:        "0 0 2 * * *",
+		RetentionCount:  7,
+		S3Enabled:       true,
+		S3DestinationID: destination.ID,
+	}})
+	require.NoError(t, err)
+	require.Len(t, collection.Policies, 1)
+	policy := collection.Policies[0]
+	require.False(t, policy.LocalEnabled)
+	require.True(t, policy.S3Enabled)
+	require.True(t, policy.S3Available)
+	require.Equal(t, destination.ID, policy.S3DestinationID)
+	require.Equal(t, "Offsite", policy.S3DestinationName)
+	require.Equal(t, "volume-backups", policy.S3Bucket)
+
+	var stored models.VolumeBackupPolicy
+	require.NoError(t, gormDB.Where("volume_name = ?", "app-data").First(&stored).Error)
+	require.False(t, stored.LocalEnabled)
+	require.True(t, stored.S3Enabled)
+	require.Equal(t, destination.ID, stored.S3DestinationID)
+}
+
+func TestVolumeBackup_CreateRejectsInvalidDestination(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.CreateBackup(
+		context.Background(),
+		"app-data",
+		models.User{},
+		models.VolumeBackupTriggerManual,
+		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestination("invalid")},
+	)
+	require.EqualError(t, err, "invalid volume backup destination")
+}
+
+func TestVolumeBackup_CreateRemoteRequiresDestination(t *testing.T) {
+	service := &VolumeService{}
+	_, err := service.CreateBackup(
+		context.Background(),
+		"app-data",
+		models.User{},
+		models.VolumeBackupTriggerManual,
+		volumetypes.CreateBackupRequest{Destination: volumetypes.BackupDestinationS3},
+	)
+	require.EqualError(t, err, "select an S3 destination for the volume backup")
+}
+
+func TestVolumeBackup_ListResolvesDestinationName(t *testing.T) {
+	gormDB, err := gorm.Open(sqlite.Open("file:volume-backup-destination-name?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.VolumeBackup{}, &models.S3Destination{}))
+	db := &database.DB{DB: gormDB}
+	destination := &models.S3Destination{
+		Name:            "Offsite",
+		Bucket:          "volume-backups",
+		Region:          "us-east-1",
+		AccessKeyID:     "access-key",
+		SecretAccessKey: "encrypted-secret",
+	}
+	require.NoError(t, gormDB.Create(destination).Error)
+	require.NoError(t, gormDB.Create(&models.VolumeBackup{
+		VolumeName:      "app-data",
+		Status:          models.VolumeBackupStatusSucceeded,
+		Trigger:         models.VolumeBackupTriggerManual,
+		Destination:     volumetypes.BackupDestinationLocalS3,
+		S3DestinationID: destination.ID,
+	}).Error)
+
+	service := &VolumeService{db: db, s3Destinations: NewS3DestinationService(db)}
+	backups, _, err := service.ListBackupsPaginated(context.Background(), "app-data", pagination.QueryParams{})
+	require.NoError(t, err)
+	require.Len(t, backups, 1)
+	require.Equal(t, volumetypes.BackupDestinationLocalS3, backups[0].Destination)
+	require.Equal(t, "Offsite", backups[0].S3DestinationName)
+}
+
+func setupVolumeBackupLifecycleTestInternal(t *testing.T, handler http.Handler) (*VolumeService, *client.Client) {
+	t.Helper()
+
+	server := httptest.NewServer(handler)
+	t.Cleanup(server.Close)
+	dockerClient, err := client.New(client.WithHost(server.URL), client.WithAPIVersion("1.41"))
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = dockerClient.Close() })
+
+	gormDB, err := gorm.Open(sqlite.Open("file:"+t.Name()+"?mode=memory&cache=shared"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, gormDB.AutoMigrate(&models.Event{}))
+	db := &database.DB{DB: gormDB}
+	dockerService := &DockerClientService{client: dockerClient}
+	eventService := NewEventService(db, &config.Config{}, nil)
+	containerService := &ContainerService{db: db, dockerService: dockerService, eventService: eventService}
+	return &VolumeService{containerService: containerService}, dockerClient
+}
+
+func TestVolumeBackupContainerLifecycleStopsAndRestartsOnlyRunningContainersUsingVolume(t *testing.T) {
+	var mu sync.Mutex
+	var operations []string
+	serverHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{ID: "uses-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+				{ID: "other-volume", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "other-data"}}},
+				{ID: "arcane", Labels: map[string]string{"com.getarcaneapp.arcane": "true"}, Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/uses-volume/stop"):
+			mu.Lock()
+			operations = append(operations, "stop:uses-volume")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/uses-volume/start"):
+			mu.Lock()
+			operations = append(operations, "start:uses-volume")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	require.NoError(t, err)
+	require.Len(t, stopped, 1)
+	require.Equal(t, "uses-volume", stopped[0].ID)
+
+	remaining, err := service.startContainersAfterBackupInternal(context.Background(), dockerClient, stopped, actor)
+	require.NoError(t, err)
+	require.Empty(t, remaining)
+	require.Equal(t, []string{"stop:uses-volume", "start:uses-volume"}, operations)
+}
+
+func TestVolumeBackupContainerLifecycleRollsBackStoppedContainersOnStopFailure(t *testing.T) {
+	var mu sync.Mutex
+	var operations []string
+	serverHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{ID: "first", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+				{ID: "second", Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}}},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/first/stop"):
+			mu.Lock()
+			operations = append(operations, "stop:first")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.HasSuffix(r.URL.Path, "/containers/second/stop"):
+			mu.Lock()
+			operations = append(operations, "stop:second")
+			mu.Unlock()
+			http.Error(w, "stop failed", http.StatusInternalServerError)
+		case strings.HasSuffix(r.URL.Path, "/containers/first/start"):
+			mu.Lock()
+			operations = append(operations, "start:first")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	stillStopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	require.ErrorContains(t, err, "failed to stop container second")
+	require.Empty(t, stillStopped)
+	require.Equal(t, []string{"stop:first", "stop:second", "start:first"}, operations)
+}
+
+func TestVolumeBackupContainerLifecycleWaitsForRunningComposeReplacement(t *testing.T) {
+	var mu sync.Mutex
+	var operations []string
+	listCalls := 0
+	serverHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/containers/json"):
+			mu.Lock()
+			listCalls++
+			call := listCalls
+			mu.Unlock()
+			if call == 1 {
+				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+					{
+						ID:     "old-id",
+						Names:  []string{"/old-name"},
+						State:  container.StateRunning,
+						Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
+						Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+					},
+				}))
+				return
+			}
+			if call == 2 {
+				require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+				{
+					ID:     "new-id",
+					Names:  []string{"/new-name"},
+					State:  container.StateRunning,
+					Labels: map[string]string{"com.docker.compose.project": "vault", "com.docker.compose.service": "vaultwarden", "com.docker.compose.container-number": "1"},
+					Mounts: []container.MountPoint{{Type: mount.TypeVolume, Name: "app-data"}},
+				},
+			}))
+		case strings.HasSuffix(r.URL.Path, "/containers/old-id/stop"):
+			mu.Lock()
+			operations = append(operations, "stop:old-id")
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		case strings.Contains(r.URL.Path, "/start"):
+			mu.Lock()
+			operations = append(operations, "unexpected:"+r.URL.Path)
+			mu.Unlock()
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	})
+
+	service, dockerClient := setupVolumeBackupLifecycleTestInternal(t, serverHandler)
+	actor := models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"}
+	stopped, err := service.stopRunningContainersForBackupInternal(context.Background(), dockerClient, "app-data", actor)
+	require.NoError(t, err)
+	require.Len(t, stopped, 1)
+	require.Equal(t, "old-id", stopped[0].ID)
+
+	remaining, err := service.startContainersAfterBackupInternal(context.Background(), dockerClient, stopped, actor)
+	require.NoError(t, err)
+	require.Empty(t, remaining)
+	require.Equal(t, []string{"stop:old-id"}, operations)
 }

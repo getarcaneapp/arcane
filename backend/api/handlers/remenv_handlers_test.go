@@ -172,7 +172,7 @@ func TestVolumeHandler_UpdateBackupPolicyCreatesActivity(t *testing.T) {
 	db := setupActivityHandlerTestDBInternal(t)
 	require.NoError(t, db.AutoMigrate(&models.VolumeBackupPolicy{}, &models.VolumeBackup{}))
 	activityService := services.NewActivityService(db, nil)
-	volumeService := services.NewVolumeService(db, nil, nil, activityService, nil, nil, nil, nil, "", "test-encryption-key")
+	volumeService := services.NewVolumeService(db, nil, nil, activityService, nil, nil, nil, nil, nil, "", "test-encryption-key")
 	handler := &VolumeHandler{volumeService: volumeService, activityService: activityService}
 
 	output, err := handler.UpdateBackupPolicy(context.Background(), &UpdateVolumeBackupPolicyInput{

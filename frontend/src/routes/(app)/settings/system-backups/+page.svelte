@@ -40,7 +40,7 @@
 		...(data.destinations.length
 			? [
 					{ label: m.volume_backup_destination_s3(), value: 's3' },
-					{ label: m.volume_backup_destination_local_s3(), value: 'local_s3' }
+					{ label: m.backups_destination_local_s3(), value: 'local_s3' }
 				]
 			: [])
 	]);
@@ -75,14 +75,14 @@
 			? policy.localEnabled
 				? m.backups_destination_local_s3()
 				: m.backups_destination_s3()
-			: m.backups_destination_local();
+			: m.local();
 		return policy.s3DestinationName ? `${label} · ${policy.s3DestinationName}` : label;
 	}
 
 	function backupStatusLabel(status: SystemBackupRun['status']) {
 		if (status === 'succeeded') return m.volume_backup_status_succeeded();
-		if (status === 'failed') return m.volume_backup_status_failed();
-		return m.volume_backup_status_running();
+		if (status === 'failed') return m.common_failed();
+		return m.common_running();
 	}
 
 	function openPolicy(id?: string) {
@@ -113,7 +113,7 @@
 		if (action === 'upload') return m.system_backups_upload_title();
 		if (action === 'delete') return m.system_backups_delete_title();
 		if (action === 'discover') return m.system_backups_discover_title();
-		return m.system_backups_create();
+		return m.volumes_backup_create();
 	}
 	function dialogDescription() {
 		if (action === 'restore') return m.system_backups_restore_description();
@@ -199,7 +199,7 @@
 		{
 			id: 'create',
 			action: 'create',
-			label: m.system_backups_create(),
+			label: m.volumes_backup_create(),
 			onclick: () => openAction('create'),
 			disabled: isReadOnly
 		}
@@ -221,9 +221,7 @@
 					<LockIcon class="size-4 text-muted-foreground" />
 					<span class="text-sm font-medium">{m.system_backups_recovery_key()}</span>
 					<Badge variant={policyCollection.recoveryKeyStored ? 'green' : 'gray'}
-						>{policyCollection.recoveryKeyStored
-							? m.system_backups_key_configured()
-							: m.system_backups_key_not_configured()}</Badge
+						>{policyCollection.recoveryKeyStored ? m.common_configured() : m.common_not_configured()}</Badge
 					>
 				</div>
 				<ArcaneButton
@@ -255,14 +253,14 @@
 											? policy.localEnabled
 												? m.backups_destination_local_s3()
 												: m.backups_destination_s3()
-											: m.backups_destination_local()}</Badge
+											: m.local()}</Badge
 									>
 									<ArcaneButton
 										action="edit"
 										size="icon"
 										icon={EditIcon}
 										showLabel={false}
-										customLabel={m.system_backups_edit_schedule()}
+										customLabel={m.jobs_edit_schedule()}
 										onclick={() => openPolicy(policy.id)}
 										class="size-7"
 										disabled={isReadOnly}
@@ -355,7 +353,7 @@
 								id="manual-system-backup-destination"
 								value={destination}
 								onValueChange={(value) => (destination = value as SystemBackupDestination)}
-								label={m.system_backups_destination()}
+								label={m.backups_destination_label()}
 								options={destinationOptions}
 							/>{/if}
 					{/if}

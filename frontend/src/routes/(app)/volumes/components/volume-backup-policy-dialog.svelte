@@ -39,7 +39,7 @@
 			? [
 					{ label: m.volume_backup_destination_s3(), value: 's3', description: m.volume_backup_destination_s3_description() },
 					{
-						label: m.volume_backup_destination_local_s3(),
+						label: m.backups_destination_local_s3(),
 						value: 'local_s3',
 						description: m.volume_backup_destination_local_s3_description()
 					}
@@ -185,7 +185,7 @@
 
 <ResponsiveDialog
 	bind:open
-	title={policyId ? m.volume_backup_edit_schedule() : m.volume_backup_add_schedule()}
+	title={policyId ? m.jobs_edit_schedule() : m.volume_backup_add_schedule()}
 	description={m.volume_backup_policy_description()}
 	contentClass="sm:max-w-[760px]"
 >
@@ -197,7 +197,7 @@
 						id={`volume-backup-policy-enabled-${index}`}
 						checked={form.enabled}
 						onCheckedChange={(checked) => updateForm(index, { enabled: checked })}
-						label={m.volume_backup_policy_enabled()}
+						label={m.backups_enabled()}
 						description={m.volume_backup_policy_enabled_description()}
 					/>
 					<TextInputWithLabel
@@ -230,7 +230,7 @@
 						id={`volume-backup-policy-destination-${index}`}
 						value={form.destination}
 						onValueChange={(destination) => updateForm(index, { destination: destination as PolicyForm['destination'] })}
-						label={m.volume_backup_destination_label()}
+						label={m.backups_destination_label()}
 						description={m.volume_backup_destination_description()}
 						error={destinationError(index)}
 						options={destinationOptions}
@@ -255,7 +255,7 @@
 		{#if policyId}
 			<ArcaneButton
 				action="remove"
-				customLabel={m.volume_backup_remove_schedule()}
+				customLabel={m.backups_remove_schedule()}
 				onclick={deletePolicy}
 				loading={deleting}
 				disabled={saving || deleting}

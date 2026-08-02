@@ -31,7 +31,7 @@
 		{ accessorKey: 'id', title: m.system_backups_id(), sortable: false, cell: IdCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
-		{ accessorKey: 'destination', title: m.volume_backup_destination_label(), sortable: true, cell: DestinationCell },
+		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{ accessorKey: 'error', title: m.common_error(), sortable: false, cell: ErrorCell }
@@ -39,7 +39,7 @@
 	const mobileFields = [
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
-		{ id: 'destination', label: m.volume_backup_destination_label(), defaultVisible: true },
+		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true }
 	];
 
@@ -47,8 +47,8 @@
 		return status === 'succeeded'
 			? m.volume_backup_status_succeeded()
 			: status === 'failed'
-				? m.volume_backup_status_failed()
-				: m.volume_backup_status_running();
+				? m.common_failed()
+				: m.common_running();
 	}
 	function triggerLabel(trigger: SystemBackupRun['trigger']) {
 		return trigger === 'scheduled'
@@ -63,7 +63,7 @@
 				? m.backups_destination_local_s3()
 				: item.destination === 's3'
 					? m.backups_destination_s3()
-					: m.backups_destination_local();
+					: m.local();
 		return item.s3DestinationName ? `${label} · ${item.s3DestinationName}` : label;
 	}
 </script>

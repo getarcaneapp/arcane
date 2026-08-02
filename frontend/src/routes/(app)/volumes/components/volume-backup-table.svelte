@@ -298,8 +298,8 @@
 
 	function backupStatusLabel(status: BackupEntry['status']) {
 		if (status === 'succeeded') return m.volume_backup_status_succeeded();
-		if (status === 'failed') return m.volume_backup_status_failed();
-		return m.volume_backup_status_running();
+		if (status === 'failed') return m.common_failed();
+		return m.common_running();
 	}
 
 	function backupStatusVariant(status: BackupEntry['status']): 'green' | 'red' | 'blue' {
@@ -317,7 +317,7 @@
 	function backupDestinationLabel(destination: BackupEntry['destination']) {
 		if (destination === 'local_s3') return m.backups_destination_local_s3();
 		if (destination === 's3') return m.backups_destination_s3();
-		return m.backups_destination_local();
+		return m.local();
 	}
 
 	function backupDestinationName(backup: BackupEntry) {
@@ -344,7 +344,7 @@
 		{ accessorKey: 'id', title: m.common_id(), sortable: true, cell: IdCell },
 		{ accessorKey: 'status', title: m.common_status(), sortable: true, cell: StatusCell },
 		{ accessorKey: 'trigger', title: m.volume_backup_trigger(), sortable: true, cell: TriggerCell },
-		{ accessorKey: 'destination', title: m.volume_backup_destination_label(), sortable: true, cell: DestinationCell },
+		{ accessorKey: 'destination', title: m.backups_destination_label(), sortable: true, cell: DestinationCell },
 		{ accessorKey: 'size', title: m.common_size(), sortable: true, cell: SizeCell },
 		{ accessorKey: 'createdAt', title: m.common_created(), sortable: true, cell: CreatedCell },
 		{
@@ -360,7 +360,7 @@
 	const mobileFields = [
 		{ id: 'status', label: m.common_status(), defaultVisible: true },
 		{ id: 'trigger', label: m.volume_backup_trigger(), defaultVisible: true },
-		{ id: 'destination', label: m.volume_backup_destination_label(), defaultVisible: true },
+		{ id: 'destination', label: m.backups_destination_label(), defaultVisible: true },
 		{ id: 'size', label: m.common_size(), defaultVisible: true },
 		{ id: 'remoteSnapshotId', label: m.volume_backup_remote_snapshot(), defaultVisible: false }
 	];
@@ -482,9 +482,9 @@
 						<ArrowDownIcon class="size-4" />
 					</DropdownMenu.Trigger>
 					<DropdownMenu.Content align="end" class="w-64">
-						<DropdownMenu.Label>{m.volume_backup_destination_label()}</DropdownMenu.Label>
+						<DropdownMenu.Label>{m.backups_destination_label()}</DropdownMenu.Label>
 						<DropdownMenu.Item onclick={() => handleCreate({ destination: 'local' })}>
-							{m.backups_destination_local()}
+							{m.local()}
 						</DropdownMenu.Item>
 						<DropdownMenu.Item onclick={() => openS3DestinationDialog('s3')}>
 							{m.backups_destination_s3()}
@@ -526,7 +526,7 @@
 				show: mobileFieldVisibility['size'] ?? true
 			},
 			{
-				label: m.volume_backup_destination_label(),
+				label: m.backups_destination_label(),
 				getValue: (item) => backupDestinationDisplay(item),
 				icon: DownloadIcon,
 				iconVariant: 'gray',
@@ -564,7 +564,7 @@
 							? policy.localEnabled
 								? m.backups_destination_local_s3()
 								: m.backups_destination_s3()
-							: m.backups_destination_local()}</Badge
+							: m.local()}</Badge
 					>
 					{#if canBackupVolume}
 						<ArcaneButton
@@ -572,7 +572,7 @@
 							size="icon"
 							icon={EditIcon}
 							showLabel={false}
-							customLabel={m.volume_backup_edit_schedule()}
+							customLabel={m.jobs_edit_schedule()}
 							onclick={() => {
 								editingBackupPolicyId = policy.id;
 								showBackupPolicy = true;

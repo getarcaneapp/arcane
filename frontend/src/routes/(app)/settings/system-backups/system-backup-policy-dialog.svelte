@@ -68,7 +68,7 @@
 			? [
 					{ label: m.volume_backup_destination_s3(), value: 's3', description: m.volume_backup_destination_s3_description() },
 					{
-						label: m.volume_backup_destination_local_s3(),
+						label: m.backups_destination_local_s3(),
 						value: 'local_s3',
 						description: m.volume_backup_destination_local_s3_description()
 					}
@@ -147,7 +147,7 @@
 
 <ResponsiveDialog
 	bind:open
-	title={policyId ? m.system_backups_edit_schedule() : m.system_backups_add_schedule()}
+	title={policyId ? m.jobs_edit_schedule() : m.system_backups_add_schedule()}
 	description={m.system_backups_schedule_description()}
 	contentClass="sm:max-w-[680px]"
 >
@@ -157,7 +157,7 @@
 				id="system-backup-enabled"
 				checked={form.enabled}
 				onCheckedChange={(enabled) => (form = { ...form, enabled })}
-				label={m.system_backups_enabled()}
+				label={m.backups_enabled()}
 				description={m.system_backups_enabled_description()}
 			/>
 			{#if keyError}<p class="text-sm text-destructive">{keyError}</p>{/if}
@@ -184,7 +184,7 @@
 				id="system-backup-destination"
 				value={form.destination}
 				onValueChange={(destination) => (form = { ...form, destination: destination as SystemBackupDestination })}
-				label={m.system_backups_destination()}
+				label={m.backups_destination_label()}
 				options={destinationOptions}
 			/>
 			{#if form.destination !== 'local'}
@@ -202,7 +202,7 @@
 	{#snippet footer()}
 		{#if policyId}<ArcaneButton
 				action="remove"
-				customLabel={m.system_backups_remove_schedule()}
+				customLabel={m.backups_remove_schedule()}
 				onclick={remove}
 				loading={deleting}
 				disabled={saving || deleting}

@@ -52,7 +52,7 @@
 
 	function deleteDestination(destination: S3Destination) {
 		openConfirmDialog({
-			title: m.s3_destination_delete_title({ name: destination.name }),
+			title: m.delete_name({ name: destination.name }),
 			message: m.s3_destination_delete_message(),
 			confirm: {
 				label: m.common_delete(),

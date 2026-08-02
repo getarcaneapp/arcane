@@ -26,7 +26,7 @@
 
 	const formSchema = z
 		.object({
-			name: z.string().trim().min(1, m.s3_destination_name_required()),
+			name: z.string().trim().min(1, m.common_name_required()),
 			endpoint: z.string(),
 			bucket: z.string().trim().min(1, m.backups_s3_bucket_required()),
 			region: z.string(),

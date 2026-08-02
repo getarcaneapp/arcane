@@ -600,9 +600,9 @@
 						<span class="mt-0.5 inline-flex shrink-0 items-center gap-1.5 text-xs">
 							{#if hookConfigured}
 								<CodeIcon class="size-3.5" />
-								{m.git_sync_pre_deploy_status_configured()}
+								{m.common_configured()}
 							{:else}
-								{m.git_sync_pre_deploy_status_none()}
+								{m.common_not_configured()}
 							{/if}
 						</span>
 					</div>

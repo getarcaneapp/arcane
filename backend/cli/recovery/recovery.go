@@ -24,7 +24,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const rusticImage = "ghcr.io/rustic-rs/rustic:v0.11.2"
+const rusticImage = volumehelper.DefaultToolsImage
 
 var requestPath string
 
@@ -188,11 +188,11 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 	if _, err := dockerClient.ImageInspect(ctx, rusticImage); err != nil {
 		reader, pullErr := dockerClient.ImagePull(ctx, rusticImage, client.ImagePullOptions{})
 		if pullErr != nil {
-			return fmt.Errorf("pull Rustic image: %w", pullErr)
+			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
 		if pullErr = dockerutil.RenderJSONMessageStream(reader, nil); pullErr != nil {
 			_ = reader.Close()
-			return fmt.Errorf("pull Rustic image: %w", pullErr)
+			return fmt.Errorf("pull Arcane tools image for Rustic: %w", pullErr)
 		}
 		_ = reader.Close()
 	}
@@ -209,7 +209,13 @@ func restoreSnapshot(ctx context.Context, dockerClient *client.Client, request r
 		snapshotPath = "/"
 	}
 	created, err := dockerClient.ContainerCreate(ctx, client.ContainerCreateOptions{
-		Config:     &container.Config{Image: rusticImage, Cmd: []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"}, Env: environment, Labels: volumehelper.Labels()},
+		Config: &container.Config{
+			Image:      rusticImage,
+			Entrypoint: []string{"rustic"},
+			Cmd:        []string{"restore", "--delete", request.SnapshotID + ":" + snapshotPath, "/restore"},
+			Env:        environment,
+			Labels:     volumehelper.Labels(),
+		},
 		HostConfig: hostConfig,
 	})
 	if err != nil {
