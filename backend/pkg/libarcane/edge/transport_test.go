@@ -12,9 +12,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/coder/websocket"
+	"github.com/coder/websocket/wsjson"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
-	"github.com/gorilla/websocket"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 )
@@ -66,7 +68,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 	t.Run("returns false when tunnel is missing", func(t *testing.T) {
 		transport, ok := GetActiveTunnelTransport("env-missing").Get()
 		assert.False(t, ok)
-		assert.Equal(t, "", transport)
+		assert.Empty(t, transport)
 	})
 
 	t.Run("detects grpc tunnel", func(t *testing.T) {
@@ -88,7 +90,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 		defer GetRegistry().Unregister(envID)
 
 		conn := createTestConn(t)
-		defer func() { _ = conn.Close() }()
+		defer func() { _ = conn.CloseNow() }()
 
 		tunnel := newWebSocketAgentTunnel(envID, conn)
 		GetRegistry().Register(envID, tunnel)
@@ -109,7 +111,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 
 		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.False(t, ok)
-		assert.Equal(t, "", transport)
+		assert.Empty(t, transport)
 	})
 
 	t.Run("returns false for unknown transport implementation", func(t *testing.T) {
@@ -122,7 +124,7 @@ func TestGetActiveTunnelTransport(t *testing.T) {
 
 		transport, ok := GetActiveTunnelTransport(envID).Get()
 		assert.False(t, ok)
-		assert.Equal(t, "", transport)
+		assert.Empty(t, transport)
 	})
 }
 
@@ -225,14 +227,16 @@ func runProxyRequestBenchmark(b *testing.B, tunnel *AgentTunnel, payloadSize int
 
 	for b.Loop() {
 		statusCode, _, respBody, err := ProxyRequest(ctx, tunnel, http.MethodPost, "/api/environments/0/images/upload", "", headers, body)
-		if err != nil {
-			b.Fatalf("proxy request failed: %v", err)
-		}
-		if statusCode != http.StatusOK {
-			b.Fatalf("unexpected status code: %d", statusCode)
-		}
+
+		require.NoError(b, err,
+			"proxy request failed: %v", err)
+
+		require.Equal(b, http.StatusOK, statusCode,
+			"unexpected status code: %d", statusCode)
+
 		if len(respBody) != payloadSize {
-			b.Fatalf("unexpected response length: got %d want %d", len(respBody), payloadSize)
+			require.Len(b, respBody, payloadSize,
+				"unexpected response length: got %d want %d", len(respBody), payloadSize)
 		}
 	}
 }
@@ -258,7 +262,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 	if err != nil {
 		cancel()
 		tunnelServer.WaitForCleanupDone()
-		b.Fatalf("failed to create gRPC client: %v", err)
+		require.FailNowf(b, "unexpected failure", "failed to create gRPC client: %v", err)
 	}
 
 	client := tunnelpb.NewTunnelServiceClient(conn)
@@ -267,7 +271,7 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 		_ = conn.Close()
 		cancel()
 		tunnelServer.WaitForCleanupDone()
-		b.Fatalf("failed to open gRPC stream: %v", err)
+		require.FailNowf(b, "unexpected failure", "failed to open gRPC stream: %v", err)
 	}
 
 	if err := stream.Send(&tunnelpb.AgentMessage{
@@ -278,14 +282,14 @@ func setupGRPCBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel, func
 		_ = conn.Close()
 		cancel()
 		tunnelServer.WaitForCleanupDone()
-		b.Fatalf("failed to send register message: %v", err)
+		require.FailNowf(b, "unexpected failure", "failed to send register message: %v", err)
 	}
 
 	if _, err := stream.Recv(); err != nil {
 		_ = conn.Close()
 		cancel()
 		tunnelServer.WaitForCleanupDone()
-		b.Fatalf("failed to receive register response: %v", err)
+		require.FailNowf(b, "unexpected failure", "failed to receive register response: %v", err)
 	}
 
 	responseBody := make([]byte, payloadSize)
@@ -332,18 +336,17 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	b.Helper()
 
 	responseBody := make([]byte, payloadSize)
-	upgrader := websocket.Upgrader{CheckOrigin: func(_ *http.Request) bool { return true }}
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		conn, err := upgrader.Upgrade(w, r, nil)
+		conn, err := websocket.Accept(w, r, nil)
 		if err != nil {
 			return
 		}
 
 		for {
 			var msg TunnelMessage
-			if err := conn.ReadJSON(&msg); err != nil {
-				_ = conn.Close()
+			if err := wsjson.Read(r.Context(), conn, &msg); err != nil {
+				_ = conn.CloseNow()
 				return
 			}
 
@@ -357,21 +360,18 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 				Status: http.StatusOK,
 				Body:   responseBody,
 			}
-			if err := conn.WriteJSON(resp); err != nil {
-				_ = conn.Close()
+			if err := wsjson.Write(r.Context(), conn, resp); err != nil {
+				_ = conn.CloseNow()
 				return
 			}
 		}
 	}))
 
 	wsURL := "ws" + strings.TrimPrefix(server.URL, "http")
-	conn, resp, err := websocket.DefaultDialer.Dial(wsURL, nil)
+	conn, _, err := websocket.Dial(context.Background(), wsURL, nil)
 	if err != nil {
 		server.Close()
-		b.Fatalf("failed to dial websocket server: %v", err)
-	}
-	if resp != nil {
-		_ = resp.Body.Close()
+		require.FailNowf(b, "unexpected failure", "failed to dial websocket server: %v", err)
 	}
 
 	tunnel := NewAgentTunnelWithConn("bench-websocket", NewTunnelConn(conn))
@@ -391,7 +391,7 @@ func setupWebSocketBenchmarkTunnel(b *testing.B, payloadSize int) (*AgentTunnel,
 	}()
 
 	return tunnel, func() {
-		_ = tunnel.Close()
+		_ = tunnel.CloseWithReason("")
 		server.Close()
 		<-dispatchDone
 	}
@@ -408,7 +408,6 @@ func waitForBenchmarkTunnel(b *testing.B, envID string) *AgentTunnel {
 		}
 		time.Sleep(10 * time.Millisecond)
 	}
-
-	b.Fatalf("timed out waiting for tunnel registration for env %s", envID)
+	require.FailNowf(b, "unexpected failure", "timed out waiting for tunnel registration for env %s", envID)
 	return nil
 }

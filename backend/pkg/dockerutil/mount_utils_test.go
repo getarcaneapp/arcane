@@ -48,7 +48,7 @@ func TestCurrentContainerInspectTarget(t *testing.T) {
 
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "hostname unavailable")
-		require.Equal(t, "", target)
+		require.Empty(t, target)
 	})
 }
 

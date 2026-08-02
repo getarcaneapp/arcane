@@ -310,7 +310,7 @@ func TestRemenvClient_EdgeWithTunnel(t *testing.T) {
 		}
 	})
 	defer server.Close()
-	defer func() { _ = tunnel.Close() }()
+	defer func() { _ = tunnel.CloseWithReason("") }()
 
 	envID := "env-edge-1"
 	GetRegistry().Register(envID, tunnel)

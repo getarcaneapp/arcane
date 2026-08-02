@@ -337,6 +337,34 @@ func (s *RoleService) CreateRole(ctx context.Context, name string, description *
 	return role, nil
 }
 
+// lockAssignedUserRowsInternal locks the user rows of everyone currently
+// assigned to roleID, in deterministic id order. Role-definition writes call
+// this so they serialize with UserService mutation transactions, whose in-tx
+// privilege checks lock the same rows: without it a role edit could change a
+// holder's effective admin status between that check and the mutation commit.
+// Returns the affected user ids for post-commit cache invalidation.
+func lockAssignedUserRowsInternal(tx *gorm.DB, roleID string) ([]string, error) {
+	var ids []string
+	if err := tx.Model(&models.UserRoleAssignment{}).
+		Where("role_id = ?", roleID).
+		Distinct("user_id").
+		Pluck("user_id", &ids).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to list users assigned to role")
+	}
+	if len(ids) == 0 {
+		return ids, nil
+	}
+	var locked []string
+	if err := tx.Model(&models.User{}).
+		Clauses(clause.Locking{Strength: "UPDATE"}).
+		Where("id IN ?", ids).
+		Order("id").
+		Pluck("id", &locked).Error; err != nil {
+		return nil, errors.WrapIf(err, "failed to lock users assigned to role")
+	}
+	return ids, nil
+}
+
 func (s *RoleService) UpdateRole(ctx context.Context, id, name string, description *string, permissions []string) (*models.Role, error) {
 	if err := validatePermissionsInternal(permissions); err != nil {
 		return nil, err
@@ -361,6 +389,9 @@ func (s *RoleService) UpdateRole(ctx context.Context, id, name string, descripti
 			if conflict > 0 {
 				return common.Classify(common.ErrRoleNameTaken, errors.New("Role name already in use"))
 			}
+		}
+		if _, err := lockAssignedUserRowsInternal(tx, id); err != nil {
+			return err
 		}
 		existing.Name = name
 		existing.Description = description
@@ -395,12 +426,11 @@ func (s *RoleService) DeleteRole(ctx context.Context, id string) error {
 				errors.New("Built-in role cannot be modified"))
 		}
 
-		if err := tx.Model(&models.UserRoleAssignment{}).
-			Where("role_id = ?", id).
-			Distinct("user_id").
-			Pluck("user_id", &affected).Error; err != nil {
-			return errors.WrapIf(err, "failed to list affected users")
+		ids, err := lockAssignedUserRowsInternal(tx, id)
+		if err != nil {
+			return err
 		}
+		affected = ids
 		if err := tx.Delete(&models.Role{}, "id = ?", id).Error; err != nil {
 			return errors.WrapIf(err, "failed to delete role")
 		}
@@ -457,6 +487,17 @@ func (s *RoleService) replaceUserAssignmentsForSourceInternal(ctx context.Contex
 		desired[i].Source = source
 	}
 	err := dbutil.WithTx(ctx, s.db.DB, func(tx *gorm.DB) error {
+		// Lock the target's user row so assignment swaps serialize with
+		// UserService update/delete transactions, whose in-tx privilege
+		// checks lock the same row.
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("id = ?", userID).
+			First(&models.User{}).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return ErrUserNotFound
+			}
+			return errors.WrapIf(err, "failed to lock user for assignment update")
+		}
 		if err := validateAssignmentsExistInternal(tx, desired); err != nil {
 			return err
 		}

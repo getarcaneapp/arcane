@@ -1,6 +1,10 @@
 package validation
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestIsValidUserEmail_AllowsReportedFormats(t *testing.T) {
 	t.Parallel()
@@ -15,9 +19,10 @@ func TestIsValidUserEmail_AllowsReportedFormats(t *testing.T) {
 	for _, email := range validEmails {
 		t.Run(email, func(t *testing.T) {
 			t.Parallel()
-			if !IsValidUserEmail(email) {
-				t.Fatalf("expected %q to be valid", email)
-			}
+
+			require.True(t, IsValidUserEmail(email),
+				"expected %q to be valid", email)
+
 		})
 	}
 }
@@ -43,9 +48,10 @@ func TestIsValidUserEmail_RejectsMalformedAddresses(t *testing.T) {
 	for _, email := range invalidEmails {
 		t.Run(email, func(t *testing.T) {
 			t.Parallel()
-			if IsValidUserEmail(email) {
-				t.Fatalf("expected %q to be invalid", email)
-			}
+
+			require.False(t, IsValidUserEmail(email),
+				"expected %q to be invalid", email)
+
 		})
 	}
 }

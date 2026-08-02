@@ -3,7 +3,6 @@ package services
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"testing"
 	"time"
 
@@ -18,6 +17,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/auth"
 	"github.com/golang-jwt/jwt/v5"
 	"github.com/samber/hot"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupAuthServiceTestDB(t *testing.T) *database.DB {
@@ -87,9 +87,10 @@ func makeAccessToken(t *testing.T, secret []byte, subject string, id string, use
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := tok.SignedString(secret)
-	if err != nil {
-		t.Fatalf("sign:  %v", err)
-	}
+
+	require.NoError(t, err,
+		"sign:  %v", err)
+
 	return signed
 }
 
@@ -116,9 +117,10 @@ func makeRefreshToken(t *testing.T, secret []byte, subject string, id string, ex
 	}
 	tok := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 	signed, err := tok.SignedString(secret)
-	if err != nil {
-		t.Fatalf("sign: %v", err)
-	}
+
+	require.NoError(t, err,
+		"sign: %v", err)
+
 	return signed
 }
 
@@ -137,9 +139,10 @@ func makeUnsignedToken(t *testing.T, claims jwt.Claims) string {
 	t.Helper()
 	tok := jwt.NewWithClaims(jwt.SigningMethodNone, claims)
 	signed, err := tok.SignedString(jwt.UnsafeAllowNoneSignatureType)
-	if err != nil {
-		t.Fatalf("sign none: %v", err)
-	}
+
+	require.NoError(t, err,
+		"sign none: %v", err)
+
 	return signed
 }
 
@@ -165,21 +168,22 @@ func TestVerifyToken_ValidClaims(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", "u123", "alice", []string{"user", "admin"}, "a@example.com", "Alice", exp, session.ID)
 
 	verifiedUser, _, err := s.VerifyToken(context.Background(), token)
-	if err != nil {
-		t.Fatalf("VerifyToken error: %v", err)
-	}
-	if verifiedUser.ID != "u123" {
-		t.Errorf("id %q", verifiedUser.ID)
-	}
-	if verifiedUser.Username != "alice" {
-		t.Errorf("username %q", verifiedUser.Username)
-	}
-	if verifiedUser.Email == nil || *verifiedUser.Email != "a@example.com" {
-		t.Errorf("email %v", verifiedUser.Email)
-	}
-	if verifiedUser.DisplayName == nil || *verifiedUser.DisplayName != "Alice" {
-		t.Errorf("displayName %v", verifiedUser.DisplayName)
-	}
+
+	require.NoError(t, err,
+		"VerifyToken error: %v", err)
+
+	assert.Equal(t, "u123", verifiedUser.ID,
+		"id %q", verifiedUser.ID)
+
+	assert.Equal(t, "alice", verifiedUser.Username,
+		"username %q", verifiedUser.Username)
+
+	assert.False(t, verifiedUser.Email == nil || *verifiedUser.Email != "a@example.com",
+		"email %v", verifiedUser.Email)
+
+	assert.False(t, verifiedUser.DisplayName == nil || *verifiedUser.DisplayName != "Alice",
+		"displayName %v", verifiedUser.DisplayName)
+
 }
 
 func TestVerifyToken_RejectsNonHMACAlg(t *testing.T) {
@@ -198,9 +202,10 @@ func TestVerifyToken_RejectsNonHMACAlg(t *testing.T) {
 	})
 
 	_, _, err := s.VerifyToken(context.Background(), token)
-	if !errors.Is(err, ErrInvalidToken) {
-		t.Errorf("want ErrInvalidToken, got %v", err)
-	}
+
+	assert.ErrorIs(t, err, ErrInvalidToken,
+		"want ErrInvalidToken, got %v", err)
+
 }
 
 func TestVerifyToken_Expired(t *testing.T) {
@@ -222,9 +227,10 @@ func TestVerifyToken_Expired(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	if !errors.Is(err, ErrExpiredToken) {
-		t.Errorf("want ErrExpiredToken, got %v", err)
-	}
+
+	assert.ErrorIs(t, err, ErrExpiredToken,
+		"want ErrExpiredToken, got %v", err)
+
 }
 
 func TestVerifyToken_InvalidSubject(t *testing.T) {
@@ -240,15 +246,19 @@ func TestVerifyToken_InvalidSignature(t *testing.T) {
 	s := newTestAuthService("")
 	exp := time.Now().Add(5 * time.Minute)
 	otherSecret := make([]byte, 32)
-	if _, err := rand.Read(otherSecret); err != nil {
-		t.Fatalf("rand.Read: %v", err)
+	{
+		_, err := rand.Read(otherSecret)
+		require.NoError(t, err,
+			"rand.Read: %v", err)
 	}
+
 	token := makeAccessToken(t, otherSecret, "access", "u1", "bob", []string{"user"}, "", "", exp)
 
 	_, _, err := s.VerifyToken(context.Background(), token)
-	if !errors.Is(err, ErrInvalidToken) {
-		t.Errorf("want ErrInvalidToken, got %v", err)
-	}
+
+	assert.ErrorIs(t, err, ErrInvalidToken,
+		"want ErrInvalidToken, got %v", err)
+
 }
 
 func TestVerifyToken_MissingUserID(t *testing.T) {
@@ -262,17 +272,20 @@ func TestVerifyToken_MissingUserID(t *testing.T) {
 
 func TestGenerateUsernameFromEmail(t *testing.T) {
 	u := generateUsernameFromEmail("john.doe@example.com", "sub-abcdef01")
-	if u != "john.doe" {
-		t.Errorf("username %q", u)
-	}
+
+	assert.Equal(t, "john.doe", u,
+		"username %q", u)
+
 	u2 := generateUsernameFromEmail("", "1234567890abcdef")
-	if u2 != "user_90abcdef" {
-		t.Errorf("fallback username %q", u2)
-	}
+
+	assert.Equal(t, "user_90abcdef", u2,
+		"fallback username %q", u2)
+
 	u3 := generateUsernameFromEmail("", "short")
-	if u3 != "user_short" {
-		t.Errorf("short subject username %q", u3)
-	}
+
+	assert.Equal(t, "user_short", u3,
+		"short subject username %q", u3)
+
 }
 
 func TestPersistOidcTokens_SetsFields(t *testing.T) {
@@ -287,21 +300,22 @@ func TestPersistOidcTokens_SetsFields(t *testing.T) {
 	}
 	s.persistOidcTokens(user, resp)
 
-	if user.OidcAccessToken == nil || *user.OidcAccessToken != "at-123" {
-		t.Errorf("access token %v", user.OidcAccessToken)
-	}
-	if user.OidcRefreshToken == nil || *user.OidcRefreshToken != "rt-456" {
-		t.Errorf("refresh token %v", user.OidcRefreshToken)
-	}
-	if user.OidcAccessTokenExpiresAt == nil {
-		t.Errorf("expiresAt nil")
-	}
+	assert.False(t, user.OidcAccessToken == nil || *user.OidcAccessToken != "at-123",
+		"access token %v", user.OidcAccessToken)
+
+	assert.False(t, user.OidcRefreshToken == nil || *user.OidcRefreshToken != "rt-456",
+		"refresh token %v", user.OidcRefreshToken)
+
+	assert.NotNil(t, user.OidcAccessTokenExpiresAt,
+		"expiresAt nil")
+
 	// Check approx expiry within [start+7s, start+12s] to allow CI slop
 	earliest := start.Add(7 * time.Second)
 	latest := start.Add(12 * time.Second)
-	if user.OidcAccessTokenExpiresAt.Before(earliest) || user.OidcAccessTokenExpiresAt.After(latest) {
-		t.Errorf("expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, earliest, latest)
-	}
+
+	assert.False(t, user.OidcAccessTokenExpiresAt.Before(earliest) || user.OidcAccessTokenExpiresAt.After(latest),
+		"expiresAt %v not in [%v,%v]", user.OidcAccessTokenExpiresAt, earliest, latest)
+
 }
 
 func TestVerifyToken_VersionMismatch(t *testing.T) {
@@ -314,9 +328,9 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 	config.Version = "2.0.0"
 
 	_, _, err := s.VerifyToken(context.Background(), token)
-	if !errors.Is(err, ErrTokenVersionMismatch) {
-		t.Errorf("want ErrTokenVersionMismatch, got %v", err)
-	}
+
+	assert.ErrorIs(t, err, ErrTokenVersionMismatch,
+		"want ErrTokenVersionMismatch, got %v", err)
 
 	config.Version = oldVersion
 }
@@ -324,7 +338,7 @@ func TestVerifyToken_VersionMismatch(t *testing.T) {
 func TestRefreshToken_Valid(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -355,7 +369,7 @@ func TestRefreshToken_Valid(t *testing.T) {
 func TestRefreshToken_VersionMismatchRotates(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -421,7 +435,7 @@ func TestVerifyToken_RejectsRevokedSession(t *testing.T) {
 	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.True(t, errors.Is(err, common.ErrSessionRevoked))
+	require.ErrorIs(t, err, common.ErrSessionRevoked)
 }
 
 func TestVerifyToken_RejectsMissingSessionID(t *testing.T) {
@@ -464,13 +478,39 @@ func TestRevokeSessionThenVerifyTokenFails(t *testing.T) {
 	require.NoError(t, s.RevokeSession(context.Background(), session.ID))
 
 	_, _, err = s.VerifyToken(context.Background(), token)
-	require.True(t, errors.Is(err, common.ErrSessionRevoked))
+	require.ErrorIs(t, err, common.ErrSessionRevoked)
+}
+
+func TestVerifyToken_RejectsRevokedCachedSession(t *testing.T) {
+	db := setupAuthServiceTestDB(t)
+	userSvc := NewUserService(db)
+	s := newTestAuthService("")
+	s.userService = userSvc
+	s.sessionService = NewSessionService(db)
+
+	user := &models.User{
+		BaseModel: models.BaseModel{ID: "u-cached-revoked"},
+		Username:  "cached-revoked-user",
+	}
+	_, err := userSvc.CreateUser(context.Background(), user)
+	require.NoError(t, err)
+
+	exp := time.Now().Add(5 * time.Minute)
+	session, _ := createTestSession(t, db, user.ID, exp)
+	token := makeAccessToken(t, s.jwtSecret, "access", user.ID, user.Username, []string{"user"}, "", "", exp, session.ID)
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.NoError(t, err)
+	require.NoError(t, NewSessionService(db).RevokeSession(context.Background(), session.ID))
+
+	_, _, err = s.VerifyToken(context.Background(), token)
+	require.ErrorIs(t, err, common.ErrSessionRevoked, "expected cached access token to be rejected after cross-process revocation, got %v", err)
 }
 
 func TestRefreshToken_RotatesJTI(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -499,7 +539,7 @@ func TestRefreshToken_RotatesJTI(t *testing.T) {
 func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	db := setupAuthServiceTestDB(t)
 	userSvc := NewUserService(db)
-	settingsSvc, err := NewSettingsService(context.Background(), db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), db)
 	require.NoError(t, err)
 	s := newTestAuthService("")
 	s.userService = userSvc
@@ -519,7 +559,7 @@ func TestRefreshToken_RejectsRevokedSession(t *testing.T) {
 	token := makeRefreshToken(t, s.jwtSecret, "refresh", refreshJTI, exp, user.ID, session.ID)
 
 	_, err = s.RefreshToken(context.Background(), token, auth.SessionMeta{})
-	require.True(t, errors.Is(err, common.ErrSessionRevoked))
+	require.ErrorIs(t, err, common.ErrSessionRevoked)
 }
 
 func TestChangePassword_RevokesAllSessions(t *testing.T) {
@@ -593,9 +633,10 @@ func TestRefreshToken_RejectsNonHMACAlg(t *testing.T) {
 	})
 
 	_, err := s.RefreshToken(context.Background(), token, auth.SessionMeta{})
-	if !errors.Is(err, ErrInvalidToken) {
-		t.Errorf("want ErrInvalidToken, got %v", err)
-	}
+
+	assert.ErrorIs(t, err, ErrInvalidToken,
+		"want ErrInvalidToken, got %v", err)
+
 }
 
 func TestGetOidcConfigurationStatus(t *testing.T) {
@@ -607,58 +648,60 @@ func TestGetOidcConfigurationStatus(t *testing.T) {
 	s.settingsService = &SettingsService{}
 
 	status, err := s.GetOidcConfigurationStatus(context.Background())
-	if err != nil {
-		t.Fatalf("GetOidcConfigurationStatus error: %v", err)
-	}
-	if status.EnvForced || status.EnvConfigured {
-		t.Errorf("expected disabled, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-	}
+
+	require.NoError(t, err,
+		"GetOidcConfigurationStatus error: %v", err)
+
+	assert.False(t, status.EnvForced || status.EnvConfigured,
+		"expected disabled, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
+
 	// MergeAccounts will be false since GetSettings will fail
-	if status.MergeAccounts {
-		t.Errorf("expected mergeAccounts=false, got true")
-	}
+
+	assert.False(t, status.MergeAccounts,
+		"expected mergeAccounts=false, got true")
 
 	// Explicit env override to false should still be treated as forced
 	t.Setenv("OIDC_ENABLED", "false")
 	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = false
 	status, err = s.GetOidcConfigurationStatus(context.Background())
-	if err != nil {
-		t.Fatalf("GetOidcConfigurationStatus error: %v", err)
-	}
-	if !status.EnvForced || status.EnvConfigured {
-		t.Errorf("expected forced=false-override and not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-	}
+
+	require.NoError(t, err,
+		"GetOidcConfigurationStatus error: %v", err)
+
+	assert.False(t, !status.EnvForced || status.EnvConfigured,
+		"expected forced=false-override and not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
 
 	// Enabled but missing fields
 	t.Setenv("OIDC_ENABLED", "true")
 	s.settingsService.envOverrides = resolveSettingsEnvOverridesInternal()
 	s.config.OidcEnabled = true
 	status, err = s.GetOidcConfigurationStatus(context.Background())
-	if err != nil {
-		t.Fatalf("GetOidcConfigurationStatus error: %v", err)
-	}
-	if !status.EnvForced || status.EnvConfigured {
-		t.Errorf("expected enabled but not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-	}
+
+	require.NoError(t, err,
+		"GetOidcConfigurationStatus error: %v", err)
+
+	assert.False(t, !status.EnvForced || status.EnvConfigured,
+		"expected enabled but not configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
 
 	// Enabled and configured
 	s.config.OidcClientID = "client-id"
 	s.config.OidcIssuerURL = "https://example.com"
 	status, err = s.GetOidcConfigurationStatus(context.Background())
-	if err != nil {
-		t.Fatalf("GetOidcConfigurationStatus error: %v", err)
-	}
-	if !status.EnvForced || !status.EnvConfigured {
-		t.Errorf("expected enabled and configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
-	}
+
+	require.NoError(t, err,
+		"GetOidcConfigurationStatus error: %v", err)
+
+	assert.False(t, !status.EnvForced || !status.EnvConfigured,
+		"expected enabled and configured, got forced=%v configured=%v", status.EnvForced, status.EnvConfigured)
+
 }
 
 func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_NoExistingUser_CreatesNewUser(t *testing.T) {
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
@@ -694,7 +737,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailNotVerified_WithExistingUser_Ret
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))
@@ -736,7 +779,7 @@ func TestFindOrCreateOidcUser_MergeEnabled_EmailVerificationMissing_WithExisting
 	ctx := context.Background()
 	db := setupAuthServiceTestDB(t)
 
-	settingsSvc, err := NewSettingsService(ctx, db)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.EnsureDefaultSettings(ctx))
 	require.NoError(t, settingsSvc.SetBoolSetting(ctx, "oidcMergeAccounts", true))

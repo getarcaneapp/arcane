@@ -54,7 +54,7 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 	workdir := filepath.Dir(composeFilePath)
 	if strings.TrimSpace(projectsDirectory) == "" {
 		envMap := loadComposeEnvironment(workdir)
-		return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
+		return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
 	}
 
 	envLoader := NewEnvLoader(projectsDirectory, workdir, autoInjectEnv)
@@ -63,11 +63,6 @@ func ParseArcaneComposeMetadata(ctx context.Context, composeFilePath, projectsDi
 		return emptyArcaneComposeMetadataInternal(), errors.WrapIf(err, "load project environment")
 	}
 
-	return ParseArcaneComposeMetadataWithEnv(ctx, composeFilePath, envMap)
-}
-
-// ParseArcaneComposeMetadataWithEnv reads a Docker Compose file and extracts Arcane-specific metadata using a provided environment.
-func ParseArcaneComposeMetadataWithEnv(ctx context.Context, composeFilePath string, envMap map[string]string) (ArcaneComposeMetadata, error) {
 	return parseArcaneComposeMetadataFromFileInternal(ctx, composeFilePath, envMap, map[string]struct{}{})
 }
 
@@ -202,7 +197,7 @@ func emptyArcaneComposeMetadataInternal() ArcaneComposeMetadata {
 }
 
 func loadComposeProjectForMetadataFromFileInternal(ctx context.Context, composeFilePath string, envMap map[string]string) (*composetypes.Project, error) {
-	return loadComposeProjectInternal(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
+	return LoadComposeProject(ctx, composeFilePath, "", "", false, nil, envMap, func(opts *loader.Options) {
 		opts.SkipValidation = true
 		opts.SkipConsistencyCheck = true
 		opts.SkipResolveEnvironment = false

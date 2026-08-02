@@ -13,6 +13,76 @@ async function navigateToImages(page: Page) {
 	await page.waitForLoadState('load');
 }
 
+function getImageRows(page: Page) {
+	return page
+		.getByRole('row')
+		.filter({ has: page.getByRole('checkbox', { name: 'Select row', exact: true }) });
+}
+
+async function mockImageDeleteFlow(page: Page, failFirst = false) {
+	const state = {
+		deleteRequestCount: 0,
+		imageListRequestCount: 0,
+		usageCountRequestCount: 0,
+		inFlight: 0,
+		maxInFlight: 0,
+		deletedIds: new Set<string>()
+	};
+
+	await page.route('**/api/environments/0/images**', async (route) => {
+		const request = route.request();
+		const url = new URL(request.url());
+
+		if (request.method() === 'DELETE' && url.pathname.startsWith(`${ROUTES.apiImages}/`)) {
+			state.deleteRequestCount += 1;
+			state.inFlight += 1;
+			state.maxInFlight = Math.max(state.maxInFlight, state.inFlight);
+			const imageId = decodeURIComponent(url.pathname.slice(`${ROUTES.apiImages}/`.length));
+			const shouldFail = failFirst && state.deleteRequestCount === 1;
+
+			await new Promise((resolve) => setTimeout(resolve, 50));
+			state.inFlight -= 1;
+			if (!shouldFail) state.deletedIds.add(imageId);
+
+			await route.fulfill({
+				status: shouldFail ? 500 : 200,
+				contentType: 'application/json',
+				body: JSON.stringify(
+					shouldFail
+						? { success: false, message: 'mock delete failure' }
+						: { success: true, data: { message: 'Image removed successfully' } }
+				)
+			});
+			return;
+		}
+
+		if (request.method() === 'GET' && url.pathname === ROUTES.apiImages) {
+			state.imageListRequestCount += 1;
+			const response = await route.fetch();
+			const body = await response.json();
+			if (Array.isArray(body?.data)) {
+				body.data = body.data.filter((image: { id: string }) => !state.deletedIds.has(image.id));
+				if (body.pagination?.totalItems !== undefined) {
+					body.pagination.totalItems = Math.max(
+						0,
+						Number(body.pagination.totalItems) - state.deletedIds.size
+					);
+				}
+			}
+			await route.fulfill({ response, body: JSON.stringify(body) });
+			return;
+		}
+
+		if (request.method() === 'GET' && url.pathname === `${ROUTES.apiImages}/counts`) {
+			state.usageCountRequestCount += 1;
+		}
+
+		await route.continue();
+	});
+
+	return state;
+}
+
 async function fetchAllImagesForUsage(page: Page): Promise<any[]> {
 	const limit = 200;
 	let start = 0;
@@ -202,12 +272,89 @@ test.describe('Images Page', () => {
 
 		const dialog = page.getByRole('dialog', { name: 'Remove image', exact: true });
 		await expect(dialog).toBeVisible();
+		const refreshedImageList = page.waitForRequest((request) => {
+			return request.method() === 'GET' && new URL(request.url()).pathname === ROUTES.apiImages;
+		});
+		const refreshedUsageCounts = page.waitForRequest((request) => {
+			return (
+				request.method() === 'GET' &&
+				new URL(request.url()).pathname === `${ROUTES.apiImages}/counts`
+			);
+		});
 		await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
 		await expect.poll(() => removeRequestCount).toBe(1);
+		await Promise.all([refreshedImageList, refreshedUsageCounts]);
 
 		await expect(
 			page.getByRole('region', { name: 'Notifications alt+T', exact: true }).getByRole('listitem')
 		).toBeVisible();
+	});
+
+	test('should remove selected images sequentially and refresh the list and usage counts', async ({
+		page
+	}) => {
+		test.skip(realImages.length < 2, 'At least two images are required for bulk remove test');
+		await navigateToImages(page);
+
+		const rows = getImageRows(page);
+		await expect(rows.nth(1)).toBeVisible();
+		const initialRowCount = await rows.count();
+		const mock = await mockImageDeleteFlow(page);
+
+		await rows.nth(0).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+		await rows.nth(1).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+		await expect(
+			page.getByRole('button', { name: 'Remove Selected (2)', exact: true })
+		).toBeVisible();
+		await page.getByRole('button', { name: 'Remove Selected (2)', exact: true }).click();
+
+		const dialog = page.getByRole('dialog');
+		await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+
+		await expect.poll(() => mock.deleteRequestCount).toBe(2);
+		expect(mock.maxInFlight).toBe(1);
+		await expect(
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.filter({ hasText: '2 images removed successfully' })
+		).toBeVisible();
+		await expect.poll(() => mock.imageListRequestCount).toBeGreaterThan(0);
+		await expect.poll(() => mock.usageCountRequestCount).toBeGreaterThan(0);
+		await expect.poll(() => getImageRows(page).count()).toBe(initialRowCount - 2);
+		await expect(page.getByRole('button', { name: /^Remove Selected/ })).toHaveCount(0);
+	});
+
+	test('should continue bulk removal after a failed image and refresh successful results', async ({
+		page
+	}) => {
+		test.skip(realImages.length < 2, 'At least two images are required for bulk remove test');
+		await navigateToImages(page);
+
+		const rows = getImageRows(page);
+		await expect(rows.nth(1)).toBeVisible();
+		const initialRowCount = await rows.count();
+		const mock = await mockImageDeleteFlow(page, true);
+
+		await rows.nth(0).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+		await rows.nth(1).getByRole('checkbox', { name: 'Select row', exact: true }).check();
+		await page.getByRole('button', { name: 'Remove Selected (2)', exact: true }).click();
+
+		const dialog = page.getByRole('dialog');
+		await dialog.getByRole('button', { name: 'Remove', exact: true }).click();
+
+		await expect.poll(() => mock.deleteRequestCount).toBe(2);
+		expect(mock.maxInFlight).toBe(1);
+		await expect(
+			page
+				.getByRole('region', { name: 'Notifications alt+T', exact: true })
+				.getByRole('listitem')
+				.filter({ hasText: 'Removed 1 of 2' })
+		).toBeVisible();
+		await expect.poll(() => mock.imageListRequestCount).toBeGreaterThan(0);
+		await expect.poll(() => mock.usageCountRequestCount).toBeGreaterThan(0);
+		await expect.poll(() => getImageRows(page).count()).toBe(initialRowCount - 1);
+		await expect(page.getByRole('button', { name: /^Remove Selected/ })).toHaveCount(0);
 	});
 
 	test('should call prune API on prune click and confirmation', async ({ page }) => {

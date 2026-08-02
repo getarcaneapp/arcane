@@ -11,22 +11,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestIsSecureInternal(t *testing.T) {
+func TestSecureCookieFromRequest(t *testing.T) {
 	t.Run("plain http returns false", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/", nil)
-		assert.False(t, isSecureInternal(req))
+		assert.False(t, SecureCookieFromRequest(req))
 	})
 
 	t.Run("X-Forwarded-Proto https is not trusted directly", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/", nil)
 		req.Header.Set("X-Forwarded-Proto", "https")
-		assert.False(t, isSecureInternal(req))
+		assert.False(t, SecureCookieFromRequest(req))
 	})
 
 	t.Run("secure cookie context returns true", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "http://example.com/", nil)
-		req = req.WithContext(WithSecureCookieContext(context.Background(), true))
-		assert.True(t, isSecureInternal(req))
+		req = req.WithContext(context.WithValue(context.Background(), SecureCookieContextKey{}, true))
+		assert.True(t, SecureCookieFromRequest(req))
 	})
 }
 

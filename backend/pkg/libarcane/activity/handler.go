@@ -49,50 +49,6 @@ type HandlerOptions struct {
 	Queue bool
 }
 
-// StartHandlerActivityForUser creates a background activity and returns its ID
-// along with a work context the caller MUST use for the underlying operation.
-// When the service supports cancellation (implements Tracker), the returned
-// context is a cancelable child bound to the activity; cancelling the activity
-// cancels this context. The activity registration is released when the activity
-// is completed via the service. On failure it returns ("", ctx) unchanged.
-func StartHandlerActivityForUser(
-	ctx context.Context,
-	activityService Service,
-	environmentID string,
-	activityType models.ActivityType,
-	resourceType string,
-	resourceID string,
-	resourceName string,
-	user *models.User,
-	step string,
-	message string,
-	metadata models.JSON,
-) (string, context.Context) {
-	return startHandlerActivityInternal(ctx, activityService, environmentID, activityType, resourceType, resourceID, resourceName, user, step, message, metadata, false)
-}
-
-// StartQueuedHandlerActivityForUser behaves like StartHandlerActivityForUser
-// but routes the activity through the per-environment concurrency limiter:
-// when no slot is free the activity is created with status queued. The caller
-// MUST call AwaitHandlerActivitySlot on the returned work context before doing
-// the actual work (streaming endpoints write their started line in between,
-// so the client learns the activity ID before the queue wait begins).
-func StartQueuedHandlerActivityForUser(
-	ctx context.Context,
-	activityService Service,
-	environmentID string,
-	activityType models.ActivityType,
-	resourceType string,
-	resourceID string,
-	resourceName string,
-	user *models.User,
-	step string,
-	message string,
-	metadata models.JSON,
-) (string, context.Context) {
-	return startHandlerActivityInternal(ctx, activityService, environmentID, activityType, resourceType, resourceID, resourceName, user, step, message, metadata, true)
-}
-
 // AwaitHandlerActivitySlot blocks until the queued activity holds a
 // concurrency slot (flipping it to running). A cancellation while waiting is
 // not an error to the caller: the work context is already cancelled, so the
@@ -111,7 +67,21 @@ func AwaitHandlerActivitySlot(ctx context.Context, activityService Service, acti
 	}
 }
 
-func startHandlerActivityInternal(
+// StartHandlerActivity creates a background activity and returns its ID along
+// with a work context the caller MUST use for the underlying operation. When
+// the service supports cancellation (implements Tracker), the returned context
+// is a cancelable child bound to the activity; cancelling the activity cancels
+// this context. The activity registration is released when the activity is
+// completed via the service. On failure it returns ("", ctx) unchanged.
+//
+// When queue is true the activity is routed through the per-environment
+// concurrency limiter: when no slot is free the activity is created with
+// status queued. The caller MUST then call AwaitHandlerActivitySlot on the
+// returned work context before doing the actual work (streaming endpoints
+// write their started line in between, so the client learns the activity ID
+// before the queue wait begins). Quick actions (start/stop/delete) must pass
+// false.
+func StartHandlerActivity(
 	ctx context.Context,
 	activityService Service,
 	environmentID string,
@@ -186,7 +156,7 @@ func CompleteHandlerActivity(ctx context.Context, activityService Service, activ
 // The action MUST use the provided context for its operation so cancellation
 // propagates.
 func RunHandlerActivity(ctx context.Context, activityService Service, opts HandlerOptions, action func(ctx context.Context) error) (string, error) {
-	activityID, workCtx := startHandlerActivityInternal(
+	activityID, workCtx := StartHandlerActivity(
 		ctx,
 		activityService,
 		opts.EnvironmentID,

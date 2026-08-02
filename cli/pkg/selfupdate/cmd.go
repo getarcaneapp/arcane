@@ -121,7 +121,7 @@ func newSelfUpdateChannelValueCmdInternal(channel string) *cobra.Command {
 }
 
 func setCLIUpdateChannelAndRunInternal(cmd *cobra.Command, channel string) error {
-	channel = normalizeCLIUpdateChannelInternal(channel)
+	channel = strings.ToLower(strings.TrimSpace(channel))
 	if channel != cliUpdateChannelNext && channel != cliUpdateChannelStable {
 		return errors.Errorf("invalid update channel %q (expected stable or next)", channel)
 	}
@@ -183,7 +183,7 @@ func buildCLIUpdatePlanInternal(ctx context.Context, overrideChannel string) (*c
 		return nil, err
 	}
 
-	channel := normalizeCLIUpdateChannelInternal(overrideChannel)
+	channel := strings.ToLower(strings.TrimSpace(overrideChannel))
 	if channel == "" {
 		channel, err = configuredCLIUpdateChannelInternal()
 		if err != nil {
@@ -219,7 +219,7 @@ func configuredCLIUpdateChannelInternal() (string, error) {
 	if err != nil {
 		return "", errors.WrapIf(err, "failed to load config")
 	}
-	channel := normalizeCLIUpdateChannelInternal(cfg.CLIUpdateChannel)
+	channel := strings.ToLower(strings.TrimSpace(cfg.CLIUpdateChannel))
 	if channel == "" {
 		return "", nil
 	}
@@ -257,10 +257,6 @@ func resolveCLIUpdateTargetInternal() (string, error) {
 		return "", errors.WrapIf(err, "failed to resolve current executable")
 	}
 	return filepath.EvalSymlinks(exe)
-}
-
-func normalizeCLIUpdateChannelInternal(channel string) string {
-	return strings.ToLower(strings.TrimSpace(channel))
 }
 
 func inferCLIUpdateChannelInternal(version string) string {
@@ -371,16 +367,14 @@ func resolveStableCLIUpdateInternal(ctx context.Context) (*cliUpdatePlan, error)
 
 func cliUpdateNeededInternal(channel, currentSHA, expectedSHA, remoteVersion string) bool {
 	if channel == cliUpdateChannelStable {
-		return normalizeVersionInternal(config.Version) != normalizeVersionInternal(remoteVersion)
+		current := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(config.Version)), "v")
+		remote := strings.TrimPrefix(strings.ToLower(strings.TrimSpace(remoteVersion)), "v")
+		return current != remote
 	}
 	if strings.TrimSpace(expectedSHA) == "" {
 		return true
 	}
 	return !strings.EqualFold(currentSHA, expectedSHA)
-}
-
-func normalizeVersionInternal(version string) string {
-	return strings.TrimPrefix(strings.ToLower(strings.TrimSpace(version)), "v")
 }
 
 func fetchLatestGitHubReleaseInternal(ctx context.Context) (string, error) {
@@ -662,7 +656,7 @@ func sha256FileInternal(path string) (string, error) {
 func findChecksumInternal(checksums string, artifactNames ...string) (string, error) {
 	wanted := make(map[string]struct{}, len(artifactNames))
 	for _, artifactName := range artifactNames {
-		artifactName = normalizeChecksumPathInternal(artifactName)
+		artifactName = strings.TrimPrefix(path.Clean(strings.TrimSpace(artifactName)), "./")
 		if artifactName != "" {
 			wanted[artifactName] = struct{}{}
 		}
@@ -673,7 +667,7 @@ func findChecksumInternal(checksums string, artifactNames ...string) (string, er
 		if len(fields) < 2 {
 			continue
 		}
-		checksumPath := normalizeChecksumPathInternal(fields[len(fields)-1])
+		checksumPath := strings.TrimPrefix(path.Clean(strings.TrimSpace(fields[len(fields)-1])), "./")
 		if checksumPathMatchesInternal(checksumPath, wanted) {
 			return strings.ToLower(fields[0]), nil
 		}
@@ -688,13 +682,9 @@ func checksumEntryNamesInternal(checksums string) []string {
 		if len(fields) < 2 {
 			continue
 		}
-		names = append(names, normalizeChecksumPathInternal(fields[len(fields)-1]))
+		names = append(names, strings.TrimPrefix(path.Clean(strings.TrimSpace(fields[len(fields)-1])), "./"))
 	}
 	return names
-}
-
-func normalizeChecksumPathInternal(value string) string {
-	return strings.TrimPrefix(path.Clean(strings.TrimSpace(value)), "./")
 }
 
 func checksumPathMatchesInternal(checksumPath string, wanted map[string]struct{}) bool {

@@ -253,7 +253,7 @@ func (h *ActivityHandler) proxyCancelActivityInternal(ctx context.Context, input
 // audit message, preferring the authenticated user and falling back to a name
 // forwarded from a proxying controller.
 func (h *ActivityHandler) cancelRequestedByInternal(ctx context.Context, forwarded string) string {
-	if user, ok := humamw.GetCurrentUserFromContext(ctx); ok && user != nil {
+	if user, ok := models.CurrentUserFromContext(ctx); ok && user != nil {
 		if user.DisplayName != nil && strings.TrimSpace(*user.DisplayName) != "" {
 			return strings.TrimSpace(*user.DisplayName)
 		}

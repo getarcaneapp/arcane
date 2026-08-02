@@ -45,8 +45,8 @@ func TestMigrateDatabase_BlocksDowngradeWithoutFlag(t *testing.T) {
 
 	err := migrateDatabaseToVersionInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{}, targetVersion)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
-	assert.ErrorContains(t, err, "newer than this Arcane binary supports")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 
 	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
 	require.NoError(t, err)
@@ -183,7 +183,7 @@ func TestMigrateDatabase_BlocksFutureGooseVersionWithoutFlag(t *testing.T) {
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "newer than this Arcane binary supports")
+	require.ErrorContains(t, err, "newer than this Arcane binary supports")
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersionInternal(t, dsn))
 }
 
@@ -198,9 +198,9 @@ func TestMigrateDatabase_BlocksDowngradeWhenEmbeddedMigrationMissing(t *testing.
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
-	assert.ErrorContains(t, err, "restore the database from a backup")
-	assert.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true is not sufficient")
+	require.ErrorContains(t, err, "restore the database from a backup")
+	require.ErrorContains(t, err, strconv.FormatInt(highestVersion+1, 10))
 	assert.Equal(t, highestVersion+1, readGooseSQLiteVersionInternal(t, dsn))
 }
 
@@ -213,8 +213,8 @@ func TestMigrateDatabase_BlocksDirtyLegacyCurrentVersion(t *testing.T) {
 
 	err = migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "is dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "is dirty")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
 	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
 	assert.Equal(t, highestVersion, readGooseSQLiteVersionInternal(t, dsn))
@@ -232,8 +232,8 @@ func TestMigrateDatabase_BlocksDirtyLegacyOlderVersion(t *testing.T) {
 
 	err := migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "is dirty")
-	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
+	require.ErrorContains(t, err, "is dirty")
+	require.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 
 	require.NoError(t, migrateDatabaseInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{AllowDowngrade: true}))
 	highestVersion, err := getHighestEmbeddedMigrationVersionInternal("sqlite")
@@ -333,7 +333,7 @@ CREATE TABLE goose_db_version (
 
 	err = adoptLegacyMigrationStateInternal(ctx, rawDB, dbProviderSQLite, MigrationOptions{})
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "failed to insert Goose migration version")
+	require.ErrorContains(t, err, "failed to insert Goose migration version")
 
 	var rowCount int
 	err = rawDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM goose_db_version WHERE version_id = 0 AND is_applied = 0`).Scan(&rowCount)
@@ -351,7 +351,7 @@ func TestInitialize_BlocksDirtyLegacyMigrationState(t *testing.T) {
 	db, err := Initialize(ctx, dsn, MigrationOptions{})
 	require.Error(t, err)
 	require.Nil(t, db)
-	assert.ErrorContains(t, err, "dirty")
+	require.ErrorContains(t, err, "dirty")
 	assert.ErrorContains(t, err, "ALLOW_DOWNGRADE=true")
 }
 

@@ -22,6 +22,7 @@ import (
 	"github.com/libtnb/sqlite"
 	dockercontainer "github.com/moby/moby/api/types/container"
 	dockerimage "github.com/moby/moby/api/types/image"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -34,7 +35,7 @@ func setupDashboardHandlerTestDB(t *testing.T) (*database.DB, *services.Settings
 	require.NoError(t, db.AutoMigrate(&models.ApiKey{}, &models.Environment{}, &models.ImageUpdateRecord{}, &models.Project{}, &models.SettingVariable{}))
 
 	databaseDB := &database.DB{DB: db}
-	settingsSvc, err := services.NewSettingsService(context.Background(), databaseDB)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 
 	return databaseDB, settingsSvc
@@ -56,9 +57,13 @@ func newDashboardHandlerTestDockerService(
 			w.Header().Set("API-Version", "1.41")
 			w.WriteHeader(http.StatusOK)
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(images))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -177,7 +182,7 @@ func runDashboardStreamAllInternal(t *testing.T, ctx context.Context, cancel con
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not terminate after cancel")
+		require.FailNow(t, "stream did not terminate after cancel")
 	}
 }
 
@@ -187,12 +192,14 @@ func TestDashboardHandlerStreamAllEmitsRemoteSnapshotInternal(t *testing.T) {
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/api/environments/0/dashboard", r.URL.Path)
+		if !assert.Equal(t, "/api/environments/0/dashboard", r.URL.Path) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{
 			"containers":{"data":[{"id":"c1"}],"counts":{"runningContainers":2,"stoppedContainers":1,"totalContainers":3},"pagination":{"totalPages":1,"totalItems":1,"currentPage":1,"itemsPerPage":20}},
@@ -231,7 +238,7 @@ func TestDashboardHandlerStreamAllLegacyAgentComposesSnapshotFromGranularEndpoin
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -283,7 +290,7 @@ func TestDashboardHandlerStreamAllLegacyAgent404EmitsIncompatibleErrorInternal(t
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
@@ -326,7 +333,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	allowedServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -370,7 +377,7 @@ func TestDashboardHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *tes
 func TestDashboardHandlerRemoteFetchReusesLoadedEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

@@ -27,7 +27,7 @@ func TestBuildService_ResolveBuildRequest_PassesThroughLocalContext(t *testing.T
 	contextDir := t.TempDir()
 	svc := &BuildService{
 		gitCloneFn: func(context.Context, string, string, buildgit.AuthConfig) (string, error) {
-			t.Fatal("git clone should not run for local contexts")
+			require.FailNow(t, "git clone should not run for local contexts")
 			return "", nil
 		},
 	}
@@ -63,7 +63,7 @@ func TestBuildService_ResolveBuildRequest_ClonesRemoteGitContext(t *testing.T) {
 	cleanupCalled := false
 	svc := &BuildService{
 		gitProbeFn: func(context.Context, string, buildgit.AuthConfig) error {
-			t.Fatal("git remote probe should not run for .git URLs")
+			require.FailNow(t, "git remote probe should not run for .git URLs")
 			return nil
 		},
 		gitCloneFn: func(_ context.Context, repositoryURL, ref string, auth buildgit.AuthConfig) (string, error) {
@@ -150,7 +150,7 @@ func TestBuildService_ResolveBuildRequest_RejectsNonGitHTTPContextViaProbeFailur
 			return assert.AnError
 		},
 		gitCloneFn: func(context.Context, string, string, buildgit.AuthConfig) (string, error) {
-			t.Fatal("git clone should not run when remote probe fails")
+			require.FailNow(t, "git clone should not run when remote probe fails")
 			return "", nil
 		},
 	}
@@ -225,7 +225,7 @@ func TestBuildService_ResolveBuildRequest_UsesSavedGitCredentials(t *testing.T) 
 		svc := &BuildService{
 			gitRepository: repoService,
 			gitProbeFn: func(context.Context, string, buildgit.AuthConfig) error {
-				t.Fatal("git remote probe should not run for ssh URLs")
+				require.FailNow(t, "git remote probe should not run for ssh URLs")
 				return nil
 			},
 			gitCloneFn: func(_ context.Context, _ string, _ string, auth buildgit.AuthConfig) (string, error) {

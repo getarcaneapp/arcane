@@ -23,12 +23,12 @@ func TestEnvironmentServiceRuntimeChangeSignalCoalescesInternal(t *testing.T) {
 	select {
 	case <-changes:
 	default:
-		t.Fatal("expected a pending runtime change signal")
+		require.FailNow(t, "expected a pending runtime change signal")
 	}
 
 	select {
 	case <-changes:
-		t.Fatal("expected coalesced signals, got a second wake-up")
+		require.FailNow(t, "expected coalesced signals, got a second wake-up")
 	default:
 	}
 
@@ -37,7 +37,7 @@ func TestEnvironmentServiceRuntimeChangeSignalCoalescesInternal(t *testing.T) {
 	s.NotifyRuntimeStateChanged()
 	select {
 	case <-changes:
-		t.Fatal("expected no signal after unsubscribe")
+		require.FailNow(t, "expected no signal after unsubscribe")
 	default:
 	}
 

@@ -11,17 +11,15 @@ var (
 	OidcStateCookieName     = "oidc_state"
 )
 
-type secureCookieContextKey struct{}
-
-// WithSecureCookieContext records the router's trusted secure-cookie decision.
-func WithSecureCookieContext(ctx context.Context, secure bool) context.Context {
-	return context.WithValue(ctx, secureCookieContextKey{}, secure)
-}
+// SecureCookieContextKey is the context key under which router middleware
+// records its trusted secure-cookie decision (a bool derived from TLS or
+// trusted proxy headers).
+type SecureCookieContextKey struct{}
 
 // SecureCookieFromContext returns the secure-cookie decision that router
 // middleware derived from TLS or trusted proxy headers.
 func SecureCookieFromContext(ctx context.Context) bool {
-	secure, _ := ctx.Value(secureCookieContextKey{}).(bool)
+	secure, _ := ctx.Value(SecureCookieContextKey{}).(bool)
 	return secure
 }
 
@@ -34,12 +32,8 @@ func SecureCookieFromRequest(r *http.Request) bool {
 	return SecureCookieFromContext(r.Context())
 }
 
-func isSecureInternal(r *http.Request) bool {
-	return SecureCookieFromRequest(r)
-}
-
 func ClearTokenCookie(w http.ResponseWriter, r *http.Request) {
-	for _, cookieHeader := range BuildClearTokenCookieStringsFor(isSecureInternal(r)) {
+	for _, cookieHeader := range BuildClearTokenCookieStringsFor(SecureCookieFromRequest(r)) {
 		w.Header().Add("Set-Cookie", cookieHeader)
 	}
 }

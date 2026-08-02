@@ -16,6 +16,7 @@ import (
 	dockerutils "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	utilsregistry "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/registryauth"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	imagetypes "github.com/getarcaneapp/arcane/types/v2/image"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
@@ -70,7 +71,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 
 	g, gctx := errgroup.WithContext(ctx)
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		inspectResult, err := dockerClient.ImageInspect(gctx, id)
 		if err != nil {
@@ -80,7 +83,9 @@ func (s *ImageService) GetImageDetail(ctx context.Context, id string) (*imagetyp
 		return nil
 	})
 
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		imageList, err := dockerClient.ImageList(gctx, client.ImageListOptions{})
 		if err != nil {
 			return errors.WrapIf(err, "failed to list images")
@@ -674,7 +679,9 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	g, groupCtx := errgroup.WithContext(ctx)
 
 	// Fetch Docker images
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		imageList, err := s.dockerService.listImagesInternal(groupCtx)
 		if err != nil {
@@ -685,7 +692,9 @@ func (s *ImageService) ListImagesPaginated(ctx context.Context, params paginatio
 	})
 
 	// Fetch containers to determine usage
-	g.Go(func() error {
+	g.Go(func() (workerErr error) {
+		defer utils.RecoverToError(&workerErr, "image worker")
+
 		var err error
 		containerList, err := s.dockerService.listContainersInternal(groupCtx)
 		if err != nil {

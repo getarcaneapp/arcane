@@ -33,10 +33,7 @@ function parseBooleanEnv(value: string | undefined): boolean | undefined {
 
 const explicitInsecureTLS = parseBooleanEnv(process.env['DEV_BACKEND_INSECURE_TLS']);
 // Allow local self-signed HTTPS while developing edge mTLS against the manager.
-const useInsecureLocalTLS =
-	explicitInsecureTLS ??
-	(parsedDevBackendURL.protocol === 'https:' &&
-		(parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
+const useInsecureLocalTLS = explicitInsecureTLS ?? (parsedDevBackendURL.protocol === 'https:' && (parsedDevBackendURL.hostname === 'localhost' || parsedDevBackendURL.hostname === '127.0.0.1'));
 
 export default defineConfig({
 	plugins: [
@@ -48,7 +45,8 @@ export default defineConfig({
 				fallback: 'index.html'
 			}),
 			version: {
-				name: packageJson.version
+				name: packageJson.version,
+				pollInterval: 0
 			}
 		}),
 		paraglideVitePlugin({

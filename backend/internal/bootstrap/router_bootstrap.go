@@ -18,12 +18,14 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/api/handlers"
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/frontend"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils/cookie"
+	httputil "github.com/getarcaneapp/arcane/backend/v2/pkg/utils/httpx"
 	"github.com/getarcaneapp/arcane/types/v2"
 	"go.uber.org/fx"
 )
@@ -159,9 +161,12 @@ type RouterParams struct {
 	fx.In
 
 	Context        context.Context
+	Lifecycle      fx.Lifecycle
+	ActorRuntime   *actors.Runtime
 	Config         *config.Config
 	HandlerDeps    api.HandlerDeps
 	AuthMiddleware *middleware.AuthMiddleware
+	TunnelRegistry *edge.TunnelRegistry
 }
 
 func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
@@ -208,10 +213,14 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	apiGroup.Use(middleware.PerIPRateLimitForPaths(
 		[]string{"/api/webhooks/trigger/:token"}, 60, 10,
 	))
+	// Agent event ingestion authenticates on the agent token alone and sits
+	// outside the auth middleware, so it needs its own brute-force ceiling.
+	// The allowance is generous because busy agents legitimately batch events.
+	apiGroup.Use(middleware.PerIPRateLimitForPaths(
+		[]string{"/api/events"}, 60, 30,
+	))
 	handlerAppCtx := handlers.NewActivityAppContext(ctx)
 
-	tunnelRegistry := edge.NewTunnelRegistry()
-	edge.SetDefaultRegistry(tunnelRegistry)
 	envResolver := func(ctx context.Context, id string) (string, *string, bool, error) {
 		env, err := deps.Environment.GetEnvironmentByID(ctx, id)
 		if err != nil || env == nil {
@@ -227,12 +236,17 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 
 	permissionMatcher := authz.NewPermissionMatcher()
 
-	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParam(
+	envProxyMiddleware := middleware.NewEnvProxyMiddlewareWithParamAndRegistry(
 		types.LocalDockerEnvironmentID,
 		"id",
 		envResolver,
 		createAuthValidatorInternal(deps),
 		permissionMatcher,
+		p.TunnelRegistry,
+		// Proxied WebSocket upgrades enforce the same Origin policy as the local
+		// endpoints, so a cross-origin page cannot ride a session cookie into a
+		// remote environment.
+		httputil.ValidateWebSocketOrigin(cfg.GetAppURL()),
 	)
 	apiGroup.Use(envProxyMiddleware)
 
@@ -256,7 +270,7 @@ func newRouter(p RouterParams) (*echo.Echo, *edge.TunnelServer) {
 	// This is only registered when NOT in agent mode (i.e., running as manager)
 	var tunnelServer *edge.TunnelServer
 	if !cfg.AgentMode {
-		tunnelServer = registerEdgeTunnelRoutes(ctx, cfg, apiGroup, deps.Environment, deps.Event)
+		tunnelServer = registerEdgeTunnelRoutes(ctx, p.Lifecycle, p.ActorRuntime, cfg, apiGroup, deps.Environment, deps.Event, p.TunnelRegistry)
 	}
 
 	if cfg.Environment != "production" {
@@ -328,7 +342,7 @@ func secureCookieContextMiddlewareInternal(trustedProxyNets []*net.IPNet) echo.M
 				secure = true
 			}
 			if secure {
-				c.SetRequest(req.WithContext(cookie.WithSecureCookieContext(req.Context(), true)))
+				c.SetRequest(req.WithContext(context.WithValue(req.Context(), cookie.SecureCookieContextKey{}, true)))
 			}
 			return next(c)
 		}

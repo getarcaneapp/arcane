@@ -3,8 +3,9 @@ package integrationtest
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // TestContainerStartSurfacesServerError verifies that `containers start` reports
@@ -12,6 +13,7 @@ import (
 // false success. This is a regression guard: the manager's remote-environment
 // proxy returns 403 when the caller lacks the required per-environment
 // permission, and the CLI must not swallow that and exit 0.
+
 func TestContainerStartSurfacesServerError(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -34,15 +36,16 @@ func TestContainerStartSurfacesServerError(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "start", "abc123"},
 	)
-	if err == nil {
-		t.Fatalf("expected an error for a 403 start response, got success\nstdout=%s\nstderr=%s", outBuf, errOut)
-	}
-	if !strings.Contains(err.Error(), "403") {
-		t.Fatalf("expected the error to mention status 403, got: %v", err)
-	}
-	if strings.Contains(outBuf, "successfully") {
-		t.Fatalf("expected no success message on a denied start, got stdout=%s", outBuf)
-	}
+
+	require.Error(t, err,
+		"expected an error for a 403 start response, got success\nstdout=%s\nstderr=%s", outBuf, errOut)
+
+	require.Contains(t, err.Error(), "403",
+		"expected the error to mention status 403, got: %v", err)
+
+	require.NotContains(t, outBuf, "successfully",
+		"expected no success message on a denied start, got stdout=%s", outBuf)
+
 }
 
 // TestSystemContainersStartAllSurfacesServerError verifies the same guard for a
@@ -65,13 +68,14 @@ func TestSystemContainersStartAllSurfacesServerError(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "system", "containers-start-all"},
 	)
-	if err == nil {
-		t.Fatalf("expected an error for a 403 response, got success\nstdout=%s\nstderr=%s", outBuf, errOut)
-	}
-	if !strings.Contains(err.Error(), "403") {
-		t.Fatalf("expected the error to mention status 403, got: %v", err)
-	}
-	if strings.Contains(outBuf, "Started all containers") {
-		t.Fatalf("expected no success message on a denied start-all, got stdout=%s", outBuf)
-	}
+
+	require.Error(t, err,
+		"expected an error for a 403 response, got success\nstdout=%s\nstderr=%s", outBuf, errOut)
+
+	require.Contains(t, err.Error(), "403",
+		"expected the error to mention status 403, got: %v", err)
+
+	require.NotContains(t, outBuf, "Started all containers",
+		"expected no success message on a denied start-all, got stdout=%s", outBuf)
+
 }

@@ -1,38 +1,40 @@
 package authz
 
 import (
-	"slices"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestPermissionSetAllowsGlobal(t *testing.T) {
 	ps := NewPermissionSet()
 	ps.AddGlobal(PermContainersList)
 
-	if !ps.Allows(PermContainersList, "env-1") {
-		t.Fatal("global perm should apply to any env")
-	}
-	if !ps.Allows(PermContainersList, "") {
-		t.Fatal("global perm should apply org-level too")
-	}
-	if ps.Allows(PermContainersStart, "env-1") {
-		t.Fatal("unrelated perm should be denied")
-	}
+	require.True(t, ps.Allows(PermContainersList, "env-1"),
+		"global perm should apply to any env")
+
+	require.True(t, ps.Allows(PermContainersList, ""),
+		"global perm should apply org-level too")
+
+	require.False(t, ps.Allows(PermContainersStart, "env-1"),
+		"unrelated perm should be denied")
+
 }
 
 func TestPermissionSetEnvScopedDoesNotLeak(t *testing.T) {
 	ps := NewPermissionSet()
 	ps.AddEnv("env-1", PermContainersStart)
 
-	if !ps.Allows(PermContainersStart, "env-1") {
-		t.Fatal("env perm should apply to its own env")
-	}
-	if ps.Allows(PermContainersStart, "env-2") {
-		t.Fatal("env perm must not leak to another env")
-	}
-	if ps.Allows(PermContainersStart, "") {
-		t.Fatal("env perm must not satisfy an org-level check")
-	}
+	require.True(t, ps.Allows(PermContainersStart, "env-1"),
+		"env perm should apply to its own env")
+
+	require.False(t, ps.Allows(PermContainersStart, "env-2"),
+		"env perm must not leak to another env")
+
+	require.False(t, ps.Allows(PermContainersStart, ""),
+		"env perm must not satisfy an org-level check")
+
 }
 
 func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
@@ -63,9 +65,12 @@ func TestPermissionSetAllowsAnyEffectiveScope(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.ps.AllowsAny(PermActivitiesRead); got != tt.want {
-				t.Fatalf("AllowsAny() = %v, want %v", got, tt.want)
+			{
+				got := tt.ps.AllowsAny(PermActivitiesRead)
+				require.Equal(t, tt.want, got,
+					"AllowsAny() = %v, want %v", got, tt.want)
 			}
+
 		})
 	}
 }
@@ -81,9 +86,9 @@ func TestPermissionSetIsGlobalAdminRejectsUnknownPermissions(t *testing.T) {
 	}
 	ps.AddGlobal("projects:made-up")
 
-	if ps.IsGlobalAdmin() {
-		t.Fatal("global admin should reject injected unknown permissions")
-	}
+	require.False(t, ps.IsGlobalAdmin(),
+		"global admin should reject injected unknown permissions")
+
 }
 
 func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
@@ -94,9 +99,9 @@ func TestPermissionSetIsGlobalAdminRequiresExactKnownSet(t *testing.T) {
 	}
 	ps.AddGlobal("containers:does-not-exist")
 
-	if ps.IsGlobalAdmin() {
-		t.Fatal("global admin should require the complete known permission set")
-	}
+	require.False(t, ps.IsGlobalAdmin(),
+		"global admin should require the complete known permission set")
+
 }
 
 func TestPermissionSetIsGlobalAdmin(t *testing.T) {
@@ -105,44 +110,45 @@ func TestPermissionSetIsGlobalAdmin(t *testing.T) {
 		ps.AddGlobal(perm)
 	}
 
-	if !ps.IsGlobalAdmin() {
-		t.Fatal("complete known permission set should be global admin")
-	}
+	require.True(t, ps.IsGlobalAdmin(),
+		"complete known permission set should be global admin")
+
 }
 
 func TestSudoAllowsEverything(t *testing.T) {
 	ps := SudoPermissionSet()
-	if !ps.Allows(PermContainersDelete, "any-env") {
-		t.Fatal("sudo should allow any perm on any env")
-	}
-	if !ps.Allows(PermUsersDelete, "") {
-		t.Fatal("sudo should allow org-level perms")
-	}
-	if !ps.IsGlobalAdmin() {
-		t.Fatal("sudo should report as global admin")
-	}
+
+	require.True(t, ps.Allows(PermContainersDelete, "any-env"),
+		"sudo should allow any perm on any env")
+
+	require.True(t, ps.Allows(PermUsersDelete, ""),
+		"sudo should allow org-level perms")
+
+	require.True(t, ps.IsGlobalAdmin(),
+		"sudo should report as global admin")
+
 }
 
 func TestEnvironmentPermissionSetScopesToOwnEnvironment(t *testing.T) {
 	ps := EnvironmentPermissionSet("env-A")
 
-	if !ps.Allows(PermContainersStart, "env-A") {
-		t.Fatal("environment token should allow env-scoped permissions for its own env")
-	}
-	if ps.Allows(PermContainersStart, "env-B") {
-		t.Fatal("environment token must not allow env-scoped permissions for another env")
-	}
-	if ps.Allows(PermUsersList, "") {
-		t.Fatal("environment token must not allow org-level permissions")
-	}
-	if ps.IsGlobalAdmin() {
-		t.Fatal("environment token must not be global admin")
-	}
+	require.True(t, ps.Allows(PermContainersStart, "env-A"),
+		"environment token should allow env-scoped permissions for its own env")
+
+	require.False(t, ps.Allows(PermContainersStart, "env-B"),
+		"environment token must not allow env-scoped permissions for another env")
+
+	require.False(t, ps.Allows(PermUsersList, ""),
+		"environment token must not allow org-level permissions")
+
+	require.False(t, ps.IsGlobalAdmin(),
+		"environment token must not be global admin")
 
 	empty := EnvironmentPermissionSet("")
-	if empty.Allows(PermContainersStart, "env-A") {
-		t.Fatal("environment token with empty env id must deny env-scoped permissions")
-	}
+
+	require.False(t, empty.Allows(PermContainersStart, "env-A"),
+		"environment token with empty env id must deny env-scoped permissions")
+
 }
 
 func TestEnvIDFromPath(t *testing.T) {
@@ -155,25 +161,29 @@ func TestEnvIDFromPath(t *testing.T) {
 		"":                                     "",
 	}
 	for input, want := range cases {
-		if got := EnvIDFromPath(input); got != want {
-			t.Errorf("EnvIDFromPath(%q) = %q, want %q", input, got, want)
+		{
+			got := EnvIDFromPath(input)
+			assert.Equal(t, want, got,
+				"EnvIDFromPath(%q) = %q, want %q", input, got, want)
 		}
+
 	}
 }
 
 func TestIsOrgLevelAndEnvScoped(t *testing.T) {
-	if !IsOrgLevel(PermUsersList) {
-		t.Fatal("users:list should be org-level")
-	}
-	if IsEnvScoped(PermUsersList) {
-		t.Fatal("users:list should not be env-scoped")
-	}
-	if IsOrgLevel(PermContainersStart) {
-		t.Fatal("containers:start should not be org-level")
-	}
-	if !IsEnvScoped(PermContainersStart) {
-		t.Fatal("containers:start should be env-scoped")
-	}
+
+	require.True(t, IsOrgLevel(PermUsersList),
+		"users:list should be org-level")
+
+	require.False(t, IsEnvScoped(PermUsersList),
+		"users:list should not be env-scoped")
+
+	require.False(t, IsOrgLevel(PermContainersStart),
+		"containers:start should not be org-level")
+
+	require.True(t, IsEnvScoped(PermContainersStart),
+		"containers:start should be env-scoped")
+
 }
 
 func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
@@ -181,30 +191,34 @@ func TestIsKnownPermissionRejectsSyntheticPrefixMatches(t *testing.T) {
 	// must not be accepted — otherwise an admin could inflate ps.Global past
 	// TotalPermissionsCount() with bogus entries and trip IsGlobalAdmin().
 	for _, p := range []string{"containers:fake1", "projects:bogus", "images:made-up"} {
-		if IsKnownPermission(p) {
-			t.Errorf("IsKnownPermission(%q) = true, want false", p)
-		}
-		if IsEnvScoped(p) {
-			t.Errorf("IsEnvScoped(%q) = true, want false", p)
-		}
+
+		assert.False(t, IsKnownPermission(p),
+			"IsKnownPermission(%q) = true, want false", p)
+
+		assert.False(t, IsEnvScoped(p),
+			"IsEnvScoped(%q) = true, want false", p)
+
 	}
 }
 
 func TestBuiltInRolesOnlyReferenceKnownPermissions(t *testing.T) {
 	for _, p := range BuiltInEditorPermissions() {
-		if !IsKnownPermission(p) {
-			t.Errorf("editor references unknown perm %q", p)
-		}
+
+		assert.True(t, IsKnownPermission(p),
+			"editor references unknown perm %q", p)
+
 	}
 	for _, p := range BuiltInDeployerPermissions() {
-		if !IsKnownPermission(p) {
-			t.Errorf("deployer references unknown perm %q", p)
-		}
+
+		assert.True(t, IsKnownPermission(p),
+			"deployer references unknown perm %q", p)
+
 	}
 	for _, p := range BuiltInViewerPermissions() {
-		if !IsKnownPermission(p) {
-			t.Errorf("viewer references unknown perm %q", p)
-		}
+
+		assert.True(t, IsKnownPermission(p),
+			"viewer references unknown perm %q", p)
+
 	}
 }
 
@@ -218,15 +232,16 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 	}
 
 	for _, permission := range variablePermissions {
-		if !IsKnownPermission(permission) {
-			t.Fatalf("variable permission %q must be known", permission)
-		}
-		if !IsOrgLevel(permission) {
-			t.Fatalf("variable permission %q must be global", permission)
-		}
-		if slices.Contains(BuiltInMonitorPermissions(), permission) {
-			t.Fatalf("Monitor must not receive %q", permission)
-		}
+
+		require.True(t, IsKnownPermission(permission),
+			"variable permission %q must be known", permission)
+
+		require.True(t, IsOrgLevel(permission),
+			"variable permission %q must be global", permission)
+
+		require.NotContains(t, BuiltInMonitorPermissions(), permission,
+			"Monitor must not receive %q", permission)
+
 	}
 
 	for name, permissions := range map[string][]string{
@@ -235,9 +250,10 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		"No-Shell Editor": BuiltInNoShellEditorPermissions(),
 	} {
 		for _, permission := range variablePermissions {
-			if !slices.Contains(permissions, permission) {
-				t.Fatalf("%s must receive %q", name, permission)
-			}
+
+			require.Contains(t, permissions, permission,
+				"%s must receive %q", name, permission)
+
 		}
 	}
 
@@ -245,89 +261,103 @@ func TestVariablePermissionsAreSeparateGlobalGrantsWithBuiltInAccess(t *testing.
 		"Viewer":   BuiltInViewerPermissions(),
 		"Deployer": BuiltInDeployerPermissions(),
 	} {
-		if !slices.Contains(permissions, PermVariablesRead) {
-			t.Fatalf("%s must receive %q", name, PermVariablesRead)
-		}
+
+		require.Contains(t, permissions, PermVariablesRead,
+			"%s must receive %q", name, PermVariablesRead)
+
 		for _, permission := range variablePermissions[1:] {
-			if slices.Contains(permissions, permission) {
-				t.Fatalf("%s must not receive %q", name, permission)
-			}
+
+			require.NotContains(t, permissions, permission,
+				"%s must not receive %q", name, permission)
+
 		}
 	}
 
 	templatesOnly := NewPermissionSet()
 	templatesOnly.AddGlobal(PermTemplatesRead, PermTemplatesCreate, PermTemplatesUpdate, PermTemplatesDelete)
 	for _, permission := range variablePermissions {
-		if templatesOnly.Allows(permission, "") {
-			t.Fatalf("template grants must not satisfy %q", permission)
-		}
+
+		require.False(t, templatesOnly.Allows(permission, ""),
+			"template grants must not satisfy %q", permission)
+
 	}
 }
 
 func TestPermissionCatalogDerivesKnownPermissionsAndScopes(t *testing.T) {
 	catalog := PermissionCatalog()
-	if len(catalog) == 0 {
-		t.Fatal("permission catalog must not be empty")
-	}
+
+	require.NotEmpty(t, catalog,
+		"permission catalog must not be empty")
 
 	all := AllPermissions()
 	if len(all) != TotalPermissionsCount() {
-		t.Fatalf("AllPermissions length = %d, TotalPermissionsCount = %d", len(all), TotalPermissionsCount())
+		require.Len(t, all, TotalPermissionsCount(),
+			"AllPermissions length = %d, TotalPermissionsCount = %d", len(all), TotalPermissionsCount())
 	}
 
 	seen := make(map[string]struct{}, len(all))
 	var catalogCount int
 	for _, resource := range catalog {
-		if resource.Scope != PermissionScopeGlobal && resource.Scope != PermissionScopeEnv {
-			t.Fatalf("resource %q has invalid scope %q", resource.Key, resource.Scope)
-		}
+
+		require.False(t, resource.Scope != PermissionScopeGlobal && resource.Scope != PermissionScopeEnv,
+			"resource %q has invalid scope %q", resource.Key, resource.Scope)
+
 		for _, action := range resource.Actions {
 			catalogCount++
-			if action.Permission == "" {
-				t.Fatalf("resource %q action %q has empty permission", resource.Key, action.Key)
+
+			require.NotEmpty(t, action.Permission,
+				"resource %q action %q has empty permission", resource.Key, action.Key)
+			{
+
+				_, exists := seen[action.Permission]
+				require.False(t, exists,
+					"duplicate permission %q in catalog", action.Permission)
 			}
-			if _, exists := seen[action.Permission]; exists {
-				t.Fatalf("duplicate permission %q in catalog", action.Permission)
-			}
+
 			seen[action.Permission] = struct{}{}
-			if !IsKnownPermission(action.Permission) {
-				t.Fatalf("catalog permission %q is not known", action.Permission)
-			}
-			if resource.Scope == PermissionScopeGlobal && !IsOrgLevel(action.Permission) {
-				t.Fatalf("catalog permission %q should be org-level", action.Permission)
-			}
-			if resource.Scope == PermissionScopeEnv && !IsEnvScoped(action.Permission) {
-				t.Fatalf("catalog permission %q should be env-scoped", action.Permission)
-			}
+
+			require.True(t, IsKnownPermission(action.Permission),
+				"catalog permission %q is not known", action.Permission)
+
+			require.False(t, resource.Scope == PermissionScopeGlobal && !IsOrgLevel(action.Permission),
+				"catalog permission %q should be org-level", action.Permission)
+
+			require.False(t, resource.Scope == PermissionScopeEnv && !IsEnvScoped(action.Permission),
+				"catalog permission %q should be env-scoped", action.Permission)
+
 		}
 	}
 
-	if catalogCount != len(all) {
-		t.Fatalf("catalog permission count = %d, AllPermissions count = %d", catalogCount, len(all))
-	}
+	require.Equal(t, len(all), catalogCount,
+		"catalog permission count = %d, AllPermissions count = %d", catalogCount, len(all))
+
 	for _, permission := range all {
-		if _, exists := seen[permission]; !exists {
-			t.Fatalf("AllPermissions includes %q outside catalog", permission)
+		{
+			_, exists := seen[permission]
+			require.True(t, exists,
+				"AllPermissions includes %q outside catalog", permission)
 		}
+
 	}
 }
 
 func TestNotificationsManageRequiresGlobalScope(t *testing.T) {
-	if !IsOrgLevel(PermNotificationsManage) {
-		t.Fatal("notifications:manage must be org-level for manager-global notification settings")
-	}
-	if IsEnvScoped(PermNotificationsManage) {
-		t.Fatal("notifications:manage must not be environment-scoped")
-	}
+
+	require.True(t, IsOrgLevel(PermNotificationsManage),
+		"notifications:manage must be org-level for manager-global notification settings")
+
+	require.False(t, IsEnvScoped(PermNotificationsManage),
+		"notifications:manage must not be environment-scoped")
 
 	ps := NewPermissionSet()
 	ps.AddEnv("env-1", PermNotificationsManage)
-	if ps.Allows(PermNotificationsManage, "") {
-		t.Fatal("an environment-scoped notification grant must not authorize the global resource")
-	}
+
+	require.False(t, ps.Allows(PermNotificationsManage, ""),
+		"an environment-scoped notification grant must not authorize the global resource")
 
 	ps.AddGlobal(PermNotificationsManage)
-	if !ps.Allows(PermNotificationsManage, "") {
-		t.Fatal("a global notification grant must authorize the global resource")
-	}
+
+	require.True(t, ps.Allows(PermNotificationsManage, ""),
+		"a global notification grant must authorize the global resource")
+
 }

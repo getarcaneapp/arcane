@@ -417,10 +417,12 @@ func TestImageUpdateService_InspectLocalImageSnapshot_NoRepoDigestsRemainsLocal(
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
 				ID:       "sha256:local-only-image",
 				RepoTags: []string{"local-only:latest"},
-			}))
+			})) {
+				return
+			}
 			return
 		}
 		http.NotFound(w, r)
@@ -455,11 +457,13 @@ func newImageUpdateFallbackServer(t *testing.T, repositoryTag, localDigest, remo
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
 				ID:          "sha256:local-image-id",
 				RepoTags:    []string{imageRef},
 				RepoDigests: []string{repositoryRef + "@" + localDigest},
-			}))
+			})) {
+				return
+			}
 			return
 		case r.URL.Path == manifestPath:
 			w.Header().Set("Docker-Content-Digest", remoteDigest)
@@ -507,7 +511,9 @@ func newImageRefResolutionServer(t *testing.T, containers []dockertypescontainer
 			return
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 			return
 		default:
 			http.NotFound(w, r)
@@ -554,7 +560,7 @@ func TestImageUpdateService_GetImageRefByIDInternal_UsesContainerFallback(t *tes
 			imageRef, err := svc.getImageRefByIDInternal(context.Background(), imageID)
 			if tt.wantErr != "" {
 				require.Error(t, err)
-				assert.ErrorContains(t, err, tt.wantErr)
+				require.ErrorContains(t, err, tt.wantErr)
 				assert.Empty(t, imageRef)
 				return
 			}
@@ -611,7 +617,7 @@ func TestImageUpdateService_CheckMultipleImages_SkippedDigestPinnedReferenceClea
 	pinnedDigest := digest.FromString("stale-pinned-newt").String()
 	imageRef := "ghcr.io/fosrl/newt@" + pinnedDigest
 	repository := "ghcr.io/fosrl/newt"
-	recordID := buildSyntheticImageUpdateRecordIDInternal(repository, "latest")
+	recordID := fmt.Sprintf("ref::%s@latest", strings.ToLower(strings.TrimSpace(repository)))
 	require.NoError(t, db.Create(&models.ImageUpdateRecord{
 		ID:             recordID,
 		Repository:     repository,
@@ -669,11 +675,13 @@ func newImageUpdateNoRepoTagsServer(t *testing.T, imageID, localDigest string) *
 	return httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json") {
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(dockertypesimage.InspectResponse{
 				ID:          imageID,
 				RepoTags:    []string{},
 				RepoDigests: []string{r.Host + "/valkey/valkey@" + localDigest},
-			}))
+			})) {
+				return
+			}
 			return
 		}
 		http.NotFound(w, r)
@@ -796,7 +804,7 @@ func TestImageUpdateService_CheckMultipleImagesCompletesActivityWhenRequestConte
 	case err := <-errCh:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for image update check to return")
+		require.FailNow(t, "timed out waiting for image update check to return")
 	}
 
 	require.Eventually(t, func() bool {
@@ -1002,7 +1010,7 @@ func TestImageUpdateService_CheckMultipleImages_PersistsRefScopedErrorsWhenLocal
 
 	var saved models.ImageUpdateRecord
 	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
-	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", fmt.Sprintf("ref::%s@alpine", strings.ToLower(strings.TrimSpace(repository)))).First(&saved).Error)
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	require.NotNil(t, saved.LastError)
@@ -1036,18 +1044,12 @@ func TestImageUpdateService_SaveUpdateResultWithSnapshotInternal_PersistsRegistr
 
 	var saved models.ImageUpdateRecord
 	repository := fmt.Sprintf("%s/library/nginx", serverURL.Host)
-	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", buildSyntheticImageUpdateRecordIDInternal(repository, "alpine")).First(&saved).Error)
+	require.NoError(t, db.WithContext(context.Background()).Where("id = ?", fmt.Sprintf("ref::%s@alpine", strings.ToLower(strings.TrimSpace(repository)))).First(&saved).Error)
 	assert.Equal(t, repository, saved.Repository)
 	assert.Equal(t, "alpine", saved.Tag)
 	assert.True(t, saved.HasUpdate)
 	assert.Equal(t, remoteDigest, mo.PointerToOption(saved.LatestDigest).OrEmpty())
 	assert.Nil(t, saved.LastError)
-}
-
-func TestBuildSyntheticImageUpdateRecordIDInternal_UsesUnambiguousSeparator(t *testing.T) {
-	id := buildSyntheticImageUpdateRecordIDInternal("docker.io/library/nginx", "sha256:abcdef")
-
-	require.Equal(t, "ref::docker.io/library/nginx@sha256:abcdef", id)
 }
 
 func TestImageUpdateService_MarkImageRefUpToDateAfterPull_ClearsMatchingRecordsAndPersistsCurrentImage(t *testing.T) {
@@ -1773,10 +1775,14 @@ func newImageUpdateDiscoveryServerInternal(
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(images))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -2075,10 +2081,12 @@ func TestImageUpdateService_GetAllImageRefsFallsBackWhenContainerDiscoveryFailsI
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]dockertypesimage.Summary{
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]dockertypesimage.Summary{
 				{ID: "sha256:first", RepoTags: []string{firstRef}},
 				{ID: "sha256:second", RepoTags: []string{secondRef}},
-			}))
+			})) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			http.Error(w, "container listing denied", http.StatusForbidden)
 		default:

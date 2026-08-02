@@ -15,6 +15,7 @@ import (
 	"github.com/subosito/gotenv"
 
 	"github.com/getarcaneapp/arcane/backend/v2/api/ws"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/di"
@@ -52,7 +53,7 @@ func Bootstrap(ctx context.Context) error {
 	// Tee all slog output into the in-memory ring buffer that powers the
 	// diagnostics live log tail.
 	slog.SetDefault(slog.New(logs.NewSlogHandler(slog.Default().Handler(), ws.LogBroadcaster())))
-	ConfigureGormLogger(cfg)
+	database.SetGormLogger(BuildGormLogger(cfg))
 	slog.InfoContext(ctx, "Arcane is starting...", "version", config.Version)
 	slog.InfoContext(ctx, "Arcane Identity Configuration", "PUID", os.Getuid(), "PGID", os.Getgid())
 
@@ -103,15 +104,15 @@ func applicationOptions(appCtx context.Context, cfg *config.Config, db *database
 			func() context.Context { return appCtx },
 			newConfiguredHTTPClient,
 		),
+		di.ActorOptions,
 		di.ServiceOptions,
 		di.JobOptions,
 		serverOptions,
 		fx.Invoke(
+			registerAppCancelHook,
 			initializeStartupState,
 			registerJobs,
-			registerAppRollbackCancelHook,
 			startEdgeTunnelClient,
-			registerAppCancelHook,
 		),
 		fx.WithLogger(func() fxevent.Logger {
 			logger := &fxevent.SlogLogger{Logger: slog.Default()}
@@ -330,20 +331,22 @@ func runRoleStartupTasks(ctx context.Context, roleService *services.RoleService,
 	}
 }
 
-func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, cfg *config.Config, router *echo.Echo, _ *http.Server) {
+func startEdgeTunnelClient(appCtx context.Context, lc fx.Lifecycle, actorRuntime *actors.Runtime, cfg *config.Config, router *echo.Echo, _ *http.Server) {
+	var stop func(context.Context) error
 	lc.Append(fx.Hook{
 		OnStart: func(context.Context) error {
-			startEdgeTunnelClientIfConfigured(appCtx, cfg, router)
+			var startErr error
+			stop, startErr = startEdgeTunnelClientIfConfigured(appCtx, actorRuntime, cfg, router)
+			if startErr != nil {
+				slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", startErr)
+			}
 			return nil
 		},
-	})
-}
-
-func registerAppRollbackCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
-	lc.Append(fx.Hook{
-		OnStop: func(context.Context) error {
-			cancelApp()
-			return nil
+		OnStop: func(ctx context.Context) error {
+			if stop == nil {
+				return nil
+			}
+			return stop(ctx)
 		},
 	})
 }
@@ -357,10 +360,10 @@ func registerAppCancelHook(lc fx.Lifecycle, cancelApp context.CancelFunc) {
 	})
 }
 
-func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Config, router http.Handler) {
+func startEdgeTunnelClientIfConfigured(appCtx context.Context, actorRuntime *actors.Runtime, cfg *config.Config, router http.Handler) (func(context.Context) error, error) {
 	managerEndpointConfigured := cfg.ManagerApiUrl != ""
 	if !cfg.EdgeAgent || !managerEndpointConfigured || cfg.AgentToken == "" {
-		return
+		return nil, nil
 	}
 
 	edgeCfg := &edge.Config{
@@ -381,18 +384,13 @@ func startEdgeTunnelClientIfConfigured(appCtx context.Context, cfg *config.Confi
 	}
 
 	slog.InfoContext(appCtx, "Starting edge agent session client", edge.StartupLogAttrs(edgeCfg)...)
-	errCh, err := edge.StartTunnelClientWithErrors(appCtx, edgeCfg, router)
+	stop, err := edge.StartTunnelClient(appCtx, actorRuntime, edgeCfg, router)
 	if err != nil {
-		slog.ErrorContext(appCtx, "Failed to start edge tunnel client", "error", err)
-		return
+		return nil, errors.WrapIf(err, "failed to start edge tunnel client")
 	}
 
 	slog.InfoContext(appCtx, "Edge tunnel client started", "manager_url", cfg.ManagerApiUrl)
-	go func() {
-		for err := range errCh {
-			slog.ErrorContext(appCtx, "Edge tunnel client error", "error", err)
-		}
-	}()
+	return stop, nil
 }
 
 func handleAgentBootstrapPairing(ctx context.Context, cfg *config.Config, httpClient *http.Client) error {

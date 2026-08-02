@@ -3,11 +3,14 @@ package scheduler
 import (
 	"context"
 	"log/slog"
-	"sync/atomic"
 
+	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/types/v2/updater"
 )
+
+const autoUpdateAdmissionScopeInternal = "auto-update"
 
 // pendingUpdateApplierInternal is the slice of UpdaterService the job needs,
 // kept as an interface so the overlap guard is testable with a fake.
@@ -18,17 +21,18 @@ type pendingUpdateApplierInternal interface {
 type AutoUpdateJob struct {
 	updaterService  pendingUpdateApplierInternal
 	settingsService *services.SettingsService
-	// running guards against overlapping cron ticks: an update-all run can
-	// outlast its schedule interval, and stacked runs exhaust the shared
-	// activity slots.
-	running atomic.Bool
+	admissionGate   *actors.Gate[actors.AdmissionKey]
 }
 
-func NewAutoUpdateJob(updaterService *services.UpdaterService, settingsService *services.SettingsService) *AutoUpdateJob {
+func NewAutoUpdateJob(updaterService *services.UpdaterService, settingsService *services.SettingsService, admissionGate *actors.Gate[actors.AdmissionKey]) (*AutoUpdateJob, error) {
+	if admissionGate == nil {
+		return nil, errors.New("auto-update admission gate unavailable")
+	}
 	return &AutoUpdateJob{
 		updaterService:  updaterService,
 		settingsService: settingsService,
-	}
+		admissionGate:   admissionGate,
+	}, nil
 }
 
 func (j *AutoUpdateJob) Name() string {
@@ -58,11 +62,16 @@ func (j *AutoUpdateJob) Run(ctx context.Context) {
 		return
 	}
 
-	if !j.running.CompareAndSwap(false, true) {
+	lease, admitted, err := j.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: autoUpdateAdmissionScopeInternal})
+	if err != nil {
+		slog.ErrorContext(ctx, "auto-update admission failed", "error", err)
+		return
+	}
+	if !admitted {
 		slog.WarnContext(ctx, "auto-update run still in progress; skipping overlapping run")
 		return
 	}
-	defer j.running.Store(false)
+	defer lease.Release()
 
 	slog.InfoContext(ctx, "auto-update run started")
 

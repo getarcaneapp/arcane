@@ -201,12 +201,6 @@ func RemoveProjectFile(projectsRoot, dirPath, fileName string) error {
 	return nil
 }
 
-// WriteEnvFile writes a .env file to the specified directory
-// projectsRoot is the allowed root directory to prevent path traversal attacks
-func WriteEnvFile(projectsRoot, dirPath, content string) error {
-	return WriteProjectFile(projectsRoot, dirPath, ".env", content)
-}
-
 func EnsureEnvFile(projectsRoot, dirPath string) error {
 	envPath := filepath.Join(dirPath, ".env")
 	if _, err := os.Stat(envPath); err == nil {
@@ -215,7 +209,7 @@ func EnsureEnvFile(projectsRoot, dirPath string) error {
 		return errors.WrapIf(err, "failed to stat env file")
 	}
 
-	return WriteEnvFile(projectsRoot, dirPath, "")
+	return WriteProjectFile(projectsRoot, dirPath, ".env", "")
 }
 
 // WriteProjectFiles writes both compose and env files to a project directory.
@@ -231,7 +225,7 @@ func WriteProjectFiles(projectsRoot, dirPath, composeContent string, envContent 
 	// We only create an empty one if it doesn't exist, to satisfy
 	// compose-go from failing when the compose file references env_file: .env
 	if envContent != nil {
-		if err := WriteEnvFile(projectsRoot, dirPath, *envContent); err != nil {
+		if err := WriteProjectFile(projectsRoot, dirPath, ".env", *envContent); err != nil {
 			return err
 		}
 	} else {

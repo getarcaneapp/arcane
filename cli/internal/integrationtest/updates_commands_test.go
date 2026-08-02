@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/types/v2/imageupdate"
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainersListUpdatesJSONContract(t *testing.T) {
@@ -44,21 +45,27 @@ func TestContainersListUpdatesJSONContract(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--updates", "has_update", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if seenUpdatesFilter != "has_update" {
-		t.Fatalf("expected updates filter query param, got %q", seenUpdatesFilter)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Equal(t, "has_update", seenUpdatesFilter,
+		"expected updates filter query param, got %q", seenUpdatesFilter)
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got); err != nil {
-		t.Fatalf("json parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got)
+		require.NoError(t, err,
+			"json parse failed: %v\noutput=%s", err, outBuf)
 	}
+
 	for _, key := range []string{"success", "data", "pagination"} {
-		if _, ok := got[key]; !ok {
-			t.Fatalf("missing key %q in output: %v", key, got)
+		{
+			_, ok := got[key]
+			require.True(t, ok,
+				"missing key %q in output: %v", key, got)
 		}
+
 	}
 }
 
@@ -96,15 +103,16 @@ func TestContainersUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "--output", "text", "containers", "updates"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if seenUpdatesFilter != "has_update" {
-		t.Fatalf("expected updates filter query param, got %q", seenUpdatesFilter)
-	}
-	if strings.TrimSpace(outBuf) == "" {
-		t.Fatal("expected output from containers updates command")
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Equal(t, "has_update", seenUpdatesFilter,
+		"expected updates filter query param, got %q", seenUpdatesFilter)
+
+	require.NotEmpty(t, strings.TrimSpace(outBuf),
+		"expected output from containers updates command")
+
 }
 
 func TestProjectsListUpdatesJSONContract(t *testing.T) {
@@ -144,21 +152,27 @@ func TestProjectsListUpdatesJSONContract(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "projects", "list", "--updates", "has_update", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if seenUpdatesFilter != "has_update" {
-		t.Fatalf("expected updates filter query param, got %q", seenUpdatesFilter)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Equal(t, "has_update", seenUpdatesFilter,
+		"expected updates filter query param, got %q", seenUpdatesFilter)
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got); err != nil {
-		t.Fatalf("json parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got)
+		require.NoError(t, err,
+			"json parse failed: %v\noutput=%s", err, outBuf)
 	}
+
 	for _, key := range []string{"success", "data", "pagination"} {
-		if _, ok := got[key]; !ok {
-			t.Fatalf("missing key %q in output: %v", key, got)
+		{
+			_, ok := got[key]
+			require.True(t, ok,
+				"missing key %q in output: %v", key, got)
 		}
+
 	}
 }
 
@@ -199,15 +213,16 @@ func TestProjectsUpdatesCommandUsesHasUpdateFilter(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "--output", "text", "projects", "updates"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if seenUpdatesFilter != "has_update" {
-		t.Fatalf("expected updates filter query param, got %q", seenUpdatesFilter)
-	}
-	if strings.TrimSpace(outBuf) == "" {
-		t.Fatal("expected output from projects updates command")
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Equal(t, "has_update", seenUpdatesFilter,
+		"expected updates filter query param, got %q", seenUpdatesFilter)
+
+	require.NotEmpty(t, strings.TrimSpace(outBuf),
+		"expected output from projects updates command")
+
 }
 
 func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T) {
@@ -244,36 +259,40 @@ func TestImagesUpdatesCheckEncodesImageRefAndDecodesSingleResponse(t *testing.T)
 		t,
 		[]string{"--config", configPath, "images", "updates", "check", imageRef, "--json"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if receivedImageRef != imageRef {
-		t.Fatalf("expected imageRef %q, got %q", imageRef, receivedImageRef)
-	}
-	if !strings.Contains(receivedRawQuery, "%26") || !strings.Contains(receivedRawQuery, "%3D") {
-		t.Fatalf("expected reserved query characters to be encoded, got %q", receivedRawQuery)
-	}
-	if strings.Contains(receivedRawQuery, "&debug=") {
-		t.Fatalf("imageRef escaped into a second query parameter: %q", receivedRawQuery)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Equal(t, imageRef, receivedImageRef,
+		"expected imageRef %q, got %q", imageRef, receivedImageRef)
+
+	require.False(t, !strings.Contains(receivedRawQuery, "%26") || !strings.Contains(receivedRawQuery, "%3D"),
+		"expected reserved query characters to be encoded, got %q", receivedRawQuery)
+
+	require.NotContains(t, receivedRawQuery, "&debug=",
+		"imageRef escaped into a second query parameter: %q", receivedRawQuery)
 
 	var result imageupdate.Response
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &result); err != nil {
-		t.Fatalf("single response JSON parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &result)
+		require.NoError(t, err,
+			"single response JSON parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if !result.HasUpdate || result.CurrentVersion != "1.0.0" || result.LatestVersion != "1.1.0" {
-		t.Fatalf("unexpected single image update response: %+v", result)
-	}
+
+	require.False(t, !result.HasUpdate || result.CurrentVersion != "1.0.0" || result.LatestVersion != "1.1.0",
+		"unexpected single image update response: %+v", result)
+
 }
 
 func TestImagesUpdatesCheckRequiresImageRef(t *testing.T) {
 	outBuf, _, err := executeCLIIntegrationCommandInternal(t, []string{"images", "updates", "check"})
-	if err == nil {
-		t.Fatalf("expected missing image reference to fail, got output %q", outBuf)
-	}
-	if !strings.Contains(err.Error(), "1 arg") || !strings.Contains(err.Error(), "received 0") {
-		t.Fatalf("unexpected argument error: %v", err)
-	}
+
+	require.Error(t, err,
+		"expected missing image reference to fail, got output %q", outBuf)
+
+	require.False(t, !strings.Contains(err.Error(), "1 arg") || !strings.Contains(err.Error(), "received 0"),
+		"unexpected argument error: %v", err)
+
 }
 
 func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
@@ -327,46 +346,56 @@ func TestImageUpdateCommandsDecodeExpectedResponseTypes(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "images", "updates", "check-all", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("check-all: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"check-all: %v (%s)", err, errOut)
+
 	var batch imageupdate.BatchResponse
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &batch); err != nil {
-		t.Fatalf("batch response JSON parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &batch)
+		require.NoError(t, err,
+			"batch response JSON parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if batch["nginx:latest"] == nil || !batch["nginx:latest"].HasUpdate {
-		t.Fatalf("unexpected batch response: %+v", batch)
-	}
+
+	require.False(t, batch["nginx:latest"] == nil || !batch["nginx:latest"].HasUpdate,
+		"unexpected batch response: %+v", batch)
 
 	outBuf, errOut, err = executeCLIIntegrationCommandInternal(
 		t,
 		[]string{"--config", configPath, "images", "updates", "check-image", "image-123", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("check-image: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"check-image: %v (%s)", err, errOut)
+
 	var single imageupdate.Response
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &single); err != nil {
-		t.Fatalf("single response JSON parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &single)
+		require.NoError(t, err,
+			"single response JSON parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if single.HasUpdate || single.CurrentVersion != "1.1.0" {
-		t.Fatalf("unexpected image response: %+v", single)
-	}
+
+	require.False(t, single.HasUpdate || single.CurrentVersion != "1.1.0",
+		"unexpected image response: %+v", single)
 
 	outBuf, errOut, err = executeCLIIntegrationCommandInternal(
 		t,
 		[]string{"--config", configPath, "images", "updates", "summary", "--json"},
 	)
-	if err != nil {
-		t.Fatalf("summary: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"summary: %v (%s)", err, errOut)
+
 	var summary imageupdate.Summary
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &summary); err != nil {
-		t.Fatalf("summary response JSON parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &summary)
+		require.NoError(t, err,
+			"summary response JSON parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if summary.TotalImages != 4 || summary.ImagesWithUpdates != 2 || summary.DigestUpdates != 1 {
-		t.Fatalf("unexpected summary response: %+v", summary)
-	}
+
+	require.False(t, summary.TotalImages != 4 || summary.ImagesWithUpdates != 2 || summary.DigestUpdates != 1,
+		"unexpected summary response: %+v", summary)
+
 }
 
 func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
@@ -413,15 +442,16 @@ func TestImageUpdateCommandsRejectHTTPAndEnvelopeFailures(t *testing.T) {
 				t.Run(command.name, func(t *testing.T) {
 					args := append([]string{"--config", configPath}, command.args...)
 					outBuf, _, err := executeCLIIntegrationCommandInternal(t, args)
-					if err == nil {
-						t.Fatalf("expected %s error, got success with output %q", failure.name, outBuf)
-					}
-					if !strings.Contains(err.Error(), failure.wantError) {
-						t.Fatalf("expected error containing %q, got %v", failure.wantError, err)
-					}
-					if strings.TrimSpace(outBuf) != "" {
-						t.Fatalf("failed response produced success output: %q", outBuf)
-					}
+
+					require.Error(t, err,
+						"expected %s error, got success with output %q", failure.name, outBuf)
+
+					require.Contains(t, err.Error(), failure.wantError,
+						"expected error containing %q, got %v", failure.wantError, err)
+
+					require.Empty(t, strings.TrimSpace(outBuf),
+						"failed response produced success output: %q", outBuf)
+
 				})
 			}
 		})

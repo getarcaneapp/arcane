@@ -11,10 +11,10 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
-	"sync"
 	"time"
 
 	"emperror.dev/errors"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -27,21 +27,8 @@ import (
 	schedulertypes "github.com/getarcaneapp/arcane/types/v2/scheduler"
 	"github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/client"
-	"github.com/samber/mo"
 	"gorm.io/gorm"
 )
-
-// DynamicScheduler is the subset of the job scheduler used by services that
-// register per-entity jobs at runtime (GitOps syncs, environment health). It is a
-// consumer-side interface satisfied by *pkg/scheduler.JobScheduler; the scheduler
-// is injected post-construction via SetScheduler because it is created after the
-// service graph is built (and pkg/scheduler imports this package, so it cannot be
-// a wire input here).
-type DynamicScheduler interface {
-	AddJob(ctx context.Context, job schedulertypes.Job) error
-	RemoveJob(ctx context.Context, name string)
-	HasJob(name string) bool
-}
 
 type GitOpsSyncService struct {
 	db              *database.DB
@@ -52,13 +39,9 @@ type GitOpsSyncService struct {
 	settingsService *SettingsService
 
 	// scheduler and lifecycleCtx are injected post-construction via SetScheduler.
-	scheduler    DynamicScheduler
-	lifecycleCtx context.Context
-	// runningSyncs guards against overlapping PerformSync runs for the same sync.
-	// The previous single global job serialized syncs implicitly; with independent
-	// per-sync jobs (plus manual/webhook/startup triggers) a sync could otherwise
-	// run concurrently with itself and race the clone/redeploy of one project.
-	runningSyncs sync.Map
+	scheduler     schedulertypes.DynamicScheduler
+	lifecycleCtx  context.Context
+	admissionGate *actors.Gate[actors.AdmissionKey]
 }
 
 const defaultGitSyncTimeout = 5 * time.Minute
@@ -367,6 +350,7 @@ func NewGitOpsSyncService(db *database.DB, repoService *GitRepositoryService, pr
 }
 
 const gitOpsSyncJobPrefix = "gitops-sync:"
+const gitOpsSyncAdmissionScopeInternal = "gitops-sync"
 
 func gitOpsSyncJobNameInternal(syncID string) string { return gitOpsSyncJobPrefix + syncID }
 
@@ -374,12 +358,17 @@ func gitOpsSyncJobNameInternal(syncID string) string { return gitOpsSyncJobPrefi
 // called during bootstrap (after the service graph is built) before any per-sync
 // jobs are registered. The lifecycle context is used for background sync kicks so
 // they outlive the request/bootstrap goroutine that triggered them.
-func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // background sync kicks must capture the app lifecycle context, not request contexts
+func (s *GitOpsSyncService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error { //nolint:contextcheck // background sync kicks must capture the app lifecycle context, not request contexts
+	if scheduler == nil || admissionGate == nil {
+		return errors.New("GitOps scheduler dependencies unavailable")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
+	s.admissionGate = admissionGate
+	return nil
 }
 
 func (s *GitOpsSyncService) schedulerCtxInternal(ctx context.Context) context.Context {
@@ -493,15 +482,6 @@ func isGitOpsSyncOverdueInternal(sync *models.GitOpsSync) bool {
 	}
 	interval := max(sync.SyncInterval, 1)
 	return time.Now().After(sync.LastSyncAt.Add(time.Duration(interval) * time.Minute))
-}
-
-// acquireSyncLockInternal returns a release func when no sync is currently
-// running for the given id; otherwise the caller should skip.
-func (s *GitOpsSyncService) acquireSyncLockInternal(syncID string) mo.Option[func()] {
-	if _, loaded := s.runningSyncs.LoadOrStore(syncID, struct{}{}); loaded {
-		return mo.None[func()]()
-	}
-	return mo.Some(func() { s.runningSyncs.Delete(syncID) })
 }
 
 func (s *GitOpsSyncService) getEnvironmentSyncLimits(ctx context.Context) (int, int64, int64) {
@@ -922,12 +902,15 @@ func (s *GitOpsSyncService) DeleteSync(ctx context.Context, environmentID, id st
 func (s *GitOpsSyncService) PerformSync(ctx context.Context, environmentID, id string, actor models.User) (*gitops.SyncResult, error) {
 	// Coalesce overlapping runs for the same sync (scheduled fire, startup/enable
 	// kick, manual trigger, webhook) so they don't race the clone/redeploy.
-	release, ok := s.acquireSyncLockInternal(id).Get()
-	if !ok {
+	lease, admitted, err := s.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: gitOpsSyncAdmissionScopeInternal, ID: id})
+	if err != nil {
+		return nil, errors.WrapIf(err, "failed to admit GitOps sync")
+	}
+	if !admitted {
 		slog.InfoContext(ctx, "GitOps sync already in progress; skipping", "syncId", id)
 		return &gitops.SyncResult{Success: false, Message: "sync already in progress", SyncedAt: time.Now()}, nil
 	}
-	defer release()
+	defer lease.Release()
 
 	syncCtx, cancel := context.WithTimeout(ctx, defaultGitSyncTimeout)
 	defer cancel()
@@ -2004,7 +1987,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 	}
 
 	if hasEffective {
-		if err := projects.WriteEnvFile(projectsDir, stagePath, effective); err != nil {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, ".env", effective); err != nil {
 			return errors.WrapIf(err, "seed stage .env")
 		}
 	} else {
@@ -2013,7 +1996,7 @@ func (s *GitOpsSyncService) seedStageEnvFromCandidateDirInternal(ctx context.Con
 		if mergeErr != nil {
 			return errors.WrapIf(mergeErr, "build effective env from pre-existing project")
 		}
-		if err := projects.WriteEnvFile(projectsDir, stagePath, merged); err != nil {
+		if err := projects.WriteProjectFile(projectsDir, stagePath, ".env", merged); err != nil {
 			return errors.WrapIf(err, "seed stage .env")
 		}
 	}
@@ -2326,13 +2309,16 @@ func (s *GitOpsSyncService) validateDirectorySyncStageInternal(ctx context.Conte
 	)
 
 	autoInjectEnv := s.settingsService.GetBoolSetting(ctx, "autoInjectEnv", false)
-	project, err := projects.LoadComposeProjectLenient(
+	project, err := projects.LoadComposeProject(
 		ctx,
 		filepath.Join(stagePath, composeFileName),
 		projects.NormalizeProjectName(projectName),
 		projectsDir,
 		autoInjectEnv,
 		pathMapper,
+		nil,
+		nil,
+		true,
 	)
 	if err != nil {
 		return 0, err

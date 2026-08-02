@@ -22,6 +22,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	"github.com/getarcaneapp/arcane/types/v2/activity"
 	streamtypes "github.com/getarcaneapp/arcane/types/v2/stream"
+	"github.com/stretchr/testify/assert"
 )
 
 func setupActivityHandlerTestDBInternal(t *testing.T) *database.DB {
@@ -83,15 +84,23 @@ func TestActivityHandlerClearHistoryDeletesSelectedEnvironmentOnlyInternal(t *te
 func TestActivityHandlerClearHistoryProxiesRemoteEnvironmentInternal(t *testing.T) {
 	ctx := context.Background()
 	db := setupActivityHandlerTestDBInternal(t)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 
 	token := "remote-token"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodDelete, r.Method)
-		require.Equal(t, "/api/environments/0/activities/history", r.URL.Path)
-		require.Equal(t, token, r.Header.Get("X-API-Key"))
-		require.Equal(t, token, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodDelete, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/environments/0/activities/history", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, token, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, token, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"deleted":7}}`))
 	}))
@@ -180,7 +189,7 @@ func runActivityClientStreamInternal(t *testing.T, ctx context.Context, cancel c
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not terminate after cancel")
+		require.FailNow(t, "stream did not terminate after cancel")
 	}
 }
 
@@ -190,7 +199,7 @@ func TestActivityHandlerStreamAllEmitsEnvironmentScopedEventsInternal(t *testing
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -236,7 +245,7 @@ func TestActivityHandlerStreamAllReusesRemoteEnvironmentAfterInitialPollInternal
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -302,7 +311,7 @@ func TestActivityHandlerStreamAllRemoteFailureEmitsErrorAndKeepsStreamingInterna
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 
@@ -339,7 +348,7 @@ func TestActivityHandlerStreamAllFiltersUnauthorizedEnvironmentsInternal(t *test
 
 	db := setupActivityHandlerTestDBInternal(t)
 	limitStreamTestDBToSingleConnInternal(t, db)
-	settingsService, err := services.NewSettingsService(ctx, db)
+	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
 	require.NoError(t, err)
 	activityService := services.NewActivityService(db, settingsService)
 	_, err = activityService.StartActivity(ctx, services.StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeResourceAction})

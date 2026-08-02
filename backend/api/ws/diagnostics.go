@@ -1,24 +1,35 @@
 package ws
 
 import (
+	"context"
 	"encoding/json/v2"
 	"log/slog"
 	"net/http"
 	"net/http/pprof"
 	"time"
 
+	"github.com/coder/websocket"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	systemtypes "github.com/getarcaneapp/arcane/types/v2/system"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"go.getarcane.app/streams/logs"
 )
 
 // diagnosticsStreamInterval is how often the live diagnostics stream pushes a snapshot.
 const diagnosticsStreamInterval = 2 * time.Second
+
+// Keepalive/liveness bounds for the diagnostics sockets, mirroring the system
+// stats stream. Without them a silently dead peer wedges the writer forever,
+// which also strands the writer's deferred cleanup (log subscription, conn).
+const (
+	diagnosticsReadLimit  = 512
+	diagnosticsWriteWait  = 10 * time.Second
+	diagnosticsPingWait   = 10 * time.Second
+	diagnosticsPingPeriod = 54 * time.Second
+)
 
 // BuildDiagnostics assembles a full diagnostics snapshot: runtime/memory/GC from
 // the DiagnosticsService plus this package's WebSocket metrics and worker-goroutine
@@ -61,23 +72,26 @@ func (h *WebSocketHandler) registerDiagnosticsRoutesInternal(group *echo.Group, 
 // DiagnosticsStream pushes a fresh diagnostics snapshot on connect and then every
 // diagnosticsStreamInterval until the client disconnects.
 func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close diagnostics websocket connection", "error", err)
 		}
 	}()
 
-	done := diagnosticsReadLoopInternal(conn)
+	ctx := c.Request().Context()
+	done := diagnosticsReadLoopInternal(ctx, conn)
 	write := func() bool {
 		b, marshalErr := json.Marshal(BuildDiagnostics(h.diagnosticsService))
 		if marshalErr != nil {
 			return true
 		}
-		return conn.WriteMessage(websocket.TextMessage, b) == nil
+		wctx, cancel := context.WithTimeout(ctx, diagnosticsWriteWait)
+		defer cancel()
+		return conn.Write(wctx, websocket.MessageText, b) == nil
 	}
 
 	if !write() {
@@ -85,6 +99,8 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 	}
 	ticker := time.NewTicker(diagnosticsStreamInterval)
 	defer ticker.Stop()
+	pingTicker := time.NewTicker(diagnosticsPingPeriod)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-done:
@@ -93,18 +109,22 @@ func (h *WebSocketHandler) DiagnosticsStream(c *echo.Context) error {
 			if !write() {
 				return nil
 			}
+		case <-pingTicker.C:
+			if !pingDiagnosticsConnInternal(ctx, conn) {
+				return nil
+			}
 		}
 	}
 }
 
 // ServerLogsStream replays the recent backend log backlog then streams new entries live.
 func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
-	conn, err := h.wsUpgrader.Upgrade(c.Response(), c.Request(), nil)
+	conn, err := wshub.Accept(c.Response(), c.Request(), h.checkWSOrigin)
 	if err != nil {
 		return nil
 	}
 	defer func() {
-		if err := conn.Close(); err != nil {
+		if err := conn.CloseNow(); err != nil {
 			slog.Debug("Failed to close server logs websocket connection", "error", err)
 		}
 	}()
@@ -114,13 +134,16 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 	ch, cancel := defaultLogBroadcaster.Subscribe()
 	defer cancel()
 
-	done := diagnosticsReadLoopInternal(conn)
+	ctx := c.Request().Context()
+	done := diagnosticsReadLoopInternal(ctx, conn)
 	write := func(e logs.Entry) bool {
 		b, marshalErr := json.Marshal(e)
 		if marshalErr != nil {
 			return true
 		}
-		return conn.WriteMessage(websocket.TextMessage, b) == nil
+		wctx, wcancel := context.WithTimeout(ctx, diagnosticsWriteWait)
+		defer wcancel()
+		return conn.Write(wctx, websocket.MessageText, b) == nil
 	}
 
 	for _, e := range defaultLogBroadcaster.Recent() {
@@ -128,6 +151,8 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 			return nil
 		}
 	}
+	pingTicker := time.NewTicker(diagnosticsPingPeriod)
+	defer pingTicker.Stop()
 	for {
 		select {
 		case <-done:
@@ -139,18 +164,33 @@ func (h *WebSocketHandler) ServerLogsStream(c *echo.Context) error {
 			if !write(e) {
 				return nil
 			}
+		case <-pingTicker.C:
+			if !pingDiagnosticsConnInternal(ctx, conn) {
+				return nil
+			}
 		}
 	}
 }
 
+// pingDiagnosticsConnInternal reports whether the peer answered a ping in time.
+// The pong is serviced by the diagnosticsReadLoopInternal reader, so a peer
+// that stops answering fails here within diagnosticsPingWait.
+func pingDiagnosticsConnInternal(ctx context.Context, conn *websocket.Conn) bool {
+	pctx, cancel := context.WithTimeout(ctx, diagnosticsPingWait)
+	defer cancel()
+	return conn.Ping(pctx) == nil
+}
+
 // diagnosticsReadLoopInternal drains incoming frames; the returned channel closes
 // when the peer disconnects, signaling the writer loop to stop.
-func diagnosticsReadLoopInternal(conn *websocket.Conn) <-chan struct{} {
+func diagnosticsReadLoopInternal(ctx context.Context, conn *websocket.Conn) <-chan struct{} {
+	conn.SetReadLimit(diagnosticsReadLimit)
+
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
 		for {
-			if _, _, err := conn.ReadMessage(); err != nil {
+			if _, _, err := conn.Read(ctx); err != nil {
 				return
 			}
 		}

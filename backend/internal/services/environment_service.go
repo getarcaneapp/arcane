@@ -15,6 +15,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
@@ -54,11 +55,9 @@ type EnvironmentService struct {
 	// scheduler and lifecycleCtx are injected post-construction via SetScheduler
 	// (manager-only). Each enabled environment gets its own health-check job; this
 	// replaces the single global environment-health job.
-	scheduler    DynamicScheduler
-	lifecycleCtx context.Context
-	// runningHealthChecks guards against a per-environment health check overlapping
-	// with itself (replaces the old single job's atomic "running" guard).
-	runningHealthChecks sync.Map
+	scheduler     schedulertypes.DynamicScheduler
+	lifecycleCtx  context.Context
+	admissionGate *actors.Gate[actors.AdmissionKey]
 
 	// variableSyncer is injected post-construction via SetVariableSyncer
 	// (manager-only) to avoid a wire cycle with VariableService.
@@ -114,18 +113,24 @@ func NewEnvironmentService(db *database.DB, httpClient *http.Client, dockerServi
 }
 
 const environmentHealthJobPrefix = "environment-health:"
+const environmentHealthAdmissionScopeInternal = "environment-health"
 
 func environmentHealthJobNameInternal(envID string) string { return environmentHealthJobPrefix + envID }
 
 // SetScheduler injects the job scheduler and app lifecycle context. Called during
 // bootstrap on the manager only (agent mode leaves scheduler nil, so all health-job
 // registration becomes a no-op).
-func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler DynamicScheduler) { //nolint:contextcheck // health-check jobs must capture the app lifecycle context, not request contexts
+func (s *EnvironmentService) SetScheduler(ctx context.Context, scheduler schedulertypes.DynamicScheduler, admissionGate *actors.Gate[actors.AdmissionKey]) error { //nolint:contextcheck // health-check jobs must capture the app lifecycle context, not request contexts
+	if scheduler == nil || admissionGate == nil {
+		return errors.New("environment scheduler dependencies unavailable")
+	}
 	if ctx == nil {
 		ctx = context.Background()
 	}
 	s.lifecycleCtx = ctx
 	s.scheduler = scheduler
+	s.admissionGate = admissionGate
+	return nil
 }
 
 // SetVariableSyncer injects the global-variable syncer. Called during
@@ -236,22 +241,19 @@ func (s *EnvironmentService) RunHealthChecksNow(ctx context.Context) error {
 	return nil
 }
 
-func (s *EnvironmentService) acquireHealthLockInternal(envID string) mo.Option[func()] {
-	if _, loaded := s.runningHealthChecks.LoadOrStore(envID, struct{}{}); loaded {
-		return mo.None[func()]()
-	}
-	return mo.Some(func() { s.runningHealthChecks.Delete(envID) })
-}
-
 // runHealthCheckInternal tests one environment's connection (updating its DB status)
 // and, for online remotes, syncs registries and repositories to it.
 func (s *EnvironmentService) runHealthCheckInternal(ctx context.Context, envID string) {
-	release, ok := s.acquireHealthLockInternal(envID).Get()
-	if !ok {
+	lease, admitted, err := s.admissionGate.TryAcquire(ctx, actors.AdmissionKey{Scope: environmentHealthAdmissionScopeInternal, ID: envID})
+	if err != nil {
+		slog.ErrorContext(ctx, "environment health check admission failed", "environment_id", envID, "error", err)
+		return
+	}
+	if !admitted {
 		slog.WarnContext(ctx, "environment health check skipped; previous run still in progress", "environment_id", envID)
 		return
 	}
-	defer release()
+	defer lease.Release()
 
 	status, err := s.TestConnection(ctx, envID, nil)
 	switch {
@@ -1976,7 +1978,7 @@ func buildEnvironmentEndpointURLInternal(apiURL, endpointPath string) (string, e
 func (s *EnvironmentService) getProxyRequestContextInternal(ctx context.Context) (context.Context, context.CancelFunc) {
 	if s != nil && s.settingsService != nil {
 		settings := s.settingsService.GetSettingsConfig()
-		return timeouts.WithTimeout(ctx, settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest)
+		return context.WithTimeout(ctx, timeouts.GetDuration(settings.ProxyRequestTimeout.AsInt(), timeouts.DefaultProxyRequest))
 	}
 
 	return context.WithTimeout(ctx, timeouts.DefaultProxyRequest)
@@ -2160,14 +2162,15 @@ func (s *EnvironmentService) SyncRegistriesToEnvironment(ctx context.Context, en
 		}
 
 		syncItem := containerregistry.Sync{
-			ID:           reg.ID,
-			URL:          reg.URL,
-			Description:  reg.Description,
-			Insecure:     reg.Insecure,
-			Enabled:      reg.Enabled,
-			RegistryType: registryType,
-			CreatedAt:    reg.CreatedAt,
-			UpdatedAt:    reg.UpdatedAt,
+			ID:              reg.ID,
+			URL:             reg.URL,
+			Description:     reg.Description,
+			Insecure:        reg.Insecure,
+			Enabled:         reg.Enabled,
+			RegistryType:    registryType,
+			RepositoryNames: reg.RepositoryNames,
+			CreatedAt:       reg.CreatedAt,
+			UpdatedAt:       reg.UpdatedAt,
 		}
 
 		if registryType == registryTypeECR {

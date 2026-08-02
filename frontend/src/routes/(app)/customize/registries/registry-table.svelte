@@ -17,6 +17,7 @@
 	import { containerRegistryService } from '#lib/services/container-registry-service';
 	import { RegistryIcon, UserIcon, ExternalLinkIcon, EditIcon, TrashIcon, TestIcon } from '#lib/icons';
 	import { hasPermission } from '#lib/utils/auth';
+	import { getRegistryDisplayName } from '#lib/utils/registry';
 	import IfPermitted from '#lib/components/if-permitted.svelte';
 
 	let {
@@ -42,16 +43,6 @@
 		if (!keyId) return m.common_na();
 		if (keyId.length <= 4) return keyId;
 		return '*'.repeat(11) + keyId.slice(-4);
-	}
-
-	function getRegistryDisplayName(item: ContainerRegistry) {
-		if (item.registryType === 'ecr') return m.amazon_ecr();
-		const url = item.url;
-		if (!url || url === 'docker.io') return m.registry_docker_hub();
-		if (url.includes('ghcr.io')) return m.registry_github_container_registry();
-		if (url.includes('gcr.io')) return m.registry_google_container_registry();
-		if (url.includes('quay.io')) return m.registry_quay_io();
-		return url;
 	}
 
 	function formatPullUsage(item: ContainerRegistry) {

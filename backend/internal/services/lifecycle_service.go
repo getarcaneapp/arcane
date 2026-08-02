@@ -283,7 +283,7 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	}
 
 	apiTimeoutSec := s.settingsService.GetSettingsConfig().DockerAPITimeout.AsInt()
-	createCtx, createCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	createCtx, createCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer createCancel()
 	resp, err := dockerClient.ContainerCreate(createCtx, client.ContainerCreateOptions{
 		Config:     config,
@@ -295,7 +295,7 @@ func (s *LifecycleService) runScriptInContainerInternal(
 	containerID := resp.ID
 	defer removeLifecycleContainerInternal(ctx, dockerClient, containerID, apiTimeoutSec)
 
-	startCtx, startCancel := timeouts.WithTimeout(ctx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	startCtx, startCancel := context.WithTimeout(ctx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer startCancel()
 	if _, err := dockerClient.ContainerStart(startCtx, containerID, client.ContainerStartOptions{}); err != nil {
 		return "", "", 0, errors.WrapIf(err, "start lifecycle container")
@@ -359,7 +359,7 @@ func (s *LifecycleService) ensureRunnerImageInternal(ctx context.Context, docker
 	}
 
 	pullTimeoutSec := s.settingsService.GetSettingsConfig().DockerImagePullTimeout.AsInt()
-	pullCtx, pullCancel := timeouts.WithTimeout(ctx, pullTimeoutSec, timeouts.DefaultDockerImagePull)
+	pullCtx, pullCancel := context.WithTimeout(ctx, timeouts.GetDuration(pullTimeoutSec, timeouts.DefaultDockerImagePull))
 	defer pullCancel()
 
 	pullReader, err := dockerClient.ImagePull(pullCtx, image, client.ImagePullOptions{})
@@ -501,7 +501,7 @@ func validateScriptPathInternal(projectPath, scriptPath string) error {
 
 	info, err := os.Lstat(absScript)
 	if err != nil {
-		return errors.WrapIff(err, "stat script %q", scriptPath)
+		return describeScriptStatErrorInternal(err, projectPath, scriptPath, absScript)
 	}
 	if info.Mode()&os.ModeSymlink != 0 {
 		return errors.Errorf("script path %q is a symlink; symlinks are not allowed", scriptPath)
@@ -510,6 +510,19 @@ func validateScriptPathInternal(projectPath, scriptPath string) error {
 		return errors.Errorf("script path %q refers to a directory", scriptPath)
 	}
 	return nil
+}
+
+func describeScriptStatErrorInternal(err error, projectPath, scriptPath, resolvedScriptPath string) error {
+	if os.IsPermission(err) {
+		return errors.WrapIff(
+			err,
+			"Arcane pre-deploy validation could not inspect script %q. %s",
+			scriptPath,
+			describeLifecyclePathAccessInternal(projectPath, resolvedScriptPath),
+		)
+	}
+
+	return errors.WrapIff(err, "stat script %q", scriptPath)
 }
 
 // parseLifecycleEnvTextInternal reads admin-configured env config as the
@@ -694,7 +707,7 @@ func removeLifecycleContainerInternal(ctx context.Context, dockerClient *client.
 		return
 	}
 	cleanupCtx := context.WithoutCancel(ctx)
-	cleanupCtx, cleanupCancel := timeouts.WithTimeout(cleanupCtx, apiTimeoutSec, timeouts.DefaultDockerAPI)
+	cleanupCtx, cleanupCancel := context.WithTimeout(cleanupCtx, timeouts.GetDuration(apiTimeoutSec, timeouts.DefaultDockerAPI))
 	defer cleanupCancel()
 	if _, err := dockerClient.ContainerRemove(cleanupCtx, containerID, client.ContainerRemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		slog.WarnContext(cleanupCtx, "failed to remove lifecycle container", "containerID", containerID, "error", err)

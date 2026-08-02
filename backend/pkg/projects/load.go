@@ -145,19 +145,6 @@ func DetectComposeFile(dir string) (string, error) {
 	}
 }
 
-func LoadComposeProject(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
-	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false)
-}
-
-// LoadComposeProjectLenient loads a compose project tolerating undefined variables.
-// Instead of substituting undefined ${VAR} references with an empty string (which
-// produces invalid volume/bind specs like ":/path"), it replaces them with a
-// placeholder value so structural validation can succeed. This is useful during
-// GitSync validation where a .env file may not yet exist.
-func LoadComposeProjectLenient(ctx context.Context, composeFile, projectName, projectsDirectory string, autoInjectEnv bool, pathMapper *PathMapper) (*composetypes.Project, error) {
-	return loadComposeProjectInternal(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, true)
-}
-
 // LoadComposeProjectFromContent loads a Compose project from in-memory source content.
 func LoadComposeProjectFromContent(ctx context.Context, opts projecttypes.ComposeContentOptions) (project *composetypes.Project, err error) {
 	defer recoverComposeLoadPanicInternal(ctx, "in-memory compose content", &project, &err)
@@ -240,7 +227,9 @@ func wrapTypeCastMappingLenientInternal(mapping map[tree.Path]interp.Cast) map[t
 		wrapped[path] = wrapCastWithLenientFallbackInternal(cast)
 	}
 	for _, section := range []string{"limits", "reservations"} {
-		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "cpus"), lenientCastFloatInternal)
+		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "cpus"), func(value string) (any, error) {
+			return strconv.ParseFloat(value, 64)
+		})
 		addIfAbsent(tree.NewPath("services", tree.PathMatchAll, "deploy", "resources", section, "memory"), lenientCastSizeInternal)
 	}
 	return wrapped
@@ -257,10 +246,6 @@ func wrapCastWithLenientFallbackInternal(original interp.Cast) interp.Cast {
 		}
 		return result, err
 	}
-}
-
-func lenientCastFloatInternal(value string) (any, error) {
-	return strconv.ParseFloat(value, 64)
 }
 
 func lenientCastSizeInternal(value string) (any, error) {
@@ -326,7 +311,13 @@ func ApplyLenientLoaderOptions(ctx context.Context, opts *loader.Options, compos
 	}
 }
 
-func loadComposeProjectInternal(
+// LoadComposeProject loads a compose project from composeFile. envOverride and
+// configureLoader are optional and may be nil. When lenient is true, undefined
+// ${VAR} references are tolerated: instead of substituting them with an empty
+// string (which produces invalid volume/bind specs like ":/path"), they are
+// replaced with a placeholder value so structural validation can succeed. This
+// is useful during GitSync validation where a .env file may not yet exist.
+func LoadComposeProject(
 	ctx context.Context,
 	composeFile string,
 	projectName string,
@@ -554,7 +545,7 @@ func LoadComposeProjectFromDir(ctx context.Context, dir, projectName, projectsDi
 		return nil, "", err
 	}
 
-	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper)
+	proj, err := LoadComposeProject(ctx, composeFile, projectName, projectsDirectory, autoInjectEnv, pathMapper, nil, nil, false)
 	if err != nil {
 		return nil, "", err
 	}

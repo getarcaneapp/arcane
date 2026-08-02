@@ -59,7 +59,7 @@
 				const newUrl = new URL(page.url.href);
 				newUrl.searchParams.delete('action');
 				newUrl.searchParams.delete('targetType');
-				goto(newUrl.toString(), { replaceState: true, keepFocus: true });
+				goto(newUrl.toString(), { replaceState: true, reset: false });
 			}, 100);
 		}
 	});

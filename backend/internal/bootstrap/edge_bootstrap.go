@@ -8,12 +8,14 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/middleware"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v5"
+	"go.uber.org/fx"
 )
 
 // registerEdgeTunnelRoutes configures the manager-side edge tunnel server.
@@ -21,10 +23,13 @@ import (
 // Returns the TunnelServer for graceful shutdown.
 func registerEdgeTunnelRoutes(
 	ctx context.Context,
+	lifecycle fx.Lifecycle,
+	actorRuntime *actors.Runtime,
 	cfg *config.Config,
 	apiGroup *echo.Group,
 	environmentService *services.EnvironmentService,
 	eventService *services.EventService,
+	registry *edge.TunnelRegistry,
 ) *edge.TunnelServer {
 	// Resolver that validates API key and returns the environment ID
 	resolver := func(ctx context.Context, token string) (string, error) {
@@ -90,7 +95,7 @@ func registerEdgeTunnelRoutes(
 		return nil
 	}
 
-	server := edge.NewTunnelServer(resolver, statusCallback)
+	server := edge.NewTunnelServerWithRegistry(registry, resolver, statusCallback)
 	server.SetConfig(&edge.Config{
 		EdgeMTLSMode:       cfg.EdgeMTLSMode,
 		EdgeMTLSCAFile:     cfg.EdgeMTLSCAFile,
@@ -135,7 +140,20 @@ func registerEdgeTunnelRoutes(
 		})
 		createEdgeMTLSIssueEventsInternal(ctx, eventService, envIDCopy, envNameCopy, remoteAddr, certIssued, caGenerated, reenrolled)
 	})
-	go server.StartCleanupLoop(ctx)
+	var cleanupRunner *actors.Runner
+	lifecycle.Append(fx.Hook{
+		OnStart: func(context.Context) error {
+			var err error
+			cleanupRunner, err = actors.NewRunner(ctx, actorRuntime, "edge-tunnel", "cleanup", "edge tunnel cleanup", 3, func(runCtx context.Context) error {
+				server.StartCleanupLoop(runCtx)
+				return nil
+			})
+			return err
+		},
+		OnStop: func(stopCtx context.Context) error {
+			return cleanupRunner.Stop(stopCtx)
+		},
+	})
 	apiGroup.POST("/tunnel/poll", server.HandlePoll)
 	// Rate-limit agent mTLS enrollment per-IP. Enrollment is authenticated
 	// only by the agent token, so we cap bursts to mitigate brute-force or

@@ -13,6 +13,7 @@ import (
 	dockerutil "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	networktypes "github.com/getarcaneapp/arcane/types/v2/network"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/network"
@@ -81,7 +82,9 @@ func (s *NetworkService) GetNetworkTopology(ctx context.Context) (*networktypes.
 
 	for i := range networkList.Items {
 		rawNetwork := networkList.Items[i]
-		g.Go(func() error {
+		g.Go(func() (workerErr error) {
+			defer utils.RecoverToError(&workerErr, "network worker")
+
 			inspected, err := libarcane.NetworkInspectWithCompatibility(groupCtx, dockerClient, rawNetwork.ID, client.NetworkInspectOptions{})
 			if err != nil {
 				return errors.WrapIff(err, "failed to inspect network %s", rawNetwork.Name)

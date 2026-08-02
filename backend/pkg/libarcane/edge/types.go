@@ -8,7 +8,8 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gorilla/websocket"
+	"github.com/coder/websocket"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/actors"
 	"google.golang.org/grpc"
 )
 
@@ -47,9 +48,7 @@ type TunnelClient struct {
 	managerURL             string
 	managerGRPCAddr        string
 	localPort              string // Port the agent is running on locally
-	httpClient             *http.Client
 	conn                   atomic.Pointer[connBox]
-	stopCh                 chan struct{}
 	requestTimeout         time.Duration
 	activeStreams          sync.Map // map[string]*activeWSStream
 	requestTransfers       sync.Map // map[string]*commandRequestTransfer
@@ -57,8 +56,11 @@ type TunnelClient struct {
 	preferWebSocketUntil   time.Time
 	grpcFailureStreak      int
 	agentInstanceID        string
-	sessionID              string
-	managerCapabilities    []string
+	registration           actors.Snapshot[clientRegistrationInternal]
+}
+
+type clientRegistrationInternal struct {
+	sessionID string
 }
 
 // connBox wraps the active TunnelConnection so it can be swapped atomically on
@@ -106,8 +108,9 @@ type streamingResponseRecorder struct {
 }
 
 type pollManagedTunnelSession struct {
-	cancel context.CancelFunc
-	done   chan error
+	cancel   context.CancelFunc
+	done     chan error
+	stopping bool
 }
 
 type CommandRequest struct {
@@ -213,8 +216,7 @@ type AgentTunnel struct {
 
 // TunnelRegistry manages active edge agent tunnel connections
 type TunnelRegistry struct {
-	tunnels map[string]*AgentTunnel // environmentID -> tunnel
-	mu      sync.RWMutex
+	tunnels *actors.StateMap[string, *AgentTunnel]
 }
 
 type internalTunnelRequestContextKey struct{}

@@ -79,6 +79,11 @@ type Update struct {
 	// Required: false
 	PollingInterval *string `json:"pollingInterval,omitempty"`
 
+	// ImageEventWatcherEnabled indicates if Docker image events trigger image checks.
+	//
+	// Required: false
+	ImageEventWatcherEnabled *string `json:"imageEventWatcherEnabled,omitempty"`
+
 	// DockerClientRefreshInterval is the cron expression for refreshing the cached Docker client.
 	//
 	// Required: false

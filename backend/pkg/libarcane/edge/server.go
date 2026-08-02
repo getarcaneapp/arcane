@@ -13,10 +13,11 @@ import (
 	"emperror.dev/emperror"
 	"emperror.dev/errors"
 
+	wshub "github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/ws"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	tunnelpb "github.com/getarcaneapp/arcane/backend/v2/proto/tunnel/v1"
+	certgen "github.com/getarcaneapp/arcane/cli/v2/pkg/generate"
 	"github.com/google/uuid"
-	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v5"
 	"github.com/samber/mo"
 	"google.golang.org/grpc"
@@ -39,13 +40,6 @@ const (
 	streamDeliveryTimeout = 5 * time.Second
 )
 
-var tunnelUpgrader = websocket.Upgrader{
-	ReadBufferSize:    64 * 1024,
-	WriteBufferSize:   64 * 1024,
-	EnableCompression: true,
-	CheckOrigin:       func(r *http.Request) bool { return true },
-}
-
 // EnvironmentResolver resolves an agent token to an environment ID.
 type EnvironmentResolver func(ctx context.Context, token string) (environmentID string, err error)
 
@@ -65,11 +59,6 @@ type EventCallback func(ctx context.Context, environmentID string, event *Tunnel
 // reenrolled is true when an environment that had already enrolled receives
 // assets again after the enrollment cooldown.
 type EnrollmentCallback func(ctx context.Context, environmentID, remoteAddr string, certIssued bool, caGenerated bool, reenrolled bool)
-
-// NewTunnelServer creates a new tunnel server.
-func NewTunnelServer(resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
-	return NewTunnelServerWithRegistry(GetRegistry(), resolver, statusCallback)
-}
 
 // NewTunnelServerWithRegistry creates a new tunnel server using an injected tunnel registry.
 func NewTunnelServerWithRegistry(registry *TunnelRegistry, resolver EnvironmentResolver, statusCallback StatusUpdateCallback) *TunnelServer {
@@ -134,8 +123,9 @@ func (s *TunnelServer) HandleConnect(c *echo.Context) error {
 	ctx := req.Context()
 	callbackCtx := context.WithoutCancel(ctx)
 
-	// Upgrade to WebSocket.
-	conn, err := tunnelUpgrader.Upgrade(c.Response(), req, nil)
+	// Upgrade to WebSocket. Agents authenticate with tokens/mTLS, not browser
+	// cookies, so no Origin check is needed here.
+	conn, err := wshub.Accept(c.Response(), req, nil)
 	if err != nil {
 		slog.ErrorContext(ctx, "Failed to upgrade edge tunnel connection", "error", err)
 		return nil
@@ -388,7 +378,16 @@ func tokenFromHeadersWithSourceInternal(req *http.Request) (string, string) {
 }
 
 func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx context.Context, tunnel *AgentTunnel) {
-	accepted, drainPrevious, rejectReason := s.registry.RegisterSession(tunnel, TunnelStaleTimeout)
+	accepted, drainPrevious, rejectReason, err := s.registry.RegisterSession(callbackCtx, tunnel, TunnelStaleTimeout)
+	if err != nil {
+		slog.ErrorContext(ctx, "Failed to register edge agent session",
+			"environment_id", tunnel.EnvironmentID,
+			"agent_instance_id", tunnel.AgentInstance,
+			"error", err,
+		)
+		_ = tunnel.CloseWithReason("edge agent session registration unavailable")
+		return
+	}
 	if !accepted {
 		slog.WarnContext(ctx, "Rejected duplicate edge agent session",
 			"environment_id", tunnel.EnvironmentID,
@@ -430,8 +429,8 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 		DrainPrevious: drainPrevious,
 	}); err != nil {
 		slog.WarnContext(ctx, "Failed to send register response", "environment_id", tunnel.EnvironmentID, "error", err)
-		_ = tunnel.Close()
-		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		_ = tunnel.CloseWithReason("")
+		removed, active := s.registry.UnregisterCurrent(callbackCtx, tunnel.EnvironmentID, tunnel)
 		if removed && !active {
 			s.updateConnectionStatusInternal(callbackCtx, tunnel, false)
 		}
@@ -441,7 +440,7 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 	s.updateConnectionStatusInternal(callbackCtx, tunnel, true)
 
 	defer func() {
-		removed, active := s.registry.UnregisterCurrent(tunnel.EnvironmentID, tunnel)
+		removed, active := s.registry.UnregisterCurrent(callbackCtx, tunnel.EnvironmentID, tunnel)
 		if !removed {
 			return
 		}
@@ -456,6 +455,14 @@ func (s *TunnelServer) manageConnectedTunnel(ctx context.Context, callbackCtx co
 
 // messageLoop processes incoming messages from the agent.
 func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
+	// One reusable timer for stream delivery deadlines. time.After per message
+	// left a live 5s runtime timer for every frame, so a chatty log tail through
+	// a tunnel accumulated thousands of them. This loop is the only user, so the
+	// timer is never touched concurrently.
+	deliveryTimer := time.NewTimer(streamDeliveryTimeout)
+	deliveryTimer.Stop()
+	defer deliveryTimer.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -469,12 +476,12 @@ func (s *TunnelServer) messageLoop(ctx context.Context, tunnel *AgentTunnel) {
 				return
 			}
 
-			s.handleTunnelMessage(ctx, tunnel, msg)
+			s.handleTunnelMessage(ctx, tunnel, msg, deliveryTimer)
 		}
 	}
 }
 
-func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	switch msg.Type {
 	case MessageTypeHeartbeat:
 		s.handleHeartbeat(ctx, tunnel, msg)
@@ -485,7 +492,7 @@ func (s *TunnelServer) handleTunnelMessage(ctx context.Context, tunnel *AgentTun
 	case MessageTypeEvent:
 		s.handleEvent(ctx, tunnel, msg)
 	case MessageTypeStreamData, MessageTypeStreamEnd, MessageTypeWebSocketData, MessageTypeWebSocketClose, MessageTypeStreamClose:
-		s.deliverStream(ctx, tunnel, msg)
+		s.deliverStream(ctx, tunnel, msg, deliveryTimer)
 	case MessageTypeRequest, MessageTypeHeartbeatAck, MessageTypeWebSocketStart, MessageTypeRegisterResponse, MessageTypeCommandRequest, MessageTypeStreamOpen, MessageTypeCancelRequest:
 		slog.DebugContext(ctx, "Ignoring message type from agent", "type", msg.Type, "environment_id", tunnel.EnvironmentID)
 	case MessageTypeRegister:
@@ -525,17 +532,23 @@ func (s *TunnelServer) deliverResponse(ctx context.Context, tunnel *AgentTunnel,
 	slog.WarnContext(ctx, "Received response for unknown request", "id", msg.ID)
 }
 
-func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage) {
+func (s *TunnelServer) deliverStream(ctx context.Context, tunnel *AgentTunnel, msg *TunnelMessage, deliveryTimer *time.Timer) {
 	if req, ok := tunnel.Pending.Load(msg.ID); ok {
 		pending, isPending := req.(*PendingRequest)
 		if !isPending {
 			return
 		}
+
+		// Go 1.23+ timers drop any stale value on Stop/Reset, so no drain is needed.
+		deliveryTimer.Stop()
+		deliveryTimer.Reset(streamDeliveryTimeout)
+		defer deliveryTimer.Stop()
+
 		select {
 		case pending.ResponseCh <- msg:
 		case <-ctx.Done():
 			return
-		case <-time.After(streamDeliveryTimeout):
+		case <-deliveryTimer.C:
 			err := errors.Errorf("stream delivery timed out for pending request %s", msg.ID)
 			tunnel.Pending.Delete(msg.ID)
 			pending.failureCh <- err
@@ -583,7 +596,7 @@ func (s *TunnelServer) StartCleanupLoop(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			removed := s.registry.CleanupStale(TunnelStaleTimeout)
+			removed := s.registry.CleanupStale(ctx, TunnelStaleTimeout)
 			for _, tunnel := range removed {
 				s.updateConnectionStatusInternal(context.WithoutCancel(ctx), tunnel, false)
 			}
@@ -693,7 +706,7 @@ func (s *TunnelServer) requireCertificateIdentityInternal(state *tls.ConnectionS
 	if NormalizeEdgeMTLSMode(s.edgeMTLSModeInternal()) == EdgeMTLSModeDisabled {
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(state, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) requireRequestCertificateIdentityInternal(req *http.Request, envID string) error {
@@ -727,7 +740,7 @@ func (s *TunnelServer) requireCertificateIdentityFromContextInternal(ctx context
 		}
 		return nil
 	}
-	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, edgeMTLSTrustDomainInternal(s.cfg))
+	return verifiedPeerCertificateEnvironmentIDMatchesInternal(&tlsInfo.State, envID, certgen.EdgeMTLSTrustDomain(edgeMTLSAppURLInternal(s.cfg)))
 }
 
 func (s *TunnelServer) edgeMTLSModeInternal() string {

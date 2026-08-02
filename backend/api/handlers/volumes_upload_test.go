@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"mime/multipart"
 	"net/http"
 	"testing"
@@ -32,7 +33,7 @@ func TestUploadFileReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 func TestUploadAndRestoreReturnsBadRequestWhenNoFileProvided(t *testing.T) {
 	h := &VolumeHandler{volumeService: &services.VolumeService{}}
 
-	ctx := models.WithCurrentUser(adminTestContextInternal(), &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
+	ctx := context.WithValue(adminTestContextInternal(), models.CurrentUserContextKey{}, &models.User{BaseModel: models.BaseModel{ID: "u-1"}})
 
 	_, err := h.UploadAndRestore(ctx, &UploadAndRestoreInput{
 		EnvironmentID: "0",

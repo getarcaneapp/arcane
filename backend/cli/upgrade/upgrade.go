@@ -209,6 +209,89 @@ func normalizeRecreatedArcaneLabelsInternal(containerLabels map[string]string) m
 	return normalized
 }
 
+func refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels map[string]string, imageID string) map[string]string {
+	refreshed := maps.Clone(containerLabels)
+	for key, value := range containerLabels {
+		if !strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
+			continue
+		}
+		for previousKey, previousValue := range previousImageLabels {
+			if strings.EqualFold(previousKey, key) && previousValue == value {
+				delete(refreshed, key)
+				break
+			}
+		}
+	}
+
+	for key, value := range imageLabels {
+		if !strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
+			continue
+		}
+		preserved := false
+		for existingKey := range refreshed {
+			if strings.EqualFold(existingKey, key) {
+				preserved = true
+				break
+			}
+		}
+		if preserved {
+			continue
+		}
+		if refreshed == nil {
+			refreshed = make(map[string]string)
+		}
+		refreshed[key] = value
+	}
+
+	if refreshed != nil && imageID != "" {
+		for key := range refreshed {
+			if strings.EqualFold(key, "com.docker.compose.image") {
+				refreshed[key] = imageID
+			}
+		}
+	}
+
+	return refreshed
+}
+
+func refreshRecreatedContainerLabelsInternal(ctx context.Context, dockerClient *client.Client, containerLabels map[string]string, previousImage, targetImage string) map[string]string {
+	imageInspect, imageInspectErr := dockerClient.ImageInspect(ctx, targetImage)
+	if imageInspectErr != nil {
+		slog.Warn("Could not inspect target image labels; preserving container OCI overrides",
+			"image", targetImage,
+			"error", imageInspectErr,
+		)
+		return maps.Clone(containerLabels)
+	}
+
+	imageLabels := map[string]string(nil)
+	previousImageLabels := map[string]string(nil)
+	if imageInspect.Config != nil {
+		imageLabels = imageInspect.Config.Labels
+		if hasOCIImageLabelInternal(containerLabels) && strings.TrimSpace(previousImage) != "" {
+			previousImageInspect, previousImageInspectErr := dockerClient.ImageInspect(ctx, previousImage)
+			if previousImageInspectErr != nil {
+				slog.Warn("Could not inspect previous image labels; preserving existing OCI labels",
+					"image", previousImage,
+					"error", previousImageInspectErr,
+				)
+			} else if previousImageInspect.Config != nil {
+				previousImageLabels = previousImageInspect.Config.Labels
+			}
+		}
+	}
+	return refreshRecreatedImageLabelsInternal(containerLabels, previousImageLabels, imageLabels, imageInspect.ID)
+}
+
+func hasOCIImageLabelInternal(containerLabels map[string]string) bool {
+	for key := range containerLabels {
+		if strings.HasPrefix(strings.ToLower(key), "org.opencontainers.image.") {
+			return true
+		}
+	}
+	return false
+}
+
 func isAgentContainer(inspect container.InspectResponse) bool {
 	if inspect.Config == nil {
 		return false
@@ -381,6 +464,8 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	config.Image = newImage
 	config.Labels = normalizeRecreatedArcaneLabelsInternal(config.Labels)
 
+	config.Labels = refreshRecreatedContainerLabelsInternal(ctx, dockerClient, config.Labels, oldContainer.Image, newImage)
+
 	hostConfig, sanitizedMemorySwappiness, engineInfo, err := libarcane.PrepareRecreateHostConfigForEngine(ctx, dockerClient, oldContainer.HostConfig)
 	if err != nil {
 		return errors.WrapIf(err, "prepare host config")
@@ -430,7 +515,7 @@ func upgradeContainer(ctx context.Context, dockerClient *client.Client, oldConta
 	)
 	if !nm.IsContainer() {
 		apiVersion = libarcane.DetectDockerAPIVersion(ctx, dockerClient)
-		if apiVersion != "" && !libarcane.SupportsDockerCreatePerNetworkMACAddress(apiVersion) {
+		if apiVersion != "" && !libarcane.IsDockerAPIVersionAtLeast(apiVersion, libarcane.NetworkScopedMacAddressMinAPIVersion) {
 			slog.Info("daemon API does not support per-network mac-address on create; stripping endpoint mac addresses",
 				"dockerAPIVersion", apiVersion,
 				"minimumRequiredAPIVersion", libarcane.NetworkScopedMacAddressMinAPIVersion,

@@ -1,17 +1,13 @@
-/// <reference no-default-lib="true"/>
-/// <reference lib="esnext" />
-/// <reference lib="webworker" />
-/// <reference types="@sveltejs/kit" />
-
-import { base, files, version } from '$service-worker';
-
-const self = globalThis.self as unknown as ServiceWorkerGlobalScope;
+import { version } from '$app/env';
+import { assets } from '$app/manifest';
+import { asset } from '$app/paths';
+import { self } from '$app/service-worker';
 
 const CACHE = `cache-${version}`;
 
-const API_PREFIX = `${base}/api/`;
-const ASSETS = files;
-const ASSET_PATHS = new Set(ASSETS.map((asset) => new URL(asset, self.location.origin).pathname));
+const API_PREFIX = new URL('api/', self.registration.scope).pathname;
+const ASSETS = assets.map(({ path }) => asset(path));
+const ASSET_PATHS = new Set(ASSETS.map((assetPath) => new URL(assetPath, self.location.origin).pathname));
 
 self.addEventListener('install', (event) => {
 	console.log('[ServiceWorker] Install');

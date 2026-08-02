@@ -44,11 +44,6 @@ func ParseVersion(output string) string {
 	return strings.TrimSpace(output)
 }
 
-// NormalizeNetworkMode trims a configured Trivy network mode.
-func NormalizeNetworkMode(networkMode string) string {
-	return strings.TrimSpace(networkMode)
-}
-
 // ParseSecurityOpts splits a comma- or newline-separated list of security options
 // into a cleaned slice, returning nil when there are no non-empty entries.
 func ParseSecurityOpts(value string) []string {

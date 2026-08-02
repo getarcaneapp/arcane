@@ -251,9 +251,9 @@ func parseStructEnvFieldsInternal(filename, structName string, opts envFieldOpti
 			return nil, errors.WrapIff(err, "render type for %s.%s", structName, field.Names[0].Name)
 		}
 
-		description := normalizeCommentInternal(field.Doc.Text())
+		description := strings.TrimSpace(strings.Join(strings.Fields(field.Doc.Text()), " "))
 		if description == "" {
-			description = normalizeCommentInternal(field.Comment.Text())
+			description = strings.TrimSpace(strings.Join(strings.Fields(field.Comment.Text()), " "))
 		}
 
 		for _, name := range field.Names {
@@ -320,7 +320,7 @@ func collectSettingEnvOverridesInternal() ([]SettingOverrideEntry, error) {
 		}
 
 		entries = append(entries, SettingOverrideEntry{
-			Env:          utils.CamelCaseToScreamingSnakeCase(key),
+			Env:          strings.ToUpper(utils.CamelCaseToSnakeCase(key)),
 			SettingKey:   key,
 			Description:  meta["description"],
 			DefaultValue: defaultValue,
@@ -396,10 +396,6 @@ func splitTagListInternal(value string) []string {
 	}
 
 	return result
-}
-
-func normalizeCommentInternal(comment string) string {
-	return strings.TrimSpace(strings.Join(strings.Fields(comment), " "))
 }
 
 func joinRequirementsInternal(parts ...string) string {

@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"crypto/subtle"
 	"encoding/json/v2"
 	"log/slog"
 	"net/http"
@@ -133,7 +134,13 @@ func validAgentEventIngestionTokenInternal(r *http.Request, cfg *config.Config) 
 		return false
 	}
 	token := r.Header.Get(pkgutils.HeaderAgentToken)
-	return token != "" && token == cfg.AgentToken
+	if token == "" || cfg.AgentToken == "" {
+		return false
+	}
+	// Constant time, matching agentTokenMatchesInternal in the auth middleware:
+	// this endpoint is unauthenticated apart from the token, so a byte-by-byte
+	// comparison is directly probeable.
+	return subtle.ConstantTimeCompare([]byte(token), []byte(cfg.AgentToken)) == 1
 }
 
 // RegisterEvents registers all event management endpoints.

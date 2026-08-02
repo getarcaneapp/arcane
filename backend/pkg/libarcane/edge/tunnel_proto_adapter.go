@@ -168,9 +168,11 @@ func managerProtoToTunnelMessage(msg *tunnelpb.ManagerMessage) (*TunnelMessage, 
 		}, nil
 	case *tunnelpb.ManagerMessage_WsData:
 		return &TunnelMessage{
-			ID:            payload.WsData.GetStreamId(),
-			Type:          MessageTypeWebSocketData,
-			Body:          payload.WsData.GetData(),
+			ID:   payload.WsData.GetStreamId(),
+			Type: MessageTypeWebSocketData,
+			Body: payload.WsData.GetData(),
+			// WSMessageType carries RFC 6455 opcodes (text=1, binary=2) on the
+			// wire; a mixed-version fleet depends on these exact values.
 			WSMessageType: int(payload.WsData.GetMessageType()),
 		}, nil
 	case *tunnelpb.ManagerMessage_WsClose:

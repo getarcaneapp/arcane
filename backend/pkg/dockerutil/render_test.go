@@ -4,6 +4,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestRenderJSONMessageStream(t *testing.T) {
@@ -13,24 +15,29 @@ func TestRenderJSONMessageStream(t *testing.T) {
 				`{"status":"Pull complete","id":"abc123"}` + "\n" +
 				`{"status":"Status: Downloaded newer image for nginx:stable-alpine"}` + "\n")
 		var out strings.Builder
+		{
 
-		if err := RenderJSONMessageStream(stream, &out); err != nil {
-			t.Fatalf("expected nil error, got %v", err)
+			err := RenderJSONMessageStream(stream, &out)
+			require.NoError(t, err,
+				"expected nil error, got %v", err)
 		}
+
 		want := "stable-alpine: Pulling from library/nginx\n" +
 			"abc123: Pull complete\n" +
 			"Status: Downloaded newer image for nginx:stable-alpine\n"
-		if out.String() != want {
-			t.Fatalf("expected CLI-parity output %q, got %q", want, out.String())
-		}
+
+		require.Equal(t, want, out.String(),
+			"expected CLI-parity output %q, got %q", want, out.String())
+
 	})
 
 	t.Run("returns daemon errorDetail verbatim", func(t *testing.T) {
 		stream := strings.NewReader(`{"errorDetail":{"code":401,"message":"unauthorized"}}` + "\n")
 		err := RenderJSONMessageStream(stream, nil)
-		if err == nil || !strings.Contains(err.Error(), "unauthorized") {
-			t.Fatalf("expected unauthorized error, got %v", err)
-		}
+
+		require.False(t, err == nil || !strings.Contains(err.Error(), "unauthorized"),
+			"expected unauthorized error, got %v", err)
+
 	})
 }
 
@@ -53,7 +60,8 @@ func TestLogLineWriterConcurrentWrites(t *testing.T) {
 
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
 	if len(lines) != 8*200 {
-		t.Fatalf("expected %d frames, got %d", 8*200, len(lines))
+		require.Len(t, lines, 8*200,
+			"expected %d frames, got %d", 8*200, len(lines))
 	}
 }
 
@@ -85,7 +93,8 @@ func TestLogLineWriter(t *testing.T) {
 	want := `{"log":"Container arcane-test Creating"}` + "\n" +
 		`{"log":"Container arcane-test Created"}` + "\n" +
 		`{"log":"partial"}` + "\n"
-	if out.String() != want {
-		t.Fatalf("expected framed lines %q, got %q", want, out.String())
-	}
+
+	require.Equal(t, want, out.String(),
+		"expected framed lines %q, got %q", want, out.String())
+
 }

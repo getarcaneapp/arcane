@@ -20,6 +20,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/remenv"
 	envtypes "github.com/getarcaneapp/arcane/types/v2/env"
 	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.getarcane.app/sys/crypto"
 	"gorm.io/gorm"
@@ -50,7 +51,7 @@ func setupVariableServiceTest(t *testing.T) (*VariableService, *database.DB, str
 
 	projectsDir := t.TempDir()
 	dbWrap := &database.DB{DB: db}
-	settingsSvc, err := NewSettingsService(context.Background(), dbWrap)
+	settingsSvc, err := newSettingsServiceForTestInternal(t, context.Background(), dbWrap)
 	require.NoError(t, err)
 	require.NoError(t, settingsSvc.UpdateSetting(context.Background(), "projectsDirectory", projectsDir))
 
@@ -230,7 +231,9 @@ func TestSyncEnvironment_DirectMaterializesSecretsThroughAgentRoute(t *testing.T
 	requests := make([]capturedVariableSyncRequestInternal, 0, 2)
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, request *http.Request) {
 		body, err := io.ReadAll(request.Body)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		requestMu.Lock()
 		requests = append(requests, capturedVariableSyncRequestInternal{
 			Method: request.Method,

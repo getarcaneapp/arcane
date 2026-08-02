@@ -1,4 +1,4 @@
-import { replaceState } from '$app/navigation';
+import { goto } from '$app/navigation';
 import { page } from '$app/state';
 import { onMount, untrack } from 'svelte';
 
@@ -9,9 +9,25 @@ type UseUrlTabOptions<T extends string> = {
 };
 
 export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () => true }: UseUrlTabOptions<T>) {
+	let pendingUrlUpdate = Promise.resolve();
+
 	function currentUrl() {
 		const reactiveUrl = page.url;
 		return typeof window === 'undefined' ? new URL(reactiveUrl.href) : new URL(window.location.href);
+	}
+
+	function updateUrl(url: URL) {
+		const state = page.state;
+		pendingUrlUpdate = pendingUrlUpdate
+			.catch(() => undefined)
+			.then(() =>
+				goto(url, {
+					replace: true,
+					shallow: true,
+					reset: false,
+					state
+				})
+			);
 	}
 
 	function resolveTab(url = currentUrl()) {
@@ -40,7 +56,7 @@ export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () 
 		const url = currentUrl();
 		if (url.searchParams.get('tab') !== tab) {
 			url.searchParams.set('tab', tab);
-			replaceState(url, page.state);
+			updateUrl(url);
 		}
 
 		value = tab as T;
@@ -51,7 +67,7 @@ export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () 
 		const selected = resolveTab(url);
 		if (mounted && ready() && url.searchParams.get('tab') !== selected) {
 			url.searchParams.set('tab', selected);
-			replaceState(url, page.state);
+			updateUrl(url);
 		}
 		if (untrack(() => value) !== selected) value = selected;
 	});

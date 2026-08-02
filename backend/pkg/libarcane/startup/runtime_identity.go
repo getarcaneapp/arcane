@@ -100,7 +100,7 @@ func ApplyRequestedRuntimeIdentity(ctx context.Context, cfg *RuntimeIdentityConf
 			return errors.WrapIf(err, "load mountpoints")
 		}
 
-		if err := prepareWritablePathsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir); err != nil {
+		if err := prepareWritablePathsWithRootsInternal(runtimeUID, runtimeGID, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory); err != nil {
 			return err
 		}
 	}
@@ -279,10 +279,6 @@ func dockerSocketPathInternal(raw string) mo.Option[string] {
 	return mo.Some(filepath.Clean(socketPath))
 }
 
-func prepareWritablePathsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string) error {
-	return prepareWritablePathsWithRootsInternal(uid, gid, mountpoints, projectsDir, defaultDataDirectory, defaultBuildsDirectory)
-}
-
 func prepareWritablePathsWithRootsInternal(uid int, gid int, mountpoints map[string]struct{}, projectsDir string, dataDirectory string, buildsDirectory string) error {
 	if err := os.MkdirAll(dataDirectory, pkgutils.DirPerm); err != nil {
 		return errors.WrapIf(err, "create data directory")
@@ -348,7 +344,7 @@ func ensureSQLiteFilesExistInternal(databaseURL string) error {
 
 	// Ensure the parent directory exists before creating the file.
 	// This covers the "already the right user" early-return path where
-	// prepareWritablePathsInternal is not called.
+	// prepareWritablePathsWithRootsInternal is not called.
 	dir := filepath.Dir(sqlitePath)
 	if dir != "" && dir != "." {
 		if err := os.MkdirAll(dir, pkgutils.DirPerm); err != nil {

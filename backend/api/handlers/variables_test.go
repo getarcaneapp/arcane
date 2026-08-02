@@ -123,7 +123,7 @@ func setupVariableHandlerServicesInternal(t *testing.T) (*services.VariableServi
 		&models.SettingVariable{},
 	))
 	databaseDB := &database.DB{DB: databaseConnection}
-	settingsService, err := services.NewSettingsService(context.Background(), databaseDB)
+	settingsService, err := newSettingsServiceForTestInternal(t, context.Background(), databaseDB)
 	require.NoError(t, err)
 	require.NoError(t, settingsService.UpdateSetting(context.Background(), "projectsDirectory", t.TempDir()))
 	environmentService := services.NewEnvironmentService(databaseDB, nil, nil, nil, settingsService, nil)

@@ -560,7 +560,7 @@ func (s *UpdaterService) PullImage(ctx context.Context, imageRef string, progres
 	if s.deps.Settings != nil {
 		pullTimeoutSeconds = s.deps.Settings.GetSettingsConfig().DockerImagePullTimeout.AsInt()
 	}
-	pullCtx, cancelPull := timeouts.WithTimeout(ctx, pullTimeoutSeconds, timeouts.DefaultDockerImagePull)
+	pullCtx, cancelPull := context.WithTimeout(ctx, timeouts.GetDuration(pullTimeoutSeconds, timeouts.DefaultDockerImagePull))
 	defer cancelPull()
 
 	if s.deps.Projects != nil {

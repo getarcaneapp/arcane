@@ -12,6 +12,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -29,7 +30,9 @@ func TestResolveHelperImage_UsesLocalToolsImage(t *testing.T) {
 		switch {
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Id": "tools-image"})) {
+				return
+			}
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/images/create"):
 			pullCalls.Add(1)
 			http.Error(w, "unexpected pull", http.StatusInternalServerError)
@@ -54,11 +57,17 @@ func TestResolveHelperImage_PullsToolsImageWhenMissing(t *testing.T) {
 			http.NotFound(w, r)
 		case r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/images/create"):
 			pullCalls.Add(1)
-			require.Equal(t, "ghcr.io/getarcaneapp/tools", r.URL.Query().Get("fromImage"))
-			require.Equal(t, "latest", r.URL.Query().Get("tag"))
+			if !assert.Equal(t, "ghcr.io/getarcaneapp/tools", r.URL.Query().Get("fromImage")) {
+				return
+			}
+			if !assert.Equal(t, "latest", r.URL.Query().Get("tag")) {
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
 			_, err := w.Write([]byte(`{"status":"pulled"}` + "\n"))
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -81,17 +90,21 @@ func TestResolveHelperImage_FallsBackToArcaneRuntimeWhenToolsPullFails(t *testin
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{
 				{ID: "arcane-container", Image: "arcane:local", State: container.StateRunning},
-			}))
+			})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.Contains(r.URL.Path, "/containers/arcane-container/") && strings.HasSuffix(r.URL.Path, "/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(container.InspectResponse{
 				ID: "arcane-container",
 				Config: &container.Config{
 					Image: "arcane:local",
 				},
-			}))
+			})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -113,7 +126,9 @@ func TestResolveHelperImage_ReturnsPullErrorWhenNoFallbackExists(t *testing.T) {
 			http.Error(w, "pull failed", http.StatusInternalServerError)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

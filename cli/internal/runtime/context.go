@@ -14,7 +14,9 @@ import (
 
 type contextKey string
 
-const appContextKey contextKey = "arcane_app_context"
+// AppContextKey is the context key under which the CLI's AppContext is stored;
+// set it with context.WithValue and read it back with From.
+const AppContextKey contextKey = "arcane_app_context"
 
 type OutputMode string
 
@@ -74,15 +76,11 @@ func New(opts Options) (*AppContext, error) {
 	}, nil
 }
 
-func WithAppContext(ctx context.Context, app *AppContext) context.Context {
-	return context.WithValue(ctx, appContextKey, app)
-}
-
 func From(ctx context.Context) (*AppContext, bool) {
 	if ctx == nil {
 		return nil, false
 	}
-	app, ok := ctx.Value(appContextKey).(*AppContext)
+	app, ok := ctx.Value(AppContextKey).(*AppContext)
 	return app, ok && app != nil
 }
 

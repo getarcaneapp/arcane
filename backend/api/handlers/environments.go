@@ -465,11 +465,51 @@ func (h *EnvironmentHandler) visibleEnvironmentsForInternal(ctx context.Context,
 	return filtered, nil
 }
 
+// fingerprintEnvironmentsInternal hashes every field of the visible environment
+// list. This runs on every stream tick for every connected client, so it hashes
+// the fields directly rather than marshalling the payload to JSON and retaining
+// the bytes for comparison — most ticks change nothing and the encoded snapshot
+// was thrown away immediately.
+func fingerprintEnvironmentsInternal(envs []environment.Environment) uint64 {
+	return utils.FingerprintOf(envs, func(f *utils.Fingerprint, env *environment.Environment) {
+		f.String(env.ID).
+			String(env.Name).
+			String(env.ApiUrl).
+			String(env.Status).
+			Bool(env.Enabled).
+			Bool(env.IsEdge).
+			OptTime(env.LastSeen).
+			OptString(env.EdgeTransport).
+			OptString(env.LastEdgeTransport).
+			OptString(env.EdgeSecurityMode).
+			OptString(env.EdgeSessionID).
+			OptString(env.EdgeAgentInstance).
+			Strings(env.EdgeCapabilities).
+			OptBool(env.Connected).
+			OptTime(env.ConnectedAt).
+			OptTime(env.LastHeartbeat).
+			OptTime(env.LastPollAt).
+			OptString(env.ApiKey)
+
+		cert := env.EdgeMTLSCertificate
+		f.Present(cert != nil)
+		if cert == nil {
+			return
+		}
+		f.OptString(cert.CommonName).
+			OptTime(cert.ExpiresAt).
+			OptInt(cert.DaysRemaining).
+			Bool(cert.Expired).
+			Bool(cert.ExpiringSoon)
+	})
+}
+
 func (h *EnvironmentHandler) runEnvironmentStreamProducerInternal(ctx context.Context, ps *authz.PermissionSet, events chan<- environment.StreamEvent) {
 	changes, unsubscribe := h.environmentService.SubscribeRuntimeChanges()
 	defer unsubscribe()
 
-	var lastFingerprint []byte
+	var lastFingerprint uint64
+	var haveFingerprint bool
 	var lastSentAt time.Time
 
 	send := func() bool {
@@ -482,17 +522,14 @@ func (h *EnvironmentHandler) runEnvironmentStreamProducerInternal(ctx context.Co
 			return ctx.Err() == nil
 		}
 
-		fingerprint, err := json.Marshal(envs)
-		if err != nil {
-			slog.WarnContext(ctx, "environment stream failed to encode environments", "error", err)
-			return ctx.Err() == nil
-		}
+		fingerprint := fingerprintEnvironmentsInternal(envs)
 		// Re-send unchanged state on a floor so relative timestamps in the UI
 		// ("last seen 2 minutes ago") keep advancing.
-		if bytes.Equal(fingerprint, lastFingerprint) && time.Since(lastSentAt) < environmentStreamRefreshFloor {
+		if haveFingerprint && fingerprint == lastFingerprint && time.Since(lastSentAt) < environmentStreamRefreshFloor {
 			return true
 		}
 		lastFingerprint = fingerprint
+		haveFingerprint = true
 		lastSentAt = time.Now()
 
 		return agg.Send(ctx, events, environment.StreamEvent{
@@ -668,7 +705,7 @@ func (h *EnvironmentHandler) UpdateEnvironment(ctx context.Context, input *Updat
 
 	h.handleEnvironmentPairingInternal(ctx, input.ID, &input.Body, updates, isLocalEnv)
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -757,7 +794,7 @@ func (h *EnvironmentHandler) DeleteEnvironment(ctx context.Context, input *Delet
 		return nil, huma.Error400BadRequest("Cannot delete local environment")
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
@@ -1408,7 +1445,7 @@ func (h *EnvironmentHandler) logMTLSAuditEventInternal(ctx context.Context, env 
 		return
 	}
 
-	user, _ := humamw.GetCurrentUserFromContext(ctx)
+	user, _ := models.CurrentUserFromContext(ctx)
 	var userID, username *string
 	if user != nil {
 		userID = new(user.ID)
