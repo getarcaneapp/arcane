@@ -6,9 +6,15 @@ type UseUrlTabOptions<T extends string> = {
 	validTabs: () => readonly T[];
 	defaultTab: () => T;
 	ready?: () => boolean;
+	aliases?: () => Readonly<Partial<Record<string, T>>>;
 };
 
-export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () => true }: UseUrlTabOptions<T>) {
+export function useUrlTab<T extends string>({
+	validTabs,
+	defaultTab,
+	ready = () => true,
+	aliases = () => ({})
+}: UseUrlTabOptions<T>) {
 	let pendingUrlUpdate = Promise.resolve();
 
 	function currentUrl() {
@@ -36,7 +42,9 @@ export function useUrlTab<T extends string>({ validTabs, defaultTab, ready = () 
 		const fallback = tabs.includes(defaultValue) ? defaultValue : (tabs[0] ?? defaultValue);
 		const requested = url.searchParams.get('tab');
 
-		return requested && tabs.includes(requested as T) ? (requested as T) : fallback;
+		if (!requested) return fallback;
+		const aliased = aliases()[requested] ?? requested;
+		return tabs.includes(aliased as T) ? (aliased as T) : fallback;
 	}
 
 	let value = $state<T>(resolveTab());

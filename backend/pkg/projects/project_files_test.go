@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/getarcaneapp/arcane/types/v2/project"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -318,7 +319,7 @@ func TestApplyProjectFileChanges_RequiresRecursiveForNonEmptyFolderDelete(t *tes
 func TestValidateProjectFileName_RejectsPathSeparators(t *testing.T) {
 	t.Parallel()
 
-	_, err := ValidateProjectFileName(strings.Join([]string{"folder", "name"}, string(filepath.Separator)))
+	_, err := utils.ValidateFileName(strings.Join([]string{"folder", "name"}, string(filepath.Separator)))
 	require.Error(t, err)
 }
 

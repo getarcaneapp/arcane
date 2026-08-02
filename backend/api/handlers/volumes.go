@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"encoding/json/v2"
 	"io"
 	"mime/multipart"
 	"net/http"
@@ -12,6 +13,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/danielgtaylor/huma/v2"
 	humamw "github.com/getarcaneapp/arcane/backend/v2/api/middleware"
+	"github.com/getarcaneapp/arcane/backend/v2/internal/common"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/services"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
@@ -191,6 +193,35 @@ type DeleteFileInput struct {
 	EnvironmentID string `path:"id" doc:"Environment ID"`
 	VolumeName    string `path:"volumeName" doc:"Volume name"`
 	Path          string `query:"path" doc:"File or directory path to delete"`
+}
+
+type GetVolumeWorkspaceInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+}
+
+type GetVolumeWorkspaceOutput struct {
+	Body base.ApiResponse[volumetypes.Workspace]
+}
+
+type GetVolumeWorkspaceFileInput struct {
+	EnvironmentID string `path:"id" doc:"Environment ID"`
+	VolumeName    string `path:"volumeName" doc:"Volume name"`
+	RelativePath  string `query:"relativePath" doc:"Path relative to the volume root"`
+}
+
+type GetVolumeWorkspaceFileOutput struct {
+	Body base.ApiResponse[volumetypes.WorkspaceFileContent]
+}
+
+type UpdateVolumeWorkspaceInput struct {
+	EnvironmentID string         `path:"id" doc:"Environment ID"`
+	VolumeName    string         `path:"volumeName" doc:"Volume name"`
+	RawBody       multipart.Form `contentType:"multipart/form-data"`
+}
+
+type UpdateVolumeWorkspaceOutput struct {
+	Body base.ApiResponse[volumetypes.Workspace]
 }
 
 type ListBackupsInput struct {
@@ -384,6 +415,8 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 
 	// --- Volume Browsing Endpoints ---
 
+	registerVolumeWorkspaceRoutesInternal(api, h)
+
 	humamw.RegisterWithPermission(api, huma.Operation{
 		OperationID: "browse-volume-directory",
 		Method:      http.MethodGet,
@@ -554,6 +587,44 @@ func RegisterVolumes(api huma.API, dockerService *services.DockerClientService, 
 			},
 		},
 	}, authz.PermVolumesUpload, h.UploadAndRestore)
+}
+
+func registerVolumeWorkspaceRoutesInternal(api huma.API, h *VolumeHandler) {
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-workspace",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/files",
+		Summary:     "Get volume workspace files",
+		Description: "Get the recursive file tree and revision for a volume workspace",
+		Tags:        []string{"Volumes"},
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVolumesBrowse, h.GetVolumeWorkspace)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "get-volume-workspace-file",
+		Method:      http.MethodGet,
+		Path:        "/environments/{id}/volumes/{volumeName}/file",
+		Summary:     "Get volume workspace file",
+		Description: "Get editable content or read-only metadata for a volume file",
+		Tags:        []string{"Volumes"},
+		Security:    defaultOperationSecurityInternal(),
+	}, authz.PermVolumesBrowse, h.GetVolumeWorkspaceFile)
+
+	humamw.RegisterWithPermission(api, huma.Operation{
+		OperationID: "update-volume-workspace",
+		Method:      http.MethodPut,
+		Path:        "/environments/{id}/volumes/{volumeName}/files",
+		Summary:     "Update volume workspace files",
+		Description: "Apply an ordered, revision-checked set of volume file changes",
+		Tags:        []string{"Volumes"},
+		Security:    defaultOperationSecurityInternal(),
+		RequestBody: &huma.RequestBody{Content: map[string]*huma.MediaType{
+			"multipart/form-data": {Schema: &huma.Schema{Type: "object", Properties: map[string]*huma.Schema{
+				"manifest": {Type: "string", Description: "JSON encoded file update manifest"},
+				"files":    {Type: "array", Items: &huma.Schema{Type: "string", Format: "binary"}},
+			}, Required: []string{"manifest"}}},
+		}},
+	}, authz.PermVolumesBrowse, h.UpdateVolumeWorkspace)
 }
 
 // ListVolumes returns a paginated list of volumes.
@@ -786,6 +857,131 @@ func (h *VolumeHandler) GetVolumeSizes(ctx context.Context, input *GetVolumeSize
 			Data:    result,
 		},
 	}, nil
+}
+
+func volumeWorkspaceHTTPErrorInternal(err error) error {
+	switch {
+	case errors.Is(err, common.ErrVolumeFileConflict):
+		return huma.Error409Conflict(err.Error())
+	case errors.Is(err, common.ErrVolumeFileForbidden):
+		return huma.Error403Forbidden(err.Error())
+	case errors.Is(err, common.ErrVolumeFileNotFound):
+		return huma.Error404NotFound(err.Error())
+	case errors.Is(err, common.ErrVolumeFileBadRequest):
+		return huma.Error400BadRequest(err.Error())
+	default:
+		return huma.Error500InternalServerError("internal error")
+	}
+}
+
+func (h *VolumeHandler) GetVolumeWorkspace(ctx context.Context, input *GetVolumeWorkspaceInput) (*GetVolumeWorkspaceOutput, error) {
+	workspace, err := h.volumeService.GetVolumeWorkspace(ctx, input.VolumeName)
+	if err != nil {
+		return nil, volumeWorkspaceHTTPErrorInternal(err)
+	}
+	return &GetVolumeWorkspaceOutput{Body: base.ApiResponse[volumetypes.Workspace]{Success: true, Data: *workspace}}, nil
+}
+
+func (h *VolumeHandler) GetVolumeWorkspaceFile(ctx context.Context, input *GetVolumeWorkspaceFileInput) (*GetVolumeWorkspaceFileOutput, error) {
+	if strings.TrimSpace(input.RelativePath) == "" {
+		return nil, huma.Error400BadRequest("relativePath is required")
+	}
+	file, err := h.volumeService.GetVolumeWorkspaceFile(ctx, input.VolumeName, input.RelativePath)
+	if err != nil {
+		return nil, volumeWorkspaceHTTPErrorInternal(err)
+	}
+	return &GetVolumeWorkspaceFileOutput{Body: base.ApiResponse[volumetypes.WorkspaceFileContent]{Success: true, Data: *file}}, nil
+}
+
+func requireVolumeWorkspacePermissionsInternal(ctx context.Context, environmentID string, changes []volumetypes.FileChange) error {
+	permissions, ok := humamw.PermissionsFromContext(ctx)
+	if !ok || permissions == nil {
+		return huma.Error403Forbidden("insufficient permissions")
+	}
+	require := func(permission string) error {
+		if !permissions.Allows(permission, environmentID) {
+			return huma.Error403Forbidden("insufficient permissions for volume file operation")
+		}
+		return nil
+	}
+	for _, change := range changes {
+		switch change.Operation {
+		case volumetypes.FileOpCreateFile, volumetypes.FileOpCreateFolder, volumetypes.FileOpUpdateFile:
+			if err := require(authz.PermVolumesUpload); err != nil {
+				return err
+			}
+		case volumetypes.FileOpRename, volumetypes.FileOpMove:
+			if err := require(authz.PermVolumesUpload); err != nil {
+				return err
+			}
+			if err := require(authz.PermVolumesDelete); err != nil {
+				return err
+			}
+		case volumetypes.FileOpDelete:
+			if err := require(authz.PermVolumesDelete); err != nil {
+				return err
+			}
+		case volumetypes.FileOpRestoreFile:
+			if err := require(authz.PermVolumesBackup); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func parseVolumeWorkspaceManifestInternal(form multipart.Form) (volumetypes.FileUpdateManifest, error) {
+	manifestValues := form.Value["manifest"]
+	if len(manifestValues) != 1 {
+		return volumetypes.FileUpdateManifest{}, huma.Error400BadRequest("exactly one manifest is required")
+	}
+	var manifest volumetypes.FileUpdateManifest
+	if err := json.Unmarshal([]byte(manifestValues[0]), &manifest); err != nil {
+		return volumetypes.FileUpdateManifest{}, huma.Error400BadRequest("invalid workspace manifest")
+	}
+	return manifest, nil
+}
+
+func (h *VolumeHandler) UpdateVolumeWorkspace(ctx context.Context, input *UpdateVolumeWorkspaceInput) (*UpdateVolumeWorkspaceOutput, error) {
+	manifest, err := parseVolumeWorkspaceManifestInternal(input.RawBody)
+	if err != nil {
+		return nil, err
+	}
+	if err := requireVolumeWorkspacePermissionsInternal(ctx, input.EnvironmentID, manifest.FileChanges); err != nil {
+		return nil, err
+	}
+	user, err := requireUserInternal(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	runtimeCtx := utils.ActivityRuntimeContext(ctx, h.appCtx)
+	activityID, err := activitylib.RunHandlerActivity(runtimeCtx, h.activityService, activitylib.HandlerOptions{
+		EnvironmentID:  input.EnvironmentID,
+		Type:           models.ActivityTypeResourceAction,
+		ResourceType:   "volume",
+		ResourceID:     input.VolumeName,
+		ResourceName:   input.VolumeName,
+		User:           user,
+		Step:           "Updating volume workspace",
+		Message:        "Updating volume workspace",
+		SuccessMessage: "Volume workspace updated successfully",
+		Metadata: models.JSON{
+			"action":          "update_volume_workspace",
+			"fileChangeCount": len(manifest.FileChanges),
+		},
+	}, func(runtimeCtx context.Context) error {
+		return h.volumeService.UpdateVolumeWorkspace(runtimeCtx, input.VolumeName, manifest, input.RawBody.File["files"], *user)
+	})
+	if err != nil {
+		return nil, volumeWorkspaceHTTPErrorInternal(err)
+	}
+	workspace, err := h.volumeService.GetVolumeWorkspace(runtimeCtx, input.VolumeName)
+	if err != nil {
+		return nil, volumeWorkspaceHTTPErrorInternal(err)
+	}
+	workspace.ActivityID = mo.EmptyableToOption(strings.TrimSpace(activityID)).ToPointer()
+	return &UpdateVolumeWorkspaceOutput{Body: base.ApiResponse[volumetypes.Workspace]{Success: true, Data: *workspace}}, nil
 }
 
 // --- Volume Browser Handler Methods ---

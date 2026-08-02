@@ -18,6 +18,7 @@ import (
 
 	"emperror.dev/errors"
 
+	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/database"
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	docker "github.com/getarcaneapp/arcane/backend/v2/pkg/dockerutil"
@@ -38,15 +39,17 @@ import (
 )
 
 type VolumeService struct {
-	db               *database.DB
-	dockerService    *DockerClientService
-	eventService     *EventService
-	settingsService  *SettingsService
-	containerService *ContainerService
-	imageService     *ImageService
-	backupVolumeName string
-	helperMu         sync.Mutex
-	helperByVolume   map[string]*volumeHelper
+	db                 *database.DB
+	dockerService      *DockerClientService
+	eventService       *EventService
+	settingsService    *SettingsService
+	containerService   *ContainerService
+	imageService       *ImageService
+	backupVolumeName   string
+	fileTreeMaxDepth   int
+	fileTreeMaxEntries int
+	helperMu           sync.Mutex
+	helperByVolume     map[string]*volumeHelper
 	// helperGroup deduplicates concurrent read-only helper creation per volume.
 	// Without it two simultaneous browse requests each create a helper and the
 	// second overwrites the first in helperByVolume, orphaning a `sleep infinity`
@@ -87,20 +90,30 @@ type backupStorageMountInternal struct {
 	requiresEnsure bool
 }
 
-func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, backupVolumeName string) *VolumeService {
+func NewVolumeService(db *database.DB, dockerService *DockerClientService, eventService *EventService, settingsService *SettingsService, containerService *ContainerService, imageService *ImageService, cfg *config.Config) *VolumeService {
 	slog.Debug("volume service: new")
+	backupVolumeName := ""
+	fileTreeMaxDepth := 50
+	fileTreeMaxEntries := 10000
+	if cfg != nil {
+		backupVolumeName = cfg.BackupVolumeName
+		fileTreeMaxDepth = cfg.VolumeFileTreeMaxDepth
+		fileTreeMaxEntries = cfg.VolumeFileTreeMaxEntries
+	}
 	if strings.TrimSpace(backupVolumeName) == "" {
 		backupVolumeName = "arcane-backups"
 	}
 	return &VolumeService{
-		db:               db,
-		dockerService:    dockerService,
-		eventService:     eventService,
-		settingsService:  settingsService,
-		containerService: containerService,
-		imageService:     imageService,
-		backupVolumeName: backupVolumeName,
-		helperByVolume:   make(map[string]*volumeHelper),
+		db:                 db,
+		dockerService:      dockerService,
+		eventService:       eventService,
+		settingsService:    settingsService,
+		containerService:   containerService,
+		imageService:       imageService,
+		backupVolumeName:   backupVolumeName,
+		fileTreeMaxDepth:   fileTreeMaxDepth,
+		fileTreeMaxEntries: fileTreeMaxEntries,
+		helperByVolume:     make(map[string]*volumeHelper),
 	}
 }
 
@@ -418,6 +431,10 @@ func (s *VolumeService) GetFileContent(ctx context.Context, volumeName, filePath
 		return nil, "", err
 	}
 	defer cleanup()
+	relativePath := strings.TrimPrefix(sanitizedPath, "/")
+	if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, false); err != nil {
+		return nil, "", err
+	}
 
 	targetPath := path.Join("/volume", sanitizedPath)
 	cmd := []string{"head", "-c", strconv.FormatInt(maxBytes, 10), targetPath}
@@ -451,6 +468,11 @@ func (s *VolumeService) DownloadFile(ctx context.Context, volumeName, filePath s
 
 	containerID, cleanup, err := s.createTempContainerInternal(ctx, volumeName, true)
 	if err != nil {
+		return nil, 0, err
+	}
+	relativePath := strings.TrimPrefix(sanitizedPath, "/")
+	if err := s.validateVolumeWorkspacePathInternal(ctx, containerID, relativePath, false); err != nil {
+		cleanup()
 		return nil, 0, err
 	}
 
@@ -1640,6 +1662,23 @@ func (s *VolumeService) backupArchiveFilenameInternal(backupID string) (string, 
 	return sanitizedBackupID + ".tar.gz", nil
 }
 
+func (s *VolumeService) restoreBackupFilesInContainerInternal(ctx context.Context, containerID, filename string, cleanedPaths []string) (string, error) {
+	args := make([]string, 0, len(cleanedPaths)+5)
+	args = append(args, "sh", "-c", `set -e
+archive="$1"
+shift
+if [ ! -f "$archive" ]; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
+for member do
+  if ! tar -tzf "$archive" -- "$member" >/dev/null 2>&1; then echo ARCANE_NOT_FOUND >&2; exit 44; fi
+done
+tar -xzf "$archive" -C /volume -- "$@"`, "sh", path.Join("/backups", filename))
+	for _, cleaned := range cleanedPaths {
+		args = append(args, "./"+cleaned)
+	}
+	_, stderr, err := s.execInContainerInternal(ctx, containerID, args)
+	return stderr, errors.WrapIf(err, "failed to restore files")
+}
+
 func (s *VolumeService) BackupHasPath(ctx context.Context, backupID string, filePath string) (bool, error) {
 	slog.DebugContext(ctx, "volume service: backup has path", "backup_id", backupID, "path", filePath)
 	cleaned, err := s.sanitizeBackupPathInternal(filePath)
@@ -1800,11 +1839,6 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 		return errors.New("no valid paths provided")
 	}
 
-	tarPaths := make([]string, 0, len(cleanedPaths))
-	for _, p := range cleanedPaths {
-		tarPaths = append(tarPaths, "./"+p)
-	}
-
 	dockerClient, err := s.dockerService.GetClient(ctx)
 	if err != nil {
 		return err
@@ -1849,8 +1883,7 @@ func (s *VolumeService) RestoreBackupFiles(ctx context.Context, volumeName, back
 	}
 	defer cleanup()
 
-	cmd := append([]string{"tar", "-xzf", path.Join("/backups", filename), "-C", "/volume", "--"}, tarPaths...)
-	_, stderr, err := s.execInContainerInternal(ctx, resp.ID, cmd)
+	stderr, err := s.restoreBackupFilesInContainerInternal(ctx, resp.ID, filename, cleanedPaths)
 	if err != nil {
 		return errors.WrapIf(err, "failed to restore files")
 	}
@@ -2430,6 +2463,11 @@ func (s *VolumeService) downloadFileFromContainerInternal(
 		_ = reader.Close()
 		cleanup()
 		return nil, 0, errors.New("path is a directory")
+	}
+	if hdr.Typeflag == tar.TypeSymlink || hdr.Typeflag == tar.TypeLink || hdr.FileInfo().Mode()&os.ModeSymlink != 0 {
+		_ = reader.Close()
+		cleanup()
+		return nil, 0, errors.New("symlink downloads are not supported")
 	}
 
 	return &cleanupReadCloser{

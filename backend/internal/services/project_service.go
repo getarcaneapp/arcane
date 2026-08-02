@@ -1105,7 +1105,7 @@ func (s *ProjectService) GetProjectFileContent(ctx context.Context, projectID, r
 	if strings.TrimSpace(relativePath) == "" {
 		return project.IncludeFile{}, common.Classify(common.ErrProjectFileBadRequest, errors.New("Invalid project file request: relative path is required"))
 	}
-	normalizedRelativePath, err := projects.NormalizeProjectRelativePath(relativePath)
+	normalizedRelativePath, err := utils.NormalizeRelativePath(relativePath)
 	if err != nil {
 		return project.IncludeFile{}, common.Classify(common.ErrProjectFileForbidden, errors.WrapIf(err, "Forbidden project file path"))
 	}
@@ -3343,7 +3343,7 @@ func projectUpdateBackupScopeInternal(projectPath string, composeContent, envCon
 	}
 
 	for _, change := range fileChanges {
-		rel, err := projects.NormalizeProjectRelativePath(change.RelativePath)
+		rel, err := utils.NormalizeRelativePath(change.RelativePath)
 		if err != nil {
 			continue
 		}
@@ -3351,7 +3351,7 @@ func projectUpdateBackupScopeInternal(projectPath string, composeContent, envCon
 		var dest string
 		switch change.Operation {
 		case project.FileOpRename:
-			newName, nameErr := projects.ValidateProjectFileName(change.NewName)
+			newName, nameErr := utils.ValidateFileName(change.NewName)
 			if nameErr != nil {
 				continue
 			}
@@ -3359,7 +3359,7 @@ func projectUpdateBackupScopeInternal(projectPath string, composeContent, envCon
 		case project.FileOpMove:
 			parent := strings.TrimSpace(change.NewParentPath)
 			if parent != "" {
-				normalizedParent, parentErr := projects.NormalizeProjectRelativePath(parent)
+				normalizedParent, parentErr := utils.NormalizeRelativePath(parent)
 				if parentErr != nil {
 					continue
 				}

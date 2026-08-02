@@ -91,6 +91,7 @@ export interface GPUStats {
 export interface FileEntry {
 	name: string;
 	path: string;
+	relativePath?: string;
 	isDirectory: boolean;
 	size: number;
 	modTime: string;

@@ -6,8 +6,8 @@
 	import * as Tabs from '#lib/components/ui/tabs';
 	import { useEnvironmentRefresh } from '#lib/hooks/use-environment-refresh.svelte';
 	import { LayersIcon, DockIcon, JobsIcon, TrashIcon, EditIcon, FileTextIcon } from '#lib/icons';
-	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
-	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { ResourcePageLayout, type ActionButton, type StatCardConfig } from '#lib/layouts/index.js';
 	import { m } from '#lib/paraglide/messages';
@@ -276,7 +276,7 @@
 								persistKey={`arcane.swarm.split:${stackName}:source`}
 							>
 								{#snippet first()}
-									<ProjectFileTreePanel
+									<WorkspaceFileTreePanel
 										composeFileName="compose.yaml"
 										entries={[]}
 										selectedFile={selectedSourceFile}

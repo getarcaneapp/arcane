@@ -9,10 +9,10 @@
 	import { projectService } from '#lib/services/project-service.js';
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
-	import CodePanel from '../components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
-	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
-	import EditorTabStrip from '../components/EditorTabStrip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import { environmentStore } from '#lib/stores/environment.store.svelte';
 	import { hasPermission } from '#lib/utils/auth';
 	import { ComposeEditorSplit } from '#lib/components/compose';
@@ -23,19 +23,23 @@
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import type { ProjectFileDraft } from '#lib/types/project-files';
 	import {
-		isProjectFileSelectionUnder,
 		planProjectFileCreate,
 		planProjectFileMove,
 		planProjectFileRename,
-		projectFileBasename,
-		projectFileLanguage,
-		projectFilePathMatches,
-		remapProjectFilePath,
-		remapProjectFileRecord,
-		remapSelectedProjectFileKey,
-		removeProjectFileRecord,
-		type ManagedProjectFileEntry
+		readProjectTextUpload,
+		validateProjectFileName
 	} from '../components/project-file-tree-utils';
+	import {
+		isWorkspaceFileSelectionUnder as isProjectFileSelectionUnder,
+		workspaceFileBasename as projectFileBasename,
+		workspaceFileLanguage as projectFileLanguage,
+		workspaceFilePathMatches as projectFilePathMatches,
+		remapWorkspaceFilePath as remapProjectFilePath,
+		remapWorkspaceFileRecord as remapProjectFileRecord,
+		remapSelectedWorkspaceFileKey as remapSelectedProjectFileKey,
+		removeWorkspaceFileRecord as removeProjectFileRecord,
+		type WorkspaceFileEntry as ManagedProjectFileEntry
+	} from '#lib/utils/workspace-files';
 	import {
 		composeTreeSplitProps,
 		createComposeEditorSchema,
@@ -227,6 +231,14 @@
 		newProjectFileContents = { ...newProjectFileContents, [relativePath]: content };
 		ensureNewProjectFileUiState(relativePath);
 		openProjectFileTab(`file:${relativePath}`);
+	}
+
+	async function uploadNewProjectFile(parentPath: string, files: File[]): Promise<string | void> {
+		const file = files[0];
+		if (!file) return m.project_file_upload_file_required();
+		const result = await readProjectTextUpload(file);
+		if (result.error) return result.error;
+		createNewProjectFile(parentPath, file.name, result.content ?? '');
 	}
 
 	function createNewProjectFolder(parentPath: string, name: string) {
@@ -426,7 +438,7 @@
 							persistKey="arcane.compose.split:new-project:tree"
 						>
 							{#snippet first()}
-								<ProjectFileTreePanel
+								<WorkspaceFileTreePanel
 									composeFileName="compose.yaml"
 									entries={newProjectFileEntries}
 									selectedFile={selectedProjectFile}
@@ -434,6 +446,8 @@
 									onSelect={openProjectFileTab}
 									onCreateFile={createNewProjectFile}
 									onCreateFolder={createNewProjectFolder}
+									onUpload={uploadNewProjectFile}
+									validateName={(name, parentPath) => validateProjectFileName(name, parentPath)}
 									onRename={renameNewProjectFile}
 									onMove={moveNewProjectFile}
 									onDelete={deleteNewProjectFile}

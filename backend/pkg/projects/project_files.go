@@ -11,9 +11,7 @@ import (
 	"path"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
-	"unicode/utf8"
 
 	"emperror.dev/errors"
 
@@ -165,7 +163,11 @@ func (w *projectFileTreeWalkerInternal) visit(rel string, entry fs.DirEntry, wal
 	// fs.WalkDir visits entries in deterministic lexical order, so hashing
 	// in visit order yields a stable revision.
 	isProtected := w.protected[rel]
-	writeProjectFileRevisionEntryInternal(w.revisionHash, rel, info, entry.IsDir(), isProtected)
+	kind := "file"
+	if entry.IsDir() {
+		kind = "dir"
+	}
+	pkgutils.WriteFileTreeRevisionEntry(w.revisionHash, rel, kind, info.Size(), info.ModTime().UnixNano(), info.Mode().String(), isProtected)
 	w.entryCount++
 
 	if isProtected {
@@ -263,56 +265,8 @@ func ProtectedProjectFilePaths(composeFileName string) map[string]bool {
 	return protected
 }
 
-func NormalizeProjectRelativePath(input string) (string, error) {
-	trimmed := strings.TrimSpace(input)
-	if trimmed == "" {
-		return "", errors.New("path is required")
-	}
-	if strings.ContainsRune(trimmed, 0) {
-		return "", errors.New("path contains a null byte")
-	}
-	if strings.Contains(trimmed, "\\") {
-		return "", errors.New("path must use forward slashes")
-	}
-	if path.IsAbs(trimmed) || filepath.IsAbs(trimmed) {
-		return "", errors.New("absolute paths are not allowed")
-	}
-
-	cleaned := path.Clean(trimmed)
-	if cleaned == "." || cleaned == ".." || strings.HasPrefix(cleaned, "../") {
-		return "", errors.New("path traversal is not allowed")
-	}
-	for segment := range strings.SplitSeq(cleaned, "/") {
-		if segment == "" || segment == "." || segment == ".." {
-			return "", errors.New("path contains an invalid segment")
-		}
-	}
-
-	return cleaned, nil
-}
-
-func ValidateProjectFileName(name string) (string, error) {
-	trimmed := strings.TrimSpace(name)
-	if trimmed == "" {
-		return "", errors.New("name is required")
-	}
-	if strings.ContainsRune(trimmed, 0) {
-		return "", errors.New("name contains a null byte")
-	}
-	if strings.Contains(trimmed, "/") || strings.Contains(trimmed, "\\") {
-		return "", errors.New("name must not contain path separators")
-	}
-	if filepath.VolumeName(trimmed) != "" {
-		return "", errors.New("name must not contain a volume prefix")
-	}
-	if trimmed == "." || trimmed == ".." || filepath.Base(trimmed) != trimmed {
-		return "", errors.New("invalid name")
-	}
-	return trimmed, nil
-}
-
 func applyProjectFileChangeInternal(root *os.Root, protected map[string]bool, change project.ProjectFileChange) error {
-	rel, err := NormalizeProjectRelativePath(change.RelativePath)
+	rel, err := pkgutils.NormalizeRelativePath(change.RelativePath)
 	if err != nil {
 		return errors.WrapIf(err, "invalid project file path")
 	}
@@ -331,7 +285,7 @@ func applyProjectFileChangeInternal(root *os.Root, protected map[string]bool, ch
 		}
 		return updateManagedProjectFileInternal(root, protected, rel, *change.Content)
 	case project.FileOpRename:
-		newName, err := ValidateProjectFileName(change.NewName)
+		newName, err := pkgutils.ValidateFileName(change.NewName)
 		if err != nil {
 			return errors.WrapIf(err, "invalid project file name")
 		}
@@ -471,7 +425,7 @@ func normalizeOptionalProjectParentPathInternal(input string) (string, error) {
 	if strings.TrimSpace(input) == "" {
 		return "", nil
 	}
-	return NormalizeProjectRelativePath(input)
+	return pkgutils.NormalizeRelativePath(input)
 }
 
 func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, rel, newParentPath string) error {
@@ -502,7 +456,7 @@ func moveManagedProjectPathInternal(root *os.Root, protected map[string]bool, re
 	if sourceInfo.Mode()&os.ModeSymlink != 0 {
 		return errors.WrapIf(ErrProjectFileSymlinkPath, "symlink paths are not supported")
 	}
-	if sourceInfo.IsDir() && parentRel != "" && projectFilePathMatchesInternal(parentRel, rel) {
+	if sourceInfo.IsDir() && parentRel != "" && pkgutils.FilePathMatches(parentRel, rel) {
 		return errors.New("folder cannot be moved into itself or a descendant")
 	}
 
@@ -638,15 +592,11 @@ func ensureWritableProjectRelPathInternal(protected map[string]bool, rel string)
 	return nil
 }
 
-func projectFilePathMatchesInternal(relativePath string, rootPath string) bool {
-	return relativePath == rootPath || strings.HasPrefix(relativePath, rootPath+"/")
-}
-
 func validateProjectTextContentInternal(content string) error {
 	if len(content) > MaxManagedProjectFileBytes {
 		return errors.Errorf("file exceeds %d byte limit", MaxManagedProjectFileBytes)
 	}
-	if !utf8.ValidString(content) || strings.IndexByte(content, 0) >= 0 {
+	if pkgutils.IsBinaryFileContent([]byte(content)) {
 		return errors.New("binary files are not supported")
 	}
 	return nil
@@ -667,26 +617,4 @@ func isDirectoryEmptyInternal(root *os.Root, rel string) (bool, error) {
 		return false, errors.WrapIf(err, "read folder")
 	}
 	return false, nil
-}
-
-func writeProjectFileRevisionEntryInternal(h hash.Hash, rel string, info fs.FileInfo, isDir, protected bool) {
-	kind := "file"
-	if isDir {
-		kind = "dir"
-	}
-	protectedFlag := ""
-	if protected {
-		protectedFlag = "protected"
-	}
-
-	entry := strings.Join([]string{
-		rel,
-		kind,
-		strconv.FormatInt(info.Size(), 10),
-		strconv.FormatInt(info.ModTime().UnixNano(), 10),
-		info.Mode().String(),
-		protectedFlag,
-	}, "\x00")
-	_, _ = io.WriteString(h, entry)
-	_, _ = h.Write([]byte{'\n'})
 }

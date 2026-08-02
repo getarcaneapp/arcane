@@ -41,10 +41,10 @@
 	import { useUrlTab } from '#lib/hooks/use-url-tab.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import EditableName from '../components/EditableName.svelte';
-	import ProjectFileTreePanel from '../components/ProjectFileTreePanel.svelte';
-	import EditorTabStrip from '../components/EditorTabStrip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
 	import ProjectContainersTable from '../components/ProjectContainersTable.svelte';
-	import CodePanel from '../components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import ProjectsLogsPanel from '../components/ProjectLogsPanel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { Switch } from '#lib/components/ui/switch';
@@ -63,18 +63,22 @@
 	import { activityToastOptions, extractActivityId } from '#lib/utils/activity-toast';
 	import { globalVariablesToMap } from '#lib/utils/template-load';
 	import {
-		applyProjectFileChangesForDisplay,
-		isProjectFileSelectionUnder,
 		planProjectFileCreate,
 		planProjectFileMove,
 		planProjectFileRename,
-		projectFileBasename,
-		projectFileLanguage,
-		projectFilePathMatches,
-		remapProjectFileRecord,
-		remapSelectedProjectFileKey,
-		removeProjectFileRecord
+		readProjectTextUpload,
+		validateProjectFileName
 	} from '../components/project-file-tree-utils';
+	import {
+		applyWorkspaceFileChangesForDisplay as applyProjectFileChangesForDisplay,
+		isWorkspaceFileSelectionUnder as isProjectFileSelectionUnder,
+		workspaceFileBasename as projectFileBasename,
+		workspaceFileLanguage as projectFileLanguage,
+		workspaceFilePathMatches as projectFilePathMatches,
+		remapWorkspaceFileRecord as remapProjectFileRecord,
+		remapSelectedWorkspaceFileKey as remapSelectedProjectFileKey,
+		removeWorkspaceFileRecord as removeProjectFileRecord
+	} from '#lib/utils/workspace-files';
 	import { composeTreeSplitProps, extractComposeYamlName } from '#lib/utils/compose-flow';
 
 	let { data } = $props();
@@ -257,6 +261,15 @@
 	// The override editor surfaces only when an override exists or the user asked
 	// to add one this session; otherwise the UI shows an "add override" affordance.
 	let overrideActive = $derived(overrideExists || overrideEditorRequested);
+	const projectWorkspaceLeadingRows = $derived([
+		{ key: 'compose', label: composeFileName, iconClass: 'text-blue-500', locked: true },
+		...(overrideActive
+			? [{ key: 'override', label: overrideFileName, iconClass: 'text-purple-500', locked: true }]
+			: canEditOverride
+				? [{ key: 'add-override', label: m.compose_override_add(), onSelect: handleAddOverride }]
+				: []),
+		{ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true }
+	]);
 	let archiveRequiresStopped = $derived(
 		!!project &&
 			!project.isArchived &&
@@ -1151,6 +1164,14 @@
 		openFileTab(`file:${relativePath}`);
 	}
 
+	async function uploadManagedProjectFiles(parentPath: string, files: File[]): Promise<string | void> {
+		const file = files[0];
+		if (!file) return m.project_file_upload_file_required();
+		const result = await readProjectTextUpload(file);
+		if (result.error) return result.error;
+		createManagedProjectFile(parentPath, file.name, result.content ?? '');
+	}
+
 	function createManagedProjectFolder(parentPath: string, name: string) {
 		const relativePath = planProjectFileCreate(managedProjectFilePaths, parentPath, name, composeFileName);
 		if (!relativePath) return;
@@ -1577,11 +1598,8 @@
 									onResizeEnd={persistPrefs}
 								>
 									{#snippet first()}
-										<ProjectFileTreePanel
-											{composeFileName}
-											{overrideFileName}
-											showOverride={overrideActive}
-											onAddOverride={canEditOverride ? handleAddOverride : undefined}
+										<WorkspaceFileTreePanel
+											leadingRows={projectWorkspaceLeadingRows}
 											entries={managedProjectFiles}
 											{selectedFile}
 											disabled={!canEditProjectFiles}
@@ -1589,6 +1607,8 @@
 											onSelect={selectManagedProjectFile}
 											onCreateFile={createManagedProjectFile}
 											onCreateFolder={createManagedProjectFolder}
+											onUpload={uploadManagedProjectFiles}
+											validateName={(name, parentPath) => validateProjectFileName(name, parentPath, composeFileName)}
 											onRename={renameManagedProjectFile}
 											onMove={moveManagedProjectFile}
 											onDelete={deleteManagedProjectFile}

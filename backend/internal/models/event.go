@@ -60,6 +60,7 @@ const (
 	EventTypeVolumeFileCreate EventType = "volume.file.create"
 	EventTypeVolumeFileDelete EventType = "volume.file.delete"
 	EventTypeVolumeFileUpload EventType = "volume.file.upload"
+	EventTypeVolumeFileUpdate EventType = "volume.file.update"
 
 	EventTypeVolumeBackupCreate       EventType = "volume.backup.create"
 	EventTypeVolumeBackupDelete       EventType = "volume.backup.delete"

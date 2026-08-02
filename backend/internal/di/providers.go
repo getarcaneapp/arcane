@@ -98,7 +98,7 @@ func provideGitRepositoryServiceInternal(db *database.DB, cfg *config.Config, ev
 }
 
 func provideVolumeServiceInternal(lc fx.Lifecycle, db *database.DB, docker *services.DockerClientService, event *services.EventService, settings *services.SettingsService, container *services.ContainerService, image *services.ImageService, cfg *config.Config) *services.VolumeService {
-	service := services.NewVolumeService(db, docker, event, settings, container, image, cfg.BackupVolumeName)
+	service := services.NewVolumeService(db, docker, event, settings, container, image, cfg)
 	lc.Append(fx.Hook{
 		OnStop: func(ctx context.Context) error {
 			service.CleanupHelperContainers(ctx)

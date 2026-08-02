@@ -261,6 +261,8 @@ var expectedEnvConfigVars = []string{
 	"TZ",
 	"UI_CONFIGURATION_DISABLED",
 	"UPDATE_CHECK_DISABLED",
+	"VOLUME_FILE_TREE_MAX_DEPTH",
+	"VOLUME_FILE_TREE_MAX_ENTRIES",
 }
 
 var expectedSettingOverrideKeys = []string{

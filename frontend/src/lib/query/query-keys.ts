@@ -140,9 +140,9 @@ export const queryKeys = {
 		table: (environmentId: string, options: SearchPaginationSortRequest) =>
 			['volumes', environmentId, stableSerialize(options)] as const,
 		detail: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName] as const,
-		list: (volumeName: string, path: string) => ['volume-browser', volumeName, 'list', path] as const,
-		listPrefix: (volumeName: string) => ['volume-browser', volumeName, 'list'] as const,
-		content: (volumeName: string, path: string) => ['volume-browser', volumeName, 'content', path] as const,
+		files: (environmentId: string, volumeName: string) => ['volume', environmentId, volumeName, 'files'] as const,
+		file: (environmentId: string, volumeName: string, relativePath: string) =>
+			['volume', environmentId, volumeName, 'file', relativePath] as const,
 		backups: (volumeName: string) => ['volume-backups', volumeName] as const,
 		backupHasPath: (backupId: string, path: string) => ['volume-backups', backupId, 'has-path', path] as const
 	},

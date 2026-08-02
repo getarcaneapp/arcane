@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { ComposeEditorWrapper } from '#lib/components/compose';
-	import CodePanel from '../../projects/components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import { projectService } from '#lib/services/project-service';
 	import type { Project, IncludeFile } from '#lib/types/swarm';
 

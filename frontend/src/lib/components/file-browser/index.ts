@@ -4,7 +4,6 @@ import List from './FileList.svelte';
 import Preview from './FilePreview.svelte';
 import UploadDialog from './FileUploadDialog.svelte';
 import CreateFolderDialog from './CreateFolderDialog.svelte';
-import VolumeBrowser from './VolumeBrowser.svelte';
 
 export type { FileProvider } from './GenericFileBrowser.svelte';
 export { sortFileEntries } from './GenericFileBrowser.svelte';
@@ -16,7 +15,6 @@ export {
 	Preview,
 	UploadDialog,
 	CreateFolderDialog,
-	VolumeBrowser,
 	// aliases
 	Root as FileBrowser,
 	Breadcrumb as FileBreadcrumb,

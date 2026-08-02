@@ -63,34 +63,36 @@ type Config struct {
 	// Docker secrets. Leave empty to manage mappings purely via the UI/API.
 	OidcRoleMappings string `env:"OIDC_ROLE_MAPPINGS" default:"" options:"file"`
 
-	PUID                    string `env:"PUID" default:""`
-	PGID                    string `env:"PGID" default:""`
-	DockerHost              string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
-	DockerConfig            string `env:"DOCKER_CONFIG" default:""`
-	ProjectsDirectory       string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
-	TemplatesDirectory      string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
-	ProjectScanMaxDepth     int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
-	ProjectFileTreeMaxDepth int    `env:"PROJECT_FILE_TREE_MAX_DEPTH" default:"20"`
-	ProjectScanSkipDirs     string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
-	LogJson                 bool   `env:"LOG_JSON" default:"false"`
-	LogLevel                string `env:"LOG_LEVEL" default:"info" options:"toLower"`
-	AgentMode               bool   `env:"AGENT_MODE" default:"false"`
-	AgentToken              string `env:"AGENT_TOKEN" default:"" options:"file"`
-	ManagerApiUrl           string `env:"MANAGER_API_URL" default:""`
-	UpdateCheckDisabled     bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
-	UIConfigurationDisabled bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
-	AnalyticsDisabled       bool   `env:"ANALYTICS_DISABLED" default:"false"`
-	GPUMonitoringEnabled    bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
-	GPUType                 string `env:"GPU_TYPE" default:"auto"`
-	EdgeAgent               bool   `env:"EDGE_AGENT" default:"false"`
-	EdgeTransport           string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
-	EdgeReconnectInterval   int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
-	EdgeMTLSMode            string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
-	EdgeMTLSCAFile          string `env:"EDGE_MTLS_CA_FILE" default:""`
-	EdgeMTLSCertFile        string `env:"EDGE_MTLS_CERT_FILE" default:""`
-	EdgeMTLSKeyFile         string `env:"EDGE_MTLS_KEY_FILE" default:""`
-	EdgeMTLSServerName      string `env:"EDGE_MTLS_SERVER_NAME" default:""`
-	EdgeMTLSAssetsDir       string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
+	PUID                     string `env:"PUID" default:""`
+	PGID                     string `env:"PGID" default:""`
+	DockerHost               string `env:"DOCKER_HOST" default:"unix:///var/run/docker.sock"`
+	DockerConfig             string `env:"DOCKER_CONFIG" default:""`
+	ProjectsDirectory        string `env:"PROJECTS_DIRECTORY" default:"/app/data/projects"`
+	TemplatesDirectory       string `env:"TEMPLATES_DIRECTORY" default:"/app/data/templates"`
+	ProjectScanMaxDepth      int    `env:"PROJECT_SCAN_MAX_DEPTH" default:"3"`
+	ProjectFileTreeMaxDepth  int    `env:"PROJECT_FILE_TREE_MAX_DEPTH" default:"20"`
+	ProjectScanSkipDirs      string `env:"PROJECT_SCAN_SKIP_DIRS" default:".git,node_modules,vendor,.venv,venv,__pycache__,.cache,dist,build,target,.next,.nuxt,.svelte-kit"`
+	VolumeFileTreeMaxDepth   int    `env:"VOLUME_FILE_TREE_MAX_DEPTH" default:"50"`
+	VolumeFileTreeMaxEntries int    `env:"VOLUME_FILE_TREE_MAX_ENTRIES" default:"10000"`
+	LogJson                  bool   `env:"LOG_JSON" default:"false"`
+	LogLevel                 string `env:"LOG_LEVEL" default:"info" options:"toLower"`
+	AgentMode                bool   `env:"AGENT_MODE" default:"false"`
+	AgentToken               string `env:"AGENT_TOKEN" default:"" options:"file"`
+	ManagerApiUrl            string `env:"MANAGER_API_URL" default:""`
+	UpdateCheckDisabled      bool   `env:"UPDATE_CHECK_DISABLED" default:"false"`
+	UIConfigurationDisabled  bool   `env:"UI_CONFIGURATION_DISABLED" default:"false"`
+	AnalyticsDisabled        bool   `env:"ANALYTICS_DISABLED" default:"false"`
+	GPUMonitoringEnabled     bool   `env:"GPU_MONITORING_ENABLED" default:"false"`
+	GPUType                  string `env:"GPU_TYPE" default:"auto"`
+	EdgeAgent                bool   `env:"EDGE_AGENT" default:"false"`
+	EdgeTransport            string `env:"EDGE_TRANSPORT" default:"auto" options:"toLower"`
+	EdgeReconnectInterval    int    `env:"EDGE_RECONNECT_INTERVAL" default:"5"` // seconds
+	EdgeMTLSMode             string `env:"EDGE_MTLS_MODE" default:"disabled" options:"toLower"`
+	EdgeMTLSCAFile           string `env:"EDGE_MTLS_CA_FILE" default:""`
+	EdgeMTLSCertFile         string `env:"EDGE_MTLS_CERT_FILE" default:""`
+	EdgeMTLSKeyFile          string `env:"EDGE_MTLS_KEY_FILE" default:""`
+	EdgeMTLSServerName       string `env:"EDGE_MTLS_SERVER_NAME" default:""`
+	EdgeMTLSAssetsDir        string `env:"EDGE_MTLS_ASSETS_DIR" default:""`
 
 	TrustedProxies string `env:"TRUSTED_PROXIES" default:""`
 

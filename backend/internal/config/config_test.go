@@ -60,6 +60,15 @@ func TestConfig_LoadPermissions(t *testing.T) {
 	})
 }
 
+func TestConfig_LoadVolumeFileTreeLimits(t *testing.T) {
+	t.Setenv("VOLUME_FILE_TREE_MAX_DEPTH", "75")
+	t.Setenv("VOLUME_FILE_TREE_MAX_ENTRIES", "20000")
+
+	cfg := Load()
+	require.Equal(t, 75, cfg.VolumeFileTreeMaxDepth)
+	require.Equal(t, 20000, cfg.VolumeFileTreeMaxEntries)
+}
+
 func TestConfig_DockerSecretsFileSupport(t *testing.T) {
 	// Save original env vars
 	origEncryptionKey := os.Getenv("ENCRYPTION_KEY")

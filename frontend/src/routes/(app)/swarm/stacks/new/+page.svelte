@@ -10,10 +10,10 @@
 	import ComposeCreateMenu from '#lib/components/compose-create-menu.svelte';
 	import ComposeFileEditorPanel from '#lib/components/compose-file-editor-panel.svelte';
 	import { ArrowLeftIcon, TrashIcon } from '#lib/icons';
-	import CodePanel from '../../../projects/components/CodePanel.svelte';
+	import CodePanel from '#lib/components/code-panel.svelte';
 	import EditableName from '../../../projects/components/EditableName.svelte';
-	import EditorTabStrip from '../../../projects/components/EditorTabStrip.svelte';
-	import ProjectFileTreePanel from '../../../projects/components/ProjectFileTreePanel.svelte';
+	import EditorTabStrip from '#lib/components/editor-tab-strip.svelte';
+	import WorkspaceFileTreePanel from '#lib/components/workspace-file-tree-panel.svelte';
 	import ResizableSplit from '#lib/components/resizable-split.svelte';
 	import { Checkbox } from '#lib/components/ui/checkbox';
 	import { Label } from '#lib/components/ui/label';
@@ -24,19 +24,23 @@
 	import type { ProjectFileDraft } from '#lib/types/project-files';
 	import type { SwarmSyncFile } from '#lib/types/swarm';
 	import {
-		isProjectFileSelectionUnder,
 		planProjectFileCreate,
 		planProjectFileMove,
 		planProjectFileRename,
-		projectFileBasename,
-		projectFileLanguage,
-		projectFilePathMatches,
-		remapProjectFilePath,
-		remapProjectFileRecord,
-		remapSelectedProjectFileKey,
-		removeProjectFileRecord,
-		type ManagedProjectFileEntry
+		readProjectTextUpload,
+		validateProjectFileName
 	} from '../../../projects/components/project-file-tree-utils';
+	import {
+		isWorkspaceFileSelectionUnder as isProjectFileSelectionUnder,
+		workspaceFileBasename as projectFileBasename,
+		workspaceFileLanguage as projectFileLanguage,
+		workspaceFilePathMatches as projectFilePathMatches,
+		remapWorkspaceFilePath as remapProjectFilePath,
+		remapWorkspaceFileRecord as remapProjectFileRecord,
+		remapSelectedWorkspaceFileKey as remapSelectedProjectFileKey,
+		removeWorkspaceFileRecord as removeProjectFileRecord,
+		type WorkspaceFileEntry as ManagedProjectFileEntry
+	} from '#lib/utils/workspace-files';
 	import {
 		createComposeEditorSchema,
 		createComposeTemplateDialogFlow,
@@ -214,6 +218,14 @@
 		stackFiles = [...stackFiles, { relativePath, isDirectory: false }];
 		stackFileContents = { ...stackFileContents, [relativePath]: content };
 		openStackTab(`file:${relativePath}`);
+	}
+
+	async function uploadStackFile(parentPath: string, files: File[]): Promise<string | void> {
+		const file = files[0];
+		if (!file) return m.project_file_upload_file_required();
+		const result = await readProjectTextUpload(file);
+		if (result.error) return result.error;
+		createStackFile(parentPath, file.name, result.content ?? '');
 	}
 
 	function createStackFolder(parentPath: string, name: string) {
@@ -465,7 +477,7 @@
 							persistKey="arcane.swarm.split:new"
 						>
 							{#snippet first()}
-								<ProjectFileTreePanel
+								<WorkspaceFileTreePanel
 									composeFileName="compose.yaml"
 									overrideFileName="compose.override.yaml"
 									showOverride={overrideActive}
@@ -476,6 +488,8 @@
 									onSelect={openStackTab}
 									onCreateFile={createStackFile}
 									onCreateFolder={createStackFolder}
+									onUpload={uploadStackFile}
+									validateName={(name, parentPath) => validateProjectFileName(name, parentPath)}
 									onRename={renameStackFile}
 									onMove={moveStackFile}
 									onDelete={deleteStackFile}

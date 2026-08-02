@@ -11,32 +11,39 @@
 		ArrowRightIcon,
 		CreateFileIcon,
 		CreateFolderIcon,
+		DownloadIcon,
 		EditIcon,
 		FileTextIcon,
 		FolderMoveIcon,
 		FolderOpenIcon,
 		LockIcon,
+		RefreshIcon,
 		TrashIcon,
 		UploadIcon
 	} from '#lib/icons';
 	import { m } from '#lib/paraglide/messages';
 	import { cn } from '#lib/utils';
 	import {
-		compareProjectFileEntries,
-		joinProjectFilePath,
-		projectFileBasename,
-		projectFileParentPath,
-		projectFilePathMatches,
-		validateProjectFileName,
-		type ManagedProjectFileEntry
-	} from './project-file-tree-utils';
-
-	const MAX_MANAGED_PROJECT_FILE_BYTES = 1024 * 1024;
+		compareWorkspaceFileEntries,
+		joinWorkspaceFilePath,
+		workspaceFileBasename,
+		workspaceFileParentPath,
+		workspaceFilePathMatches,
+		validateWorkspaceFileName,
+		type WorkspaceFileEntry
+	} from '#lib/utils/workspace-files';
 
 	type DialogMode = 'create_file' | 'create_folder' | 'rename' | 'move' | 'upload';
-	type TreeRow = ManagedProjectFileEntry & {
+	type TreeRow = WorkspaceFileEntry & {
 		depth: number;
 		hasChildren: boolean;
+	};
+	type WorkspaceTreeLeadingRow = {
+		key: string;
+		label: string;
+		iconClass?: string;
+		locked?: boolean;
+		onSelect?: () => void;
 	};
 	type FolderDestinationOption = {
 		relativePath: string;
@@ -48,7 +55,7 @@
 	};
 
 	interface Props {
-		composeFileName: string;
+		composeFileName?: string;
 		// The override row is pinned only by the project editor. showOverride renders
 		// the existing-override row (labeled overrideFileName); onAddOverride renders
 		// an "add override" affordance for a project that has none yet. Other
@@ -56,23 +63,39 @@
 		overrideFileName?: string;
 		showOverride?: boolean;
 		onAddOverride?: () => void;
-		entries: ManagedProjectFileEntry[];
+		title?: string;
+		leadingRows?: WorkspaceTreeLeadingRow[];
+		entries: WorkspaceFileEntry[];
 		selectedFile: string;
 		disabled?: boolean;
 		readOnlyMessage?: string;
 		onSelect: (key: string) => void;
-		onCreateFile?: (parentPath: string, name: string, content?: string) => void;
+		onCreateFile?: (parentPath: string, name: string) => void;
 		onCreateFolder?: (parentPath: string, name: string) => void;
 		onRename?: (relativePath: string, newName: string) => void;
 		onMove?: (relativePath: string, newParentPath: string) => void;
 		onDelete?: (relativePath: string) => void;
+		onUpload?: (parentPath: string, files: File[]) => Promise<string | void> | string | void;
+		onDownload?: (relativePath: string) => void;
+		onRestore?: (relativePath: string) => void;
+		multipleUploads?: boolean;
+		allowUploadOverwrite?: boolean;
+		validateName?: (name: string, parentPath: string) => string | null;
+		emptyMessage?: string;
+		uploadDescription?: string;
+		rootDestinationLabel?: string;
+		rootPathMessage?: string;
+		deleteConfirmMessage?: (name: string) => string;
+		lockedLabel?: string;
 	}
 
 	let {
-		composeFileName,
+		composeFileName = 'compose.yaml',
 		overrideFileName,
 		showOverride = false,
 		onAddOverride,
+		title = m.project_files(),
+		leadingRows,
 		entries,
 		selectedFile,
 		disabled = false,
@@ -82,7 +105,19 @@
 		onCreateFolder,
 		onRename,
 		onMove,
-		onDelete
+		onDelete,
+		onUpload,
+		onDownload,
+		onRestore,
+		multipleUploads = false,
+		allowUploadOverwrite = false,
+		validateName,
+		emptyMessage = m.project_files_empty(),
+		uploadDescription = m.project_file_upload_description(),
+		rootDestinationLabel = m.project_file_root_destination(),
+		rootPathMessage = m.project_file_root_path(),
+		deleteConfirmMessage = (name) => m.project_file_delete_confirm({ name }),
+		lockedLabel = m.project_file_protected()
 	}: Props = $props();
 
 	let openFolders = $state<Record<string, boolean>>({});
@@ -94,7 +129,7 @@
 	let dialogTargetPath = $state('');
 	let dialogDestinationPath = $state('');
 	let destinationOpenFolders = $state<Record<string, boolean>>({});
-	let uploadFile = $state<File | null>(null);
+	let uploadFiles = $state<File[]>([]);
 	let uploadInputKey = $state(0);
 	let dialogSubmitting = $state(false);
 	let dialogError = $state<string | null>(null);
@@ -104,11 +139,32 @@
 	const selectedManagedEntry = $derived(selectedManagedPath ? entryByPath.get(selectedManagedPath) : undefined);
 	const selectedParentPath = $derived.by(() => {
 		if (activeFolderPath && entryByPath.get(activeFolderPath)?.isDirectory) return activeFolderPath;
-		return selectedManagedEntry?.isDirectory ? selectedManagedEntry.relativePath : projectFileParentPath(selectedManagedPath);
+		return selectedManagedEntry?.isDirectory ? selectedManagedEntry.relativePath : workspaceFileParentPath(selectedManagedPath);
 	});
 	const rows = $derived.by(() => flattenRows(entries, openFolders));
 	const hasDirectories = $derived(entries.some((entry) => entry.isDirectory));
-	const canManageFiles = $derived(!!onCreateFile && !!onCreateFolder && !!onRename && !!onMove && !!onDelete);
+	const canCreateFile = $derived(!!onCreateFile);
+	const canCreateFolder = $derived(!!onCreateFolder);
+	const canUpload = $derived(!!onUpload);
+	const hasHeaderActions = $derived(canCreateFile || canCreateFolder || canUpload);
+	const effectiveLeadingRows = $derived.by(() => {
+		if (leadingRows) return leadingRows;
+		const rows: WorkspaceTreeLeadingRow[] = [
+			{ key: 'compose', label: composeFileName, iconClass: 'text-blue-500', locked: true }
+		];
+		if (showOverride) {
+			rows.push({
+				key: 'override',
+				label: overrideFileName ?? 'compose.override.yaml',
+				iconClass: 'text-purple-500',
+				locked: true
+			});
+		} else if (onAddOverride) {
+			rows.push({ key: 'add-override', label: m.compose_override_add(), onSelect: onAddOverride });
+		}
+		rows.push({ key: 'env', label: '.env', iconClass: 'text-green-500', locked: true });
+		return rows;
+	});
 	const dialogTitle = $derived.by(() => {
 		if (dialogMode === 'upload') return m.upload_file();
 		if (dialogMode === 'move') return m.move();
@@ -143,16 +199,16 @@
 		};
 	}
 
-	function flattenRows(files: ManagedProjectFileEntry[], folderStates: Record<string, boolean>): TreeRow[] {
-		const byParent = new Map<string, ManagedProjectFileEntry[]>();
+	function flattenRows(files: WorkspaceFileEntry[], folderStates: Record<string, boolean>): TreeRow[] {
+		const byParent = new Map<string, WorkspaceFileEntry[]>();
 		for (const entry of files) {
-			const parentPath = projectFileParentPath(entry.relativePath);
+			const parentPath = workspaceFileParentPath(entry.relativePath);
 			const siblings = byParent.get(parentPath) ?? [];
 			siblings.push(entry);
 			byParent.set(parentPath, siblings);
 		}
 		for (const siblings of byParent.values()) {
-			siblings.sort(compareProjectFileEntries);
+			siblings.sort(compareWorkspaceFileEntries);
 		}
 
 		const result: TreeRow[] = [];
@@ -178,7 +234,7 @@
 		dialogTargetPath = '';
 		dialogDestinationPath = parentPath;
 		destinationOpenFolders = parentPath ? openAncestorDestinationFolders(parentPath) : {};
-		uploadFile = null;
+		uploadFiles = [];
 		dialogSubmitting = false;
 		dialogError = null;
 		dialogOpen = true;
@@ -187,17 +243,17 @@
 	function openRenameDialog(relativePath: string) {
 		if (disabled) return;
 		dialogMode = 'rename';
-		dialogName = projectFileBasename(relativePath);
-		dialogParentPath = projectFileParentPath(relativePath);
+		dialogName = workspaceFileBasename(relativePath);
+		dialogParentPath = workspaceFileParentPath(relativePath);
 		dialogTargetPath = relativePath;
 		dialogDestinationPath = '';
-		uploadFile = null;
+		uploadFiles = [];
 		dialogSubmitting = false;
 		dialogError = null;
 		dialogOpen = true;
 	}
 
-	function compareProjectFolderPaths(a: string, b: string): number {
+	function compareWorkspaceFolderPaths(a: string, b: string): number {
 		const aSegments = a.split('/');
 		const bSegments = b.split('/');
 		const length = Math.min(aSegments.length, bSegments.length);
@@ -223,7 +279,7 @@
 		const childCounts = new Map<string, number>();
 		for (const entry of entries) {
 			if (!entry.isDirectory) continue;
-			const parentPath = projectFileParentPath(entry.relativePath);
+			const parentPath = workspaceFileParentPath(entry.relativePath);
 			childCounts.set(parentPath, (childCounts.get(parentPath) ?? 0) + 1);
 		}
 		return childCounts;
@@ -234,17 +290,17 @@
 		return [
 			{
 				relativePath: '',
-				label: m.project_file_root_destination(),
+				label: rootDestinationLabel,
 				depth: 0,
 				hasChildren: (childCounts.get('') ?? 0) > 0,
 				disabled: false
 			},
 			...entries
 				.filter((candidate) => candidate.isDirectory)
-				.sort((a, b) => compareProjectFolderPaths(a.relativePath, b.relativePath))
+				.sort((a, b) => compareWorkspaceFolderPaths(a.relativePath, b.relativePath))
 				.map((candidate) => ({
 					relativePath: candidate.relativePath,
-					label: projectFileBasename(candidate.relativePath),
+					label: workspaceFileBasename(candidate.relativePath),
 					depth: destinationDepth(candidate.relativePath),
 					hasChildren: (childCounts.get(candidate.relativePath) ?? 0) > 0,
 					disabled: false
@@ -256,14 +312,14 @@
 		const entry = entryByPath.get(relativePath);
 		if (!entry) return [];
 
-		const basename = projectFileBasename(relativePath);
-		const currentParentPath = projectFileParentPath(relativePath);
+		const basename = workspaceFileBasename(relativePath);
+		const currentParentPath = workspaceFileParentPath(relativePath);
 		return buildFolderDestinationOptions().map((candidate) => {
-			const targetPath = joinProjectFilePath(candidate.relativePath, basename);
+			const targetPath = joinWorkspaceFilePath(candidate.relativePath, basename);
 			let reason: string | undefined;
 			if (candidate.relativePath === currentParentPath) {
 				reason = m.project_file_move_current_location();
-			} else if (entry.isDirectory && candidate.relativePath && projectFilePathMatches(candidate.relativePath, relativePath)) {
+			} else if (entry.isDirectory && candidate.relativePath && workspaceFilePathMatches(candidate.relativePath, relativePath)) {
 				reason = m.project_file_move_descendant_blocked();
 			} else if (entryByPath.has(targetPath)) {
 				reason = m.project_file_move_duplicate_destination();
@@ -279,19 +335,19 @@
 
 	function openAncestorDestinationFolders(relativePath: string): Record<string, boolean> {
 		const folders: Record<string, boolean> = {};
-		let parentPath = projectFileParentPath(relativePath);
+		let parentPath = workspaceFileParentPath(relativePath);
 		while (parentPath) {
 			folders[parentPath] = true;
-			parentPath = projectFileParentPath(parentPath);
+			parentPath = workspaceFileParentPath(parentPath);
 		}
 		return folders;
 	}
 
 	function isDestinationVisible(relativePath: string): boolean {
-		let parentPath = projectFileParentPath(relativePath);
+		let parentPath = workspaceFileParentPath(relativePath);
 		while (parentPath) {
 			if (destinationOpenFolders[parentPath] !== true) return false;
-			parentPath = projectFileParentPath(parentPath);
+			parentPath = workspaceFileParentPath(parentPath);
 		}
 		return true;
 	}
@@ -313,7 +369,7 @@
 		dialogTargetPath = relativePath;
 		dialogDestinationPath = selectedDestinationPath;
 		destinationOpenFolders = selectedDestinationPath ? openAncestorDestinationFolders(selectedDestinationPath) : {};
-		uploadFile = null;
+		uploadFiles = [];
 		dialogSubmitting = false;
 		dialogError = null;
 		dialogOpen = true;
@@ -327,7 +383,7 @@
 		dialogTargetPath = '';
 		dialogDestinationPath = parentPath;
 		destinationOpenFolders = parentPath ? openAncestorDestinationFolders(parentPath) : {};
-		uploadFile = null;
+		uploadFiles = [];
 		uploadInputKey += 1;
 		dialogSubmitting = false;
 		dialogError = null;
@@ -336,31 +392,15 @@
 
 	function handleUploadFileChange(event: Event) {
 		const input = event.currentTarget as HTMLInputElement;
-		const file = input.files?.[0] ?? null;
-		uploadFile = file;
-		if (file) {
-			dialogName = file.name;
+		uploadFiles = input.files ? [...input.files] : [];
+		if (uploadFiles.length === 1) {
+			dialogName = uploadFiles[0]?.name ?? '';
 		}
 		dialogError = null;
 	}
 
-	async function readUploadFileContent(file: File): Promise<string | null> {
-		if (file.size > MAX_MANAGED_PROJECT_FILE_BYTES) {
-			dialogError = m.project_file_upload_too_large();
-			return null;
-		}
-
-		try {
-			const bytes = new Uint8Array(await file.arrayBuffer());
-			if (bytes.includes(0)) {
-				dialogError = m.project_file_upload_text_required();
-				return null;
-			}
-			return new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-		} catch {
-			dialogError = m.project_file_upload_text_required();
-			return null;
-		}
+	function normalizeDialogName(name: string, parentPath: string): string | null {
+		return validateName ? validateName(name, parentPath) : validateWorkspaceFileName(name);
 	}
 
 	async function handleDialogSubmit() {
@@ -383,13 +423,13 @@
 		}
 
 		if (dialogMode === 'rename') {
-			const name = validateProjectFileName(dialogName, dialogParentPath, composeFileName);
+			const name = normalizeDialogName(dialogName, dialogParentPath);
 			if (!name) {
 				dialogError = m.project_file_invalid_name();
 				return;
 			}
 
-			const targetPath = joinProjectFilePath(dialogParentPath, name);
+			const targetPath = joinWorkspaceFilePath(dialogParentPath, name);
 			if (targetPath !== dialogTargetPath && entryByPath.has(targetPath)) {
 				dialogError = m.project_file_duplicate_name();
 				return;
@@ -400,39 +440,60 @@
 			return;
 		}
 
-		const name = validateProjectFileName(dialogName, dialogDestinationPath, composeFileName);
+		if (dialogMode === 'upload') {
+			if (uploadFiles.length === 0) {
+				dialogError = m.project_file_upload_file_required();
+				return;
+			}
+			const normalizedNames = multipleUploads
+				? uploadFiles.map((file) => normalizeDialogName(file.name, dialogDestinationPath))
+				: [normalizeDialogName(dialogName, dialogDestinationPath)];
+			if (normalizedNames.some((name) => !name)) {
+				dialogError = m.project_file_invalid_name();
+				return;
+			}
+			if (
+				!allowUploadOverwrite &&
+				normalizedNames.some((name) => name && entryByPath.has(joinWorkspaceFilePath(dialogDestinationPath, name)))
+			) {
+				dialogError = m.project_file_duplicate_name();
+				return;
+			}
+
+			dialogSubmitting = true;
+			try {
+				const selectedFiles = multipleUploads
+					? uploadFiles
+					: [
+							new File([uploadFiles[0]!], normalizedNames[0]!, {
+								type: uploadFiles[0]!.type,
+								lastModified: uploadFiles[0]!.lastModified
+							})
+						];
+				const error = await onUpload?.(dialogDestinationPath, selectedFiles);
+				if (typeof error === 'string' && error) {
+					dialogError = error;
+					return;
+				}
+				if (dialogDestinationPath) {
+					openFolders = { ...openFolders, [dialogDestinationPath]: true };
+				}
+				dialogOpen = false;
+			} finally {
+				dialogSubmitting = false;
+			}
+			return;
+		}
+
+		const name = normalizeDialogName(dialogName, dialogDestinationPath);
 		if (!name) {
 			dialogError = m.project_file_invalid_name();
 			return;
 		}
 
-		const targetPath = joinProjectFilePath(dialogDestinationPath, name);
+		const targetPath = joinWorkspaceFilePath(dialogDestinationPath, name);
 		if (entryByPath.has(targetPath)) {
 			dialogError = m.project_file_duplicate_name();
-			return;
-		}
-
-		if (dialogMode === 'upload') {
-			if (!uploadFile) {
-				dialogError = m.project_file_upload_file_required();
-				return;
-			}
-
-			dialogSubmitting = true;
-			const content = await readUploadFileContent(uploadFile);
-			dialogSubmitting = false;
-			if (content === null) {
-				return;
-			}
-
-			onCreateFile?.(dialogDestinationPath, name, content);
-			if (dialogDestinationPath) {
-				openFolders = {
-					...openFolders,
-					[dialogDestinationPath]: true
-				};
-			}
-			dialogOpen = false;
 			return;
 		}
 
@@ -453,11 +514,11 @@
 		dialogOpen = false;
 	}
 
-	function handleDelete(entry: ManagedProjectFileEntry) {
+	function handleDelete(entry: WorkspaceFileEntry) {
 		if (disabled) return;
 		openConfirmDialog({
 			title: m.delete_name({ name: entry.relativePath }),
-			message: m.project_file_delete_confirm({ name: entry.relativePath }),
+			message: deleteConfirmMessage(entry.relativePath),
 			confirm: {
 				label: m.common_delete(),
 				destructive: true,
@@ -469,57 +530,63 @@
 
 <div class="flex min-h-0 flex-1 flex-col">
 	<div class="flex h-9 shrink-0 items-center border-b border-border px-2">
-		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{m.project_files()}</span>
-		{#if canManageFiles}
+		<span class="text-[11px] font-semibold tracking-wider text-muted-foreground uppercase">{title}</span>
+		{#if hasHeaderActions}
 			<div class="ml-auto flex items-center gap-0.5">
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ArcaneButton
-							action="create"
-							size="icon"
-							tone="ghost"
-							class="size-6"
-							icon={CreateFileIcon}
-							showLabel={false}
-							{disabled}
-							customLabel={m.project_file_new_file()}
-							onclick={() => openCreateDialog('create_file')}
-						/>
-					</Tooltip.Trigger>
-					<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ArcaneButton
-							action="create"
-							size="icon"
-							tone="ghost"
-							class="size-6"
-							icon={CreateFolderIcon}
-							showLabel={false}
-							{disabled}
-							customLabel={m.new_folder()}
-							onclick={() => openCreateDialog('create_folder')}
-						/>
-					</Tooltip.Trigger>
-					<Tooltip.Content>{m.new_folder()}</Tooltip.Content>
-				</Tooltip.Root>
-				<Tooltip.Root>
-					<Tooltip.Trigger>
-						<ArcaneButton
-							action="base"
-							size="icon"
-							tone="ghost"
-							class="size-6"
-							icon={UploadIcon}
-							showLabel={false}
-							{disabled}
-							customLabel={m.upload_file()}
-							onclick={() => openUploadDialog()}
-						/>
-					</Tooltip.Trigger>
-					<Tooltip.Content>{m.upload_file()}</Tooltip.Content>
-				</Tooltip.Root>
+				{#if canCreateFile}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<ArcaneButton
+								action="create"
+								size="icon"
+								tone="ghost"
+								class="size-6"
+								icon={CreateFileIcon}
+								showLabel={false}
+								{disabled}
+								customLabel={m.project_file_new_file()}
+								onclick={() => openCreateDialog('create_file')}
+							/>
+						</Tooltip.Trigger>
+						<Tooltip.Content>{m.project_file_new_file()}</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
+				{#if canCreateFolder}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<ArcaneButton
+								action="create"
+								size="icon"
+								tone="ghost"
+								class="size-6"
+								icon={CreateFolderIcon}
+								showLabel={false}
+								{disabled}
+								customLabel={m.new_folder()}
+								onclick={() => openCreateDialog('create_folder')}
+							/>
+						</Tooltip.Trigger>
+						<Tooltip.Content>{m.new_folder()}</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
+				{#if canUpload}
+					<Tooltip.Root>
+						<Tooltip.Trigger>
+							<ArcaneButton
+								action="base"
+								size="icon"
+								tone="ghost"
+								class="size-6"
+								icon={UploadIcon}
+								showLabel={false}
+								{disabled}
+								customLabel={m.upload_file()}
+								onclick={() => openUploadDialog()}
+							/>
+						</Tooltip.Trigger>
+						<Tooltip.Content>{m.upload_file()}</Tooltip.Content>
+					</Tooltip.Root>
+				{/if}
 			</div>
 		{/if}
 	</div>
@@ -530,78 +597,35 @@
 
 	<div class="min-h-0 flex-1 overflow-auto">
 		<TreeView.Root class="min-w-max p-2 whitespace-nowrap">
-			<button
-				type="button"
-				class={cn(
-					'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
-					selectedFile === 'compose' && 'bg-accent'
-				)}
-				onclick={() => onSelect('compose')}
-			>
-				{#if hasDirectories}
-					<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-				{/if}
-				<FileTextIcon class="size-4 shrink-0 text-blue-500" />
-				<span class="min-w-0 flex-1 truncate">{composeFileName}</span>
-				<span class="inline-flex size-6 shrink-0 items-center justify-center">
-					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
-				</span>
-			</button>
-
-			{#if showOverride}
+			{#each effectiveLeadingRows as leadingRow (leadingRow.key)}
 				<button
 					type="button"
 					class={cn(
 						'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
-						selectedFile === 'override' && 'bg-accent'
+						selectedFile === leadingRow.key && 'bg-accent',
+						leadingRow.key === 'add-override' && 'text-muted-foreground hover:text-foreground'
 					)}
-					onclick={() => onSelect('override')}
+					onclick={() => (leadingRow.onSelect ? leadingRow.onSelect() : onSelect(leadingRow.key))}
 				>
 					{#if hasDirectories}
 						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
 					{/if}
-					<FileTextIcon class="size-4 shrink-0 text-purple-500" />
-					<span class="min-w-0 flex-1 truncate">{overrideFileName}</span>
-					<span class="inline-flex size-6 shrink-0 items-center justify-center">
-						<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
-					</span>
-				</button>
-			{:else if onAddOverride}
-				<button
-					type="button"
-					class="flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] text-muted-foreground hover:bg-accent hover:text-foreground"
-					onclick={() => onAddOverride?.()}
-				>
-					{#if hasDirectories}
-						<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
+					{#if leadingRow.key === 'add-override'}
+						<CreateFileIcon class="size-4 shrink-0" />
+					{:else}
+						<FileTextIcon class={cn('size-4 shrink-0', leadingRow.iconClass ?? 'text-muted-foreground')} />
 					{/if}
-					<CreateFileIcon class="size-4 shrink-0" />
-					<span class="min-w-0 flex-1 truncate">{m.compose_override_add()}</span>
+					<span class="min-w-0 flex-1 truncate">{leadingRow.label}</span>
+					{#if leadingRow.locked}
+						<span class="inline-flex size-6 shrink-0 items-center justify-center">
+							<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+						</span>
+					{/if}
 				</button>
-			{/if}
-
-			<button
-				type="button"
-				class={cn(
-					'flex w-full items-center gap-1.5 rounded-md px-2 py-1 text-left text-[13px] hover:bg-accent',
-					selectedFile === 'env' && 'bg-accent'
-				)}
-				onclick={() => onSelect('env')}
-			>
-				{#if hasDirectories}
-					<span class="inline-flex size-4 shrink-0 items-center justify-center"></span>
-				{/if}
-				<FileTextIcon class="size-4 shrink-0 text-green-500" />
-				<span class="min-w-0 flex-1 truncate">.env</span>
-				<span class="inline-flex size-6 shrink-0 items-center justify-center">
-					<LockIcon class="size-3.5 shrink-0 text-muted-foreground" aria-label={m.project_file_protected()} />
-				</span>
-			</button>
+			{/each}
 
 			{#if rows.length === 0}
-				{#if canManageFiles}
-					<div class="px-7 py-3 text-xs text-muted-foreground">{m.project_files_empty()}</div>
-				{/if}
+				<div class="px-7 py-3 text-xs text-muted-foreground">{emptyMessage}</div>
 			{:else}
 				{#each rows as row (row.relativePath)}
 					<div
@@ -651,50 +675,75 @@
 							{/if}
 						</button>
 
-						{#if canManageFiles}
+						{#if row.locked || row.isSymlink || onRename || onMove || onDelete || onDownload || onRestore}
 							<div class="flex shrink-0 items-center gap-0.5">
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											type="button"
-											class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-											aria-label={m.project_file_rename_label({ name: row.relativePath })}
+								{#if row.locked || row.isSymlink}
+									<LockIcon class="mx-1 size-3.5 shrink-0 text-muted-foreground" aria-label={lockedLabel} />
+								{:else}
+									{#if onDownload && !row.isDirectory && !row.pending}
+										<ArcaneButton
+											action="base"
+											size="icon"
+											tone="ghost"
+											class="size-6"
+											icon={DownloadIcon}
+											showLabel={false}
+											customLabel={m.templates_download()}
+											onclick={() => onDownload?.(row.relativePath)}
+										/>
+									{/if}
+									{#if onRestore && !row.isDirectory && !row.pending}
+										<ArcaneButton
+											action="base"
+											size="icon"
+											tone="ghost"
+											class="size-6"
+											icon={RefreshIcon}
+											showLabel={false}
+											customLabel={m.volumes_backups_restore()}
+											onclick={() => onRestore?.(row.relativePath)}
+										/>
+									{/if}
+									{#if onRename}
+										<ArcaneButton
+											action="base"
+											size="icon"
+											tone="ghost"
+											class="size-6"
+											icon={EditIcon}
+											showLabel={false}
 											{disabled}
+											customLabel={m.rename()}
 											onclick={() => openRenameDialog(row.relativePath)}
-										>
-											<EditIcon class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Content>{m.rename()}</Tooltip.Content>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											type="button"
-											class="inline-flex size-6 items-center justify-center rounded text-foreground hover:bg-foreground/10"
-											aria-label={m.project_file_move_label({ name: row.relativePath })}
+										/>
+									{/if}
+									{#if onMove}
+										<ArcaneButton
+											action="base"
+											size="icon"
+											tone="ghost"
+											class="size-6"
+											icon={FolderMoveIcon}
+											showLabel={false}
 											{disabled}
+											customLabel={m.move()}
 											onclick={() => openMoveDialog(row.relativePath)}
-										>
-											<FolderMoveIcon class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Content>{m.move()}</Tooltip.Content>
-								</Tooltip.Root>
-								<Tooltip.Root>
-									<Tooltip.Trigger>
-										<button
-											type="button"
-											class="inline-flex size-6 items-center justify-center rounded text-destructive hover:bg-destructive/10"
-											aria-label={m.delete_name({ name: row.relativePath })}
+										/>
+									{/if}
+									{#if onDelete}
+										<ArcaneButton
+											action="remove"
+											size="icon"
+											tone="ghost"
+											class="size-6"
+											icon={TrashIcon}
+											showLabel={false}
 											{disabled}
+											customLabel={m.common_delete()}
 											onclick={() => handleDelete(row)}
-										>
-											<TrashIcon class="size-3.5" />
-										</button>
-									</Tooltip.Trigger>
-									<Tooltip.Content>{m.common_delete()}</Tooltip.Content>
-								</Tooltip.Root>
+										/>
+									{/if}
+								{/if}
 							</div>
 						{/if}
 					</div>
@@ -719,11 +768,11 @@
 					{#if dialogMode === 'move'}
 						{m.project_file_move_description({ name: dialogTargetPath })}
 					{:else if dialogMode === 'upload'}
-						{m.project_file_upload_description()}
+						{uploadDescription}
 					{:else if dialogMode === 'create_file' || dialogMode === 'create_folder'}
-						{dialogDestinationPath ? m.project_file_parent_path({ path: dialogDestinationPath }) : m.project_file_root_path()}
+						{dialogDestinationPath ? m.project_file_parent_path({ path: dialogDestinationPath }) : rootPathMessage}
 					{:else}
-						{dialogParentPath ? m.project_file_parent_path({ path: dialogParentPath }) : m.project_file_root_path()}
+						{dialogParentPath ? m.project_file_parent_path({ path: dialogParentPath }) : rootPathMessage}
 					{/if}
 				</Dialog.Description>
 			</Dialog.Header>
@@ -732,12 +781,18 @@
 				<div class="space-y-2">
 					<Label for="project-file-upload">{m.project_file_upload_file_label()}</Label>
 					{#key uploadInputKey}
-						<Input id="project-file-upload" type="file" onchange={handleUploadFileChange} aria-invalid={!!dialogError} />
+						<Input
+							id="project-file-upload"
+							type="file"
+							multiple={multipleUploads}
+							onchange={handleUploadFileChange}
+							aria-invalid={!!dialogError}
+						/>
 					{/key}
 				</div>
 			{/if}
 
-			{#if dialogMode !== 'move'}
+			{#if dialogMode !== 'move' && (dialogMode !== 'upload' || !multipleUploads)}
 				<div class="space-y-2">
 					<Label for="project-file-name">{m.common_name()}</Label>
 					<Input
@@ -817,7 +872,7 @@
 					loading={dialogSubmitting}
 					disabled={dialogSubmitting ||
 						(dialogMode === 'move' && !hasValidDestination) ||
-						(dialogMode === 'upload' && !uploadFile)}
+						(dialogMode === 'upload' && uploadFiles.length === 0)}
 				/>
 			</Dialog.Footer>
 		</form>
