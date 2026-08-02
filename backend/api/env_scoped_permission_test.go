@@ -9,6 +9,8 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 // TestEnvScopedOperationsDeclarePermission guards the remote-environment proxy
@@ -19,12 +21,13 @@ import (
 // to an agent. An operation missing this metadata would be denied by the proxy
 // (default-deny), so this test fails loudly if any env-scoped operation is
 // registered with a bare huma.Register instead of RegisterWithPermission.
+
 func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 	api := SetupAPIForSpec()
 	oapi := api.OpenAPI()
-	if oapi == nil || oapi.Paths == nil {
-		t.Fatal("expected an OpenAPI document with paths")
-	}
+
+	require.False(t, oapi == nil || oapi.Paths == nil,
+		"expected an OpenAPI document with paths")
 
 	var missing []string
 	for path, item := range oapi.Paths {
@@ -50,7 +53,7 @@ func TestEnvScopedOperationsDeclarePermission(t *testing.T) {
 
 	if len(missing) > 0 {
 		sort.Strings(missing)
-		t.Errorf("%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
+		assert.Failf(t, "unexpected failure", "%d env-scoped operation(s) missing required-permission metadata; register them with middleware.RegisterWithPermission:\n  %s",
 			len(missing), strings.Join(missing, "\n  "))
 	}
 }

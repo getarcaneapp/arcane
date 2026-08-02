@@ -294,7 +294,7 @@ func TestTunnelClient_WebSocket_ReconnectClosesStreams(t *testing.T) {
 	select {
 	case <-firstStreamLive:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for the first stream to come up")
+		require.FailNow(t, "timed out waiting for the first stream to come up")
 	}
 	assert.Equal(t, 1, countStreams(), "expected one active stream during the first connection")
 
@@ -600,8 +600,9 @@ func TestTunnelClient_DialLocalWebSocket_StripsForwardedBrowserHeaders(t *testin
 			return
 		}
 		defer func() { _ = conn.CloseNow() }()
-
-		require.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte("ok")))
+		if !assert.NoError(t, conn.Write(r.Context(), websocket.MessageText, []byte("ok"))) {
+			return
+		}
 	}))
 	defer localServer.Close()
 
@@ -659,7 +660,9 @@ func TestTunnelClient_IsGRPCConnectionInternal(t *testing.T) {
 
 func TestTunnelClient_HandleRequest_GRPCConfigWithWebSocketConnUsesNonStreamingResponse(t *testing.T) {
 	localHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, "/local/api", r.URL.Path)
+		if !assert.Equal(t, "/local/api", r.URL.Path) {
+			return
+		}
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(`{"ok":true}`))
@@ -1107,7 +1110,7 @@ func TestTunnelClient_connectAndServeGRPC_TimesOutWithoutRegisterResponse(t *tes
 
 	err := client.connectAndServeGRPC(ctx)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, errTunnelRegistrationTimeout)
+	require.ErrorIs(t, err, errTunnelRegistrationTimeout)
 	assert.Contains(t, err.Error(), "timed out waiting for tunnel registration response")
 	assert.Contains(t, err.Error(), "not forwarding gRPC")
 	assert.EqualValues(t, 1, service.connectCount.Load())
@@ -1161,7 +1164,7 @@ func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnC
 	select {
 	case <-firstConn.receiveStarted:
 	case <-time.After(time.Second):
-		t.Fatal("registration receive did not start")
+		require.FailNow(t, "registration receive did not start")
 	}
 
 	client.conn.Store(&connBox{conn: secondConn})
@@ -1172,7 +1175,7 @@ func TestTunnelClient_awaitRegistrationInternal_ClosesAttemptConnWhenClientConnC
 		require.Nil(t, result.msg)
 		require.ErrorIs(t, result.err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("registration did not exit after cancellation")
+		require.FailNow(t, "registration did not exit after cancellation")
 	}
 
 	assert.True(t, firstConn.IsClosed())
@@ -1295,7 +1298,7 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	msgType, payload, err := proxyConn.Read(ctx)
 	select {
 	case upgradeErr := <-upgradeErrCh:
-		t.Fatalf("local websocket upgrade failed: %s", upgradeErr)
+		require.FailNowf(t, "unexpected failure", "local websocket upgrade failed: %s", upgradeErr)
 	default:
 	}
 	require.NoError(t, err)
@@ -1306,28 +1309,28 @@ func TestTunnelClient_GRPC_WebSocketProxyEndToEnd(t *testing.T) {
 	case got := <-pathCh:
 		assert.Equal(t, "/api/environments/0/ws/system/stats", got)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for forwarded websocket path")
+		require.FailNow(t, "timeout waiting for forwarded websocket path")
 	}
 
 	select {
 	case got := <-headerTokenCh:
 		assert.Equal(t, "valid-token", got)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for local websocket auth header")
+		require.FailNow(t, "timeout waiting for local websocket auth header")
 	}
 
 	select {
 	case got := <-queryCh:
 		assert.Equal(t, "tail=100", got)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for forwarded query")
+		require.FailNow(t, "timeout waiting for forwarded query")
 	}
 
 	select {
 	case got := <-receivedMsgCh:
 		assert.Equal(t, "hello-grpc-ws", got)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for forwarded websocket payload")
+		require.FailNow(t, "timeout waiting for forwarded websocket payload")
 	}
 
 	select {
@@ -1376,7 +1379,7 @@ func TestTunnelClient_connectAndServe_WebSocketConfigFallsBackToWebSocket(t *tes
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected websocket fallback connection to manager")
+		require.FailNow(t, "expected websocket fallback connection to manager")
 	}
 }
 
@@ -1417,7 +1420,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected auto transport to fall back to websocket when gRPC is unavailable")
+		require.FailNow(t, "expected auto transport to fall back to websocket when gRPC is unavailable")
 	}
 
 	cancel()
@@ -1425,7 +1428,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCUnavailabl
 	select {
 	case <-errCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for auto fallback tunnel shutdown")
+		require.FailNow(t, "timeout waiting for auto fallback tunnel shutdown")
 	}
 }
 
@@ -1455,7 +1458,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected auto transport to fall back to websocket when gRPC setup hangs")
+		require.FailNow(t, "expected auto transport to fall back to websocket when gRPC setup hangs")
 	}
 
 	cancel()
@@ -1463,7 +1466,7 @@ func TestTunnelClient_connectAndServe_AutoFallsBackToWebSocketWhenGRPCSetupHangs
 	select {
 	case <-errCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for auto fallback tunnel shutdown")
+		require.FailNow(t, "timeout waiting for auto fallback tunnel shutdown")
 	}
 }
 
@@ -1489,7 +1492,7 @@ func TestTunnelClient_connectAndServe_GRPCDoesNotFallbackToWebSocket(t *testing.
 
 	select {
 	case <-wsConnectedCh:
-		t.Fatal("explicit gRPC transport should not fall back to websocket")
+		require.FailNow(t, "explicit gRPC transport should not fall back to websocket")
 	default:
 	}
 }
@@ -1540,9 +1543,9 @@ func TestTunnelClient_connectAndServe_OpensGRPCWhenAvailable(t *testing.T) {
 
 	select {
 	case err := <-errCh:
-		assert.ErrorIs(t, err, context.Canceled)
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for gRPC tunnel shutdown")
+		require.FailNow(t, "timeout waiting for gRPC tunnel shutdown")
 	}
 }
 
@@ -1626,7 +1629,7 @@ func startHangingTCPServerInternal(t *testing.T, ctx context.Context) (string, f
 		select {
 		case <-done:
 		case <-time.After(2 * time.Second):
-			t.Fatal("timeout waiting for hanging TCP server shutdown")
+			require.FailNow(t, "timeout waiting for hanging TCP server shutdown")
 		}
 	}
 
@@ -1761,10 +1764,12 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 		case "/api/tunnel/poll":
 			pollCount.Add(1)
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
 				Status:              TunnelStatusRequired,
 				PollIntervalSeconds: 1,
-			}))
+			})) {
+				return
+			}
 		case "/api/tunnel/connect":
 			conn, err := websocket.Accept(w, r, nil)
 			if err != nil {
@@ -1809,12 +1814,12 @@ func TestTunnelClient_connectAndServePoll_OpensWebSocketWhenRequired(t *testing.
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected poll transport to open websocket tunnel when required")
+		require.FailNow(t, "expected poll transport to open websocket tunnel when required")
 	}
 
 	assert.GreaterOrEqual(t, pollCount.Load(), int32(1))
@@ -1825,10 +1830,12 @@ func TestTunnelClient_pollTunnelControlInternal_UsesConfiguredHTTPClient(t *test
 
 	managerServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
 			Status:              TunnelStatusIdle,
 			PollIntervalSeconds: 1,
-		}))
+		})) {
+			return
+		}
 	}))
 	defer managerServer.Close()
 
@@ -1866,10 +1873,12 @@ func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testin
 		switch r.URL.Path {
 		case "/api/tunnel/poll":
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
 				Status:              TunnelStatusIdle,
 				PollIntervalSeconds: 1,
-			}))
+			})) {
+				return
+			}
 		case "/api/tunnel/connect":
 			select {
 			case wsConnectedCh <- struct{}{}:
@@ -1890,11 +1899,11 @@ func TestTunnelClient_connectAndServePoll_DoesNotOpenWebSocketWhenIdle(t *testin
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	select {
 	case <-wsConnectedCh:
-		t.Fatal("did not expect idle poll transport to open websocket tunnel")
+		require.FailNow(t, "did not expect idle poll transport to open websocket tunnel")
 	default:
 	}
 }
@@ -1916,10 +1925,12 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(TunnelPollResponse{
 				Status:              TunnelStatusRequired,
 				PollIntervalSeconds: 1,
-			}))
+			})) {
+				return
+			}
 		case "/api/tunnel/connect":
 			conn, err := websocket.Accept(w, r, nil)
 			if err != nil {
@@ -1964,12 +1975,12 @@ func TestTunnelClient_connectAndServePoll_RetriesAfterTransientPollError(t *test
 
 	err := client.connectAndServe(ctx)
 	require.Error(t, err)
-	assert.ErrorIs(t, err, context.DeadlineExceeded)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
 
 	select {
 	case <-wsConnectedCh:
 	case <-time.After(2 * time.Second):
-		t.Fatal("expected poll transport to recover after transient poll error")
+		require.FailNow(t, "expected poll transport to recover after transient poll error")
 	}
 
 	assert.GreaterOrEqual(t, pollCount.Load(), int32(2))
@@ -2006,7 +2017,7 @@ func TestTunnelClient_syncPollManagedSessionInternal_IdleUsesBoundedStopTimeout(
 	nextSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), session, TunnelStatusIdle)
 	require.Same(t, session, nextSession)
 	require.Error(t, err)
-	assert.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
+	require.EqualError(t, err, "timed out waiting for poll-managed websocket session to stop")
 
 	fencedSession, err := (&TunnelClient{}).syncPollManagedSessionInternal(context.Background(), nextSession, TunnelStatusRequired)
 	require.NoError(t, err)
@@ -2036,7 +2047,9 @@ func startTestPollAndGRPCManagerInternal(t *testing.T, ctx context.Context, serv
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/tunnel/poll" {
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(pollResp))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(pollResp)) {
+				return
+			}
 			return
 		}
 
@@ -2304,7 +2317,7 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 	select {
 	case <-registered:
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for registration")
+		require.FailNow(t, "timed out waiting for registration")
 	}
 	cancel()
 
@@ -2313,6 +2326,6 @@ func TestConnectAndServeWebSocket_CancelUnblocksMessageLoop(t *testing.T) {
 		// Cancellation must close the socket and unblock the message loop well
 		// under the poll-managed teardown timeout.
 	case <-time.After(defaultPollManagedSessionStopTimeout):
-		t.Fatal("messageLoop did not unblock after context cancellation")
+		require.FailNow(t, "messageLoop did not unblock after context cancellation")
 	}
 }

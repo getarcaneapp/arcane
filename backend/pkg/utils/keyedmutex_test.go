@@ -44,8 +44,10 @@ func TestKeyedMutexTryLockDoesNotBlockOnHeldKey(t *testing.T) {
 	var locks KeyedMutex
 
 	unlock := locks.Lock("a")
-	if _, ok := locks.TryLock("a"); ok {
-		t.Fatal("TryLock acquired a key that is already held")
+	{
+		_, ok := locks.TryLock("a")
+		require.False(t, ok,
+			"TryLock acquired a key that is already held")
 	}
 
 	// A different key is unaffected.

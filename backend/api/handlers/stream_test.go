@@ -65,7 +65,7 @@ func TestStreamHandlerEnvironmentsChannelEmitsUnreachableEnvironmentInternal(t *
 	select {
 	case <-done:
 	case <-time.After(5 * time.Second):
-		t.Fatal("stream did not terminate after cancel")
+		require.FailNow(t, "stream did not terminate after cancel")
 	}
 
 	require.NotNil(t, seen, "expected an environments snapshot for an unreachable environment")

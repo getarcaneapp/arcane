@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -21,7 +22,9 @@ func TestDockerProjectVolumeRenameMigrationInternal_RollbackExplainsPreservedTar
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -55,7 +58,9 @@ func TestRollbackVolume_ExplainsPreservedTargetWhenSourceMissing(t *testing.T) {
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

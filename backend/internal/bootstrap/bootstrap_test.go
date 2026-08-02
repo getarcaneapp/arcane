@@ -331,13 +331,13 @@ func TestJobSchedulerStopCancelsItsPrivateContextInternal(t *testing.T) {
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("watcher did not start")
+		require.FailNow(t, "watcher did not start")
 	}
 	lifecycle.RequireStop()
 	select {
 	case <-watcher.stopped:
 	case <-time.After(time.Second):
-		t.Fatal("watcher did not stop")
+		require.FailNow(t, "watcher did not stop")
 	}
 	require.NoError(t, appCtx.Err())
 }

@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -92,7 +91,7 @@ func TestSettingsHandler_UpdateLocalEnvironment_RejectsUnreadableProjectsDirecto
 	var statusErr huma.StatusError
 	require.ErrorAs(t, err, &statusErr, "expected a huma status error")
 	require.Equal(t, 400, statusErr.GetStatus())
-	require.True(t, strings.Contains(err.Error(), "cannot read projects directory"), "error message should explain the failure: %s", err.Error())
+	require.Contains(t, err.Error(), "cannot read projects directory", "error message should explain the failure: %s", err.Error())
 
 	require.Equal(t, originalDir, settingsSvc.GetSettingsConfig().ProjectsDirectory.Value, "projectsDirectory must not be persisted on validation failure")
 }

@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/moby/moby/api/types/system"
+	"github.com/stretchr/testify/require"
 )
 
 func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
@@ -18,13 +19,15 @@ func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
 		Success:    true,
 		APIVersion: "1.55",
 	})
-	if err != nil {
-		t.Fatalf("marshal Docker info: %v", err)
-	}
+
+	require.NoError(t, err,
+		"marshal Docker info: %v", err)
 
 	var payload map[string]any
-	if err := json.Unmarshal(data, &payload); err != nil {
-		t.Fatalf("unmarshal Docker info payload: %v", err)
+	{
+		err := json.Unmarshal(data, &payload)
+		require.NoError(t, err,
+			"unmarshal Docker info payload: %v", err)
 	}
 
 	for name, want := range map[string]any{
@@ -33,11 +36,17 @@ func TestInfoMarshalsEmbeddedDockerFieldsAtTopLevel(t *testing.T) {
 		"ContainersRunning": float64(3),
 		"apiVersion":        "1.55",
 	} {
-		if got := payload[name]; got != want {
-			t.Fatalf("payload[%q] = %#v, want %#v; payload: %s", name, got, want, data)
+		{
+			got := payload[name]
+			require.Equal(t, want, got,
+				"payload[%q] = %#v, want %#v; payload: %s", name, got, want, data)
 		}
+
 	}
-	if _, nested := payload["Info"]; nested {
-		t.Fatalf("Docker fields were nested under Info: %s", data)
+	{
+		_, nested := payload["Info"]
+		require.False(t, nested,
+			"Docker fields were nested under Info: %s", data)
 	}
+
 }

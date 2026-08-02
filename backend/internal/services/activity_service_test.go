@@ -315,7 +315,7 @@ func TestActivitySubscriberCoalescesProgressEventsInternal(t *testing.T) {
 				return
 			}
 		case <-deadline:
-			t.Fatal("did not receive final coalesced progress event")
+			require.FailNow(t, "did not receive final coalesced progress event")
 		}
 	}
 }
@@ -395,7 +395,7 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 
 	select {
 	case awaitErr := <-awaitDone:
-		t.Fatalf("await returned before the slot freed: %v", awaitErr)
+		require.FailNowf(t, "unexpected failure", "await returned before the slot freed: %v", awaitErr)
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -406,7 +406,7 @@ func TestActivityServiceQueuedActivityFlipsToRunningWhenSlotFreesInternal(t *tes
 	case awaitErr := <-awaitDone:
 		require.NoError(t, awaitErr)
 	case <-time.After(5 * time.Second):
-		t.Fatal("await did not acquire the freed slot")
+		require.FailNow(t, "await did not acquire the freed slot")
 	}
 
 	var model models.Activity
@@ -435,7 +435,7 @@ func TestActivityServiceLimitIncreaseKeepsCountingActiveSlotsInternal(t *testing
 	case awaitErr := <-awaitDone:
 		require.NoError(t, awaitErr)
 	case <-time.After(2 * slotWaitRecheckInterval):
-		t.Fatal("waiter was not admitted after the limit increase")
+		require.FailNow(t, "waiter was not admitted after the limit increase")
 	}
 
 	third, err := service.StartActivity(ctx, StartActivityRequest{EnvironmentID: "0", Type: models.ActivityTypeImagePull, Queue: true})
@@ -462,7 +462,7 @@ func TestActivityServiceCancelWhileQueuedUnblocksAwaitInternal(t *testing.T) {
 	case awaitErr := <-awaitDone:
 		require.ErrorIs(t, awaitErr, activitylib.ErrCanceled)
 	case <-time.After(5 * time.Second):
-		t.Fatal("cancel did not unblock the queued slot wait")
+		require.FailNow(t, "cancel did not unblock the queued slot wait")
 	}
 }
 
@@ -706,7 +706,7 @@ func receiveActivityEventInternal(t *testing.T, events <-chan activitytypes.Stre
 	case event := <-events:
 		return event
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for activity event")
+		require.FailNow(t, "timed out waiting for activity event")
 		return activitytypes.StreamEvent{}
 	}
 }

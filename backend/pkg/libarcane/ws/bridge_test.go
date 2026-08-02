@@ -37,7 +37,7 @@ func drainClient(t *testing.T, c *Client, count int, timeout time.Duration) [][]
 		case msg := <-c.send:
 			msgs = append(msgs, msg)
 		case <-deadline:
-			t.Fatalf("timed out waiting for messages, got %d/%d", len(msgs), count)
+			require.FailNowf(t, "unexpected failure", "timed out waiting for messages, got %d/%d", len(msgs), count)
 		}
 	}
 	return msgs
@@ -85,7 +85,7 @@ func TestForwardLines_ContextCancellation(t *testing.T) {
 	case <-done:
 		// ForwardLines exited as expected
 	case <-time.After(time.Second):
-		t.Fatal("ForwardLines did not exit after context cancellation")
+		require.FailNow(t, "ForwardLines did not exit after context cancellation")
 	}
 }
 
@@ -285,7 +285,7 @@ func TestForwardLogJSONBatched_FlushesOnContextCancel(t *testing.T) {
 	select {
 	case <-done:
 	case <-time.After(2 * time.Second):
-		t.Fatal("ForwardLogJSONBatched did not exit after context cancellation")
+		require.FailNow(t, "ForwardLogJSONBatched did not exit after context cancellation")
 	}
 
 	// The buffered message should have been flushed

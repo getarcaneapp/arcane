@@ -111,7 +111,7 @@ func TestStreamMultiplexedLogsContextCancelDoesNotDeadlock(t *testing.T) {
 	case err := <-done:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("StreamMultiplexedLogs did not exit after cancellation")
+		require.FailNow(t, "StreamMultiplexedLogs did not exit after cancellation")
 	}
 }
 
@@ -129,7 +129,7 @@ func TestReadAllLogsContextCancelClosesReader(t *testing.T) {
 	select {
 	case <-reader.readStarted:
 	case <-time.After(time.Second):
-		t.Fatal("ReadAllLogs did not start reading")
+		require.FailNow(t, "ReadAllLogs did not start reading")
 	}
 
 	cancel()
@@ -138,13 +138,13 @@ func TestReadAllLogsContextCancelClosesReader(t *testing.T) {
 	case err := <-done:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("ReadAllLogs did not exit after cancellation")
+		require.FailNow(t, "ReadAllLogs did not exit after cancellation")
 	}
 
 	select {
 	case <-reader.closeCalled:
 	case <-time.After(time.Second):
-		t.Fatal("ReadAllLogs did not close the reader on cancellation")
+		require.FailNow(t, "ReadAllLogs did not close the reader on cancellation")
 	}
 }
 

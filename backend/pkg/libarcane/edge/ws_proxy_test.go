@@ -261,7 +261,9 @@ func TestHandleAgentMessage_StreamDataPreservesTextFrame(t *testing.T) {
 	serverConnCh := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		serverConnCh <- conn
 	}))
 	defer server.Close()

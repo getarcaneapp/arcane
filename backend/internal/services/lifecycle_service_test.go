@@ -182,7 +182,7 @@ func TestDescribeScriptStatError_PermissionDeniedIsActionable(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, os.ErrPermission)
+	require.ErrorIs(t, err, os.ErrPermission)
 	assert.Contains(t, err.Error(), "Arcane pre-deploy validation")
 	assert.Contains(t, err.Error(), "permission denied")
 	assert.Contains(t, err.Error(), "scripts/pre-deploy.sh")
@@ -197,7 +197,7 @@ func TestDescribeScriptStatError_PreservesGenericStatFailure(t *testing.T) {
 	)
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, os.ErrNotExist)
+	require.ErrorIs(t, err, os.ErrNotExist)
 	assert.Contains(t, err.Error(), `stat script "missing.sh"`)
 	assert.NotContains(t, err.Error(), "Arcane pre-deploy validation could not inspect")
 }

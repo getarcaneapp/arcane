@@ -131,7 +131,7 @@ func TestTunnelRegistry_RegisterSessionRejectsCompetingAgent(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, accepted)
 	assert.False(t, drainPrevious)
-	assert.Equal(t, "", reason)
+	assert.Empty(t, reason)
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.CloseNow() }()
@@ -164,7 +164,7 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, accepted)
 	assert.False(t, drainPrevious)
-	assert.Equal(t, "", reason)
+	assert.Empty(t, reason)
 
 	conn2 := createTestConn(t)
 	defer func() { _ = conn2.CloseNow() }()
@@ -175,7 +175,7 @@ func TestTunnelRegistry_RegisterSessionReplacesSameAgentInstance(t *testing.T) {
 	require.NoError(t, err)
 	assert.True(t, accepted)
 	assert.True(t, drainPrevious)
-	assert.Equal(t, "", reason)
+	assert.Empty(t, reason)
 	assert.True(t, tunnel1.Conn.IsClosed())
 
 	got, ok := r.Get(envID).Get()
@@ -212,14 +212,16 @@ func TestActorTunnelRegistryPublishesReplacementBeforeClosingPreviousInternal(t 
 	registered := make(chan bool, 1)
 	go func() {
 		accepted, _, _, registerErr := registry.RegisterSession(t.Context(), replacement, TunnelStaleTimeout)
-		require.NoError(t, registerErr)
+		if !assert.NoError(t, registerErr) {
+			return
+		}
 		registered <- accepted
 	}()
 
 	select {
 	case <-previousConn.closeStarted:
 	case <-time.After(time.Second):
-		t.Fatal("replacement did not begin closing the previous tunnel")
+		require.FailNow(t, "replacement did not begin closing the previous tunnel")
 	}
 	active, ok := registry.Get("env-actor-registry").Get()
 	require.True(t, ok)

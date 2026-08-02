@@ -88,7 +88,7 @@ func TestValidateScriptPath_PermissionDeniedIncludesDiagnostics(t *testing.T) {
 	err := validateScriptPathInternal(dir, "blocked/pre-deploy.sh")
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, os.ErrPermission)
+	require.ErrorIs(t, err, os.ErrPermission)
 	assert.Contains(t, err.Error(), "Arcane pre-deploy validation")
 	assert.Contains(t, err.Error(), "Arcane process identity: uid=")
 	assert.Contains(t, err.Error(), blockedDir)

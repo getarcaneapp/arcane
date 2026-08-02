@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-containerregistry/pkg/v1/static"
 	"github.com/klauspost/compress/zstd"
+	"github.com/stretchr/testify/require"
 )
 
 func TestReadAttestationLayerBytesInternalDecompressesGzip(t *testing.T) {
@@ -14,21 +15,27 @@ func TestReadAttestationLayerBytesInternalDecompressesGzip(t *testing.T) {
 
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
-	if _, err := gz.Write(statement); err != nil {
-		t.Fatalf("gzip write: %v", err)
+	{
+		_, err := gz.Write(statement)
+		require.NoError(t, err,
+			"gzip write: %v", err)
 	}
-	if err := gz.Close(); err != nil {
-		t.Fatalf("gzip close: %v", err)
+	{
+
+		err := gz.Close()
+		require.NoError(t, err,
+			"gzip close: %v", err)
 	}
 
 	layer := static.NewLayer(buf.Bytes(), inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !bytes.Equal(got, statement) {
-		t.Fatalf("expected decompressed statement %q, got %q", statement, got)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	require.True(t, bytes.Equal(got, statement),
+		"expected decompressed statement %q, got %q", statement, got)
+
 }
 
 func TestReadAttestationLayerBytesInternalPassesThroughRawJSON(t *testing.T) {
@@ -36,32 +43,37 @@ func TestReadAttestationLayerBytesInternalPassesThroughRawJSON(t *testing.T) {
 
 	layer := static.NewLayer(statement, inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !bytes.Equal(got, statement) {
-		t.Fatalf("expected raw statement unchanged %q, got %q", statement, got)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	require.True(t, bytes.Equal(got, statement),
+		"expected raw statement unchanged %q, got %q", statement, got)
+
 }
 
 func TestReadAttestationLayerBytesInternalDecompressesZstd(t *testing.T) {
 	statement := []byte(`{"predicateType":"https://slsa.dev/provenance/v1"}`)
 
 	encoder, err := zstd.NewWriter(nil)
-	if err != nil {
-		t.Fatalf("zstd writer: %v", err)
-	}
+
+	require.NoError(t, err,
+		"zstd writer: %v", err)
+
 	compressed := encoder.EncodeAll(statement, nil)
-	if err := encoder.Close(); err != nil {
-		t.Fatalf("zstd close: %v", err)
+	{
+		err := encoder.Close()
+		require.NoError(t, err,
+			"zstd close: %v", err)
 	}
 
 	layer := static.NewLayer(compressed, inTotoLayerMediaTypeInternal)
 	got, err := readAttestationLayerBytesInternal(layer, "sha256:test")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !bytes.Equal(got, statement) {
-		t.Fatalf("expected decompressed statement %q, got %q", statement, got)
-	}
+
+	require.NoError(t, err,
+		"unexpected error: %v", err)
+
+	require.True(t, bytes.Equal(got, statement),
+		"expected decompressed statement %q, got %q", statement, got)
+
 }

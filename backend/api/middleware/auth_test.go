@@ -223,7 +223,7 @@ func TestNewAuthBridge_RejectsApiKeyOnBearerOnlyOperation(t *testing.T) {
 		Path:        "/bearer-only",
 		Security:    []map[string][]string{{"BearerAuth": {}}},
 	}, func(ctx context.Context, _ *secureInput) (*secureOutput, error) {
-		t.Fatal("handler must not be reached with API key auth")
+		require.FailNow(t, "handler must not be reached with API key auth")
 		return &secureOutput{}, nil
 	})
 
@@ -384,7 +384,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "", sawSessionID)
+		require.Empty(t, sawSessionID)
 	})
 
 	t.Run("succeeds with invalid token (does not block)", func(t *testing.T) {
@@ -394,7 +394,7 @@ func TestNewAuthBridge_OpportunisticAuthOnPublicRoute(t *testing.T) {
 		rec := httptest.NewRecorder()
 		router.ServeHTTP(rec, req)
 		require.Equal(t, http.StatusOK, rec.Code)
-		require.Equal(t, "", sawSessionID)
+		require.Empty(t, sawSessionID)
 	})
 }
 

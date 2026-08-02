@@ -290,7 +290,9 @@ func TestImageServiceExportImageReturnsTarStreamInternal(t *testing.T) {
 			return
 		}
 		names := r.URL.Query()["names"]
-		require.Equal(t, []string{"source:latest"}, names)
+		if !assert.Equal(t, []string{"source:latest"}, names) {
+			return
+		}
 		_, _ = w.Write([]byte("tar-bytes"))
 	}))
 	t.Cleanup(server.Close)

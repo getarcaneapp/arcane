@@ -136,7 +136,7 @@ func TestGeneratedClientCertificate_IncludesSANs(t *testing.T) {
 
 	require.True(t, cert.NotBefore.Before(cert.NotAfter))
 	skew := cert.NotAfter.Sub(cert.NotBefore)
-	require.True(t, skew > 0)
+	require.Positive(t, skew)
 }
 
 func TestEnsureAgentMTLSAssets_RejectsPlainHTTPEnrollment(t *testing.T) {
@@ -507,7 +507,7 @@ func TestCAKey_EncryptedOnDiskWhenCryptoInitialized(t *testing.T) {
 
 	raw, err := os.ReadFile(caKeyPath)
 	require.NoError(t, err)
-	require.False(t, strings.Contains(string(raw), "BEGIN EC PRIVATE KEY"),
+	require.NotContains(t, string(raw), "BEGIN EC PRIVATE KEY",
 		"encrypted CA key file must not contain plain PEM markers")
 
 	pemBytes, err := readCAKeyPEMInternal(caKeyPath)

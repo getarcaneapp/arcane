@@ -123,7 +123,9 @@ func newUpdaterApplyPendingDockerServerInternal(
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			encodedRef := strings.TrimSuffix(r.URL.Path[strings.LastIndex(r.URL.Path, "/images/")+len("/images/"):], "/json")
 			imageRef, err := url.PathUnescape(encodedRef)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 			inspect, ok := imageInspectByRef[imageRef]
 			if !ok {
 				http.NotFound(w, r)
@@ -135,7 +137,9 @@ func newUpdaterApplyPendingDockerServerInternal(
 			response := containers
 			if filters := strings.TrimSpace(r.URL.Query().Get("filters")); filters != "" {
 				var raw map[string]map[string]bool
-				require.NoError(t, json.Unmarshal([]byte(filters), &raw))
+				if !assert.NoError(t, json.Unmarshal([]byte(filters), &raw)) {
+					return
+				}
 				projectName := ""
 				serviceName := ""
 				for value := range raw["label"] {

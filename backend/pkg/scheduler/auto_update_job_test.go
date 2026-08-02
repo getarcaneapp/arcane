@@ -70,7 +70,7 @@ func TestAutoUpdateJob_OverlappingRunIsSkippedInternal(t *testing.T) {
 	select {
 	case <-firstDone:
 	case <-time.After(time.Second):
-		t.Fatal("first auto-update run did not finish")
+		require.FailNow(t, "first auto-update run did not finish")
 	}
 
 	// The guard resets once the run finishes.

@@ -91,19 +91,19 @@ func TestSettingsTimeoutSyncDoesNotBlockOtherEffectsInternal(t *testing.T) {
 	select {
 	case <-environment.started:
 	case <-time.After(time.Second):
-		t.Fatal("timeout sync did not start")
+		require.FailNow(t, "timeout sync did not start")
 	}
 	select {
 	case <-timeoutCallbackDone:
 	case <-time.After(time.Second):
-		t.Fatal("timeout settings callback remained blocked by remote sync")
+		require.FailNow(t, "timeout settings callback remained blocked by remote sync")
 	}
 
 	settings.pollingCallback([]libarcane.SettingUpdate{{Key: "pollingEnabled", Value: "true"}})
 	select {
 	case <-scheduler.rescheduled:
 	case <-time.After(time.Second):
-		t.Fatal("local settings effect was blocked by remote timeout sync")
+		require.FailNow(t, "local settings effect was blocked by remote timeout sync")
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)

@@ -294,7 +294,7 @@ func TestCommandRequestFailsWhenTunnelCloses(t *testing.T) {
 	case err := <-errCh:
 		require.ErrorContains(t, err, "edge tunnel closed while waiting for response")
 	case <-time.After(time.Second):
-		t.Fatal("pending command did not fail after tunnel close")
+		require.FailNow(t, "pending command did not fail after tunnel close")
 	}
 }
 

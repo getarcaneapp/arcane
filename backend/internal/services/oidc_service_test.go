@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/getarcaneapp/arcane/backend/v2/internal/config"
+	"github.com/stretchr/testify/require"
 )
 
 func TestValidateMobileRedirectURI(t *testing.T) {
@@ -31,9 +32,10 @@ func TestValidateMobileRedirectURI(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			err := s.ValidateMobileRedirectURI(ctx, tc.uri)
-			if (err != nil) != tc.wantErr {
-				t.Fatalf("ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, err)
-			}
+
+			require.Equal(t, tc.wantErr, (err != nil),
+				"ValidateMobileRedirectURI(%q): wantErr=%v got err=%v", tc.uri, tc.wantErr, err)
+
 		})
 	}
 }
@@ -49,12 +51,14 @@ func TestGetMobileRedirectAllowlistTrimsWhitespace(t *testing.T) {
 	got := s.GetMobileRedirectAllowlist(ctx)
 	want := []string{"arcane-mobile://a", "arcane-mobile://b", "arcane-mobile://c"}
 	if len(got) != len(want) {
-		t.Fatalf("got %d entries (%v), want %d (%v)", len(got), got, len(want), want)
+		require.Len(t, got, len(want),
+			"got %d entries (%v), want %d (%v)", len(got), got, len(want), want)
 	}
 	for i, w := range want {
-		if got[i] != w {
-			t.Fatalf("entry %d: got %q, want %q", i, got[i], w)
-		}
+
+		require.Equal(t, w, got[i],
+			"entry %d: got %q, want %q", i, got[i], w)
+
 	}
 }
 
@@ -62,11 +66,14 @@ func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 	ctx := context.Background()
 	db := setupSettingsTestDB(t)
 	settingsService, err := newSettingsServiceForTestInternal(t, ctx, db)
-	if err != nil {
-		t.Fatalf("NewSettingsService: %v", err)
-	}
-	if err := settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "arcane-mobile://db-callback"); err != nil {
-		t.Fatalf("UpdateSetting: %v", err)
+
+	require.NoError(t, err,
+		"NewSettingsService: %v", err)
+	{
+
+		err := settingsService.UpdateSetting(ctx, "oidcMobileRedirectUris", "arcane-mobile://db-callback")
+		require.NoError(t, err,
+			"UpdateSetting: %v", err)
 	}
 
 	s := &OidcService{
@@ -75,11 +82,17 @@ func TestGetMobileRedirectAllowlistUsesSettings(t *testing.T) {
 			OidcMobileRedirectUris: "arcane-mobile://config-callback",
 		},
 	}
+	{
 
-	if err := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://db-callback"); err != nil {
-		t.Fatalf("ValidateMobileRedirectURI db value: %v", err)
+		err := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://db-callback")
+		require.NoError(t, err,
+			"ValidateMobileRedirectURI db value: %v", err)
 	}
-	if err := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://config-callback"); err == nil {
-		t.Fatal("ValidateMobileRedirectURI config fallback should fail when DB setting is configured")
+	{
+
+		err := s.ValidateMobileRedirectURI(ctx, "arcane-mobile://config-callback")
+		require.Error(t, err,
+			"ValidateMobileRedirectURI config fallback should fail when DB setting is configured")
 	}
+
 }

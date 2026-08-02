@@ -77,12 +77,13 @@ func TestUpdateAllResolveResumeAction(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := resolveResumeActionInternal(tt.job, tt.currentVersion, tt.currentDigest, now)
-			if got.markStale != tt.wantStale {
-				t.Fatalf("markStale = %v, want %v", got.markStale, tt.wantStale)
-			}
-			if !tt.wantStale && got.managerSucceeded != tt.wantManagerOK {
-				t.Fatalf("managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
-			}
+
+			require.Equal(t, tt.wantStale, got.markStale,
+				"markStale = %v, want %v", got.markStale, tt.wantStale)
+
+			require.False(t, !tt.wantStale && got.managerSucceeded != tt.wantManagerOK,
+				"managerSucceeded = %v, want %v", got.managerSucceeded, tt.wantManagerOK)
+
 		})
 	}
 }
@@ -103,31 +104,35 @@ func TestUpsertPendingResult(t *testing.T) {
 			{EnvironmentID: "abc", EnvironmentName: "palladium", Status: models.EnvironmentUpdateResultStatusPending},
 		},
 	}
+	{
 
-	// A seeded environment resolves to its existing row without appending.
-	if idx := upsertPendingResultInternal(job, "abc", "palladium"); idx != 1 {
-		t.Fatalf("existing env index = %d, want 1", idx)
+		// A seeded environment resolves to its existing row without appending.
+		idx := upsertPendingResultInternal(job, "abc", "palladium")
+		require.Equal(t, 1, idx,
+			"existing env index = %d, want 1", idx)
 	}
-	if len(job.Results) != 2 {
-		t.Fatalf("results grew to %d, want 2", len(job.Results))
-	}
+
+	require.Len(t, job.Results, 2,
+		"results grew to %d, want 2", len(job.Results))
 
 	// A missing environment (seeding raced or a new env was registered) appends a
 	// fresh pending row and returns the new index.
 	idx := upsertPendingResultInternal(job, "xyz", "oracle-cloud")
-	if idx != 2 {
-		t.Fatalf("new env index = %d, want 2", idx)
-	}
-	if len(job.Results) != 3 {
-		t.Fatalf("results = %d, want 3", len(job.Results))
-	}
+
+	require.Equal(t, 2, idx,
+		"new env index = %d, want 2", idx)
+
+	require.Len(t, job.Results, 3,
+		"results = %d, want 3", len(job.Results))
+
 	got := job.Results[2]
-	if got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud" {
-		t.Fatalf("appended row = %+v, want id=xyz name=oracle-cloud", got)
-	}
-	if got.Status != models.EnvironmentUpdateResultStatusPending {
-		t.Fatalf("appended row status = %q, want pending", got.Status)
-	}
+
+	require.False(t, got.EnvironmentID != "xyz" || got.EnvironmentName != "oracle-cloud",
+		"appended row = %+v, want id=xyz name=oracle-cloud", got)
+
+	require.Equal(t, models.EnvironmentUpdateResultStatusPending, got.Status,
+		"appended row status = %q, want pending", got.Status)
+
 }
 
 func TestUpdateAllFailedJobMarksUpdatingResultsFailed(t *testing.T) {

@@ -10,6 +10,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane/edge"
 	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func newTestEnvironmentMiddleware() *EnvironmentMiddleware {
@@ -303,7 +304,7 @@ func TestEnvironmentMiddleware_CreateProxyRequest_RejectsInvalidProxyTarget(t *t
 	c := e.NewContext(req, recorder)
 
 	_, err := middleware.createProxyRequest(c, "ftp://example.com/containers", nil)
-	assert.Error(t, err)
+	require.Error(t, err)
 	assert.Contains(t, err.Error(), "Invalid proxy target URL")
 }
 

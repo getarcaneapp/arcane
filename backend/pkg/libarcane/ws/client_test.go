@@ -271,7 +271,7 @@ func TestServeClient_StoppedHubDoesNotBlock(t *testing.T) {
 	case registered := <-done:
 		assert.False(t, registered, "registration against a stopped hub must fail")
 	case <-time.After(2 * time.Second):
-		t.Fatal("ServeClientWithOnRemove blocked on a stopped hub")
+		require.FailNow(t, "ServeClientWithOnRemove blocked on a stopped hub")
 	}
 
 	// The caller owns the connection and its bookkeeping on failure, so it can

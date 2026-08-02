@@ -256,6 +256,6 @@ func TestAutoHealJob_OverlappingRunIsSkippedInternal(t *testing.T) {
 	select {
 	case <-firstDone:
 	case <-time.After(time.Second):
-		t.Fatal("first auto-heal run did not finish")
+		require.FailNow(t, "first auto-heal run did not finish")
 	}
 }

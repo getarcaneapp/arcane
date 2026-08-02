@@ -90,7 +90,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	case <-statusCallbackCalled:
 		// callback observed
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for status callback")
+		require.FailNow(t, "timeout waiting for status callback")
 	}
 
 	// Test Heartbeat
@@ -128,7 +128,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 		assert.Equal(t, "req-1", received.ID)
 		assert.Equal(t, []byte("response"), received.Body)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for response")
+		require.FailNow(t, "timeout waiting for response")
 	}
 
 	// Test Stream Delivery
@@ -150,7 +150,7 @@ func TestTunnelServer_HandleConnect(t *testing.T) {
 	case received := <-streamCh:
 		assert.Equal(t, "stream-1", received.ID)
 	case <-time.After(1 * time.Second):
-		t.Fatal("timeout waiting for stream")
+		require.FailNow(t, "timeout waiting for stream")
 	}
 
 	// Test Ignored/Unknown Messages
@@ -515,7 +515,7 @@ func TestTokenFromMetadata(t *testing.T) {
 	})
 
 	t.Run("returns empty when metadata missing", func(t *testing.T) {
-		assert.Equal(t, "", tokenFromMetadataInternal(context.Background()))
+		assert.Empty(t, tokenFromMetadataInternal(context.Background()))
 	})
 }
 
@@ -581,7 +581,7 @@ func TestTunnelServer_HandleEventCallback(t *testing.T) {
 	select {
 	case <-called:
 	case <-time.After(2 * time.Second):
-		t.Fatal("timeout waiting for event callback")
+		require.FailNow(t, "timeout waiting for event callback")
 	}
 }
 

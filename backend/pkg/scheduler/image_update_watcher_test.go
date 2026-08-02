@@ -5,7 +5,6 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -489,9 +488,9 @@ func TestImageUpdateWatcher_BackfillGatesFirstScanAndCoalescesEventBurst(t *test
 	require.Equal(t, 1, scanner.countInternal())
 
 	logs := logBuffer.stringInternal()
-	require.True(t, strings.Contains(logs, "project image metadata backfill completed"), logs)
-	require.True(t, strings.Contains(logs, "projects=2500"), logs)
-	require.True(t, strings.Contains(logs, "duration="), logs)
+	require.Contains(t, logs, "project image metadata backfill completed", logs)
+	require.Contains(t, logs, "projects=2500", logs)
+	require.Contains(t, logs, "duration=", logs)
 	t.Logf("coalesced %d image events into one scan after backfilling %d projects in %s", eventCount, projectCount, time.Since(burstStartedAt))
 }
 
@@ -538,7 +537,7 @@ func TestImageUpdateWatcher_BackfillFailureRetriesBeforeScanning(t *testing.T) {
 	select {
 	case <-secondAttemptStarted:
 	case <-time.After(time.Second):
-		t.Fatal("backfill was not retried")
+		require.FailNow(t, "backfill was not retried")
 	}
 	require.Zero(t, scanner.countInternal())
 	close(releaseSecondAttempt)
@@ -569,7 +568,7 @@ func TestImageUpdateWatcher_CancellationStopsBackfillWithoutScanning(t *testing.
 	case err := <-errCh:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("watcher did not stop after cancellation")
+		require.FailNow(t, "watcher did not stop after cancellation")
 	}
 	require.Zero(t, scanner.countInternal())
 }

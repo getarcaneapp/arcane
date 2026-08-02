@@ -474,8 +474,8 @@ func TestTakeHelperIDInternal(t *testing.T) {
 	require.NotContains(t, s.helperByVolume, "vol-a")
 
 	// Absent (idempotent): returns "" without panicking.
-	require.Equal(t, "", s.takeHelperIDInternal("vol-a"))
-	require.Equal(t, "", s.takeHelperIDInternal("never-existed"))
+	require.Empty(t, s.takeHelperIDInternal("vol-a"))
+	require.Empty(t, s.takeHelperIDInternal("never-existed"))
 }
 
 func TestTouchHelperInternal(t *testing.T) {

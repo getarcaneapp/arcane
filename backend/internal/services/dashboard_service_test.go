@@ -22,6 +22,7 @@ import (
 	dockermount "github.com/moby/moby/api/types/mount"
 	dockervolume "github.com/moby/moby/api/types/volume"
 	"github.com/moby/moby/client"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -64,11 +65,17 @@ func newDashboardTestDockerService(
 
 		switch {
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(containers))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(containers)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/images/json"):
-			require.NoError(t, json.NewEncoder(w).Encode(images))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(images)) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/volumes"):
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Volumes": volumes, "Warnings": []string{}}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Volumes": volumes, "Warnings": []string{}})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

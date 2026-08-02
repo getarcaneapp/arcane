@@ -26,6 +26,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/internal/models"
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/authz"
 	federatedtypes "github.com/getarcaneapp/arcane/types/v2/federated"
+	"github.com/stretchr/testify/assert"
 )
 
 type federatedTestIssuerInternal struct {
@@ -48,18 +49,20 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, _ *http.Request) {
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"issuer":                                issuer.IssuerURL,
 			"jwks_uri":                              issuer.IssuerURL + "/jwks",
 			"authorization_endpoint":                issuer.IssuerURL + "/authorize",
 			"token_endpoint":                        issuer.IssuerURL + "/token",
 			"subject_types_supported":               []string{"public"},
 			"id_token_signing_alg_values_supported": []string{"RS256"},
-		}))
+		})) {
+			return
+		}
 	})
 	mux.HandleFunc("/jwks", func(w http.ResponseWriter, _ *http.Request) {
 		pub := privateKey.PublicKey
-		require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+		if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 			"keys": []map[string]any{
 				{
 					"kty": "RSA",
@@ -70,7 +73,9 @@ func newFederatedTestIssuerInternal(t *testing.T) *federatedTestIssuerInternal {
 					"e":   base64.RawURLEncoding.EncodeToString(big.NewInt(int64(pub.E)).Bytes()),
 				},
 			},
-		}))
+		})) {
+			return
+		}
 	})
 
 	issuer.server = httptest.NewServer(mux)

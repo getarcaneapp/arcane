@@ -108,7 +108,7 @@ func TestProxyHTTP_RemoteClose(t *testing.T) {
 	case <-proxyDone:
 		// OK
 	case <-time.After(5 * time.Second):
-		t.Fatal("ProxyHTTP did not return after remote closed")
+		require.FailNow(t, "ProxyHTTP did not return after remote closed")
 	}
 }
 
@@ -130,7 +130,7 @@ func TestProxyHTTP_InvalidRemoteURL(t *testing.T) {
 	case err := <-proxyDone:
 		require.Error(t, err, "ProxyHTTP should return error when remote is unreachable")
 	case <-time.After(50 * time.Second):
-		t.Fatal("ProxyHTTP did not return after failed dial")
+		require.FailNow(t, "ProxyHTTP did not return after failed dial")
 	}
 }
 
@@ -217,6 +217,6 @@ func TestProxyHTTP_HeadersForwarded(t *testing.T) {
 		assert.Equal(t, "test-value", receivedHeaders.Get("X-Custom-Header"))
 		assert.Equal(t, "Bearer token123", receivedHeaders.Get("Authorization"))
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for headers")
+		require.FailNow(t, "timed out waiting for headers")
 	}
 }

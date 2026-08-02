@@ -188,7 +188,7 @@ func TestDockerClientService_PublishImageStateResyncNotifiesSubscribers(t *testi
 		require.Equal(t, events.ImageEventType, message.Type)
 		require.Equal(t, docker.ImageStateResyncAction, message.Action)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for image state resync event")
+		require.FailNow(t, "timed out waiting for image state resync event")
 	}
 }
 
@@ -231,13 +231,13 @@ func TestDockerClientService_EventActorStopCancelsAndJoinsStreamInternal(t *test
 	select {
 	case <-streamStarted:
 	case <-time.After(time.Second):
-		t.Fatal("Docker event stream did not start")
+		require.FailNow(t, "Docker event stream did not start")
 	}
 	select {
 	case message := <-eventsCh:
 		require.Equal(t, docker.ImageStateResyncAction, message.Action)
 	case <-time.After(time.Second):
-		t.Fatal("Docker event stream did not publish reconnect resync")
+		require.FailNow(t, "Docker event stream did not publish reconnect resync")
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)

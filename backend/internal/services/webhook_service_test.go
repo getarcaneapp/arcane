@@ -213,7 +213,7 @@ func TestCreateWebhook_EmptyTargetIDAcceptedForUpdaterType(t *testing.T) {
 
 	wh, _, err := svc.CreateWebhook(ctx, "updater-hook", models.WebhookTargetTypeUpdater, models.WebhookActionTypeRun, "", "env-1", models.User{})
 	require.NoError(t, err)
-	assert.Equal(t, "", wh.TargetID)
+	assert.Empty(t, wh.TargetID)
 }
 
 func TestCreateWebhook_ContainerTypeAccepted(t *testing.T) {
@@ -427,7 +427,7 @@ func TestDeleteWebhook_NotFoundForWrongEnvironment(t *testing.T) {
 	require.NoError(t, err)
 
 	err = svc.DeleteWebhook(ctx, created.ID, "env-2", models.User{})
-	assert.ErrorIs(t, err, ErrWebhookNotFound)
+	require.ErrorIs(t, err, ErrWebhookNotFound)
 
 	// Webhook must still exist in the correct environment
 	_, err = svc.GetWebhookByID(ctx, created.ID, "env-1")

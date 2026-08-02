@@ -285,6 +285,5 @@ func TestFingerprintEnvironmentsDetectsFieldChange(t *testing.T) {
 	base := []envtypes.Environment{{ID: "1", Name: "prod", Status: "online", Enabled: true}}
 	renamed := []envtypes.Environment{{ID: "1", Name: "production", Status: "online", Enabled: true}}
 
-	assert.Equal(t, fingerprintEnvironmentsInternal(base), fingerprintEnvironmentsInternal(base))
 	assert.NotEqual(t, fingerprintEnvironmentsInternal(base), fingerprintEnvironmentsInternal(renamed))
 }

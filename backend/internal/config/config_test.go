@@ -383,8 +383,8 @@ func TestConfig_TLSSettings(t *testing.T) {
 
 		cfg := Load()
 		assert.False(t, cfg.TLSEnabled)
-		assert.Equal(t, "", cfg.TLSCertFile)
-		assert.Equal(t, "", cfg.TLSKeyFile)
+		assert.Empty(t, cfg.TLSCertFile)
+		assert.Empty(t, cfg.TLSKeyFile)
 	})
 
 	t.Run("loads tls settings from env", func(t *testing.T) {
@@ -439,7 +439,7 @@ func TestConfig_GetManagerGRPCAddr(t *testing.T) {
 		cfg := &Config{
 			ManagerApiUrl: "://bad-url",
 		}
-		assert.Equal(t, "", cfg.GetManagerGRPCAddr())
+		assert.Empty(t, cfg.GetManagerGRPCAddr())
 	})
 }
 
@@ -544,13 +544,13 @@ func TestConfig_ApplyProxyDefaults(t *testing.T) {
 	t.Run("empty listen is no-op", func(t *testing.T) {
 		cfg := &Config{Listen: ""}
 		applyProxyDefaults(cfg)
-		assert.Equal(t, "", cfg.TrustedProxies)
+		assert.Empty(t, cfg.TrustedProxies)
 	})
 
 	t.Run("public bind is no-op", func(t *testing.T) {
 		cfg := &Config{Listen: "0.0.0.0"}
 		applyProxyDefaults(cfg)
-		assert.Equal(t, "", cfg.TrustedProxies)
+		assert.Empty(t, cfg.TrustedProxies)
 	})
 }
 
@@ -561,7 +561,7 @@ func TestConfig_TrustedProxies(t *testing.T) {
 	t.Run("Default empty", func(t *testing.T) {
 		unsetEnv(t, "TRUSTED_PROXIES")
 		cfg := Load()
-		assert.Equal(t, "", cfg.TrustedProxies)
+		assert.Empty(t, cfg.TrustedProxies)
 	})
 
 	t.Run("Single CIDR", func(t *testing.T) {

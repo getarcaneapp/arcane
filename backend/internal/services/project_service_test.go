@@ -262,10 +262,14 @@ func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef ma
 		case strings.Contains(r.URL.Path, "/images/") && strings.HasSuffix(r.URL.Path, "/json"):
 			path := r.URL.Path
 			imagePathIndex := strings.Index(path, "/images/")
-			require.NotEqual(t, -1, imagePathIndex)
+			if !assert.NotEqual(t, -1, imagePathIndex) {
+				return
+			}
 			encodedRef := strings.TrimSuffix(path[imagePathIndex+len("/images/"):], "/json")
 			imageRef, err := url.PathUnescape(encodedRef)
-			require.NoError(t, err)
+			if !assert.NoError(t, err) {
+				return
+			}
 
 			inspect, ok := inspectByRef[imageRef]
 			if !ok {
@@ -274,7 +278,9 @@ func newProjectImagePullServerWithObserverInternal(t *testing.T, inspectByRef ma
 			}
 
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(inspect))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(inspect)) {
+				return
+			}
 			return
 		default:
 			http.NotFound(w, r)
@@ -428,7 +434,7 @@ func TestProjectService_UpdateProjectStatusInternal(t *testing.T) {
 	if updated.UpdatedAt != nil {
 		assert.WithinDuration(t, time.Now(), *updated.UpdatedAt, time.Second)
 	} else {
-		t.Error("UpdatedAt should not be nil")
+		assert.Fail(t, "UpdatedAt should not be nil")
 	}
 }
 
@@ -974,7 +980,7 @@ func TestProjectService_ComposePullSelectedServicesInternal_LeavesRecordsWhenPul
 
 	err = svc.composePullSelectedServicesInternal(ctx, projectDef, []string{"app"}, systemUser, nil)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "failed to pull image")
+	require.ErrorContains(t, err, "failed to pull image")
 
 	var selectedRecord models.ImageUpdateRecord
 	require.NoError(t, db.WithContext(ctx).Where("id = ?", "sha256:selected-old").First(&selectedRecord).Error)
@@ -1043,7 +1049,7 @@ func TestProjectService_UpdateProjectServicesHardFailsWhenPullFailsInternal(t *t
 	svc := NewProjectService(db, settingsService, nil, imageService, dockerService, nil, nil, nil, config.Load())
 	err = svc.UpdateProjectServices(ctx, projectRecord.ID, []string{"app"}, systemUser)
 	require.Error(t, err)
-	assert.ErrorContains(t, err, "pull updated service images")
+	require.ErrorContains(t, err, "pull updated service images")
 	assert.False(t, upCalled, "compose up must not run after a pull failure")
 
 	var persistedProject models.Project
@@ -1162,19 +1168,25 @@ func TestProjectService_UpdateProject_RenameFailsWhenVolumeMigrationPreparationF
 			_, _ = io.WriteString(w, "OK")
 		case strings.HasSuffix(r.URL.Path, "/version"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
 				"ApiVersion":    "1.41",
 				"MinAPIVersion": "1.24",
 				"Version":       "24.0.0",
-			}))
+			})) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/bar_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"Name": "bar_data",
-			}))
+			})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -1278,17 +1290,21 @@ func TestProjectService_PrepareProjectRenameVolumeMigrationForUpdate_UsesCompose
 			http.NotFound(w, r)
 		case strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{
 				"Name":   "nginx_data",
 				"Driver": "local",
 				"Labels": map[string]string{
 					composeapi.ProjectLabel: "nginx",
 					composeapi.VolumeLabel:  "data",
 				},
-			}))
+			})) {
+				return
+			}
 		case strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -2367,7 +2383,7 @@ func TestProjectService_UpdateProject_RejectsStaleProjectFileRevision(t *testing
 	})
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, common.ErrProjectFileConflict)
+	require.ErrorIs(t, err, common.ErrProjectFileConflict)
 	assert.NoFileExists(t, filepath.Join(project.Path, "notes.txt"))
 }
 
@@ -2408,7 +2424,7 @@ func TestProjectService_UpdateProject_RejectsStaleDeepProjectFileRevision(t *tes
 	})
 
 	require.Error(t, err)
-	assert.ErrorIs(t, err, common.ErrProjectFileConflict)
+	require.ErrorIs(t, err, common.ErrProjectFileConflict)
 	assert.NoFileExists(t, filepath.Join(project.Path, "notes.txt"))
 }
 
@@ -3223,7 +3239,7 @@ func TestProjectService_ApplyGitSyncProjectFiles_PreservesGitEnvSyntax(t *testin
 		assert.Equal(t, gitEnv, string(gitBytes))
 
 		_, statErr := os.Stat(filepath.Join(projectPath, "project.env"))
-		assert.ErrorIs(t, statErr, os.ErrNotExist)
+		require.ErrorIs(t, statErr, os.ErrNotExist)
 	}
 
 	effectiveEnv, err := projects.ParseProjectEnvFile(filepath.Join(projectPath, ".env"), nil)
@@ -4160,7 +4176,7 @@ func TestProjectService_ArchiveProject_RequiresStoppedProject(t *testing.T) {
 	svc := NewProjectService(db, settingsService, nil, nil, nil, nil, nil, nil, config.Load())
 	err = svc.ArchiveProject(ctx, "project-running", models.User{BaseModel: models.BaseModel{ID: "user-1"}, Username: "tester"})
 	require.Error(t, err)
-	assert.ErrorIs(t, err, common.ErrProjectMustBeStopped)
+	require.ErrorIs(t, err, common.ErrProjectMustBeStopped)
 
 	var stored models.Project
 	require.NoError(t, db.First(&stored, "id = ?", "project-running").Error)
@@ -5407,7 +5423,7 @@ func TestProjectService_GetProjectDetails_UsesGitOpsCustomComposeFilename(t *tes
 	assert.Equal(t, "radarr.yaml", details.ComposeFileName)
 	assert.Equal(t, composeContent, details.ComposeContent)
 	assert.Equal(t, "TZ=UTC\n", details.EnvContent)
-	assert.Equal(t, 1, len(details.Services))
+	assert.Len(t, details.Services, 1)
 }
 
 func TestProjectService_UpdateProject_WritesThroughSymlinkedProjectPath(t *testing.T) {
@@ -5989,7 +6005,9 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsPreservedTargetJourna
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Name": "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved = true
 			w.WriteHeader(http.StatusNoContent)
@@ -6183,17 +6201,23 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsJournalWhenDirectoryRo
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			if targetRemoved.Load() {
 				http.NotFound(w, r)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -6283,7 +6307,9 @@ func TestProjectService_RecoverProjectRenameJournals_CompletesCommittedVolumeJou
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			oldVolumeRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -6357,7 +6383,9 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackCommittedJournalWh
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			oldVolumeRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -6440,20 +6468,28 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalAfterDBRestore
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			if !targetExists.Load() {
 				http.NotFound(w, r)
 				return
 			}
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			targetRemoveAttempts.Add(1)
 			if allowTargetRemove.Load() {
@@ -6678,10 +6714,14 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsCommittedJournalAndCl
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			cacheSourceRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -6762,7 +6802,9 @@ func TestProjectService_RecoverProjectRenameJournals_MarksSourceCleanupPendingWh
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			sourceRemoveAttempts.Add(1)
 			http.Error(w, "volume busy", http.StatusInternalServerError)
@@ -6845,7 +6887,9 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsSourceCleanupPendingJ
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			sourceRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -6920,16 +6964,24 @@ func TestProjectService_RecoverProjectRenameJournals_RollsBackSourceCleanupPendi
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_cache"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_cache"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_cache"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			dataSourceRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -7024,7 +7076,9 @@ func TestProjectService_RecoverProjectRenameJournals_KeepsSourceCleanupPendingJo
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			sourceRemoveAttempts.Add(1)
 			http.Error(w, "volume busy", http.StatusInternalServerError)
@@ -7152,12 +7206,16 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsMissingPathJournalWhe
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)
@@ -7305,7 +7363,9 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenRollbackTa
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "nginx_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			http.Error(w, "temporary docker error", http.StatusInternalServerError)
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
@@ -7382,12 +7442,16 @@ func TestProjectService_RecoverProjectRenameJournals_ClearsJournalWhenTargetPres
 		switch {
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/volumes/nginx_data"):
 			http.NotFound(w, r)
 		case r.Method == http.MethodGet && strings.HasSuffix(r.URL.Path, "/containers/json"):
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode([]container.Summary{}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode([]container.Summary{})) {
+				return
+			}
 		case r.Method == http.MethodDelete && strings.HasSuffix(r.URL.Path, "/volumes/web_data"):
 			targetRemoved.Store(true)
 			w.WriteHeader(http.StatusNoContent)

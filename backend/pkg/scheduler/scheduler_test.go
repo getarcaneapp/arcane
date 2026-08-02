@@ -148,7 +148,7 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bus watcher to start")
+		require.FailNow(t, "timed out waiting for bus watcher to start")
 	}
 
 	stopDone := make(chan error, 1)
@@ -158,13 +158,13 @@ func TestJobScheduler_StopWaitsForBusWatchers(t *testing.T) {
 	select {
 	case <-watcher.stopped:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bus watcher to stop")
+		require.FailNow(t, "timed out waiting for bus watcher to stop")
 	}
 	select {
 	case err := <-stopDone:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("scheduler did not stop after bus watcher finished")
+		require.FailNow(t, "scheduler did not stop after bus watcher finished")
 	}
 }
 
@@ -180,7 +180,7 @@ func TestJobScheduler_StopJoinsRunnerBeforeStoppingWatcher(t *testing.T) {
 	select {
 	case <-watcher.started:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for bus watcher to start")
+		require.FailNow(t, "timed out waiting for bus watcher to start")
 	}
 	require.NoError(t, js.Stop(t.Context()))
 }
@@ -303,7 +303,7 @@ func TestJobScheduler_RescheduleJob_UsesProvidedContext(t *testing.T) {
 	case err := <-runErrCh:
 		require.NoError(t, err)
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled run")
+		require.FailNow(t, "timed out waiting for scheduled run")
 	}
 }
 
@@ -336,7 +336,7 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	select {
 	case <-startedCh:
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled run")
+		require.FailNow(t, "timed out waiting for scheduled run")
 	}
 
 	cancelLifecycle()
@@ -344,7 +344,7 @@ func TestJobScheduler_RescheduleJob_UsesLifecycleContextForShutdown(t *testing.T
 	select {
 	case <-stoppedCh:
 	case <-time.After(1500 * time.Millisecond):
-		t.Fatal("scheduled job did not observe lifecycle cancellation")
+		require.FailNow(t, "scheduled job did not observe lifecycle cancellation")
 	}
 }
 
@@ -456,14 +456,14 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	select {
 	case <-jobStarted:
 	case <-time.After(2500 * time.Millisecond):
-		t.Fatal("timed out waiting for scheduled job to start")
+		require.FailNow(t, "timed out waiting for scheduled job to start")
 	}
 
 	cancelLifecycle()
 	select {
 	case <-cancellationObserved:
 	case <-time.After(time.Second):
-		t.Fatal("scheduled job did not observe lifecycle cancellation")
+		require.FailNow(t, "scheduled job did not observe lifecycle cancellation")
 	}
 
 	stopDone := make(chan error, 1)
@@ -471,7 +471,7 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 
 	select {
 	case err := <-stopDone:
-		t.Fatalf("scheduler stopped before the running job finished: %v", err)
+		require.FailNowf(t, "unexpected failure", "scheduler stopped before the running job finished: %v", err)
 	case <-time.After(100 * time.Millisecond):
 	}
 
@@ -479,12 +479,12 @@ func TestJobScheduler_StopWaitsForCanceledJobToFinish(t *testing.T) {
 	select {
 	case <-jobFinished:
 	case <-time.After(time.Second):
-		t.Fatal("scheduled job did not finish after release")
+		require.FailNow(t, "scheduled job did not finish after release")
 	}
 	select {
 	case err := <-stopDone:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("scheduler did not stop after the running job finished")
+		require.FailNow(t, "scheduler did not stop after the running job finished")
 	}
 }

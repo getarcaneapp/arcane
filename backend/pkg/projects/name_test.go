@@ -1,6 +1,11 @@
 package projects
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
 
 func TestComposeContentProjectName(t *testing.T) {
 	tests := []struct {
@@ -16,9 +21,12 @@ func TestComposeContentProjectName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := ComposeContentProjectName(tt.content); got != tt.want {
-				t.Errorf("ComposeContentProjectName() = %q, want %q", got, tt.want)
+			{
+				got := ComposeContentProjectName(tt.content)
+				assert.Equal(t, tt.want, got,
+					"ComposeContentProjectName() = %q, want %q", got, tt.want)
 			}
+
 		})
 	}
 }
@@ -49,9 +57,10 @@ func TestNormalizeProjectName(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			got := NormalizeProjectName(tt.input)
-			if got != tt.expected {
-				t.Fatalf("NormalizeProjectName() = %q, want %q", got, tt.expected)
-			}
+
+			require.Equal(t, tt.expected, got,
+				"NormalizeProjectName() = %q, want %q", got, tt.expected)
+
 		})
 	}
 }

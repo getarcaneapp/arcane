@@ -105,7 +105,7 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 		case "followProjectSymlinks":
 			require.Equal(t, "false", sv.Value)
 		case "autoUpdateExcludedContainers":
-			require.Equal(t, "", sv.Value)
+			require.Empty(t, sv.Value)
 		case "imageEventWatcherEnabled":
 			require.Equal(t, "false", sv.Value)
 		case "vulnerabilityScanEnabled":
@@ -117,9 +117,9 @@ func TestSettingsService_EnsureDefaultSettings_Idempotent(t *testing.T) {
 		case "lifecycleDefaultRunnerImage":
 			require.Equal(t, "alpine:latest", sv.Value)
 		case "trivyNetwork":
-			require.Equal(t, "", sv.Value)
+			require.Empty(t, sv.Value)
 		case "trivySecurityOpts":
-			require.Equal(t, "", sv.Value)
+			require.Empty(t, sv.Value)
 		case "trivyPrivileged":
 			require.Equal(t, "false", sv.Value)
 		case "trivyPreserveCacheOnVolumePrune":
@@ -642,7 +642,7 @@ func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotificationInte
 	case err := <-updateResult:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("settings update waited for notification callback")
+		require.FailNow(t, "settings update waited for notification callback")
 	}
 
 	secondUpdate := make(chan error, 1)
@@ -654,7 +654,7 @@ func TestSettingsServiceActorPublishesSnapshotBeforeAsynchronousNotificationInte
 	case err := <-secondUpdate:
 		require.NoError(t, err)
 	case <-time.After(time.Second):
-		t.Fatal("settings subscriber blocked the next settings writer")
+		require.FailNow(t, "settings subscriber blocked the next settings writer")
 	}
 	close(releaseCallback)
 }
@@ -725,15 +725,15 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 	ctx := context.Background()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	if err != nil {
-		b.Fatal(err)
+		require.FailNowf(b, "benchmark database setup failed", "%v", err)
 	}
 	if err := db.AutoMigrate(&models.SettingVariable{}); err != nil {
-		b.Fatal(err)
+		require.FailNowf(b, "benchmark database migration failed", "%v", err)
 	}
 	settingsDB := &database.DB{DB: db}
 	svc, err := newSettingsServiceForTestInternal(b, ctx, settingsDB)
 	if err != nil {
-		b.Fatal(err)
+		require.FailNowf(b, "benchmark service setup failed", "%v", err)
 	}
 
 	b.ReportAllocs()
@@ -742,10 +742,10 @@ func BenchmarkSettingsService_GetSettings(b *testing.B) {
 	for b.Loop() {
 		settingsCfg, err := svc.GetSettings(ctx)
 		if err != nil {
-			b.Fatal(err)
+			require.FailNowf(b, "benchmark GetSettings failed", "%v", err)
 		}
 		if settingsCfg == nil {
-			b.Fatal("settings should not be nil")
+			require.FailNow(b, "GetSettings returned nil settings")
 		}
 	}
 }

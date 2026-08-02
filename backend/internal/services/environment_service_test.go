@@ -28,6 +28,7 @@ import (
 	"github.com/getarcaneapp/arcane/types/v2/containerregistry"
 	"github.com/getarcaneapp/arcane/types/v2/environment"
 	"github.com/getarcaneapp/arcane/types/v2/gitops"
+	"github.com/stretchr/testify/assert"
 	"go.getarcane.app/sys/crypto"
 	"go.uber.org/fx/fxtest"
 )
@@ -249,14 +250,26 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 	var env1Calls atomic.Int32
 	env1Token := "token-1"
 	env1Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/container-registries/sync", r.URL.Path)
-		require.Equal(t, env1Token, r.Header.Get("X-API-Key"))
-		require.Equal(t, env1Token, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, env1Token, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, env1Token, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 
 		var syncReq containerregistry.SyncRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
-		require.Len(t, syncReq.Registries, 1)
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+			return
+		}
+		if !assert.Len(t, syncReq.Registries, 1) {
+			return
+		}
 		env1Calls.Add(1)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -267,14 +280,26 @@ func TestEnvironmentService_SyncRegistriesToRemoteEnvironments_SyncsEligibleRemo
 	var env2Calls atomic.Int32
 	env2Token := "token-2"
 	env2Server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/container-registries/sync", r.URL.Path)
-		require.Equal(t, env2Token, r.Header.Get("X-API-Key"))
-		require.Equal(t, env2Token, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, env2Token, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, env2Token, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 
 		var syncReq containerregistry.SyncRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
-		require.Len(t, syncReq.Registries, 1)
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+			return
+		}
+		if !assert.Len(t, syncReq.Registries, 1) {
+			return
+		}
 		env2Calls.Add(1)
 
 		w.Header().Set("Content-Type", "application/json")
@@ -300,21 +325,43 @@ func TestEnvironmentService_SyncRegistriesToEnvironment_IncludesECRFields(t *tes
 	createTestECRRegistry(t, db, "reg-ecr")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/container-registries/sync", r.URL.Path)
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/container-registries/sync", r.URL.Path) {
+			return
+		}
 
 		var syncReq containerregistry.SyncRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
-		require.Len(t, syncReq.Registries, 1)
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+			return
+		}
+		if !assert.Len(t, syncReq.Registries, 1) {
+			return
+		}
 
 		registry := syncReq.Registries[0]
-		require.Equal(t, registryTypeECR, registry.RegistryType)
-		require.Equal(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com", registry.URL)
-		require.Equal(t, "AKIA1234567890EXAMPLE", registry.AWSAccessKeyID)
-		require.Equal(t, "aws-secret", registry.AWSSecretAccessKey)
-		require.Equal(t, "us-east-1", registry.AWSRegion)
-		require.Empty(t, registry.Username)
-		require.Empty(t, registry.Token)
+		if !assert.Equal(t, registryTypeECR, registry.RegistryType) {
+			return
+		}
+		if !assert.Equal(t, "123456789012.dkr.ecr.us-east-1.amazonaws.com", registry.URL) {
+			return
+		}
+		if !assert.Equal(t, "AKIA1234567890EXAMPLE", registry.AWSAccessKeyID) {
+			return
+		}
+		if !assert.Equal(t, "aws-secret", registry.AWSSecretAccessKey) {
+			return
+		}
+		if !assert.Equal(t, "us-east-1", registry.AWSRegion) {
+			return
+		}
+		if !assert.Empty(t, registry.Username) {
+			return
+		}
+		if !assert.Empty(t, registry.Token) {
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
@@ -346,16 +393,32 @@ func TestEnvironmentService_SyncRepositoriesToEnvironment_UsesAgentHeaders(t *te
 
 	accessToken := "token-1"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/git-repositories/sync", r.URL.Path)
-		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
-		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/git-repositories/sync", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 
 		var syncReq gitops.RepositorySyncRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq))
-		require.Len(t, syncReq.Repositories, 1)
-		require.Equal(t, "repo-token", syncReq.Repositories[0].Token)
-		require.Equal(t, "arcane", syncReq.Repositories[0].Username)
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&syncReq)) {
+			return
+		}
+		if !assert.Len(t, syncReq.Repositories, 1) {
+			return
+		}
+		if !assert.Equal(t, "repo-token", syncReq.Repositories[0].Token) {
+			return
+		}
+		if !assert.Equal(t, "arcane", syncReq.Repositories[0].Username) {
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"message":"ok"}}`))
@@ -670,7 +733,7 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.NotContains(t, standard.DockerCompose, "EDGE_TRANSPORT=websocket")
 	require.Contains(t, standard.DockerRun, "EDGE_TRANSPORT=poll")
 	require.Contains(t, standard.DockerCompose, "EDGE_TRANSPORT=poll")
-	require.True(t, strings.Contains(standard.DockerRun, "AGENT_TOKEN=token-123"))
+	require.Contains(t, standard.DockerRun, "AGENT_TOKEN=token-123")
 	require.Contains(t, standard.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, standard.DockerCompose, "- arcane-data:/app/data")
 	require.NotContains(t, standard.DockerRun, "-v arcane-data:/data")
@@ -682,7 +745,7 @@ func TestEnvironmentService_GenerateDeploymentSnippets_ExplicitlyUsePollTranspor
 	require.NotContains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=websocket")
 	require.Contains(t, edgeSnippets.DockerRun, "EDGE_TRANSPORT=poll")
 	require.Contains(t, edgeSnippets.DockerCompose, "EDGE_TRANSPORT=poll")
-	require.True(t, strings.Contains(edgeSnippets.DockerRun, "AGENT_TOKEN=token-456"))
+	require.Contains(t, edgeSnippets.DockerRun, "AGENT_TOKEN=token-456")
 	require.Contains(t, edgeSnippets.DockerRun, "-v arcane-data:/app/data")
 	require.Contains(t, edgeSnippets.DockerCompose, "- arcane-data:/app/data")
 	require.NotContains(t, edgeSnippets.DockerRun, "-v arcane-data:/data")
@@ -779,8 +842,10 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 		ParentEnvironmentID: &parentEnvironmentID,
 		SwarmNodeID:         &nodeID,
 	}
-	if err := db.WithContext(ctx).Create(legacy).Error; err != nil {
-		t.Fatalf("create legacy environment: %v", err)
+	{
+		err := db.WithContext(ctx).Create(legacy).Error
+		require.NoError(t, err,
+			"create legacy environment: %v", err)
 	}
 
 	reused, reusedToken, err := svc.EnsureSwarmNodeAgentEnvironment(
@@ -792,28 +857,31 @@ func TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_ReusesLegacyHiddenRe
 		"username",
 		false,
 	)
-	if err != nil {
-		t.Fatalf("EnsureSwarmNodeAgentEnvironment() error = %v", err)
-	}
-	if reused.ID != legacy.ID {
-		t.Fatalf("environment ID = %q, want %q", reused.ID, legacy.ID)
-	}
-	if !reused.Hidden {
-		t.Fatal("legacy environment was unexpectedly converted to visible")
-	}
-	if reusedToken != token {
-		t.Fatalf("token = %q, want existing token", reusedToken)
-	}
+
+	require.NoError(t, err,
+		"EnsureSwarmNodeAgentEnvironment() error = %v", err)
+
+	require.Equal(t, legacy.ID, reused.ID,
+		"environment ID = %q, want %q", reused.ID, legacy.ID)
+
+	require.True(t, reused.Hidden,
+		"legacy environment was unexpectedly converted to visible")
+
+	require.Equal(t, token, reusedToken,
+		"token = %q, want existing token", reusedToken)
 
 	var environments []models.Environment
-	if err := db.WithContext(ctx).
-		Where("parent_environment_id = ? AND swarm_node_id = ?", parentEnvironmentID, nodeID).
-		Find(&environments).Error; err != nil {
-		t.Fatalf("list node environments: %v", err)
+	{
+		err := db.WithContext(ctx).
+			Where("parent_environment_id = ? AND swarm_node_id = ?", parentEnvironmentID, nodeID).
+			Find(&environments).Error
+		require.NoError(t, err,
+			"list node environments: %v", err)
 	}
-	if len(environments) != 1 {
-		t.Fatalf("environment count = %d, want 1", len(environments))
-	}
+
+	require.Len(t, environments, 1,
+		"environment count = %d, want 1", len(environments))
+
 }
 
 // TestEnvironmentService_EnsureSwarmNodeAgentEnvironment_TokenResolvesEndToEnd
@@ -1112,7 +1180,9 @@ func newTestWebSocketTunnelInternal(t *testing.T, envID string) (*edge.AgentTunn
 	connCh := make(chan *websocket.Conn, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		conn, err := websocket.Accept(w, r, nil)
-		require.NoError(t, err)
+		if !assert.NoError(t, err) {
+			return
+		}
 		connCh <- conn
 	}))
 

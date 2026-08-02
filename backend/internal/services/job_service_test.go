@@ -319,8 +319,7 @@ func findJobStatusByIDInternal(t *testing.T, jobs []jobschedule.JobStatus, id st
 			return job
 		}
 	}
-
-	t.Fatalf("job %q not found", id)
+	require.FailNowf(t, "unexpected failure", "job %q not found", id)
 	return jobschedule.JobStatus{}
 }
 

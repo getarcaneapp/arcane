@@ -9,7 +9,7 @@
 		"test": "playwright test"
 	},
 	"devDependencies": {
-		"@playwright/test": "^1.62.0",
+		"@playwright/test": "^1.62.1",
 		"@types/node": "^26.1.2",
 		"oxfmt": "^0.61.0",
 		"typescript": "^6.0.3"

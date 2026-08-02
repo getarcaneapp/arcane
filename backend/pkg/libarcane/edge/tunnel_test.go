@@ -114,7 +114,7 @@ func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
 	select {
 	case <-stream.recvStarted:
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for stream recv start")
+		require.FailNow(t, "timed out waiting for stream recv start")
 	}
 
 	require.NoError(t, conn.Close())
@@ -122,9 +122,9 @@ func TestGRPCManagerTunnelConn_CloseCancelsReceive(t *testing.T) {
 	select {
 	case err := <-errCh:
 		require.Error(t, err)
-		assert.ErrorIs(t, err, context.Canceled)
+		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for receive to unblock")
+		require.FailNow(t, "timed out waiting for receive to unblock")
 	}
 }
 
@@ -171,7 +171,7 @@ func TestTunnelConn_CloseSendsCloseFrame(t *testing.T) {
 		assert.Equal(t, websocket.StatusNormalClosure, websocket.CloseStatus(err),
 			"peer should observe a normal closure, got: %v", err)
 	case <-time.After(5 * time.Second):
-		t.Fatal("timed out waiting for peer read to return")
+		require.FailNow(t, "timed out waiting for peer read to return")
 	}
 }
 

@@ -14,6 +14,7 @@ import (
 	swarmtypes "github.com/getarcaneapp/arcane/types/v2/swarm"
 	"github.com/moby/moby/api/types/swarm"
 	"github.com/moby/moby/api/types/system"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,10 +45,18 @@ func TestSwarmService_FetchSwarmNodeIdentityViaEdgeInternal_UsesEnvironmentAcces
 
 	accessToken := "token-123"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodGet, r.Method)
-		require.Equal(t, "/api/swarm/node-identity", r.URL.Path)
-		require.Equal(t, accessToken, r.Header.Get("X-API-Key"))
-		require.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token"))
+		if !assert.Equal(t, http.MethodGet, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/swarm/node-identity", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-API-Key")) {
+			return
+		}
+		if !assert.Equal(t, accessToken, r.Header.Get("X-Arcane-Agent-Token")) {
+			return
+		}
 
 		w.Header().Set("Content-Type", "application/json")
 		_, _ = w.Write([]byte(`{"success":true,"data":{"swarmNodeId":"node-1","hostname":"worker-1","role":"worker","engineVersion":"29.3.1","swarmActive":true}}`))
@@ -230,14 +239,16 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 
 				switch {
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/info":
-					require.NoError(t, json.NewEncoder(w).Encode(system.Info{
+					if !assert.NoError(t, json.NewEncoder(w).Encode(system.Info{
 						Swarm: swarm.Info{
 							LocalNodeState:   swarm.LocalNodeStateActive,
 							ControlAvailable: true,
 						},
-					}))
+					})) {
+						return
+					}
 				case r.Method == http.MethodGet && r.URL.Path == "/v1.41/services/service-1":
-					require.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
+					if !assert.NoError(t, json.NewEncoder(w).Encode(swarm.Service{
 						ID: "service-1",
 						Meta: swarm.Meta{
 							Version: swarm.Version{Index: 7},
@@ -246,12 +257,20 @@ func TestSwarmService_ScaleService_HandlesServiceModesInternal(t *testing.T) {
 							Annotations: swarm.Annotations{Name: "service-1"},
 							Mode:        tt.mode,
 						},
-					}))
+					})) {
+						return
+					}
 				case r.Method == http.MethodPost && r.URL.Path == "/v1.41/services/service-1/update":
 					updateCalls++
-					require.Equal(t, "7", r.URL.Query().Get("version"))
-					require.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec))
-					require.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}}))
+					if !assert.Equal(t, "7", r.URL.Query().Get("version")) {
+						return
+					}
+					if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&updatedSpec)) {
+						return
+					}
+					if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]any{"Warnings": []string{"updated"}})) {
+						return
+					}
 				default:
 					http.NotFound(w, r)
 				}

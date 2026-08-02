@@ -39,7 +39,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 					Path:        "/customize/git-repositories",
 					Middlewares: humamw.RequirePermission(api, authz.PermGitReposCreate),
 				}, func(_ context.Context, _ *struct{}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -57,7 +57,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -75,7 +75,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},
@@ -93,7 +93,7 @@ func TestGitRepositoryHandlers_PermissionGating(t *testing.T) {
 				}, func(_ context.Context, _ *struct {
 					ID string `path:"id"`
 				}) (*struct{}, error) {
-					t.Fatal("handler must not run when permission is missing")
+					require.FailNow(t, "handler must not run when permission is missing")
 					return nil, nil
 				})
 			},

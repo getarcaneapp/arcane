@@ -7,6 +7,8 @@ import (
 	"strings"
 	"sync"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestContainersListSendsLimitAndStart(t *testing.T) {
@@ -38,27 +40,32 @@ func TestContainersListSendsLimitAndStart(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--json", "--limit", "5", "--start", "10"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if gotPath != "/api/environments/0/containers" {
-		t.Fatalf("path = %q, want %q", gotPath, "/api/environments/0/containers")
-	}
-	if !(strings.Contains(gotQuery, "limit=5") && strings.Contains(gotQuery, "start=10")) {
-		t.Fatalf("query = %q, want limit=5 and start=10", gotQuery)
-	}
+	require.Equal(t, "/api/environments/0/containers", gotPath,
+		"path = %q, want %q", gotPath, "/api/environments/0/containers")
+
+	require.True(t, (strings.Contains(gotQuery, "limit=5") && strings.Contains(gotQuery, "start=10")),
+		"query = %q, want limit=5 and start=10", gotQuery)
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got); err != nil {
-		t.Fatalf("json parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got)
+		require.NoError(t, err,
+			"json parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if _, ok := got["pagination"]; !ok {
-		t.Fatalf("expected pagination in output: %v", got)
+	{
+
+		_, ok := got["pagination"]
+		require.True(t, ok,
+			"expected pagination in output: %v", got)
 	}
+
 }
 
 func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
@@ -88,19 +95,19 @@ func TestContainersListExplicitStartZeroSendsStartZero(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--json", "--start", "0"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if gotPath != "/api/environments/0/containers" {
-		t.Fatalf("path = %q, want %q", gotPath, "/api/environments/0/containers")
-	}
-	if !(strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20")) {
-		t.Fatalf("query = %q, want start=0 and limit=20", gotQuery)
-	}
+	require.Equal(t, "/api/environments/0/containers", gotPath,
+		"path = %q, want %q", gotPath, "/api/environments/0/containers")
+
+	require.True(t, (strings.Contains(gotQuery, "start=0") && strings.Contains(gotQuery, "limit=20")),
+		"query = %q, want start=0 and limit=20", gotQuery)
+
 }
 
 func TestContainersListTextShowsShowingSummary(t *testing.T) {
@@ -121,12 +128,13 @@ func TestContainersListTextShowsShowingSummary(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--json=false"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
-	if !strings.Contains(outBuf, "Showing: 1/26 containers") {
-		t.Fatalf("expected showing summary in output, got:\n%s", outBuf)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
+
+	require.Contains(t, outBuf, "Showing: 1/26 containers",
+		"expected showing summary in output, got:\n%s", outBuf)
+
 }
 
 // TestContainersListAllRequestsEveryItem pins the wire form of --all. The API
@@ -160,19 +168,19 @@ func TestContainersListAllRequestsEveryItem(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "containers", "list", "--json", "--all"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if gotPath != "/api/environments/0/containers" {
-		t.Fatalf("path = %q, want %q", gotPath, "/api/environments/0/containers")
-	}
-	if gotQuery != "limit=-1" {
-		t.Fatalf("query = %q, want %q", gotQuery, "limit=-1")
-	}
+	require.Equal(t, "/api/environments/0/containers", gotPath,
+		"path = %q, want %q", gotPath, "/api/environments/0/containers")
+
+	require.Equal(t, "limit=-1", gotQuery,
+		"query = %q, want %q", gotQuery, "limit=-1")
+
 }
 
 // TestProjectsListAllIncludesArchived covers the one resource where "everything"
@@ -203,16 +211,16 @@ func TestProjectsListAllIncludesArchived(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "projects", "list", "--json", "--all"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if gotQuery != "archived=all&limit=-1" {
-		t.Fatalf("query = %q, want %q", gotQuery, "archived=all&limit=-1")
-	}
+	require.Equal(t, "archived=all&limit=-1", gotQuery,
+		"query = %q, want %q", gotQuery, "archived=all&limit=-1")
+
 }
 
 func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
@@ -251,19 +259,19 @@ func TestAdminEventsListEnvSendsLimitAndStart(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "admin", "events", "list-env", "--json", "--limit", "3", "--start", "6"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	defer mu.Unlock()
 
-	if gotPath != "/api/events/environment/0" {
-		t.Fatalf("path = %q, want %q", gotPath, "/api/events/environment/0")
-	}
-	if !(strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6")) {
-		t.Fatalf("query = %q, want limit=3 and start=6", gotQuery)
-	}
+	require.Equal(t, "/api/events/environment/0", gotPath,
+		"path = %q, want %q", gotPath, "/api/events/environment/0")
+
+	require.True(t, (strings.Contains(gotQuery, "limit=3") && strings.Contains(gotQuery, "start=6")),
+		"query = %q, want limit=3 and start=6", gotQuery)
+
 }
 
 func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {
@@ -295,34 +303,46 @@ func TestTemplatesListJSONIncludesPaginatedEnvelope(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "templates", "list", "--json", "--limit", "7", "--start", "14"},
 	)
-	if err != nil {
-		t.Fatalf("execute: %v (%s)", err, errOut)
-	}
+
+	require.NoError(t, err,
+		"execute: %v (%s)", err, errOut)
 
 	mu.Lock()
 	if gotPath != "/api/templates" {
 		mu.Unlock()
-		t.Fatalf("path = %q, want %q", gotPath, "/api/templates")
+		require.FailNowf(t, "unexpected failure", "path = %q, want %q", gotPath, "/api/templates")
 	}
 	if !(strings.Contains(gotQuery, "limit=7") && strings.Contains(gotQuery, "start=14")) {
 		mu.Unlock()
-		t.Fatalf("query = %q, want limit=7 and start=14", gotQuery)
+		require.FailNowf(t, "unexpected failure", "query = %q, want limit=7 and start=14", gotQuery)
 	}
 	mu.Unlock()
 
 	var got map[string]any
-	if err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got); err != nil {
-		t.Fatalf("json parse failed: %v\noutput=%s", err, outBuf)
+	{
+		err := json.Unmarshal([]byte(strings.TrimSpace(outBuf)), &got)
+		require.NoError(t, err,
+			"json parse failed: %v\noutput=%s", err, outBuf)
 	}
-	if _, ok := got["success"]; !ok {
-		t.Fatalf("expected success key in output: %v", got)
+	{
+
+		_, ok := got["success"]
+		require.True(t, ok,
+			"expected success key in output: %v", got)
 	}
-	if _, ok := got["data"]; !ok {
-		t.Fatalf("expected data key in output: %v", got)
+	{
+
+		_, ok := got["data"]
+		require.True(t, ok,
+			"expected data key in output: %v", got)
 	}
-	if _, ok := got["pagination"]; !ok {
-		t.Fatalf("expected pagination key in output: %v", got)
+	{
+
+		_, ok := got["pagination"]
+		require.True(t, ok,
+			"expected pagination key in output: %v", got)
 	}
+
 }
 
 func TestTemplatesListAllRejectsExplicitPaginationFlags(t *testing.T) {
@@ -345,18 +365,20 @@ func TestTemplatesListAllRejectsExplicitPaginationFlags(t *testing.T) {
 		t,
 		[]string{"--config", configPath, "templates", "list", "--all", "--limit", "50"},
 	)
-	if err == nil {
-		t.Fatal("expected command error, got nil")
-	}
-	if !strings.Contains(err.Error(), "--all cannot be combined with explicit pagination flags") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if !strings.Contains(errOut, "--all cannot be combined with explicit pagination flags") {
-		t.Fatalf("unexpected stderr output: %s", errOut)
-	}
+
+	require.Error(t, err,
+		"expected command error, got nil")
+
+	require.Contains(t, err.Error(), "--all cannot be combined with explicit pagination flags",
+		"unexpected error: %v", err)
+
+	require.Contains(t, errOut, "--all cannot be combined with explicit pagination flags",
+		"unexpected stderr output: %s", errOut)
+
 	mu.Lock()
 	defer mu.Unlock()
-	if called {
-		t.Fatal("expected command to fail before issuing HTTP request")
-	}
+
+	require.False(t, called,
+		"expected command to fail before issuing HTTP request")
+
 }

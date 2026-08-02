@@ -13,6 +13,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/libarcane"
 	"github.com/moby/moby/api/types/container"
 	"github.com/moby/moby/api/types/volume"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -59,9 +60,13 @@ func TestCreateProjectRenamedVolumeInternal_UsesPendingComposeDriverOptions(t *t
 	var payload map[string]any
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost && strings.HasSuffix(r.URL.Path, "/volumes/create") {
-			require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+			if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload)) {
+				return
+			}
 			w.Header().Set("Content-Type", "application/json")
-			require.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"}))
+			if !assert.NoError(t, json.NewEncoder(w).Encode(volume.Volume{Name: "web_data"})) {
+				return
+			}
 			return
 		}
 		http.NotFound(w, r)

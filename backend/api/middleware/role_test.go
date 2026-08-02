@@ -34,7 +34,7 @@ func TestRequirePermission_RejectsCallerMissingPermission(t *testing.T) {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*struct{}, error) {
-		t.Fatal("handler must not run when permission is missing")
+		require.FailNow(t, "handler must not run when permission is missing")
 		return nil, nil
 	})
 
@@ -105,7 +105,7 @@ func TestRequirePermission_EnvScopedDoesNotLeakAcrossEnvs(t *testing.T) {
 		ID  string `path:"id"`
 		CID string `path:"cid"`
 	}) (*struct{}, error) {
-		t.Fatal("handler must not run when permission is scoped to a different env")
+		require.FailNow(t, "handler must not run when permission is scoped to a different env")
 		return nil, nil
 	})
 
@@ -134,7 +134,7 @@ func TestRequirePermissionEnvironmentGrantCannotManageGlobalNotificationsInterna
 	}, func(_ context.Context, _ *struct {
 		ID string `path:"id"`
 	}) (*struct{}, error) {
-		t.Fatal("handler must not run for an environment-scoped grant on global notification settings")
+		require.FailNow(t, "handler must not run for an environment-scoped grant on global notification settings")
 		return nil, nil
 	})
 

@@ -1,15 +1,22 @@
 package types
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/stretchr/testify/require"
+)
 
 func TestConfigLimitForRepos(t *testing.T) {
 	cfg := &Config{}
 	cfg.SetResourceLimit("repos", 42)
 
 	for _, resource := range []string{"repos", "repo", "git-repositories", "git-repos"} {
-		if got := cfg.LimitFor(resource); got != 42 {
-			t.Fatalf("LimitFor(%q) = %d, want 42", resource, got)
+		{
+			got := cfg.LimitFor(resource)
+			require.Equal(t, 42, got,
+				"LimitFor(%q) = %d, want 42", resource, got)
 		}
+
 	}
 }
 
@@ -21,8 +28,11 @@ func TestNormalizePaginatedResourceGitOpsSyncAliases(t *testing.T) {
 		"gitops",
 		"gitopssync",
 	} {
-		if got := NormalizePaginatedResource(resource); got != "gitops-syncs" {
-			t.Fatalf("NormalizePaginatedResource(%q) = %q, want %q", resource, got, "gitops-syncs")
+		{
+			got := NormalizePaginatedResource(resource)
+			require.Equal(t, "gitops-syncs", got,
+				"NormalizePaginatedResource(%q) = %q, want %q", resource, got, "gitops-syncs")
 		}
+
 	}
 }

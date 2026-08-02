@@ -3,6 +3,8 @@ package httpx
 import (
 	"net/http/httptest"
 	"testing"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestIsWebSocketUpgradeRequest(t *testing.T) {
@@ -29,9 +31,12 @@ func TestIsWebSocketUpgradeRequest(t *testing.T) {
 			if tt.upgrade != "" {
 				r.Header.Set("Upgrade", tt.upgrade)
 			}
-			if got := IsWebSocketUpgradeRequest(r); got != tt.want {
-				t.Errorf("IsWebSocketUpgradeRequest() = %v, want %v", got, tt.want)
+			{
+				got := IsWebSocketUpgradeRequest(r)
+				assert.Equal(t, tt.want, got,
+					"IsWebSocketUpgradeRequest() = %v, want %v", got, tt.want)
 			}
+
 		})
 	}
 }

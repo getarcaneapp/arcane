@@ -218,7 +218,9 @@ func TestContainerRegistryService_GetRegistryPullUsage_AnonymousDockerHubLimit(t
 			w.Header().Set("RateLimit-Remaining", "90;w=21600")
 			w.WriteHeader(http.StatusOK)
 		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			if !assert.Failf(t, "unexpected failure", "unexpected request %s %s", r.Method, r.URL.Path) {
+				return
+			}
 		}
 	})
 
@@ -268,7 +270,9 @@ func TestContainerRegistryService_GetRegistryPullUsage_UsesDockerHubCredential(t
 			w.Header().Set("RateLimit-Remaining", "199;w=21600")
 			w.WriteHeader(http.StatusOK)
 		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			if !assert.Failf(t, "unexpected failure", "unexpected request %s %s", r.Method, r.URL.Path) {
+				return
+			}
 		}
 	})
 
@@ -300,7 +304,9 @@ func TestContainerRegistryService_GetRegistryPullUsage_CredentialErrorIsNonFatal
 			w.Header().Set("WWW-Authenticate", `Bearer realm="https://auth.docker.io/token",service="registry.docker.io"`)
 			w.WriteHeader(http.StatusUnauthorized)
 		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+			if !assert.Failf(t, "unexpected failure", "unexpected request %s %s", r.Method, r.URL.Path) {
+				return
+			}
 		}
 	})
 
@@ -661,7 +667,7 @@ func TestContainerRegistryService_TestRegistry_SkipsLoginForEmptyCredentials(t *
 	svc := NewContainerRegistryService(nil, func(context.Context) (RegistryDaemonClient, error) {
 		return &fakeRegistryDaemonClient{
 			registryLoginFn: func(ctx context.Context, options client.RegistryLoginOptions) (client.RegistryLoginResult, error) {
-				t.Fatal("RegistryLogin should not be called with empty credentials")
+				require.FailNow(t, "RegistryLogin should not be called with empty credentials")
 				return client.RegistryLoginResult{}, nil
 			},
 		}, nil
@@ -727,7 +733,7 @@ func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *tes
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("registry lookup did not start")
+		require.FailNow(t, "registry lookup did not start")
 	}
 	cancel()
 
@@ -735,7 +741,7 @@ func TestContainerRegistryService_GetImageDigest_HonorsCallerCancellation(t *tes
 	case err := <-result:
 		require.ErrorIs(t, err, context.Canceled)
 	case <-time.After(time.Second):
-		t.Fatal("registry lookup did not honor caller cancellation")
+		require.FailNow(t, "registry lookup did not honor caller cancellation")
 	}
 }
 
@@ -907,23 +913,34 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 				w.Header().Set("Docker-Content-Digest", wantDigest)
 				w.WriteHeader(http.StatusOK)
 			default:
-				t.Fatalf("unexpected manifest call %d", len(authHeaders))
+				if !assert.Failf(t, "unexpected failure", "unexpected manifest call %d", len(authHeaders)) {
+					return
+				}
 			}
 		case "/token":
 			username, password, ok := r.BasicAuth()
 			if !ok {
-				require.Equal(t, "", r.Header.Get("Authorization"))
-				require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+				if !assert.Empty(t, r.Header.Get("Authorization")) {
+					return
+				}
+				if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
 					"token": "anonymous-token",
-				}))
+				})) {
+					return
+				}
 				return
 			}
-
-			require.Equal(t, "stored-user", username)
-			require.Equal(t, "stored-token", password)
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.Equal(t, "stored-user", username) {
+				return
+			}
+			if !assert.Equal(t, "stored-token", password) {
+				return
+			}
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
 				"token": "credential-token",
-			}))
+			})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}
@@ -952,7 +969,7 @@ func TestContainerRegistryService_InspectImageDigest_RetriesStoredCredentialsAft
 	assert.Equal(t, "stored-user", result.AuthUsername)
 	assert.True(t, result.UsedCredential)
 	require.Len(t, authHeaders, 3)
-	assert.Equal(t, "", authHeaders[0])
+	assert.Empty(t, authHeaders[0])
 	assert.Equal(t, "Bearer anonymous-token", authHeaders[1])
 	assert.Equal(t, "Basic c3RvcmVkLXVzZXI6c3RvcmVkLXRva2Vu", authHeaders[2])
 }
@@ -997,7 +1014,7 @@ func TestContainerRegistryService_InspectImageDigest_PreservesDaemonAndFallbackE
 	result, err := svc.inspectImageDigestInternal(context.Background(), "registry.example.com/team/app:1.2.3", nil)
 	require.Error(t, err)
 	require.NotNil(t, result)
-	assert.ErrorIs(t, err, daemonErr)
+	require.ErrorIs(t, err, daemonErr)
 	assert.ErrorIs(t, err, fallbackErr)
 }
 
@@ -1014,9 +1031,11 @@ func TestContainerRegistryService_InspectImageDigest_PreservesAnonymousUnauthori
 			w.Header().Set("WWW-Authenticate", `Bearer realm="`+tokenURL+`",service="registry.example.com"`)
 			w.WriteHeader(http.StatusUnauthorized)
 		case "/token":
-			require.NoError(t, json.NewEncoder(w).Encode(map[string]string{
+			if !assert.NoError(t, json.NewEncoder(w).Encode(map[string]string{
 				"token": "anonymous-token",
-			}))
+			})) {
+				return
+			}
 		default:
 			http.NotFound(w, r)
 		}

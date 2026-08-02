@@ -239,7 +239,7 @@ func TestWebSocketHandler_ProjectLogs_CompletedSourceStartsFreshStream(t *testin
 	select {
 	case <-firstDone:
 	case <-time.After(2 * time.Second):
-		t.Fatal("first finite log stream did not complete")
+		require.FailNow(t, "first finite log stream did not complete")
 	}
 
 	conn2 := dialWebSocket(t, server.URL, path)
@@ -432,17 +432,17 @@ func TestWebSocketHandler_AcquireSystemStatsSampler_WaitsForInitialSnapshot(t *t
 	select {
 	case <-firstDone:
 	case <-time.After(2 * time.Second):
-		t.Fatal("first sampler acquisition did not finish")
+		require.FailNow(t, "first sampler acquisition did not finish")
 	}
 
 	select {
 	case <-secondDone:
 	case <-time.After(2 * time.Second):
-		t.Fatal("second sampler acquisition did not wait for readiness")
+		require.FailNow(t, "second sampler acquisition did not wait for readiness")
 	}
 
 	stats := handler.latestSystemStatsSnapshotInternal()
-	require.Equal(t, 42.0, stats.CPUUsage)
+	require.InDelta(t, 42.0, stats.CPUUsage, 0.000001)
 
 	handler.releaseSystemStatsSamplerInternal()
 	handler.releaseSystemStatsSamplerInternal()
@@ -477,7 +477,7 @@ func TestWebSocketHandler_AcquireSystemStatsSampler_StopsWaitingWhenCallerCancel
 	select {
 	case <-readyToCancel:
 	case <-time.After(time.Second):
-		t.Fatal("sampler did not start CPU initialization")
+		require.FailNow(t, "sampler did not start CPU initialization")
 	}
 
 	cancel()
@@ -486,7 +486,7 @@ func TestWebSocketHandler_AcquireSystemStatsSampler_StopsWaitingWhenCallerCancel
 	case ok := <-done:
 		require.False(t, ok)
 	case <-time.After(100 * time.Millisecond):
-		t.Fatal("sampler acquisition did not stop waiting after cancellation")
+		require.FailNow(t, "sampler acquisition did not stop waiting after cancellation")
 	}
 
 	handler.releaseSystemStatsSamplerInternal()
@@ -607,7 +607,7 @@ func TestWebSocketHandler_GetCachedCgroupLimitsInternal_DeduplicatesRefresh(t *t
 	select {
 	case <-start:
 	case <-time.After(2 * time.Second):
-		t.Fatal("detector was not called")
+		require.FailNow(t, "detector was not called")
 	}
 
 	require.Equal(t, int32(1), calls.Load())

@@ -113,7 +113,7 @@ func TestHub_Broadcast(t *testing.T) {
 	case received := <-c.send:
 		assert.Equal(t, msg, received)
 	case <-time.After(time.Second):
-		t.Fatal("timed out waiting for broadcast message")
+		require.FailNow(t, "timed out waiting for broadcast message")
 	}
 }
 
@@ -150,7 +150,7 @@ func TestHub_BroadcastToMultipleClients(t *testing.T) {
 		case received := <-c.send:
 			assert.Equal(t, msg, received, "client %d did not receive expected message", i)
 		case <-time.After(time.Second):
-			t.Fatalf("client %d timed out waiting for broadcast message", i)
+			require.FailNowf(t, "unexpected failure", "client %d timed out waiting for broadcast message", i)
 		}
 	}
 }
@@ -300,7 +300,7 @@ func TestHub_ContextCancellation(t *testing.T) {
 	case <-done:
 		// Hub exited as expected
 	case <-time.After(2 * time.Second):
-		t.Fatal("Hub.Run did not exit after context cancellation")
+		require.FailNow(t, "Hub.Run did not exit after context cancellation")
 	}
 
 	// After closeAll, clients map should be empty

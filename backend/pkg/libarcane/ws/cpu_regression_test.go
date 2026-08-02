@@ -113,7 +113,7 @@ func BenchmarkCPU_PageReloadSimulation(b *testing.B) {
 	for i := range b.N {
 		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
-			b.Fatal(err)
+			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 
 		// Read one message to exercise the pipeline
@@ -200,7 +200,7 @@ func BenchmarkCPU_ContainerLogReloadSimulation(b *testing.B) {
 	for i := range b.N {
 		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
-			b.Fatal(err)
+			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 
 		_ = readOneWithTimeout(conn, 2*time.Second)
@@ -253,7 +253,7 @@ func BenchmarkCPU_GoroutineScaling(b *testing.B) {
 				for j := range concurrency {
 					conn, _, err := websocket.Dial(b.Context(), url, nil)
 					if err != nil {
-						b.Fatal(err)
+						require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 					}
 					conns[j] = conn
 				}
@@ -303,7 +303,7 @@ func BenchmarkCPU_SustainedStreaming(b *testing.B) {
 	for b.Loop() {
 		conn, _, err := websocket.Dial(b.Context(), url, nil)
 		if err != nil {
-			b.Fatal(err)
+			require.FailNowf(b, "benchmark websocket dial failed", "%v", err)
 		}
 		for range 10 {
 			if err := readOneWithTimeout(conn, 2*time.Second); err != nil {

@@ -331,7 +331,7 @@ func TestGitOpsSyncService_CleanupLeakedScratchDirsOnStartup_RemovesOrphans(t *t
 
 	for _, p := range scratch {
 		_, err := os.Stat(p)
-		assert.ErrorIs(t, err, os.ErrNotExist, "scratch dir should be removed: %s", p)
+		require.ErrorIs(t, err, os.ErrNotExist, "scratch dir should be removed: %s", p)
 	}
 	_, err := os.Stat(realProject)
 	assert.NoError(t, err, "real project dir must be kept")
@@ -369,7 +369,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_RefusesDuplicateOnNameCollision(
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
+	require.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
 
 	var got models.GitOpsSync
 	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
@@ -402,7 +402,7 @@ func TestGitOpsSyncService_GetOrCreateProject_RefusesDuplicateOnNameCollision(t 
 	require.ErrorIs(t, err, common.ErrGitOpsSyncProjectBindingBroken)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "Dozzle-1"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
+	require.ErrorIs(t, statErr, os.ErrNotExist, "must not mint a -N duplicate")
 
 	var got models.GitOpsSync
 	require.NoError(t, db.Where("id = ?", sync.ID).First(&got).Error)
@@ -564,10 +564,10 @@ services:
 	assert.Equal(t, filepath.Join(updatedProject.Path, "docker-compose.yaml"), composePath)
 
 	_, statErr := os.Stat(filepath.Join(updatedProject.Path, "old.txt"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 
 	_, statErr = os.Stat(filepath.Join(updatedProject.Path, "compose.yaml"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 
 	keepBytes, err := os.ReadFile(filepath.Join(updatedProject.Path, "keep.txt"))
 	require.NoError(t, err)
@@ -1014,7 +1014,7 @@ func TestProjectsRemoveStaleComposeFiles_RemovesStaleCustomComposeFiles(t *testi
 	require.NoError(t, err)
 
 	_, statErr := os.Stat(filepath.Join(projectPath, "radarr.yaml"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 
 	_, statErr = os.Stat(filepath.Join(projectPath, "sonarr.yaml"))
 	require.NoError(t, statErr)
@@ -1183,7 +1183,7 @@ func TestGitOpsSyncService_SyncProjectDirectory_FailsWhenBoundProjectMissing(t *
 	assert.Zero(t, projectCount)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "demo-project"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 
 	var storedSync models.GitOpsSync
 	require.NoError(t, db.First(&storedSync, "id = ?", sync.ID).Error)
@@ -1280,9 +1280,9 @@ func TestGitOpsSyncService_GetOrCreateProjectInternal_FailsWhenBoundProjectMissi
 	assert.Zero(t, projectCount)
 
 	_, statErr := os.Stat(filepath.Join(projectsDir, "demo-project"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 	_, statErr = os.Stat(filepath.Join(projectsDir, "demo-project-1"))
-	assert.ErrorIs(t, statErr, os.ErrNotExist)
+	require.ErrorIs(t, statErr, os.ErrNotExist)
 
 	var storedSync models.GitOpsSync
 	require.NoError(t, db.First(&storedSync, "id = ?", sync.ID).Error)

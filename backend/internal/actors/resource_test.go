@@ -88,7 +88,7 @@ func TestResourceCanceledStopStillCleansAndFencesInternal(t *testing.T) {
 	select {
 	case <-stopped:
 	case <-time.After(time.Second):
-		t.Fatal("resource cleanup was abandoned after stop wait cancellation")
+		require.FailNow(t, "resource cleanup was abandoned after stop wait cancellation")
 	}
 	require.ErrorIs(t, resource.Restart(t.Context(), "restart", func(context.Context) (int, error) { return 2, nil }), ErrResourceStopped)
 

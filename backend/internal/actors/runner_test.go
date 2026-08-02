@@ -26,7 +26,7 @@ func TestRunnerCancelsAndJoinsBackgroundFunctionInternal(t *testing.T) {
 	select {
 	case <-started:
 	case <-time.After(time.Second):
-		t.Fatal("runner did not start")
+		require.FailNow(t, "runner did not start")
 	}
 
 	stopCtx, cancel := context.WithTimeout(context.Background(), time.Second)
@@ -35,7 +35,7 @@ func TestRunnerCancelsAndJoinsBackgroundFunctionInternal(t *testing.T) {
 	select {
 	case <-exited:
 	default:
-		t.Fatal("runner stop returned before background function exited")
+		require.FailNow(t, "runner stop returned before background function exited")
 	}
 	require.NoError(t, lifecycle.Stop(stopCtx))
 }

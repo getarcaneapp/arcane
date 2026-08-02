@@ -15,6 +15,7 @@ import (
 	"github.com/getarcaneapp/arcane/backend/v2/pkg/pagination"
 	pkgutils "github.com/getarcaneapp/arcane/backend/v2/pkg/utils"
 	"github.com/libtnb/sqlite"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
 )
@@ -185,13 +186,21 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 
 	requests := make(chan CreateEventRequest, 1)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		require.Equal(t, http.MethodPost, r.Method)
-		require.Equal(t, "/api/events", r.URL.Path)
-		require.Equal(t, "test-agent-token", r.Header.Get(pkgutils.HeaderAgentToken))
+		if !assert.Equal(t, http.MethodPost, r.Method) {
+			return
+		}
+		if !assert.Equal(t, "/api/events", r.URL.Path) {
+			return
+		}
+		if !assert.Equal(t, "test-agent-token", r.Header.Get(pkgutils.HeaderAgentToken)) {
+			return
+		}
 
 		defer func() { _ = r.Body.Close() }()
 		var payload CreateEventRequest
-		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		if !assert.NoError(t, json.NewDecoder(r.Body).Decode(&payload)) {
+			return
+		}
 
 		select {
 		case requests <- payload:
@@ -228,7 +237,7 @@ func TestEventService_CreateEvent_ForwardsToManagerAPIInAgentMode(t *testing.T) 
 		require.Equal(t, "0", *payload.EnvironmentID)
 		require.Equal(t, "test", payload.Metadata["source"])
 	case <-time.After(2 * time.Second):
-		t.Fatal("timed out waiting for manager event sync request")
+		require.FailNow(t, "timed out waiting for manager event sync request")
 	}
 }
 
